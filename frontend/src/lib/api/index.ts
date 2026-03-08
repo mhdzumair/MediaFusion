@@ -298,6 +298,21 @@ export {
   type SchedulerListParams,
 } from './scheduler'
 export {
+  taskManagementApi,
+  type TaskRecord,
+  type TaskListResponse,
+  type QueueSummary,
+  type TaskOverviewResponse,
+  type CancelTaskRequest,
+  type CancelTaskResponse,
+  type TaskListParams,
+  type RetryTaskResponse,
+  type BulkActionRequest,
+  type BulkActionResponse,
+  type TaskStreamParams,
+  type TaskStreamSnapshot,
+} from './task-management'
+export {
   metadataApi,
   type RefreshMetadataRequest,
   type RefreshMetadataResponse,

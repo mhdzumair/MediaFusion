@@ -138,6 +138,27 @@ export function useScraperHistory(scraperName: string | null, limit: number = 20
   })
 }
 
+export function useScraperSearchRuns(params?: {
+  query?: string
+  meta_id?: string
+  scraper_name?: string
+  limit?: number
+}) {
+  return useQuery({
+    queryKey: [
+      ...METRICS_QUERY_KEY,
+      'scraper-search-runs',
+      params?.query,
+      params?.meta_id,
+      params?.scraper_name,
+      params?.limit,
+    ],
+    queryFn: () => metricsApi.getScraperSearchRuns(params),
+    staleTime: 15 * 1000,
+    refetchInterval: 30 * 1000,
+  })
+}
+
 export function useScraperLatestMetrics(scraperName: string | null) {
   return useQuery({
     queryKey: [...METRICS_QUERY_KEY, 'scraper-latest', scraperName],

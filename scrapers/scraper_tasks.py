@@ -7,8 +7,7 @@ from enum import Enum
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import dramatiq
-
+from api.task_queue import actor
 from db.config import settings
 from db.schemas import MetadataData, TorrentStreamData, UserData
 from db.schemas.config import IndexerConfig, TorznabEndpointConfig
@@ -613,9 +612,10 @@ async def run_usenet_scrapers(
     return unique_streams
 
 
-@dramatiq.actor(
+@actor(
     time_limit=5 * 60 * 1000,  # 5 minutes
     priority=20,
+    queue_name="priority",
 )
 async def cleanup_expired_scraper_task(**kwargs):
     """Cleanup expired items from all scrapers"""

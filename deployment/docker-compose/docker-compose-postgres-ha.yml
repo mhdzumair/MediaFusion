@@ -204,6 +204,7 @@ services:
       # Use read replica PgBouncer for read operations
       - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
       - REDIS_URL=redis://redis:6379
+      - TASKIQ_SINGLE_WORKER_MODE=false
     depends_on:
       pgbouncer:
         condition: service_healthy
@@ -212,17 +213,87 @@ services:
       redis:
         condition: service_healthy
 
-  # Override dramatiq-worker to use PgBouncer
-  dramatiq-worker:
+  # Override Taskiq workers to use PgBouncer
+  taskiq-worker-default:
     environment:
       - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
       - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
       - REDIS_URL=redis://redis:6379
+      - TASKIQ_SINGLE_WORKER_MODE=false
     depends_on:
       pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  taskiq-worker-scrapy:
+    image: mhdzumair/mediafusion:5.2.2
+    command: ["taskiq", "worker", "api.taskiq_worker:broker_scrapy", "--workers", "1", "--max-async-tasks", "1", "--ack-type", "when_executed"]
+    env_file: .env
+    environment:
+      - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
+      - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
+      - REDIS_URL=redis://redis:6379
+      - TASKIQ_SINGLE_WORKER_MODE=false
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mediafusion-network
+
+  taskiq-worker-import:
+    image: mhdzumair/mediafusion:5.2.2
+    command: ["taskiq", "worker", "api.taskiq_worker:broker_import", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
+    env_file: .env
+    environment:
+      - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
+      - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
+      - REDIS_URL=redis://redis:6379
+      - TASKIQ_SINGLE_WORKER_MODE=false
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mediafusion-network
+
+  taskiq-worker-priority:
+    image: mhdzumair/mediafusion:5.2.2
+    command: ["taskiq", "worker", "api.taskiq_worker:broker_priority", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
+    env_file: .env
+    environment:
+      - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
+      - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
+      - REDIS_URL=redis://redis:6379
+      - TASKIQ_SINGLE_WORKER_MODE=false
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mediafusion-network
 
 volumes:
   postgres-replica-1-data:

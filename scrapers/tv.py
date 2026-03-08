@@ -2,11 +2,11 @@ import difflib
 import logging
 import re
 
-import dramatiq
 import httpx
 from ipytv import playlist
 from ipytv.channel import IPTVAttr
 
+from api.task_queue import actor
 from db import crud, schemas
 from db.config import settings
 from db.database import get_background_session
@@ -105,14 +105,14 @@ async def parse_m3u_playlist(
         await add_tv_metadata(batch=batch, namespace=namespace)
 
 
-@dramatiq.actor(priority=2, time_limit=15 * 60 * 1000, queue_name="scrapy")
-def parse_m3u_playlist_background(
+@actor(priority=2, time_limit=15 * 60 * 1000, queue_name="scrapy")
+async def parse_m3u_playlist_background(
     namespace: str,
     playlist_source: str,
     playlist_url: str = None,
     playlist_redis_key: str = None,
 ):
-    parse_m3u_playlist(
+    await parse_m3u_playlist(
         namespace,
         playlist_source,
         playlist_url=playlist_url,
@@ -120,7 +120,7 @@ def parse_m3u_playlist_background(
     )
 
 
-@dramatiq.actor(time_limit=30 * 60 * 1000, priority=5)  # time limit is 30 minutes
+@actor(time_limit=30 * 60 * 1000, priority=5)  # time limit is 30 minutes
 async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
     """Validate TV streams in the database."""
     offset = page * page_size
@@ -151,10 +151,10 @@ async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
         logging.info(f"Updated {len(updates)} streams")
 
     # Schedule the next batch in 2 minutes
-    validate_tv_streams_in_db.send_with_options(args=(page + 1, page_size), delay=2 * 6000)
+    await validate_tv_streams_in_db.async_send_with_options(args=(page + 1, page_size), delay=2 * 6000)
 
 
-@dramatiq.actor(time_limit=30 * 60 * 1000, priority=5)
+@actor(time_limit=30 * 60 * 1000, priority=5)
 async def update_tv_posters_in_db(*args, **kwargs):
     """Validate TV posters in the database."""
     async with get_background_session() as session:

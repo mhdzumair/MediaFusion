@@ -1,9 +1,9 @@
 import logging
 from abc import ABC, abstractmethod
 
-import dramatiq
 import httpx
 
+from api.task_queue import actor
 from db import crud
 from db.config import settings
 from db.database import get_background_session
@@ -278,7 +278,7 @@ def normalize_imdb_id(imdb_id: str | int | None) -> str | None:
 
 
 # Dramatiq actors for scheduling
-@dramatiq.actor(time_limit=60 * 60 * 1000, priority=5, queue_name="scrapy")
+@actor(time_limit=60 * 60 * 1000, priority=5, queue_name="scrapy")
 @minimum_run_interval(hours=settings.prowlarr_feed_scrape_interval_hour)
 async def run_prowlarr_feed_scraper(**kwargs):
     if not settings.is_scrap_from_prowlarr:
@@ -288,7 +288,7 @@ async def run_prowlarr_feed_scraper(**kwargs):
     await scraper.scrape_feed()
 
 
-@dramatiq.actor(time_limit=60 * 60 * 1000, priority=5, queue_name="scrapy")
+@actor(time_limit=60 * 60 * 1000, priority=5, queue_name="scrapy")
 @minimum_run_interval(hours=settings.jackett_feed_scrape_interval_hour)
 async def run_jackett_feed_scraper(**kwargs):
     if not settings.is_scrap_from_jackett:

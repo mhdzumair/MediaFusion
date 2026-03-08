@@ -212,21 +212,207 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dramatiq-worker-deployment
+  name: taskiq-worker-default-deployment
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: dramatiq-worker
+      app: taskiq-worker-default
   template:
     metadata:
       labels:
-        app: dramatiq-worker
+        app: taskiq-worker-default
     spec:
       containers:
-      - name: dramatiq-worker
+      - name: taskiq-worker-default
         image: mhdzumair/mediafusion:5.2.2
-        command: ["dramatiq", "api.task", "-p", "1", "-t", "1"]
+        command: ["taskiq", "worker", "api.taskiq_worker:broker_default", "--workers", "1", "--max-async-tasks", "8", "--ack-type", "when_executed"]
+        env:
+          - name: HOST_URL
+            value: "https://mediafusion.local"
+          - name: POSTGRES_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: POSTGRES_URI
+          - name: POSTGRES_READ_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: POSTGRES_READ_URI
+                optional: true
+          - name: REDIS_URL
+            value: "redis://redis-service:6379"
+          - name: SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: SECRET_KEY
+          - name: API_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: API_PASSWORD
+          - name: CONTACT_EMAIL
+            value: "admin@example.com"
+          - name: PROWLARR_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: PROWLARR_API_KEY
+                optional: true
+        resources:
+          requests:
+            memory: "500Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "400m"
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskiq-worker-scrapy-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskiq-worker-scrapy
+  template:
+    metadata:
+      labels:
+        app: taskiq-worker-scrapy
+    spec:
+      containers:
+      - name: taskiq-worker-scrapy
+        image: mhdzumair/mediafusion:5.2.2
+        command: ["taskiq", "worker", "api.taskiq_worker:broker_scrapy", "--workers", "1", "--max-async-tasks", "1", "--ack-type", "when_executed"]
+        env:
+          - name: HOST_URL
+            value: "https://mediafusion.local"
+          - name: POSTGRES_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: POSTGRES_URI
+          - name: POSTGRES_READ_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: POSTGRES_READ_URI
+                optional: true
+          - name: REDIS_URL
+            value: "redis://redis-service:6379"
+          - name: SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: SECRET_KEY
+          - name: API_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: API_PASSWORD
+          - name: CONTACT_EMAIL
+            value: "admin@example.com"
+          - name: PROWLARR_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: PROWLARR_API_KEY
+                optional: true
+        resources:
+          requests:
+            memory: "500Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "400m"
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskiq-worker-import-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskiq-worker-import
+  template:
+    metadata:
+      labels:
+        app: taskiq-worker-import
+    spec:
+      containers:
+      - name: taskiq-worker-import
+        image: mhdzumair/mediafusion:5.2.2
+        command: ["taskiq", "worker", "api.taskiq_worker:broker_import", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
+        env:
+          - name: HOST_URL
+            value: "https://mediafusion.local"
+          - name: POSTGRES_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: POSTGRES_URI
+          - name: POSTGRES_READ_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: POSTGRES_READ_URI
+                optional: true
+          - name: REDIS_URL
+            value: "redis://redis-service:6379"
+          - name: SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: SECRET_KEY
+          - name: API_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: API_PASSWORD
+          - name: CONTACT_EMAIL
+            value: "admin@example.com"
+          - name: PROWLARR_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: PROWLARR_API_KEY
+                optional: true
+        resources:
+          requests:
+            memory: "500Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "400m"
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskiq-worker-priority-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskiq-worker-priority
+  template:
+    metadata:
+      labels:
+        app: taskiq-worker-priority
+    spec:
+      containers:
+      - name: taskiq-worker-priority
+        image: mhdzumair/mediafusion:5.2.2
+        command: ["taskiq", "worker", "api.taskiq_worker:broker_priority", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
         env:
           - name: HOST_URL
             value: "https://mediafusion.local"

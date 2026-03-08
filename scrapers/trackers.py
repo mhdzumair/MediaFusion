@@ -1,18 +1,18 @@
 import logging
 from datetime import datetime, timedelta
 
-import dramatiq
 from pyasynctracker import batch_scrape_info_hashes, find_max_seeders
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
+from api.task_queue import actor
 from db import crud
 from db.database import get_background_session
 from db.models import TorrentStream
 from utils.runtime_const import TRACKERS
 
 
-@dramatiq.actor(time_limit=10 * 60 * 1000, priority=5, max_retries=3)
+@actor(time_limit=10 * 60 * 1000, priority=5, max_retries=3)
 async def update_torrent_seeders(page=0, page_size=25, *args, **kwargs):
     offset = page * page_size
 
@@ -47,4 +47,4 @@ async def update_torrent_seeders(page=0, page_size=25, *args, **kwargs):
 
         logging.info(f"Updated {len(max_seeders_data)} torrents")
 
-    update_torrent_seeders.send_with_options(args=(page + 1, page_size), delay=60000)
+    await update_torrent_seeders.async_send_with_options(args=(page + 1, page_size), delay=60000)

@@ -50,11 +50,16 @@ endif
 	@sed -i -e "/<addon\s*id=\"plugin\.video\.mediafusion\"/s/version=\"[^\"]*\"/version=\"$(VERSION_NEW)\"/" kodi/plugin.video.mediafusion/addon.xml
 	# Update repository addon.xml
 	@sed -i -e "/<addon\s*id=\"repository\.mediafusion\"/s/version=\"[^\"]*\"/version=\"$(VERSION_NEW)\"/" kodi/repository.mediafusion/addon.xml
-	# Update docker-compose.yml
-	@sed -i 's|image: $(DOCKER_REPO)/$(IMAGE_NAME):[^[:space:]]*|image: $(DOCKER_REPO)/$(IMAGE_NAME):$(VERSION_NEW)|g' deployment/docker-compose/docker-compose.yml
-	@sed -i 's|image: $(DOCKER_REPO)/$(IMAGE_NAME):[^[:space:]]*|image: $(DOCKER_REPO)/$(IMAGE_NAME):$(VERSION_NEW)|g' deployment/docker-compose/docker-compose-minimal.yml
-	# Update k8s deployment
-	@sed -i 's|image: $(DOCKER_REPO)/$(IMAGE_NAME):[^[:space:]]*|image: $(DOCKER_REPO)/$(IMAGE_NAME):$(VERSION_NEW)|g' deployment/k8s/local-deployment.yaml
+	# Update deployment manifests that reference the docker image
+	@for file in \
+		deployment/docker-compose/docker-compose.yml \
+		deployment/docker-compose/docker-compose-minimal.yml \
+		deployment/docker-compose/docker-compose-postgres-ha.yml \
+		deployment/k8s/local-deployment.yaml; do \
+		if [ -f "$$file" ]; then \
+			sed -i 's|image: $(DOCKER_REPO)/$(IMAGE_NAME):[^[:space:]]*|image: $(DOCKER_REPO)/$(IMAGE_NAME):$(VERSION_NEW)|g' "$$file"; \
+		fi; \
+	done
 	# Update pyproject.toml
 	@sed -i -e "s/version = \"[0-9.]*\"/version = \"$(VERSION_NEW)\"/" pyproject.toml
 	@echo "Version updated to $(VERSION_NEW) in all files"

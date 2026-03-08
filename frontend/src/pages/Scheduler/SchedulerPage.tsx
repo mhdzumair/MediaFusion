@@ -359,7 +359,7 @@ interface ConfirmRunState {
   mode: RunMode
 }
 
-export function SchedulerPage() {
+export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<SchedulerCategory | 'all'>('all')
   const [selectedJob, setSelectedJob] = useState<SchedulerJobInfo | null>(null)
@@ -473,28 +473,51 @@ export function SchedulerPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-gradient-to-br from-primary to-primary/80 shadow-lg shadow-primary/20">
-              <Calendar className="h-5 w-5 text-white" />
-            </div>
-            Scheduler Management
-          </h1>
-          <p className="text-muted-foreground mt-1">Monitor and control scheduled background jobs</p>
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-primary to-primary/80 shadow-lg shadow-primary/20">
+                <Calendar className="h-5 w-5 text-white" />
+              </div>
+              Scheduler Management
+            </h1>
+            <p className="text-muted-foreground mt-1">Monitor and control scheduled background jobs</p>
+          </div>
+          <Button
+            onClick={() => {
+              refetch()
+              refetchDmmStatus()
+            }}
+            variant="outline"
+            className="rounded-xl"
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
         </div>
-        <Button
-          onClick={() => {
-            refetch()
-            refetchDmmStatus()
-          }}
-          variant="outline"
-          className="rounded-xl"
-        >
-          <RefreshCw className="mr-2 h-4 w-4" />
-          Refresh
-        </Button>
-      </div>
+      )}
+
+      {embedded && (
+        <div className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/20 p-3">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-primary" />
+            <p className="text-sm font-medium">Scheduler Management</p>
+          </div>
+          <Button
+            onClick={() => {
+              refetch()
+              refetchDmmStatus()
+            }}
+            variant="outline"
+            size="sm"
+            className="rounded-lg"
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
+      )}
 
       {/* Global Scheduler Warning */}
       {stats?.global_scheduler_disabled && (

@@ -139,6 +139,9 @@ Deploy MediaFusion using Docker Compose:
 docker compose -f docker-compose.yml up -d
 ```
 
+This profile runs a **single Taskiq worker service** (`taskiq-worker-default`) by default using `TASKIQ_SINGLE_WORKER_MODE=true`.
+It is the recommended default for local deployments.
+
 ### High Availability Deployment (PostgreSQL with Read Replicas)
 
 For production environments with high read workloads, use the HA configuration:
@@ -151,6 +154,7 @@ This setup includes:
 - PostgreSQL primary (read-write)
 - PostgreSQL read replica (read-only)
 - PgBouncer connection pooling for both primary and replica
+- Dedicated Taskiq workers for `default`, `scrapy`, `import`, and `priority` queues (`TASKIQ_SINGLE_WORKER_MODE=false`)
 
 ### Development Setup (Databases Only)
 

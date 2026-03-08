@@ -2,7 +2,6 @@
 M3U Playlist Import API endpoints.
 """
 
-import asyncio
 import json
 import logging
 from datetime import datetime
@@ -577,8 +576,7 @@ async def import_m3u_playlist(
             )
 
             # Queue background task
-            await asyncio.to_thread(
-                run_m3u_import.send,
+            await run_m3u_import.async_send(
                 job_id=job_id,
                 user_id=user.id,
                 entries=entries,

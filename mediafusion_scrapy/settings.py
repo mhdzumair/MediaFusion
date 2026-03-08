@@ -1,3 +1,5 @@
+import os
+
 # Scrapy settings for mediafusion_scrapy project
 #
 # For simplicity, this file contains only settings considered important or
@@ -113,4 +115,4 @@ RETRY_TIMES = 5
 
 FLARESOLVERR_URL = settings.flaresolverr_url
 
-CLOSESPIDER_TIMEOUT_NO_ITEM = 600  # 10 minutes
+CLOSESPIDER_TIMEOUT_NO_ITEM = max(1, int(os.getenv("SCRAPY_CLOSESPIDER_TIMEOUT_NO_ITEM", "600")))  # 10 minutes

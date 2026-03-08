@@ -3,9 +3,9 @@ import logging
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urljoin
 
-import dramatiq
 import httpx
 
+from api.task_queue import actor
 from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import StreamingProvider
@@ -245,9 +245,10 @@ async def cleanup_service_cache(service: str) -> None:
         logging.error(f"Error during cache cleanup for {service}: {e}")
 
 
-@dramatiq.actor(
+@actor(
     time_limit=5 * 60 * 1000,  # 5 minutes
     priority=2,
+    queue_name="priority",
 )
 async def cleanup_expired_cache(**kwargs):
     """

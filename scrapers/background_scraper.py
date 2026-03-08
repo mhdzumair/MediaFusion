@@ -3,9 +3,9 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
-import dramatiq
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from api.task_queue import actor
 from db import crud
 from db.config import settings
 from db.database import get_background_session
@@ -341,7 +341,7 @@ async def _run_background_search_async():
         await worker.close()
 
 
-@dramatiq.actor(
+@actor(
     priority=10,
     max_retries=3,
     time_limit=2 * 60 * 60 * 1000,  # 2 hours

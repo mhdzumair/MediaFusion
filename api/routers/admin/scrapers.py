@@ -215,8 +215,7 @@ async def run_scraper(
             detail=f"Unknown spider: {request.spider_name}. Available: {list(const.SCRAPY_SPIDERS.keys())}",
         )
 
-    # Send task to dramatiq
-    run_spider.send(
+    await run_spider.async_send(
         request.spider_name,
         pages=request.pages,
         start_page=request.start_page,
@@ -378,7 +377,7 @@ async def run_dmm_hashlist_ingestion(
         )
 
     if not request.sync:
-        run_dmm_hashlist_scraper.send()
+        await run_dmm_hashlist_scraper.async_send()
         return {
             "status": "scheduled",
             "mode": "async_queue",
@@ -415,7 +414,7 @@ async def run_dmm_hashlist_full_ingestion_endpoint(
         )
 
     if not request.sync:
-        run_dmm_hashlist_full_ingestion_job.send(
+        await run_dmm_hashlist_full_ingestion_job.async_send(
             max_iterations=request.max_iterations,
             incremental_commits=request.incremental_commits,
             backfill_commits=request.backfill_commits,

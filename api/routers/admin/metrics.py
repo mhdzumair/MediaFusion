@@ -73,6 +73,7 @@ class ScraperMetricsSummary(BaseModel):
     quality_distribution: dict[str, int]
     source_distribution: dict[str, int]
     indexer_stats: dict[str, Any] | None = None
+    formatted_summary: str | None = None
 
 
 class ScraperAggregatedStats(BaseModel):
@@ -113,6 +114,13 @@ class ScraperHistoryResponse(BaseModel):
 
     scraper_name: str
     history: list[ScraperMetricsSummary]
+    total: int
+
+
+class ScraperSearchRunsResponse(BaseModel):
+    """Cross-scraper recent media search runs."""
+
+    runs: list[ScraperMetricsSummary]
     total: int
 
 
@@ -922,6 +930,64 @@ async def get_scraper_metrics_overview(
             scrapers=[],
             total_scrapers=0,
         )
+
+
+@router.get("/scrapers/searches", response_model=ScraperSearchRunsResponse)
+async def get_scraper_search_runs(
+    response: Response,
+    query: str | None = Query(None, description="Filter by media title, meta ID, or scraper name"),
+    meta_id: str | None = Query(None, description="Exact meta ID filter"),
+    scraper_name: str | None = Query(None, description="Optional scraper name filter"),
+    limit: int = Query(100, ge=1, le=500, description="Max number of runs to return"),
+    _admin: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Get recent media search runs across scrapers with optional filtering."""
+    response.headers.update(const.NO_CACHE_HEADERS)
+
+    try:
+        scraper_names = await get_all_scraper_names()
+        if scraper_name:
+            scraper_names = [name for name in scraper_names if name == scraper_name]
+
+        lowered_query = query.strip().lower() if query else None
+        lowered_meta_id = meta_id.strip().lower() if meta_id else None
+        per_scraper_limit = min(100, max(25, limit))
+        runs: list[ScraperMetricsSummary] = []
+
+        for name in scraper_names:
+            history_key = f"{SCRAPER_METRICS_HISTORY_KEY}{name}"
+            history_raw = await REDIS_ASYNC_CLIENT.lrange(history_key, 0, per_scraper_limit - 1)
+            for entry_raw in history_raw:
+                try:
+                    if isinstance(entry_raw, bytes):
+                        entry_raw = entry_raw.decode()
+                    run = ScraperMetricsSummary(**json.loads(entry_raw))
+                except (json.JSONDecodeError, TypeError, ValueError) as parse_error:
+                    logger.warning("Error parsing scraper search run entry: %s", parse_error)
+                    continue
+
+                if lowered_meta_id and (run.meta_id or "").lower() != lowered_meta_id:
+                    continue
+
+                if lowered_query:
+                    search_blob = " ".join(
+                        [
+                            run.scraper_name or "",
+                            run.meta_id or "",
+                            run.meta_title or "",
+                        ]
+                    ).lower()
+                    if lowered_query not in search_blob:
+                        continue
+
+                runs.append(run)
+
+        runs.sort(key=lambda item: item.timestamp, reverse=True)
+        trimmed_runs = runs[:limit]
+        return ScraperSearchRunsResponse(runs=trimmed_runs, total=len(trimmed_runs))
+    except Exception as e:
+        logger.error(f"Error getting scraper search runs: {e}")
+        return ScraperSearchRunsResponse(runs=[], total=0)
 
 
 @router.get("/scrapers/{scraper_name}", response_model=ScraperAggregatedStats)

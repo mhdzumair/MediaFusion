@@ -183,7 +183,7 @@ async def bulk_import_rss_feeds(import_data: RSSFeedBulkImport, session: AsyncSe
 async def run_rss_feed_scraper_endpoint(_: str = Depends(api_password_dependency)):
     """Manually trigger the RSS feed scraper"""
     try:
-        run_rss_feed_scraper()
+        await run_rss_feed_scraper.async_send()
         return {"detail": "RSS feed scraper started successfully"}
     except Exception as e:
         logger.exception(f"Failed to start RSS feed scraper: {str(e)}")

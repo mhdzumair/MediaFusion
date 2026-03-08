@@ -31,6 +31,7 @@ class RedisStatsCollector(StatsCollector):
             "log_count_error": log_count_error,
             "log_count_info": log_count_info,
             "log_count_warning": log_count_warning,
+            "close_reason": reason,
         }
 
         # Save the stats to Redis

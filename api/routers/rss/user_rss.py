@@ -412,7 +412,7 @@ async def run_all_scrapers(
     try:
         from scrapers.rss_scraper import run_rss_feed_scraper
 
-        run_rss_feed_scraper()
+        await run_rss_feed_scraper.async_send()
         return {"status": "success", "message": "RSS feed scraper started"}
     except Exception as e:
         logger.exception(f"Failed to start RSS scraper: {e}")

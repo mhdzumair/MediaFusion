@@ -307,6 +307,7 @@ class ScraperMetrics:
             "quality_distribution": dict(self.quality_stats),
             "source_distribution": dict(self.source_stats),
             "indexer_stats": indexer_stats_serializable,
+            "formatted_summary": self.format_summary(),
         }
 
     async def save_to_redis(self) -> bool:
@@ -1264,7 +1265,123 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
         self.base_url = base_url
         self.indexer_status = {}
         self.indexer_circuit_breakers = {}
+        self.indexer_search_locks: dict[str | int, asyncio.Lock] = {}
+        self.indexer_runtime_stats: dict[str | int, dict[str, int]] = {}
+        self.degraded_search_until: float = 0.0
         self.background_scraper_manager = BackgroundScraperManager()
+
+    @staticmethod
+    def describe_exception(error: Exception) -> str:
+        """Return a stable, non-empty exception summary for metrics and logs."""
+        message = str(error).strip()
+        if message:
+            return message
+
+        if isinstance(error, httpx.HTTPStatusError):
+            status_code = error.response.status_code if error.response else "unknown"
+            return f"HTTPStatusError ({status_code})"
+        if isinstance(error, httpx.TimeoutException):
+            return "TimeoutException"
+        if isinstance(error, httpx.RequestError):
+            request_url = getattr(getattr(error, "request", None), "url", None)
+            return f"RequestError ({request_url})" if request_url else "RequestError"
+        return error.__class__.__name__
+
+    @staticmethod
+    def _get_limited_aka_titles(metadata: MetadataData) -> list[str]:
+        """Return deduplicated AKA titles limited by configured live-query budget."""
+        limit = max(0, settings.scrape_max_aka_titles_per_query)
+        if limit == 0:
+            return []
+
+        normalized_primary = (metadata.title or "").strip().lower()
+        seen: set[str] = set()
+        limited: list[str] = []
+        for raw_title in metadata.aka_titles:
+            if not isinstance(raw_title, str):
+                continue
+            title = raw_title.strip()
+            if not title:
+                continue
+            normalized = title.lower()
+            if normalized == normalized_primary or normalized in seen:
+                continue
+            seen.add(normalized)
+            limited.append(title)
+            if len(limited) >= limit:
+                break
+        return limited
+
+    @staticmethod
+    def _monotonic_now() -> float:
+        try:
+            return asyncio.get_running_loop().time()
+        except RuntimeError:
+            return time.monotonic()
+
+    def is_degraded_search_active(self) -> bool:
+        """Whether title-based search should be temporarily degraded."""
+        if not settings.scrape_degraded_mode_enabled:
+            return False
+        return self.degraded_search_until > self._monotonic_now()
+
+    def order_indexers_for_query(self, indexers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Order indexers by runtime reliability and static priority."""
+
+        def score(indexer: dict[str, Any]) -> tuple[int, float, int, int, str]:
+            indexer_id = indexer.get("id")
+            stats = self.indexer_runtime_stats.get(indexer_id, {})
+            successes = int(stats.get("successes", 0))
+            errors = int(stats.get("errors", 0))
+            attempts = successes + errors
+            error_rate = (errors / attempts) if attempts > 0 else 0.0
+            breaker = self.indexer_circuit_breakers.get(indexer_id)
+            breaker_rank = 0 if not breaker or breaker.state == "CLOSED" else 1
+            priority = int(indexer.get("priority", 25))
+            return (breaker_rank, error_rate, -successes, priority, str(indexer.get("name", "")))
+
+        return sorted(indexers, key=score)
+
+    def record_indexer_search_result(self, indexer_id: str | int, *, success: bool) -> None:
+        """Track runtime search outcomes and trigger degraded mode when needed."""
+        stats = self.indexer_runtime_stats.setdefault(indexer_id, {"successes": 0, "errors": 0})
+        if success:
+            stats["successes"] += 1
+        else:
+            stats["errors"] += 1
+            self._maybe_enable_degraded_search_mode()
+
+    def _maybe_enable_degraded_search_mode(self) -> None:
+        if not settings.scrape_degraded_mode_enabled:
+            return
+        if self.is_degraded_search_active():
+            return
+
+        total_successes = sum(int(stats.get("successes", 0)) for stats in self.indexer_runtime_stats.values())
+        total_errors = sum(int(stats.get("errors", 0)) for stats in self.indexer_runtime_stats.values())
+        total_attempts = total_successes + total_errors
+        open_breakers = sum(
+            1 for breaker in self.indexer_circuit_breakers.values() if getattr(breaker, "state", "CLOSED") == "OPEN"
+        )
+
+        should_enable = False
+        reason = ""
+        if open_breakers >= settings.scrape_degraded_mode_open_breakers_threshold:
+            should_enable = True
+            reason = f"{open_breakers} open indexer circuit breakers"
+        elif total_attempts >= settings.scrape_degraded_mode_min_attempts:
+            error_ratio = total_errors / total_attempts if total_attempts else 0.0
+            if error_ratio >= settings.scrape_degraded_mode_error_ratio_threshold:
+                should_enable = True
+                reason = f"high runtime error ratio {error_ratio:.2f} ({total_errors}/{total_attempts} failures)"
+
+        if should_enable:
+            self.degraded_search_until = self._monotonic_now() + settings.scrape_degraded_mode_duration_seconds
+            self.logger.warning(
+                "Enabling degraded scraper mode for %ss: %s",
+                settings.scrape_degraded_mode_duration_seconds,
+                reason,
+            )
 
     async def _scrape_and_parse(
         self,
@@ -1276,6 +1393,8 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
     ) -> list[TorrentStreamData]:
         results = []
         processed_info_hashes: set[str] = set()
+        self.indexer_runtime_stats = {}
+        self.degraded_search_until = 0.0
 
         # Get list of healthy indexers
         healthy_indexers = await self.get_healthy_indexers()
@@ -1340,7 +1459,7 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                         )
                     )
                 if settings.scrape_with_aka_titles:
-                    for aka_title in metadata.aka_titles:
+                    for aka_title in self._get_limited_aka_titles(metadata):
                         search_generators.append(
                             self.scrape_movie_by_title(
                                 processed_info_hashes,
@@ -1393,7 +1512,7 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                         )
                     )
                 if settings.scrape_with_aka_titles:
-                    for aka_title in metadata.aka_titles:
+                    for aka_title in self._get_limited_aka_titles(metadata):
                         search_generators.append(
                             self.scrape_series_by_title(
                                 processed_info_hashes,
@@ -1648,6 +1767,14 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
         requires_imdb: bool = False,
     ) -> AsyncGenerator[TorrentStreamData, None]:
         """Common method to run scraping and parsing process"""
+        if search_type == "search" and self.is_degraded_search_active():
+            self.metrics.record_skip("Degraded mode title search")
+            self.logger.warning(
+                "Skipping title search while degraded mode is active. Query=%s",
+                search_query or metadata.title,
+            )
+            return
+
         # Filter indexers based on capabilities
         filtered_indexers = self.filter_indexers_by_capability(indexers, search_type, categories, requires_imdb)
 
@@ -1669,7 +1796,8 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
         )
 
         # Use only the IDs from filtered indexers
-        indexer_ids = [indexer["id"] for indexer in filtered_indexers]
+        ordered_indexers = self.order_indexers_for_query(filtered_indexers)
+        indexer_ids = [indexer["id"] for indexer in ordered_indexers]
         search_results = await self.fetch_search_results(
             params, indexer_ids=indexer_ids, timeout=self.search_query_timeout
         )

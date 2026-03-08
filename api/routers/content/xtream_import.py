@@ -2,7 +2,6 @@
 Xtream Codes Import API endpoints.
 """
 
-import asyncio
 import json
 import logging
 import re
@@ -328,8 +327,7 @@ async def import_xtream(
             )
 
             # Queue background task
-            await asyncio.to_thread(
-                run_xtream_import.send,
+            await run_xtream_import.async_send(
                 job_id=job_id,
                 user_id=user.id,
                 server_url=credentials["server_url"],

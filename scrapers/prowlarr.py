@@ -201,6 +201,7 @@ class ProwlarrScraper(IndexerBaseScraper):
                     recovery_timeout=300,
                     half_open_attempts=1,
                 )
+                self.indexer_search_locks.setdefault(indexer_id, asyncio.Lock())
 
                 # Store indexer status
                 self.indexer_status[indexer_id] = {
@@ -242,40 +243,47 @@ class ProwlarrScraper(IndexerBaseScraper):
                 continue
 
             indexer_name = indexer_status.get("name", f"ID:{indexer_id}")
-
-            if circuit_breaker.is_closed():
-                try:
-                    search_params = {**params, "indexerIds": [indexer_id]}
-                    response = await self.http_client.get(
-                        f"{self.base_url}/api/v1/search",
-                        params=search_params,
-                        headers=self.headers,
-                        timeout=timeout,
-                    )
-                    response.raise_for_status()
-                    indexer_results = response.json()
-
-                    # Record success
-                    circuit_breaker.record_success()
-                    self.metrics.record_indexer_success(indexer_name, len(indexer_results))
-                    results.extend(indexer_results)
-
-                except Exception as e:
-                    error_msg = f"Error searching indexer {indexer_name}: {str(e)}"
-                    self.logger.error(error_msg)
-
-                    circuit_breaker.record_failure()
-                    self.metrics.record_indexer_error(indexer_name, str(e))
-
-                    if not circuit_breaker.is_closed():
-                        self.logger.warning(
-                            f"Circuit breaker opened for indexer {indexer_name}. Status: {circuit_breaker.get_status()}"
+            indexer_lock = self.indexer_search_locks.setdefault(indexer_id, asyncio.Lock())
+            async with indexer_lock:
+                if circuit_breaker.is_closed():
+                    try:
+                        search_params = {**params, "indexerIds": [indexer_id]}
+                        response = await self.http_client.get(
+                            f"{self.base_url}/api/v1/search",
+                            params=search_params,
+                            headers=self.headers,
+                            timeout=timeout,
                         )
-                        indexer_status["is_healthy"] = False
-                        self.indexer_status[indexer_id] = indexer_status
-            else:
-                self.logger.debug(f"Skipping indexer {indexer_name} - circuit breaker is {circuit_breaker.state}")
-                self.metrics.record_indexer_error(indexer_name, f"Circuit breaker {circuit_breaker.state}")
+                        response.raise_for_status()
+                        indexer_results = response.json()
+
+                        # Record success
+                        circuit_breaker.record_success()
+                        self.record_indexer_search_result(indexer_id, success=True)
+                        self.metrics.record_indexer_success(indexer_name, len(indexer_results))
+                        results.extend(indexer_results)
+
+                    except Exception as e:
+                        error_detail = self.describe_exception(e)
+                        self.logger.error("Error searching indexer %s: %s", indexer_name, error_detail)
+
+                        circuit_breaker.record_failure()
+                        self.record_indexer_search_result(indexer_id, success=False)
+                        self.metrics.record_indexer_error(indexer_name, error_detail)
+
+                        if not circuit_breaker.is_closed():
+                            self.logger.warning(
+                                "Circuit breaker opened for indexer %s. Status: %s",
+                                indexer_name,
+                                circuit_breaker.get_status(),
+                            )
+                            indexer_status["is_healthy"] = False
+                            self.indexer_status[indexer_id] = indexer_status
+                else:
+                    self.logger.debug(
+                        "Skipping indexer %s - circuit breaker is %s", indexer_name, circuit_breaker.state
+                    )
+                    self.metrics.record_indexer_error(indexer_name, f"Circuit breaker {circuit_breaker.state}")
 
         return results
 

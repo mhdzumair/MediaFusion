@@ -33,13 +33,13 @@ import { IPTVSourcesPage } from '@/pages/IPTVSources'
 import { ContentDetailPage } from '@/pages/Content'
 import { IntegrationsPage } from '@/pages/Integrations'
 import { ModeratorDashboardPage } from '@/pages/Moderator'
-import { SchedulerPage } from '@/pages/Scheduler'
 import { CacheManagerPage } from '@/pages/CacheManager'
 import { DatabaseManagerPage } from '@/pages/DatabaseManager'
 import { ExceptionTrackerPage } from '@/pages/ExceptionTracker'
 import { RequestMetricsPage } from '@/pages/RequestMetrics'
 import { MetadataCreatorPage } from '@/pages/MetadataCreator'
 import { SettingsPage } from '@/pages/Settings'
+import { TaskManagementPage } from '@/pages/TaskManagement'
 import { PrivacyPolicyPage, TermsOfServicePage, DMCAPage } from '@/pages/Legal'
 import { ReleaseNotesPage } from '@/pages/ReleaseNotes'
 
@@ -268,7 +268,15 @@ function AppRoutes() {
           path="scheduler"
           element={
             <RoleGuard requiredRole="admin">
-              <SchedulerPage />
+              <Navigate to="/dashboard/tasks" replace />
+            </RoleGuard>
+          }
+        />
+        <Route
+          path="tasks"
+          element={
+            <RoleGuard requiredRole="admin">
+              <TaskManagementPage />
             </RoleGuard>
           }
         />

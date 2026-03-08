@@ -11,9 +11,9 @@ import logging
 from datetime import datetime
 from urllib.parse import urlparse
 
-import dramatiq
 import pytz
 
+from api.task_queue import actor
 from db.redis_database import REDIS_ASYNC_CLIENT
 
 logger = logging.getLogger(__name__)
@@ -503,7 +503,7 @@ async def _process_xtream_import(
 
 
 # Dramatiq actors for background processing
-@dramatiq.actor(
+@actor(
     priority=5,
     max_retries=1,
     time_limit=3600000,  # 1 hour
@@ -514,7 +514,7 @@ def run_m3u_import(**kwargs):
     asyncio.run(_process_m3u_import(**kwargs))
 
 
-@dramatiq.actor(
+@actor(
     priority=5,
     max_retries=1,
     time_limit=3600000,  # 1 hour
@@ -830,7 +830,7 @@ async def _process_xtream_sync(
         )
 
 
-@dramatiq.actor(
+@actor(
     priority=5,
     max_retries=1,
     time_limit=3600000,  # 1 hour
@@ -841,7 +841,7 @@ def run_m3u_sync(**kwargs):
     asyncio.run(_process_m3u_sync(**kwargs))
 
 
-@dramatiq.actor(
+@actor(
     priority=5,
     max_retries=1,
     time_limit=3600000,  # 1 hour

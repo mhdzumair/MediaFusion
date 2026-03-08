@@ -1,7 +1,5 @@
 import logging
 
-from dramatiq.middleware import CurrentMessage
-from dramatiq_abort import abort
 from scrapy.extensions.closespider import CloseSpider
 
 logger = logging.getLogger(__name__)
@@ -18,10 +16,6 @@ class CloseSpiderExtended(CloseSpider):
         else:
             logger.info(f"Closing spider since no items were produced in the last {self.timeout_no_item} seconds.")
             self.shutdown_signal_count += 1
-            dramatiq_message = CurrentMessage.get_current_message()
-            if dramatiq_message:
-                logger.info(f"Aborting message {dramatiq_message.message_id} due to no items produced.")
-                abort(dramatiq_message.message_id, abort_ttl=0)
             assert self.crawler.engine
             spider = self.crawler.engine.spider
             self.crawler.engine.close_spider(spider, "closespider_timeout_no_item")

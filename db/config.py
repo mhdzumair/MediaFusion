@@ -264,6 +264,13 @@ class Settings(BaseSettings):
     store_stremthru_magnet_cache: bool = False
     is_scrap_from_yts: bool = True
     scrape_with_aka_titles: bool = True
+    scrape_max_aka_titles_per_query: int = Field(default=8, ge=0)
+    scrape_degraded_mode_enabled: bool = True
+    scrape_degraded_mode_duration_seconds: int = Field(default=180, ge=30)
+    scrape_degraded_mode_open_breakers_threshold: int = Field(default=3, ge=1)
+    scrape_degraded_mode_min_attempts: int = Field(default=12, ge=1)
+    scrape_degraded_mode_error_ratio_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+    taskiq_single_worker_mode: bool = False
     enable_fetching_torrent_metadata_from_p2p: bool = True
     # Anime metadata providers used by search fallback chain.
     # Ordered preference: first provider is queried first, next providers are used as fallback.

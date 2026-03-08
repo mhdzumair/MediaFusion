@@ -4,10 +4,10 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-import dramatiq
 import httpx
 import xmltodict
 
+from api.task_queue import actor
 from db import crud
 from db.config import settings
 from db.database import get_background_session
@@ -1137,7 +1137,7 @@ class RssScraper(BaseScraper):
             return catalogs
 
 
-@dramatiq.actor(time_limit=60 * 60 * 1000, priority=5, queue_name="scrapy")
+@actor(time_limit=60 * 60 * 1000, priority=5, queue_name="scrapy")
 @minimum_run_interval(hours=settings.rss_feed_scrape_interval_hour)
 async def run_rss_feed_scraper(**kwargs):
     """Scheduled task to run RSS feed scraper"""

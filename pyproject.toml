@@ -31,7 +31,6 @@ dependencies = [
     "diskcache",
     "demagnetize",
     "redis[hiredis]",
-    "dramatiq[redis,watch]",
     "gunicorn",
     "scrapy",
     "aioqbt",
@@ -51,7 +50,6 @@ dependencies = [
     "pytz",
     "aiohttp-socks",
     "socksio",
-    "dramatiq-abort",
     "tzdata",
     "ipython",
     "scrapy-fake-useragent>=1.4.4",
@@ -67,6 +65,8 @@ dependencies = [
     "yt-dlp",
     "aioboto3>=13.0.0",
     "aiosmtplib>=3.0.0",
+    "taskiq>=0.12.1",
+    "taskiq-redis>=1.0.9",
 ]
 
 [dependency-groups]

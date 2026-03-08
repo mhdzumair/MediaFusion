@@ -13,6 +13,8 @@ services:
       - PROWLARR_URL=http://prowlarr:9696
       - FLARESOLVERR_URL=http://flaresolverr:8191/v1
       - PLAYWRIGHT_CDP_URL=ws://browserless:3000?blockAds=true&stealth=true
+      # Standard compose runs in single-worker mode by default.
+      - TASKIQ_SINGLE_WORKER_MODE=true
     depends_on:
       postgres:
         condition: service_healthy
@@ -143,13 +145,14 @@ services:
     networks:
       - mediafusion-network
 
-  dramatiq-worker:
+  taskiq-worker-default:
     image: mhdzumair/mediafusion:5.2.2
-    command: ["dramatiq", "api.task", "-p", "1", "-t", "4"]
+    command: ["taskiq", "worker", "api.taskiq_worker:broker_default", "--workers", "1", "--max-async-tasks", "8", "--ack-type", "when_executed"]
     env_file: .env
     environment:
       - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@postgres:5432/mediafusion
       - REDIS_URL=redis://redis:6379
+      - TASKIQ_SINGLE_WORKER_MODE=true
     depends_on:
       postgres:
         condition: service_healthy

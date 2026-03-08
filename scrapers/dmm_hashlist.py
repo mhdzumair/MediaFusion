@@ -7,9 +7,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 import PTT
-import dramatiq
 import httpx
 
+from api.task_queue import actor
 from db import crud
 from db.config import settings
 from db.crud.media import get_all_external_ids_batch, search_media
@@ -737,7 +737,7 @@ class DMMHashlistScraper:
         )
 
 
-@dramatiq.actor(time_limit=60 * 60 * 1000, priority=5, queue_name="scrapy")
+@actor(time_limit=60 * 60 * 1000, priority=5, queue_name="scrapy")
 @minimum_run_interval(hours=settings.dmm_hashlist_sync_interval_hour)
 async def run_dmm_hashlist_scraper(**kwargs):
     if not settings.is_scrap_from_dmm_hashlist:
@@ -833,7 +833,7 @@ async def run_dmm_hashlist_full_ingestion(
     }
 
 
-@dramatiq.actor(time_limit=float("inf"), priority=5, queue_name="scrapy")
+@actor(time_limit=float("inf"), priority=5, queue_name="scrapy")
 async def run_dmm_hashlist_full_ingestion_job(
     *,
     max_iterations: int = DEFAULT_FULL_INGEST_MAX_ITERATIONS,

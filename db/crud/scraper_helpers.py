@@ -427,12 +427,57 @@ async def get_or_create_metadata(
     if canonical_media_id and canonical_media_id != media.id:
         canonical_media = await session.get(Media, canonical_media_id)
         if canonical_media:
-            await session.exec(sa_delete(Media).where(Media.id == media.id))
+            await _merge_duplicate_media_into_canonical(
+                session,
+                duplicate_media_id=media.id,
+                canonical_media_id=canonical_media.id,
+            )
             await session.flush()
             return canonical_media
 
     await session.flush()
     return media
+
+
+async def _merge_duplicate_media_into_canonical(
+    session: AsyncSession,
+    duplicate_media_id: int,
+    canonical_media_id: int,
+) -> None:
+    """Move stream links to canonical media, then remove duplicate media safely."""
+    if duplicate_media_id == canonical_media_id:
+        return
+
+    migration_stats = await migrate_media_links(session, duplicate_media_id, canonical_media_id)
+
+    # These user-facing rows don't cascade on media delete; preserve history by re-pointing.
+    await session.exec(
+        sa_update(WatchHistory).where(WatchHistory.media_id == duplicate_media_id).values(media_id=canonical_media_id)
+    )
+    await session.exec(
+        sa_update(PlaybackTracking)
+        .where(PlaybackTracking.media_id == duplicate_media_id)
+        .values(media_id=canonical_media_id)
+    )
+
+    # These provider tables currently have non-cascading media foreign keys.
+    await session.exec(sa_delete(MediaImage).where(MediaImage.media_id == duplicate_media_id))
+    await session.exec(sa_delete(MediaRating).where(MediaRating.media_id == duplicate_media_id))
+    await session.exec(sa_delete(MediaFusionRating).where(MediaFusionRating.media_id == duplicate_media_id))
+    await session.exec(sa_delete(ProviderMetadata).where(ProviderMetadata.media_id == duplicate_media_id))
+
+    await session.exec(sa_delete(Media).where(Media.id == duplicate_media_id))
+    logger.info(
+        "Merged duplicate media_id=%s into canonical media_id=%s (stream_links_migrated=%s, "
+        "stream_links_deleted_as_duplicates=%s, file_links_migrated=%s, "
+        "file_links_deleted_as_duplicates=%s)",
+        duplicate_media_id,
+        canonical_media_id,
+        migration_stats["stream_links_migrated"],
+        migration_stats["stream_links_deleted_as_duplicates"],
+        migration_stats["file_links_migrated"],
+        migration_stats["file_links_deleted_as_duplicates"],
+    )
 
 
 def _normalize_year_value(year_value: Any) -> int | None:

@@ -201,4 +201,4 @@ A special thank you to all our contributors!
 - [parse-torrent-title](https://github.com/platelminto/parse-torrent-title)
 - [kubernetes](https://kubernetes.io/)
 - [docker](https://www.docker.com/)
-- [dramatiq](https://dramatiq.io/)
+- [Taskiq](https://taskiq-python.github.io/)

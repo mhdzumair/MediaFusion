@@ -3,7 +3,7 @@ import asyncio
 from db import database
 from utils import torrent
 
-# Import all modules containing Dramatiq actors so the worker discovers them.
+# Import all modules containing background actors so workers discover them.
 from mediafusion_scrapy import task  # noqa: F401
 from scrapers import (  # noqa: F401
     background_scraper,

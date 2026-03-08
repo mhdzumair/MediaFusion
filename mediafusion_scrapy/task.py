@@ -1,20 +1,28 @@
 import gc
+import json
 import logging
 import os
+import sys
 import time
 from multiprocessing import get_context
+from typing import Any
 
-import dramatiq
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
+
+from api.task_queue import (
+    TaskCancelledError,
+    actor,
+    get_current_task_id,
+    is_task_cancel_requested,
+)
+from db.redis_database import REDIS_SYNC_CLIENT
 
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_SPIDER_PROCESS_TIMEOUT_SECONDS = int(os.getenv("SCRAPY_PROCESS_TIMEOUT_SECONDS", "3300"))
-_SPIDER_TERMINATE_GRACE_SECONDS = int(os.getenv("SCRAPY_PROCESS_TERMINATE_GRACE_SECONDS", "30"))
-_SPIDER_PROGRESS_LOG_INTERVAL_SECONDS = int(os.getenv("SCRAPY_PROCESS_PROGRESS_LOG_INTERVAL_SECONDS", "60"))
 _SPIDER_PROCESS_START_METHOD = os.getenv("SCRAPY_PROCESS_START_METHOD", "spawn").strip().lower()
+SPIDER_LOOP_JOIN_POLL_SECONDS = 5.0
 
 try:
     _PROCESS_CONTEXT = get_context(_SPIDER_PROCESS_START_METHOD)
@@ -35,6 +43,10 @@ def run_spider_in_process(spider_name, *args, **kwargs):
     settings = get_project_settings()
     settings.set("LOG_LEVEL", "INFO")
     settings.set("LOG_STDOUT", True)
+    if os.getenv("SCRAPY_TEST_LIGHTWEIGHT", "0") == "1":
+        # Test mode: disable DB-dependent middleware and heavy pipelines.
+        settings.set("SPIDER_MIDDLEWARES", {}, priority="cmdline")
+        settings.set("ITEM_PIPELINES", {}, priority="cmdline")
 
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -47,7 +59,35 @@ def run_spider_in_process(spider_name, *args, **kwargs):
     process.start()
 
 
-@dramatiq.actor(priority=5, time_limit=60 * 60 * 1000, queue_name="scrapy")
+def _ensure_project_import_path() -> None:
+    if _PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, _PROJECT_ROOT)
+
+    existing_pythonpath = os.environ.get("PYTHONPATH", "")
+    pythonpath_parts = [part for part in existing_pythonpath.split(os.pathsep) if part]
+    if _PROJECT_ROOT not in pythonpath_parts:
+        pythonpath_parts.insert(0, _PROJECT_ROOT)
+        os.environ["PYTHONPATH"] = os.pathsep.join(pythonpath_parts)
+
+
+def _read_runtime_timeouts() -> tuple[int, int, int]:
+    timeout_seconds = int(os.getenv("SCRAPY_PROCESS_TIMEOUT_SECONDS", "3300"))
+    terminate_grace_seconds = int(os.getenv("SCRAPY_PROCESS_TERMINATE_GRACE_SECONDS", "30"))
+    progress_log_interval_seconds = int(os.getenv("SCRAPY_PROCESS_PROGRESS_LOG_INTERVAL_SECONDS", "60"))
+    return timeout_seconds, terminate_grace_seconds, progress_log_interval_seconds
+
+
+def _read_spider_stats(spider_name: str) -> dict[str, Any]:
+    raw_stats = REDIS_SYNC_CLIENT.get(f"scrapy_stats:{spider_name}")
+    if not raw_stats:
+        return {}
+    try:
+        return json.loads(raw_stats)
+    except (TypeError, ValueError):
+        return {}
+
+
+@actor(priority=5, time_limit=60 * 60 * 1000, queue_name="scrapy")
 def run_spider(spider_name: str, *args, **kwargs):
     """
     Wrapper function to run the spider in a separate process.
@@ -55,12 +95,15 @@ def run_spider(spider_name: str, *args, **kwargs):
     Uses multiprocessing with a dedicated child process because Scrapy's
     Twisted reactor cannot be restarted within the same process. We pipe the
     child's stdout/stderr
-    back to the current process so Dramatiq captures the logs.
+    back to the current process so the worker captures the logs.
     """
+    timeout_seconds, terminate_grace_seconds, progress_log_interval_seconds = _read_runtime_timeouts()
+    task_id = get_current_task_id()
+    _ensure_project_import_path()
     logger.info(
         "Starting spider %s in subprocess (timeout=%ss, start_method=%s)",
         spider_name,
-        _SPIDER_PROCESS_TIMEOUT_SECONDS,
+        timeout_seconds,
         _PROCESS_CONTEXT.get_start_method(),
     )
     p = None
@@ -69,15 +112,24 @@ def run_spider(spider_name: str, *args, **kwargs):
         p.start()
 
         started_at = time.monotonic()
-        deadline = started_at + _SPIDER_PROCESS_TIMEOUT_SECONDS
-        next_progress_log_at = started_at + max(_SPIDER_PROGRESS_LOG_INTERVAL_SECONDS, 15)
+        deadline = started_at + timeout_seconds
+        next_progress_log_at = started_at + max(progress_log_interval_seconds, 15)
 
         while p.is_alive():
+            if task_id and is_task_cancel_requested(task_id):
+                logger.warning("Cancellation requested for task %s (spider=%s).", task_id, spider_name)
+                p.terminate()
+                p.join(timeout=terminate_grace_seconds)
+                if p.is_alive():
+                    p.kill()
+                    p.join(timeout=5)
+                raise TaskCancelledError(f"Spider '{spider_name}' cancelled by user request.")
+
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
 
-            join_step = min(remaining, float(max(_SPIDER_PROGRESS_LOG_INTERVAL_SECONDS, 15)))
+            join_step = min(remaining, SPIDER_LOOP_JOIN_POLL_SECONDS)
             p.join(timeout=join_step)
 
             if p.is_alive() and time.monotonic() >= next_progress_log_at:
@@ -88,17 +140,17 @@ def run_spider(spider_name: str, *args, **kwargs):
                     p.pid,
                     elapsed,
                 )
-                next_progress_log_at = time.monotonic() + max(_SPIDER_PROGRESS_LOG_INTERVAL_SECONDS, 15)
+                next_progress_log_at = time.monotonic() + max(progress_log_interval_seconds, 15)
 
         if p.is_alive():
             logger.error(
                 "Spider %s exceeded timeout (%ss). Terminating subprocess pid=%s.",
                 spider_name,
-                _SPIDER_PROCESS_TIMEOUT_SECONDS,
+                timeout_seconds,
                 p.pid,
             )
             p.terminate()
-            p.join(timeout=_SPIDER_TERMINATE_GRACE_SECONDS)
+            p.join(timeout=terminate_grace_seconds)
             if p.is_alive():
                 logger.error(
                     "Spider %s did not terminate gracefully. Killing subprocess pid=%s.",
@@ -107,7 +159,7 @@ def run_spider(spider_name: str, *args, **kwargs):
                 )
                 p.kill()
                 p.join(timeout=5)
-            raise RuntimeError(f"Spider '{spider_name}' timed out after {_SPIDER_PROCESS_TIMEOUT_SECONDS} seconds.")
+            raise RuntimeError(f"Spider '{spider_name}' timed out after {timeout_seconds} seconds.")
 
         if p.exitcode != 0:
             logger.error(
@@ -116,6 +168,16 @@ def run_spider(spider_name: str, *args, **kwargs):
                 p.exitcode,
             )
             raise RuntimeError(f"Spider '{spider_name}' exited with code {p.exitcode}.")
+
+        spider_stats = _read_spider_stats(spider_name)
+        if (
+            spider_stats.get("item_scraped_count", 0) == 0
+            and spider_stats.get("close_reason") == "closespider_timeout_no_item"
+        ):
+            raise RuntimeError(
+                f"Spider '{spider_name}' cancelled due to no items for "
+                f"{os.getenv('SCRAPY_CLOSESPIDER_TIMEOUT_NO_ITEM', '600')} seconds."
+            )
 
         logger.info("Spider %s finished successfully", spider_name)
     finally:

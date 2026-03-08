@@ -17,7 +17,7 @@ DOC_PATH = ROOT_DIR / "docs/env-reference.md"
 DOCKER_ENV_SAMPLE_PATH = ROOT_DIR / "deployment/docker-compose/.env-sample"
 K8S_LOCAL_DEPLOYMENT_PATH = ROOT_DIR / "deployment/k8s/local-deployment.yaml"
 
-K8S_APP_CONTAINERS = ("mediafusion", "dramatiq-worker")
+K8S_APP_CONTAINERS = ("mediafusion", "taskiq-worker-default")
 TOKEN_WORD_MAP = {
     "api": "API",
     "aka": "AKA",

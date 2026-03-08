@@ -146,10 +146,25 @@ uv run uvicorn api.main:app \
 
 ### Running Background Workers (Optional)
 
-For testing scrapers and background tasks, run Dramatiq workers in a separate terminal:
+For testing scrapers and background tasks, run Taskiq workers in separate terminals:
 
 ```bash
-uv run dramatiq api.task scrapers.scraper_tasks mediafusion_scrapy.task -p 1 -t 1
+uv run taskiq worker api.taskiq_worker:broker_default --workers 1 --max-async-tasks 8 --ack-type when_executed
+uv run taskiq worker api.taskiq_worker:broker_scrapy --workers 1 --max-async-tasks 1 --ack-type when_executed
+uv run taskiq worker api.taskiq_worker:broker_import --workers 1 --max-async-tasks 4 --ack-type when_executed
+uv run taskiq worker api.taskiq_worker:broker_priority --workers 1 --max-async-tasks 4 --ack-type when_executed
+```
+
+If you want a single worker to consume all queues (including Scrapy), set:
+
+```bash
+TASKIQ_SINGLE_WORKER_MODE=true
+```
+
+Then run only one worker:
+
+```bash
+uv run taskiq worker api.taskiq_worker:broker_default --workers 1 --max-async-tasks 8 --ack-type when_executed
 ```
 
 ### Local Development Tips

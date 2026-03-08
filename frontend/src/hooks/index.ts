@@ -82,6 +82,7 @@ export {
   useScraperMetrics,
   useScraperAggregatedStats,
   useScraperHistory,
+  useScraperSearchRuns,
   useScraperLatestMetrics,
   useDashboardMetrics,
 } from './useMetrics'
@@ -232,6 +233,17 @@ export {
   useRunDmmHashlistFull,
   schedulerKeys,
 } from './useScheduler'
+export {
+  useTaskOverview,
+  useTaskList,
+  useTaskDetail,
+  useCancelTask,
+  useRetryTask,
+  useBulkCancelTasks,
+  useBulkRetryTasks,
+  useTaskStreamUpdates,
+  taskManagementKeys,
+} from './useTaskManagement'
 
 // Admin Database Management hooks
 export { useDeleteMetadata, useBlockTorrentStream } from './useAdmin'

@@ -2,7 +2,6 @@
 IPTV Source Management API endpoints.
 """
 
-import asyncio
 import logging
 from datetime import datetime
 from uuid import uuid4
@@ -296,8 +295,7 @@ async def sync_iptv_source(
             )
 
             # Queue background task
-            await asyncio.to_thread(
-                run_m3u_sync.send,
+            await run_m3u_sync.async_send(
                 job_id=job_id,
                 source_id=source_id,
                 user_id=user.id,
@@ -332,8 +330,7 @@ async def sync_iptv_source(
             )
 
             # Queue background task
-            await asyncio.to_thread(
-                run_xtream_sync.send,
+            await run_xtream_sync.async_send(
                 job_id=job_id,
                 source_id=source_id,
                 user_id=user.id,

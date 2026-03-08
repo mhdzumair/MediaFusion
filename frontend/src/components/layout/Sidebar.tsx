@@ -14,13 +14,13 @@ import {
   GitPullRequest,
   X,
   Link as LinkIcon,
-  Calendar,
   HardDrive,
   Radio,
   FilePlus2,
   UserCog,
   Bug,
   Activity,
+  Workflow,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/ui/logo'
@@ -66,7 +66,7 @@ const adminNavItems: NavItem[] = [
   { title: 'Metrics', href: '/dashboard/metrics', icon: BarChart3, requiredRole: 'admin' },
   { title: 'Users', href: '/dashboard/users', icon: Users, requiredRole: 'admin' },
   { title: 'Database', href: '/dashboard/database', icon: Database, requiredRole: 'admin' },
-  { title: 'Scheduler', href: '/dashboard/scheduler', icon: Calendar, requiredRole: 'admin' },
+  { title: 'Task Management', href: '/dashboard/tasks', icon: Workflow, requiredRole: 'admin' },
   { title: 'Cache Manager', href: '/dashboard/cache', icon: HardDrive, requiredRole: 'admin' },
   { title: 'Exceptions', href: '/dashboard/exceptions', icon: Bug, requiredRole: 'admin' },
   { title: 'Request Metrics', href: '/dashboard/request-metrics', icon: Activity, requiredRole: 'admin' },

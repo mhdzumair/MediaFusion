@@ -267,6 +267,7 @@ export interface ScraperMetricsSummary {
   quality_distribution: Record<string, number>
   source_distribution: Record<string, number>
   indexer_stats?: Record<string, ScraperMetricsIndexerStats> | null
+  formatted_summary?: string | null
 }
 
 export interface ScraperAggregatedStats {
@@ -306,6 +307,11 @@ export interface ScraperMetricsResponse {
 export interface ScraperHistoryResponse {
   scraper_name: string
   history: ScraperMetricsSummary[]
+  total: number
+}
+
+export interface ScraperSearchRunsResponse {
+  runs: ScraperMetricsSummary[]
   total: number
 }
 
@@ -447,6 +453,26 @@ export const metricsApi = {
     return apiClient.get<ScraperHistoryResponse>(
       `/admin/metrics/scrapers/${encodeURIComponent(scraperName)}/history?limit=${limit}`,
     )
+  },
+
+  /**
+   * Get recent media-search runs across scrapers.
+   * Requires admin role
+   */
+  getScraperSearchRuns: async (params?: {
+    query?: string
+    meta_id?: string
+    scraper_name?: string
+    limit?: number
+  }): Promise<ScraperSearchRunsResponse> => {
+    const queryParams = new URLSearchParams()
+    if (params?.query) queryParams.set('query', params.query)
+    if (params?.meta_id) queryParams.set('meta_id', params.meta_id)
+    if (params?.scraper_name) queryParams.set('scraper_name', params.scraper_name)
+    if (params?.limit) queryParams.set('limit', String(params.limit))
+    const qs = queryParams.toString()
+    const url = qs ? `/admin/metrics/scrapers/searches?${qs}` : '/admin/metrics/scrapers/searches'
+    return apiClient.get<ScraperSearchRunsResponse>(url)
   },
 
   /**

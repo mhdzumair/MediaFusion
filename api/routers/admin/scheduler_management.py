@@ -493,15 +493,13 @@ async def run_scheduler_job(
             detail=f"Job '{job_id}' is already running",
         )
 
-    # Import task functions based on category
-    # Use asyncio.to_thread to avoid blocking the event loop with synchronous Redis calls
+    # Import task functions based on category.
     try:
         if job_id == "dmm_hashlist_scraper":
             from scrapers.dmm_hashlist import run_dmm_hashlist_scraper
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(
-                run_dmm_hashlist_scraper.send,
+            await run_dmm_hashlist_scraper.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
@@ -509,8 +507,7 @@ async def run_scheduler_job(
             from mediafusion_scrapy.task import run_spider
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(
-                run_spider.send,
+            await run_spider.async_send(
                 spider_name=job_id,
                 crontab_expression=crontab,
                 force_run=force_run,
@@ -519,8 +516,7 @@ async def run_scheduler_job(
             from scrapers.feed_scraper import run_prowlarr_feed_scraper
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(
-                run_prowlarr_feed_scraper.send,
+            await run_prowlarr_feed_scraper.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
@@ -528,8 +524,7 @@ async def run_scheduler_job(
             from scrapers.feed_scraper import run_jackett_feed_scraper
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(
-                run_jackett_feed_scraper.send,
+            await run_jackett_feed_scraper.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
@@ -537,8 +532,7 @@ async def run_scheduler_job(
             from scrapers.rss_scraper import run_rss_feed_scraper
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(
-                run_rss_feed_scraper.send,
+            await run_rss_feed_scraper.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
@@ -546,8 +540,7 @@ async def run_scheduler_job(
             from scrapers.tv import validate_tv_streams_in_db
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(
-                validate_tv_streams_in_db.send,
+            await validate_tv_streams_in_db.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
@@ -555,8 +548,7 @@ async def run_scheduler_job(
             from scrapers.trackers import update_torrent_seeders
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(
-                update_torrent_seeders.send,
+            await update_torrent_seeders.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
@@ -564,8 +556,7 @@ async def run_scheduler_job(
             from scrapers.scraper_tasks import cleanup_expired_scraper_task
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(
-                cleanup_expired_scraper_task.send,
+            await cleanup_expired_scraper_task.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
@@ -573,8 +564,7 @@ async def run_scheduler_job(
             from streaming_providers.cache_helpers import cleanup_expired_cache
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(
-                cleanup_expired_cache.send,
+            await cleanup_expired_cache.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
@@ -582,8 +572,7 @@ async def run_scheduler_job(
             from scrapers.background_scraper import run_background_search
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(
-                run_background_search.send,
+            await run_background_search.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
