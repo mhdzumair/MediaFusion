@@ -11,7 +11,7 @@ import dateparser
 import PTT
 
 from db import crud
-from db.database import get_async_session, get_read_session
+from db.database import get_async_session_context, get_read_session_context
 from db.schemas import StreamFileData, TorrentStreamData
 from db.schemas.media import UsenetStreamData
 from streaming_providers.exceptions import ProviderException
@@ -245,7 +245,7 @@ class TorrentFileProcessor:
 
         if parsed_data.get("date"):
             if not self._metadata:
-                async for session in get_read_session():
+                async with get_read_session_context() as session:
                     self._metadata = await crud.get_series_data_by_id(session, meta_id, load_relations=True)
 
             metadata_seasons = self._get_metadata_seasons(self._metadata)
@@ -423,7 +423,7 @@ async def _save_torrent_stream(torrent_stream: TorrentStreamData) -> None:
     # Filter out None values except for is_blocked
     updates = {k: v for k, v in updates.items() if v is not None or k == "is_blocked"}
 
-    async for session in get_async_session():
+    async with get_async_session_context() as session:
         await crud.update_torrent_stream(session, torrent_stream.info_hash, updates)
 
         # Update stream files if present (v5 schema)
@@ -800,7 +800,7 @@ class UsenetFileProcessor:
 
         if parsed_data.get("date"):
             if not self._metadata:
-                async for session in get_read_session():
+                async with get_read_session_context() as session:
                     self._metadata = await crud.get_series_data_by_id(session, meta_id, load_relations=True)
 
             metadata_seasons = self._get_metadata_seasons(self._metadata)

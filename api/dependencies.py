@@ -8,17 +8,14 @@ including profile context resolution for the new UI flow.
 from typing import Callable
 
 from fastapi import Depends, Query
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_auth
-from db.database import get_read_session
 from db.models import User
 from utils.profile_context import ProfileContext, ProfileDataProvider
 
 
 async def get_profile_context(
     current_user: User = Depends(require_auth),
-    session: AsyncSession = Depends(get_read_session),
 ) -> ProfileContext:
     """
     FastAPI dependency to get current user's profile context.
@@ -38,12 +35,11 @@ async def get_profile_context(
             rpdb_key = profile_ctx.rpdb_api_key
             ...
     """
-    return await ProfileDataProvider.get_context(current_user.id, session)
+    return await ProfileDataProvider.get_context(current_user.id)
 
 
 async def get_optional_profile_context(
     current_user: User = Depends(require_auth),
-    session: AsyncSession = Depends(get_read_session),
 ) -> ProfileContext:
     """
     Same as get_profile_context but returns empty context on error.
@@ -51,7 +47,7 @@ async def get_optional_profile_context(
     Use this for endpoints where profile data is optional but helpful.
     """
     try:
-        return await ProfileDataProvider.get_context(current_user.id, session)
+        return await ProfileDataProvider.get_context(current_user.id)
     except Exception:
         return ProfileContext.empty(current_user.id)
 
@@ -77,10 +73,9 @@ def get_profile_context_with_id(
 
     async def dependency(
         current_user: User = Depends(require_auth),
-        session: AsyncSession = Depends(get_read_session),
         profile_id: int | None = Query(None, description="Specific profile ID to use (defaults to user's default)"),
     ) -> ProfileContext:
-        return await ProfileDataProvider.get_context(current_user.id, session, profile_id=profile_id)
+        return await ProfileDataProvider.get_context(current_user.id, profile_id=profile_id)
 
     return dependency
 

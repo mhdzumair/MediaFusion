@@ -482,17 +482,13 @@ class DMMHashlistScraper:
             torrent_title: str,
         ) -> tuple[tuple[str, int | None, str], str | None]:
             async with resolve_semaphore:
-                async with get_background_session() as session:
-                    meta_id = await self._resolve_meta_id(
-                        session,
-                        parsed_title,
-                        parsed_year,
-                        media_type,
-                        torrent_title=torrent_title,
-                    )
-                    # Persist metadata created during external resolution even if no stream is stored.
-                    await session.commit()
-                    return cache_key, meta_id
+                meta_id = await self._resolve_meta_id(
+                    parsed_title,
+                    parsed_year,
+                    media_type,
+                    torrent_title=torrent_title,
+                )
+                return cache_key, meta_id
 
         if metadata_keys:
             resolved_pairs = await asyncio.gather(
@@ -591,19 +587,19 @@ class DMMHashlistScraper:
 
     async def _resolve_meta_id(
         self,
-        session,
         title: str,
         year: int | None,
         media_type: str,
         torrent_title: str | None = None,
     ) -> str | None:
-        existing_meta_id = await self._resolve_meta_id_from_existing_db(
-            session,
-            title,
-            year,
-            media_type,
-            torrent_title=torrent_title,
-        )
+        async with get_background_session() as session:
+            existing_meta_id = await self._resolve_meta_id_from_existing_db(
+                session,
+                title,
+                year,
+                media_type,
+                torrent_title=torrent_title,
+            )
         if existing_meta_id:
             return existing_meta_id
 
@@ -653,15 +649,17 @@ class DMMHashlistScraper:
                 "tmdb_id": best_match.get("tmdb_id"),
                 "tvdb_id": best_match.get("tvdb_id"),
             }
-            metadata_result = await crud.get_or_create_metadata(
-                session,
-                metadata_payload,
-                media_type,
-                is_search_imdb_title=False,
-                is_imdb_only=False,
-            )
-            if metadata_result:
-                return await crud.get_canonical_external_id(session, metadata_result.id)
+            async with get_background_session() as session:
+                metadata_result = await crud.get_or_create_metadata(
+                    session,
+                    metadata_payload,
+                    media_type,
+                    is_search_imdb_title=False,
+                    is_imdb_only=False,
+                )
+                if metadata_result:
+                    await session.commit()
+                    return await crud.get_canonical_external_id(session, metadata_result.id)
 
         logger.debug("Skipping DMM entry due to no confident metadata match: %s (%s)", title, media_type)
         return None

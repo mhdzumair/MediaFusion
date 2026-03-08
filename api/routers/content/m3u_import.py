@@ -25,7 +25,7 @@ from db.crud.scraper_helpers import (
     save_tv_channel_metadata,
 )
 from db.crud.streams import get_http_stream_by_url_for_media
-from db.database import get_async_session
+from db.database import get_async_session_context
 from db.enums import IPTVSourceType, MediaType
 from db.models import FileMediaLink, HTTPStream, IPTVSource, Stream, StreamFile, User
 from db.models.streams import FileType, LinkSource, StreamType
@@ -201,21 +201,11 @@ async def _import_movie_entry(
             media_id = media.id
 
     if not media_id:
-        # Try to search for matching media
-        try:
-            matches = await meta_fetcher.search_multiple_results(
-                title=entry.get("parsed_title", entry["name"]),
-                year=entry.get("parsed_year"),
-                media_type="movie",
-            )
-            if matches:
-                external_id = matches[0].get("id")
-                if external_id:
-                    media = await get_media_by_external_id(session, external_id, MediaType.MOVIE)
-                    if media:
-                        media_id = media.id
-        except Exception as e:
-            logger.warning(f"Failed to search for movie metadata: {e}")
+        external_id = entry.get("matched_media_id")
+        if external_id:
+            media = await get_media_by_external_id(session, external_id, MediaType.MOVIE)
+            if media:
+                media_id = media.id
 
     if not media_id:
         # Create user-owned metadata
@@ -268,21 +258,11 @@ async def _import_series_entry(
             media_id = media.id
 
     if not media_id:
-        # Try to search for matching media
-        try:
-            matches = await meta_fetcher.search_multiple_results(
-                title=entry.get("parsed_title", entry["name"]),
-                year=entry.get("parsed_year"),
-                media_type="series",
-            )
-            if matches:
-                external_id = matches[0].get("id")
-                if external_id:
-                    media = await get_media_by_external_id(session, external_id, MediaType.SERIES)
-                    if media:
-                        media_id = media.id
-        except Exception as e:
-            logger.warning(f"Failed to search for series metadata: {e}")
+        external_id = entry.get("matched_media_id")
+        if external_id:
+            media = await get_media_by_external_id(session, external_id, MediaType.SERIES)
+            if media:
+                media_id = media.id
 
     if not media_id:
         # Create user-owned metadata
@@ -344,6 +324,26 @@ async def _import_series_entry(
         confidence=1.0,
     )
     session.add(file_link)
+
+
+async def _resolve_entry_matched_media_id(entry: dict[str, Any], media_type: str) -> str | None:
+    """Resolve best external ID for movie/series entry without holding a DB session."""
+    matched_media_id = entry.get("matched_media_id")
+    if matched_media_id:
+        return matched_media_id
+
+    try:
+        matches = await meta_fetcher.search_multiple_results(
+            title=entry.get("parsed_title", entry["name"]),
+            year=entry.get("parsed_year"),
+            media_type=media_type,
+        )
+        if matches:
+            return matches[0].get("id")
+    except Exception as exc:
+        logger.warning("Failed to search %s metadata for %s: %s", media_type, entry.get("name"), exc)
+
+    return None
 
 
 # ============================================
@@ -491,7 +491,6 @@ async def import_m3u_playlist(
     save_source: bool = Form(False),  # Save URL for re-sync
     source_name: str = Form(None),  # Custom name for saved source
     user: User = Depends(require_auth),
-    session: AsyncSession = Depends(get_async_session),
 ):
     """
     Import an M3U playlist with support for TV, movies, and series.
@@ -621,13 +620,15 @@ async def import_m3u_playlist(
 
                 if content_type == M3UContentType.TV:
                     # Import as TV channel (handles deduplication)
-                    import_result = await _import_tv_entry(
-                        session=session,
-                        entry=entry,
-                        source=source,
-                        user_id=user.id,
-                        is_public=is_public,
-                    )
+                    async with get_async_session_context() as session:
+                        import_result = await _import_tv_entry(
+                            session=session,
+                            entry=entry,
+                            source=source,
+                            user_id=user.id,
+                            is_public=is_public,
+                        )
+                        await session.commit()
                     if import_result["stream_created"]:
                         stats["tv"] += 1
                     elif import_result["stream_existed"]:
@@ -635,24 +636,34 @@ async def import_m3u_playlist(
 
                 elif content_type == M3UContentType.MOVIE:
                     # Import as movie stream
-                    await _import_movie_entry(
-                        session=session,
-                        entry=entry,
-                        source=source,
-                        user_id=user.id,
-                        is_public=is_public,
-                    )
+                    resolved_media_id = await _resolve_entry_matched_media_id(entry, "movie")
+                    if resolved_media_id:
+                        entry["matched_media_id"] = resolved_media_id
+                    async with get_async_session_context() as session:
+                        await _import_movie_entry(
+                            session=session,
+                            entry=entry,
+                            source=source,
+                            user_id=user.id,
+                            is_public=is_public,
+                        )
+                        await session.commit()
                     stats["movie"] += 1
 
                 elif content_type == M3UContentType.SERIES:
                     # Import as series episode stream
-                    await _import_series_entry(
-                        session=session,
-                        entry=entry,
-                        source=source,
-                        user_id=user.id,
-                        is_public=is_public,
-                    )
+                    resolved_media_id = await _resolve_entry_matched_media_id(entry, "series")
+                    if resolved_media_id:
+                        entry["matched_media_id"] = resolved_media_id
+                    async with get_async_session_context() as session:
+                        await _import_series_entry(
+                            session=session,
+                            entry=entry,
+                            source=source,
+                            user_id=user.id,
+                            is_public=is_public,
+                        )
+                        await session.commit()
                     stats["series"] += 1
 
                 else:
@@ -663,8 +674,6 @@ async def import_m3u_playlist(
             except Exception as e:
                 logger.warning(f"Failed to import entry {entry.get('name', 'unknown')}: {e}")
                 stats["failed"] += 1
-
-        await session.commit()
 
         # Delete redis cache after processing
         if redis_key:
@@ -693,9 +702,10 @@ async def import_m3u_playlist(
                 last_sync_stats=stats,
                 is_active=True,
             )
-            session.add(iptv_source)
-            await session.commit()
-            await session.refresh(iptv_source)
+            async with get_async_session_context() as session:
+                session.add(iptv_source)
+                await session.commit()
+                await session.refresh(iptv_source)
             source_id = iptv_source.id
             logger.info(f"Saved M3U source '{source_name}' for user {user.id}")
 

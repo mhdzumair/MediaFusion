@@ -30,7 +30,7 @@ from db.crud.scraper_helpers import store_new_torrent_streams
 from db.crud.stream_services import get_cached_live_torrent_fallback_stream
 from db.models import User
 from db.config import settings
-from db.database import get_async_session_context, get_read_session
+from db.database import get_async_session_context, get_read_session_context
 from db.models import (
     Media,
     MediaExternalID,
@@ -186,7 +186,7 @@ async def fetch_stream_or_404(info_hash: str) -> tuple[TorrentStreamData, bool]:
     Returns:
         tuple of (stream data, recovered_from_fallback_cache)
     """
-    async for session in get_read_session():
+    async with get_read_session_context() as session:
         torrent_stream = await crud.get_stream_by_info_hash(session, info_hash, load_relations=True)
         if torrent_stream:
             # Convert to Pydantic model to detach from session
@@ -758,7 +758,7 @@ async def fetch_usenet_stream_or_404(nzb_guid: str) -> UsenetStreamData:
     """
     Fetches Usenet stream by NZB GUID, raises a 404 error if not found.
     """
-    async for session in get_read_session():
+    async with get_read_session_context() as session:
         usenet_stream = await crud.get_usenet_stream_by_guid(session, nzb_guid, load_relations=True)
         if usenet_stream:
             return UsenetStreamData.from_db(usenet_stream)
@@ -964,7 +964,7 @@ async def usenet_playback_endpoint(
 
 async def _get_telegram_stream_by_chat_message(chat_id: str, message_id: int):
     """Fetch TelegramStream from database by chat_id and message_id."""
-    async for session in get_read_session():
+    async with get_read_session_context() as session:
         telegram_stream = await crud.get_telegram_stream_by_chat_message(
             session, chat_id, message_id, load_relations=True
         )

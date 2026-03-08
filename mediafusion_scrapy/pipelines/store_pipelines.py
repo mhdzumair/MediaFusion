@@ -7,7 +7,7 @@ from scrapy.exceptions import DropItem
 from sqlmodel import select
 
 from db import crud
-from db.database import get_async_session
+from db.database import get_async_session_context
 from db.enums import MediaType
 from db.models import Media
 from db.redis_database import REDIS_ASYNC_CLIENT
@@ -78,7 +78,7 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
             logging.warning(f"year not found in item: {item}")
             raise DropItem(f"year not found in item: {item}")
 
-        async for session in get_async_session():
+        async with get_async_session_context() as session:
             title_key = f"{item['title']}_{item['year']}"
             prefix = item.get("catalog", ["event"])[0]
             stable_id = f"{prefix}:{hashlib.md5(title_key.encode()).hexdigest()[:16]}"
@@ -174,7 +174,7 @@ class TVStorePipeline(QueueBasedPipeline):
             raise DropItem(f"title not found in item: {item}")
 
         tv_metadata = TVMetaData.model_validate(item)
-        async for session in get_async_session():
+        async with get_async_session_context() as session:
             await crud.save_tv_channel_metadata(session, tv_metadata)
         return item
 
@@ -252,7 +252,7 @@ class MovieStorePipeline(QueueBasedPipeline):
         if item.get("type") != "movie":
             return item
 
-        async for session in get_async_session():
+        async with get_async_session_context() as session:
             media = await self._get_or_create_media(session, item)
 
             if not media:
@@ -383,7 +383,7 @@ class SeriesStorePipeline(QueueBasedPipeline):
         if item.get("type") != "series":
             return item
 
-        async for session in get_async_session():
+        async with get_async_session_context() as session:
             media = await self._get_or_create_media(session, item)
 
             if not media:
@@ -462,7 +462,7 @@ class LiveEventStorePipeline(QueueBasedPipeline):
         if "title" not in item:
             raise DropItem(f"name not found in item: {item}")
 
-        async for session in get_async_session():
+        async with get_async_session_context() as session:
             await crud.save_events_data(session, item)
         if "scraped_info_hash_key" in item:
             await self.redis.sadd(item["scraped_info_hash_key"], item["info_hash"])

@@ -21,7 +21,7 @@ import pytz
 from sqlmodel import select
 
 from api.routers.user.auth import hash_password
-from db.database import get_async_session
+from db.database import get_async_session_context
 from db.enums import UserRole
 from db.models import User, UserProfile
 
@@ -33,7 +33,7 @@ async def create_admin_user(
 ) -> None:
     """Create an admin user with default profile."""
 
-    async for session in get_async_session():
+    async with get_async_session_context() as session:
         # Check if email already exists
         result = await session.exec(select(User).where(User.email == email))
         existing = result.first()

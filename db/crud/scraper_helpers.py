@@ -729,6 +729,16 @@ async def update_single_imdb_metadata(
     # Lazy import to avoid circular dependency
     from scrapers.scraper_tasks import meta_fetcher
 
+    # Fetch fresh data before any DB work so no session stays open during network I/O.
+    try:
+        fetched_data = await meta_fetcher.get_metadata(meta_id, media_type=media_type)
+        if not fetched_data:
+            logger.warning(f"Could not fetch fresh metadata for {meta_id}")
+            return False
+    except Exception as e:
+        logger.error(f"Error fetching metadata for {meta_id}: {e}")
+        return False
+
     # Get existing media via MediaExternalID lookup
     media = await get_media_by_external_id(session, meta_id)
     if not media:
@@ -746,16 +756,6 @@ async def update_single_imdb_metadata(
     )
     result = await session.exec(query)
     media = result.first()
-
-    # Fetch fresh data
-    try:
-        fetched_data = await meta_fetcher.get_metadata(meta_id, media_type=media_type)
-        if not fetched_data:
-            logger.warning(f"Could not fetch fresh metadata for {meta_id}")
-            return False
-    except Exception as e:
-        logger.error(f"Error fetching metadata for {meta_id}: {e}")
-        return False
 
     # Update basic media fields
     media.title = fetched_data.get("title") or media.title

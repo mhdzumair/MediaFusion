@@ -8,7 +8,7 @@ import PTT
 import scrapy
 
 from db import crud
-from db.database import get_async_session
+from db.database import get_async_session_context
 from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.config import config_manager
 from utils.parser import convert_size_to_bytes, is_non_video_title
@@ -321,7 +321,7 @@ class ExtToSpider(scrapy.Spider):
 
         if await self.redis.sismember(self.scraped_info_hash_key, info_hash):
             self.logger.info(f"Torrent already scraped: {torrent_data['torrent_name']}")
-            async for session in get_async_session():
+            async with get_async_session_context() as session:
                 await crud.update_torrent_seeders(session, info_hash, torrent_data.get("seeders"))
             return
 

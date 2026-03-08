@@ -128,27 +128,27 @@ async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
     async with get_background_session() as session:
         tv_streams = await crud.get_all_tv_streams_paginated(session, offset, page_size)
 
-        if not tv_streams:
-            logging.info(f"No TV streams to validate on page {page}")
-            return
+    if not tv_streams:
+        logging.info(f"No TV streams to validate on page {page}")
+        return
 
-        updates = []
+    updates = []
+    for stream, http_stream in tv_streams:
+        is_valid = await validate_live_stream_url(http_stream.url, http_stream.behavior_hints or {})
+        logging.info(f"Stream: {stream.name}, Status: {is_valid}")
 
-        for stream, http_stream in tv_streams:
-            is_valid = await validate_live_stream_url(http_stream.url, http_stream.behavior_hints or {})
-            logging.info(f"Stream: {stream.name}, Status: {is_valid}")
+        if is_valid:
+            updates.append((stream.id, True))
+        else:
+            updates.append((stream.id, False))
+            logging.error(f"Stream failed validation: {stream.name}")
 
-            if is_valid:
-                updates.append((stream.id, True))
-            else:
-                updates.append((stream.id, False))
-                logging.error(f"Stream failed validation: {stream.name}")
-
-        # Apply updates
+    async with get_background_session() as session:
         for stream_id, is_active in updates:
             await crud.update_tv_stream_status(session, stream_id, is_active)
+        await session.commit()
 
-        logging.info(f"Updated {len(updates)} streams")
+    logging.info(f"Updated {len(updates)} streams")
 
     # Schedule the next batch in 2 minutes
     await validate_tv_streams_in_db.async_send_with_options(args=(page + 1, page_size), delay=2 * 6000)
@@ -161,43 +161,46 @@ async def update_tv_posters_in_db(*args, **kwargs):
         not_working_posters = await crud.get_tv_metadata_not_working_posters(session)
         logging.info(f"Found {len(not_working_posters)} TV posters to update.")
 
-        if not not_working_posters:
-            logging.info("No TV posters to update.")
-            return
+    if not not_working_posters:
+        logging.info("No TV posters to update.")
+        return
 
-        async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
-            response = await client.get("https://iptv-org.github.io/api/channels.json", timeout=30)
-            iptv_channels = response.json()
+    async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
+        response = await client.get("https://iptv-org.github.io/api/channels.json", timeout=30)
+        iptv_channels = response.json()
 
-        iptv_org_channel_data = {}
-        for channel in iptv_channels:
-            iptv_org_channel_data[channel["name"].casefold()] = channel
-            if channel.get("alt_names"):
-                for alt_name in channel["alt_names"]:
-                    iptv_org_channel_data[alt_name.casefold()] = channel
-        iptv_org_channel_names = iptv_org_channel_data.keys()
+    iptv_org_channel_data = {}
+    for channel in iptv_channels:
+        iptv_org_channel_data[channel["name"].casefold()] = channel
+        if channel.get("alt_names"):
+            for alt_name in channel["alt_names"]:
+                iptv_org_channel_data[alt_name.casefold()] = channel
+    iptv_org_channel_names = iptv_org_channel_data.keys()
 
-        def get_similar_channel_name(name, cutoff=0.8):
-            name = name.casefold()
-            name = re.sub(r"\s*\[.*?]|\s*\(.*?\)", "", name)
-            name = name.split(" – ")[0]
-            matches = difflib.get_close_matches(name, iptv_org_channel_names, n=1, cutoff=cutoff)
-            return matches[0] if matches else None
+    def get_similar_channel_name(name, cutoff=0.8):
+        name = name.casefold()
+        name = re.sub(r"\s*\[.*?]|\s*\(.*?\)", "", name)
+        name = name.split(" – ")[0]
+        matches = difflib.get_close_matches(name, iptv_org_channel_names, n=1, cutoff=cutoff)
+        return matches[0] if matches else None
 
-        updated_count = 0
-        for tv_metadata in not_working_posters:
-            iptv_org_channel_name = get_similar_channel_name(tv_metadata.title, cutoff=0.8)
-            if not iptv_org_channel_name:
-                logging.error(f"Channel not found in iptv-org: {tv_metadata.title}")
-                continue
+    updates: list[tuple[int, str]] = []
+    for tv_metadata in not_working_posters:
+        iptv_org_channel_name = get_similar_channel_name(tv_metadata.title, cutoff=0.8)
+        if not iptv_org_channel_name:
+            logging.error(f"Channel not found in iptv-org: {tv_metadata.title}")
+            continue
 
-            iptv_org_channel = iptv_org_channel_data[iptv_org_channel_name]
-            poster = iptv_org_channel.get("logo")
-            if not poster:
-                logging.error(f"Poster not found for channel: {tv_metadata.title}")
-                continue
+        iptv_org_channel = iptv_org_channel_data[iptv_org_channel_name]
+        poster = iptv_org_channel.get("logo")
+        if not poster:
+            logging.error(f"Poster not found for channel: {tv_metadata.title}")
+            continue
+        updates.append((tv_metadata.id, poster))
 
-            await crud.update_tv_metadata_poster(session, tv_metadata.id, poster, True)
-            updated_count += 1
+    async with get_background_session() as session:
+        for metadata_id, poster in updates:
+            await crud.update_tv_metadata_poster(session, metadata_id, poster, True)
+        await session.commit()
 
-        logging.info(f"Updated {updated_count} TV posters in the database.")
+    logging.info(f"Updated {len(updates)} TV posters in the database.")

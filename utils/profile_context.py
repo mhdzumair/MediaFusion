@@ -22,6 +22,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.config import settings
+from db.database import get_read_session_context
 from db.models import UserProfile
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
@@ -181,7 +182,12 @@ class ProfileDataProvider:
     CACHE_PREFIX = "profile_enc:"
 
     @classmethod
-    async def get_context(cls, user_id: int, session: AsyncSession, profile_id: int | None = None) -> ProfileContext:
+    async def get_context(
+        cls,
+        user_id: int,
+        session: AsyncSession | None = None,
+        profile_id: int | None = None,
+    ) -> ProfileContext:
         """
         Get profile context for authenticated user.
 
@@ -201,7 +207,11 @@ class ProfileDataProvider:
         """
         # If specific profile requested, load it directly (no caching for specific profiles)
         if profile_id is not None:
-            profile = await cls._get_profile_by_id(user_id, profile_id, session)
+            if session is not None:
+                profile = await cls._get_profile_by_id(user_id, profile_id, session)
+            else:
+                async with get_read_session_context() as read_session:
+                    profile = await cls._get_profile_by_id(user_id, profile_id, read_session)
             if not profile:
                 logger.debug(f"Profile {profile_id} not found for user {user_id}, falling back to default")
                 # Fall back to default profile
@@ -221,7 +231,11 @@ class ProfileDataProvider:
 
         if not cached:
             # 2. Load from database
-            profile = await cls._get_active_profile(user_id, session)
+            if session is not None:
+                profile = await cls._get_active_profile(user_id, session)
+            else:
+                async with get_read_session_context() as read_session:
+                    profile = await cls._get_active_profile(user_id, read_session)
             if not profile:
                 logger.debug(f"No active profile found for user {user_id}")
                 return ProfileContext.empty(user_id)

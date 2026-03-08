@@ -14,7 +14,7 @@ from api.rbac import is_admin
 from api.routers.user.auth import require_auth
 from db import crud
 from db.config import settings
-from db.database import get_async_session, get_read_session
+from db.database import get_async_session, get_read_session, get_read_session_context
 from db.models import RSSFeed, User
 from db.schemas import (
     RSSFeedFilters,
@@ -366,7 +366,6 @@ async def test_rss_feed_url(
 async def scrape_single_feed(
     feed_id: str,
     user: User = Depends(require_auth),
-    session: AsyncSession = Depends(get_read_session),
 ):
     """Trigger scraping for a single feed. Users can only scrape their own feeds."""
     from scrapers.rss_scraper import RssScraper
@@ -374,7 +373,8 @@ async def scrape_single_feed(
     # Admin can scrape any feed
     user_id = None if is_admin(user) else user.id
 
-    feed = await crud.get_user_rss_feed(session, feed_id, user_id)
+    async with get_read_session_context() as session:
+        feed = await crud.get_user_rss_feed(session, feed_id, user_id)
     if not feed:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

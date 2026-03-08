@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
+import select
 from urllib.parse import urlparse
 
 import pytz
@@ -110,6 +111,7 @@ async def _process_m3u_import(
     from db.models import IPTVSource
     from api.routers.content.m3u_import import (
         M3UContentType,
+        _resolve_entry_matched_media_id,
         _import_tv_entry,
         _import_movie_entry,
         _import_series_entry,
@@ -128,21 +130,20 @@ async def _process_m3u_import(
     )
 
     try:
-        async with database.get_background_session() as session:
-            for i, entry in enumerate(entries):
-                try:
-                    idx = entry["index"]
+        for i, entry in enumerate(entries):
+            try:
+                idx = entry["index"]
 
-                    # Apply override if exists
-                    if idx in override_map:
-                        override = override_map[idx]
-                        entry["detected_type"] = override.get("type", entry["detected_type"])
-                        if "media_id" in override and override["media_id"]:
-                            entry["matched_media_id"] = override["media_id"]
+                if idx in override_map:
+                    override = override_map[idx]
+                    entry["detected_type"] = override.get("type", entry["detected_type"])
+                    if "media_id" in override and override["media_id"]:
+                        entry["matched_media_id"] = override["media_id"]
 
-                    content_type = M3UContentType(entry["detected_type"])
+                content_type = M3UContentType(entry["detected_type"])
 
-                    if content_type == M3UContentType.TV:
+                if content_type == M3UContentType.TV:
+                    async with database.get_background_session() as session:
                         import_result = await _import_tv_entry(
                             session=session,
                             entry=entry,
@@ -150,12 +151,17 @@ async def _process_m3u_import(
                             user_id=user_id,
                             is_public=is_public,
                         )
-                        if import_result["stream_created"]:
-                            stats["tv"] += 1
-                        elif import_result["stream_existed"]:
-                            stats["skipped"] += 1
+                        await session.commit()
+                    if import_result["stream_created"]:
+                        stats["tv"] += 1
+                    elif import_result["stream_existed"]:
+                        stats["skipped"] += 1
 
-                    elif content_type == M3UContentType.MOVIE:
+                elif content_type == M3UContentType.MOVIE:
+                    resolved_media_id = await _resolve_entry_matched_media_id(entry, "movie")
+                    if resolved_media_id:
+                        entry["matched_media_id"] = resolved_media_id
+                    async with database.get_background_session() as session:
                         await _import_movie_entry(
                             session=session,
                             entry=entry,
@@ -163,9 +169,14 @@ async def _process_m3u_import(
                             user_id=user_id,
                             is_public=is_public,
                         )
-                        stats["movie"] += 1
+                        await session.commit()
+                    stats["movie"] += 1
 
-                    elif content_type == M3UContentType.SERIES:
+                elif content_type == M3UContentType.SERIES:
+                    resolved_media_id = await _resolve_entry_matched_media_id(entry, "series")
+                    if resolved_media_id:
+                        entry["matched_media_id"] = resolved_media_id
+                    async with database.get_background_session() as session:
                         await _import_series_entry(
                             session=session,
                             entry=entry,
@@ -173,51 +184,49 @@ async def _process_m3u_import(
                             user_id=user_id,
                             is_public=is_public,
                         )
-                        stats["series"] += 1
+                        await session.commit()
+                    stats["series"] += 1
 
-                    else:
-                        stats["skipped"] += 1
+                else:
+                    stats["skipped"] += 1
 
-                except Exception as e:
-                    logger.warning(f"Failed to import entry {entry.get('name', 'unknown')}: {e}")
-                    stats["failed"] += 1
+            except Exception as e:
+                logger.warning(f"Failed to import entry {entry.get('name', 'unknown')}: {e}")
+                stats["failed"] += 1
 
-                # Update progress every 10 items or at the end
-                if (i + 1) % 10 == 0 or i == total - 1:
-                    await update_import_job_status(
-                        job_id=job_id,
-                        status=ImportJobStatus.PROCESSING,
-                        progress=i + 1,
-                        total=total,
-                        stats=stats,
-                    )
-
-            await session.commit()
-
-            # Save IPTV source if requested
-            source_id = None
-            if save_source and m3u_url:
-                if not source_name:
-                    parsed = urlparse(m3u_url)
-                    source_name = f"M3U - {parsed.netloc or 'playlist'}"
-
-                iptv_source = IPTVSource(
-                    user_id=user_id,
-                    source_type=IPTVSourceType.M3U,
-                    name=source_name,
-                    m3u_url=m3u_url,
-                    is_public=is_public,
-                    import_live=True,
-                    import_vod=True,
-                    import_series=True,
-                    last_synced_at=datetime.now(pytz.UTC),
-                    last_sync_stats=stats,
-                    is_active=True,
+            if (i + 1) % 10 == 0 or i == total - 1:
+                await update_import_job_status(
+                    job_id=job_id,
+                    status=ImportJobStatus.PROCESSING,
+                    progress=i + 1,
+                    total=total,
+                    stats=stats,
                 )
+
+        source_id = None
+        if save_source and m3u_url:
+            if not source_name:
+                parsed = urlparse(m3u_url)
+                source_name = f"M3U - {parsed.netloc or 'playlist'}"
+
+            iptv_source = IPTVSource(
+                user_id=user_id,
+                source_type=IPTVSourceType.M3U,
+                name=source_name,
+                m3u_url=m3u_url,
+                is_public=is_public,
+                import_live=True,
+                import_vod=True,
+                import_series=True,
+                last_synced_at=datetime.now(pytz.UTC),
+                last_sync_stats=stats,
+                is_active=True,
+            )
+            async with database.get_background_session() as session:
                 session.add(iptv_source)
                 await session.commit()
                 await session.refresh(iptv_source)
-                source_id = iptv_source.id
+            source_id = iptv_source.id
 
         # Mark as completed
         await update_import_job_status(
@@ -264,6 +273,7 @@ async def _process_xtream_import(
     from utils.xtream_client import XtreamClient
     from utils.profile_crypto import ProfileCrypto
     from api.routers.content.m3u_import import (
+        _resolve_entry_matched_media_id,
         _import_tv_entry,
         _import_movie_entry,
         _import_series_entry,
@@ -308,23 +318,22 @@ async def _process_xtream_import(
             total=total_items,
         )
 
-        async with database.get_background_session() as session:
-            # Import Live TV
-            if import_live and live_category_ids:
-                for cat_id in live_category_ids:
-                    streams = await client.get_live_streams(cat_id)
-                    for stream in streams:
-                        try:
-                            stream_url = client.build_stream_url("live", str(stream.get("stream_id", "")))
-                            entry = {
-                                "index": processed,
-                                "name": stream.get("name", "Unknown"),
-                                "url": stream_url,
-                                "logo": stream.get("stream_icon"),
-                                "genres": [stream.get("category_name", "")],
-                                "detected_type": "tv",
-                            }
-
+        # Import Live TV
+        if import_live and live_category_ids:
+            for cat_id in live_category_ids:
+                streams = await client.get_live_streams(cat_id)
+                for stream in streams:
+                    try:
+                        stream_url = client.build_stream_url("live", str(stream.get("stream_id", "")))
+                        entry = {
+                            "index": processed,
+                            "name": stream.get("name", "Unknown"),
+                            "url": stream_url,
+                            "logo": stream.get("stream_icon"),
+                            "genres": [stream.get("category_name", "")],
+                            "detected_type": "tv",
+                        }
+                        async with database.get_background_session() as session:
                             result = await _import_tv_entry(
                                 session=session,
                                 entry=entry,
@@ -332,45 +341,46 @@ async def _process_xtream_import(
                                 user_id=user_id,
                                 is_public=is_public,
                             )
-                            if result["stream_created"]:
-                                stats["tv"] += 1
-                            else:
-                                stats["skipped"] += 1
-                        except Exception as e:
-                            logger.warning(f"Failed to import Xtream live stream: {e}")
-                            stats["failed"] += 1
+                            await session.commit()
+                        if result["stream_created"]:
+                            stats["tv"] += 1
+                        else:
+                            stats["skipped"] += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to import Xtream live stream: {e}")
+                        stats["failed"] += 1
 
-                        processed += 1
-                        if processed % 50 == 0:
-                            await update_import_job_status(
-                                job_id=job_id,
-                                status=ImportJobStatus.PROCESSING,
-                                progress=processed,
-                                total=total_items,
-                                stats=stats,
-                            )
+                    processed += 1
+                    if processed % 50 == 0:
+                        await update_import_job_status(
+                            job_id=job_id,
+                            status=ImportJobStatus.PROCESSING,
+                            progress=processed,
+                            total=total_items,
+                            stats=stats,
+                        )
 
-                    # Commit after each category
-                    await session.commit()
-
-            # Import VOD (Movies)
-            if import_vod and vod_category_ids:
-                for cat_id in vod_category_ids:
-                    streams = await client.get_vod_streams(cat_id)
-                    for stream in streams:
-                        try:
-                            stream_url = client.build_stream_url("movie", str(stream.get("stream_id", "")))
-                            entry = {
-                                "index": processed,
-                                "name": stream.get("name", "Unknown"),
-                                "url": stream_url,
-                                "logo": stream.get("stream_icon"),
-                                "genres": [stream.get("category_name", "")],
-                                "detected_type": "movie",
-                                "parsed_title": stream.get("name"),
-                                "parsed_year": stream.get("year"),
-                            }
-
+        # Import VOD (Movies)
+        if import_vod and vod_category_ids:
+            for cat_id in vod_category_ids:
+                streams = await client.get_vod_streams(cat_id)
+                for stream in streams:
+                    try:
+                        stream_url = client.build_stream_url("movie", str(stream.get("stream_id", "")))
+                        entry = {
+                            "index": processed,
+                            "name": stream.get("name", "Unknown"),
+                            "url": stream_url,
+                            "logo": stream.get("stream_icon"),
+                            "genres": [stream.get("category_name", "")],
+                            "detected_type": "movie",
+                            "parsed_title": stream.get("name"),
+                            "parsed_year": stream.get("year"),
+                        }
+                        resolved_media_id = await _resolve_entry_matched_media_id(entry, "movie")
+                        if resolved_media_id:
+                            entry["matched_media_id"] = resolved_media_id
+                        async with database.get_background_session() as session:
                             await _import_movie_entry(
                                 session=session,
                                 entry=entry,
@@ -378,50 +388,52 @@ async def _process_xtream_import(
                                 user_id=user_id,
                                 is_public=is_public,
                             )
-                            stats["movie"] += 1
-                        except Exception as e:
-                            logger.warning(f"Failed to import Xtream VOD: {e}")
-                            stats["failed"] += 1
+                            await session.commit()
+                        stats["movie"] += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to import Xtream VOD: {e}")
+                        stats["failed"] += 1
 
-                        processed += 1
-                        if processed % 50 == 0:
-                            await update_import_job_status(
-                                job_id=job_id,
-                                status=ImportJobStatus.PROCESSING,
-                                progress=processed,
-                                total=total_items,
-                                stats=stats,
-                            )
+                    processed += 1
+                    if processed % 50 == 0:
+                        await update_import_job_status(
+                            job_id=job_id,
+                            status=ImportJobStatus.PROCESSING,
+                            progress=processed,
+                            total=total_items,
+                            stats=stats,
+                        )
 
-                    await session.commit()
+        # Import Series
+        if import_series and series_category_ids:
+            for cat_id in series_category_ids:
+                series_list = await client.get_series(cat_id)
+                for series in series_list:
+                    try:
+                        series_id = str(series.get("series_id", ""))
+                        series_info = await client.get_series_info(series_id)
 
-            # Import Series
-            if import_series and series_category_ids:
-                for cat_id in series_category_ids:
-                    series_list = await client.get_series(cat_id)
-                    for series in series_list:
-                        try:
-                            series_id = str(series.get("series_id", ""))
-                            series_info = await client.get_series_info(series_id)
+                        episodes = series_info.get("episodes", {})
+                        for season_num, season_episodes in episodes.items():
+                            for ep in season_episodes:
+                                ep_id = ep.get("id", "")
+                                stream_url = client.build_stream_url("series", str(ep_id))
 
-                            episodes = series_info.get("episodes", {})
-                            for season_num, season_episodes in episodes.items():
-                                for ep in season_episodes:
-                                    ep_id = ep.get("id", "")
-                                    stream_url = client.build_stream_url("series", str(ep_id))
-
-                                    entry = {
-                                        "index": processed,
-                                        "name": f"{series.get('name', 'Unknown')} S{season_num}E{ep.get('episode_num', 1)}",
-                                        "url": stream_url,
-                                        "logo": series.get("cover"),
-                                        "genres": [series.get("category_name", "")],
-                                        "detected_type": "series",
-                                        "parsed_title": series.get("name"),
-                                        "season": int(season_num),
-                                        "episode": int(ep.get("episode_num", 1)),
-                                    }
-
+                                entry = {
+                                    "index": processed,
+                                    "name": f"{series.get('name', 'Unknown')} S{season_num}E{ep.get('episode_num', 1)}",
+                                    "url": stream_url,
+                                    "logo": series.get("cover"),
+                                    "genres": [series.get("category_name", "")],
+                                    "detected_type": "series",
+                                    "parsed_title": series.get("name"),
+                                    "season": int(season_num),
+                                    "episode": int(ep.get("episode_num", 1)),
+                                }
+                                resolved_media_id = await _resolve_entry_matched_media_id(entry, "series")
+                                if resolved_media_id:
+                                    entry["matched_media_id"] = resolved_media_id
+                                async with database.get_background_session() as session:
                                     await _import_series_entry(
                                         session=session,
                                         entry=entry,
@@ -429,57 +441,57 @@ async def _process_xtream_import(
                                         user_id=user_id,
                                         is_public=is_public,
                                     )
-                                    stats["series"] += 1
-                        except Exception as e:
-                            logger.warning(f"Failed to import Xtream series: {e}")
-                            stats["failed"] += 1
+                                    await session.commit()
+                                stats["series"] += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to import Xtream series: {e}")
+                        stats["failed"] += 1
 
-                        processed += 1
-                        if processed % 10 == 0:
-                            await update_import_job_status(
-                                job_id=job_id,
-                                status=ImportJobStatus.PROCESSING,
-                                progress=processed,
-                                total=total_items,
-                                stats=stats,
-                            )
+                    processed += 1
+                    if processed % 10 == 0:
+                        await update_import_job_status(
+                            job_id=job_id,
+                            status=ImportJobStatus.PROCESSING,
+                            progress=processed,
+                            total=total_items,
+                            stats=stats,
+                        )
 
-                    await session.commit()
-
-            # Save IPTV source if requested
-            source_id = None
-            if save_source:
-                crypto = ProfileCrypto()
-                encrypted_creds = crypto.encrypt(
-                    json.dumps(
-                        {
-                            "username": username,
-                            "password": password,
-                        }
-                    )
+        # Save IPTV source if requested
+        source_id = None
+        if save_source:
+            crypto = ProfileCrypto()
+            encrypted_creds = crypto.encrypt(
+                json.dumps(
+                    {
+                        "username": username,
+                        "password": password,
+                    }
                 )
+            )
 
-                iptv_source = IPTVSource(
-                    user_id=user_id,
-                    source_type=IPTVSourceType.XTREAM,
-                    name=source_name,
-                    server_url=server_url,
-                    encrypted_credentials=encrypted_creds,
-                    is_public=is_public,
-                    import_live=import_live,
-                    import_vod=import_vod,
-                    import_series=import_series,
-                    live_category_ids=live_category_ids,
-                    vod_category_ids=vod_category_ids,
-                    series_category_ids=series_category_ids,
-                    last_synced_at=datetime.now(pytz.UTC),
-                    last_sync_stats=stats,
-                    is_active=True,
-                )
+            iptv_source = IPTVSource(
+                user_id=user_id,
+                source_type=IPTVSourceType.XTREAM,
+                name=source_name,
+                server_url=server_url,
+                encrypted_credentials=encrypted_creds,
+                is_public=is_public,
+                import_live=import_live,
+                import_vod=import_vod,
+                import_series=import_series,
+                live_category_ids=live_category_ids,
+                vod_category_ids=vod_category_ids,
+                series_category_ids=series_category_ids,
+                last_synced_at=datetime.now(pytz.UTC),
+                last_sync_stats=stats,
+                is_active=True,
+            )
+            async with database.get_background_session() as session:
                 session.add(iptv_source)
                 await session.commit()
                 await session.refresh(iptv_source)
-                source_id = iptv_source.id
+            source_id = iptv_source.id
 
         await update_import_job_status(
             job_id=job_id,
@@ -545,6 +557,7 @@ async def _process_m3u_sync(
     from db.models import IPTVSource
     from api.routers.content.m3u_import import (
         M3UContentType,
+        _resolve_entry_matched_media_id,
         _import_movie_entry,
         _import_series_entry,
         _import_tv_entry,
@@ -567,12 +580,12 @@ async def _process_m3u_sync(
             total=len(entries),
         )
 
-        async with database.get_background_session() as session:
-            for i, entry in enumerate(entries):
-                try:
-                    content_type = M3UContentType(entry.get("detected_type", "unknown"))
+        for i, entry in enumerate(entries):
+            try:
+                content_type = M3UContentType(entry.get("detected_type", "unknown"))
 
-                    if content_type == M3UContentType.TV and import_live:
+                if content_type == M3UContentType.TV and import_live:
+                    async with database.get_background_session() as session:
                         result = await _import_tv_entry(
                             session=session,
                             entry=entry,
@@ -580,12 +593,17 @@ async def _process_m3u_sync(
                             user_id=user_id,
                             is_public=is_public,
                         )
-                        if result.get("stream_created"):
-                            stats["tv"] += 1
-                        elif result.get("stream_existed"):
-                            stats["skipped"] += 1
+                        await session.commit()
+                    if result.get("stream_created"):
+                        stats["tv"] += 1
+                    elif result.get("stream_existed"):
+                        stats["skipped"] += 1
 
-                    elif content_type == M3UContentType.MOVIE and import_vod:
+                elif content_type == M3UContentType.MOVIE and import_vod:
+                    resolved_media_id = await _resolve_entry_matched_media_id(entry, "movie")
+                    if resolved_media_id:
+                        entry["matched_media_id"] = resolved_media_id
+                    async with database.get_background_session() as session:
                         await _import_movie_entry(
                             session=session,
                             entry=entry,
@@ -593,9 +611,14 @@ async def _process_m3u_sync(
                             user_id=user_id,
                             is_public=is_public,
                         )
-                        stats["movie"] += 1
+                        await session.commit()
+                    stats["movie"] += 1
 
-                    elif content_type == M3UContentType.SERIES and import_series:
+                elif content_type == M3UContentType.SERIES and import_series:
+                    resolved_media_id = await _resolve_entry_matched_media_id(entry, "series")
+                    if resolved_media_id:
+                        entry["matched_media_id"] = resolved_media_id
+                    async with database.get_background_session() as session:
                         await _import_series_entry(
                             session=session,
                             entry=entry,
@@ -603,27 +626,25 @@ async def _process_m3u_sync(
                             user_id=user_id,
                             is_public=is_public,
                         )
-                        stats["series"] += 1
+                        await session.commit()
+                    stats["series"] += 1
 
-                except Exception as e:
-                    logger.warning(f"Failed to import entry during sync: {e}")
-                    stats["failed"] += 1
+            except Exception as e:
+                logger.warning(f"Failed to import entry during sync: {e}")
+                stats["failed"] += 1
 
-                # Update progress periodically
-                if (i + 1) % 50 == 0:
-                    await update_import_job_status(
-                        job_id=job_id,
-                        status=ImportJobStatus.PROCESSING,
-                        progress=i + 1,
-                        total=len(entries),
-                        stats=stats,
-                    )
+            if (i + 1) % 50 == 0:
+                await update_import_job_status(
+                    job_id=job_id,
+                    status=ImportJobStatus.PROCESSING,
+                    progress=i + 1,
+                    total=len(entries),
+                    stats=stats,
+                )
 
-            await session.commit()
+        from sqlmodel import select
 
-            # Update source sync metadata
-            from sqlmodel import select
-
+        async with database.get_background_session() as session:
             query = select(IPTVSource).where(IPTVSource.id == source_id)
             result = await session.exec(query)
             source = result.first()
@@ -672,6 +693,7 @@ async def _process_xtream_sync(
     from db import database
     from db.models import IPTVSource
     from api.routers.content.m3u_import import (
+        _resolve_entry_matched_media_id,
         _import_movie_entry,
         _import_tv_entry,
     )
@@ -714,20 +736,20 @@ async def _process_xtream_sync(
         )
 
         processed = 0
-        async with database.get_background_session() as session:
-            # Import live streams
-            if import_live:
-                for stream in live_streams:
-                    try:
-                        stream_url = client.build_live_url(str(stream.get("stream_id", "")))
-                        entry = {
-                            "name": stream.get("name", "Unknown"),
-                            "url": stream_url,
-                            "logo": stream.get("stream_icon"),
-                            "genres": [],
-                            "index": 0,
-                        }
+        # Import live streams
+        if import_live:
+            for stream in live_streams:
+                try:
+                    stream_url = client.build_live_url(str(stream.get("stream_id", "")))
+                    entry = {
+                        "name": stream.get("name", "Unknown"),
+                        "url": stream_url,
+                        "logo": stream.get("stream_icon"),
+                        "genres": [],
+                        "index": 0,
+                    }
 
+                    async with database.get_background_session() as session:
                         result = await _import_tv_entry(
                             session=session,
                             entry=entry,
@@ -735,43 +757,45 @@ async def _process_xtream_sync(
                             user_id=user_id,
                             is_public=is_public,
                         )
+                        await session.commit()
 
-                        if result.get("stream_created"):
-                            stats["tv"] += 1
-                        elif result.get("stream_existed"):
-                            stats["skipped"] += 1
+                    if result.get("stream_created"):
+                        stats["tv"] += 1
+                    elif result.get("stream_existed"):
+                        stats["skipped"] += 1
 
-                    except Exception as e:
-                        logger.warning(f"Failed to sync live stream: {e}")
-                        stats["failed"] += 1
+                except Exception as e:
+                    logger.warning(f"Failed to sync live stream: {e}")
+                    stats["failed"] += 1
 
-                    processed += 1
-                    if processed % 50 == 0:
-                        await update_import_job_status(
-                            job_id=job_id,
-                            status=ImportJobStatus.PROCESSING,
-                            progress=processed,
-                            total=total_items,
-                            stats=stats,
-                        )
+                processed += 1
+                if processed % 50 == 0:
+                    await update_import_job_status(
+                        job_id=job_id,
+                        status=ImportJobStatus.PROCESSING,
+                        progress=processed,
+                        total=total_items,
+                        stats=stats,
+                    )
 
-                await session.commit()
-
-            # Import VOD
-            if import_vod:
-                for stream in vod_streams:
-                    try:
-                        ext = stream.get("container_extension", "mkv")
-                        stream_url = client.build_vod_url(str(stream.get("stream_id", "")), ext)
-                        entry = {
-                            "name": stream.get("name", "Unknown"),
-                            "url": stream_url,
-                            "logo": stream.get("stream_icon"),
-                            "parsed_title": stream.get("name"),
-                            "parsed_year": None,
-                            "index": 0,
-                        }
-
+        # Import VOD
+        if import_vod:
+            for stream in vod_streams:
+                try:
+                    ext = stream.get("container_extension", "mkv")
+                    stream_url = client.build_vod_url(str(stream.get("stream_id", "")), ext)
+                    entry = {
+                        "name": stream.get("name", "Unknown"),
+                        "url": stream_url,
+                        "logo": stream.get("stream_icon"),
+                        "parsed_title": stream.get("name"),
+                        "parsed_year": None,
+                        "index": 0,
+                    }
+                    resolved_media_id = await _resolve_entry_matched_media_id(entry, "movie")
+                    if resolved_media_id:
+                        entry["matched_media_id"] = resolved_media_id
+                    async with database.get_background_session() as session:
                         await _import_movie_entry(
                             session=session,
                             entry=entry,
@@ -779,27 +803,24 @@ async def _process_xtream_sync(
                             user_id=user_id,
                             is_public=is_public,
                         )
-                        stats["movie"] += 1
+                        await session.commit()
+                    stats["movie"] += 1
 
-                    except Exception as e:
-                        logger.warning(f"Failed to sync VOD: {e}")
-                        stats["failed"] += 1
+                except Exception as e:
+                    logger.warning(f"Failed to sync VOD: {e}")
+                    stats["failed"] += 1
 
-                    processed += 1
-                    if processed % 50 == 0:
-                        await update_import_job_status(
-                            job_id=job_id,
-                            status=ImportJobStatus.PROCESSING,
-                            progress=processed,
-                            total=total_items,
-                            stats=stats,
-                        )
+                processed += 1
+                if processed % 50 == 0:
+                    await update_import_job_status(
+                        job_id=job_id,
+                        status=ImportJobStatus.PROCESSING,
+                        progress=processed,
+                        total=total_items,
+                        stats=stats,
+                    )
 
-                await session.commit()
-
-            # Update source sync metadata
-            from sqlmodel import select
-
+        async with database.get_background_session() as session:
             query = select(IPTVSource).where(IPTVSource.id == source_id)
             result = await session.exec(query)
             source = result.first()

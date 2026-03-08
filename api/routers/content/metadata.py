@@ -10,11 +10,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import inspect
 from sqlmodel import select
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_auth
 from db import crud
-from db.database import get_async_session
+from db.database import get_async_session_context
 from db.models import Media, MediaExternalID, User
 from scrapers.scraper_tasks import meta_fetcher
 
@@ -149,7 +148,6 @@ async def refresh_metadata(
     media_id: int,
     request: RefreshMetadataRequest,
     user: User = Depends(require_auth),
-    session: AsyncSession = Depends(get_async_session),
 ):
     """
     Refresh metadata from external sources (IMDB/TMDB/TVDB/MAL/Kitsu).
@@ -159,20 +157,17 @@ async def refresh_metadata(
     """
     user_id = _require_user_id(user)
 
-    # Get the media record
-    result = await session.exec(select(Media).where(Media.id == media_id))
-    media = result.first()
-    if not media:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Media with ID {media_id} not found.",
-        )
-
-    title = media.title
-
-    # Get all external IDs for this media
-    external_ids_result = await session.exec(select(MediaExternalID).where(MediaExternalID.media_id == media_id))
-    external_ids_records = external_ids_result.all()
+    async with get_async_session_context() as session:
+        result = await session.exec(select(Media).where(Media.id == media_id))
+        media = result.first()
+        if not media:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Media with ID {media_id} not found.",
+            )
+        title = media.title
+        external_ids_result = await session.exec(select(MediaExternalID).where(MediaExternalID.media_id == media_id))
+        external_ids_records = external_ids_result.all()
 
     # Build external_ids dict
     external_ids: dict[str, str] = {}
@@ -199,39 +194,29 @@ async def refresh_metadata(
 
     refreshed_providers = list(provider_data.keys())
 
-    if not provider_data:
-        # Fallback: update stream counts even if metadata refresh failed
-        canonical_id = external_ids.get("imdb") or external_ids.get("tmdb") or list(external_ids.values())[0]
-        # Recalculate stream time to fix any incorrect values
-        await crud.update_meta_stream(session, canonical_id, request.media_type, recalculate_stream_time=True)
-        message = "Could not fetch fresh metadata from any provider. Stream counts updated."
-    else:
-        # Apply metadata updates from providers
-        # Priority: IMDB > TMDB > TVDB > MAL > Kitsu
-        provider_priority = ["imdb", "tmdb", "tvdb", "mal", "kitsu"]
+    async with get_async_session_context() as session:
+        if not provider_data:
+            canonical_id = external_ids.get("imdb") or external_ids.get("tmdb") or list(external_ids.values())[0]
+            await crud.update_meta_stream(session, canonical_id, request.media_type, recalculate_stream_time=True)
+            message = "Could not fetch fresh metadata from any provider. Stream counts updated."
+        else:
+            provider_priority = ["imdb", "tmdb", "tvdb", "mal", "kitsu"]
+            for provider in provider_priority:
+                if provider in provider_data:
+                    data = provider_data[provider]
+                    await crud.update_provider_metadata(session, media_id, provider, data)
 
-        # Store raw provider data in provider_metadata table
-        for provider in provider_priority:
-            if provider in provider_data:
-                data = provider_data[provider]
-                # Store raw provider data for reference
-                await crud.update_provider_metadata(session, media_id, provider, data)
+            success = await crud.apply_multi_provider_metadata(session, media_id, provider_data, request.media_type)
+            if not success:
+                logger.warning(f"Failed to apply multi-provider metadata for media_id={media_id}")
 
-        # Apply multi-provider metadata to normalized tables
-        # This uses waterfall fallback and merges cast/crew/genres from all providers
-        success = await crud.apply_multi_provider_metadata(session, media_id, provider_data, request.media_type)
-
-        if not success:
-            logger.warning(f"Failed to apply multi-provider metadata for media_id={media_id}")
-
-        # Recalculate stream time to fix any incorrect values
-        canonical_id = external_ids.get("imdb") or external_ids.get("tmdb") or list(external_ids.values())[0]
-        await crud.update_meta_stream(session, canonical_id, request.media_type, recalculate_stream_time=True)
-
-        message = f"Successfully refreshed metadata from {len(refreshed_providers)} provider(s): {', '.join(refreshed_providers)}."
-
-    # Commit changes
-    await session.commit()
+            canonical_id = external_ids.get("imdb") or external_ids.get("tmdb") or list(external_ids.values())[0]
+            await crud.update_meta_stream(session, canonical_id, request.media_type, recalculate_stream_time=True)
+            message = (
+                f"Successfully refreshed metadata from {len(refreshed_providers)} provider(s): "
+                f"{', '.join(refreshed_providers)}."
+            )
+        await session.commit()
 
     logger.info(
         "User %s refreshed metadata for media_id=%s from providers: %s",
@@ -254,7 +239,6 @@ async def link_external_id(
     media_id: int,
     request: LinkExternalIdRequest,
     user: User = Depends(require_auth),
-    session: AsyncSession = Depends(get_async_session),
 ):
     """
     Link an external provider ID to existing media.
@@ -287,32 +271,32 @@ async def link_external_id(
                     detail=f"{request.provider.upper()} ID must be numeric.",
                 )
 
-    # Check if media exists
-    result = await session.exec(select(Media).where(Media.id == media_id))
-    media = result.first()
-    if not media:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Media with ID {media_id} not found.",
-        )
+    async with get_async_session_context() as session:
+        result = await session.exec(select(Media).where(Media.id == media_id))
+        media = result.first()
+        if not media:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Media with ID {media_id} not found.",
+            )
+        media_title = media.title
 
-    # Check if this external ID is already linked to another media
-    existing_link = await crud.get_media_by_external_id(
-        session, external_id if request.provider == "imdb" else f"{request.provider}:{external_id}"
-    )
-    if existing_link and existing_link.id != media_id:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"This {request.provider.upper()} ID is already linked to another media (ID: {existing_link.id}).",
+        existing_link = await crud.get_media_by_external_id(
+            session, external_id if request.provider == "imdb" else f"{request.provider}:{external_id}"
         )
+        if existing_link and existing_link.id != media_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"This {request.provider.upper()} ID is already linked to another media (ID: {existing_link.id}).",
+            )
 
-    # Add the external ID
-    await crud.add_external_id(
-        session,
-        media_id=media_id,
-        provider=request.provider,
-        external_id=external_id,
-    )
+        await crud.add_external_id(
+            session,
+            media_id=media_id,
+            provider=request.provider,
+            external_id=external_id,
+        )
+        await session.commit()
 
     metadata_updated = False
 
@@ -330,20 +314,18 @@ async def link_external_id(
                 provider_data = None
 
             if provider_data:
-                # Apply metadata to the media
-                await crud.apply_multi_provider_metadata(
-                    session,
-                    media_id,
-                    {request.provider: provider_data},
-                    request.media_type,
-                )
+                async with get_async_session_context() as session:
+                    await crud.apply_multi_provider_metadata(
+                        session,
+                        media_id,
+                        {request.provider: provider_data},
+                        request.media_type,
+                    )
+                    await session.commit()
                 metadata_updated = True
                 logger.info(f"Updated metadata for media {media_id} from {request.provider}")
         except Exception as e:
             logger.warning(f"Failed to fetch metadata from {request.provider}: {e}")
-
-    # Commit changes
-    await session.commit()
 
     logger.info(
         "User %s linked %s:%s to media %s",
@@ -359,7 +341,7 @@ async def link_external_id(
         media_id=media_id,
         provider=request.provider,
         external_id=external_id,
-        title=media.title,
+        title=media_title,
         metadata_updated=metadata_updated,
     )
 
@@ -369,7 +351,6 @@ async def link_multiple_external_ids(
     media_id: int,
     request: LinkMultipleExternalIdsRequest,
     user: User = Depends(require_auth),
-    session: AsyncSession = Depends(get_async_session),
 ):
     """
     Link multiple external provider IDs to a media item at once.
@@ -379,14 +360,14 @@ async def link_multiple_external_ids(
     """
     user_id = _require_user_id(user)
 
-    # Check if media exists
-    result = await session.exec(select(Media).where(Media.id == media_id))
-    media = result.first()
-    if not media:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Media with ID {media_id} not found.",
-        )
+    async with get_async_session_context() as session:
+        result = await session.exec(select(Media).where(Media.id == media_id))
+        media = result.first()
+        if not media:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Media with ID {media_id} not found.",
+            )
 
     # Build list of IDs to link
     ids_to_link: list[tuple[str, str]] = []  # (provider, external_id)
@@ -429,31 +410,30 @@ async def link_multiple_external_ids(
     linked_providers = []
     failed_providers = []
 
-    # Link each ID
-    for provider, external_id in ids_to_link:
-        try:
-            # Check if this external ID is already linked to another media
-            lookup_id = external_id if provider == "imdb" else f"{provider}:{external_id}"
-            existing_link = await crud.get_media_by_external_id(session, lookup_id)
+    async with get_async_session_context() as session:
+        for provider, external_id in ids_to_link:
+            try:
+                lookup_id = external_id if provider == "imdb" else f"{provider}:{external_id}"
+                existing_link = await crud.get_media_by_external_id(session, lookup_id)
 
-            if existing_link and existing_link.id != media_id:
-                logger.warning(f"{provider}:{external_id} is already linked to media {existing_link.id}")
+                if existing_link and existing_link.id != media_id:
+                    logger.warning(f"{provider}:{external_id} is already linked to media {existing_link.id}")
+                    failed_providers.append(provider)
+                    continue
+
+                await crud.add_external_id(
+                    session,
+                    media_id=media_id,
+                    provider=provider,
+                    external_id=external_id,
+                )
+                linked_providers.append(provider)
+                logger.info(f"Linked {provider}:{external_id} to media {media_id}")
+
+            except Exception as e:
+                logger.error(f"Failed to link {provider}:{external_id}: {e}")
                 failed_providers.append(provider)
-                continue
-
-            # Add the external ID
-            await crud.add_external_id(
-                session,
-                media_id=media_id,
-                provider=provider,
-                external_id=external_id,
-            )
-            linked_providers.append(provider)
-            logger.info(f"Linked {provider}:{external_id} to media {media_id}")
-
-        except Exception as e:
-            logger.error(f"Failed to link {provider}:{external_id}: {e}")
-            failed_providers.append(provider)
+        await session.commit()
 
     metadata_updated = False
 
@@ -471,19 +451,18 @@ async def link_multiple_external_ids(
             )
 
             if provider_data:
-                await crud.apply_multi_provider_metadata(
-                    session,
-                    media_id,
-                    provider_data,
-                    request.media_type,
-                )
+                async with get_async_session_context() as session:
+                    await crud.apply_multi_provider_metadata(
+                        session,
+                        media_id,
+                        provider_data,
+                        request.media_type,
+                    )
+                    await session.commit()
                 metadata_updated = True
                 logger.info(f"Updated metadata for media {media_id} from {list(provider_data.keys())}")
         except Exception as e:
             logger.warning(f"Failed to fetch metadata: {e}")
-
-    # Commit changes
-    await session.commit()
 
     logger.info("User %s linked %s to media %s", user_id, linked_providers, media_id)
 
@@ -503,7 +482,6 @@ async def migrate_metadata_id(
     meta_id: str,
     request: LinkExternalIdRequest,
     user: User = Depends(require_auth),
-    session: AsyncSession = Depends(get_async_session),
 ):
     """
     [DEPRECATED] Migrate internal MediaFusion ID to a proper external ID.
@@ -512,7 +490,8 @@ async def migrate_metadata_id(
     This endpoint is kept for backward compatibility.
     """
     # Get the media by external ID (meta_id is the old external ID format)
-    media = await crud.get_media_by_external_id(session, meta_id)
+    async with get_async_session_context() as session:
+        media = await crud.get_media_by_external_id(session, meta_id)
     if not media:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -520,7 +499,7 @@ async def migrate_metadata_id(
         )
 
     # Forward to the new link-external endpoint
-    return await link_external_id(media.id, request, user, session)
+    return await link_external_id(media.id, request, user)
 
 
 @router.post("/search-external", response_model=SearchExternalResponse)

@@ -28,7 +28,7 @@ from db.crud.scraper_helpers import (
     update_metadata,
 )
 from db.crud.stream_services import invalidate_media_stream_cache
-from db.database import get_async_session
+from db.database import get_async_session, get_async_session_context
 from db.enums import UserRole
 from db.models import FileMediaLink, Media, MediaExternalID, StreamFile, StreamMediaLink, User
 from db.redis_database import REDIS_ASYNC_CLIENT
@@ -586,7 +586,6 @@ async def migrate_media(
 async def migrate_metadata_id(
     request: MigrateIdRequest,
     _admin: User = Depends(require_role(UserRole.ADMIN)),
-    session: AsyncSession = Depends(get_async_session),
 ):
     """
     Migrate a MediaFusion ID to an IMDb ID (Admin only).
@@ -597,11 +596,11 @@ async def migrate_metadata_id(
     3. Delete the old metadata
     4. Update stream statistics for the new ID
     """
-    # First check if the IMDb metadata exists
-    if request.media_type == "series":
-        target_metadata = await get_series_data_by_id(session, request.imdb_id)
-    else:
-        target_metadata = await get_movie_data_by_id(session, request.imdb_id)
+    async with get_async_session_context() as session:
+        if request.media_type == "series":
+            target_metadata = await get_series_data_by_id(session, request.imdb_id)
+        else:
+            target_metadata = await get_movie_data_by_id(session, request.imdb_id)
 
     # If IMDb metadata doesn't exist, fetch and create it
     if not target_metadata:
@@ -613,40 +612,41 @@ async def migrate_metadata_id(
                 detail=f"Could not fetch metadata for {request.imdb_id} from IMDB/TMDB.",
             )
 
-        # Create the metadata in database
-        created_metadata = await crud.scraper_helpers.get_or_create_metadata(
-            session,
-            fetched_metadata,
-            request.media_type,
-            is_search_imdb_title=False,
-            is_imdb_only=True,
-        )
-        if not created_metadata:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to create metadata for {request.imdb_id}.",
+        async with get_async_session_context() as session:
+            created_metadata = await crud.scraper_helpers.get_or_create_metadata(
+                session,
+                fetched_metadata,
+                request.media_type,
+                is_search_imdb_title=False,
+                is_imdb_only=True,
             )
+            if not created_metadata:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to create metadata for {request.imdb_id}.",
+                )
+            await session.commit()
         logger.info(f"Created metadata for {request.imdb_id}")
 
-    # Get old metadata for notification before deleting
-    old_metadata = await get_metadata_by_id(session, request.mediafusion_id)
-    if not old_metadata:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Metadata with ID {request.mediafusion_id} not found.",
-        )
-    old_title = old_metadata.title
+    async with get_async_session_context() as session:
+        # Get old metadata for notification before deleting
+        old_metadata = await get_metadata_by_id(session, request.mediafusion_id)
+        if not old_metadata:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Metadata with ID {request.mediafusion_id} not found.",
+            )
+        old_title = old_metadata.title
 
-    # Perform the migration - update torrent streams to point to new ID
-    migrated_count = await migrate_torrent_streams(session, request.mediafusion_id, request.imdb_id)
+        # Perform the migration - update torrent streams to point to new ID
+        migrated_count = await migrate_torrent_streams(session, request.mediafusion_id, request.imdb_id)
 
-    # Delete old metadata
-    await delete_metadata(session, request.mediafusion_id)
+        # Delete old metadata
+        await delete_metadata(session, request.mediafusion_id)
 
-    # Update stream stats for new ID
-    await update_meta_stream(session, request.imdb_id, request.media_type)
-
-    await session.commit()
+        # Update stream stats for new ID
+        await update_meta_stream(session, request.imdb_id, request.media_type)
+        await session.commit()
 
     # Send notification
     if settings.telegram_bot_token:
@@ -672,7 +672,6 @@ async def migrate_metadata_id(
 async def update_media_images(
     request: UpdateImagesRequest,
     _admin: User = Depends(require_role(UserRole.ADMIN)),
-    session: AsyncSession = Depends(get_async_session),
 ):
     """
     Update poster, background, and/or logo for existing content (Admin only).
@@ -686,18 +685,18 @@ async def update_media_images(
             detail="At least one image URL (poster, background, or logo) must be provided",
         )
 
-    # Get metadata to validate it exists and get current values
-    metadata = await get_metadata_by_id(session, request.meta_id)
-    if not metadata:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Content with ID {request.meta_id} not found",
-        )
-
-    old_poster = metadata.poster
-    old_background = metadata.background
-    old_logo = metadata.logo
-    meta_type = metadata.type.value if metadata.type else "movie"
+    async with get_async_session_context() as session:
+        metadata = await get_metadata_by_id(session, request.meta_id)
+        if not metadata:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Content with ID {request.meta_id} not found",
+            )
+        old_poster = metadata.poster
+        old_background = metadata.background
+        old_logo = metadata.logo
+        old_title = metadata.title
+        meta_type = metadata.type.value if metadata.type else "movie"
 
     # Build update fields and validate image URLs
     update_fields = {}
@@ -726,15 +725,15 @@ async def update_media_images(
             )
         update_fields["logo"] = request.logo
 
-    # Update metadata
-    await update_metadata(session, request.meta_id, update_fields)
-    await session.commit()
+    async with get_async_session_context() as session:
+        await update_metadata(session, request.meta_id, update_fields)
+        await session.commit()
 
     # Send Telegram notification
     if settings.telegram_bot_token:
         await telegram_notifier.send_image_update_notification(
             meta_id=request.meta_id,
-            title=metadata.title,
+            title=old_title,
             meta_type=meta_type,
             poster=f"{settings.poster_host_url}/poster/{meta_type}/{request.meta_id}.jpg",
             old_poster=old_poster,
@@ -765,7 +764,6 @@ async def refresh_imdb_data(
     meta_id: str,
     media_type: Literal["movie", "series"],
     _admin: User = Depends(require_role(UserRole.ADMIN)),
-    session: AsyncSession = Depends(get_async_session),
 ):
     """
     Refresh IMDb/TMDB data for existing content (Admin only).
@@ -773,33 +771,35 @@ async def refresh_imdb_data(
     This fetches fresh metadata from external providers and updates the database.
     """
     # Validate content exists
-    if media_type == "series":
-        series = await get_series_data_by_id(session, meta_id)
-        if not series:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Series with ID {meta_id} not found.",
-            )
-    else:
-        movie = await get_movie_data_by_id(session, meta_id)
-        if not movie:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Movie with ID {meta_id} not found.",
-            )
+    async with get_async_session_context() as session:
+        if media_type == "series":
+            series = await get_series_data_by_id(session, meta_id)
+            if not series:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Series with ID {meta_id} not found.",
+                )
+        else:
+            movie = await get_movie_data_by_id(session, meta_id)
+            if not movie:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Movie with ID {meta_id} not found.",
+                )
 
     if meta_id.startswith("tt"):
-        # Fetch fresh data from IMDB/TMDB and update
-        success = await crud.update_single_imdb_metadata(session, meta_id, media_type)
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to update IMDb data for {meta_id}.",
-            )
+        async with get_async_session_context() as session:
+            success = await crud.update_single_imdb_metadata(session, meta_id, media_type)
+            if not success:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to update IMDb data for {meta_id}.",
+                )
+            await session.commit()
     else:
-        await update_meta_stream(session, meta_id, media_type)
-
-    await session.commit()
+        async with get_async_session_context() as session:
+            await update_meta_stream(session, meta_id, media_type)
+            await session.commit()
 
     logger.info(f"Admin refreshed IMDb data for {meta_id}")
 
@@ -814,71 +814,75 @@ async def delete_torrent(
     info_hash: str,
     reason: str | None = None,
     _admin: User = Depends(require_role(UserRole.ADMIN)),
-    session: AsyncSession = Depends(get_async_session),
 ):
     """
     Delete a torrent by info_hash (Admin only).
 
     This completely removes the torrent from the database.
     """
-    # Find torrent by info_hash
-    torrent = await crud.streams.get_torrent_by_info_hash(session, info_hash)
-    if not torrent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Torrent not found: {info_hash}",
-        )
-
-    # Get metadata for notification
-    metadata = None
-    media_id = None
-
-    stream_media_result = await session.exec(
-        select(StreamMediaLink.media_id).where(StreamMediaLink.stream_id == torrent.stream_id).limit(1)
-    )
-    media_id = stream_media_result.first()
-
-    # Fallback for streams linked at file level only.
-    if media_id is None:
-        file_media_result = await session.exec(
-            select(FileMediaLink.media_id)
-            .join(StreamFile, StreamFile.id == FileMediaLink.file_id)
-            .where(StreamFile.stream_id == torrent.stream_id)
-            .limit(1)
-        )
-        media_id = file_media_result.first()
-
-    if media_id is not None:
-        metadata = await session.get(Media, media_id)
+    notification_payload = None
 
     try:
-        await delete_torrent_stream(session, info_hash)
-        await session.commit()
-
-        # Send Telegram notification
-        if settings.telegram_bot_token and metadata:
-            meta_type = metadata.type.value if metadata.type else "movie"
-            # Get external ID for the media
-            imdb_ext_result = await session.exec(
-                select(MediaExternalID.external_id)
-                .where(
-                    MediaExternalID.media_id == metadata.id,
-                    MediaExternalID.provider == "imdb",
+        async with get_async_session_context() as session:
+            torrent = await crud.streams.get_torrent_by_info_hash(session, info_hash)
+            if not torrent:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Torrent not found: {info_hash}",
                 )
-                .limit(1)
-            )
-            imdb_id = imdb_ext_result.first()
-            meta_id = imdb_id if imdb_id else f"mf{metadata.id}"
+            stream_name = torrent.stream.name if torrent.stream else "Unknown"
 
-            poster = f"{settings.poster_host_url}/poster/{meta_type}/{meta_id}.jpg"
+            metadata = None
+            stream_media_result = await session.exec(
+                select(StreamMediaLink.media_id).where(StreamMediaLink.stream_id == torrent.stream_id).limit(1)
+            )
+            media_id = stream_media_result.first()
+
+            if media_id is None:
+                file_media_result = await session.exec(
+                    select(FileMediaLink.media_id)
+                    .join(StreamFile, StreamFile.id == FileMediaLink.file_id)
+                    .where(StreamFile.stream_id == torrent.stream_id)
+                    .limit(1)
+                )
+                media_id = file_media_result.first()
+
+            if media_id is not None:
+                metadata = await session.get(Media, media_id)
+
+            if settings.telegram_bot_token and metadata:
+                meta_type = metadata.type.value if metadata.type else "movie"
+                imdb_ext_result = await session.exec(
+                    select(MediaExternalID.external_id)
+                    .where(
+                        MediaExternalID.media_id == metadata.id,
+                        MediaExternalID.provider == "imdb",
+                    )
+                    .limit(1)
+                )
+                imdb_id = imdb_ext_result.first()
+                meta_id = imdb_id if imdb_id else f"mf{metadata.id}"
+                notification_payload = {
+                    "info_hash": info_hash,
+                    "meta_id": meta_id,
+                    "title": metadata.title,
+                    "meta_type": meta_type,
+                    "poster": f"{settings.poster_host_url}/poster/{meta_type}/{meta_id}.jpg",
+                    "name": stream_name,
+                }
+
+            await delete_torrent_stream(session, info_hash)
+            await session.commit()
+
+        if notification_payload:
             await telegram_notifier.send_block_notification(
-                info_hash=info_hash,
+                info_hash=notification_payload["info_hash"],
                 action="delete",
-                meta_id=meta_id,
-                title=metadata.title,
-                meta_type=meta_type,
-                poster=poster,
-                name=torrent.stream.name if torrent.stream else "Unknown",
+                meta_id=notification_payload["meta_id"],
+                title=notification_payload["title"],
+                meta_type=notification_payload["meta_type"],
+                poster=notification_payload["poster"],
+                name=notification_payload["name"],
             )
     except Exception as e:
         logger.error(f"Failed to delete torrent {info_hash}: {e}")

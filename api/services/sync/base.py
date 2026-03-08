@@ -13,6 +13,7 @@ from typing import Generic, TypeVar
 import pytz
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from db.database import get_async_session_context
 from db.enums import HistorySource, IntegrationType, SyncDirection, WatchAction
 from db.models import ProfileIntegration, WatchHistory
 
@@ -249,7 +250,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
 
     async def sync(
         self,
-        session: AsyncSession,
         direction: SyncDirection | None = None,
         full_sync: bool = False,
     ) -> SyncResult:
@@ -257,7 +257,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
         Perform bidirectional sync with the external platform.
 
         Args:
-            session: Database session
             direction: Override sync direction (uses config default if None)
             full_sync: If True, fetch all history ignoring last_sync_at
 
@@ -278,7 +277,8 @@ class BaseSyncService(ABC, Generic[ConfigT]):
                 self.config = new_config
 
             # Get integration record for sync state (read-only, just to get last_sync_at)
-            integration = await self._get_integration(session)
+            async with get_async_session_context() as session:
+                integration = await self._get_integration(session)
             # Use None for full sync to fetch all history
             last_sync_at = None if full_sync else (integration.last_sync_at if integration else None)
             effective_direction = direction or self._get_sync_direction()
@@ -286,7 +286,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
             # Import from platform
             if effective_direction in (SyncDirection.IMPORT, SyncDirection.BIDIRECTIONAL):
                 import_result = await self._import_from_platform(
-                    session,
                     since=last_sync_at,
                 )
                 result.imported = import_result.imported
@@ -296,7 +295,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
             # Export to platform
             if effective_direction in (SyncDirection.EXPORT, SyncDirection.BIDIRECTIONAL):
                 export_result = await self._export_to_platform(
-                    session,
                     since=last_sync_at,
                 )
                 result.exported = export_result.exported
@@ -321,7 +319,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
 
     async def _import_from_platform(
         self,
-        session: AsyncSession,
         since: datetime | None = None,
     ) -> SyncResult:
         """Import watch history from external platform."""
@@ -336,72 +333,39 @@ class BaseSyncService(ABC, Generic[ConfigT]):
             media_created = 0
             already_exists = 0
 
-            # Process items in batches to avoid transaction issues
-            batch_size = 50
-            for i in range(0, len(items), batch_size):
-                batch = items[i : i + batch_size]
-                for item in batch:
-                    try:
-                        # Resolve to internal media ID
+            for item in items:
+                try:
+                    async with get_async_session_context() as session:
                         media_id = await self._resolve_media_id(session, item)
-                        if not media_id:
-                            # Try to create the media from external metadata
-                            media_id = await self._create_media_from_item(session, item)
-                            if media_id:
-                                media_created += 1
-                            else:
-                                media_not_found += 1
-                                result.import_skipped += 1
-                                continue
 
-                        # Check if already exists
+                    if not media_id:
+                        media_id = await self._create_media_from_item(item)
+                        if media_id:
+                            media_created += 1
+                        else:
+                            media_not_found += 1
+                            result.import_skipped += 1
+                            continue
+
+                    async with get_async_session_context() as session:
                         exists = await self._watch_entry_exists(session, media_id, item)
                         if exists:
                             already_exists += 1
                             result.import_skipped += 1
                             continue
 
-                        # Create watch history entry
                         await self._create_watch_entry(session, media_id, item)
+                        await session.commit()
                         result.imported += 1
 
-                    except Exception as e:
-                        logger.warning(f"Failed to import item {item.title}: {e}")
-                        result.import_errors += 1
-                        # Rollback failed transaction to allow continuing
-                        try:
-                            await session.rollback()
-                        except Exception:
-                            pass
-
-                # Commit after each batch
-                try:
-                    await session.commit()
-                except Exception as commit_error:
-                    logger.warning(f"Failed to commit batch: {commit_error}")
-                    try:
-                        await session.rollback()
-                    except Exception:
-                        pass
-
-            # Final commit for any remaining items
-            try:
-                await session.commit()
-            except Exception as commit_error:
-                logger.debug(f"Final commit (may be no-op): {commit_error}")
-                try:
-                    await session.rollback()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to import item {item.title}: {e}")
+                    result.import_errors += 1
 
         except Exception as e:
             logger.exception(f"Import failed: {e}")
             result.success = False
             result.error = str(e)
-            try:
-                await session.rollback()
-            except Exception:
-                pass
 
         logger.info(
             f"Import summary: {result.imported} imported, "
@@ -414,7 +378,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
 
     async def _export_to_platform(
         self,
-        session: AsyncSession,
         since: datetime | None = None,
     ) -> SyncResult:
         """Export watch history to external platform."""
@@ -424,28 +387,27 @@ class BaseSyncService(ABC, Generic[ConfigT]):
             # Get local watch history
             from sqlmodel import select
 
-            query = select(WatchHistory).where(
-                WatchHistory.profile_id == self.profile_id,
-                WatchHistory.action == WatchAction.WATCHED,
-            )
-            if since:
-                query = query.where(WatchHistory.watched_at > since)
+            items_to_push: list[WatchedItem] = []
+            async with get_async_session_context() as session:
+                query = select(WatchHistory).where(
+                    WatchHistory.profile_id == self.profile_id,
+                    WatchHistory.action == WatchAction.WATCHED,
+                )
+                if since:
+                    query = query.where(WatchHistory.watched_at > since)
 
-            db_result = await session.exec(query)
-            entries = db_result.all()
+                db_result = await session.exec(query)
+                entries = db_result.all()
 
-            result.details.append(f"Found {len(entries)} local entries to export")
+                result.details.append(f"Found {len(entries)} local entries to export")
 
-            # Convert to WatchedItem format
-            items_to_push = []
-            for entry in entries:
-                item = await self._convert_to_watched_item(session, entry)
-                if item:
-                    items_to_push.append(item)
-                else:
-                    result.export_skipped += 1
+                for entry in entries:
+                    item = await self._convert_to_watched_item(session, entry)
+                    if item:
+                        items_to_push.append(item)
+                    else:
+                        result.export_skipped += 1
 
-            # Push to platform
             if items_to_push:
                 success, errors = await self.push_watch_history(items_to_push)
                 result.exported = success
@@ -513,13 +475,11 @@ class BaseSyncService(ABC, Generic[ConfigT]):
 
     async def _create_media_from_item(
         self,
-        session: AsyncSession,
         item: WatchedItem,
     ) -> int | None:
         """Create media entry from external metadata when it doesn't exist.
 
         Fetches metadata from TMDb/IMDb and creates the media record.
-        Uses a savepoint to isolate this operation from the main transaction.
         """
         from scrapers.scraper_tasks import meta_fetcher
         from db.models import Media, MediaExternalID
@@ -527,7 +487,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
         from db.crud.media import get_media_by_external_id
 
         try:
-            # Determine which provider to use based on available IDs
             provider = None
             provider_id = None
 
@@ -545,13 +504,7 @@ class BaseSyncService(ABC, Generic[ConfigT]):
                 logger.debug(f"No external ID available to fetch metadata for {item.title}")
                 return None
 
-            # Double-check if media exists (might have been created in a previous iteration)
             ext_id_str = provider_id if provider == "imdb" else f"{provider}:{provider_id}"
-            existing = await get_media_by_external_id(session, ext_id_str)
-            if existing:
-                return existing.id
-
-            # Fetch metadata from the provider
             media_type_str = "movie" if item.media_type == "movie" else "series"
             metadata = await meta_fetcher.get_metadata_from_provider(provider, provider_id, media_type_str)
 
@@ -559,39 +512,35 @@ class BaseSyncService(ABC, Generic[ConfigT]):
                 logger.debug(f"No metadata found for {item.title} from {provider}:{provider_id}")
                 return None
 
-            # Determine MediaType enum
-            if item.media_type == "movie":
-                db_media_type = MediaType.MOVIE
-            else:
-                db_media_type = MediaType.SERIES
+            async with get_async_session_context() as session:
+                existing = await get_media_by_external_id(session, ext_id_str)
+                if existing:
+                    return existing.id
 
-            # Parse runtime
-            runtime_minutes = None
-            if metadata.get("runtime"):
-                runtime_str = str(metadata["runtime"])
-                try:
-                    if "min" in runtime_str.lower():
-                        runtime_minutes = int(runtime_str.lower().replace("min", "").strip())
-                    elif runtime_str.isdigit():
-                        runtime_minutes = int(runtime_str)
-                except (ValueError, TypeError):
-                    pass
+                db_media_type = MediaType.MOVIE if item.media_type == "movie" else MediaType.SERIES
 
-            # Use a savepoint to isolate this operation
-            async with session.begin_nested():
-                # Create the media record
+                runtime_minutes = None
+                if metadata.get("runtime"):
+                    runtime_str = str(metadata["runtime"])
+                    try:
+                        if "min" in runtime_str.lower():
+                            runtime_minutes = int(runtime_str.lower().replace("min", "").strip())
+                        elif runtime_str.isdigit():
+                            runtime_minutes = int(runtime_str)
+                    except (ValueError, TypeError):
+                        pass
+
                 media = Media(
                     type=db_media_type,
                     title=metadata.get("title", item.title),
                     year=metadata.get("year") or item.year,
                     description=metadata.get("description"),
                     runtime_minutes=runtime_minutes,
-                    is_user_created=False,  # System-imported from sync
+                    is_user_created=False,
                 )
                 session.add(media)
-                await session.flush()  # Get the ID
+                await session.flush()
 
-                # Create external ID records for all available IDs
                 if item.imdb_id:
                     session.add(
                         MediaExternalID(
@@ -617,18 +566,12 @@ class BaseSyncService(ABC, Generic[ConfigT]):
                         )
                     )
 
-                await session.flush()
-
-            logger.info(f"Created media '{media.title}' (ID: {media.id}) from {provider}")
-            return media.id
+                await session.commit()
+                logger.info(f"Created media '{media.title}' (ID: {media.id}) from {provider}")
+                return media.id
 
         except Exception as e:
             logger.warning(f"Failed to create media for {item.title}: {e}")
-            # Try to recover session state
-            try:
-                await session.rollback()
-            except Exception:
-                pass
             return None
 
     async def _watch_entry_exists(

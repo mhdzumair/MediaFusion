@@ -24,7 +24,7 @@ from thefuzz import fuzz
 from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
 from api.routers.content.contributions import award_import_approval_points
 from api.routers.user.auth import require_auth
-from db.database import get_read_session, get_async_session
+from db.database import get_async_session_context, get_read_session
 from db.enums import ContributionStatus, MediaType, UserRole
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.retry_utils import run_db_operation_with_retry
@@ -1309,7 +1309,7 @@ async def import_torrents(
     if prepared_items:
         from api.routers.content.torrent_import import _normalize_sports_import_metadata, process_torrent_import
 
-        async for write_session in get_async_session():
+        async with get_async_session_context() as write_session:
             for batch in iter_chunks(prepared_items, IMPORT_DB_BATCH_SIZE):
                 batch_hashes = [item.info_hash for item in batch]
                 try:
@@ -1442,7 +1442,6 @@ async def import_torrents(
                                 status="failed",
                                 message=str(error)[:200],
                             )
-            break
     # Fill any unreported slot defensively to keep response length deterministic.
     for index, info_hash in enumerate(requested_hashes):
         if index not in results_by_index:
@@ -1685,7 +1684,7 @@ async def advanced_import_torrents(
             )
 
             # Process the import immediately only for auto-approved submissions.
-            async for write_session in get_async_session():
+            async with get_async_session_context() as write_session:
                 try:
                     write_session.add(contribution)
                     await write_session.flush()
@@ -1775,7 +1774,6 @@ async def advanced_import_torrents(
                 except Exception as e:
                     await write_session.rollback()
                     raise e
-                break
 
         except Exception as e:
             logger.exception(f"Failed to import torrent {info_hash_lower}: {e}")

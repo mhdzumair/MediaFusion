@@ -624,27 +624,14 @@ async def _ensure_series_episode_metadata(
     series_meta.total_episodes = int(total_episodes_result.one() or 0)
 
 
-async def fetch_and_create_media_from_external(
-    session: AsyncSession,
+async def fetch_external_metadata_payload(
     external_id: str,
     media_type: str,
     fallback_title: str | None = None,
-) -> Media | None:
-    """
-    Fetch metadata from external provider and create a Media record.
-
-    Args:
-        session: Database session
-        external_id: External ID (e.g., tt1234567 for IMDB)
-        media_type: 'movie' or 'series'
-        fallback_title: Title to use if fetch fails
-
-    Returns:
-        Created Media object or None
-    """
+) -> dict[str, Any]:
+    """Fetch metadata from external providers without holding a DB session."""
     from scrapers.scraper_tasks import meta_fetcher
 
-    # Determine provider from external_id format
     provider = None
     provider_id = external_id
 
@@ -663,41 +650,35 @@ async def fetch_and_create_media_from_external(
         provider = "kitsu"
         provider_id = external_id.split(":")[-1]
     else:
-        # Try to infer - if it starts with tt, it's IMDB
-        # Otherwise, assume it might be a numeric TMDB ID
         if external_id.isdigit():
             provider = "tmdb"
         else:
-            # Unknown format, use get_or_create_metadata as fallback
-            return await get_or_create_metadata(
-                session,
-                {"id": external_id, "title": fallback_title or "Unknown"},
-                media_type,
-            )
+            return {"id": external_id, "title": fallback_title or "Unknown"}
 
     try:
-        # Fetch full metadata from the provider
         metadata = await meta_fetcher.get_metadata_from_provider(provider, provider_id, media_type)
-
         if metadata:
-            # Create media with full metadata
-            return await get_or_create_metadata(session, metadata, media_type)
-        else:
-            # Fallback to basic creation
-            logger.warning(f"Could not fetch metadata from {provider} for {external_id}, using fallback")
-            return await get_or_create_metadata(
-                session,
-                {"id": external_id, "title": fallback_title or "Unknown"},
-                media_type,
-            )
+            return metadata
+        logger.warning(f"Could not fetch metadata from {provider} for {external_id}, using fallback")
     except Exception as e:
         logger.warning(f"Error fetching metadata from {provider} for {external_id}: {e}")
-        # Fallback to basic creation
-        return await get_or_create_metadata(
-            session,
-            {"id": external_id, "title": fallback_title or "Unknown"},
-            media_type,
-        )
+
+    return {"id": external_id, "title": fallback_title or "Unknown"}
+
+
+async def fetch_and_create_media_from_external(
+    session: AsyncSession,
+    external_id: str,
+    media_type: str,
+    fallback_title: str | None = None,
+) -> Media | None:
+    """Backward-compatible helper to fetch metadata and persist it in DB."""
+    metadata_payload = await fetch_external_metadata_payload(
+        external_id=external_id,
+        media_type=media_type,
+        fallback_title=fallback_title,
+    )
+    return await get_or_create_metadata(session, metadata_payload, media_type)
 
 
 router = APIRouter(prefix="/api/v1/import", tags=["Content Import"])
@@ -746,6 +727,33 @@ async def process_torrent_import(
     if not info_hash:
         raise ValueError("Missing info_hash in contribution data")
 
+    # Fetch external metadata before opening heavy DB transaction work.
+    prefetched_media_payloads: dict[tuple[str, str], dict[str, Any]] = {}
+    primary_external_id = meta_id or f"user_{info_hash[:8]}"
+    if meta_type != "sports":
+        prefetched_media_payloads[(primary_external_id, meta_type)] = await fetch_external_metadata_payload(
+            primary_external_id,
+            meta_type,
+            fallback_title=title,
+        )
+
+    for file_info in contribution_data.get("file_data", []):
+        file_meta_id = file_info.get("meta_id")
+        if not file_meta_id:
+            continue
+        file_meta_type = file_info.get("meta_type", meta_type)
+        if file_meta_type == "sports":
+            file_sports_category = file_info.get("sports_category") or sports_category
+            file_meta_type = _resolve_fetch_media_type(file_meta_type, file_sports_category)
+        fetch_key = (file_meta_id, file_meta_type)
+        if fetch_key in prefetched_media_payloads:
+            continue
+        prefetched_media_payloads[fetch_key] = await fetch_external_metadata_payload(
+            file_meta_id,
+            file_meta_type,
+            fallback_title=file_info.get("meta_title"),
+        )
+
     # Check if torrent already exists
     existing = await session.exec(select(TorrentStream).where(TorrentStream.info_hash == info_hash))
     existing_torrent = existing.first()
@@ -786,14 +794,13 @@ async def process_torrent_import(
                 session.add(media)
                 await session.flush()
         else:
-            # Try to fetch full metadata from external provider and create
             try:
-                media = await fetch_and_create_media_from_external(
-                    session,
-                    meta_id or f"user_{info_hash[:8]}",
-                    meta_type,
-                    fallback_title=title,
-                )
+                payload = prefetched_media_payloads.get((primary_external_id, meta_type)) or {
+                    "id": primary_external_id,
+                    "title": title,
+                    "year": contribution_data.get("year"),
+                }
+                media = await get_or_create_metadata(session, payload, meta_type)
             except Exception as e:
                 logger.warning(f"Failed to fetch/create media for {meta_id}: {e}")
                 media_type_map = {
@@ -904,13 +911,15 @@ async def process_torrent_import(
                     file_meta_type = _resolve_fetch_media_type(file_meta_type, file_sports_category)
 
                 try:
-                    # Fetch full metadata from external provider
-                    file_media = await fetch_and_create_media_from_external(
-                        session,
-                        file_meta_id,
-                        file_meta_type,
-                        fallback_title=file_meta_title,
-                    )
+                    payload = prefetched_media_payloads.get((file_meta_id, file_meta_type))
+                    if payload:
+                        file_media = await get_or_create_metadata(session, payload, file_meta_type)
+                    elif file_meta_title:
+                        file_media = await get_or_create_metadata(
+                            session,
+                            {"id": file_meta_id, "title": file_meta_title},
+                            file_meta_type,
+                        )
                 except Exception as e:
                     logger.warning(f"Failed to fetch/create media for file meta_id {file_meta_id}: {e}")
 

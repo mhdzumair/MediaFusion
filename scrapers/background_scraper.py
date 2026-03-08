@@ -9,7 +9,7 @@ from api.task_queue import actor
 from db import crud
 from db.config import settings
 from db.database import get_background_session
-from db.retry_utils import is_retryable_db_error
+from db.retry_utils import run_db_operation_with_retry
 from db.schemas import MetadataData
 from scrapers.base_scraper import BackgroundScraperManager, IndexerBaseScraper
 from scrapers.jackett import JackettScraper
@@ -56,6 +56,22 @@ async def _safe_session_rollback(session: AsyncSession) -> None:
         logger.warning("Rollback failed in background search worker: %s", exc, exc_info=exc)
 
 
+async def _safe_session_close(session: AsyncSession) -> None:
+    """Close session without surfacing expected shutdown failures."""
+    try:
+        await session.close()
+    except BaseException as exc:
+        if _is_expected_shutdown_error(exc):
+            return
+        logger.warning("Session close failed in background search worker: %s", exc, exc_info=exc)
+
+
+async def _reset_session_before_retry(session: AsyncSession) -> None:
+    """Reset session state so next attempt can grab a fresh DB connection."""
+    await _safe_session_rollback(session)
+    await _safe_session_close(session)
+
+
 async def _run_with_db_retry(
     operation: Callable[[], Awaitable[T]],
     session: AsyncSession,
@@ -64,26 +80,23 @@ async def _run_with_db_retry(
     max_attempts: int = 3,
 ) -> T:
     """Run a DB operation with retry on transient disconnect errors."""
-    delay_seconds = 0.5
-    for attempt in range(1, max_attempts + 1):
-        try:
-            return await operation()
-        except Exception as exc:
-            if not is_retryable_db_error(exc) or attempt >= max_attempts:
-                raise
 
-            logger.warning(
-                "Retryable DB error during %s (attempt %d/%d): %s",
-                operation_name,
-                attempt,
-                max_attempts,
-                exc,
-            )
-            await _safe_session_rollback(session)
-            await asyncio.sleep(delay_seconds)
-            delay_seconds *= 2
+    async def _before_retry(attempt: int, total_attempts: int, exc: Exception) -> None:
+        logger.warning(
+            "Retryable DB error during %s (attempt %d/%d): %s",
+            operation_name,
+            attempt,
+            total_attempts,
+            exc,
+        )
+        await _reset_session_before_retry(session)
 
-    raise RuntimeError(f"DB retry loop exhausted for {operation_name}")
+    return await run_db_operation_with_retry(
+        operation=operation,
+        operation_name=operation_name,
+        max_attempts=max_attempts,
+        before_retry=_before_retry,
+    )
 
 
 class BackgroundSearchWorker:
@@ -113,92 +126,89 @@ class BackgroundSearchWorker:
         pending_movies = await self.manager.get_pending_items("movie")
         logger.info(f"Background search found {len(pending_movies)} movies to process")
 
-        async with get_background_session() as session:
-            for item in pending_movies:
-                meta_id = item["key"]
-                await self.manager.mark_as_processing(meta_id)
+        for item in pending_movies:
+            meta_id = item["key"]
+            await self.manager.mark_as_processing(meta_id)
 
-                try:
-                    metadata = None
+            try:
+                async with get_background_session() as read_session:
                     media = await _run_with_db_retry(
-                        lambda: crud.get_movie_data_by_id(session, meta_id, load_relations=True),
-                        session,
+                        lambda: crud.get_movie_data_by_id(read_session, meta_id, load_relations=True),
+                        read_session,
                         operation_name=f"loading movie metadata {meta_id}",
                     )
-                    if media:
-                        metadata = MetadataData.from_db(media)
-                    if not metadata:
+
+                metadata = MetadataData.from_db(media) if media else None
+                if not metadata:
+                    continue
+
+                processed_info_hashes: set[str] = set()
+                for scraper in self.scrapers:
+                    healthy_indexers = await scraper.get_healthy_indexers()
+                    if not healthy_indexers:
                         continue
 
-                    processed_info_hashes: set[str] = set()
-                    for scraper in self.scrapers:
-                        healthy_indexers = await scraper.get_healthy_indexers()
-                        if not healthy_indexers:
-                            continue
+                    indexer_chunks = list(scraper.split_indexers_into_chunks(healthy_indexers, 3))
 
-                        indexer_chunks = list(scraper.split_indexers_into_chunks(healthy_indexers, 3))
+                    scraper.metrics.start()
+                    scraper.metrics.meta_data = metadata
 
-                        scraper.metrics.start()
-                        scraper.metrics.meta_data = metadata
-
-                        title_streams_generators = []
-                        for chunk in indexer_chunks:
-                            for query_template in scraper.MOVIE_SEARCH_QUERY_TEMPLATES:
-                                search_query = query_template.format(title=metadata.title, year=metadata.year)
+                    title_streams_generators = []
+                    for chunk in indexer_chunks:
+                        for query_template in scraper.MOVIE_SEARCH_QUERY_TEMPLATES:
+                            search_query = query_template.format(title=metadata.title, year=metadata.year)
+                            title_streams_generators.append(
+                                scraper.scrape_movie_by_title(
+                                    processed_info_hashes,
+                                    metadata,
+                                    search_query=search_query,
+                                    indexers=chunk,
+                                )
+                            )
+                        if settings.scrape_with_aka_titles:
+                            for aka_title in metadata.aka_titles:
                                 title_streams_generators.append(
                                     scraper.scrape_movie_by_title(
                                         processed_info_hashes,
                                         metadata,
-                                        search_query=search_query,
+                                        search_query=aka_title,
                                         indexers=chunk,
                                     )
                                 )
-                            if settings.scrape_with_aka_titles:
-                                for aka_title in metadata.aka_titles:
-                                    title_streams_generators.append(
-                                        scraper.scrape_movie_by_title(
-                                            processed_info_hashes,
-                                            metadata,
-                                            search_query=aka_title,
-                                            indexers=chunk,
-                                        )
-                                    )
 
-                        try:
-                            async for stream in scraper.process_streams(
-                                *title_streams_generators,
-                                max_process=None,
-                                max_process_time=None,
-                            ):
+                    try:
+                        async for stream in scraper.process_streams(
+                            *title_streams_generators,
+                            max_process=None,
+                            max_process_time=None,
+                        ):
+                            async with get_background_session() as write_session:
                                 await _run_with_db_retry(
-                                    lambda: scraper.store_streams([stream], session=session),
-                                    session,
+                                    lambda: scraper.store_streams([stream], session=write_session),
+                                    write_session,
                                     operation_name=f"storing movie stream {meta_id}",
                                 )
-                        finally:
-                            scraper.metrics.stop()
-                            scraper.metrics.log_summary(scraper.logger)
+                    finally:
+                        scraper.metrics.stop()
+                        scraper.metrics.log_summary(scraper.logger)
 
-                except RuntimeError as e:
-                    if _is_shutdown_runtime_error(e):
-                        logger.warning("Event loop shutting down, aborting movie batch")
-                        return
-                    logger.exception(f"Error processing movie {meta_id}: {e}")
-                    await _safe_session_rollback(session)
-                except BaseExceptionGroup as e:
-                    if _is_expected_shutdown_error(e):
-                        logger.warning("Event loop shutting down, aborting movie batch")
-                        return
-                    await _safe_session_rollback(session)
-                    raise
-                except Exception as e:
-                    if _is_expected_shutdown_error(e):
-                        logger.warning("Event loop shutting down, aborting movie batch")
-                        return
-                    logger.exception(f"Error processing movie {meta_id}: {e}")
-                    await _safe_session_rollback(session)
-                finally:
-                    await self.manager.mark_as_completed(meta_id, self.manager.movie_hash_key)
+            except RuntimeError as e:
+                if _is_shutdown_runtime_error(e):
+                    logger.warning("Event loop shutting down, aborting movie batch")
+                    return
+                logger.exception(f"Error processing movie {meta_id}: {e}")
+            except BaseExceptionGroup as e:
+                if _is_expected_shutdown_error(e):
+                    logger.warning("Event loop shutting down, aborting movie batch")
+                    return
+                raise
+            except Exception as e:
+                if _is_expected_shutdown_error(e):
+                    logger.warning("Event loop shutting down, aborting movie batch")
+                    return
+                logger.exception(f"Error processing movie {meta_id}: {e}")
+            finally:
+                await self.manager.mark_as_completed(meta_id, self.manager.movie_hash_key)
 
     async def process_series_batch(self):
         """Process a batch of pending series episodes with complete scraping"""
@@ -209,101 +219,89 @@ class BackgroundSearchWorker:
         pending_series = await self.manager.get_pending_items("series")
         logger.info(f"Background search found {len(pending_series)} series episodes to process")
 
-        async with get_background_session() as session:
-            for item in pending_series:
-                key = item["key"]
-                meta_id, season, episode = key.split(":")
-                season = int(season)
-                episode = int(episode)
-                await self.manager.mark_as_processing(key)
+        for item in pending_series:
+            key = item["key"]
+            meta_id, season, episode = key.split(":")
+            season = int(season)
+            episode = int(episode)
+            await self.manager.mark_as_processing(key)
 
-                try:
-                    metadata = None
+            try:
+                async with get_background_session() as read_session:
                     media = await _run_with_db_retry(
-                        lambda: crud.get_series_data_by_id(session, meta_id, load_relations=True),
-                        session,
+                        lambda: crud.get_series_data_by_id(read_session, meta_id, load_relations=True),
+                        read_session,
                         operation_name=f"loading series metadata {meta_id}",
                     )
-                    if media:
-                        # Convert to MetadataData while session is active
-                        metadata = MetadataData.from_db(media)
-                    if not metadata:
+
+                metadata = MetadataData.from_db(media) if media else None
+                if not metadata:
+                    continue
+
+                processed_info_hashes: set[str] = set()
+                for scraper in self.scrapers:
+                    healthy_indexers = await scraper.get_healthy_indexers()
+                    if not healthy_indexers:
                         continue
 
-                    # Process each scraper sequentially for complete scraping
-                    processed_info_hashes: set[str] = set()
-                    for scraper in self.scrapers:
-                        # Get healthy indexers
-                        healthy_indexers = await scraper.get_healthy_indexers()
-                        if not healthy_indexers:
-                            continue
+                    indexer_chunks = list(scraper.split_indexers_into_chunks(healthy_indexers, 3))
 
-                        # Split indexers into chunks
-                        indexer_chunks = list(scraper.split_indexers_into_chunks(healthy_indexers, 3))
+                    scraper.metrics.start()
+                    scraper.metrics.meta_data = metadata
+                    scraper.metrics.season = season
+                    scraper.metrics.episode = episode
 
-                        # Start metrics collection
-                        scraper.metrics.start()
-                        scraper.metrics.meta_data = metadata
-                        scraper.metrics.season = season
-                        scraper.metrics.episode = episode
-
-                        # Create generators for title-based search
-                        title_streams_generators = []
-                        for chunk in indexer_chunks:
-                            for query_template in scraper.SERIES_SEARCH_QUERY_TEMPLATES:
-                                search_query = query_template.format(
-                                    title=metadata.title, season=season, episode=episode
+                    title_streams_generators = []
+                    for chunk in indexer_chunks:
+                        for query_template in scraper.SERIES_SEARCH_QUERY_TEMPLATES:
+                            search_query = query_template.format(title=metadata.title, season=season, episode=episode)
+                            title_streams_generators.append(
+                                scraper.scrape_series_by_title(
+                                    processed_info_hashes,
+                                    metadata,
+                                    season,
+                                    episode,
+                                    search_query=search_query,
+                                    indexers=chunk,
                                 )
-                                title_streams_generators.append(
-                                    scraper.scrape_series_by_title(
-                                        processed_info_hashes,
-                                        metadata,
-                                        season,
-                                        episode,
-                                        search_query=search_query,
-                                        indexers=chunk,
-                                    )
-                                )
+                            )
 
-                        # Process all streams without time limit
-                        try:
-                            async for stream in scraper.process_streams(
-                                *title_streams_generators,
-                                max_process=None,  # No limit for background
-                                max_process_time=None,  # No time limit for background
-                                catalog_type="series",
-                                season=season,
-                                episode=episode,
-                            ):
+                    try:
+                        async for stream in scraper.process_streams(
+                            *title_streams_generators,
+                            max_process=None,
+                            max_process_time=None,
+                            catalog_type="series",
+                            season=season,
+                            episode=episode,
+                        ):
+                            async with get_background_session() as write_session:
                                 await _run_with_db_retry(
-                                    lambda: scraper.store_streams([stream], session=session),
-                                    session,
+                                    lambda: scraper.store_streams([stream], session=write_session),
+                                    write_session,
                                     operation_name=f"storing series stream {meta_id} S{season}E{episode}",
                                 )
-                        finally:
-                            scraper.metrics.stop()
-                            scraper.metrics.log_summary(scraper.logger)
+                    finally:
+                        scraper.metrics.stop()
+                        scraper.metrics.log_summary(scraper.logger)
 
-                except RuntimeError as e:
-                    if _is_shutdown_runtime_error(e):
-                        logger.warning("Event loop shutting down, aborting series batch")
-                        return
-                    logger.exception(f"Error processing series {meta_id} S{season}E{episode}: {e}")
-                    await _safe_session_rollback(session)
-                except BaseExceptionGroup as e:
-                    if _is_expected_shutdown_error(e):
-                        logger.warning("Event loop shutting down, aborting series batch")
-                        return
-                    await _safe_session_rollback(session)
-                    raise
-                except Exception as e:
-                    if _is_expected_shutdown_error(e):
-                        logger.warning("Event loop shutting down, aborting series batch")
-                        return
-                    logger.exception(f"Error processing series {meta_id} S{season}E{episode}: {e}")
-                    await _safe_session_rollback(session)
-                finally:
-                    await self.manager.mark_as_completed(key, self.manager.series_hash_key)
+            except RuntimeError as e:
+                if _is_shutdown_runtime_error(e):
+                    logger.warning("Event loop shutting down, aborting series batch")
+                    return
+                logger.exception(f"Error processing series {meta_id} S{season}E{episode}: {e}")
+            except BaseExceptionGroup as e:
+                if _is_expected_shutdown_error(e):
+                    logger.warning("Event loop shutting down, aborting series batch")
+                    return
+                raise
+            except Exception as e:
+                if _is_expected_shutdown_error(e):
+                    logger.warning("Event loop shutting down, aborting series batch")
+                    return
+                logger.exception(f"Error processing series {meta_id} S{season}E{episode}: {e}")
+            finally:
+                await self.manager.mark_as_completed(key, self.manager.series_hash_key)
 
 
 async def _run_background_search_async():

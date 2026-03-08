@@ -29,22 +29,24 @@ async def update_torrent_seeders(page=0, page_size=25, *args, **kwargs):
         result = await session.exec(query)
         torrents = result.all()
 
-        if not torrents:
-            logging.info(f"No torrents to update on page {page}")
-            return
+    if not torrents:
+        logging.info(f"No torrents to update on page {page}")
+        return
 
-        data_list = []
-        for torrent in torrents:
-            urls = [t.url for t in torrent.trackers] if torrent.trackers else TRACKERS
-            data_list.append((torrent.info_hash, urls))
+    data_list = []
+    for torrent in torrents:
+        urls = [t.url for t in torrent.trackers] if torrent.trackers else TRACKERS
+        data_list.append((torrent.info_hash, urls))
 
-        results = await batch_scrape_info_hashes(data_list, timeout=30)
-        max_seeders_data = find_max_seeders(results)
+    results = await batch_scrape_info_hashes(data_list, timeout=30)
+    max_seeders_data = find_max_seeders(results)
 
+    async with get_background_session() as session:
         for info_hash, max_seeders in max_seeders_data.items():
             await crud.update_torrent_seeders(session, info_hash, max_seeders)
             logging.info(f"Updating seeders for torrent {info_hash} with max seeders: {max_seeders}")
+        await session.commit()
 
-        logging.info(f"Updated {len(max_seeders_data)} torrents")
+    logging.info(f"Updated {len(max_seeders_data)} torrents")
 
     await update_torrent_seeders.async_send_with_options(args=(page + 1, page_size), delay=60000)

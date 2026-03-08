@@ -7,13 +7,17 @@ from sqlalchemy.exc import DBAPIError, PendingRollbackError, TimeoutError as SQL
 T = TypeVar("T")
 
 RETRYABLE_DB_ERROR_MARKERS = (
+    "broken pipe",
     "connection reset by peer",
     "connection does not exist",
+    "connection is closed",
     "connection was closed",
+    "underlying connection is closed",
     "closed in the middle of operation",
     "server closed the connection unexpectedly",
     "terminating connection due to administrator command",
     "another operation is in progress",
+    "cannot call transaction.commit()",
     "cannot switch to state",
     "can't reconnect until invalid transaction is rolled back",
     "too many open files",

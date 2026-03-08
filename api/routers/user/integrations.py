@@ -470,91 +470,79 @@ async def trigger_sync(
     direction: str | None = Query(None, description="Override sync direction"),
     full_sync: bool = Query(False, description="Perform full sync ignoring last_sync_at"),
     user: User = Depends(require_auth),
-    session: AsyncSession = Depends(get_async_session),
 ):
     """Trigger a sync operation for a platform.
 
     Args:
         full_sync: If True, fetches all history from the platform, not just since last sync.
     """
-    await get_profile_for_user(session, user, profile_id)
-
-    integration = await get_integration(session, profile_id, platform)
-    if not integration:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"{platform} not connected",
-        )
-
-    # Mark sync state immediately so frontend can display progress.
-    integration.last_sync_status = "in_progress"
-    integration.last_sync_error = None
-    integration.last_sync_stats = None
-    session.add(integration)
-    await session.commit()
+    async with get_async_session_context() as session:
+        await get_profile_for_user(session, user, profile_id)
+        integration = await get_integration(session, profile_id, platform)
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"{platform} not connected",
+            )
+        integration.last_sync_status = "in_progress"
+        integration.last_sync_error = None
+        integration.last_sync_stats = None
+        session.add(integration)
+        await session.commit()
+        credentials = decrypt_credentials(integration.encrypted_credentials)
+        sync_dir = direction or integration.sync_direction
+        integration_is_enabled = integration.is_enabled
+        integration_scrobble_enabled = integration.scrobble_enabled
+        integration_settings = integration.settings or {}
 
     result = None
     error_msg = None
 
     # Run sync inline and wait for completion (manual user action).
     try:
-        async with get_async_session_context() as sync_session:
-            # Get fresh integration data
-            fresh_integration = await get_integration(sync_session, profile_id, platform)
-            if not fresh_integration:
-                logger.error(f"Integration not found during sync: {platform}")
-                return SyncTriggerResponse(
-                    message=f"Sync failed for {platform}: integration not found",
-                    sync_started=False,
-                )
+        if platform == IntegrationType.TRAKT:
+            from db.schemas.config import TraktConfig
 
-            credentials = decrypt_credentials(fresh_integration.encrypted_credentials)
-            sync_dir = direction or fresh_integration.sync_direction
+            config = TraktConfig(
+                access_token=credentials.get("access_token", ""),
+                refresh_token=credentials.get("refresh_token"),
+                expires_at=credentials.get("expires_at"),
+                client_id=credentials.get("client_id"),
+                client_secret=credentials.get("client_secret"),
+                sync_enabled=integration_is_enabled,
+                scrobble_enabled=integration_scrobble_enabled,
+                min_watch_percent=integration_settings.get("min_watch_percent", 80),
+            )
+            service = TraktSyncService(config, profile_id)
+        elif platform == IntegrationType.SIMKL:
+            from db.schemas.config import SimklConfig
 
-            if platform == IntegrationType.TRAKT:
-                from db.schemas.config import TraktConfig
+            config = SimklConfig(
+                access_token=credentials.get("access_token", ""),
+                refresh_token=credentials.get("refresh_token"),
+                expires_at=credentials.get("expires_at"),
+                client_id=credentials.get("client_id"),
+                client_secret=credentials.get("client_secret"),
+                sync_enabled=integration_is_enabled,
+            )
+            service = SimklSyncService(config, profile_id)
+        else:
+            logger.error(f"Sync not implemented for {platform}")
+            return SyncTriggerResponse(
+                message=f"Sync failed for {platform}: not implemented",
+                sync_started=False,
+            )
 
-                config = TraktConfig(
-                    access_token=credentials.get("access_token", ""),
-                    refresh_token=credentials.get("refresh_token"),
-                    expires_at=credentials.get("expires_at"),
-                    client_id=credentials.get("client_id"),
-                    client_secret=credentials.get("client_secret"),
-                    sync_enabled=fresh_integration.is_enabled,
-                    scrobble_enabled=fresh_integration.scrobble_enabled,
-                    min_watch_percent=fresh_integration.settings.get("min_watch_percent", 80),
-                )
-                service = TraktSyncService(config, profile_id)
-            elif platform == IntegrationType.SIMKL:
-                from db.schemas.config import SimklConfig
+        sync_direction = None
+        if sync_dir == "mf_to_platform":
+            sync_direction = SyncDirection.MF_TO_PLATFORM
+        elif sync_dir == "platform_to_mf":
+            sync_direction = SyncDirection.PLATFORM_TO_MF
+        elif sync_dir == "two_way":
+            sync_direction = SyncDirection.BIDIRECTIONAL
 
-                config = SimklConfig(
-                    access_token=credentials.get("access_token", ""),
-                    refresh_token=credentials.get("refresh_token"),
-                    expires_at=credentials.get("expires_at"),
-                    client_id=credentials.get("client_id"),
-                    client_secret=credentials.get("client_secret"),
-                    sync_enabled=fresh_integration.is_enabled,
-                )
-                service = SimklSyncService(config, profile_id)
-            else:
-                logger.error(f"Sync not implemented for {platform}")
-                return SyncTriggerResponse(
-                    message=f"Sync failed for {platform}: not implemented",
-                    sync_started=False,
-                )
-
-            # Map string direction to enum
-            sync_direction = None
-            if sync_dir == "mf_to_platform":
-                sync_direction = SyncDirection.MF_TO_PLATFORM
-            elif sync_dir == "platform_to_mf":
-                sync_direction = SyncDirection.PLATFORM_TO_MF
-            elif sync_dir == "two_way":
-                sync_direction = SyncDirection.BIDIRECTIONAL
-
-            result = await service.sync(sync_session, sync_direction, full_sync=full_sync)
-            logger.info(f"Sync completed for {platform}: {result.to_dict()}")
+        result = await service.sync(sync_direction, full_sync=full_sync)
+        logger.info(f"Sync completed for {platform}: {result.to_dict()}")
 
     except Exception as e:
         logger.exception(f"Sync failed for {platform}: {e}")
@@ -596,19 +584,17 @@ async def trigger_sync(
 async def trigger_sync_all(
     profile_id: int = Query(..., description="Profile ID"),
     user: User = Depends(require_auth),
-    session: AsyncSession = Depends(get_async_session),
 ):
     """Trigger sync for all connected and enabled integrations."""
-    await get_profile_for_user(session, user, profile_id)
-
-    # Get all enabled integrations
-    query = select(ProfileIntegration).where(
-        ProfileIntegration.profile_id == profile_id,
-        ProfileIntegration.is_enabled == True,
-    )
-    result = await session.exec(query)
-    enabled_integrations = result.all()
-    enabled_integration_ids = [integration.id for integration in enabled_integrations]
+    async with get_async_session_context() as session:
+        await get_profile_for_user(session, user, profile_id)
+        query = select(ProfileIntegration).where(
+            ProfileIntegration.profile_id == profile_id,
+            ProfileIntegration.is_enabled == True,
+        )
+        result = await session.exec(query)
+        enabled_integrations = result.all()
+        enabled_integration_ids = [integration.id for integration in enabled_integrations]
 
     if not enabled_integrations:
         return SyncTriggerResponse(
@@ -616,24 +602,37 @@ async def trigger_sync_all(
             sync_started=False,
         )
 
-    for integration in enabled_integrations:
-        integration.last_sync_status = "in_progress"
-        integration.last_sync_error = None
-        integration.last_sync_stats = None
-        session.add(integration)
-    await session.commit()
+    async with get_async_session_context() as session:
+        for integration_id in enabled_integration_ids:
+            integration = await session.get(ProfileIntegration, integration_id)
+            if not integration:
+                continue
+            integration.last_sync_status = "in_progress"
+            integration.last_sync_error = None
+            integration.last_sync_stats = None
+            session.add(integration)
+        await session.commit()
 
     success_count = 0
     failed_count = 0
 
     for integration_id in enabled_integration_ids:
-        async with get_async_session_context() as sync_session:
-            integration = await sync_session.get(ProfileIntegration, integration_id)
-            if not integration or not integration.is_enabled:
-                continue
-
-            try:
+        service = None
+        platform_name = None
+        sync_direction = None
+        try:
+            async with get_async_session_context() as sync_session:
+                integration = await sync_session.get(ProfileIntegration, integration_id)
+                if not integration or not integration.is_enabled:
+                    continue
                 credentials = decrypt_credentials(integration.encrypted_credentials)
+                platform_name = integration.platform
+                if integration.sync_direction == "mf_to_platform":
+                    sync_direction = SyncDirection.MF_TO_PLATFORM
+                elif integration.sync_direction == "platform_to_mf":
+                    sync_direction = SyncDirection.PLATFORM_TO_MF
+                elif integration.sync_direction == "two_way":
+                    sync_direction = SyncDirection.BIDIRECTIONAL
 
                 if integration.platform == IntegrationType.TRAKT:
                     config = TraktConfig(
@@ -644,7 +643,7 @@ async def trigger_sync_all(
                         client_secret=credentials.get("client_secret"),
                         sync_enabled=integration.is_enabled,
                         scrobble_enabled=integration.scrobble_enabled,
-                        min_watch_percent=integration.settings.get("min_watch_percent", 80),
+                        min_watch_percent=(integration.settings or {}).get("min_watch_percent", 80),
                     )
                     service = TraktSyncService(config, profile_id)
                 elif integration.platform == IntegrationType.SIMKL:
@@ -660,30 +659,30 @@ async def trigger_sync_all(
                 else:
                     continue
 
-                result = await service.sync(sync_session)
-                logger.info(f"Sync completed for {integration.platform}: {result.to_dict()}")
-
-                integration.last_sync_at = datetime.now(timezone.utc)
-                integration.last_sync_status = "success"
-                integration.last_sync_error = None
-                integration.last_sync_stats = result.to_dict()
-                success_count += 1
-            except Exception as e:
-                logger.exception(f"Sync failed for integration_id={integration_id}: {e}")
-                await sync_session.rollback()
-
-                integration = await sync_session.get(ProfileIntegration, integration_id)
-                if not integration:
-                    continue
-
-                integration.last_sync_at = datetime.now(timezone.utc)
-                integration.last_sync_status = "failed"
-                integration.last_sync_error = str(e)
-                integration.last_sync_stats = None
-                failed_count += 1
-
-            sync_session.add(integration)
-            await sync_session.commit()
+            result = await service.sync(sync_direction)
+            logger.info(f"Sync completed for {platform_name}: {result.to_dict()}")
+            async with get_async_session_context() as update_session:
+                integration = await update_session.get(ProfileIntegration, integration_id)
+                if integration:
+                    integration.last_sync_at = datetime.now(timezone.utc)
+                    integration.last_sync_status = "success"
+                    integration.last_sync_error = None
+                    integration.last_sync_stats = result.to_dict()
+                    update_session.add(integration)
+                    await update_session.commit()
+            success_count += 1
+        except Exception as e:
+            logger.exception(f"Sync failed for integration_id={integration_id}: {e}")
+            async with get_async_session_context() as update_session:
+                integration = await update_session.get(ProfileIntegration, integration_id)
+                if integration:
+                    integration.last_sync_at = datetime.now(timezone.utc)
+                    integration.last_sync_status = "failed"
+                    integration.last_sync_error = str(e)
+                    integration.last_sync_stats = None
+                    update_session.add(integration)
+                    await update_session.commit()
+            failed_count += 1
 
     return SyncTriggerResponse(
         message=f"Sync completed for {len(enabled_integrations)} platforms ({success_count} succeeded, {failed_count} failed)",

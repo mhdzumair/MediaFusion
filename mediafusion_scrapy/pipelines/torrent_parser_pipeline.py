@@ -6,7 +6,7 @@ from scrapy.exceptions import DropItem
 from scrapy.http.request import NO_CALLBACK
 
 from db import crud
-from db.database import get_async_session
+from db.database import get_async_session_context
 from utils import torrent
 
 COMMON_TAMIL_SOURCES = {"TamilMV", "TamilBlasters"}
@@ -121,7 +121,7 @@ class MagnetDownloadAndParsePipeline:
         if not info_hash:
             raise DropItem(f"Failed to parse info_hash from magnet link: {magnet_link}")
 
-        async for session in get_async_session():
+        async with get_async_session_context() as session:
             torrent_stream = await crud.get_stream_by_info_hash(session, info_hash, load_relations=True)
 
         if torrent_stream:
@@ -135,7 +135,7 @@ class MagnetDownloadAndParsePipeline:
                     item["source"],
                     stream_source,
                 )
-                async for session in get_async_session():
+                async with get_async_session_context() as session:
                     await crud.delete_torrent_stream(session, info_hash)
             else:
                 raise DropItem(f"Torrent stream already exists: {stream_name} from {stream_source}")
