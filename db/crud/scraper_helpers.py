@@ -345,13 +345,15 @@ async def get_or_create_metadata(
     if not end_date and (end_year := metadata_data.get("end_year")):
         end_date = date(end_year, 12, 31)
 
+    runtime_minutes = _normalize_runtime_minutes(metadata_data.get("runtime_minutes") or metadata_data.get("runtime"))
+
     # Create new media (external_id is now stored in MediaExternalID table)
     media = Media(
         type=media_type_enum,
         title=metadata_data.get("title", "Unknown"),
         year=year,
         description=metadata_data.get("description") or metadata_data.get("overview"),
-        runtime_minutes=metadata_data.get("runtime"),
+        runtime_minutes=runtime_minutes,
         end_date=end_date,
         is_add_title_to_poster=metadata_data.get("is_add_title_to_poster", False),
     )
@@ -488,6 +490,26 @@ def _normalize_year_value(year_value: Any) -> int | None:
         cleaned = year_value.strip()
         if cleaned.isdigit():
             return int(cleaned)
+    return None
+
+
+def _normalize_runtime_minutes(runtime_value: Any) -> int | None:
+    """Normalize runtime values like 120, '120', or '120 min'."""
+    if runtime_value is None or isinstance(runtime_value, bool):
+        return None
+    if isinstance(runtime_value, int):
+        return runtime_value
+    if isinstance(runtime_value, float):
+        return int(runtime_value)
+    if isinstance(runtime_value, str):
+        cleaned = runtime_value.strip()
+        if not cleaned:
+            return None
+        if cleaned.isdigit():
+            return int(cleaned)
+        match = re.search(r"(\d+)", cleaned)
+        if match:
+            return int(match.group(1))
     return None
 
 
@@ -764,15 +786,9 @@ async def update_single_imdb_metadata(
     media.tagline = fetched_data.get("tagline") or media.tagline
     media.year = fetched_data.get("year") or media.year
     # Handle runtime - prefer runtime_minutes (int) over runtime (string)
-    runtime = fetched_data.get("runtime_minutes") or fetched_data.get("runtime")
-    if runtime:
-        if isinstance(runtime, int):
-            media.runtime_minutes = runtime
-        elif isinstance(runtime, str):
-            # Parse "120 min" format
-            match = re.search(r"(\d+)", runtime)
-            if match:
-                media.runtime_minutes = int(match.group(1))
+    runtime_minutes = _normalize_runtime_minutes(fetched_data.get("runtime_minutes") or fetched_data.get("runtime"))
+    if runtime_minutes is not None:
+        media.runtime_minutes = runtime_minutes
     media.status = fetched_data.get("status") or media.status
     media.original_language = fetched_data.get("original_language") or media.original_language
     media.popularity = fetched_data.get("popularity") or media.popularity
@@ -1103,9 +1119,11 @@ async def update_single_imdb_metadata(
                         episode.overview = ep.get("overview") or ep.get("description") or episode.overview
                         if air_date:
                             episode.air_date = air_date
-                        episode.runtime_minutes = (
-                            ep.get("runtime_minutes") or ep.get("runtime") or episode.runtime_minutes
+                        episode_runtime_minutes = _normalize_runtime_minutes(
+                            ep.get("runtime_minutes") or ep.get("runtime")
                         )
+                        if episode_runtime_minutes is not None:
+                            episode.runtime_minutes = episode_runtime_minutes
                     else:
                         # Create new episode
                         episode = Episode(
@@ -1114,7 +1132,7 @@ async def update_single_imdb_metadata(
                             title=ep.get("title") or f"Episode {episode_num}",
                             overview=ep.get("overview") or ep.get("description"),
                             air_date=air_date,
-                            runtime_minutes=ep.get("runtime_minutes") or ep.get("runtime"),
+                            runtime_minutes=_normalize_runtime_minutes(ep.get("runtime_minutes") or ep.get("runtime")),
                             imdb_id=ep.get("imdb_id"),
                             tmdb_id=ep.get("tmdb_id"),
                         )

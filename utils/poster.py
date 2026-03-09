@@ -28,6 +28,18 @@ class PosterFetchError(Exception):
     """Raised when fetching a poster image fails due to network/connection errors."""
 
 
+class PosterProcessingError(Exception):
+    """Raised when fetched bytes cannot be processed into a raster poster."""
+
+
+def _looks_like_svg_content(content: bytes) -> bool:
+    """Detect SVG payloads (Pillow cannot decode SVG directly)."""
+    if not content:
+        return False
+    sniff = content[:2048].lstrip().lower()
+    return b"<svg" in sniff
+
+
 async def is_poster_url_dead(url: str) -> bool:
     """Check if a poster URL has been marked as dead in Redis."""
     return bool(await REDIS_ASYNC_CLIENT.get(f"{POSTER_DEAD_PREFIX}{url}"))
@@ -65,6 +77,10 @@ async def fetch_poster_image(url: str, max_retries: int = 1) -> bytes:
     # Check if the image is cached in Redis
     cached_image = await REDIS_ASYNC_CLIENT.get(url)
     if cached_image:
+        if _looks_like_svg_content(cached_image):
+            await REDIS_ASYNC_CLIENT.delete(url)
+            await _record_poster_failure(url)
+            raise PosterFetchError(f"Unsupported SVG poster format for URL: {url}")
         logging.info(f"Using cached image for URL: {url}")
         return cached_image
 
@@ -89,6 +105,8 @@ async def fetch_poster_image(url: str, max_retries: int = 1) -> bytes:
                     if not (is_image_content_type or is_octet_stream):
                         raise PosterFetchError(f"Unexpected content type: {content_type} for URL: {url}")
                     content = await response.read()
+                    if "svg" in content_type or _looks_like_svg_content(content):
+                        raise PosterFetchError(f"Unsupported SVG poster format for URL: {url}")
 
                     if is_octet_stream:
                         try:
@@ -138,9 +156,9 @@ def process_poster_image(content: bytes, mediafusion_data: PosterData) -> BytesI
         byte_io.seek(0)
 
         return byte_io
-    except UnidentifiedImageError:
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
         poster_url = getattr(mediafusion_data, "poster", "unknown")
-        raise ValueError(f"Cannot identify image from URL: {poster_url}")
+        raise PosterProcessingError(f"Cannot identify image from URL: {poster_url}") from exc
 
 
 async def create_poster(mediafusion_data: PosterData) -> BytesIO:
@@ -154,11 +172,17 @@ async def create_poster(mediafusion_data: PosterData) -> BytesIO:
             mediafusion_data.imdb_rating = imdb_rating
             # Note: Rating update is handled separately via SQL CRUD if needed
 
-    loop = asyncio.get_event_loop()
-    byte_io = await asyncio.wait_for(
-        loop.run_in_executor(executor, process_poster_image, content, mediafusion_data),
-        30,
-    )
+    loop = asyncio.get_running_loop()
+    try:
+        byte_io = await asyncio.wait_for(
+            loop.run_in_executor(executor, process_poster_image, content, mediafusion_data),
+            30,
+        )
+    except PosterProcessingError as exc:
+        # Cached bytes can be stale/non-image (e.g. SVG served as image/*); purge and track failures.
+        await REDIS_ASYNC_CLIENT.delete(mediafusion_data.poster)
+        await _record_poster_failure(mediafusion_data.poster)
+        raise PosterFetchError(str(exc)) from exc
 
     return byte_io
 

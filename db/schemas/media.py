@@ -336,10 +336,16 @@ class EpisodeData(BaseModel):
     external_ids: ExternalIDs | None = None
 
     @classmethod
-    def from_db(cls, episode: "EpisodeModel") -> "EpisodeData":
+    def from_db(cls, episode: "EpisodeModel", season_number: int | None = None) -> "EpisodeData":
+        resolved_season_number = season_number
+        if resolved_season_number is None:
+            # Avoid lazy loading on detached Episode instances.
+            loaded_season = episode.__dict__.get("season")
+            resolved_season_number = loaded_season.season_number if loaded_season else 0
+
         return cls(
             id=episode.id,
-            season_number=episode.season.season_number if episode.season else 0,
+            season_number=resolved_season_number,
             episode_number=episode.episode_number,
             title=episode.title,
             overview=episode.overview,
@@ -376,7 +382,9 @@ class SeasonData(BaseModel):
             overview=season.overview,
             air_date=season.air_date,
             episode_count=season.episode_count,
-            episodes=[EpisodeData.from_db(ep) for ep in season.episodes] if season.episodes else [],
+            episodes=[EpisodeData.from_db(ep, season_number=season.season_number) for ep in season.episodes]
+            if season.episodes
+            else [],
         )
 
 
