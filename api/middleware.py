@@ -74,27 +74,6 @@ async def find_route_handler(app, request: Request) -> Callable | None:
 
 
 class SecureLoggingMiddleware(BaseHTTPMiddleware):
-    HOT_PATH_MARKERS = (
-        "/manifest.json",
-        "/catalog/",
-        "/meta/",
-        "/stream/",
-        "/streaming_provider/",
-    )
-    HOT_PATH_LOG_SAMPLE_RATE = 20
-    _hot_path_log_counter = 0
-    _hot_path_log_mu = Lock()
-
-    @classmethod
-    def _is_hot_path(cls, url_path: str) -> bool:
-        return any(marker in url_path for marker in cls.HOT_PATH_MARKERS)
-
-    @classmethod
-    def _should_emit_hot_path_info(cls) -> bool:
-        with cls._hot_path_log_mu:
-            cls._hot_path_log_counter += 1
-            return cls._hot_path_log_counter % cls.HOT_PATH_LOG_SAMPLE_RATE == 0
-
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         await self.custom_log(request, response)
@@ -109,27 +88,6 @@ class SecureLoggingMiddleware(BaseHTTPMiddleware):
             url_path = url_path.replace(request.path_params.get("secret_str"), "*MASKED*")
         if request.path_params.get("existing_secret_str"):
             url_path = url_path.replace(request.path_params.get("existing_secret_str"), "*MASKED*")
-        if SecureLoggingMiddleware._is_hot_path(url_path):
-            if SecureLoggingMiddleware._should_emit_hot_path_info():
-                logging.info(
-                    '%s - "%s %s HTTP/1.1" %s %s',
-                    ip,
-                    request.method,
-                    url_path,
-                    response.status_code,
-                    process_time,
-                )
-            else:
-                logging.debug(
-                    '%s - "%s %s HTTP/1.1" %s %s',
-                    ip,
-                    request.method,
-                    url_path,
-                    response.status_code,
-                    process_time,
-                )
-            return
-
         logging.info(
             '%s - "%s %s HTTP/1.1" %s %s',
             ip,
