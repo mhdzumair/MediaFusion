@@ -37,6 +37,7 @@ from streaming_providers.cache_helpers import (
     mark_cache_check_done,
     store_cached_info_hashes,
 )
+from streaming_providers.usenet_compatibility import is_usenet_stream_compatible
 from utils import const
 from utils.config import config_manager
 from utils.nzb_storage import generate_signed_nzb_url
@@ -107,6 +108,7 @@ async def filter_and_sort_streams(
     user_ip: str | None = None,
     provider_override: StreamingProvider | None = None,
     disable_total_stream_cap: bool = False,
+    is_usenet: bool = False,
 ) -> tuple[list[AnyStreamData], dict]:
     # Convert to sets for faster lookups
     selected_resolutions_set = set(user_data.selected_resolutions)
@@ -154,6 +156,17 @@ async def filter_and_sort_streams(
 
     # Use provider_override if given; otherwise fall back to primary provider
     primary_provider = provider_override or user_data.get_primary_provider()
+
+    if is_usenet and primary_provider:
+        compatible_streams: list[AnyStreamData] = []
+        for stream in streams:
+            compatible, _ = is_usenet_stream_compatible(stream, primary_provider, user_data)
+            if compatible:
+                compatible_streams.append(stream)
+            else:
+                filtered_reasons["Provider/Indexer Mismatch"] = filtered_reasons.get("Provider/Indexer Mismatch", 0) + 1
+        streams = compatible_streams
+
     for stream in streams:
         # Skip private torrents if streaming provider is not supported
         # Non-torrent streams (usenet, telegram) don't have torrent_type; treat as public
@@ -464,6 +477,7 @@ async def parse_stream_data(
             user_ip,
             provider_override=current_provider,
             disable_total_stream_cap=disable_total_stream_cap,
+            is_usenet=is_usenet,
         )
 
         if not filtered_streams:

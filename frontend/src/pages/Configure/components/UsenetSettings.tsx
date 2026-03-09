@@ -313,8 +313,10 @@ export function UsenetSettings({ config, onChange }: UsenetSettingsProps) {
             <Alert>
               <Newspaper className="h-4 w-4" />
               <AlertDescription>
-                To use Usenet streams, you need a Usenet-capable streaming provider configured (TorBox, Debrider,
-                SABnzbd, NZBGet, NzbDAV, or Easynews) in the Provider tab.
+                To use Usenet streams, configure a Usenet-capable provider in the Provider tab (TorBox, Debrider,
+                SABnzbd, NZBGet, NzbDAV, or Easynews). If you use SABnzbd/NZBGet/NzbDAV, add at least one enabled
+                Newznab indexer here. For fresh on-demand NZB discovery, also enable Live Search Streams in your profile
+                settings.
               </AlertDescription>
             </Alert>
           </>
@@ -473,7 +475,7 @@ function IndexerDialog({
     onSave({
       n: name,
       u: cleanUrl,
-      ak: apiKey,
+      ak: apiKey.trim() || undefined,
       en: enabled,
       p: priority,
       mc: movieCategories.length > 0 ? movieCategories : undefined,
@@ -503,13 +505,13 @@ function IndexerDialog({
         </div>
 
         <div className="space-y-2">
-          <Label>API Key</Label>
+          <Label>API Key (Optional)</Label>
           <div className="relative">
             <Input
               type={showApiKey ? 'text' : 'password'}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Enter API key"
+              placeholder="Leave blank if your indexer does not require one"
             />
             <Button
               type="button"
@@ -646,7 +648,7 @@ function IndexerDialog({
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={handleSubmit} disabled={!name || !url || !apiKey}>
+        <Button onClick={handleSubmit} disabled={!name || !url}>
           {indexer ? 'Update' : 'Add'} Indexer
         </Button>
       </DialogFooter>

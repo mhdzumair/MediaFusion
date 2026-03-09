@@ -49,6 +49,7 @@ from db.schemas.media import TelegramStreamData, UsenetStreamData
 from streaming_providers import mapper
 from streaming_providers.cache_helpers import store_cached_info_hashes
 from streaming_providers.exceptions import ProviderException
+from streaming_providers.usenet_compatibility import is_usenet_stream_compatible
 from utils import const, crypto, torrent, wrappers
 from utils.const import CONTENT_TYPE_HEADERS_MAPPING
 from utils.lock import acquire_redis_lock, release_redis_lock
@@ -893,6 +894,13 @@ async def usenet_playback_endpoint(
 
         # Fetch Usenet stream from DB
         stream = await fetch_usenet_stream_or_404(nzb_guid)
+
+        compatible, incompatibility_reason = is_usenet_stream_compatible(stream, streaming_provider, user_data)
+        if not compatible:
+            raise ProviderException(
+                incompatibility_reason or "Selected NZB source is incompatible with this Usenet provider.",
+                "provider_error.mp4",
+            )
 
         # Acquire Redis lock to prevent duplicate download tasks
         acquired, lock = await acquire_redis_lock(f"{cached_stream_url_key}_locked", timeout=60, block=True)

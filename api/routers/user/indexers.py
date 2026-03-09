@@ -55,7 +55,7 @@ class NewznabIndexerInput(BaseModel):
 
     name: str = Field(..., description="Display name for the indexer")
     url: str = Field(..., description="Newznab API URL (base URL without query params)")
-    api_key: str = Field(..., description="API key for the indexer")
+    api_key: str | None = Field(default=None, description="Optional API key for indexers that require one")
     enabled: bool = Field(default=True, description="Enable this indexer")
     categories: list[int] = Field(default_factory=list, description="Category IDs to search")
 
@@ -366,10 +366,10 @@ async def test_newznab_indexer(
     indexer: NewznabIndexerInput,
 ):
     """Test connection to a Newznab indexer configuration."""
-    if not indexer.url or not indexer.api_key:
+    if not indexer.url:
         return ConnectionTestResult(
             success=False,
-            message="URL and API key are required",
+            message="URL is required",
         )
 
     try:
@@ -381,10 +381,9 @@ async def test_newznab_indexer(
         else:
             test_url = base_url
 
-        params = {
-            "t": "caps",
-            "apikey": indexer.api_key,
-        }
+        params = {"t": "caps"}
+        if indexer.api_key and indexer.api_key.strip():
+            params["apikey"] = indexer.api_key.strip()
 
         async with httpx.AsyncClient(timeout=15) as client:
             response = await client.get(test_url, params=params)

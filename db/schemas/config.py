@@ -339,7 +339,8 @@ class NewznabIndexerConfig(BaseModel):
     id: str = Field(alias="i")
     name: str = Field(alias="n")
     url: str = Field(alias="u")
-    api_key: str = Field(alias="ak")
+    # Optional because some Newznab-compatible endpoints do not require API keys.
+    api_key: str | None = Field(default=None, alias="ak")
     enabled: bool = Field(default=True, alias="en")
     priority: int = Field(default=1, alias="p")
     # Optional category overrides (use defaults if empty)

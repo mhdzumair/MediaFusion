@@ -276,7 +276,8 @@ class NewznabScraper(BaseScraper):
             UsenetStreamData objects
         """
         # Build URL
-        params["apikey"] = indexer.api_key
+        if indexer.api_key:
+            params["apikey"] = indexer.api_key
         params["o"] = "json"  # Request JSON output
 
         if indexer.use_zyclops:
@@ -606,7 +607,10 @@ class NewznabScraper(BaseScraper):
             # Build NZB URL
             nzb_url = item.get("link")
             if not nzb_url:
-                nzb_url = f"{str(indexer.url).rstrip('/')}/api?t=get&id={guid}&apikey={indexer.api_key}"
+                query = {"t": "get", "id": guid}
+                if indexer.api_key:
+                    query["apikey"] = indexer.api_key
+                nzb_url = f"{str(indexer.url).rstrip('/')}/api?{urlencode(query)}"
 
             # Build files list for series
             files: list[StreamFileData] = []
@@ -715,8 +719,9 @@ class NewznabScraper(BaseScraper):
         params = {
             "t": "get",
             "id": guid,
-            "apikey": indexer.api_key,
         }
+        if indexer.api_key:
+            params["apikey"] = indexer.api_key
 
         try:
             response = await self.http_client.get(url, params=params, timeout=30)

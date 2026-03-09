@@ -57,7 +57,7 @@ export interface NewznabIndexerConfig {
   i: string // id
   n: string // name
   u: string // url
-  ak: string // api_key
+  ak?: string // api_key (optional for indexers that don't require one)
   en?: boolean // enabled
   p?: number // priority
   mc?: number[] // movie_categories

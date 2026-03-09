@@ -123,7 +123,7 @@ export interface NewznabIndexerConfigType {
   i: string // id
   n: string // name
   u: string // url
-  ak: string // api_key
+  ak?: string // api_key
   en?: boolean // enabled
   p?: number // priority
   mc?: number[] // movie_categories
@@ -406,7 +406,7 @@ export interface NewznabIndexerPayload {
   id: string
   name: string
   url: string
-  api_key: string
+  api_key?: string
   enabled?: boolean
   priority?: number
   movie_categories?: number[]

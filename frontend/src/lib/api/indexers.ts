@@ -28,7 +28,7 @@ export interface TorznabEndpoint {
 export interface NewznabIndexer {
   name: string
   url: string
-  api_key: string
+  api_key?: string
   enabled: boolean
   categories: number[]
 }

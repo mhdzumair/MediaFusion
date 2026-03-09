@@ -40,6 +40,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/profiles", tags=["Profiles"])
 
+STRICT_USENET_DOWNLOADER_SERVICES = {"sabnzbd", "nzbget", "nzbdav"}
+
 
 # Dependency to add no-cache headers to responses
 async def add_no_cache_headers(response: FastAPIResponse):
@@ -497,6 +499,64 @@ def _validate_provider_configs(config: dict) -> None:
                     detail=f"Provider '{provider_name}' is missing required {label}. "
                     f"Please complete the configuration or remove the provider.",
                 )
+
+    _validate_usenet_indexer_prerequisites(config)
+
+
+def _validate_usenet_indexer_prerequisites(config: dict) -> None:
+    """Ensure downloader-style Usenet providers have at least one enabled Newznab indexer."""
+    enable_usenet_streams = config.get("enable_usenet_streams")
+    if enable_usenet_streams is None:
+        enable_usenet_streams = config.get("eus", True)
+    if enable_usenet_streams is False:
+        return
+
+    def _provider_enabled(provider: dict) -> bool:
+        return provider.get("en", True) if "en" in provider else provider.get("enabled", True)
+
+    providers_raw = config.get("streaming_providers") or config.get("sps") or []
+    has_strict_usenet_provider = any(
+        isinstance(sp, dict)
+        and _provider_enabled(sp)
+        and (sp.get("sv") or sp.get("service")) in STRICT_USENET_DOWNLOADER_SERVICES
+        for sp in providers_raw
+    )
+
+    if not has_strict_usenet_provider:
+        legacy_provider = config.get("streaming_provider") or config.get("sp")
+        if isinstance(legacy_provider, dict):
+            has_strict_usenet_provider = (
+                _provider_enabled(legacy_provider)
+                and (legacy_provider.get("sv") or legacy_provider.get("service")) in STRICT_USENET_DOWNLOADER_SERVICES
+            )
+
+    if not has_strict_usenet_provider:
+        return
+
+    indexer_cfg = config.get("indexer_config") or config.get("ic") or {}
+    newznab_indexers = (
+        indexer_cfg.get("newznab_indexers") or indexer_cfg.get("nz") or [] if isinstance(indexer_cfg, dict) else []
+    )
+
+    has_enabled_newznab = False
+    for indexer in newznab_indexers:
+        if not isinstance(indexer, dict):
+            continue
+        enabled = indexer.get("en", True) if "en" in indexer else indexer.get("enabled", True)
+        url = (indexer.get("u") or indexer.get("url") or "").strip()
+        if enabled and url:
+            has_enabled_newznab = True
+            break
+
+    if not has_enabled_newznab:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Usenet downloader providers (SABnzbd/NZBGet/NzbDAV) require at least one enabled "
+                "Newznab indexer in Profile -> Indexers. Optionally enable Live Search Streams "
+                "(lss) for on-demand scraping of fresh NZBs."
+            ),
+        )
 
 
 def _validate_external_services(config: dict) -> None:
