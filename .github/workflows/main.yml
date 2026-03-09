@@ -29,6 +29,16 @@ jobs:
           fi
           echo "PREVIOUS_VERSION=${PREVIOUS_VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: Install uv
+        if: "!github.event.release.prerelease"
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        if: "!github.event.release.prerelease"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
       - name: Update version numbers
         if: "!github.event.release.prerelease"
         run: |
