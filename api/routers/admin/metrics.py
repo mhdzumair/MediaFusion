@@ -791,11 +791,12 @@ async def get_system_overview(
         now = datetime.now(tz=UTC)
 
         # Gather all metrics in parallel
-        torrent_count_task = crud.streams.get_torrent_count(session)
+        stream_counts_task = crud.streams.get_stream_counts_by_type(session)
         metadata_task = crud.media.get_metadata_counts(session)
 
-        torrent_count = await torrent_count_task
+        stream_counts_by_type = await stream_counts_task
         metadata_counts = await metadata_task
+        total_streams = sum(stream_counts_by_type.values())
 
         # User stats
         total_users_result = await session.exec(select(func.count(User.id)))
@@ -818,9 +819,10 @@ async def get_system_overview(
 
         return {
             "timestamp": now.isoformat(),
-            "torrents": {
-                "total": torrent_count,
-                "formatted": humanize.intword(torrent_count),
+            "streams": {
+                "total": total_streams,
+                "formatted": humanize.intword(total_streams),
+                "by_type": stream_counts_by_type,
             },
             "content": {
                 "total": total_content,

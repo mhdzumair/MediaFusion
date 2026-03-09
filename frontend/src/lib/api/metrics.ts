@@ -216,9 +216,10 @@ export interface ActivityStats {
 // System Overview
 export interface SystemOverview {
   timestamp: string
-  torrents: {
+  streams: {
     total: number
     formatted: string
+    by_type: Record<string, number>
   }
   content: {
     total: number

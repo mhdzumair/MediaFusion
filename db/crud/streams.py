@@ -1853,6 +1853,20 @@ async def get_torrent_count(session: AsyncSession) -> int:
     return result.first() or 0
 
 
+async def get_stream_counts_by_type(session: AsyncSession) -> dict[str, int]:
+    """Get stream counts grouped by stream type."""
+    query = select(Stream.stream_type, func.count(Stream.id)).group_by(Stream.stream_type)
+    result = await session.exec(query)
+
+    # Always include all known stream types for stable UI rendering.
+    counts: dict[str, int] = {stream_type.value: 0 for stream_type in StreamType}
+    for stream_type, count in result.all():
+        stream_type_key = stream_type.value if isinstance(stream_type, StreamType) else str(stream_type)
+        counts[stream_type_key] = int(count or 0)
+
+    return counts
+
+
 async def get_torrents_by_source(
     session: AsyncSession,
     limit: int = 20,
