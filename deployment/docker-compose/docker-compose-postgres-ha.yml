@@ -227,7 +227,7 @@ services:
         condition: service_healthy
 
   taskiq-worker-scrapy:
-    image: mhdzumair/mediafusion:5.3.0
+    image: mhdzumair/mediafusion:5.3.1
     command: ["taskiq", "worker", "api.taskiq_worker:broker_scrapy", "--workers", "1", "--max-async-tasks", "1", "--ack-type", "when_executed"]
     env_file: .env
     environment:
@@ -250,7 +250,7 @@ services:
       - mediafusion-network
 
   taskiq-worker-import:
-    image: mhdzumair/mediafusion:5.3.0
+    image: mhdzumair/mediafusion:5.3.1
     command: ["taskiq", "worker", "api.taskiq_worker:broker_import", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
     env_file: .env
     environment:
@@ -273,7 +273,7 @@ services:
       - mediafusion-network
 
   taskiq-worker-priority:
-    image: mhdzumair/mediafusion:5.3.0
+    image: mhdzumair/mediafusion:5.3.1
     command: ["taskiq", "worker", "api.taskiq_worker:broker_priority", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
     env_file: .env
     environment:
