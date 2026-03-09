@@ -841,22 +841,7 @@ async def create_profile(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Maximum number of profiles (5) reached. Delete an existing profile to create a new one.",
         )
-
-    # If this is the first profile or set as default, unset other defaults
-    if profile_data.is_default or count == 0:
-        result = await session.exec(
-            select(UserProfile).where(UserProfile.user_id == user.id, UserProfile.is_default == True)
-        )
-        existing_profiles = result.all()
-        for p in existing_profiles:
-            p.is_default = False
-            session.add(p)
-
-    profile = UserProfile(
-        user_id=user.id,
-        name=profile_data.name,
-        is_default=profile_data.is_default or count == 0,
-    )
+    should_set_default = profile_data.is_default or count == 0
 
     # Extract API key from header and include it in config (for private instances)
     config = profile_data.config.copy() if profile_data.config else {}
@@ -872,12 +857,32 @@ async def create_profile(
     # Validate provider credentials against their APIs
     user_data = _build_user_data_for_validation(config)
     if user_data.get_active_providers():
+        # End the read transaction before outbound I/O so we don't hold a DB
+        # connection open while waiting on provider APIs.
+        if session.in_transaction():
+            await session.commit()
         validation_result = await validate_provider_credentials(request, user_data)
         if validation_result.get("status") == "error":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=validation_result.get("message", "Streaming provider credential validation failed"),
             )
+
+    # If this profile is default, unset any existing defaults after validation.
+    if should_set_default:
+        result = await session.exec(
+            select(UserProfile).where(UserProfile.user_id == user.id, UserProfile.is_default == True)
+        )
+        existing_profiles = result.all()
+        for p in existing_profiles:
+            p.is_default = False
+            session.add(p)
+
+    profile = UserProfile(
+        user_id=user.id,
+        name=profile_data.name,
+        is_default=should_set_default,
+    )
 
     # Save config with encrypted secrets
     save_profile_config(profile, config)
@@ -931,9 +936,7 @@ async def update_profile(
             detail="Profile not found",
         )
 
-    # Update fields if provided
-    if update_data.name is not None:
-        profile.name = update_data.name
+    new_config: dict[str, Any] | None = None
 
     if update_data.config is not None:
         # Get existing full config (with secrets decrypted)
@@ -955,6 +958,10 @@ async def update_profile(
         # Validate provider credentials against their APIs
         user_data = _build_user_data_for_validation(new_config)
         if user_data.get_active_providers():
+            # End the current DB transaction before outbound I/O so this request
+            # doesn't keep a connection open during provider validation.
+            if session.in_transaction():
+                await session.commit()
             validation_result = await validate_provider_credentials(request, user_data)
             if validation_result.get("status") == "error":
                 raise HTTPException(
@@ -962,21 +969,30 @@ async def update_profile(
                     detail=validation_result.get("message", "Streaming provider credential validation failed"),
                 )
 
+    existing_default_profiles: list[UserProfile] = []
+    if update_data.is_default:
+        # Query before mutating profile fields to avoid query-invoked autoflush.
+        result = await session.exec(
+            select(UserProfile).where(
+                UserProfile.user_id == user.id,
+                UserProfile.is_default == True,
+                UserProfile.id != profile_id,
+            )
+        )
+        existing_default_profiles = result.all()
+
+    # Apply updates after external validation/default lookup.
+    if update_data.name is not None:
+        profile.name = update_data.name
+
+    if new_config is not None:
         # Save config with encrypted secrets
         save_profile_config(profile, new_config)
 
     if update_data.is_default is not None:
         if update_data.is_default:
             # Unset other defaults
-            result = await session.exec(
-                select(UserProfile).where(
-                    UserProfile.user_id == user.id,
-                    UserProfile.is_default == True,
-                    UserProfile.id != profile_id,
-                )
-            )
-            existing_profiles = result.all()
-            for p in existing_profiles:
+            for p in existing_default_profiles:
                 p.is_default = False
                 session.add(p)
         profile.is_default = update_data.is_default
