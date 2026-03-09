@@ -32,6 +32,8 @@ export interface CombinedSearchResult {
   imdb_id?: string
   tmdb_id?: string
   tvdb_id?: string | number
+  mal_id?: string | number
+  kitsu_id?: string | number
   external_ids?: Record<string, string | number | null>
   provider?: string // 'imdb', 'tmdb', 'tvdb', 'mal', 'kitsu'
   description?: string
@@ -71,10 +73,12 @@ function externalToCombined(result: ExternalSearchResult, metaType?: 'movie' | '
     imdb: result.imdb_id || (result.external_ids?.imdb ?? null),
     tmdb: result.tmdb_id || (result.external_ids?.tmdb ?? null),
     tvdb: result.tvdb_id || (result.external_ids?.tvdb ?? null),
+    mal: result.mal_id || (result.external_ids?.mal ?? result.external_ids?.mal_id ?? null),
+    kitsu: result.kitsu_id || (result.external_ids?.kitsu ?? result.external_ids?.kitsu_id ?? null),
   }
 
   return {
-    id: `external-${result.imdb_id || result.tmdb_id || result.id}`,
+    id: `external-${result.imdb_id || result.tmdb_id || result.tvdb_id || result.mal_id || result.kitsu_id || result.id}`,
     title: result.title,
     year: result.year,
     poster: result.poster,
@@ -83,11 +87,22 @@ function externalToCombined(result: ExternalSearchResult, metaType?: 'movie' | '
     imdb_id: result.imdb_id,
     tmdb_id: result.tmdb_id,
     tvdb_id: result.tvdb_id,
+    mal_id: result.mal_id,
+    kitsu_id: result.kitsu_id,
     external_ids: normalizedExternalIds,
     provider: result.provider,
     description: result.description,
-    // Use imdb_id as external_id if available, otherwise construct from tmdb
-    external_id: result.imdb_id || (result.tmdb_id ? `tmdb:${result.tmdb_id}` : result.id),
+    external_id:
+      result.imdb_id ||
+      (result.tmdb_id
+        ? `tmdb:${result.tmdb_id}`
+        : result.tvdb_id
+          ? `tvdb:${result.tvdb_id}`
+          : result.mal_id
+            ? `mal:${result.mal_id}`
+            : result.kitsu_id
+              ? `kitsu:${result.kitsu_id}`
+              : result.id),
   }
 }
 
@@ -256,6 +271,8 @@ export function getBestExternalId(result: CombinedSearchResult): string {
     result.external_id ||
     (result.tmdb_id ? `tmdb:${result.tmdb_id}` : '') ||
     (result.tvdb_id ? `tvdb:${result.tvdb_id}` : '') ||
+    (result.mal_id ? `mal:${result.mal_id}` : '') ||
+    (result.kitsu_id ? `kitsu:${result.kitsu_id}` : '') ||
     result.id
   )
 }

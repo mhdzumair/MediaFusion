@@ -73,6 +73,7 @@ LIVE_TORRENT_FALLBACK_CACHE_PREFIX = "live_torrent_fallback:"
 
 logger = logging.getLogger(__name__)
 _scraper_tasks_module = None
+LIVE_SEARCH_EXTERNAL_PROVIDERS = {"tmdb", "tvdb", "mal", "kitsu"}
 
 
 def _log_db_retry_attempt(operation_name: str):
@@ -165,6 +166,28 @@ def _build_scraper_metadata(
     return None
 
 
+def _parse_live_search_id(video_id: str) -> tuple[str, str] | None:
+    """Parse a supported live-search external ID into (provider, provider_id)."""
+    normalized_video_id = str(video_id).strip()
+    if not normalized_video_id:
+        return None
+
+    if normalized_video_id.startswith("tt"):
+        return "imdb", normalized_video_id
+
+    if ":" not in normalized_video_id:
+        return None
+
+    provider, provider_id = normalized_video_id.split(":", 1)
+    provider = provider.lower()
+    if provider not in LIVE_SEARCH_EXTERNAL_PROVIDERS:
+        return None
+    provider_id = provider_id.strip()
+    if not provider_id:
+        return None
+    return provider, provider_id
+
+
 async def _persist_live_search_streams(
     torrent_streams: list[TorrentStreamData],
     usenet_streams: list[UsenetStreamData],
@@ -193,10 +216,23 @@ async def _persist_live_search_streams(
 async def _fetch_missing_media_for_live_search(
     video_id: str,
     media_type: MediaType,
+    source_provider: str,
+    source_provider_id: str,
 ) -> tuple[Media | None, MetadataData | None]:
-    """Fetch and persist missing metadata for IMDb IDs during live search."""
+    """Fetch and persist missing metadata for supported external IDs during live search."""
     scraper_tasks = _get_scraper_tasks_module()
-    fetched_metadata = await scraper_tasks.meta_fetcher.get_metadata(video_id, media_type=media_type.value)
+    if source_provider in {"imdb", "tmdb"}:
+        fetched_metadata = await scraper_tasks.meta_fetcher.get_metadata(
+            source_provider_id,
+            media_type=media_type.value,
+            source_type=source_provider,
+        )
+    else:
+        fetched_metadata = await scraper_tasks.meta_fetcher.get_metadata_from_provider(
+            source_provider,
+            source_provider_id,
+            media_type.value,
+        )
     if not fetched_metadata:
         return None, None
 
@@ -1171,15 +1207,21 @@ async def get_movie_streams(
     # Lazy import to avoid circular dependency
     from utils.parser import parse_stream_data
 
-    live_search_enabled = user_data.live_search_streams and video_id.startswith("tt")
+    live_search_id = _parse_live_search_id(video_id)
+    live_search_enabled = user_data.live_search_streams and live_search_id is not None
 
     # Resolve video_id to media
     media_lookup_name = f"movie media lookup video_id={video_id}"
     media = await _get_media_by_external_id_with_retry(video_id, MediaType.MOVIE, media_lookup_name)
     scraper_metadata = _build_scraper_metadata(media, video_id, MediaType.MOVIE)
 
-    if not media and live_search_enabled:
-        media, scraper_metadata = await _fetch_missing_media_for_live_search(video_id, MediaType.MOVIE)
+    if not media and live_search_enabled and live_search_id:
+        media, scraper_metadata = await _fetch_missing_media_for_live_search(
+            video_id,
+            MediaType.MOVIE,
+            live_search_id[0],
+            live_search_id[1],
+        )
 
     if not media:
         logger.warning(f"Movie not found for video_id: {video_id}")
@@ -1417,15 +1459,21 @@ async def get_series_streams(
     # Lazy import to avoid circular dependency
     from utils.parser import parse_stream_data
 
-    live_search_enabled = user_data.live_search_streams and video_id.startswith("tt")
+    live_search_id = _parse_live_search_id(video_id)
+    live_search_enabled = user_data.live_search_streams and live_search_id is not None
 
     # Resolve video_id to media
     media_lookup_name = f"series media lookup video_id={video_id}"
     media = await _get_media_by_external_id_with_retry(video_id, MediaType.SERIES, media_lookup_name)
     scraper_metadata = _build_scraper_metadata(media, video_id, MediaType.SERIES)
 
-    if not media and live_search_enabled:
-        media, scraper_metadata = await _fetch_missing_media_for_live_search(video_id, MediaType.SERIES)
+    if not media and live_search_enabled and live_search_id:
+        media, scraper_metadata = await _fetch_missing_media_for_live_search(
+            video_id,
+            MediaType.SERIES,
+            live_search_id[0],
+            live_search_id[1],
+        )
 
     if not media:
         logger.warning(f"Series not found for video_id: {video_id}")

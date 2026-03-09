@@ -625,6 +625,8 @@ async def get_scrape_status(
             meta_id = f"tmdb:{ext_id.external_id}"
         elif ext_id.provider == "tvdb" and not meta_id:
             meta_id = f"tvdb:{ext_id.external_id}"
+        elif ext_id.provider == "mal" and not meta_id:
+            meta_id = f"mal:{ext_id.external_id}"
 
     if not meta_id:
         meta_id = f"mf:{media_id}"
@@ -762,6 +764,8 @@ async def trigger_scrape(
             meta_id = f"tmdb:{external_ids['tmdb']}"
         elif external_ids.get("tvdb"):
             meta_id = f"tvdb:{external_ids['tvdb']}"
+        elif external_ids.get("mal"):
+            meta_id = f"mal:{external_ids['mal']}"
         else:
             meta_id = f"mf:{media_id}"
 

@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Dialog,
@@ -105,6 +106,8 @@ function getAvailableIds(result: ExternalSearchResult): { provider: ExternalProv
   if (result.imdb_id) ids.push({ provider: 'imdb', id: result.imdb_id })
   if (result.tmdb_id) ids.push({ provider: 'tmdb', id: String(result.tmdb_id) })
   if (result.tvdb_id) ids.push({ provider: 'tvdb', id: String(result.tvdb_id) })
+  if (result.mal_id) ids.push({ provider: 'mal', id: String(result.mal_id) })
+  if (result.kitsu_id) ids.push({ provider: 'kitsu', id: String(result.kitsu_id) })
   return ids
 }
 
@@ -148,6 +151,8 @@ export function RefreshMetadataButton({
   // For multi-link: which IDs from selected result to link
   const [idsToLink, setIdsToLink] = useState<{ provider: ExternalProvider; id: string }[]>([])
   const [linkMode, setLinkMode] = useState<'search' | 'manual'>('search')
+  const [includeAnimeProviders, setIncludeAnimeProviders] = useState(true)
+  const [animeSourceOrder, setAnimeSourceOrder] = useState<'kitsu_first' | 'anilist_first'>('kitsu_first')
 
   // Get canonical external ID for display
   const canonicalExternalId = externalIds ? getCanonicalExternalId(externalIds, mediaId) : `mf:${mediaId}`
@@ -186,7 +191,10 @@ export function RefreshMetadataButton({
       const trimmedSearchYear = searchYear.trim()
       const parsedSearchYear = trimmedSearchYear ? Number(trimmedSearchYear) : undefined
       const validSearchYear = Number.isFinite(parsedSearchYear) ? parsedSearchYear : undefined
-      return metadataApi.searchExternal(searchQuery, mediaType, validSearchYear)
+      return metadataApi.searchExternal(searchQuery, mediaType, validSearchYear, {
+        includeAnime: includeAnimeProviders,
+        animeSources: animeSourceOrder === 'kitsu_first' ? ['kitsu', 'anilist'] : ['anilist', 'kitsu'],
+      })
     },
     onSuccess: (data) => {
       setFailedPosterKeys({})
@@ -283,6 +291,8 @@ export function RefreshMetadataButton({
     setFetchMetadataOnLink(true)
     setIdsToLink([])
     setLinkMode('search')
+    setIncludeAnimeProviders(true)
+    setAnimeSourceOrder('kitsu_first')
     setLinkDialogOpen(true)
   }
 
@@ -531,6 +541,31 @@ export function RefreshMetadataButton({
                       )}
                     </Button>
                   </div>
+                  <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border/60 bg-muted/20 p-2.5">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={includeAnimeProviders}
+                        onCheckedChange={(checked) => setIncludeAnimeProviders(Boolean(checked))}
+                      />
+                      <span className="text-xs text-muted-foreground">Include anime providers (MAL/Kitsu)</span>
+                    </label>
+                    <div className="flex items-center gap-2 ml-auto">
+                      <span className="text-xs text-muted-foreground">Anime order</span>
+                      <Select
+                        value={animeSourceOrder}
+                        onValueChange={(value) => setAnimeSourceOrder(value as 'kitsu_first' | 'anilist_first')}
+                        disabled={!includeAnimeProviders}
+                      >
+                        <SelectTrigger className="h-8 w-[180px] rounded-lg">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="kitsu_first">Kitsu → AniList</SelectItem>
+                          <SelectItem value="anilist_first">AniList → Kitsu</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Search Results */}
@@ -645,6 +680,36 @@ export function RefreshMetadataButton({
                                     >
                                       TVDB: {result.tvdb_id}
                                       {String(externalIds?.tvdb) === String(result.tvdb_id) && ' ✓'}
+                                    </code>
+                                  )}
+                                  {result.mal_id && (
+                                    <code
+                                      className={cn(
+                                        'text-[10px] px-1 rounded',
+                                        String(externalIds?.mal) === String(result.mal_id)
+                                          ? 'text-emerald-600 bg-emerald-500/10'
+                                          : externalIds?.mal
+                                            ? 'text-primary bg-primary/10'
+                                            : 'text-muted-foreground bg-muted',
+                                      )}
+                                    >
+                                      MAL: {result.mal_id}
+                                      {String(externalIds?.mal) === String(result.mal_id) && ' ✓'}
+                                    </code>
+                                  )}
+                                  {result.kitsu_id && (
+                                    <code
+                                      className={cn(
+                                        'text-[10px] px-1 rounded',
+                                        String(externalIds?.kitsu) === String(result.kitsu_id)
+                                          ? 'text-emerald-600 bg-emerald-500/10'
+                                          : externalIds?.kitsu
+                                            ? 'text-primary bg-primary/10'
+                                            : 'text-muted-foreground bg-muted',
+                                      )}
+                                    >
+                                      Kitsu: {result.kitsu_id}
+                                      {String(externalIds?.kitsu) === String(result.kitsu_id) && ' ✓'}
                                     </code>
                                   )}
                                 </div>

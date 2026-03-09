@@ -959,6 +959,7 @@ class MetadataFetcher:
         created_year: int | None = None,
         min_similarity: int = 60,
         include_anime: bool = True,
+        anime_source_order: list[str] | None = None,
     ) -> list[dict]:
         """
         Search for multiple matching titles across all available providers.
@@ -971,7 +972,27 @@ class MetadataFetcher:
             created_year: Year used for sorting when exact year match isn't required
             min_similarity: Minimum title similarity score (0-100) for fuzzy matching
             include_anime: Whether to search MAL/Kitsu for anime
+            anime_source_order: Optional anime provider priority order. Supported values:
+                "kitsu", "anilist". If omitted, server default order is used.
         """
+        requested_anime_source_order: list[str] = []
+        if anime_source_order:
+            for provider in anime_source_order:
+                provider_key = provider.lower().strip()
+                if provider_key in {"kitsu", "anilist"} and provider_key not in requested_anime_source_order:
+                    requested_anime_source_order.append(provider_key)
+
+        if not requested_anime_source_order:
+            for provider in settings.anime_metadata_source_order:
+                provider_key = provider.lower()
+                if provider_key in {"kitsu", "anilist"} and provider_key not in requested_anime_source_order:
+                    requested_anime_source_order.append(provider_key)
+
+        if not requested_anime_source_order:
+            requested_anime_source_order = ["kitsu", "anilist"]
+
+        anime_source_order_cache = ",".join(requested_anime_source_order)
+
         # Check cache first
         cached_data = await self.cache.get(
             method="search_multiple_results",
@@ -982,6 +1003,7 @@ class MetadataFetcher:
             created_year=created_year,
             min_similarity=min_similarity,
             include_anime=include_anime,
+            anime_source_order=anime_source_order_cache,
         )
         if cached_data:
             logging.debug(f"Cache hit for search_multiple_results: {title}")
@@ -1067,11 +1089,7 @@ class MetadataFetcher:
                 "kitsu": get_kitsu_candidates,
                 "anilist": get_mal_candidates,  # "mal_data" module is AniList-backed.
             }
-            source_order: list[str] = []
-            for provider in settings.anime_metadata_source_order:
-                provider_key = provider.lower()
-                if provider_key in provider_handlers and provider_key not in source_order:
-                    source_order.append(provider_key)
+            source_order = [provider for provider in requested_anime_source_order if provider in provider_handlers]
             if not source_order:
                 source_order = ["kitsu", "anilist"]
 
@@ -1083,23 +1101,25 @@ class MetadataFetcher:
                 handler = provider_handlers[provider]
                 provider_results = await handler()
                 for item in provider_results:
+                    normalized_item = dict(item)
+                    normalized_item.setdefault("_source_provider", "mal" if provider == "anilist" else provider)
                     dedup_key = None
-                    if item.get("imdb_id"):
-                        dedup_key = f"imdb:{item['imdb_id']}"
-                    elif item.get("tmdb_id"):
-                        dedup_key = f"tmdb:{item['tmdb_id']}"
-                    elif item.get("tvdb_id"):
-                        dedup_key = f"tvdb:{item['tvdb_id']}"
-                    elif item.get("mal_id"):
-                        dedup_key = f"mal:{item['mal_id']}"
-                    elif item.get("kitsu_id"):
-                        dedup_key = f"kitsu:{item['kitsu_id']}"
+                    if normalized_item.get("imdb_id"):
+                        dedup_key = f"imdb:{normalized_item['imdb_id']}"
+                    elif normalized_item.get("tmdb_id"):
+                        dedup_key = f"tmdb:{normalized_item['tmdb_id']}"
+                    elif normalized_item.get("tvdb_id"):
+                        dedup_key = f"tvdb:{normalized_item['tvdb_id']}"
+                    elif normalized_item.get("mal_id"):
+                        dedup_key = f"mal:{normalized_item['mal_id']}"
+                    elif normalized_item.get("kitsu_id"):
+                        dedup_key = f"kitsu:{normalized_item['kitsu_id']}"
 
                     if dedup_key:
                         if dedup_key in seen_ids:
                             continue
                         seen_ids.add(dedup_key)
-                    combined_results.append(item)
+                    combined_results.append(normalized_item)
                     if len(combined_results) >= limit:
                         break
             return combined_results
@@ -1189,6 +1209,10 @@ class MetadataFetcher:
                     dedup_key = f"tmdb:{item['tmdb_id']}"
                 elif item.get("tvdb_id"):
                     dedup_key = f"tvdb:{item['tvdb_id']}"
+                elif item.get("mal_id"):
+                    dedup_key = f"mal:{item['mal_id']}"
+                elif item.get("kitsu_id"):
+                    dedup_key = f"kitsu:{item['kitsu_id']}"
 
                 if dedup_key and dedup_key in seen_ids:
                     continue
@@ -1208,6 +1232,7 @@ class MetadataFetcher:
                 created_year=created_year,
                 min_similarity=min_similarity,
                 include_anime=include_anime,
+                anime_source_order=anime_source_order_cache,
             )
 
         return results

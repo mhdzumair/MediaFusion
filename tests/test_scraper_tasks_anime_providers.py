@@ -159,3 +159,59 @@ async def test_anime_provider_order_can_prioritize_anilist(monkeypatch):
     assert results[0]["mal_id"] == "505"
     assert calls["anilist"] == 1
     assert calls["kitsu"] == 0
+
+
+@pytest.mark.asyncio
+async def test_anime_provider_request_order_override_takes_precedence(monkeypatch):
+    fetcher = MetadataFetcher(cache_ttl_minutes=1)
+    calls = {"kitsu": 0, "anilist": 0}
+
+    async def _cache_get(**kwargs):
+        return None
+
+    async def _cache_set(data, **kwargs):
+        return None
+
+    async def _search_media(*args, **kwargs):
+        return []
+
+    async def _search_imdb(*args, **kwargs):
+        return []
+
+    async def _search_tmdb(*args, **kwargs):
+        return []
+
+    async def _search_tvdb(*args, **kwargs):
+        return []
+
+    async def _search_kitsu(*args, **kwargs):
+        calls["kitsu"] += 1
+        return [{"kitsu_id": "606", "title": "Anime F", "type": "series"}]
+
+    async def _search_anilist(*args, **kwargs):
+        calls["anilist"] += 1
+        return [{"mal_id": "707", "title": "Anime G", "type": "series"}]
+
+    monkeypatch.setattr(fetcher.cache, "get", _cache_get)
+    monkeypatch.setattr(fetcher.cache, "set", _cache_set)
+    monkeypatch.setattr("db.database.get_read_session_context", lambda: _DummyReadSessionContext())
+    monkeypatch.setattr("db.crud.media.search_media", _search_media)
+    monkeypatch.setattr("scrapers.scraper_tasks.search_multiple_imdb", _search_imdb)
+    monkeypatch.setattr("scrapers.scraper_tasks.search_multiple_tmdb", _search_tmdb)
+    monkeypatch.setattr("scrapers.scraper_tasks.search_multiple_tvdb", _search_tvdb)
+    monkeypatch.setattr("scrapers.scraper_tasks.search_multiple_kitsu", _search_kitsu)
+    monkeypatch.setattr("scrapers.scraper_tasks.search_multiple_mal", _search_anilist)
+    monkeypatch.setattr("scrapers.scraper_tasks.settings.anime_metadata_source_order", ["kitsu", "anilist"])
+
+    results = await fetcher.search_multiple_results(
+        "Dandadan",
+        limit=1,
+        media_type="series",
+        include_anime=True,
+        anime_source_order=["anilist", "kitsu"],
+    )
+
+    assert len(results) == 1
+    assert results[0]["mal_id"] == "707"
+    assert calls["anilist"] == 1
+    assert calls["kitsu"] == 0

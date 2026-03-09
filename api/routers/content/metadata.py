@@ -37,6 +37,19 @@ def _require_user_id(user: User) -> int:
     )
 
 
+def _get_canonical_external_id(external_ids: dict[str, str]) -> str:
+    """Return canonical external ID string with provider prefix when needed."""
+    provider_priority = ["imdb", "tmdb", "tvdb", "mal", "kitsu"]
+    for provider in provider_priority:
+        provider_id = external_ids.get(provider)
+        if not provider_id:
+            continue
+        return provider_id if provider == "imdb" else f"{provider}:{provider_id}"
+
+    provider, provider_id = next(iter(external_ids.items()))
+    return provider_id if provider == "imdb" else f"{provider}:{provider_id}"
+
+
 # ============================================
 # Pydantic Schemas
 # ============================================
@@ -114,6 +127,14 @@ class SearchExternalRequest(BaseModel):
     title: str
     year: int | None = None
     media_type: Literal["movie", "series"]
+    include_anime: bool = Field(
+        default=True,
+        description="Whether to include anime providers (MAL/Kitsu) in search results.",
+    )
+    anime_sources: list[Literal["kitsu", "anilist"]] | None = Field(
+        default=None,
+        description="Optional anime provider order override. Example: ['anilist', 'kitsu'].",
+    )
 
 
 class ExternalSearchResult(BaseModel):
@@ -128,6 +149,8 @@ class ExternalSearchResult(BaseModel):
     imdb_id: str | None = None
     tmdb_id: str | None = None
     tvdb_id: str | int | None = None
+    mal_id: str | int | None = None
+    kitsu_id: str | int | None = None
     external_ids: dict | None = None  # All external IDs from the result
 
 
@@ -196,7 +219,7 @@ async def refresh_metadata(
 
     async with get_async_session_context() as session:
         if not provider_data:
-            canonical_id = external_ids.get("imdb") or external_ids.get("tmdb") or list(external_ids.values())[0]
+            canonical_id = _get_canonical_external_id(external_ids)
             await crud.update_meta_stream(session, canonical_id, request.media_type, recalculate_stream_time=True)
             message = "Could not fetch fresh metadata from any provider. Stream counts updated."
         else:
@@ -210,7 +233,7 @@ async def refresh_metadata(
             if not success:
                 logger.warning(f"Failed to apply multi-provider metadata for media_id={media_id}")
 
-            canonical_id = external_ids.get("imdb") or external_ids.get("tmdb") or list(external_ids.values())[0]
+            canonical_id = _get_canonical_external_id(external_ids)
             await crud.update_meta_stream(session, canonical_id, request.media_type, recalculate_stream_time=True)
             message = (
                 f"Successfully refreshed metadata from {len(refreshed_providers)} provider(s): "
@@ -511,13 +534,15 @@ async def search_external_metadata(
     Search for metadata in external sources (IMDb, TMDB, TVDB, MAL, Kitsu).
 
     Returns results from all available providers, each with their IDs.
-    The primary `id` field uses IMDb ID if available, otherwise TMDB ID.
+    The primary `id` field uses IMDb ID if available, otherwise TMDB/TVDB/MAL/Kitsu.
     """
     try:
         results = await meta_fetcher.search_multiple_results(
             title=request.title,
             year=request.year,
             media_type=request.media_type,
+            include_anime=request.include_anime,
+            anime_source_order=request.anime_sources,
         )
 
         # First pass: collect all results indexed by their primary (canonical) ID
@@ -528,23 +553,30 @@ async def search_external_metadata(
             # Get IDs from the result
             imdb_id = r.get("imdb_id")
             tmdb_id = r.get("tmdb_id")
-            tvdb_id = r.get("tvdb_id") or (r.get("external_ids") or {}).get("tvdb")
+            external_ids_payload = r.get("external_ids") or {}
+            tvdb_id = r.get("tvdb_id") or external_ids_payload.get("tvdb")
+            mal_id = r.get("mal_id") or external_ids_payload.get("mal") or external_ids_payload.get("mal_id")
+            kitsu_id = r.get("kitsu_id") or external_ids_payload.get("kitsu") or external_ids_payload.get("kitsu_id")
 
             # Get the actual source provider (where the result came from)
             source_provider = r.get("_source_provider", "imdb")
 
-            # Determine the primary ID for deduplication (IMDb > TMDB > TVDB)
+            # Determine the primary ID for deduplication (IMDb > TMDB > TVDB > MAL > Kitsu)
             if imdb_id:
                 primary_id = imdb_id
             elif tmdb_id:
                 primary_id = f"tmdb:{tmdb_id}"
             elif tvdb_id:
                 primary_id = f"tvdb:{tvdb_id}"
+            elif mal_id:
+                primary_id = f"mal:{mal_id}"
+            elif kitsu_id:
+                primary_id = f"kitsu:{kitsu_id}"
             else:
                 continue
 
             # Count how many external IDs this result has
-            id_count = sum(1 for x in [imdb_id, tmdb_id, tvdb_id] if x)
+            id_count = sum(1 for x in [imdb_id, tmdb_id, tvdb_id, mal_id, kitsu_id] if x)
 
             # Check if we already have a result for this primary ID
             if primary_id in results_by_id:
@@ -557,6 +589,8 @@ async def search_external_metadata(
                     old_imdb = existing.get("imdb_id")
                     old_tmdb = existing.get("tmdb_id")
                     old_tvdb = existing.get("tvdb_id")
+                    old_mal = existing.get("mal_id")
+                    old_kitsu = existing.get("kitsu_id")
 
                     results_by_id[primary_id] = {
                         "primary_id": primary_id,
@@ -568,6 +602,8 @@ async def search_external_metadata(
                         "imdb_id": imdb_id or old_imdb,
                         "tmdb_id": tmdb_id or old_tmdb,
                         "tvdb_id": tvdb_id or old_tvdb,
+                        "mal_id": mal_id or old_mal,
+                        "kitsu_id": kitsu_id or old_kitsu,
                         "external_ids": r.get("external_ids"),
                         "_id_count": id_count,
                     }
@@ -579,6 +615,10 @@ async def search_external_metadata(
                         existing["tmdb_id"] = tmdb_id
                     if tvdb_id and not existing.get("tvdb_id"):
                         existing["tvdb_id"] = tvdb_id
+                    if mal_id and not existing.get("mal_id"):
+                        existing["mal_id"] = mal_id
+                    if kitsu_id and not existing.get("kitsu_id"):
+                        existing["kitsu_id"] = kitsu_id
             else:
                 # New entry
                 results_by_id[primary_id] = {
@@ -591,6 +631,8 @@ async def search_external_metadata(
                     "imdb_id": imdb_id,
                     "tmdb_id": tmdb_id,
                     "tvdb_id": tvdb_id,
+                    "mal_id": mal_id,
+                    "kitsu_id": kitsu_id,
                     "external_ids": r.get("external_ids"),
                     "_id_count": id_count,
                 }
@@ -609,6 +651,8 @@ async def search_external_metadata(
                     imdb_id=data["imdb_id"],
                     tmdb_id=str(data["tmdb_id"]) if data["tmdb_id"] else None,
                     tvdb_id=str(data["tvdb_id"]) if data["tvdb_id"] else None,
+                    mal_id=str(data["mal_id"]) if data["mal_id"] else None,
+                    kitsu_id=str(data["kitsu_id"]) if data["kitsu_id"] else None,
                     external_ids=data["external_ids"],
                 )
             )

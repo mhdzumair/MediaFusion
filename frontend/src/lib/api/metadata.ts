@@ -70,10 +70,12 @@ export interface SearchExternalRequest {
   title: string
   year?: number
   media_type: 'movie' | 'series'
+  include_anime?: boolean
+  anime_sources?: ('kitsu' | 'anilist')[]
 }
 
 export interface ExternalSearchResult {
-  id: string // Primary ID (imdb_id or tmdb:xxx or tvdb:xxx)
+  id: string // Primary ID (imdb_id or tmdb/tvdb/mal/kitsu prefixed ID)
   title: string
   year?: number
   poster?: string
@@ -82,6 +84,8 @@ export interface ExternalSearchResult {
   imdb_id?: string
   tmdb_id?: string
   tvdb_id?: string | number
+  mal_id?: string | number
+  kitsu_id?: string | number
   external_ids?: Record<string, string | number | null> // All external IDs
 }
 
@@ -156,8 +160,23 @@ export const metadataApi = {
    * Search for metadata in external sources (IMDB/TMDB/TVDB/MAL/Kitsu).
    * Useful for finding the correct external ID when linking providers.
    */
-  searchExternal: (title: string, mediaType: 'movie' | 'series', year?: number): Promise<SearchExternalResponse> => {
-    return apiClient.post<SearchExternalResponse>('/metadata/search-external', { title, media_type: mediaType, year })
+  searchExternal: (
+    title: string,
+    mediaType: 'movie' | 'series',
+    year?: number,
+    options?: {
+      includeAnime?: boolean
+      animeSources?: ('kitsu' | 'anilist')[]
+    },
+  ): Promise<SearchExternalResponse> => {
+    const payload: SearchExternalRequest = { title, media_type: mediaType, year }
+    if (options?.includeAnime !== undefined) {
+      payload.include_anime = options.includeAnime
+    }
+    if (options?.animeSources && options.animeSources.length > 0) {
+      payload.anime_sources = options.animeSources
+    }
+    return apiClient.post<SearchExternalResponse>('/metadata/search-external', payload)
   },
 
   /**
