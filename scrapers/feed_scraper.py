@@ -210,11 +210,17 @@ class FeedScraper(ABC):
                 is_search_imdb_title=True,
                 is_imdb_only=True,
             )
+            metadata_id: str | int | None = None
+            if metadata:
+                if isinstance(metadata, dict):
+                    metadata_id = metadata.get("id")
+                else:
+                    metadata_id = await crud.get_canonical_external_id(session, metadata.id)
 
-        if not metadata:
+        if not metadata or not metadata_id:
             return None
 
-        return await get_metadata_by_id(metadata["id"], media_type)
+        return await get_metadata_by_id(metadata_id, media_type)
 
 
 class ProwlarrFeedScraper(FeedScraper):
@@ -245,27 +251,59 @@ class JackettFeedScraper(FeedScraper):
         return await self.scraper.fetch_search_results(params, indexer_ids=indexer_ids)
 
 
-async def get_metadata_by_id(imdb_id: str, media_type: str):
-    """Get metadata by IMDB ID"""
-    normalized_imdb_id = normalize_imdb_id(imdb_id)
-    if not normalized_imdb_id:
+async def get_metadata_by_id(metadata_id: str | int, media_type: str):
+    """Get metadata by normalized external ID."""
+    normalized_metadata_id = normalize_imdb_id(metadata_id)
+    if not normalized_metadata_id:
         return None
 
     async with get_background_session() as session:
         if media_type == "movie":
-            media = await crud.get_movie_data_by_id(session, normalized_imdb_id)
+            media = await crud.get_movie_data_by_id(session, normalized_metadata_id)
             return MetadataData.from_db(media) if media else None
-        media = await crud.get_series_data_by_id(session, normalized_imdb_id)
+        media = await crud.get_series_data_by_id(session, normalized_metadata_id)
         return MetadataData.from_db(media) if media else None
 
 
 def normalize_imdb_id(imdb_id: str | int | None) -> str | None:
-    """Normalize feed IMDb identifiers to canonical tt-prefixed form."""
+    """Normalize feed metadata identifiers to canonical external-id form."""
     if imdb_id is None:
         return None
 
     imdb_text = str(imdb_id).strip()
     if not imdb_text:
+        return None
+
+    if imdb_text.startswith("mf:"):
+        _, internal_id = imdb_text.split(":", 1)
+        if internal_id.isdigit():
+            return f"mf:{int(internal_id)}"
+        return None
+
+    if imdb_text.startswith("mftmdb"):
+        tmdb_id = imdb_text.replace("mftmdb", "", 1)
+        return f"tmdb:{tmdb_id}" if tmdb_id else None
+
+    if ":" in imdb_text:
+        provider, provider_id = imdb_text.split(":", 1)
+        provider = provider.lower().strip()
+        provider_id = provider_id.strip()
+        if not provider_id:
+            return None
+
+        if provider == "imdb":
+            if provider_id.startswith("tt"):
+                return provider_id
+            return f"tt{provider_id}" if provider_id.isdigit() else None
+
+        if provider == "mf":
+            if provider_id.isdigit():
+                return f"mf:{int(provider_id)}"
+            return None
+
+        if provider in {"tmdb", "tvdb", "mal", "kitsu"}:
+            return f"{provider}:{provider_id}"
+
         return None
 
     if imdb_text.startswith("tt"):

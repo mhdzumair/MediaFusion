@@ -2,6 +2,7 @@ import logging
 import re
 import time
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -37,6 +38,34 @@ from utils.sports_parser import (
 from utils.wrappers import minimum_run_interval
 
 logger = logging.getLogger(__name__)
+
+
+def parse_feed_datetime(date_value: str | None) -> datetime | None:
+    """Parse common RSS/Atom datetime formats safely."""
+    if not date_value:
+        return None
+
+    date_text = str(date_value).strip()
+    if not date_text:
+        return None
+
+    try:
+        parsed = datetime.strptime(date_text, "%a, %d %b %Y %H:%M:%S %z")
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    except ValueError:
+        pass
+
+    try:
+        parsed = datetime.fromisoformat(date_text.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    except ValueError:
+        pass
+
+    try:
+        parsed = parsedate_to_datetime(date_text)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    except (TypeError, ValueError, IndexError):
+        return None
 
 
 class RssScraper(BaseScraper):
@@ -428,7 +457,7 @@ class RssScraper(BaseScraper):
             )
 
             publish_date_str = self.extract_value(item, patterns.pubDate)
-            publish_date = datetime.strptime(publish_date_str, "%a, %d %b %Y %H:%M:%S %z") if publish_date_str else None
+            publish_date = parse_feed_datetime(publish_date_str)
 
             # Extract category for filtering
             category = self.extract_value(item, patterns.category)
