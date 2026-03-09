@@ -67,6 +67,8 @@ async def initialize_webdav(streaming_provider: StreamingProvider) -> AsyncGener
     try:
         webdav_options = {
             "webdav_hostname": config.url.rstrip("/"),
+            "webdav_login": config.webdav_username,
+            "webdav_password": config.webdav_password,
         }
         webdav = WebDavClient(webdav_options)
         if not await webdav.check():
@@ -136,6 +138,13 @@ def generate_webdav_url(streaming_provider: StreamingProvider, selected_file: di
     """
     config = streaming_provider.nzbdav_config
     base_url = config.url.rstrip("/")
+
+    if config.webdav_username and config.webdav_password:
+        webdav_username = quote(config.webdav_username, safe="")
+        webdav_password = quote(config.webdav_password, safe="")
+        parsed_url = urlparse(base_url)
+        netloc = f"{webdav_username}:{webdav_password}@{parsed_url.netloc}"
+        base_url = parsed_url._replace(netloc=netloc).geturl()
 
     return urljoin(
         base_url + "/",

@@ -186,6 +186,8 @@ function SingleProviderEditor({
       u: '',
       ak: '',
       cat: 'MediaFusion',
+      wus: '',
+      wpw: '',
     }
     onUpdate({ ndc: { ...currentNdc, ...updates } })
   }
@@ -930,9 +932,39 @@ function SingleProviderEditor({
                       />
                     </div>
                   </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>WebDAV Username (optional)</Label>
+                      <Input
+                        value={provider.ndc?.wus || ''}
+                        onChange={(e) => updateNzbDAVConfig({ wus: e.target.value })}
+                        placeholder="webdav_user"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>WebDAV Password (optional)</Label>
+                      <div className="relative">
+                        <Input
+                          type={showWdPassword ? 'text' : 'password'}
+                          value={provider.ndc?.wpw || ''}
+                          onChange={(e) => updateNzbDAVConfig({ wpw: e.target.value })}
+                          placeholder="••••••••"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full px-3"
+                          onClick={() => setShowWdPassword(!showWdPassword)}
+                        >
+                          {showWdPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    NzbDAV provides a built-in WebDAV server and SABnzbd-compatible API on the same URL. No separate
-                    WebDAV configuration is needed.
+                    NzbDAV provides a built-in WebDAV server and SABnzbd-compatible API on the same URL. Set WebDAV
+                    credentials only if your NzbDAV WebDAV endpoint requires authentication.
                   </p>
                 </AccordionContent>
               </AccordionItem>

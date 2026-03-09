@@ -384,6 +384,12 @@ def unmask_config_update(new_config: dict, existing_full_config: dict) -> dict:
         "qus",
         "qb_password",
         "qpw",
+        "webdav_username",
+        "wus",
+        "webdav_password",
+        "wpw",
+        "username",
+        "un",
     ]
 
     def restore_masked_in_dict(merged: dict, existing: dict):
@@ -710,6 +716,25 @@ async def get_user_config(
                     provider.qbittorrent_config.qbittorrent_password = "••••••••"
                     provider.qbittorrent_config.webdav_password = "••••••••"
                     configured_fields.extend(["qbittorrent_password", "webdav_password"])
+
+                if provider.nzbdav_config:
+                    provider.nzbdav_config.api_key = "••••••••"
+                    provider.nzbdav_config.webdav_username = "••••••••"
+                    provider.nzbdav_config.webdav_password = "••••••••"
+                    configured_fields.extend(["nzbdav_api_key", "nzbdav_webdav_credentials"])
+
+                if provider.sabnzbd_config:
+                    provider.sabnzbd_config.api_key = "••••••••"
+                    provider.sabnzbd_config.webdav_username = "••••••••"
+                    provider.sabnzbd_config.webdav_password = "••••••••"
+                    configured_fields.extend(["sabnzbd_api_key", "sabnzbd_webdav_credentials"])
+
+                if provider.nzbget_config:
+                    provider.nzbget_config.username = "••••••••"
+                    provider.nzbget_config.password = "••••••••"
+                    provider.nzbget_config.webdav_username = "••••••••"
+                    provider.nzbget_config.webdav_password = "••••••••"
+                    configured_fields.extend(["nzbget_credentials", "nzbget_webdav_credentials"])
 
         if user_data.mediaflow_config:
             user_data.mediaflow_config.api_password = "••••••••"

@@ -111,6 +111,8 @@ class NzbDAVConfig(BaseModel):
     url: str = Field(alias="u")
     api_key: str = Field(alias="ak")
     category: str = Field(default="MediaFusion", alias="cat")
+    webdav_username: str | None = Field(default=None, alias="wus")
+    webdav_password: str | None = Field(default=None, alias="wpw")
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 

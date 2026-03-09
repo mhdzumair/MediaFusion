@@ -45,6 +45,8 @@ export interface NzbDAVConfig {
   u: string // url
   ak: string // api_key
   cat: string // category
+  wus?: string // webdav_username
+  wpw?: string // webdav_password
 }
 
 export interface EasynewsConfig {

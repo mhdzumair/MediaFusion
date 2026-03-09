@@ -185,6 +185,22 @@ class ProfileCrypto:
             ("qb_username", "qus"),
             ("qb_password", "qpw"),
         ]
+        sabnzbd_fields = [
+            ("api_key", "ak"),
+            ("webdav_username", "wus"),
+            ("webdav_password", "wpw"),
+        ]
+        nzbget_fields = [
+            ("username", "un"),
+            ("password", "pw"),
+            ("webdav_username", "wus"),
+            ("webdav_password", "wpw"),
+        ]
+        nzbdav_fields = [
+            ("api_key", "ak"),
+            ("webdav_username", "wus"),
+            ("webdav_password", "wpw"),
+        ]
 
         def extract_provider_secrets(provider: dict, provider_key: str, index: int | None = None):
             """Extract secrets from a single provider config."""
@@ -213,6 +229,51 @@ class ProfileCrypto:
                         del qb[alias]
                 if qb_secrets:
                     provider_secrets[qb_key] = qb_secrets
+
+            # Handle nested nzbdav_config (both full name and alias)
+            nzbdav_key = "nzbdav_config" if "nzbdav_config" in provider else "ndc" if "ndc" in provider else None
+            if nzbdav_key and provider[nzbdav_key]:
+                nzbdav = provider[nzbdav_key]
+                nzbdav_secrets = {}
+                for full_name, alias in nzbdav_fields:
+                    if full_name in nzbdav and nzbdav[full_name]:
+                        nzbdav_secrets[full_name] = nzbdav[full_name]
+                        del nzbdav[full_name]
+                    elif alias in nzbdav and nzbdav[alias]:
+                        nzbdav_secrets[alias] = nzbdav[alias]
+                        del nzbdav[alias]
+                if nzbdav_secrets:
+                    provider_secrets[nzbdav_key] = nzbdav_secrets
+
+            # Handle nested sabnzbd_config (both full name and alias)
+            sabnzbd_key = "sabnzbd_config" if "sabnzbd_config" in provider else "sbc" if "sbc" in provider else None
+            if sabnzbd_key and provider[sabnzbd_key]:
+                sabnzbd = provider[sabnzbd_key]
+                sabnzbd_secrets = {}
+                for full_name, alias in sabnzbd_fields:
+                    if full_name in sabnzbd and sabnzbd[full_name]:
+                        sabnzbd_secrets[full_name] = sabnzbd[full_name]
+                        del sabnzbd[full_name]
+                    elif alias in sabnzbd and sabnzbd[alias]:
+                        sabnzbd_secrets[alias] = sabnzbd[alias]
+                        del sabnzbd[alias]
+                if sabnzbd_secrets:
+                    provider_secrets[sabnzbd_key] = sabnzbd_secrets
+
+            # Handle nested nzbget_config (both full name and alias)
+            nzbget_key = "nzbget_config" if "nzbget_config" in provider else "ngc" if "ngc" in provider else None
+            if nzbget_key and provider[nzbget_key]:
+                nzbget = provider[nzbget_key]
+                nzbget_secrets = {}
+                for full_name, alias in nzbget_fields:
+                    if full_name in nzbget and nzbget[full_name]:
+                        nzbget_secrets[full_name] = nzbget[full_name]
+                        del nzbget[full_name]
+                    elif alias in nzbget and nzbget[alias]:
+                        nzbget_secrets[alias] = nzbget[alias]
+                        del nzbget[alias]
+                if nzbget_secrets:
+                    provider_secrets[nzbget_key] = nzbget_secrets
 
             if provider_secrets:
                 if index is not None:
@@ -297,6 +358,42 @@ class ProfileCrypto:
                     for field in ["qb_username", "qb_password", "qus", "qpw"]:
                         if field in provider_secrets[qb_config_key]:
                             provider[actual_qb_key][field] = provider_secrets[qb_config_key][field]
+
+            for nzbdav_config_key in ["nzbdav_config", "ndc"]:
+                if nzbdav_config_key in provider_secrets:
+                    actual_nzbdav_key = "ndc" if "ndc" in provider else "nzbdav_config"
+                    if actual_nzbdav_key not in provider:
+                        provider[actual_nzbdav_key] = {}
+                    for field in ["api_key", "ak", "webdav_username", "wus", "webdav_password", "wpw"]:
+                        if field in provider_secrets[nzbdav_config_key]:
+                            provider[actual_nzbdav_key][field] = provider_secrets[nzbdav_config_key][field]
+
+            for sabnzbd_config_key in ["sabnzbd_config", "sbc"]:
+                if sabnzbd_config_key in provider_secrets:
+                    actual_sabnzbd_key = "sbc" if "sbc" in provider else "sabnzbd_config"
+                    if actual_sabnzbd_key not in provider:
+                        provider[actual_sabnzbd_key] = {}
+                    for field in ["api_key", "ak", "webdav_username", "wus", "webdav_password", "wpw"]:
+                        if field in provider_secrets[sabnzbd_config_key]:
+                            provider[actual_sabnzbd_key][field] = provider_secrets[sabnzbd_config_key][field]
+
+            for nzbget_config_key in ["nzbget_config", "ngc"]:
+                if nzbget_config_key in provider_secrets:
+                    actual_nzbget_key = "ngc" if "ngc" in provider else "nzbget_config"
+                    if actual_nzbget_key not in provider:
+                        provider[actual_nzbget_key] = {}
+                    for field in [
+                        "username",
+                        "un",
+                        "password",
+                        "pw",
+                        "webdav_username",
+                        "wus",
+                        "webdav_password",
+                        "wpw",
+                    ]:
+                        if field in provider_secrets[nzbget_config_key]:
+                            provider[actual_nzbget_key][field] = provider_secrets[nzbget_config_key][field]
 
         # Merge streaming_providers secrets (sps alias)
         for key in ["streaming_providers", "sps"]:
@@ -451,6 +548,36 @@ class ProfileCrypto:
                     for field in ["qb_password", "qpw"]:
                         if field in qb and qb[field]:
                             qb[field] = mask_value(qb[field])
+            # nzbdav_config or ndc
+            for nzbdav_key in ["nzbdav_config", "ndc"]:
+                if nzbdav_key in provider and provider[nzbdav_key]:
+                    nzbdav = provider[nzbdav_key]
+                    for field in ["api_key", "ak", "webdav_username", "wus", "webdav_password", "wpw"]:
+                        if field in nzbdav and nzbdav[field]:
+                            nzbdav[field] = mask_value(nzbdav[field])
+            # sabnzbd_config or sbc
+            for sabnzbd_key in ["sabnzbd_config", "sbc"]:
+                if sabnzbd_key in provider and provider[sabnzbd_key]:
+                    sabnzbd = provider[sabnzbd_key]
+                    for field in ["api_key", "ak", "webdav_username", "wus", "webdav_password", "wpw"]:
+                        if field in sabnzbd and sabnzbd[field]:
+                            sabnzbd[field] = mask_value(sabnzbd[field])
+            # nzbget_config or ngc
+            for nzbget_key in ["nzbget_config", "ngc"]:
+                if nzbget_key in provider and provider[nzbget_key]:
+                    nzbget = provider[nzbget_key]
+                    for field in [
+                        "username",
+                        "un",
+                        "password",
+                        "pw",
+                        "webdav_username",
+                        "wus",
+                        "webdav_password",
+                        "wpw",
+                    ]:
+                        if field in nzbget and nzbget[field]:
+                            nzbget[field] = mask_value(nzbget[field])
 
         # Mask streaming_providers (sps alias)
         for key in ["streaming_providers", "sps"]:

@@ -48,6 +48,8 @@ export interface NzbDAVConfigType {
   u: string // url
   ak: string // api_key
   cat: string // category
+  wus?: string // webdav_username
+  wpw?: string // webdav_password
 }
 
 export interface EasynewsConfigType {
@@ -327,6 +329,8 @@ export interface NzbDAVConfigPayload {
   url?: string
   api_key?: string
   category?: string
+  webdav_username?: string
+  webdav_password?: string
 }
 
 export interface EasynewsConfigPayload {
@@ -483,6 +487,8 @@ function mapNzbDAVConfig(config?: NzbDAVConfigType): NzbDAVConfigPayload | null 
     url: config.u,
     api_key: config.ak,
     category: config.cat,
+    webdav_username: config.wus,
+    webdav_password: config.wpw,
   }
 }
 
