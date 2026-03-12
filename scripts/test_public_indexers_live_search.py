@@ -138,15 +138,17 @@ async def _probe_indexer(scraper: PublicIndexerScraper, indexer_key: str, timeou
 
 
 async def _run_end_to_end(scraper: PublicIndexerScraper) -> dict:
+    original_global = settings.public_indexers_live_search_sites
     original_movie = settings.public_indexers_movie_live_search_sites
     original_series = settings.public_indexers_series_live_search_sites
     original_anime = settings.public_indexers_anime_live_search_sites
 
     # Keep the end-to-end check bounded to the known healthy subset
     # while the per-indexer sweep covers all definitions.
-    settings.public_indexers_movie_live_search_sites = "x1337,torlock,torrentdownloads"
-    settings.public_indexers_series_live_search_sites = "x1337,eztv,torrentdownloads"
-    settings.public_indexers_anime_live_search_sites = "nyaa,eztv"
+    settings.public_indexers_live_search_sites = ""
+    settings.public_indexers_movie_live_search_sites = "uindex,rutor,thepiratebay,yts"
+    settings.public_indexers_series_live_search_sites = "uindex,rutor,thepiratebay"
+    settings.public_indexers_anime_live_search_sites = "nyaa,uindex,eztv"
 
     try:
 
@@ -184,6 +186,7 @@ async def _run_end_to_end(scraper: PublicIndexerScraper) -> dict:
             episode=1,
         )
     finally:
+        settings.public_indexers_live_search_sites = original_global
         settings.public_indexers_movie_live_search_sites = original_movie
         settings.public_indexers_series_live_search_sites = original_series
         settings.public_indexers_anime_live_search_sites = original_anime

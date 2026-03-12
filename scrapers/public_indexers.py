@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from datetime import timedelta
 from urllib.parse import quote_plus, unquote, urljoin
 
+import httpx
 import PTT
 from parsel import Selector
 
@@ -133,8 +134,12 @@ class PublicIndexerScraper(BaseScraper):
         available = get_indexers_for_catalog(catalog_type=catalog_type, is_anime=is_anime)
         available_by_key = {definition.key: definition for definition in available}
         all_available_ids = tuple(available_by_key.keys())
+        global_sites = (settings.public_indexers_live_search_sites or "").strip()
 
-        if is_anime:
+        if global_sites:
+            raw_value = global_sites
+            default_ids = all_available_ids
+        elif is_anime:
             raw_value = settings.public_indexers_anime_live_search_sites
             default_ids = all_available_ids
         elif catalog_type == "movie":
@@ -413,6 +418,12 @@ class PublicIndexerScraper(BaseScraper):
         return None, None
 
     async def _fetch_page(self, indexer: ScraplingIndexerDefinition, url: str) -> dict | None:
+        response: dict | None = None
+        if indexer.http_fallback:
+            http_first = await self._fetch_with_http(url)
+            if self._is_response_usable(http_first):
+                return http_first
+
         try:
             response = await self._fetch_with_scrapling(
                 url=url,
@@ -429,18 +440,23 @@ class PublicIndexerScraper(BaseScraper):
                         solve_cloudflare=True,
                     )
         except Exception as exc:
-            self.metrics.record_error("request_error")
             self.logger.debug("Failed to fetch %s via %s: %s", url, indexer.key, exc)
-            return None
 
-        if not response.get("html"):
+        if self._is_response_usable(response):
+            return response
+
+        if indexer.http_fallback:
+            fallback = await self._fetch_with_http(url)
+            if self._is_response_usable(fallback):
+                return fallback
+
+        if response is None:
+            self.metrics.record_error("request_error")
+        elif not response.get("html"):
             self.metrics.record_skip("Empty response")
-            return None
-        status = int(response.get("status", 0) or 0)
-        if status and status >= 400:
+        else:
             self.metrics.record_error("http_error")
-            return None
-        return response
+        return None
 
     async def _fetch_with_scrapling(
         self,
@@ -462,6 +478,37 @@ class PublicIndexerScraper(BaseScraper):
             solve_cloudflare=solve_cloudflare,
             real_chrome=settings.scrapling_real_chrome,
         )
+
+    @staticmethod
+    def _is_response_usable(response: dict | None) -> bool:
+        if not response:
+            return False
+        html = str(response.get("html", "") or "")
+        if not html:
+            return False
+        status = int(response.get("status", 0) or 0)
+        return not status or status < 400
+
+    async def _fetch_with_http(self, url: str) -> dict | None:
+        timeout_seconds = max(5.0, min(30.0, settings.scrapling_timeout_ms / 1000))
+        transport = httpx.AsyncHTTPTransport(retries=1)
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                timeout=timeout_seconds,
+                proxy=settings.requests_proxy_url or None,
+                transport=transport,
+                headers={"User-Agent": "Mozilla/5.0"},
+            ) as client:
+                response = await client.get(url)
+        except Exception as exc:
+            self.logger.debug("HTTP fallback failed for %s: %s", url, exc)
+            return None
+        return {
+            "html": response.text or "",
+            "status": response.status_code,
+            "url": str(response.url),
+        }
 
     @staticmethod
     def _is_cloudflare_challenge_html(html: str) -> bool:

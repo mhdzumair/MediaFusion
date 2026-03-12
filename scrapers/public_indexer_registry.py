@@ -22,6 +22,7 @@ class ScraplingIndexerDefinition:
     search_pages_per_query: int = 1
     solve_cloudflare: bool = True
     fetcher_mode: str | None = None
+    http_fallback: bool = False
     max_detail_url_length: int = 260
 
 
@@ -195,11 +196,20 @@ INDEXER_OVERRIDES = {
     "torlock": {
         "query_url_templates": ("https://www.torlock.com/all/torrents/{query}.html",),
         "row_selectors": ("tr",),
-        "title_selectors": ("td div a[href^='/torrent/']::text",),
-        "detail_selectors": ("td div a[href^='/torrent/']::attr(href)",),
+        "title_selectors": (
+            "a[href*='/torrent/']::text",
+            "a[href*='.t0r.space/torrent/']::text",
+        ),
+        "detail_selectors": (
+            "a[href*='/torrent/']::attr(href)",
+            "a[href*='.t0r.space/torrent/']::attr(href)",
+        ),
         "size_selectors": ("td.ts::text",),
         "seeder_selectors": ("td.tul::text",),
         "max_detail_url_length": 180,
+        "solve_cloudflare": False,
+        "fetcher_mode": "dynamic",
+        "http_fallback": True,
     },
     "torrentdownloads": {
         "query_url_templates": ("https://www.torrentdownloads.pro/search/?search={query}",),
@@ -216,7 +226,10 @@ INDEXER_OVERRIDES = {
         ),
     },
     "limetorrents": {
-        "query_url_templates": ("https://www.limetorrents.lol/search/all/{query}/seeds/1/",),
+        "query_url_templates": (
+            "https://www.limetorrents.fun/search/all/{query}/seeds/1/",
+            "https://www.limetorrents.lol/search/all/{query}/seeds/1/",
+        ),
         "row_selectors": ("table.table2 tr", "table tr"),
         "title_selectors": (
             "td.tdleft div.tt-name a:last-child::text",
@@ -233,6 +246,8 @@ INDEXER_OVERRIDES = {
         "size_selectors": ("td.tdnormal::text",),
         "seeder_selectors": ("td.tdseed::text",),
         "solve_cloudflare": False,
+        "fetcher_mode": "dynamic",
+        "http_fallback": True,
     },
     "rutor": {
         "query_url_templates": ("https://rutor.info/search/{query}",),
@@ -254,7 +269,10 @@ INDEXER_OVERRIDES = {
         "solve_cloudflare": False,
     },
     "oxtorrent": {
-        "query_url_templates": ("https://www.oxtorrent.co/search_torrent?torrentSearch={query}",),
+        "query_url_templates": (
+            "https://www.oxtorrent.co/recherche/{query}",
+            "https://www.oxtorrent.co/search_torrent?torrentSearch={query}",
+        ),
         "row_selectors": ("table tbody tr", "table tr"),
         "title_selectors": ("td:nth-child(1) a[href^='/torrent/']::text",),
         "detail_selectors": ("td:nth-child(1) a[href^='/torrent/']::attr(href)",),
@@ -262,6 +280,8 @@ INDEXER_OVERRIDES = {
         "size_selectors": ("td:nth-child(2)::text",),
         "seeder_selectors": ("td:nth-child(3)::text",),
         "solve_cloudflare": False,
+        "fetcher_mode": "dynamic",
+        "http_fallback": True,
     },
     "eztv": {
         "query_url_templates": (
@@ -290,12 +310,18 @@ INDEXER_OVERRIDES = {
         "detail_selectors": ("td.tdleft .tt-name a[href*='-']::attr(href)",),
         "size_selectors": ("td.tdnormal::text",),
         "seeder_selectors": ("td.tdseed::text",),
+        "solve_cloudflare": False,
+        "fetcher_mode": "dynamic",
+        "http_fallback": True,
     },
     "therarbg": {
         "query_url_templates": ("https://therarbg.to/get-posts/keywords:{query}/",),
         "row_selectors": ("div.wrapper",),
         "title_selectors": ("a[href^='/post-detail/']::text",),
         "detail_selectors": ("a[href^='/post-detail/']::attr(href)",),
+        "solve_cloudflare": False,
+        "fetcher_mode": "dynamic",
+        "http_fallback": True,
     },
     "yts": {
         "query_url_templates": (
@@ -435,6 +461,7 @@ def _build_extra_definitions() -> dict[str, ScraplingIndexerDefinition]:
             search_pages_per_query=1,
             solve_cloudflare=override["solve_cloudflare"],
             fetcher_mode=override["fetcher_mode"],
+            http_fallback=override.get("http_fallback", False),
             max_detail_url_length=override.get("max_detail_url_length", 260),
         )
     return extra

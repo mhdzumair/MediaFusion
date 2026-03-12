@@ -152,7 +152,7 @@ class Settings(BaseSettings):
     scrapling_proxy_url: str | None = None
     scrapling_headless: bool = True
     scrapling_disable_resources: bool = False
-    scrapling_network_idle: bool = False
+    scrapling_network_idle: bool = True
     scrapling_wait_time_ms: int = 3000
     scrapling_timeout_ms: int = 60000
     scrapling_google_search_referer: bool = True
@@ -217,9 +217,13 @@ class Settings(BaseSettings):
     # Native Public Indexers (Scrapling-backed)
     is_scrap_from_public_indexers: bool = True
     public_indexers_search_interval_hour: int = 48
-    public_indexers_movie_live_search_sites: str = "all"
-    public_indexers_series_live_search_sites: str = "all"
-    public_indexers_anime_live_search_sites: str = "all"
+    # Optional global allowlist for live-search indexers. When set, this list applies
+    # to movie/series/anime (comma-separated ids, e.g. "uindex,rutor,thepiratebay").
+    public_indexers_live_search_sites: str = ""
+    # Type-specific live-search allowlists (used when the global allowlist is empty).
+    public_indexers_movie_live_search_sites: str = "uindex,rutor,thepiratebay,yts"
+    public_indexers_series_live_search_sites: str = "uindex,rutor,thepiratebay"
+    public_indexers_anime_live_search_sites: str = "nyaa,uindex,eztv"
 
     # Jackett Settings
     is_scrap_from_jackett: bool = False

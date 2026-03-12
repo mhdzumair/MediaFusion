@@ -100,12 +100,28 @@ def _normalize_unix_timestamp(value: int | float | bytes | str | None) -> int | 
         return None
 
 
+def is_probable_torrent_bytes(content: bytes) -> bool:
+    """Fast guard to avoid bencode parsing of HTML/error pages."""
+    if not content:
+        return False
+    payload = content.lstrip()
+    if not payload.startswith(b"d"):
+        return False
+    # Typical torrent dictionary keys appear near the beginning.
+    prefix = payload[:4096]
+    return b"4:info" in prefix or b"8:announce" in prefix
+
+
 def extract_torrent_metadata(
     content: bytes,
     parsed_data: dict = None,
     is_raise_error: bool = False,
     episode_name_parser: str = None,
 ) -> dict:
+    if not is_probable_torrent_bytes(content):
+        if is_raise_error:
+            raise ValueError("Invalid torrent payload")
+        return {}
     try:
         torrent_data: OrderedDict = bencodepy.decode(content)
         info = torrent_data[b"info"]

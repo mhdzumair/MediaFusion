@@ -35,7 +35,7 @@ from utils.parser import (
     calculate_max_similarity_ratio,
     is_contain_18_plus_keywords,
 )
-from utils.torrent import extract_torrent_metadata, info_hashes_to_torrent_metadata
+from utils.torrent import extract_torrent_metadata, info_hashes_to_torrent_metadata, is_probable_torrent_bytes
 
 # Redis key constants for scraper metrics storage
 SCRAPER_METRICS_KEY_PREFIX = "scraper_metrics:"
@@ -879,6 +879,14 @@ class BaseScraper(abc.ABC):
                     return await self.get_torrent_data(redirect_url, parsed_data, headers, episode_name_parser)
 
                 response.raise_for_status()
+                if not is_probable_torrent_bytes(response.content):
+                    content_type = response.headers.get("content-type", "unknown")
+                    self.logger.debug(
+                        "Skipping non-torrent payload from %s (content-type=%s)",
+                        download_url,
+                        content_type,
+                    )
+                    return None, False
                 return (
                     extract_torrent_metadata(response.content, parsed_data, episode_name_parser=episode_name_parser),
                     True,
