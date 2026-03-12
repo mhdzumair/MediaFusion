@@ -12,6 +12,13 @@ class SportVideoSpider(scrapy.Spider):
     categories = config_manager.get_scraper_config(name, "categories")
 
     custom_settings = {
+        "CONCURRENT_ITEMS": 2,
+        "HTTPCACHE_ENABLED": False,
+        "SCRAPLING_FETCHER_MODE": "stealthy",
+        "SCRAPLING_SOLVE_CLOUDFLARE": False,
+        "SCRAPLING_NETWORK_IDLE": False,
+        "SCRAPLING_WAIT_TIME_MS": 4000,
+        "SCRAPLING_MAX_TIMEOUT": 120000,
         "ITEM_PIPELINES": {
             "mediafusion_scrapy.pipelines.PlaywrightTorrentDownloadPipeline": 100,
             "mediafusion_scrapy.pipelines.SportVideoParserPipeline": 200,

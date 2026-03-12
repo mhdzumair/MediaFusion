@@ -40,6 +40,9 @@ def run_spider_in_process(spider_name, *args, **kwargs):
     """
     os.chdir(_PROJECT_ROOT)
     os.environ.setdefault("SCRAPY_SETTINGS_MODULE", "mediafusion_scrapy.settings")
+    # Force INFO at process entry to prevent inherited DEBUG handlers from
+    # parent worker contexts leaking noisy logs into Scrapy runs.
+    logging.getLogger().setLevel(logging.INFO)
     settings = get_project_settings()
     settings.set("LOG_LEVEL", "INFO")
     settings.set("LOG_STDOUT", True)

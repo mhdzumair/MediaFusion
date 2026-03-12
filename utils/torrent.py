@@ -2,13 +2,14 @@ import hashlib
 import json
 import logging
 import re
+from base64 import b32decode
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Awaitable, Iterable
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime
 from os.path import basename
 from typing import TypeVar
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlsplit
 
 import anyio
 import bencodepy
@@ -441,9 +442,39 @@ def parse_magnet(magnet_link: str) -> tuple[str, list[str]]:
     """
     try:
         magnet = Magnet.from_string(magnet_link)
+        return magnet.infohash.lower(), _filter_valid_trackers(magnet.tr)
     except MagnetError:
+        pass
+
+    try:
+        parsed = urlsplit(str(magnet_link or "").strip())
+        if parsed.scheme.lower() != "magnet":
+            return "", []
+
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        trackers = _filter_valid_trackers([tracker.strip() for tracker in query.get("tr", []) if tracker.strip()])
+        xt_values = [value.strip() for value in query.get("xt", []) if value and value.strip()]
+
+        for xt in xt_values:
+            lowered = xt.lower()
+            if not lowered.startswith("urn:btih:"):
+                continue
+
+            candidate = xt.split(":", 2)[-1].strip()
+            if _INFO_HASH_HEX_RE.fullmatch(candidate):
+                return candidate.lower(), trackers
+
+            if _INFO_HASH_BASE32_RE.fullmatch(candidate.upper()):
+                try:
+                    normalized = b32decode(candidate.upper()).hex()
+                except Exception:
+                    continue
+                if _INFO_HASH_HEX_RE.fullmatch(normalized):
+                    return normalized.lower(), trackers
+    except Exception:
         return "", []
-    return magnet.infohash.lower(), _filter_valid_trackers(magnet.tr)
+
+    return "", []
 
 
 def get_info_hash_from_magnet(magnet_link: str) -> str:

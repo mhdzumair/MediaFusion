@@ -149,8 +149,18 @@ class Settings(BaseSettings):
 
     # External Service URLs
     requests_proxy_url: str | None = None
-    playwright_cdp_url: str = "ws://browserless:3000?blockAds=true&stealth=true"
-    flaresolverr_url: str = "http://flaresolverr:8191/v1"
+    scrapling_proxy_url: str | None = None
+    scrapling_headless: bool = True
+    scrapling_disable_resources: bool = False
+    scrapling_network_idle: bool = False
+    scrapling_wait_time_ms: int = 3000
+    scrapling_timeout_ms: int = 60000
+    scrapling_google_search_referer: bool = True
+    scrapling_fetcher_mode: Literal["dynamic", "stealthy"] = "stealthy"
+    scrapling_solve_cloudflare: bool = True
+    scrapling_real_chrome: bool = False
+    scrapling_cloudflare_cache_duration: int = 3600
+    scrapling_cloudflare_max_attempts: int = 3
 
     # External Service API Keys
     tmdb_api_key: str | None = None
@@ -203,6 +213,13 @@ class Settings(BaseSettings):
     bt4g_search_timeout: int = 10
     bt4g_immediate_max_process: int = 15
     bt4g_immediate_max_process_time: int = 15
+
+    # Native Public Indexers (Scrapling-backed)
+    is_scrap_from_public_indexers: bool = True
+    public_indexers_search_interval_hour: int = 48
+    public_indexers_movie_live_search_sites: str = "all"
+    public_indexers_series_live_search_sites: str = "all"
+    public_indexers_anime_live_search_sites: str = "all"
 
     # Jackett Settings
     is_scrap_from_jackett: bool = False
@@ -270,7 +287,7 @@ class Settings(BaseSettings):
     scrape_degraded_mode_open_breakers_threshold: int = Field(default=3, ge=1)
     scrape_degraded_mode_min_attempts: int = Field(default=12, ge=1)
     scrape_degraded_mode_error_ratio_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
-    taskiq_single_worker_mode: bool = False
+    taskiq_single_worker_mode: bool = True
     enable_fetching_torrent_metadata_from_p2p: bool = True
     # Anime metadata providers used by search fallback chain.
     # Ordered preference: first provider is queried first, next providers are used as fallback.
@@ -410,6 +427,14 @@ class Settings(BaseSettings):
     disable_update_seeders: bool = True
     arab_torrents_scheduler_crontab: str = "0 0 * * *"
     disable_arab_torrents_scheduler: bool = True
+    x1337_scheduler_crontab: str = "0 */6 * * *"
+    disable_x1337_scheduler: bool = True
+    bt52_scheduler_crontab: str = "30 */6 * * *"
+    disable_bt52_scheduler: bool = True
+    uindex_scheduler_crontab: str = "0 */4 * * *"
+    disable_uindex_scheduler: bool = True
+    eztv_rss_scheduler_crontab: str = "0 */2 * * *"
+    disable_eztv_rss_scheduler: bool = False
     prowlarr_feed_scraper_crontab: str = "0 */3 * * *"
     disable_prowlarr_feed_scraper: bool = False
     jackett_feed_scraper_crontab: str = "0 */3 * * *"

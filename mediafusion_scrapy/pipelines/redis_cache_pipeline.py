@@ -19,7 +19,7 @@ class RedisCacheURLPipeline:
 
     async def process_item(self, item):
         if "webpage_url" not in item:
-            raise DropItem(f"webpage_url not found in item: {item}")
+            raise DropItem("webpage_url not found in item.")
 
         await self.redis.sadd(item["scraped_url_key"], item["webpage_url"])
         return item

@@ -4,6 +4,19 @@
 	"nowmetv": "https://neelive.com/",
 	"tamilultra": "https://tamilultra.fr/",
 	"tamilbulb": "https://tamilbulb.tv/",
+	"x1337": [
+	  "https://1337x.to/popular-movies"
+	],
+	"bt52": [
+	  "https://www.529072.xyz/",
+	  "https://www.529073.xyz/"
+	],
+	"uindex": [
+	  "https://uindex.org/search.php?c=1",
+	  "https://uindex.org/search.php?c=2",
+	  "https://uindex.org/search.php?c=7"
+	],
+	"eztv_rss": "https://eztvx.to/ezrss.xml",
 	"ext_to": [
 	  "ext.to"
 	]

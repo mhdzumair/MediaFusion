@@ -72,11 +72,11 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
 
     async def parse_item(self, item):
         if "title" not in item:
-            logging.warning(f"title not found in item: {item}")
-            raise DropItem(f"title not found in item: {item}")
+            logging.warning("title not found in item.")
+            raise DropItem("title not found in item.")
         if item.get("year") is None:
-            logging.warning(f"year not found in item: {item}")
-            raise DropItem(f"year not found in item: {item}")
+            logging.warning("year not found in item.")
+            raise DropItem("year not found in item.")
 
         async with get_async_session_context() as session:
             title_key = f"{item['title']}_{item['year']}"
@@ -170,8 +170,8 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
 class TVStorePipeline(QueueBasedPipeline):
     async def parse_item(self, item):
         if "title" not in item:
-            logging.warning(f"title not found in item: {item}")
-            raise DropItem(f"title not found in item: {item}")
+            logging.warning("title not found in item.")
+            raise DropItem("title not found in item.")
 
         tv_metadata = TVMetaData.model_validate(item)
         async with get_async_session_context() as session:
@@ -460,7 +460,7 @@ class LiveEventStorePipeline(QueueBasedPipeline):
 
     async def parse_item(self, item):
         if "title" not in item:
-            raise DropItem(f"name not found in item: {item}")
+            raise DropItem("name not found in item.")
 
         async with get_async_session_context() as session:
             await crud.save_events_data(session, item)

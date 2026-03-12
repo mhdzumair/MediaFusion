@@ -1,52 +1,27 @@
 import asyncio
-import base64
 import logging
 
-from playwright.async_api import async_playwright
-from playwright._impl._errors import Error as PlaywrightError
-from playwright._impl._errors import TargetClosedError
+import httpx
 from scrapy import signals
 from scrapy.exceptions import DropItem
 
 from db.config import settings
+from mediafusion_scrapy.scrapling_adapter import download_torrent_with_challenge
 from utils import torrent
 
 logger = logging.getLogger(__name__)
 
-# JS snippet executed inside the browser to fetch a URL and return its bytes as base64.
-_FETCH_JS = """
-async (url) => {
-    const r = await fetch(url, { credentials: "include", redirect: "follow" });
-    if (r.status !== 200) {
-        return { status: r.status, ok: false };
-    }
-    const buf = await r.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    let bin = "";
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    return { status: r.status, ok: true, size: bytes.length, data: btoa(bin) };
-}
-"""
-
 
 class PlaywrightTorrentDownloadPipeline:
-    """Download .torrent files from sites protected by JS math challenges.
-
-    Uses a Playwright browser (via browserless CDP) to solve the initial
-    challenge, then reuses the authenticated session for bulk downloads.
-    If a download fails with 429, the challenge is re-solved automatically.
-    """
+    """Download .torrent files using Scrapling Playwright fetcher."""
 
     MAX_RETRIES = 2
-    CHALLENGE_TIMEOUT_MS = 25_000
-    FETCH_TIMEOUT_MS = 30_000
+    FETCH_TIMEOUT_MS = 60_000
+    MAX_PARALLEL_DOWNLOADS = 2
 
     def __init__(self):
-        self._playwright = None
-        self._browser = None
-        self._page = None
-        self._lock = asyncio.Lock()
-        self._challenge_solved = False
+        self._http_client = None
+        self._download_semaphore = asyncio.Semaphore(self.MAX_PARALLEL_DOWNLOADS)
 
     @classmethod
     def from_crawler(cls, crawler):
@@ -56,160 +31,67 @@ class PlaywrightTorrentDownloadPipeline:
         return pipeline
 
     async def _open(self):
-        self._playwright = await async_playwright().start()
-        cdp_url = settings.playwright_cdp_url
-        logger.info("Connecting to browserless at %s", cdp_url)
-        self._browser = await self._playwright.chromium.connect_over_cdp(cdp_url, timeout=120_000)
-        ctx = self._browser.contexts[0] if self._browser.contexts else await self._browser.new_context()
-        self._page = await ctx.new_page()
-        logger.info("Playwright browser session established")
+        proxy_url = settings.scrapling_proxy_url or settings.requests_proxy_url
+        client_kwargs = {"follow_redirects": True}
+        if proxy_url:
+            client_kwargs["proxy"] = proxy_url
+        self._http_client = httpx.AsyncClient(**client_kwargs)
+        logger.info("Scrapling torrent download pipeline initialized")
 
     async def _close(self):
-        if self._browser:
-            try:
-                await self._browser.close()
-            except Exception:
-                pass
-        if self._playwright:
-            try:
-                await self._playwright.stop()
-            except Exception:
-                pass
-        self._browser = None
-        self._page = None
-        self._playwright = None
-        logger.info("Playwright browser session closed")
+        if self._http_client:
+            await self._http_client.aclose()
+        self._http_client = None
+        logger.info("Scrapling torrent download pipeline closed")
 
-    async def _reinit_page(self):
-        """Reinitialize the browser page after it has been closed unexpectedly."""
+    async def _fetch_torrent(self, torrent_url: str, referer_url: str | None = None) -> bytes | None:
+        proxy_url = settings.scrapling_proxy_url or settings.requests_proxy_url
         try:
-            if self._browser and self._browser.is_connected():
-                ctx = self._browser.contexts[0] if self._browser.contexts else await self._browser.new_context()
-                self._page = await ctx.new_page()
-                logger.info("Reinitialized Playwright page after unexpected close")
-            else:
-                logger.warning("Browser disconnected; skipping page reinitialization")
-                self._page = None
-        except Exception:
-            logger.warning("Failed to reinitialize Playwright page", exc_info=True)
-            self._page = None
-
-    async def _solve_challenge(self, torrent_url: str) -> bool:
-        """Navigate to a .torrent URL so the stealth browser solves the JS challenge."""
-        async with self._lock:
-            if self._challenge_solved:
-                return True
-            if not self._page:
-                logger.warning("No browser page available to solve challenge")
-                return False
-            try:
-                logger.info("Solving JS challenge via %s", torrent_url)
-                await self._page.goto(
-                    torrent_url,
-                    wait_until="load",
-                    timeout=self.CHALLENGE_TIMEOUT_MS,
-                )
-                await self._page.wait_for_load_state("networkidle", timeout=self.CHALLENGE_TIMEOUT_MS)
-                cookies = await self._page.context.cookies()
-                if any(c["name"] == "access_challenge_global" for c in cookies):
-                    self._challenge_solved = True
-                    logger.info("JS challenge solved successfully")
-                    return True
-
-                logger.warning("Challenge cookie not set after navigation")
-                return False
-            except TargetClosedError:
-                logger.warning("Browser page was closed; reinitializing for next attempt")
-                self._challenge_solved = False
-                await self._reinit_page()
-                return False
-            except PlaywrightError as e:
-                if "Download is starting" in str(e):
-                    # The .torrent URL triggered a direct download — the browser navigated
-                    # successfully, so the JS challenge is already solved. Check cookies.
-                    try:
-                        cookies = await self._page.context.cookies()
-                        if any(c["name"] == "access_challenge_global" for c in cookies):
-                            self._challenge_solved = True
-                            logger.info("JS challenge solved (download triggered)")
-                            return True
-                    except Exception:
-                        pass
-                    logger.warning("Download triggered but challenge cookie not set for %s", torrent_url)
-                    return False
-                logger.warning("Playwright error solving JS challenge: %s", e)
-                return False
-            except Exception:
-                logger.warning("Failed to solve JS challenge", exc_info=True)
-                return False
-
-    async def _invalidate_challenge(self):
-        """Mark the current challenge cookies as stale so the next download re-solves."""
-        async with self._lock:
-            self._challenge_solved = False
-
-    async def _fetch_torrent(self, torrent_url: str) -> bytes | None:
-        """Fetch a .torrent file using the browser's authenticated session."""
-        if not self._page:
-            return None
-        try:
-            result = await self._page.evaluate(_FETCH_JS, torrent_url)
-        except TargetClosedError:
-            logger.warning("Page closed during fetch for %s; reinitializing", torrent_url)
-            await self._reinit_page()
-            await self._invalidate_challenge()
-            return None
-        except PlaywrightError as e:
-            if "Execution context was destroyed" in str(e):
-                logger.warning("Page context destroyed during fetch for %s; invalidating challenge", torrent_url)
-                await self._invalidate_challenge()
-            else:
-                logger.warning("Playwright error during fetch for %s: %s", torrent_url, e)
-            return None
-        if not result.get("ok"):
-            return None
-        raw = base64.b64decode(result["data"])
-        if not raw or raw[0:1] != b"d":
-            logger.error(
-                "Fetched data is not a valid torrent file for %s (%d bytes)",
+            return await download_torrent_with_challenge(
                 torrent_url,
-                len(raw),
+                # Keep sports torrent fetches strictly headless to avoid visible
+                # browser popups during scheduled/background spider runs.
+                headless=settings.scrapling_headless,
+                disable_resources=settings.scrapling_disable_resources,
+                network_idle=settings.scrapling_network_idle,
+                wait_time_ms=settings.scrapling_wait_time_ms,
+                timeout_ms=settings.scrapling_timeout_ms,
+                google_search_referer=settings.scrapling_google_search_referer,
+                proxy_url=proxy_url,
+                client=self._http_client,
+                referer_url=referer_url,
+                fetcher_mode=settings.scrapling_fetcher_mode,
+                solve_cloudflare=settings.scrapling_solve_cloudflare,
+                real_chrome=settings.scrapling_real_chrome,
             )
+        except Exception:
+            logger.warning("Scrapling failed to download torrent from %s", torrent_url, exc_info=True)
             return None
-        return raw
 
     async def process_item(self, item):
         torrent_link = item.get("torrent_link")
         if not torrent_link:
-            raise DropItem(f"No torrent link found in item: {item}")
+            raise DropItem("No torrent link found in item.")
 
-        if not self._page:
-            raise DropItem("Playwright browser session not available")
+        if not self._http_client:
+            raise DropItem("Scrapling HTTP client not available")
 
         torrent_bytes = None
-        for attempt in range(1, self.MAX_RETRIES + 1):
-            if not self._challenge_solved:
-                solved = await self._solve_challenge(torrent_link)
-                if not solved:
-                    logger.error(
-                        "Cannot solve challenge (attempt %d/%d) for %s",
-                        attempt,
-                        self.MAX_RETRIES,
-                        torrent_link,
-                    )
-                    continue
+        referer_url = item.get("webpage_url")
+        async with self._download_semaphore:
+            for attempt in range(1, self.MAX_RETRIES + 1):
+                torrent_bytes = await self._fetch_torrent(torrent_link, referer_url=referer_url)
+                if torrent_bytes and torrent_bytes[0:1] == b"d":
+                    break
 
-            torrent_bytes = await self._fetch_torrent(torrent_link)
-            if torrent_bytes:
-                break
-
-            logger.warning(
-                "Download failed (attempt %d/%d) for %s, re-solving challenge",
-                attempt,
-                self.MAX_RETRIES,
-                torrent_link,
-            )
-            await self._invalidate_challenge()
+                logger.warning(
+                    "Download failed (attempt %d/%d) for %s, re-solving challenge",
+                    attempt,
+                    self.MAX_RETRIES,
+                    torrent_link,
+                )
+                if attempt < self.MAX_RETRIES:
+                    await asyncio.sleep(2 * attempt)
 
         if not torrent_bytes:
             raise DropItem(f"Failed to download torrent after retries: {torrent_link}")

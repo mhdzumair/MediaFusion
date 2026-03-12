@@ -41,14 +41,6 @@ until curl -s -o /dev/null -w "%{http_code}" -H "X-API-KEY: $PROWLARR_API_KEY" h
   sleep 5
 done
 
-# Create tag "flaresolverr"
-handle_curl true -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw '{"label":"flaresolverr"}' 'http://127.0.0.1:9696/api/v1/tag'
-
-# Create FlareSolverr proxy using the JSON file
-PROXY_DATA=$(cat "$REPO_ROOT/resources/json/prowlarr_indexer_proxy.json")
-PROXY_DATA=$(echo "$PROXY_DATA" | sed "s#\\\$FLARESOLVERR_HOST#$FLARESOLVERR_HOST#g")
-handle_curl true -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw "$PROXY_DATA" 'http://127.0.0.1:9696/api/v1/indexerProxy?'
-
 # Configure indexers using the JSON file
 INDEXERS=$(jq -c '.[]' "$REPO_ROOT/resources/json/prowlarr-indexers.json")
 echo "$INDEXERS" | while read -r indexer; do

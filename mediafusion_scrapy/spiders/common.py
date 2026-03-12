@@ -32,8 +32,17 @@ class CommonTamilSpider(scrapy.Spider):
         **kwargs,
     ):
         super(CommonTamilSpider, self).__init__(*args, **kwargs)
-        self.pages = pages
-        self.start_page = start_page
+        try:
+            self.pages = max(1, int(pages))
+        except (TypeError, ValueError):
+            self.logger.warning("Invalid pages value '%s'; defaulting to 1", pages)
+            self.pages = 1
+
+        try:
+            self.start_page = max(1, int(start_page))
+        except (TypeError, ValueError):
+            self.logger.warning("Invalid start_page value '%s'; defaulting to 1", start_page)
+            self.start_page = 1
         self.search_keyword = search_keyword
         if scrap_catalog_id != "all" and "_" not in scrap_catalog_id:
             self.logger.error(f"Invalid catalog ID: {scrap_catalog_id}. Expected format: <language>_<video_type>")

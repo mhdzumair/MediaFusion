@@ -28,6 +28,7 @@ USER mediafusion
 # Set the PATH environment variable to include the local bin directory
 ENV PATH="/home/mediafusion/.local/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
+ENV PLAYWRIGHT_BROWSERS_PATH="/mediafusion/.cache/ms-playwright"
 
 # Install uv and Python dependencies
 COPY --from=ghcr.io/astral-sh/uv:0.6.3 /uv /uvx /bin/
@@ -35,6 +36,7 @@ RUN --mount=type=cache,target=/mediafusion/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --no-install-project --compile-bytecode
+RUN uv run patchright install chromium
 
 # Runtime stage
 FROM python:3.13-slim-bookworm AS runtime
@@ -43,7 +45,30 @@ WORKDIR /mediafusion
 
 # Install runtime dependencies
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl postgresql-client && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    postgresql-client \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libcairo2 \
+    libdrm2 \
+    libgbm1 \
+    libglib2.0-0 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -53,8 +78,10 @@ RUN groupadd -r mediafusion && \
 
 # Copy the Python environment and other necessary files from the builder stage
 COPY --from=builder --chown=mediafusion:mediafusion /mediafusion/.venv /mediafusion/.venv
+COPY --from=builder --chown=mediafusion:mediafusion /mediafusion/.cache /mediafusion/.cache
 
 ENV PATH="/mediafusion/.venv/bin:$PATH"
+ENV PLAYWRIGHT_BROWSERS_PATH="/mediafusion/.cache/ms-playwright"
 
 COPY --chown=mediafusion:mediafusion . /mediafusion
 

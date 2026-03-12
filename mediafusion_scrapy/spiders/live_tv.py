@@ -476,4 +476,4 @@ class TamilUltraSpider(LiveTVSpider):
 
 class TamilBulbSpider(LiveTVSpider):
     name = "tamilbulb"
-    use_flaresolverr = True
+    use_anti_bot_solver = True

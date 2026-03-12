@@ -114,19 +114,17 @@ To configure Prowlarr, Run the script based on your OS:
 ### Linux/macOS
 
 ```bash
-export FLARESOLVERR_HOST=http://flaresolverr:8191
 ./setup-prowlarr.sh
 ```
 
 ### Windows
 
 ```powershell
-$env:FLARESOLVERR_HOST = "http://flaresolverr:8191"
 .\setup-prowlarr.ps1
 ```
 
 > [!TIP]
-> This script will setup Prowlarr API key to the `.env` file, Add tested Public trackers and flaresolverr configuration in Prowlarr. 
+> This script will setup Prowlarr API key to the `.env` file and add tested public trackers in Prowlarr.
 > Additionally, You can also add or modify your own trackers and other configuration in Prowlarr by visiting the prowlarr web interface http://localhost:9696.
 
 ## Deployment 🚢

@@ -38,10 +38,10 @@ docker run --rm -v "$REPO_ROOT/resources/xml/prowlarr-config.xml:/prowlarr-confi
 "
 
 # pull the latest images
-docker compose pull prowlarr flaresolverr
+docker compose pull prowlarr
 
-# Start Prowlarr and FlareSolverr containers
-docker compose up -d prowlarr flaresolverr
+# Start Prowlarr container
+docker compose up -d prowlarr
 
 # Function to handle curl requests
 handle_curl() {
@@ -65,14 +65,6 @@ echo "Waiting for Prowlarr to be ready..."
 until curl -s -o /dev/null -w "%{http_code}" -H "X-API-KEY: $PROWLARR_API_KEY" http://127.0.0.1:9696/api/v1/health | grep -q '^2'; do
   sleep 5
 done
-
-# Create tag "flaresolverr"
-handle_curl false -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw '{"label":"flaresolverr"}' 'http://127.0.0.1:9696/api/v1/tag'
-
-# Create FlareSolverr proxy using the JSON file
-PROXY_DATA=$(cat "$REPO_ROOT/resources/json/prowlarr_indexer_proxy.json")
-PROXY_DATA=$(echo "$PROXY_DATA" | sed "s#\\\$FLARESOLVERR_HOST#$FLARESOLVERR_HOST#g")
-handle_curl false -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw "$PROXY_DATA" 'http://127.0.0.1:9696/api/v1/indexerProxy?'
 
 # Configure indexers using the JSON file
 INDEXERS=$(jq -c '.[]' "$REPO_ROOT/resources/json/prowlarr-indexers.json")

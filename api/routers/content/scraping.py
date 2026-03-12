@@ -97,6 +97,14 @@ SCRAPER_CONFIG = {
         "description": "Search BT4G torrent search",
         "is_user_configurable": False,
     },
+    "public_indexers": {
+        "name": "Public Indexers",
+        "enabled": settings.is_scrap_from_public_indexers,
+        "requires_debrid": False,
+        "ttl": runtime_const.PUBLIC_INDEXERS_SEARCH_TTL,
+        "description": "Search native Scrapling-backed public indexers (movies/series/anime)",
+        "is_user_configurable": False,
+    },
     "jackett": {
         "name": "Jackett",
         "enabled": settings.is_scrap_from_jackett,

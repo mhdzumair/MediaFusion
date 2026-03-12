@@ -6,7 +6,6 @@ import asyncio
 import random
 from urllib.parse import urlparse
 
-import httpx
 from scrapy import signals
 from scrapy.downloadermiddlewares.retry import RetryMiddleware
 from scrapy.exceptions import IgnoreRequest
@@ -15,6 +14,7 @@ from scrapy.utils.response import response_status_message
 from twisted.internet import defer, reactor
 
 from db import database
+from mediafusion_scrapy.scrapling_adapter import solve_protected_page
 
 
 class MediafusionScrapySpiderMiddleware:
@@ -188,58 +188,76 @@ class TooManyRequestsRetryMiddleware(RetryMiddleware):
         return response
 
 
-class FlaresolverrMiddleware:
-    def __init__(self, flaresolverr_url, cache_duration, max_timeout, max_attempts, crawler):
-        self.flaresolverr_url = flaresolverr_url
+class ScraplingAntiBotMiddleware:
+    def __init__(self, cache_duration, max_timeout, max_attempts, crawler, scraper_options):
         self.cache_duration = cache_duration
         self.max_timeout = max_timeout
         self.max_attempts = max_attempts
         self.crawler = crawler
+        self.scraper_options = scraper_options
         self.solved_domains = {}
-        self.client = httpx.AsyncClient()
 
     @classmethod
     def from_crawler(cls, crawler):
+        scraper_options = {
+            "headless": crawler.settings.get("SCRAPLING_HEADLESS", True),
+            "disable_resources": crawler.settings.get("SCRAPLING_DISABLE_RESOURCES", False),
+            "network_idle": crawler.settings.get("SCRAPLING_NETWORK_IDLE", True),
+            "wait_time_ms": crawler.settings.get("SCRAPLING_WAIT_TIME_MS", 0),
+            "google_search_referer": crawler.settings.get("SCRAPLING_GOOGLE_SEARCH_REFERER", False),
+            "proxy_url": crawler.settings.get("SCRAPLING_PROXY_URL"),
+            "fetcher_mode": crawler.settings.get("SCRAPLING_FETCHER_MODE", "stealthy"),
+            "solve_cloudflare": crawler.settings.get("SCRAPLING_SOLVE_CLOUDFLARE", False),
+            "real_chrome": crawler.settings.get("SCRAPLING_REAL_CHROME", False),
+        }
         return cls(
-            flaresolverr_url=crawler.settings.get("FLARESOLVERR_URL", "http://localhost:8191/v1"),
-            cache_duration=crawler.settings.get("FLARESOLVERR_CACHE_DURATION", 3600),
-            max_timeout=crawler.settings.get("FLARESOLVERR_MAX_TIMEOUT", 60000),
-            max_attempts=crawler.settings.get("FLARESOLVERR_MAX_ATTEMPTS", 3),
+            cache_duration=crawler.settings.get("SCRAPLING_CLOUDFLARE_CACHE_DURATION", 3600),
+            max_timeout=crawler.settings.get("SCRAPLING_MAX_TIMEOUT", 60000),
+            max_attempts=crawler.settings.get("SCRAPLING_CLOUDFLARE_MAX_ATTEMPTS", 3),
             crawler=crawler,
+            scraper_options=scraper_options,
         )
+
+    @staticmethod
+    def _is_solver_enabled(spider):
+        return getattr(spider, "use_anti_bot_solver", False)
+
+    def _apply_cached_solution(self, request, solution):
+        cookies = solution.get("cookies", {})
+        if cookies:
+            request.cookies.update(cookies)
+        user_agent = solution.get("user_agent")
+        if user_agent:
+            request.headers[b"User-Agent"] = user_agent.encode()
 
     async def process_request(self, request):
         spider = self.crawler.spider
-        if not hasattr(spider, "use_flaresolverr") or not spider.use_flaresolverr:
-            return None
-
-        if request.meta.get("flaresolverr_solved"):
+        if not self._is_solver_enabled(spider):
             return None
 
         domain = urlparse(request.url).netloc
         current_time = reactor.seconds()
+        cached = self.solved_domains.get(domain)
+        if not cached:
+            return None
 
-        if domain in self.solved_domains:
-            last_solved_time, solution = self.solved_domains[domain]
-            if current_time - last_solved_time < self.cache_duration:
-                spider.logger.debug(f"Applying cached FlareSolverr cookies for {domain}")
-                solution_data = solution.get("solution", {})
-                cookies = solution_data.get("cookies", [])
-                request.cookies.update({cookie["name"]: cookie["value"] for cookie in cookies})
-                user_agent = solution_data.get("userAgent")
-                if user_agent:
-                    request.headers[b"User-Agent"] = user_agent.encode()
-
+        last_solved_time, solution = cached
+        if current_time - last_solved_time < self.cache_duration:
+            spider.logger.debug("Applying cached anti-bot cookies for %s", domain)
+            self._apply_cached_solution(request, solution)
         return None
 
     async def process_response(self, request, response):
         spider = self.crawler.spider
-        if not hasattr(spider, "use_flaresolverr") or not spider.use_flaresolverr:
+        if not self._is_solver_enabled(spider):
             return response
 
-        if response.status == 403 or (response.status == 503 and "cloudflare" in response.text.lower()):
-            return await self._handle_cloudflare(request)
+        if request.meta.get("anti_bot_solved"):
+            return response
 
+        response_text = getattr(response, "text", "") or ""
+        if response.status == 403 or (response.status == 503 and "cloudflare" in response_text.lower()):
+            return await self._handle_cloudflare(request)
         return response
 
     async def _handle_cloudflare(self, request):
@@ -247,62 +265,56 @@ class FlaresolverrMiddleware:
         domain = urlparse(request.url).netloc
         current_time = reactor.seconds()
 
-        if domain in self.solved_domains:
-            last_solved_time, solution = self.solved_domains[domain]
+        cached = self.solved_domains.get(domain)
+        if cached:
+            last_solved_time, solution = cached
             if current_time - last_solved_time < self.cache_duration:
-                return self._apply_solution(request, solution)
+                return self._build_solved_response(request, solution)
 
         for attempt in range(self.max_attempts):
+            timeout_ms = min(self.max_timeout, 30000 * (2**attempt))
             try:
-                timeout = min(self.max_timeout, 30000 * (2**attempt))  # Exponential backoff
-                flaresolverr_response = await self.client.post(
-                    self.flaresolverr_url,
-                    headers={"Content-Type": "application/json"},
-                    json={
-                        "cmd": "request.get",
-                        "url": request.url,
-                        "maxTimeout": timeout,
-                    },
-                    timeout=timeout / 1000 + 5,
+                solution = await solve_protected_page(
+                    request.url,
+                    timeout_ms=timeout_ms,
+                    **self.scraper_options,
                 )
-
-                if flaresolverr_response.status_code == 200:
-                    solution = flaresolverr_response.json()
-                    if solution.get("status") == "ok":
-                        self.solved_domains[domain] = (current_time, solution)
-                        return self._apply_solution(request, solution)
-
-                spider.logger.error(f"FlareSolverr attempt {attempt + 1} failed: {flaresolverr_response.text}")
-                await asyncio.sleep(2**attempt)  # Wait before next attempt
-
-            except httpx.RequestError as e:
-                spider.logger.error(f"FlareSolverr request error on attempt {attempt + 1}: {e}")
+            except Exception as exc:
+                spider.logger.error("Scrapling anti-bot attempt %d failed: %s", attempt + 1, exc)
                 await asyncio.sleep(2**attempt)
+                continue
+
+            if solution.get("status", 0) >= 400 or not solution.get("html"):
+                spider.logger.error(
+                    "Scrapling anti-bot attempt %d returned status=%s for %s",
+                    attempt + 1,
+                    solution.get("status"),
+                    request.url,
+                )
+                await asyncio.sleep(2**attempt)
+                continue
+
+            self.solved_domains[domain] = (current_time, solution)
+            return self._build_solved_response(request, solution)
 
         spider.logger.error(
-            f"Failed to solve Cloudflare challenge for {request.url} after {self.max_attempts} attempts"
+            "Failed to solve Cloudflare challenge for %s after %d attempts", request.url, self.max_attempts
         )
         raise IgnoreRequest()
 
-    def _apply_solution(self, original_request, solution):
-        """Convert a FlareSolverr solution into a Scrapy TextResponse.
-
-        FlareSolverr returns the full solved HTML in solution["solution"]["response"]
-        as a string. We wrap it in a TextResponse so Scrapy can parse it directly,
-        avoiding a second HTTP request that would hit Cloudflare again.
-        """
-        solution_data = solution.get("solution", {})
-        html_body = solution_data.get("response", "")
-        solved_url = solution_data.get("url", original_request.url)
-        cookies = solution_data.get("cookies", [])
-        user_agent = solution_data.get("userAgent", "")
+    def _build_solved_response(self, original_request, solution):
+        html_body = solution.get("html", "")
+        solved_url = solution.get("url", original_request.url)
+        cookies = solution.get("cookies", {})
+        user_agent = solution.get("user_agent", "")
 
         headers = {}
         if user_agent:
             headers["User-Agent"] = user_agent
         if cookies:
-            headers["Set-Cookie"] = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+            headers["Set-Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
 
+        original_request.meta["anti_bot_solved"] = True
         return TextResponse(
             url=solved_url,
             body=html_body,
@@ -310,6 +322,3 @@ class FlaresolverrMiddleware:
             headers=headers,
             request=original_request,
         )
-
-    async def close_spider(self, spider):
-        await self.client.aclose()

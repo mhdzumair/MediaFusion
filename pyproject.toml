@@ -39,7 +39,6 @@ dependencies = [
     "python-multipart",
     "prometheus-client",
     "pyasynctracker",
-    "scrapy-playwright",
     "cinemagoerng",
     "tqdm",
     "parsett",
@@ -52,7 +51,6 @@ dependencies = [
     "socksio",
     "tzdata",
     "ipython",
-    "scrapy-fake-useragent>=1.4.4",
     "humanize>=4.12.1",
     "dateparser>=1.2.1",
     "feedparser>=6.0.11",
@@ -67,6 +65,7 @@ dependencies = [
     "aiosmtplib>=3.0.0",
     "taskiq>=0.12.1",
     "taskiq-redis>=1.0.9",
+    "scrapling[fetchers]>=0.4.2",
 ]
 
 [dependency-groups]

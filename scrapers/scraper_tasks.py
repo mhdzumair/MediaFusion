@@ -25,6 +25,7 @@ from scrapers.mal_data import (
 )
 from scrapers.mediafusion import MediafusionScraper
 from scrapers.prowlarr import ProwlarrScraper
+from scrapers.public_indexers import PublicIndexerScraper
 from scrapers.tmdb_data import (
     get_imdb_id_from_tmdb,
     get_tmdb_data,
@@ -50,6 +51,7 @@ logger = logging.getLogger(__name__)
 # Global scrapers - used when user doesn't have custom indexer config
 SCRAPERS = [
     (settings.is_scrap_from_prowlarr, ProwlarrScraper, "prowlarr"),
+    (settings.is_scrap_from_public_indexers, PublicIndexerScraper, "public_indexers"),
     (settings.is_scrap_from_zilean, ZileanScraper, "zilean"),
     (settings.is_scrap_from_torrentio, TorrentioScraper, "torrentio"),
     (settings.is_scrap_from_mediafusion, MediafusionScraper, "mediafusion"),
@@ -60,6 +62,7 @@ SCRAPERS = [
 
 # Scrapers that are not indexer-based (always use global config)
 NON_INDEXER_SCRAPERS = [
+    (settings.is_scrap_from_public_indexers, PublicIndexerScraper, "public_indexers"),
     (settings.is_scrap_from_zilean, ZileanScraper, "zilean"),
     (settings.is_scrap_from_torrentio, TorrentioScraper, "torrentio"),
     (settings.is_scrap_from_mediafusion, MediafusionScraper, "mediafusion"),
@@ -69,6 +72,7 @@ NON_INDEXER_SCRAPERS = [
 
 CACHED_DATA = [
     (ProwlarrScraper.cache_key_prefix, runtime_const.PROWLARR_SEARCH_TTL),
+    (PublicIndexerScraper.cache_key_prefix, runtime_const.PUBLIC_INDEXERS_SEARCH_TTL),
     (TorrentioScraper.cache_key_prefix, runtime_const.TORRENTIO_SEARCH_TTL),
     (ZileanScraper.cache_key_prefix, runtime_const.ZILEAN_SEARCH_TTL),
     (MediafusionScraper.cache_key_prefix, runtime_const.MEDIAFUSION_SEARCH_TTL),

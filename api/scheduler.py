@@ -246,6 +246,57 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
+    if not settings.disable_x1337_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.x1337_scheduler_crontab),
+            name="x1337",
+            kwargs={
+                "actor_send_method": run_spider.async_send,
+                "spider_name": "x1337",
+                "scrape_all": "false",
+                "crontab_expression": settings.x1337_scheduler_crontab,
+            },
+        )
+
+    if not settings.disable_bt52_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.bt52_scheduler_crontab),
+            name="bt52",
+            kwargs={
+                "actor_send_method": run_spider.async_send,
+                "spider_name": "bt52",
+                "scrape_all": "false",
+                "crontab_expression": settings.bt52_scheduler_crontab,
+            },
+        )
+
+    if not settings.disable_uindex_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.uindex_scheduler_crontab),
+            name="uindex",
+            kwargs={
+                "actor_send_method": run_spider.async_send,
+                "spider_name": "uindex",
+                "scrape_all": "false",
+                "crontab_expression": settings.uindex_scheduler_crontab,
+            },
+        )
+
+    if not settings.disable_eztv_rss_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.eztv_rss_scheduler_crontab),
+            name="eztv_rss",
+            kwargs={
+                "actor_send_method": run_spider.async_send,
+                "spider_name": "eztv_rss",
+                "crontab_expression": settings.eztv_rss_scheduler_crontab,
+            },
+        )
+
     # Schedule the feed scraper
     if not settings.disable_prowlarr_feed_scraper:
         scheduler.add_job(

@@ -20,7 +20,7 @@ class SportVideoParserPipeline:
     def process_item(self, item):
         adapter = ItemAdapter(item)
         if "title" not in adapter or "torrent_name" not in adapter:
-            raise DropItem(f"title or torrent_name not found in item: {item}")
+            raise DropItem("title or torrent_name not found in item.")
 
         # Try local regex first, then fall back to shared date extraction
         match = self.title_regex.search(adapter["title"]) or self.title_regex.search(adapter["torrent_name"])

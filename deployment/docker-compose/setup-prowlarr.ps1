@@ -103,22 +103,11 @@ try {
     Remove-Item $tempConfigPath
 
     # Pull and start containers
-    docker compose pull prowlarr flaresolverr
-    docker compose up -d prowlarr flaresolverr
+    docker compose pull prowlarr
+    docker compose up -d prowlarr
 
     # Wait for Prowlarr to be ready
     Wait-ProwlarrReady
-
-    # Create tag "flaresolverr"
-    Invoke-ProwlarrApi -Uri 'http://localhost:9696/api/v1/tag' -Method "POST" -Body '{"label":"flaresolverr"}' -SuppressError
-
-    # Create FlareSolverr proxy
-    $proxyData = Get-Content -Raw -Path "$REPO_ROOT/resources/json/prowlarr_indexer_proxy.json"
-
-    # Replace the FlareSolverr host placeholder
-    $proxyData = $proxyData -replace '\$FLARESOLVERR_HOST', 'http://flaresolverr:8191'
-
-    Invoke-ProwlarrApi -Uri 'http://localhost:9696/api/v1/indexerProxy' -Method "POST" -Body $proxyData -SuppressError
 
     # Configure indexers
     $indexers = Get-Content -Raw -Path "$REPO_ROOT/resources/json/prowlarr-indexers.json" | ConvertFrom-Json

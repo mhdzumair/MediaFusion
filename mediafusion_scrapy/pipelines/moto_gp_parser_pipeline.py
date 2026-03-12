@@ -92,7 +92,7 @@ class MotoGPParserPipeline:
             raise DropItem(f"Year not parsed: {title}")
         self.description_parser_functions[uploader](item)
         if not item.get("episodes"):
-            raise DropItem(f"Episodes not parsed: {item!r}")
+            raise DropItem(f"Episodes not parsed for title: {title}")
         return item
 
     def event_and_episode_name_parser(self, event_and_episode_name):

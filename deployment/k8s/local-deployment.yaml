@@ -81,10 +81,6 @@ spec:
             value: "redis://redis-service:6379"
           - name: PROWLARR_URL
             value: "http://prowlarr-service:9696"
-          - name: FLARESOLVERR_URL
-            value: "http://flaresolverr-service:8191/v1"
-          - name: PLAYWRIGHT_CDP_URL
-            value: "ws://browserless:3000?blockAds=true&stealth=true"
           - name: ENABLE_TAMILMV_SEARCH_SCRAPER
             value: "false"
           - name: PROWLARR_IMMEDIATE_MAX_PROCESS
@@ -494,8 +490,6 @@ spec:
               secretKeyRef:
                 name: mediafusion-secrets
                 key: PROWLARR_API_KEY
-          - name: FLARESOLVERR_HOST
-            value: "http://flaresolverr-service:8191/"
       containers:
       - name: prowlarr
         image: ghcr.io/hotio/prowlarr:latest
@@ -550,8 +544,6 @@ spec:
               secretKeyRef:
                 name: mediafusion-secrets
                 key: PROWLARR_API_KEY
-          - name: FLARESOLVERR_HOST
-            value: "http://flaresolverr-service:8191/"
         volumeMounts:
           - name: config-volume
             mountPath: /config
@@ -601,88 +593,6 @@ spec:
       - name: redis-storage
         persistentVolumeClaim:
           claimName: redis-pvc
-
----
-
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: flaresolverr-deployment
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: flaresolverr
-  template:
-    metadata:
-      labels:
-        app: flaresolverr
-    spec:
-      containers:
-      - name: flaresolverr
-        image: ghcr.io/flaresolverr/flaresolverr:latest
-        ports:
-        - containerPort: 8191
-        resources:
-          requests:
-            memory: "200Mi"
-            cpu: "100m"
-          limits:
-            memory: "500Mi"
-            cpu: "200m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8191
-          initialDelaySeconds: 10
-          periodSeconds: 60
-          failureThreshold: 5
-          timeoutSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8191
-          initialDelaySeconds: 30
-          periodSeconds: 5
-          timeoutSeconds: 10
-
----
-
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: browserless
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: browserless
-  template:
-    metadata:
-      labels:
-        app: browserless
-    spec:
-      containers:
-      - name: browserless
-        image: ghcr.io/browserless/chromium
-        ports:
-        - containerPort: 3000
-        env:
-        - name: TIMEOUT
-          value: "-1"
-        resources:
-          requests:
-            memory: "200Mi"
-            cpu: "100m"
-          limits:
-            memory: "500Mi"
-            cpu: "200m"
-        volumeMounts:
-          - name: temp
-            mountPath: /tmp
-      volumes:
-        - name: temp
-          emptyDir: {}
 
 ---
 
@@ -740,34 +650,6 @@ spec:
     - protocol: TCP
       port: 6379
       targetPort: 6379
-
----
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: flaresolverr-service
-spec:
-  selector:
-    app: flaresolverr
-  ports:
-    - protocol: TCP
-      port: 8191
-      targetPort: 8191
-
----
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: browserless
-spec:
-  selector:
-    app: browserless
-  ports:
-    - protocol: TCP
-      port: 3000
-      targetPort: 3000
 
 ---
 

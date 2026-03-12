@@ -83,7 +83,7 @@ class TorrentDownloadAndParsePipeline:
         torrent_link = adapter.get("torrent_link")
 
         if not torrent_link:
-            raise DropItem(f"No torrent link found in item: {item}")
+            raise DropItem("No torrent link found in item.")
 
         headers = {"Referer": item.get("webpage_url")}
 
@@ -115,7 +115,7 @@ class MagnetDownloadAndParsePipeline:
         magnet_link = item.get("magnet_link")
 
         if not magnet_link:
-            raise DropItem(f"No magnet link found in item: {item}")
+            raise DropItem("No magnet link found in item.")
 
         info_hash, trackers = torrent.parse_magnet(magnet_link)
         if not info_hash:
@@ -145,7 +145,7 @@ class MagnetDownloadAndParsePipeline:
         if not torrent_metadata:
             if item.get("file_data"):
                 return item
-            raise DropItem(f"Failed to extract torrent metadata: {item}")
+            raise DropItem("Failed to extract torrent metadata.")
 
         item.update(torrent_metadata[0])
         return item

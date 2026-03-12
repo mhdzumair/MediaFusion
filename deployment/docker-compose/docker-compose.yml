@@ -11,8 +11,6 @@ services:
       # - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@postgres-replica:5432/mediafusion
       - REDIS_URL=redis://redis:6379
       - PROWLARR_URL=http://prowlarr:9696
-      - FLARESOLVERR_URL=http://flaresolverr:8191/v1
-      - PLAYWRIGHT_CDP_URL=ws://browserless:3000?blockAds=true&stealth=true
       # Standard compose runs in single-worker mode by default.
       - TASKIQ_SINGLE_WORKER_MODE=true
     depends_on:
@@ -179,44 +177,6 @@ services:
     volumes:
       - prowlarr-config:/config
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - mediafusion-network
-
-  flaresolverr:
-    image: ghcr.io/flaresolverr/flaresolverr:latest
-    ports:
-      - "8191:8191"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8191/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - mediafusion-network
-
-  browserless:
-    image: ghcr.io/browserless/chromium
-    ports:
-      - "3000:3000"
-    environment:
-      - TIMEOUT=-1
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/json/version"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
     logging:
       driver: "json-file"
       options:

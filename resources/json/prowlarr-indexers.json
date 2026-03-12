@@ -1,3771 +1,3277 @@
 [
-  {
-	"indexerUrls": [
-	  "https://bitsearch.to/"
-	],
-	"legacyUrls": [
-	  "https://bitsearch.nocensor.cloud/",
-	  "https://bitsearch.mrunblock.bond/"
-	],
-	"definitionName": "bitsearch",
-	"description": "BitSearch is a Public torrent meta-search engine",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": [
+	{
+		"indexerUrls": [
+			"https://bitsearch.to/"
+		],
+		"legacyUrls": [
+			"https://bitsearch.nocensor.cloud/",
+			"https://bitsearch.mrunblock.bond/"
+		],
+		"definitionName": "bitsearch",
+		"description": "BitSearch is a Public torrent meta-search engine",
+		"language": "en-US",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": [
+						{
+							"id": 3030,
+							"name": "Audio/Audiobook",
+							"subCategories": []
+						},
+						{
+							"id": 3010,
+							"name": "Audio/MP3",
+							"subCategories": []
+						},
+						{
+							"id": 3040,
+							"name": "Audio/Lossless",
+							"subCategories": []
+						},
+						{
+							"id": 3020,
+							"name": "Audio/Video",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": [
+						{
+							"id": 7020,
+							"name": "Books/EBook",
+							"subCategories": []
+						},
+						{
+							"id": 7030,
+							"name": "Books/Comics",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						},
+						{
+							"id": 4070,
+							"name": "PC/Mobile-Android",
+							"subCategories": []
+						},
+						{
+							"id": 4020,
+							"name": "PC/ISO",
+							"subCategories": []
+						},
+						{
+							"id": 4010,
+							"name": "PC/0day",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": [
+						{
+							"id": 8010,
+							"name": "Other/Misc",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": []
+				},
+				{
+					"id": 6000,
+					"name": "XXX",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
+		},
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "bitsearch",
+		"name": "BitSearch",
+		"fields": [
 			{
-			  "id": 3030,
-			  "name": "Audio/Audiobook",
-			  "subCategories": []
+				"name": "definitionFile",
+				"value": "bitsearch"
 			},
 			{
-			  "id": 3010,
-			  "name": "Audio/MP3",
-			  "subCategories": []
+				"name": "baseUrl"
 			},
 			{
-			  "id": 3040,
-			  "name": "Audio/Lossless",
-			  "subCategories": []
+				"name": "baseSettings.queryLimit"
 			},
 			{
-			  "id": 3020,
-			  "name": "Audio/Video",
-			  "subCategories": []
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "prefer_magnet_links",
+				"value": true
+			},
+			{
+				"name": "sort",
+				"value": 0
+			},
+			{
+				"name": "type",
+				"value": 1
+			},
+			{
+				"name": "info_category_8000",
+				"value": "BitSearch does not properly return categories in its search results for some releases.</br>To add to your Apps' Torznab indexer, you will need to include the 8000(Other) category."
 			}
-		  ]
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": [
-			{
-			  "id": 7020,
-			  "name": "Books/EBook",
-			  "subCategories": []
-			},
-			{
-			  "id": 7030,
-			  "name": "Books/Comics",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
-			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
-			},
-			{
-			  "id": 4070,
-			  "name": "PC/Mobile-Android",
-			  "subCategories": []
-			},
-			{
-			  "id": 4020,
-			  "name": "PC/ISO",
-			  "subCategories": []
-			},
-			{
-			  "id": 4010,
-			  "name": "PC/0day",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": [
-			{
-			  "id": 8010,
-			  "name": "Other/Misc",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": []
-		},
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#bitsearch",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "bitsearch",
-	"name": "BitSearch",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "bitsearch"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "prefer_magnet_links",
-		"value": true
-	  },
-	  {
-		"name": "sort",
-		"value": 0
-	  },
-	  {
-		"name": "type",
-		"value": 1
-	  },
-	  {
-		"name": "info_category_8000",
-		"value": "BitSearch does not properly return categories in its search results for some releases.</br>To add to your Apps' Torznab indexer, you will need to include the 8000(Other) category."
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#bitsearch",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://thepiratebay.org/",
-	  "https://thepiratebay.unblockninja.com/",
-	  "https://thepiratebay.ninjaproxy1.com/",
-	  "https://tpb.proxyninja.org/",
-	  "https://thepiratebay.torrentbay.st/",
-	  "https://tpb31.ukpass.co/",
-	  "https://tpb.skynetcloud.site/",
-	  "https://piratehaven.xyz/",
-	  "https://mirrorbay.top/",
-	  "https://thepiratebay0.org/",
-	  "https://thepiratebay10.org/",
-	  "https://pirateproxylive.org/",
-	  "https://thehiddenbay.com/",
-	  "https://thepiratebay.zone/",
-	  "https://tpb.party/",
-	  "https://piratebayproxy.live/",
-	  "https://piratebay.live/",
-	  "https://piratebay.party/",
-	  "https://thepiratebay.party/",
-	  "https://pirate-proxy.africa/",
-	  "https://thepiratebaye.org/",
-	  "https://5mins.eu/",
-	  "https://thepiratebay.cloud/",
-	  "https://tpb-proxy.xyz/",
-	  "https://piratebay.army/",
-	  "https://tpb-visit.me/",
-	  "https://tpb.re/",
-	  "https://pirate-proxy.ong/"
-	],
-	"legacyUrls": [
-	  "https://pirate-proxy.page/",
-	  "https://5mins.shop/",
-	  "https://tpb.surf/",
-	  "https://tpb.monster/",
-	  "https://thepiratebay.host/",
-	  "https://piratetoday.xyz/",
-	  "https://tpb.wtf/",
-	  "https://piratebayo3klnzokct3wt5yyxb2vpebbuyjl7m623iaxmqhsd52coid.onion.ly/",
-	  "https://piratebayo3klnzokct3wt5yyxb2vpebbuyjl7m623iaxmqhsd52coid.tor2web.to/",
-	  "https://piratebayo3klnzokct3wt5yyxb2vpebbuyjl7m623iaxmqhsd52coid.tor2web.link/",
-	  "https://tpb25.ukpass.co/",
-	  "https://tpb29.ukpass.co/",
-	  "https://piratenow.xyz/",
-	  "https://pirate-proxy.ink/",
-	  "https://proxifiedpiratebay.org/",
-	  "https://unlockedpiratebay.com/",
-	  "https://tpb.one/",
-	  "https://piratebayorg.net/",
-	  "https://tpbproxy.click/",
-	  "https://pirateproxy.live/",
-	  "https://ukpiratebay.org/",
-	  "https://piratebay.by/",
-	  "https://pirate-proxy.date/",
-	  "https://thepirateproxy.net/",
-	  "https://thepiratebay.abcproxy.org/"
-	],
-	"definitionName": "thepiratebay",
-	"description": "The Pirate Bay (TPB) is the galaxy’s most resilient Public BitTorrent site",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": [
-			{
-			  "id": 3030,
-			  "name": "Audio/Audiobook",
-			  "subCategories": []
-			},
-			{
-			  "id": 3040,
-			  "name": "Audio/Lossless",
-			  "subCategories": []
-			},
-			{
-			  "id": 3050,
-			  "name": "Audio/Other",
-			  "subCategories": []
-			},
-			{
-			  "id": 3020,
-			  "name": "Audio/Video",
-			  "subCategories": []
-			}
-		  ]
+	{
+		"indexerUrls": [
+			"https://thepiratebay.org/",
+			"https://thepiratebay.unblockninja.com/",
+			"https://thepiratebay.ninjaproxy1.com/",
+			"https://tpb.proxyninja.org/",
+			"https://thepiratebay.torrentbay.st/",
+			"https://tpb31.ukpass.co/",
+			"https://tpb.skynetcloud.site/",
+			"https://piratehaven.xyz/",
+			"https://mirrorbay.top/",
+			"https://thepiratebay0.org/",
+			"https://thepiratebay10.org/",
+			"https://pirateproxylive.org/",
+			"https://thehiddenbay.com/",
+			"https://thepiratebay.zone/",
+			"https://tpb.party/",
+			"https://piratebayproxy.live/",
+			"https://piratebay.live/",
+			"https://piratebay.party/",
+			"https://thepiratebay.party/",
+			"https://pirate-proxy.africa/",
+			"https://thepiratebaye.org/",
+			"https://5mins.eu/",
+			"https://thepiratebay.cloud/",
+			"https://tpb-proxy.xyz/",
+			"https://piratebay.army/",
+			"https://tpb-visit.me/",
+			"https://tpb.re/",
+			"https://pirate-proxy.ong/"
+		],
+		"legacyUrls": [
+			"https://pirate-proxy.page/",
+			"https://5mins.shop/",
+			"https://tpb.surf/",
+			"https://tpb.monster/",
+			"https://thepiratebay.host/",
+			"https://piratetoday.xyz/",
+			"https://tpb.wtf/",
+			"https://piratebayo3klnzokct3wt5yyxb2vpebbuyjl7m623iaxmqhsd52coid.onion.ly/",
+			"https://piratebayo3klnzokct3wt5yyxb2vpebbuyjl7m623iaxmqhsd52coid.tor2web.to/",
+			"https://piratebayo3klnzokct3wt5yyxb2vpebbuyjl7m623iaxmqhsd52coid.tor2web.link/",
+			"https://tpb25.ukpass.co/",
+			"https://tpb29.ukpass.co/",
+			"https://piratenow.xyz/",
+			"https://pirate-proxy.ink/",
+			"https://proxifiedpiratebay.org/",
+			"https://unlockedpiratebay.com/",
+			"https://tpb.one/",
+			"https://piratebayorg.net/",
+			"https://tpbproxy.click/",
+			"https://pirateproxy.live/",
+			"https://ukpiratebay.org/",
+			"https://piratebay.by/",
+			"https://pirate-proxy.date/",
+			"https://thepirateproxy.net/",
+			"https://thepiratebay.abcproxy.org/"
+		],
+		"definitionName": "thepiratebay",
+		"description": "The Pirate Bay (TPB) is the galaxy\u2019s most resilient Public BitTorrent site",
+		"language": "en-US",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": [
+						{
+							"id": 3030,
+							"name": "Audio/Audiobook",
+							"subCategories": []
+						},
+						{
+							"id": 3040,
+							"name": "Audio/Lossless",
+							"subCategories": []
+						},
+						{
+							"id": 3050,
+							"name": "Audio/Other",
+							"subCategories": []
+						},
+						{
+							"id": 3020,
+							"name": "Audio/Video",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": [
+						{
+							"id": 2020,
+							"name": "Movies/Other",
+							"subCategories": []
+						},
+						{
+							"id": 2040,
+							"name": "Movies/HD",
+							"subCategories": []
+						},
+						{
+							"id": 2060,
+							"name": "Movies/3D",
+							"subCategories": []
+						},
+						{
+							"id": 2030,
+							"name": "Movies/SD",
+							"subCategories": []
+						},
+						{
+							"id": 2045,
+							"name": "Movies/UHD",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": [
+						{
+							"id": 5050,
+							"name": "TV/Other",
+							"subCategories": []
+						},
+						{
+							"id": 5040,
+							"name": "TV/HD",
+							"subCategories": []
+						},
+						{
+							"id": 5045,
+							"name": "TV/UHD",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4030,
+							"name": "PC/Mac",
+							"subCategories": []
+						},
+						{
+							"id": 4040,
+							"name": "PC/Mobile-Other",
+							"subCategories": []
+						},
+						{
+							"id": 4060,
+							"name": "PC/Mobile-iOS",
+							"subCategories": []
+						},
+						{
+							"id": 4070,
+							"name": "PC/Mobile-Android",
+							"subCategories": []
+						},
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 1000,
+					"name": "Console",
+					"subCategories": [
+						{
+							"id": 1180,
+							"name": "Console/PS4",
+							"subCategories": []
+						},
+						{
+							"id": 1040,
+							"name": "Console/XBox",
+							"subCategories": []
+						},
+						{
+							"id": 1030,
+							"name": "Console/Wii",
+							"subCategories": []
+						},
+						{
+							"id": 1090,
+							"name": "Console/Other",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 6000,
+					"name": "XXX",
+					"subCategories": [
+						{
+							"id": 6010,
+							"name": "XXX/DVD",
+							"subCategories": []
+						},
+						{
+							"id": 6060,
+							"name": "XXX/ImageSet",
+							"subCategories": []
+						},
+						{
+							"id": 6040,
+							"name": "XXX/x264",
+							"subCategories": []
+						},
+						{
+							"id": 6045,
+							"name": "XXX/UHD",
+							"subCategories": []
+						},
+						{
+							"id": 6070,
+							"name": "XXX/Other",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": []
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": [
+						{
+							"id": 7020,
+							"name": "Books/EBook",
+							"subCategories": []
+						},
+						{
+							"id": 7030,
+							"name": "Books/Comics",
+							"subCategories": []
+						},
+						{
+							"id": 7050,
+							"name": "Books/Other",
+							"subCategories": []
+						}
+					]
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
 		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": [
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "pirate bay",
+		"name": "The Pirate Bay",
+		"fields": [
 			{
-			  "id": 2020,
-			  "name": "Movies/Other",
-			  "subCategories": []
+				"name": "definitionFile",
+				"value": "thepiratebay"
 			},
 			{
-			  "id": 2040,
-			  "name": "Movies/HD",
-			  "subCategories": []
+				"name": "baseUrl"
 			},
 			{
-			  "id": 2060,
-			  "name": "Movies/3D",
-			  "subCategories": []
+				"name": "baseSettings.queryLimit"
 			},
 			{
-			  "id": 2030,
-			  "name": "Movies/SD",
-			  "subCategories": []
+				"name": "baseSettings.grabLimit"
 			},
 			{
-			  "id": 2045,
-			  "name": "Movies/UHD",
-			  "subCategories": []
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "info_api",
+				"value": "This indexer uses the API at https://apibay.org/ to get its official TPB data. Choose any site link that you can access/prefer so that you can view the torrent details page when browsing the search results for this indexer."
 			}
-		  ]
-		},
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
-			{
-			  "id": 5050,
-			  "name": "TV/Other",
-			  "subCategories": []
-			},
-			{
-			  "id": 5040,
-			  "name": "TV/HD",
-			  "subCategories": []
-			},
-			{
-			  "id": 5045,
-			  "name": "TV/UHD",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
-			{
-			  "id": 4030,
-			  "name": "PC/Mac",
-			  "subCategories": []
-			},
-			{
-			  "id": 4040,
-			  "name": "PC/Mobile-Other",
-			  "subCategories": []
-			},
-			{
-			  "id": 4060,
-			  "name": "PC/Mobile-iOS",
-			  "subCategories": []
-			},
-			{
-			  "id": 4070,
-			  "name": "PC/Mobile-Android",
-			  "subCategories": []
-			},
-			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 1000,
-		  "name": "Console",
-		  "subCategories": [
-			{
-			  "id": 1180,
-			  "name": "Console/PS4",
-			  "subCategories": []
-			},
-			{
-			  "id": 1040,
-			  "name": "Console/XBox",
-			  "subCategories": []
-			},
-			{
-			  "id": 1030,
-			  "name": "Console/Wii",
-			  "subCategories": []
-			},
-			{
-			  "id": 1090,
-			  "name": "Console/Other",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": [
-			{
-			  "id": 6010,
-			  "name": "XXX/DVD",
-			  "subCategories": []
-			},
-			{
-			  "id": 6060,
-			  "name": "XXX/ImageSet",
-			  "subCategories": []
-			},
-			{
-			  "id": 6040,
-			  "name": "XXX/x264",
-			  "subCategories": []
-			},
-			{
-			  "id": 6045,
-			  "name": "XXX/UHD",
-			  "subCategories": []
-			},
-			{
-			  "id": 6070,
-			  "name": "XXX/Other",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": []
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": [
-			{
-			  "id": 7020,
-			  "name": "Books/EBook",
-			  "subCategories": []
-			},
-			{
-			  "id": 7030,
-			  "name": "Books/Comics",
-			  "subCategories": []
-			},
-			{
-			  "id": 7050,
-			  "name": "Books/Other",
-			  "subCategories": []
-			}
-		  ]
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#thepiratebay",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "pirate bay",
-	"name": "The Pirate Bay",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "thepiratebay"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "info_api",
-		"value": "This indexer uses the API at https://apibay.org/ to get its official TPB data. Choose any site link that you can access/prefer so that you can view the torrent details page when browsing the search results for this indexer."
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#thepiratebay",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://therarbg.to/",
-	  "https://t-rb.org/",
-	  "https://the.rarbg.club/",
-	  "https://trb.archivebay.online/",
-	  "https://trb.t-pb.org/",
-	  "https://trb.themirror.wiki/",
-	  "https://torrentlite.org/",
-	  "https://rarbg.unblockninja.com/",
-	  "https://rarbg.ninjaproxy1.com/",
-	  "https://rarbg.proxyninja.org/",
-	  "https://rarbg.torrentbay.st/"
-	],
-	"legacyUrls": [
-	  "https://therarbg.com/"
-	],
-	"definitionName": "therarbg",
-	"description": "TheRARBG is a Public site inspired by RARBG.to for TV / MOVIES / GENERAL",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
+	{
+		"indexerUrls": [
+			"https://therarbg.to/",
+			"https://t-rb.org/",
+			"https://the.rarbg.club/",
+			"https://trb.archivebay.online/",
+			"https://trb.t-pb.org/",
+			"https://trb.themirror.wiki/",
+			"https://torrentlite.org/",
+			"https://rarbg.unblockninja.com/",
+			"https://rarbg.ninjaproxy1.com/",
+			"https://rarbg.proxyninja.org/",
+			"https://rarbg.torrentbay.st/"
+		],
+		"legacyUrls": [
+			"https://therarbg.com/"
+		],
+		"definitionName": "therarbg",
+		"description": "TheRARBG is a Public site inspired by RARBG.to for TV / MOVIES / GENERAL",
+		"language": "en-US",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": [
+						{
+							"id": 5070,
+							"name": "TV/Anime",
+							"subCategories": []
+						},
+						{
+							"id": 5080,
+							"name": "TV/Documentary",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						},
+						{
+							"id": 4010,
+							"name": "PC/0day",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": []
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": []
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": []
+				},
+				{
+					"id": 6000,
+					"name": "XXX",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q",
+				"imdbId"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
 		},
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "therarbg",
+		"name": "TheRARBG",
+		"fields": [
 			{
-			  "id": 5070,
-			  "name": "TV/Anime",
-			  "subCategories": []
+				"name": "definitionFile",
+				"value": "therarbg"
 			},
 			{
-			  "id": 5080,
-			  "name": "TV/Documentary",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
-			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
+				"name": "baseUrl"
 			},
 			{
-			  "id": 4010,
-			  "name": "PC/0day",
-			  "subCategories": []
+				"name": "baseSettings.queryLimit"
+			},
+			{
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "sort",
+				"value": 0
 			}
-		  ]
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": []
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": []
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": []
-		},
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q",
-		"imdbId"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#therarbg",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "therarbg",
-	"name": "TheRARBG",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "therarbg"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "sort",
-		"value": 0
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#therarbg",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://www.torlock.com/",
-	  "https://www.torlock2.com/"
-	],
-	"legacyUrls": [
-	  "https://torlock.com/",
-	  "https://www.torlock.icu/",
-	  "https://torlock.mrunblock.guru/",
-	  "https://torlock.unblockit.click/",
-	  "https://torlock.unblockit.asia/",
-	  "https://torlock.mrunblock.life/",
-	  "https://torlock.unblockit.mov/",
-	  "https://torlock.unblockit.rsvp/",
-	  "https://torlock.unblockit.vegas/",
-	  "https://torlock.unblockit.esq/",
-	  "https://torlock.unblockit.zip/",
-	  "https://torlock.unblockit.foo/",
-	  "https://torlock.unblockit.ing/",
-	  "https://torlock.nocensor.cloud/",
-	  "https://torlock.mrunblock.bond/",
-	  "https://torlock.unblockit.date/",
-	  "https://torlock.unblockit.dad/",
-	  "https://torlock.unblockit.africa/",
-	  "https://torlock.unblockit.casa/",
-	  "https://torlock.unblockit.sbs/",
-	  "https://torlock.unblockit.ong/"
-	],
-	"definitionName": "torlock",
-	"description": "Torlock is a torrent search site that lists verified torrents only for TV series and movies",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
+	{
+		"indexerUrls": [
+			"https://www.torlock.com/",
+			"https://www.torlock2.com/"
+		],
+		"legacyUrls": [
+			"https://torlock.com/",
+			"https://www.torlock.icu/",
+			"https://torlock.mrunblock.guru/",
+			"https://torlock.unblockit.click/",
+			"https://torlock.unblockit.asia/",
+			"https://torlock.mrunblock.life/",
+			"https://torlock.unblockit.mov/",
+			"https://torlock.unblockit.rsvp/",
+			"https://torlock.unblockit.vegas/",
+			"https://torlock.unblockit.esq/",
+			"https://torlock.unblockit.zip/",
+			"https://torlock.unblockit.foo/",
+			"https://torlock.unblockit.ing/",
+			"https://torlock.nocensor.cloud/",
+			"https://torlock.mrunblock.bond/",
+			"https://torlock.unblockit.date/",
+			"https://torlock.unblockit.dad/",
+			"https://torlock.unblockit.africa/",
+			"https://torlock.unblockit.casa/",
+			"https://torlock.unblockit.sbs/",
+			"https://torlock.unblockit.ong/"
+		],
+		"definitionName": "torlock",
+		"description": "Torlock is a torrent search site that lists verified torrents only for TV series and movies",
+		"language": "en-US",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": [
+						{
+							"id": 5070,
+							"name": "TV/Anime",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": [
+						{
+							"id": 3030,
+							"name": "Audio/Audiobook",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": [
+						{
+							"id": 7020,
+							"name": "Books/EBook",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": [
+						{
+							"id": 8010,
+							"name": "Other/Misc",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 6000,
+					"name": "XXX",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
+		},
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "torlock",
+		"name": "Torlock",
+		"fields": [
 			{
-			  "id": 5070,
-			  "name": "TV/Anime",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": [
+				"name": "definitionFile",
+				"value": "torlock"
+			},
 			{
-			  "id": 3030,
-			  "name": "Audio/Audiobook",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
+				"name": "baseUrl"
+			},
 			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": [
+				"name": "baseSettings.queryLimit"
+			},
 			{
-			  "id": 7020,
-			  "name": "Books/EBook",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": [
+				"name": "baseSettings.grabLimit"
+			},
 			{
-			  "id": 8010,
-			  "name": "Other/Misc",
-			  "subCategories": []
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "sort",
+				"value": 0
+			},
+			{
+				"name": "type",
+				"value": 1
 			}
-		  ]
-		},
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#torlock",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "torlock",
-	"name": "Torlock",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "torlock"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "sort",
-		"value": 0
-	  },
-	  {
-		"name": "type",
-		"value": 1
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#torlock",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://www.torrentdownloads.pro/",
-	  "https://torrentdownloads.unblockit.ong/",
-	  "https://torrentdownloads.unblockninja.com/",
-	  "https://torrentdownloads.ninjaproxy1.com/",
-	  "https://torrentdownloads.proxyninja.org/"
-	],
-	"legacyUrls": [
-	  "https://www.torrentdownloads.me/",
-	  "https://www.torrentdownloads.info/",
-	  "https://torrentdownloads.mrunblock.guru/",
-	  "https://torrentdownloads.unblockit.click/",
-	  "https://torrentdownloads.unblockit.asia/",
-	  "https://torrentdownloads.unblockit.mov/",
-	  "https://torrentdownloads.mrunblock.life/",
-	  "https://torrentdownloads.unblockit.rsvp/",
-	  "https://torrentdownloads.unblockit.vegas/",
-	  "https://torrentdownloads.unblockit.esq/",
-	  "https://torrentdownloads.unblockit.zip/",
-	  "https://torrentdownloads.unblockit.foo/",
-	  "https://torrentdownloads.unblockit.ing/",
-	  "https://torrentdownloads.mrunblock.bond/",
-	  "https://torrentdownloads.nocensor.cloud/",
-	  "https://torrentdownloads.unblockit.date/",
-	  "https://torrentdownloads.unblockit.dad/",
-	  "https://torrentdownloads.unblockit.africa/",
-	  "https://torrentdownloads.unblockit.casa/",
-	  "https://torrentdownloads.unblockit.sbs/"
-	],
-	"definitionName": "torrentdownloads",
-	"description": "Torrent Downloads (TD) is a Public torrent site for all kinds of content",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
+	{
+		"indexerUrls": [
+			"https://www.torrentdownloads.pro/",
+			"https://torrentdownloads.unblockit.ong/",
+			"https://torrentdownloads.unblockninja.com/",
+			"https://torrentdownloads.ninjaproxy1.com/",
+			"https://torrentdownloads.proxyninja.org/"
+		],
+		"legacyUrls": [
+			"https://www.torrentdownloads.me/",
+			"https://www.torrentdownloads.info/",
+			"https://torrentdownloads.mrunblock.guru/",
+			"https://torrentdownloads.unblockit.click/",
+			"https://torrentdownloads.unblockit.asia/",
+			"https://torrentdownloads.unblockit.mov/",
+			"https://torrentdownloads.mrunblock.life/",
+			"https://torrentdownloads.unblockit.rsvp/",
+			"https://torrentdownloads.unblockit.vegas/",
+			"https://torrentdownloads.unblockit.esq/",
+			"https://torrentdownloads.unblockit.zip/",
+			"https://torrentdownloads.unblockit.foo/",
+			"https://torrentdownloads.unblockit.ing/",
+			"https://torrentdownloads.mrunblock.bond/",
+			"https://torrentdownloads.nocensor.cloud/",
+			"https://torrentdownloads.unblockit.date/",
+			"https://torrentdownloads.unblockit.dad/",
+			"https://torrentdownloads.unblockit.africa/",
+			"https://torrentdownloads.unblockit.casa/",
+			"https://torrentdownloads.unblockit.sbs/"
+		],
+		"definitionName": "torrentdownloads",
+		"description": "Torrent Downloads (TD) is a Public torrent site for all kinds of content",
+		"language": "en-US",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": [
+						{
+							"id": 5070,
+							"name": "TV/Anime",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": []
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": []
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": true,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
+		},
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "torrent downloads",
+		"name": "Torrent Downloads",
+		"fields": [
 			{
-			  "id": 5070,
-			  "name": "TV/Anime",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": []
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
+				"name": "definitionFile",
+				"value": "torrentdownloads"
+			},
 			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
+				"name": "baseUrl"
+			},
+			{
+				"name": "baseSettings.queryLimit"
+			},
+			{
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "downloadlink",
+				"value": 1
+			},
+			{
+				"name": "downloadlink2",
+				"value": 1
+			},
+			{
+				"name": "info_download",
+				"value": "As the .torrent download links on this site are known to fail from time to time, you can optionally set as a fallback an automatic alternate link."
 			}
-		  ]
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": []
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": true,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#torrentdownloads",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "torrent downloads",
-	"name": "Torrent Downloads",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "torrentdownloads"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "downloadlink",
-		"value": 1
-	  },
-	  {
-		"name": "downloadlink2",
-		"value": 1
-	  },
-	  {
-		"name": "info_download",
-		"value": "As the .torrent download links on this site are known to fail from time to time, you can optionally set as a fallback an automatic alternate link."
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#torrentdownloads",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://yourbittorrent.com/",
-	  "https://yourbittorrent2.com/"
-	],
-	"legacyUrls": [
-	  "https://yourbittorrent.host/",
-	  "https://yourbittorrent.nocensor.space/",
-	  "https://yourbittorrent.nocensor.work/",
-	  "https://yourbittorrent.nocensor.biz/",
-	  "https://yourbittorrent.nocensor.sbs/",
-	  "https://yourbittorrent.nocensor.world/",
-	  "https://yourbittorrent.nocensor.lol/",
-	  "https://yourbittorrent.mrunblock.guru/",
-	  "https://yourbittorrent.mrunblock.life/",
-	  "https://yourbittorrent.nocensor.click/",
-	  "https://yourbittorrent.nocensor.cloud/",
-	  "https://yourbittorrent.mrunblock.bond/"
-	],
-	"definitionName": "yourbittorrent",
-	"description": "YourBittorrent is a Public torrent index",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
+	{
+		"indexerUrls": [
+			"https://yourbittorrent.com/",
+			"https://yourbittorrent2.com/"
+		],
+		"legacyUrls": [
+			"https://yourbittorrent.host/",
+			"https://yourbittorrent.nocensor.space/",
+			"https://yourbittorrent.nocensor.work/",
+			"https://yourbittorrent.nocensor.biz/",
+			"https://yourbittorrent.nocensor.sbs/",
+			"https://yourbittorrent.nocensor.world/",
+			"https://yourbittorrent.nocensor.lol/",
+			"https://yourbittorrent.mrunblock.guru/",
+			"https://yourbittorrent.mrunblock.life/",
+			"https://yourbittorrent.nocensor.click/",
+			"https://yourbittorrent.nocensor.cloud/",
+			"https://yourbittorrent.mrunblock.bond/"
+		],
+		"definitionName": "yourbittorrent",
+		"description": "YourBittorrent is a Public torrent index",
+		"language": "en-US",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": [
+						{
+							"id": 5070,
+							"name": "TV/Anime",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": []
+				},
+				{
+					"id": 6000,
+					"name": "XXX",
+					"subCategories": []
+				},
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": []
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
+		},
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "yourbittorrent",
+		"name": "YourBittorrent",
+		"fields": [
 			{
-			  "id": 5070,
-			  "name": "TV/Anime",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
+				"name": "definitionFile",
+				"value": "yourbittorrent"
+			},
 			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
+				"name": "baseUrl"
+			},
+			{
+				"name": "baseSettings.queryLimit"
+			},
+			{
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
 			}
-		  ]
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": []
-		},
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": []
-		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": []
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#yourbittorrent",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "yourbittorrent",
-	"name": "YourBittorrent",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "yourbittorrent"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#yourbittorrent",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://1337x.to/",
-	  "https://1337x.st/",
-	  "https://x1337x.ws/",
-	  "https://x1337x.eu/",
-	  "https://x1337x.se/",
-	  "https://1337x.so/",
-	  "https://1337x.abcproxy.org/",
-	  "https://1337x.unblockninja.com/",
-	  "https://1337x.ninjaproxy1.com/",
-	  "https://1337x.proxyninja.org/",
-	  "https://1337x.torrentbay.st/"
-	],
-	"legacyUrls": [
-	  "https://1337x.is/",
-	  "https://1337x.gd/",
-	  "https://1337x.mrunblock.guru/",
-	  "https://1337x.mrunblock.life/",
-	  "https://1337x.unblockit.click/",
-	  "https://1337x.unblockit.asia/",
-	  "https://1337x.unblockit.mov/",
-	  "https://1337x.unblockit.rsvp/",
-	  "https://1337x.unblockit.vegas/",
-	  "https://1337x.unblockit.esq/",
-	  "https://1337x.unblockit.zip/",
-	  "https://1337x.unblockit.foo/",
-	  "https://1337x.unblockit.ing/",
-	  "https://1337x.mrunblock.bond/",
-	  "https://1337x.unblockit.date/",
-	  "https://1337x.unblockit.dad/",
-	  "https://1337x.unblockit.africa/",
-	  "https://1337x.unblockit.casa/",
-	  "https://unblockit.sbs/",
-	  "https://unblockit.ong/"
-	],
-	"definitionName": "1337x",
-	"description": "1337X is a Public torrent site that offers verified torrent downloads",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
-			{
-			  "id": 5070,
-			  "name": "TV/Anime",
-			  "subCategories": []
-			},
-			{
-			  "id": 5040,
-			  "name": "TV/HD",
-			  "subCategories": []
-			},
-			{
-			  "id": 5030,
-			  "name": "TV/SD",
-			  "subCategories": []
-			},
-			{
-			  "id": 5080,
-			  "name": "TV/Documentary",
-			  "subCategories": []
-			}
-		  ]
+	{
+		"indexerUrls": [
+			"https://bitru.org/"
+		],
+		"legacyUrls": [
+			"http://bitru.org/"
+		],
+		"definitionName": "bitru",
+		"description": "BitRu is a RUSSIAN Public Torrent Tracker for MOVIES / TV / GENERAL",
+		"language": "ru-RU",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": []
+				},
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": [
+						{
+							"id": 3030,
+							"name": "Audio/Audiobook",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": []
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": []
+				},
+				{
+					"id": 6000,
+					"name": "XXX",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
 		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": [
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "bitru",
+		"name": "BitRu",
+		"fields": [
 			{
-			  "id": 3010,
-			  "name": "Audio/MP3",
-			  "subCategories": []
+				"name": "definitionFile",
+				"value": "bitru"
 			},
 			{
-			  "id": 3040,
-			  "name": "Audio/Lossless",
-			  "subCategories": []
+				"name": "baseUrl"
 			},
 			{
-			  "id": 3020,
-			  "name": "Audio/Video",
-			  "subCategories": []
+				"name": "baseSettings.queryLimit"
 			},
 			{
-			  "id": 3050,
-			  "name": "Audio/Other",
-			  "subCategories": []
+				"name": "baseSettings.grabLimit"
 			},
 			{
-			  "id": 3030,
-			  "name": "Audio/Audiobook",
-			  "subCategories": []
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "stripcyrillic",
+				"value": false
+			},
+			{
+				"name": "addrussiantotitle",
+				"value": false
+			},
+			{
+				"name": "adverts",
+				"value": true
+			},
+			{
+				"name": "sort",
+				"value": 0
 			}
-		  ]
-		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": [
-			{
-			  "id": 2070,
-			  "name": "Movies/DVD",
-			  "subCategories": []
-			},
-			{
-			  "id": 2030,
-			  "name": "Movies/SD",
-			  "subCategories": []
-			},
-			{
-			  "id": 2010,
-			  "name": "Movies/Foreign",
-			  "subCategories": []
-			},
-			{
-			  "id": 2040,
-			  "name": "Movies/HD",
-			  "subCategories": []
-			},
-			{
-			  "id": 2060,
-			  "name": "Movies/3D",
-			  "subCategories": []
-			},
-			{
-			  "id": 2045,
-			  "name": "Movies/UHD",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
-			{
-			  "id": 4030,
-			  "name": "PC/Mac",
-			  "subCategories": []
-			},
-			{
-			  "id": 4070,
-			  "name": "PC/Mobile-Android",
-			  "subCategories": []
-			},
-			{
-			  "id": 4060,
-			  "name": "PC/Mobile-iOS",
-			  "subCategories": []
-			},
-			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
-			},
-			{
-			  "id": 4040,
-			  "name": "PC/Mobile-Other",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 1000,
-		  "name": "Console",
-		  "subCategories": [
-			{
-			  "id": 1080,
-			  "name": "Console/PS3",
-			  "subCategories": []
-			},
-			{
-			  "id": 1020,
-			  "name": "Console/PSP",
-			  "subCategories": []
-			},
-			{
-			  "id": 1040,
-			  "name": "Console/XBox",
-			  "subCategories": []
-			},
-			{
-			  "id": 1050,
-			  "name": "Console/XBox 360",
-			  "subCategories": []
-			},
-			{
-			  "id": 1090,
-			  "name": "Console/Other",
-			  "subCategories": []
-			},
-			{
-			  "id": 1030,
-			  "name": "Console/Wii",
-			  "subCategories": []
-			},
-			{
-			  "id": 1010,
-			  "name": "Console/NDS",
-			  "subCategories": []
-			},
-			{
-			  "id": 1110,
-			  "name": "Console/3DS",
-			  "subCategories": []
-			},
-			{
-			  "id": 1180,
-			  "name": "Console/PS4",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": [
-			{
-			  "id": 6010,
-			  "name": "XXX/DVD",
-			  "subCategories": []
-			},
-			{
-			  "id": 6060,
-			  "name": "XXX/ImageSet",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": [
-			{
-			  "id": 8010,
-			  "name": "Other/Misc",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": [
-			{
-			  "id": 7020,
-			  "name": "Books/EBook",
-			  "subCategories": []
-			},
-			{
-			  "id": 7030,
-			  "name": "Books/Comics",
-			  "subCategories": []
-			}
-		  ]
-		}
-	  ],
-	  "supportsRawSearch": true,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q",
-		"album",
-		"artist"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#bitru",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "1337x",
-	"name": "1337x",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "1337x"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "info_flaresolverr",
-		"value": "This site may use Cloudflare DDoS Protection, therefore Prowlarr requires <a href=\"https://wiki.servarr.com/prowlarr/faq#can-i-use-flaresolverr-indexers\" target=\"_blank\" rel=\"noreferrer\">FlareSolverr</a> to access it."
-	  },
-	  {
-		"name": "downloadlink",
-		"value": 1
-	  },
-	  {
-		"name": "downloadlink2",
-		"value": 1
-	  },
-	  {
-		"name": "info_download",
-		"value": "As the iTorrents .torrent download link on this site is known to fail from time to time, we suggest using the magnet link as a fallback. The BTCache and Torrage services are not supported because they require additional user interaction (a captcha for BTCache and a download button on Torrage.)"
-	  },
-	  {
-		"name": "sort",
-		"value": 2
-	  },
-	  {
-		"name": "type",
-		"value": 1
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#1337x",
-	"tags": [
-	  1
-	]
-  },
-  {
-	"indexerUrls": [
-	  "https://bitru.org/"
-	],
-	"legacyUrls": [
-	  "http://bitru.org/"
-	],
-	"definitionName": "bitru",
-	"description": "BitRu is a RUSSIAN Public Torrent Tracker for MOVIES / TV / GENERAL",
-	"language": "ru-RU",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
+	{
+		"indexerUrls": [
+			"https://badasstorrents.com/"
+		],
+		"legacyUrls": [
+			"https://badasstorrents.nocensor.work/",
+			"https://badasstorrents.nocensor.biz/",
+			"https://badasstorrents.nocensor.sbs/",
+			"https://badasstorrents.nocensor.world/",
+			"https://badasstorrents.nocensor.lol/",
+			"https://badasstorrents.nocensor.art/",
+			"https://badasstorrents.mrunblock.guru/",
+			"https://badasstorrents.mrunblock.life/",
+			"https://badasstorrents.nocensor.click/",
+			"https://badasstorrents.mrunblock.bond/",
+			"https://badasstorrents.nocensor.cloud/"
+		],
+		"definitionName": "badasstorrents",
+		"description": "Badass Torrents is a Public torrent site for MOVIES / TV / GENERAL",
+		"language": "en-US",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": [
+						{
+							"id": 5070,
+							"name": "TV/Anime",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": []
+				},
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": []
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": []
+				},
+				{
+					"id": 6000,
+					"name": "XXX",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q",
+				"album",
+				"artist"
+			],
+			"bookSearchParams": [
+				"q"
+			]
 		},
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": []
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": [
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "badass torrents",
+		"name": "Badass Torrents",
+		"fields": [
 			{
-			  "id": 3030,
-			  "name": "Audio/Audiobook",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
+				"name": "definitionFile",
+				"value": "badasstorrents"
+			},
 			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
+				"name": "baseUrl"
+			},
+			{
+				"name": "baseSettings.queryLimit"
+			},
+			{
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "downloadlink",
+				"value": 1
+			},
+			{
+				"name": "downloadlink2",
+				"value": 1
+			},
+			{
+				"name": "info_download",
+				"value": "You can optionally set as a fallback an automatic alternate link, so if the .torrent download link fails your download will still be successful."
 			}
-		  ]
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": []
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": []
-		},
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#badasstorrents",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "bitru",
-	"name": "BitRu",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "bitru"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "stripcyrillic",
-		"value": false
-	  },
-	  {
-		"name": "addrussiantotitle",
-		"value": false
-	  },
-	  {
-		"name": "adverts",
-		"value": true
-	  },
-	  {
-		"name": "sort",
-		"value": 0
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#bitru",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://badasstorrents.com/"
-	],
-	"legacyUrls": [
-	  "https://badasstorrents.nocensor.work/",
-	  "https://badasstorrents.nocensor.biz/",
-	  "https://badasstorrents.nocensor.sbs/",
-	  "https://badasstorrents.nocensor.world/",
-	  "https://badasstorrents.nocensor.lol/",
-	  "https://badasstorrents.nocensor.art/",
-	  "https://badasstorrents.mrunblock.guru/",
-	  "https://badasstorrents.mrunblock.life/",
-	  "https://badasstorrents.nocensor.click/",
-	  "https://badasstorrents.mrunblock.bond/",
-	  "https://badasstorrents.nocensor.cloud/"
-	],
-	"definitionName": "badasstorrents",
-	"description": "Badass Torrents is a Public torrent site for MOVIES / TV / GENERAL",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
+	{
+		"indexerUrls": [
+			"https://archive.org/"
+		],
+		"legacyUrls": [],
+		"definitionName": "internetarchive",
+		"description": "Internet Archive is a non-profit digital library offering free universal access to books, movies & music, as well as 406 billion archived web pages",
+		"language": "en-US",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": []
+				},
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": []
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": [
+						{
+							"id": 8010,
+							"name": "Other/Misc",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": []
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
+		},
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "internet archive",
+		"name": "Internet Archive",
+		"fields": [
 			{
-			  "id": 5070,
-			  "name": "TV/Anime",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
+				"name": "definitionFile",
+				"value": "internetarchive"
+			},
 			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
+				"name": "baseUrl"
+			},
+			{
+				"name": "baseSettings.queryLimit"
+			},
+			{
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "titleOnly",
+				"value": false
+			},
+			{
+				"name": "noMagnet",
+				"value": false
+			},
+			{
+				"name": "sort",
+				"value": 2
+			},
+			{
+				"name": "type",
+				"value": 1
 			}
-		  ]
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": []
-		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": []
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": []
-		},
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q",
-		"album",
-		"artist"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#internetarchive",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "badass torrents",
-	"name": "Badass Torrents",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "badasstorrents"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "downloadlink",
-		"value": 1
-	  },
-	  {
-		"name": "downloadlink2",
-		"value": 1
-	  },
-	  {
-		"name": "info_download",
-		"value": "You can optionally set as a fallback an automatic alternate link, so if the .torrent download link fails your download will still be successful."
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#badasstorrents",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://archive.org/"
-	],
-	"legacyUrls": [],
-	"definitionName": "internetarchive",
-	"description": "Internet Archive is a non-profit digital library offering free universal access to books, movies & music, as well as 406 billion archived web pages",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": []
+	{
+		"indexerUrls": [
+			"https://www.gktorrent.pm/"
+		],
+		"legacyUrls": [
+			"https://www.rantop.org/",
+			"https://www.torrent.ws/",
+			"https://gktorrent.mrunblock.guru/",
+			"https://gktorrent.mrunblock.life/",
+			"https://gktorrent.nocensor.click/",
+			"https://www.gktorrent.ac/",
+			"https://www.gktorrent.ph/",
+			"https://www.gktorrent.vc/",
+			"https://www.gktorrent.mx/",
+			"https://www.gktorrent.fi/",
+			"https://www.gktorrent.wf/",
+			"https://gktorrent.nocensor.cloud/",
+			"https://gktorrent.mrunblock.bond/",
+			"https://www.gktorrent.wtf/",
+			"https://www.gktorrent.vg/",
+			"https://www.gktorrent.lol/",
+			"https://www.gktorrent.sh/",
+			"https://www.gktorrent.eu/",
+			"https://www.gktorrent.xyz/"
+		],
+		"definitionName": "gktorrent",
+		"description": "GkTorrent is a French Public site for TV / MOVIES / GENERAL",
+		"language": "fr-FR",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": [
+						{
+							"id": 5070,
+							"name": "TV/Anime",
+							"subCategories": []
+						},
+						{
+							"id": 5080,
+							"name": "TV/Documentary",
+							"subCategories": []
+						},
+						{
+							"id": 5060,
+							"name": "TV/Sport",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": []
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": []
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 1000,
+					"name": "Console",
+					"subCategories": [
+						{
+							"id": 1050,
+							"name": "Console/XBox 360",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 6000,
+					"name": "XXX",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": true,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
 		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
-		},
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": []
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": [
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "gktorrent",
+		"name": "GkTorrent",
+		"fields": [
 			{
-			  "id": 8010,
-			  "name": "Other/Misc",
-			  "subCategories": []
+				"name": "definitionFile",
+				"value": "gktorrent"
+			},
+			{
+				"name": "baseUrl"
+			},
+			{
+				"name": "baseSettings.queryLimit"
+			},
+			{
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "multilang",
+				"value": false
+			},
+			{
+				"name": "multilanguage",
+				"value": 1
+			},
+			{
+				"name": "vostfr",
+				"value": false
 			}
-		  ]
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": []
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#gktorrent",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "internet archive",
-	"name": "Internet Archive",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "internetarchive"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "titleOnly",
-		"value": false
-	  },
-	  {
-		"name": "noMagnet",
-		"value": false
-	  },
-	  {
-		"name": "sort",
-		"value": 2
-	  },
-	  {
-		"name": "type",
-		"value": 1
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#internetarchive",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://www.gktorrent.pm/"
-	],
-	"legacyUrls": [
-	  "https://www.rantop.org/",
-	  "https://www.torrent.ws/",
-	  "https://gktorrent.mrunblock.guru/",
-	  "https://gktorrent.mrunblock.life/",
-	  "https://gktorrent.nocensor.click/",
-	  "https://www.gktorrent.ac/",
-	  "https://www.gktorrent.ph/",
-	  "https://www.gktorrent.vc/",
-	  "https://www.gktorrent.mx/",
-	  "https://www.gktorrent.fi/",
-	  "https://www.gktorrent.wf/",
-	  "https://gktorrent.nocensor.cloud/",
-	  "https://gktorrent.mrunblock.bond/",
-	  "https://www.gktorrent.wtf/",
-	  "https://www.gktorrent.vg/",
-	  "https://www.gktorrent.lol/",
-	  "https://www.gktorrent.sh/",
-	  "https://www.gktorrent.eu/",
-	  "https://www.gktorrent.xyz/"
-	],
-	"definitionName": "gktorrent",
-	"description": "GkTorrent is a French Public site for TV / MOVIES / GENERAL",
-	"language": "fr-FR",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
+	{
+		"indexerUrls": [
+			"https://itorrent.ws/"
+		],
+		"legacyUrls": [
+			"https://itorrent.unblockit.pro/",
+			"https://itorrent.unblockit.one/",
+			"https://itorrent.unblockit.me/"
+		],
+		"definitionName": "itorrent",
+		"description": "iTorrent is a Public HUNGARIAN site",
+		"language": "hu-HU",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": []
+				},
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": []
+				},
+				{
+					"id": 6000,
+					"name": "XXX",
+					"subCategories": []
+				},
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
 		},
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "itorrent",
+		"name": "iTorrent",
+		"fields": [
 			{
-			  "id": 5070,
-			  "name": "TV/Anime",
-			  "subCategories": []
+				"name": "definitionFile",
+				"value": "itorrent"
 			},
 			{
-			  "id": 5080,
-			  "name": "TV/Documentary",
-			  "subCategories": []
+				"name": "baseUrl"
 			},
 			{
-			  "id": 5060,
-			  "name": "TV/Sport",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": []
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": []
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
+				"name": "baseSettings.queryLimit"
+			},
 			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 1000,
-		  "name": "Console",
-		  "subCategories": [
+				"name": "baseSettings.grabLimit"
+			},
 			{
-			  "id": 1050,
-			  "name": "Console/XBox 360",
-			  "subCategories": []
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "sort",
+				"value": 0
+			},
+			{
+				"name": "type",
+				"value": 1
 			}
-		  ]
-		},
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": true,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#itorrent",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "gktorrent",
-	"name": "GkTorrent",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "gktorrent"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "multilang",
-		"value": false
-	  },
-	  {
-		"name": "multilanguage",
-		"value": 1
-	  },
-	  {
-		"name": "vostfr",
-		"value": false
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#gktorrent",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://itorrent.ws/"
-	],
-	"legacyUrls": [
-	  "https://itorrent.unblockit.pro/",
-	  "https://itorrent.unblockit.one/",
-	  "https://itorrent.unblockit.me/"
-	],
-	"definitionName": "itorrent",
-	"description": "iTorrent is a Public HUNGARIAN site",
-	"language": "hu-HU",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
+	{
+		"indexerUrls": [
+			"https://www.limetorrents.lol/",
+			"https://limetorrents.unblockit.black/",
+			"https://limetorrents.unblockninja.com/",
+			"https://limetorrents.ninjaproxy1.com/",
+			"https://limetorrents.proxyninja.org/",
+			"https://limetorrents.proxyninja.net/",
+			"https://limetorrents.torrentbay.st/",
+			"https://limetorrents.torrentsbay.org/"
+		],
+		"legacyUrls": [
+			"https://limetorrents.unblockit.asia/",
+			"https://limetorrents.unblockit.mov/",
+			"https://limetorrents.unblockit.rsvp/",
+			"https://limetorrents.unblockit.vegas/",
+			"https://limetorrents.unblockit.esq/",
+			"https://limetorrents.unblockit.zip/",
+			"https://limetorrents.unblockit.foo/",
+			"https://limetorrents.unblockit.ing/",
+			"https://limetorrents.mrunblock.bond/",
+			"https://limetorrents.nocensor.cloud/",
+			"https://limetorrents.unblockit.date/",
+			"https://limetorrents.unblockit.dad/",
+			"https://limetorrents.unblockit.africa/",
+			"https://limetorrents.unblockit.casa/",
+			"https://limetorrents.unblockit.sbs/",
+			"https://limetorrents.unblockit.ong/",
+			"https://limetorrents.abcproxy.org/"
+		],
+		"definitionName": "limetorrents",
+		"description": "LimeTorrents is a Public general torrent index with mostly verified torrents",
+		"language": "en-US",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": [
+						{
+							"id": 5070,
+							"name": "TV/Anime",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": []
+				},
+				{
+					"id": 1000,
+					"name": "Console",
+					"subCategories": []
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4010,
+							"name": "PC/0day",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": []
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": [
+						{
+							"id": 7020,
+							"name": "Books/EBook",
+							"subCategories": []
+						}
+					]
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
+		},
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "limetorrents",
+		"name": "LimeTorrents",
+		"fields": [
 			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
+				"name": "definitionFile",
+				"value": "limetorrents"
+			},
+			{
+				"name": "baseUrl"
+			},
+			{
+				"name": "baseSettings.queryLimit"
+			},
+			{
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "downloadlink",
+				"value": 1
+			},
+			{
+				"name": "downloadlink2",
+				"value": 1
+			},
+			{
+				"name": "info_download",
+				"value": "As the .torrent download links on this site are known to fail from time to time, you can optionally set as a fallback an automatic alternate link."
+			},
+			{
+				"name": "sort",
+				"value": 0
+			},
+			{
+				"name": "info_category_8000",
+				"value": "LimeTorrents only returns category <b>Other</b> in its <i>Keywordless</i> search results page.</br>To pass your apps' indexer TEST you will need to include the 8000(Other) category."
 			}
-		  ]
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": []
-		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": []
-		},
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": []
-		},
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#limetorrents",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "itorrent",
-	"name": "iTorrent",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "itorrent"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "sort",
-		"value": 0
-	  },
-	  {
-		"name": "type",
-		"value": 1
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#itorrent",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://www.limetorrents.lol/",
-	  "https://limetorrents.unblockit.black/",
-	  "https://limetorrents.unblockninja.com/",
-	  "https://limetorrents.ninjaproxy1.com/",
-	  "https://limetorrents.proxyninja.org/",
-	  "https://limetorrents.proxyninja.net/",
-	  "https://limetorrents.torrentbay.st/",
-	  "https://limetorrents.torrentsbay.org/"
-	],
-	"legacyUrls": [
-	  "https://limetorrents.unblockit.asia/",
-	  "https://limetorrents.unblockit.mov/",
-	  "https://limetorrents.unblockit.rsvp/",
-	  "https://limetorrents.unblockit.vegas/",
-	  "https://limetorrents.unblockit.esq/",
-	  "https://limetorrents.unblockit.zip/",
-	  "https://limetorrents.unblockit.foo/",
-	  "https://limetorrents.unblockit.ing/",
-	  "https://limetorrents.mrunblock.bond/",
-	  "https://limetorrents.nocensor.cloud/",
-	  "https://limetorrents.unblockit.date/",
-	  "https://limetorrents.unblockit.dad/",
-	  "https://limetorrents.unblockit.africa/",
-	  "https://limetorrents.unblockit.casa/",
-	  "https://limetorrents.unblockit.sbs/",
-	  "https://limetorrents.unblockit.ong/",
-	  "https://limetorrents.abcproxy.org/"
-	],
-	"definitionName": "limetorrents",
-	"description": "LimeTorrents is a Public general torrent index with mostly verified torrents",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
+	{
+		"indexerUrls": [
+			"https://www.oxtorrent.co/",
+			"https://oxtorrent.unblockit.ong/"
+		],
+		"legacyUrls": [
+			"https://oxtorrent.unblockit.casa/",
+			"https://oxtorrent.unblockit.sbs/"
+		],
+		"definitionName": "oxtorrent-co",
+		"description": "OxTorrent is a FRENCH Public Torrent Tracker for TV / MOVIES / GENERAL",
+		"language": "fr-FR",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": []
+				},
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": []
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": []
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 1000,
+					"name": "Console",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": true,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
+		},
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "oxtorrent",
+		"name": "OxTorrent",
+		"fields": [
 			{
-			  "id": 5070,
-			  "name": "TV/Anime",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": []
-		},
-		{
-		  "id": 1000,
-		  "name": "Console",
-		  "subCategories": []
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
+				"name": "definitionFile",
+				"value": "oxtorrent-co"
+			},
 			{
-			  "id": 4010,
-			  "name": "PC/0day",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": []
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": [
+				"name": "baseUrl"
+			},
 			{
-			  "id": 7020,
-			  "name": "Books/EBook",
-			  "subCategories": []
+				"name": "baseSettings.queryLimit"
+			},
+			{
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "multilang",
+				"value": false
+			},
+			{
+				"name": "multilanguage",
+				"value": 1
+			},
+			{
+				"name": "vostfr",
+				"value": false
 			}
-		  ]
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#oxtorrent-co",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "limetorrents",
-	"name": "LimeTorrents",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "limetorrents"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "downloadlink",
-		"value": 1
-	  },
-	  {
-		"name": "downloadlink2",
-		"value": 1
-	  },
-	  {
-		"name": "info_download",
-		"value": "As the .torrent download links on this site are known to fail from time to time, you can optionally set as a fallback an automatic alternate link."
-	  },
-	  {
-		"name": "sort",
-		"value": 0
-	  },
-	  {
-		"name": "info_category_8000",
-		"value": "LimeTorrents only returns category <b>Other</b> in its <i>Keywordless</i> search results page.</br>To pass your apps' indexer TEST you will need to include the 8000(Other) category."
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#limetorrents",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://www.oxtorrent.co/",
-	  "https://oxtorrent.unblockit.ong/"
-	],
-	"legacyUrls": [
-	  "https://oxtorrent.unblockit.casa/",
-	  "https://oxtorrent.unblockit.sbs/"
-	],
-	"definitionName": "oxtorrent-co",
-	"description": "OxTorrent is a FRENCH Public Torrent Tracker for TV / MOVIES / GENERAL",
-	"language": "fr-FR",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
+	{
+		"indexerUrls": [
+			"https://rutor.info/",
+			"https://rutor.is/"
+		],
+		"legacyUrls": [
+			"https://rutor.uk-unblock.xyz/",
+			"https://rutor.ind-unblock.xyz/",
+			"https://rutor.unblocked.bar/",
+			"https://rutor.proxyportal.pw/",
+			"https://rutor.uk-unblock.pro/",
+			"https://rutor.root.yt/",
+			"https://rutor.unblocked.rest/",
+			"https://rutor.unblocked.monster/",
+			"https://rutor.nocensor.space/",
+			"https://rutor.nocensor.work/",
+			"http://6tor.org/",
+			"https://rutor.nocensor.world/",
+			"https://rutor.nocensor.lol/",
+			"https://rutor.nocensor.art/",
+			"https://rutor.mrunblock.guru/",
+			"https://rutor.mrunblock.life/",
+			"https://rutor.nocensor.click/",
+			"https://rutor.mrunblock.bond/",
+			"https://rutor.nocensor.cloud/",
+			"http://new-rutor.org/",
+			"http://rutor.info/",
+			"http://rutor.is/"
+		],
+		"definitionName": "rutor",
+		"description": "RuTor is a RUSSIAN Public site for MOVIES / TV / GENERAL",
+		"language": "ru-RU",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": []
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep",
+				"imdbId"
+			],
+			"movieSearchParams": [
+				"q",
+				"imdbId"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": []
 		},
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": []
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": []
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": []
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "rutor",
+		"name": "RuTor",
+		"fields": [
 			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
+				"name": "definitionFile",
+				"value": "rutor"
+			},
+			{
+				"name": "baseUrl"
+			},
+			{
+				"name": "baseSettings.queryLimit"
+			},
+			{
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "stripcyrillic",
+				"value": false
+			},
+			{
+				"name": "addrussiantotitle",
+				"value": false
+			},
+			{
+				"name": "info",
+				"value": "RuTor does not display categories in its search results page. This definition is probably only suitable for Prowlarr Dashboard Manual searches."
+			},
+			{
+				"name": "sort",
+				"value": 0
 			}
-		  ]
-		},
-		{
-		  "id": 1000,
-		  "name": "Console",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": true,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#rutor",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "oxtorrent",
-	"name": "OxTorrent",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "oxtorrent-co"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "multilang",
-		"value": false
-	  },
-	  {
-		"name": "multilanguage",
-		"value": 1
-	  },
-	  {
-		"name": "vostfr",
-		"value": false
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#oxtorrent-co",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://rutor.info/",
-	  "https://rutor.is/"
-	],
-	"legacyUrls": [
-	  "https://rutor.uk-unblock.xyz/",
-	  "https://rutor.ind-unblock.xyz/",
-	  "https://rutor.unblocked.bar/",
-	  "https://rutor.proxyportal.pw/",
-	  "https://rutor.uk-unblock.pro/",
-	  "https://rutor.root.yt/",
-	  "https://rutor.unblocked.rest/",
-	  "https://rutor.unblocked.monster/",
-	  "https://rutor.nocensor.space/",
-	  "https://rutor.nocensor.work/",
-	  "http://6tor.org/",
-	  "https://rutor.nocensor.world/",
-	  "https://rutor.nocensor.lol/",
-	  "https://rutor.nocensor.art/",
-	  "https://rutor.mrunblock.guru/",
-	  "https://rutor.mrunblock.life/",
-	  "https://rutor.nocensor.click/",
-	  "https://rutor.mrunblock.bond/",
-	  "https://rutor.nocensor.cloud/",
-	  "http://new-rutor.org/",
-	  "http://rutor.info/",
-	  "http://rutor.is/"
-	],
-	"definitionName": "rutor",
-	"description": "RuTor is a RUSSIAN Public site for MOVIES / TV / GENERAL",
-	"language": "ru-RU",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
+	{
+		"indexerUrls": [
+			"http://rutracker.ru/"
+		],
+		"legacyUrls": [],
+		"definitionName": "rutracker-ru",
+		"description": "RuTracker.RU is a RUSSIAN Public Torrent Tracker for MOVIES / TV / GENERAL",
+		"language": "ru-RU",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": [
+						{
+							"id": 2040,
+							"name": "Movies/HD",
+							"subCategories": []
+						},
+						{
+							"id": 2070,
+							"name": "Movies/DVD",
+							"subCategories": []
+						},
+						{
+							"id": 2060,
+							"name": "Movies/3D",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": [
+						{
+							"id": 5040,
+							"name": "TV/HD",
+							"subCategories": []
+						},
+						{
+							"id": 5010,
+							"name": "TV/WEB-DL",
+							"subCategories": []
+						},
+						{
+							"id": 5045,
+							"name": "TV/UHD",
+							"subCategories": []
+						},
+						{
+							"id": 5030,
+							"name": "TV/SD",
+							"subCategories": []
+						},
+						{
+							"id": 5070,
+							"name": "TV/Anime",
+							"subCategories": []
+						},
+						{
+							"id": 5060,
+							"name": "TV/Sport",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						},
+						{
+							"id": 4040,
+							"name": "PC/Mobile-Other",
+							"subCategories": []
+						},
+						{
+							"id": 4060,
+							"name": "PC/Mobile-iOS",
+							"subCategories": []
+						},
+						{
+							"id": 4070,
+							"name": "PC/Mobile-Android",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 1000,
+					"name": "Console",
+					"subCategories": [
+						{
+							"id": 1020,
+							"name": "Console/PSP",
+							"subCategories": []
+						},
+						{
+							"id": 1040,
+							"name": "Console/XBox",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": []
+				},
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": [
+						{
+							"id": 3030,
+							"name": "Audio/Audiobook",
+							"subCategories": []
+						},
+						{
+							"id": 3010,
+							"name": "Audio/MP3",
+							"subCategories": []
+						},
+						{
+							"id": 3040,
+							"name": "Audio/Lossless",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 6000,
+					"name": "XXX",
+					"subCategories": []
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": true,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
 		},
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": []
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep",
-		"imdbId"
-	  ],
-	  "movieSearchParams": [
-		"q",
-		"imdbId"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": []
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "rutracker ru",
+		"name": "RuTracker.RU",
+		"fields": [
+			{
+				"name": "definitionFile",
+				"value": "rutracker-ru"
+			},
+			{
+				"name": "baseUrl"
+			},
+			{
+				"name": "baseSettings.queryLimit"
+			},
+			{
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "stripcyrillic",
+				"value": false
+			},
+			{
+				"name": "addrussiantotitle",
+				"value": false
+			},
+			{
+				"name": "sort",
+				"value": 0
+			},
+			{
+				"name": "type",
+				"value": 1
+			}
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#rutracker-ru",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "rutor",
-	"name": "RuTor",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "rutor"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "stripcyrillic",
-		"value": false
-	  },
-	  {
-		"name": "addrussiantotitle",
-		"value": false
-	  },
-	  {
-		"name": "info",
-		"value": "RuTor does not display categories in its search results page. This definition is probably only suitable for Prowlarr Dashboard Manual searches."
-	  },
-	  {
-		"name": "sort",
-		"value": 0
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#rutor",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "http://rutracker.ru/"
-	],
-	"legacyUrls": [],
-	"definitionName": "rutracker-ru",
-	"description": "RuTracker.RU is a RUSSIAN Public Torrent Tracker for MOVIES / TV / GENERAL",
-	"language": "ru-RU",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": [
+	{
+		"indexerUrls": [
+			"https://www.torrentdownload.info/",
+			"https://torrentdownload.unblockit.ong/"
+		],
+		"legacyUrls": [
+			"https://torrentdownload.mrunblock.guru/",
+			"https://torrentdownload.unblockit.click/",
+			"https://torrentdownload.unblockit.asia/",
+			"https://torrentdownload.unblockit.mov/",
+			"https://torrentdownload.mrunblock.life/",
+			"https://torrentdownload.unblockit.rsvp/",
+			"https://torrentdownload.unblockit.vegas/",
+			"https://torrentdownload.unblockit.esq/",
+			"https://torrentdownload.unblockit.zip/",
+			"https://torrentdownload.unblockit.foo/",
+			"https://torrentdownload.unblockit.ing/",
+			"https://torrentdownload.mrunblock.bond/",
+			"https://torrentdownload.nocensor.cloud/",
+			"https://torrentdownload.unblockit.date/",
+			"https://torrentdownload.unblockit.dad/",
+			"https://torrentdownload.unblockit.africa/",
+			"https://torrentdownload.unblockit.casa/",
+			"https://torrentdownload.unblockit.sbs/"
+		],
+		"definitionName": "torrentdownload",
+		"description": "TorrentDownload is a Public torrent meta-search engine",
+		"language": "en-US",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 6000,
+					"name": "XXX",
+					"subCategories": []
+				},
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": [
+						{
+							"id": 5070,
+							"name": "TV/Anime",
+							"subCategories": []
+						},
+						{
+							"id": 5080,
+							"name": "TV/Documentary",
+							"subCategories": []
+						},
+						{
+							"id": 5050,
+							"name": "TV/Other",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4010,
+							"name": "PC/0day",
+							"subCategories": []
+						},
+						{
+							"id": 4070,
+							"name": "PC/Mobile-Android",
+							"subCategories": []
+						},
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": [
+						{
+							"id": 3030,
+							"name": "Audio/Audiobook",
+							"subCategories": []
+						},
+						{
+							"id": 3040,
+							"name": "Audio/Lossless",
+							"subCategories": []
+						},
+						{
+							"id": 3010,
+							"name": "Audio/MP3",
+							"subCategories": []
+						},
+						{
+							"id": 3020,
+							"name": "Audio/Video",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": [
+						{
+							"id": 7030,
+							"name": "Books/Comics",
+							"subCategories": []
+						},
+						{
+							"id": 7020,
+							"name": "Books/EBook",
+							"subCategories": []
+						},
+						{
+							"id": 7010,
+							"name": "Books/Mags",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 1000,
+					"name": "Console",
+					"subCategories": []
+				},
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": []
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": [
+						{
+							"id": 8010,
+							"name": "Other/Misc",
+							"subCategories": []
+						}
+					]
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
+		},
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "torrentdownload",
+		"name": "TorrentDownload",
+		"fields": [
 			{
-			  "id": 2040,
-			  "name": "Movies/HD",
-			  "subCategories": []
+				"name": "definitionFile",
+				"value": "torrentdownload"
 			},
 			{
-			  "id": 2070,
-			  "name": "Movies/DVD",
-			  "subCategories": []
+				"name": "baseUrl"
 			},
 			{
-			  "id": 2060,
-			  "name": "Movies/3D",
-			  "subCategories": []
+				"name": "baseSettings.queryLimit"
+			},
+			{
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "sort",
+				"value": 1
 			}
-		  ]
-		},
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
-			{
-			  "id": 5040,
-			  "name": "TV/HD",
-			  "subCategories": []
-			},
-			{
-			  "id": 5010,
-			  "name": "TV/WEB-DL",
-			  "subCategories": []
-			},
-			{
-			  "id": 5045,
-			  "name": "TV/UHD",
-			  "subCategories": []
-			},
-			{
-			  "id": 5030,
-			  "name": "TV/SD",
-			  "subCategories": []
-			},
-			{
-			  "id": 5070,
-			  "name": "TV/Anime",
-			  "subCategories": []
-			},
-			{
-			  "id": 5060,
-			  "name": "TV/Sport",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
-			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
-			},
-			{
-			  "id": 4040,
-			  "name": "PC/Mobile-Other",
-			  "subCategories": []
-			},
-			{
-			  "id": 4060,
-			  "name": "PC/Mobile-iOS",
-			  "subCategories": []
-			},
-			{
-			  "id": 4070,
-			  "name": "PC/Mobile-Android",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 1000,
-		  "name": "Console",
-		  "subCategories": [
-			{
-			  "id": 1020,
-			  "name": "Console/PSP",
-			  "subCategories": []
-			},
-			{
-			  "id": 1040,
-			  "name": "Console/XBox",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": []
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": [
-			{
-			  "id": 3030,
-			  "name": "Audio/Audiobook",
-			  "subCategories": []
-			},
-			{
-			  "id": 3010,
-			  "name": "Audio/MP3",
-			  "subCategories": []
-			},
-			{
-			  "id": 3040,
-			  "name": "Audio/Lossless",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": []
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": true,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#torrentdownload",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "rutracker ru",
-	"name": "RuTracker.RU",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "rutracker-ru"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "stripcyrillic",
-		"value": false
-	  },
-	  {
-		"name": "addrussiantotitle",
-		"value": false
-	  },
-	  {
-		"name": "sort",
-		"value": 0
-	  },
-	  {
-		"name": "type",
-		"value": 1
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#rutracker-ru",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://www.torrentdownload.info/",
-	  "https://torrentdownload.unblockit.ong/"
-	],
-	"legacyUrls": [
-	  "https://torrentdownload.mrunblock.guru/",
-	  "https://torrentdownload.unblockit.click/",
-	  "https://torrentdownload.unblockit.asia/",
-	  "https://torrentdownload.unblockit.mov/",
-	  "https://torrentdownload.mrunblock.life/",
-	  "https://torrentdownload.unblockit.rsvp/",
-	  "https://torrentdownload.unblockit.vegas/",
-	  "https://torrentdownload.unblockit.esq/",
-	  "https://torrentdownload.unblockit.zip/",
-	  "https://torrentdownload.unblockit.foo/",
-	  "https://torrentdownload.unblockit.ing/",
-	  "https://torrentdownload.mrunblock.bond/",
-	  "https://torrentdownload.nocensor.cloud/",
-	  "https://torrentdownload.unblockit.date/",
-	  "https://torrentdownload.unblockit.dad/",
-	  "https://torrentdownload.unblockit.africa/",
-	  "https://torrentdownload.unblockit.casa/",
-	  "https://torrentdownload.unblockit.sbs/"
-	],
-	"definitionName": "torrentdownload",
-	"description": "TorrentDownload is a Public torrent meta-search engine",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": []
+	{
+		"indexerUrls": [
+			"https://eztvx.to/",
+			"https://eztv.wf/",
+			"https://eztv.tf/",
+			"https://eztv.yt/",
+			"https://eztv1.xyz/",
+			"https://eztv.unblockit.black/"
+		],
+		"legacyUrls": [
+			"https://eztv.ag/",
+			"https://eztv.it/",
+			"https://eztv.ch/",
+			"https://eztv.io/",
+			"https://eztv.unblockit.asia/",
+			"https://eztv.unblockit.mov/",
+			"https://eztv.mrunblock.life/",
+			"https://eztv.unblockit.rsvp/",
+			"https://eztv.unblockit.vegas/",
+			"https://eztv.unblockit.esq/",
+			"https://eztv.unblockit.zip/",
+			"https://eztv.re/",
+			"https://eztv.li/",
+			"https://eztv.unblockit.foo/",
+			"https://eztv.unblockit.ing/",
+			"https://eztv.mrunblock.bond/",
+			"https://eztv.nocensor.cloud/",
+			"https://eztv.unblockit.date/",
+			"https://eztv.unblockit.dad/",
+			"https://eztv.unblockit.africa/",
+			"https://eztv.unblockit.casa/",
+			"https://eztv.unblockit.sbs/",
+			"https://eztv.unblockninja.com/",
+			"https://eztv.ninjaproxy1.com/",
+			"https://eztv.proxyninja.org/",
+			"https://eztv.abcproxy.org/",
+			"https://eztv.unblockit.ong/"
+		],
+		"definitionName": "eztv",
+		"description": "EZTV is a Public torrent site for TV shows",
+		"language": "en-US",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": []
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [],
+			"musicSearchParams": [],
+			"bookSearchParams": []
 		},
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "eztv",
+		"name": "EZTV",
+		"fields": [
 			{
-			  "id": 5070,
-			  "name": "TV/Anime",
-			  "subCategories": []
+				"name": "definitionFile",
+				"value": "eztv"
 			},
 			{
-			  "id": 5080,
-			  "name": "TV/Documentary",
-			  "subCategories": []
+				"name": "baseUrl"
 			},
 			{
-			  "id": 5050,
-			  "name": "TV/Other",
-			  "subCategories": []
+				"name": "baseSettings.queryLimit"
+			},
+			{
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
 			}
-		  ]
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
-			{
-			  "id": 4010,
-			  "name": "PC/0day",
-			  "subCategories": []
-			},
-			{
-			  "id": 4070,
-			  "name": "PC/Mobile-Android",
-			  "subCategories": []
-			},
-			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": [
-			{
-			  "id": 3030,
-			  "name": "Audio/Audiobook",
-			  "subCategories": []
-			},
-			{
-			  "id": 3040,
-			  "name": "Audio/Lossless",
-			  "subCategories": []
-			},
-			{
-			  "id": 3010,
-			  "name": "Audio/MP3",
-			  "subCategories": []
-			},
-			{
-			  "id": 3020,
-			  "name": "Audio/Video",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": [
-			{
-			  "id": 7030,
-			  "name": "Books/Comics",
-			  "subCategories": []
-			},
-			{
-			  "id": 7020,
-			  "name": "Books/EBook",
-			  "subCategories": []
-			},
-			{
-			  "id": 7010,
-			  "name": "Books/Mags",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 1000,
-		  "name": "Console",
-		  "subCategories": []
-		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": [
-			{
-			  "id": 8010,
-			  "name": "Other/Misc",
-			  "subCategories": []
-			}
-		  ]
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#eztv",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "torrentdownload",
-	"name": "TorrentDownload",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "torrentdownload"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "sort",
-		"value": 1
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#torrentdownload",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://www.529052.xyz/",
-	  "https://www.529053.xyz/"
-	],
-	"legacyUrls": [
-	  "https://529050.xyz/",
-	  "https://529048.xyz/",
-	  "https://529049.xyz/"
-	],
-	"definitionName": "52bt",
-	"description": "52BT is a CHINESE Public tracker for TV / MOVIES / MUSIC / GENERAL",
-	"language": "zh-CN",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": []
+	{
+		"indexerUrls": [
+			"https://yts.mx/",
+			"https://yts.unblockit.meme/",
+			"https://yts.unblockninja.com/",
+			"https://yts.ninjaproxy1.com/",
+			"https://yts.proxyninja.org/",
+			"https://yts.proxyninja.net/",
+			"https://yts.torrentbay.st/",
+			"https://yts.torrentsbay.org/"
+		],
+		"legacyUrls": [
+			"https://yts.unblockit.mov/",
+			"https://yts.unblockit.rsvp/",
+			"https://yts.unblockit.vegas/",
+			"https://yts.unblockit.esq/",
+			"https://yts.unblockit.zip/",
+			"https://yts.unblockit.foo/",
+			"https://yts.unblockit.ing/",
+			"https://yts.mrunblock.bond/",
+			"https://yts.nocensor.cloud/",
+			"https://yts.unblockit.date/",
+			"https://yts.unblockit.dad/",
+			"https://yts.unblockit.africa/",
+			"https://yts.unblockit.casa/",
+			"https://yts.unblockit.sbs/",
+			"https://yts.unblockit.ong/",
+			"https://yts.abcproxy.org/",
+			"https://yts.unblockit.black/",
+			"https://yts.lt/",
+			"https://yts.am/",
+			"https://yts.ag/"
+		],
+		"definitionName": "yts",
+		"description": "YTS is a Public torrent site specialising in HD movies of small size",
+		"language": "en-US",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": [
+						{
+							"id": 2040,
+							"name": "Movies/HD",
+							"subCategories": []
+						},
+						{
+							"id": 2045,
+							"name": "Movies/UHD",
+							"subCategories": []
+						},
+						{
+							"id": 2060,
+							"name": "Movies/3D",
+							"subCategories": []
+						}
+					]
+				}
+			],
+			"supportsRawSearch": false,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [],
+			"movieSearchParams": [
+				"q",
+				"imdbId"
+			],
+			"musicSearchParams": [],
+			"bookSearchParams": []
 		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": []
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": []
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": []
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
-	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "52bt",
-	"name": "52BT",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "52bt"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "cat-id",
-		"value": 0
-	  },
-	  {
-		"name": "sort",
-		"value": 2
-	  },
-	  {
-		"name": "info_flaresolverr",
-		"value": "This site may use Cloudflare DDoS Protection, therefore Prowlarr requires <a href=\"https://wiki.servarr.com/prowlarr/faq#can-i-use-flaresolverr-indexers\" target=\"_blank\" rel=\"noreferrer\">FlareSolverr</a> to access it."
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#52bt",
-	"tags": [
-	  1
-	]
-  },
-  {
-	"indexerUrls": [
-	  "https://eztvx.to/",
-	  "https://eztv.wf/",
-	  "https://eztv.tf/",
-	  "https://eztv.yt/",
-	  "https://eztv1.xyz/",
-	  "https://eztv.unblockit.black/"
-	],
-	"legacyUrls": [
-	  "https://eztv.ag/",
-	  "https://eztv.it/",
-	  "https://eztv.ch/",
-	  "https://eztv.io/",
-	  "https://eztv.unblockit.asia/",
-	  "https://eztv.unblockit.mov/",
-	  "https://eztv.mrunblock.life/",
-	  "https://eztv.unblockit.rsvp/",
-	  "https://eztv.unblockit.vegas/",
-	  "https://eztv.unblockit.esq/",
-	  "https://eztv.unblockit.zip/",
-	  "https://eztv.re/",
-	  "https://eztv.li/",
-	  "https://eztv.unblockit.foo/",
-	  "https://eztv.unblockit.ing/",
-	  "https://eztv.mrunblock.bond/",
-	  "https://eztv.nocensor.cloud/",
-	  "https://eztv.unblockit.date/",
-	  "https://eztv.unblockit.dad/",
-	  "https://eztv.unblockit.africa/",
-	  "https://eztv.unblockit.casa/",
-	  "https://eztv.unblockit.sbs/",
-	  "https://eztv.unblockninja.com/",
-	  "https://eztv.ninjaproxy1.com/",
-	  "https://eztv.proxyninja.org/",
-	  "https://eztv.abcproxy.org/",
-	  "https://eztv.unblockit.ong/"
-	],
-	"definitionName": "eztv",
-	"description": "EZTV is a Public torrent site for TV shows",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [],
-	  "musicSearchParams": [],
-	  "bookSearchParams": []
-	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "eztv",
-	"name": "EZTV",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "eztv"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#eztv",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://yts.mx/",
-	  "https://yts.unblockit.meme/",
-	  "https://yts.unblockninja.com/",
-	  "https://yts.ninjaproxy1.com/",
-	  "https://yts.proxyninja.org/",
-	  "https://yts.proxyninja.net/",
-	  "https://yts.torrentbay.st/",
-	  "https://yts.torrentsbay.org/"
-	],
-	"legacyUrls": [
-	  "https://yts.unblockit.mov/",
-	  "https://yts.unblockit.rsvp/",
-	  "https://yts.unblockit.vegas/",
-	  "https://yts.unblockit.esq/",
-	  "https://yts.unblockit.zip/",
-	  "https://yts.unblockit.foo/",
-	  "https://yts.unblockit.ing/",
-	  "https://yts.mrunblock.bond/",
-	  "https://yts.nocensor.cloud/",
-	  "https://yts.unblockit.date/",
-	  "https://yts.unblockit.dad/",
-	  "https://yts.unblockit.africa/",
-	  "https://yts.unblockit.casa/",
-	  "https://yts.unblockit.sbs/",
-	  "https://yts.unblockit.ong/",
-	  "https://yts.abcproxy.org/",
-	  "https://yts.unblockit.black/",
-	  "https://yts.lt/",
-	  "https://yts.am/",
-	  "https://yts.ag/"
-	],
-	"definitionName": "yts",
-	"description": "YTS is a Public torrent site specialising in HD movies of small size",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": [
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "yts",
+		"name": "YTS",
+		"fields": [
 			{
-			  "id": 2040,
-			  "name": "Movies/HD",
-			  "subCategories": []
+				"name": "definitionFile",
+				"value": "yts"
 			},
 			{
-			  "id": 2045,
-			  "name": "Movies/UHD",
-			  "subCategories": []
+				"name": "baseUrl"
 			},
 			{
-			  "id": 2060,
-			  "name": "Movies/3D",
-			  "subCategories": []
-			}
-		  ]
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [],
-	  "movieSearchParams": [
-		"q",
-		"imdbId"
-	  ],
-	  "musicSearchParams": [],
-	  "bookSearchParams": []
-	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "yts",
-	"name": "YTS",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "yts"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#yts",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://nyaa.si/",
-	  "https://nyaa.iss.ink/",
-	  "https://nyaa.land/",
-	  "https://nyaa.unblockninja.com/"
-	],
-	"legacyUrls": [
-	  "https://nyaa.black-mirror.xyz/",
-	  "https://nyaa.unblocked.casa/",
-	  "https://nyaa.proxyportal.fun/",
-	  "https://nyaa.uk-unblock.xyz/",
-	  "https://nyaa.ind-unblock.xyz/",
-	  "https://nyaa.unblocked.bar/",
-	  "https://nyaa.proxyportal.pw/",
-	  "https://nyaa.uk-unblock.pro/",
-	  "https://nyaa.root.yt/",
-	  "https://nyaa.lol/",
-	  "https://nyaa.mrunblock.bond/",
-	  "https://nyaa.nocensor.cloud/"
-	],
-	"definitionName": "nyaasi",
-	"description": "Nyaa is a Public torrent site focused on Eastern Asian media including anime, manga, literature and music",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
-			{
-			  "id": 5070,
-			  "name": "TV/Anime",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": [
-			{
-			  "id": 2020,
-			  "name": "Movies/Other",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": []
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": []
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": []
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
-			{
-			  "id": 4020,
-			  "name": "PC/ISO",
-			  "subCategories": []
+				"name": "baseSettings.queryLimit"
 			},
 			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
 			}
-		  ]
-		}
-	  ],
-	  "supportsRawSearch": true,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#yts",
+		"tags": []
 	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "nyaa si",
-	"name": "Nyaa.si",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "nyaasi"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.preferMagnetUrl",
-		"value": false
-	  },
-	  {
-		"name": "prefer_magnet_links",
-		"value": true
-	  },
-	  {
-		"name": "sonarr_compatibility",
-		"value": true
-	  },
-	  {
-		"name": "strip_s01",
-		"value": false
-	  },
-	  {
-		"name": "radarr_compatibility",
-		"value": true
-	  },
-	  {
-		"name": "filter-id",
-		"value": 1
-	  },
-	  {
-		"name": "cat-id",
-		"value": 0
-	  },
-	  {
-		"name": "sort",
-		"value": 0
-	  },
-	  {
-		"name": "type",
-		"value": 1
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#nyaasi",
-	"tags": []
-  }
+	{
+		"indexerUrls": [
+			"https://nyaa.si/",
+			"https://nyaa.iss.ink/",
+			"https://nyaa.land/",
+			"https://nyaa.unblockninja.com/"
+		],
+		"legacyUrls": [
+			"https://nyaa.black-mirror.xyz/",
+			"https://nyaa.unblocked.casa/",
+			"https://nyaa.proxyportal.fun/",
+			"https://nyaa.uk-unblock.xyz/",
+			"https://nyaa.ind-unblock.xyz/",
+			"https://nyaa.unblocked.bar/",
+			"https://nyaa.proxyportal.pw/",
+			"https://nyaa.uk-unblock.pro/",
+			"https://nyaa.root.yt/",
+			"https://nyaa.lol/",
+			"https://nyaa.mrunblock.bond/",
+			"https://nyaa.nocensor.cloud/"
+		],
+		"definitionName": "nyaasi",
+		"description": "Nyaa is a Public torrent site focused on Eastern Asian media including anime, manga, literature and music",
+		"language": "en-US",
+		"enable": true,
+		"redirect": false,
+		"supportsRss": true,
+		"supportsSearch": true,
+		"supportsRedirect": false,
+		"supportsPagination": false,
+		"appProfileId": 1,
+		"protocol": "torrent",
+		"privacy": "public",
+		"capabilities": {
+			"limitsMax": 100,
+			"limitsDefault": 100,
+			"categories": [
+				{
+					"id": 5000,
+					"name": "TV",
+					"subCategories": [
+						{
+							"id": 5070,
+							"name": "TV/Anime",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 2000,
+					"name": "Movies",
+					"subCategories": [
+						{
+							"id": 2020,
+							"name": "Movies/Other",
+							"subCategories": []
+						}
+					]
+				},
+				{
+					"id": 3000,
+					"name": "Audio",
+					"subCategories": []
+				},
+				{
+					"id": 7000,
+					"name": "Books",
+					"subCategories": []
+				},
+				{
+					"id": 8000,
+					"name": "Other",
+					"subCategories": []
+				},
+				{
+					"id": 4000,
+					"name": "PC",
+					"subCategories": [
+						{
+							"id": 4020,
+							"name": "PC/ISO",
+							"subCategories": []
+						},
+						{
+							"id": 4050,
+							"name": "PC/Games",
+							"subCategories": []
+						}
+					]
+				}
+			],
+			"supportsRawSearch": true,
+			"searchParams": [
+				"q",
+				"q"
+			],
+			"tvSearchParams": [
+				"q",
+				"season",
+				"ep"
+			],
+			"movieSearchParams": [
+				"q"
+			],
+			"musicSearchParams": [
+				"q"
+			],
+			"bookSearchParams": [
+				"q"
+			]
+		},
+		"priority": 25,
+		"downloadClientId": 0,
+		"added": "0001-01-01T00:00:00Z",
+		"sortName": "nyaa si",
+		"name": "Nyaa.si",
+		"fields": [
+			{
+				"name": "definitionFile",
+				"value": "nyaasi"
+			},
+			{
+				"name": "baseUrl"
+			},
+			{
+				"name": "baseSettings.queryLimit"
+			},
+			{
+				"name": "baseSettings.grabLimit"
+			},
+			{
+				"name": "baseSettings.limitsUnit",
+				"value": 0
+			},
+			{
+				"name": "torrentBaseSettings.appMinimumSeeders"
+			},
+			{
+				"name": "torrentBaseSettings.seedRatio"
+			},
+			{
+				"name": "torrentBaseSettings.seedTime"
+			},
+			{
+				"name": "torrentBaseSettings.packSeedTime"
+			},
+			{
+				"name": "torrentBaseSettings.preferMagnetUrl",
+				"value": false
+			},
+			{
+				"name": "prefer_magnet_links",
+				"value": true
+			},
+			{
+				"name": "sonarr_compatibility",
+				"value": true
+			},
+			{
+				"name": "strip_s01",
+				"value": false
+			},
+			{
+				"name": "radarr_compatibility",
+				"value": true
+			},
+			{
+				"name": "filter-id",
+				"value": 1
+			},
+			{
+				"name": "cat-id",
+				"value": 0
+			},
+			{
+				"name": "sort",
+				"value": 0
+			},
+			{
+				"name": "type",
+				"value": 1
+			}
+		],
+		"implementationName": "Cardigann",
+		"implementation": "Cardigann",
+		"configContract": "CardigannSettings",
+		"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#nyaasi",
+		"tags": []
+	}
 ]

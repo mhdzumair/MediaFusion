@@ -19,10 +19,10 @@ MAGNET_RE = re.compile(r"magnet:\?xt=urn:btih:[a-fA-F0-9]{40}[^\"'<>\s]*")
 
 
 class ExtToSpider(scrapy.Spider):
-    """Base spider for scraping ext.to torrent site via FlareSolverr.
+    """Base spider for scraping ext.to torrent site via Scrapling anti-bot solver.
 
     ext.to is behind Cloudflare protection. This spider uses the existing
-    FlaresolverrMiddleware to bypass it by setting use_flaresolverr = True.
+    Scrapling anti-bot middleware by setting use_anti_bot_solver = True.
     No Playwright/Browserless is needed since ext.to serves server-rendered HTML.
 
     Supports two scraping modes:
@@ -49,7 +49,7 @@ class ExtToSpider(scrapy.Spider):
     """
 
     allowed_domains = config_manager.get_start_url("ext_to") or ["ext.to"]
-    use_flaresolverr = True
+    use_anti_bot_solver = True
 
     uploader_profiles: list[str] = []
     search_queries: list[str] = []

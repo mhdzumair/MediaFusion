@@ -16,7 +16,7 @@ class MovieTVParserPipeline:
             raise DropItem(f"Title not parsed: {title}")
 
         if "file_data" not in data:
-            raise DropItem(f"File data not found in item: {data}")
+            raise DropItem(f"File data not found for title: {title}")
 
         data_type = data.get("type", "movie")
         if data_type == "movie":

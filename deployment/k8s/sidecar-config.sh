@@ -47,15 +47,6 @@ until [ "$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-KEY: $PROWLARR_API_K
   sleep 5
 done
 
-# Create tag "flaresolverr"
-handle_curl false -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw '{"label":"flaresolverr"}' 'http://localhost:9696/api/v1/tag'
-
-# Create FlareSolverr proxy using the JSON file
-retry_curl https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/prowlarr_indexer_proxy.json /config/prowlarr_indexer_proxy.json
-PROXY_DATA=$(cat /config/prowlarr_indexer_proxy.json)
-PROXY_DATA=$(echo "$PROXY_DATA" | sed "s#\\\$FLARESOLVERR_HOST#$FLARESOLVERR_HOST#g")
-handle_curl true -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw "$PROXY_DATA" 'http://localhost:9696/api/v1/indexerProxy?'
-
 # Configure indexers using the JSON file
 retry_curl https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/prowlarr-indexers.json /config/prowlarr-indexers.json
 INDEXERS=$(jq -c '.[]' /config/prowlarr-indexers.json)

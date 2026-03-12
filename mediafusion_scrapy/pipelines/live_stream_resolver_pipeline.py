@@ -23,7 +23,7 @@ class LiveStreamResolverPipeline:
             stream_headers = {"Referer": referer} if referer else {}
 
         if not stream_url:
-            raise DropItem(f"No stream URL found in item: {item}")
+            raise DropItem("No stream URL found in item.")
 
         response = await self.crawler.engine.download_async(
             scrapy.Request(

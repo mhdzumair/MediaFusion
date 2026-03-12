@@ -1,4 +1,5 @@
 import os
+import logging
 
 # Scrapy settings for mediafusion_scrapy project
 #
@@ -57,9 +58,9 @@ SPIDER_MIDDLEWARES = {
 DOWNLOADER_MIDDLEWARES = {
     "mediafusion_scrapy.middlewares.TooManyRequestsRetryMiddleware": 543,
     "scrapy.downloadermiddlewares.retry.RetryMiddleware": 550,
-    # FlaresolverrMiddleware must have higher priority number than RetryMiddleware
-    # so it intercepts 403 responses first in process_response (reverse order).
-    "mediafusion_scrapy.middlewares.FlaresolverrMiddleware": 551,
+    # Scrapling anti-bot middleware must have higher priority number than RetryMiddleware
+    # so it intercepts Cloudflare pages first in process_response (reverse order).
+    "mediafusion_scrapy.middlewares.ScraplingAntiBotMiddleware": 551,
 }
 
 EXTENSIONS = {
@@ -97,6 +98,24 @@ HTTPCACHE_STORAGE = "scrapy.extensions.httpcache.FilesystemCacheStorage"
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 FEED_EXPORT_ENCODING = "utf-8"
 LOG_LEVEL = "INFO"
+LOG_FORMATTER = "mediafusion_scrapy.log_formatter.CompactDropItemLogFormatter"
+
+
+class _SuppressNoCloudflareChallengeFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "No Cloudflare challenge found." not in record.getMessage()
+
+
+# Enforce logger levels for CLI runs where project-level logging config
+# can otherwise leak DEBUG logs despite Scrapy LOG_LEVEL overrides.
+logging.getLogger("scrapy").setLevel(logging.INFO)
+logging.getLogger("scrapy.core.engine").setLevel(logging.INFO)
+logging.getLogger("scrapy.core.scraper").setLevel(logging.INFO)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("asyncio").setLevel(logging.WARNING)
+logging.getLogger("scrapling").addFilter(_SuppressNoCloudflareChallengeFilter())
+logging.getLogger("scrapling.engines._browsers._stealth").addFilter(_SuppressNoCloudflareChallengeFilter())
 
 STATS_CLASS = "mediafusion_scrapy.custom_stats.RedisStatsCollector"
 
@@ -113,6 +132,17 @@ RETRY_HTTP_CODES = [
 ]  # 429 is handled by the middleware
 RETRY_TIMES = 5
 
-FLARESOLVERR_URL = settings.flaresolverr_url
+SCRAPLING_PROXY_URL = settings.scrapling_proxy_url or settings.requests_proxy_url
+SCRAPLING_HEADLESS = settings.scrapling_headless
+SCRAPLING_DISABLE_RESOURCES = settings.scrapling_disable_resources
+SCRAPLING_NETWORK_IDLE = settings.scrapling_network_idle
+SCRAPLING_WAIT_TIME_MS = settings.scrapling_wait_time_ms
+SCRAPLING_MAX_TIMEOUT = settings.scrapling_timeout_ms
+SCRAPLING_GOOGLE_SEARCH_REFERER = settings.scrapling_google_search_referer
+SCRAPLING_FETCHER_MODE = settings.scrapling_fetcher_mode
+SCRAPLING_SOLVE_CLOUDFLARE = settings.scrapling_solve_cloudflare
+SCRAPLING_REAL_CHROME = settings.scrapling_real_chrome
+SCRAPLING_CLOUDFLARE_CACHE_DURATION = settings.scrapling_cloudflare_cache_duration
+SCRAPLING_CLOUDFLARE_MAX_ATTEMPTS = settings.scrapling_cloudflare_max_attempts
 
 CLOSESPIDER_TIMEOUT_NO_ITEM = max(1, int(os.getenv("SCRAPY_CLOSESPIDER_TIMEOUT_NO_ITEM", "600")))  # 10 minutes

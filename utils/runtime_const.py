@@ -43,6 +43,7 @@ DMM_HASHLIST_SYNC_TTL = int(timedelta(hours=settings.dmm_hashlist_sync_interval_
 SERVER_NAMESPACE = None
 YTS_SEARCH_TTL = 259200  # 3 days in seconds
 BT4G_SEARCH_TTL = int(timedelta(hours=settings.bt4g_search_interval_hour).total_seconds())
+PUBLIC_INDEXERS_SEARCH_TTL = int(timedelta(hours=settings.public_indexers_search_interval_hour).total_seconds())
 JACKETT_SEARCH_TTL = int(timedelta(hours=settings.jackett_search_interval_hour).total_seconds())
 # Torznab TTL - same as Jackett since they use the same protocol
 TORZNAB_SEARCH_TTL = JACKETT_SEARCH_TTL
