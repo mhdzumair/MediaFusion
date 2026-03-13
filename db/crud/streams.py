@@ -150,13 +150,15 @@ async def link_stream_to_media(
     season: int | None = None,
     episode: int | None = None,
 ) -> StreamMediaLink:
-    """Link a stream to a media entry."""
+    """Link a stream to a media entry.
+
+    Note: season/episode are deprecated at stream-link level.
+    Episode mapping now lives on FileMediaLink (file-level granularity).
+    """
     link = StreamMediaLink(
         stream_id=stream_id,
         media_id=media_id,
         file_index=file_index,
-        season=season,
-        episode=episode,
     )
     session.add(link)
     await increment_stream_count(session, media_id)

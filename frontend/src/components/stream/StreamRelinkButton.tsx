@@ -56,6 +56,8 @@ interface StreamRelinkButtonProps {
   onSuccess?: () => void
 }
 
+type ManualIdMode = 'external' | 'mediafusion'
+
 // API to get existing links
 const streamLinkingApi = {
   getMediaForStream: async (streamId: number): Promise<{ stream_id: number; media_entries: MediaLinkInfo[] }> => {
@@ -68,6 +70,25 @@ function normalizeExternalIdInput(rawValue: string): string {
   if (!value) return ''
   if (/^\d+$/.test(value)) return `tmdb:${value}`
   return value
+}
+
+function parseMediaFusionMediaIdInput(rawValue: string): number | null {
+  const value = rawValue.trim()
+  if (!value) return null
+
+  const match = value.match(/^(?:mf:|mediafusion:)?(\d+)$/i)
+  if (!match) return null
+
+  const parsed = Number.parseInt(match[1], 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) return null
+  return parsed
+}
+
+function parseOptionalInteger(rawValue: string): number | undefined {
+  const value = rawValue.trim()
+  if (!value) return undefined
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) ? parsed : undefined
 }
 
 function getResultExternalIds(result: CombinedSearchResult): string[] {
@@ -119,9 +140,13 @@ export function StreamRelinkButton({
   const [searchQuery, setSearchQuery] = useState('')
   const [searchYear, setSearchYear] = useState('')
   const [selectedMedia, setSelectedMedia] = useState<CombinedSearchResult | null>(null)
+  const [manualIdMode, setManualIdMode] = useState<ManualIdMode>('external')
   const [manualExternalId, setManualExternalId] = useState('')
-  const [manualMediaType, setManualMediaType] = useState<'movie' | 'series'>('movie')
+  const [manualMediaType, setManualMediaType] = useState<'movie' | 'series' | 'tv'>('movie')
   const [fileIndex, setFileIndex] = useState<string>('')
+  const [seasonNumber, setSeasonNumber] = useState<string>('')
+  const [episodeNumber, setEpisodeNumber] = useState<string>('')
+  const [episodeEnd, setEpisodeEnd] = useState<string>('')
   const [reason, setReason] = useState('')
 
   const debouncedQuery = useDebounce(searchQuery, 300)
@@ -166,9 +191,13 @@ export function StreamRelinkButton({
       // Reset state when closing
       setSearchQuery('')
       setSelectedMedia(null)
+      setManualIdMode('external')
       setManualExternalId('')
       setManualMediaType('movie')
       setFileIndex('')
+      setSeasonNumber('')
+      setEpisodeNumber('')
+      setEpisodeEnd('')
       setReason('')
       setSearchYear('')
       setLinkAction('add')
@@ -183,7 +212,7 @@ export function StreamRelinkButton({
       if (bestExternalId) {
         setManualExternalId(bestExternalId)
       }
-      setManualMediaType(result.type === 'series' ? 'series' : 'movie')
+      setManualMediaType(result.type === 'series' ? 'series' : result.type === 'tv' ? 'tv' : 'movie')
     } else {
       setManualExternalId('')
     }
@@ -191,10 +220,37 @@ export function StreamRelinkButton({
     setSearchOpen(false)
     setSearchQuery('')
     setSearchYear('')
+    setSeasonNumber('')
+    setEpisodeNumber('')
+    setEpisodeEnd('')
   }, [])
 
   const handleSelectManualExternalId = useCallback(() => {
     const normalizedExternalId = normalizeExternalIdInput(manualExternalId)
+    const mediaFusionMediaId = parseMediaFusionMediaIdInput(manualExternalId)
+
+    if (manualIdMode === 'mediafusion') {
+      if (!mediaFusionMediaId) {
+        toast({
+          title: 'Media ID required',
+          description: 'Enter a valid MediaFusion media ID like 123 or mf:123.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      setManualExternalId(String(mediaFusionMediaId))
+      setSelectedMedia({
+        id: `manual-mf-${mediaFusionMediaId}`,
+        title: `MediaFusion media #${mediaFusionMediaId}`,
+        type: manualMediaType,
+        source: 'internal',
+        internal_id: mediaFusionMediaId,
+        external_id: `mf:${mediaFusionMediaId}`,
+      })
+      return
+    }
+
     if (!normalizedExternalId) {
       toast({
         title: 'External ID required',
@@ -213,41 +269,75 @@ export function StreamRelinkButton({
       external_id: normalizedExternalId,
       provider: normalizedExternalId.startsWith('tt') ? 'imdb' : normalizedExternalId.split(':', 1)[0] || 'external',
     })
-  }, [manualExternalId, manualMediaType, toast])
+  }, [manualExternalId, manualIdMode, manualMediaType, toast])
 
   // Submit suggestion
   const handleSubmit = useCallback(async () => {
     const normalizedManualExternalId = normalizeExternalIdInput(manualExternalId)
+    const manualMediaFusionId = parseMediaFusionMediaIdInput(manualExternalId)
+    const parsedFileIndex = parseOptionalInteger(fileIndex)
+    const parsedSeasonNumber = parseOptionalInteger(seasonNumber)
+    const parsedEpisodeNumber = parseOptionalInteger(episodeNumber)
+    const parsedEpisodeEnd = parseOptionalInteger(episodeEnd)
     const selectedExternalId =
       selectedMedia?.source === 'external' ? normalizeExternalIdInput(getBestExternalId(selectedMedia)) : ''
     const isInternalSelection = selectedMedia?.source === 'internal' && !!selectedMedia.internal_id
     const isManualExternalSelection = selectedMedia?.source === 'external' && selectedMedia.id.startsWith('manual-')
-    const targetExternalId = isInternalSelection ? '' : normalizedManualExternalId || selectedExternalId
+    const hasEpisodeMapping =
+      parsedSeasonNumber !== undefined || parsedEpisodeNumber !== undefined || parsedEpisodeEnd !== undefined
+    const targetMediaId =
+      (isInternalSelection ? selectedMedia.internal_id : undefined) ||
+      (manualIdMode === 'mediafusion' ? (manualMediaFusionId ?? undefined) : undefined)
+    const targetExternalId = targetMediaId
+      ? ''
+      : manualIdMode === 'external'
+        ? normalizedManualExternalId || selectedExternalId
+        : selectedExternalId
 
-    if (!isInternalSelection && !targetExternalId) return
+    if (!targetMediaId && !targetExternalId) return
+    if (hasEpisodeMapping && parsedFileIndex === undefined) {
+      toast({
+        title: 'File index required',
+        description: 'Set a file index when adding season/episode mapping.',
+        variant: 'destructive',
+      })
+      return
+    }
+    if (parsedEpisodeEnd !== undefined && parsedEpisodeNumber === undefined) {
+      toast({
+        title: 'Episode number required',
+        description: 'Set episode number when episode end is provided.',
+        variant: 'destructive',
+      })
+      return
+    }
 
     try {
       const response = await createSuggestion.mutateAsync({
         streamId,
         data: {
           suggestion_type: linkAction === 'relink' ? 'relink_media' : 'add_media_link',
-          target_media_id: isInternalSelection ? selectedMedia.internal_id : undefined,
+          target_media_id: targetMediaId,
           target_external_id: targetExternalId || undefined,
           target_media_type: targetExternalId
             ? selectedMedia?.type === 'series'
               ? 'series'
-              : manualMediaType
+              : selectedMedia?.type === 'tv'
+                ? 'tv'
+                : manualMediaType
             : undefined,
-          target_title:
-            !isInternalSelection && !isManualExternalSelection ? (selectedMedia?.title ?? undefined) : undefined,
-          file_index: fileIndex ? parseInt(fileIndex) : undefined,
+          target_title: !targetMediaId && !isManualExternalSelection ? (selectedMedia?.title ?? undefined) : undefined,
+          file_index: parsedFileIndex,
+          season_number: parsedSeasonNumber,
+          episode_number: parsedEpisodeNumber,
+          episode_end: parsedEpisodeEnd,
           reason:
             reason ||
-            (isInternalSelection
-              ? `Link stream to "${selectedMedia?.title || 'selected media'}"`
+            (targetMediaId
+              ? `Link stream to "${selectedMedia?.title || `MediaFusion media #${targetMediaId}`}"`
               : `Link stream to external ID "${targetExternalId}"`),
           current_value: currentMediaTitle || existingLinks.map((l) => l.title).join(', ') || undefined,
-          suggested_value: isInternalSelection ? selectedMedia?.title : targetExternalId,
+          suggested_value: targetMediaId ? selectedMedia?.title || `mf:${targetMediaId}` : targetExternalId,
         },
       })
 
@@ -271,10 +361,14 @@ export function StreamRelinkButton({
   }, [
     streamId,
     selectedMedia,
+    manualIdMode,
     manualExternalId,
     manualMediaType,
     linkAction,
     fileIndex,
+    seasonNumber,
+    episodeNumber,
+    episodeEnd,
     reason,
     currentMediaTitle,
     existingLinks,
@@ -284,10 +378,14 @@ export function StreamRelinkButton({
   ])
 
   const normalizedManualExternalId = normalizeExternalIdInput(manualExternalId)
+  const manualMediaFusionId = parseMediaFusionMediaIdInput(manualExternalId)
+  const selectedMediaType = selectedMedia?.type?.toLowerCase()
+  const isEpisodeMappingSupportedTarget = selectedMediaType === 'series' || selectedMediaType === 'tv'
   const canSubmit = Boolean(
     (selectedMedia?.source === 'internal' && selectedMedia.internal_id) ||
     (selectedMedia?.source === 'external' && normalizeExternalIdInput(getBestExternalId(selectedMedia))) ||
-    normalizedManualExternalId,
+    (manualIdMode === 'external' && normalizedManualExternalId) ||
+    (manualIdMode === 'mediafusion' && manualMediaFusionId),
   )
 
   const defaultTrigger = (
@@ -632,14 +730,34 @@ export function StreamRelinkButton({
                 )}
               </div>
 
-              {/* Manual external ID */}
+              {/* Manual ID */}
               <div className="space-y-2 p-2 rounded-lg border border-dashed border-border/70 bg-muted/20">
-                <Label className="text-xs text-muted-foreground">Manual External ID</Label>
+                <Label className="text-xs text-muted-foreground">Manual ID</Label>
                 <div className="grid grid-cols-2 gap-2">
+                  <div className="flex items-center gap-1 rounded border border-border/50 p-1 col-span-2">
+                    <Button
+                      type="button"
+                      variant={manualIdMode === 'external' ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-6 px-2 text-xs flex-1"
+                      onClick={() => setManualIdMode('external')}
+                    >
+                      External ID
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={manualIdMode === 'mediafusion' ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-6 px-2 text-xs flex-1"
+                      onClick={() => setManualIdMode('mediafusion')}
+                    >
+                      MediaFusion ID
+                    </Button>
+                  </div>
                   <Input
                     value={manualExternalId}
                     onChange={(e) => setManualExternalId(e.target.value)}
-                    placeholder="tt1234567, tmdb:550, tvdb:121361"
+                    placeholder={manualIdMode === 'external' ? 'tt1234567, tmdb:550, tvdb:121361' : '123 or mf:123'}
                     className="h-8 text-sm col-span-2"
                   />
                   <div className="flex items-center gap-1 rounded border border-border/50 p-1">
@@ -661,6 +779,15 @@ export function StreamRelinkButton({
                     >
                       Series
                     </Button>
+                    <Button
+                      type="button"
+                      variant={manualMediaType === 'tv' ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-6 px-2 text-xs flex-1"
+                      onClick={() => setManualMediaType('tv')}
+                    >
+                      TV
+                    </Button>
                   </div>
                   <Button
                     type="button"
@@ -668,14 +795,14 @@ export function StreamRelinkButton({
                     size="sm"
                     className="h-8"
                     onClick={handleSelectManualExternalId}
-                    disabled={!normalizedManualExternalId}
+                    disabled={manualIdMode === 'external' ? !normalizedManualExternalId : !manualMediaFusionId}
                   >
                     Use ID
                   </Button>
                 </div>
                 <p className="text-[10px] text-muted-foreground">
-                  If this ID does not exist yet, MediaFusion will create media during link approval and attach the
-                  stream.
+                  External IDs create/fetch metadata during approval. MediaFusion IDs link to an existing internal media
+                  record directly.
                 </p>
               </div>
 
@@ -693,6 +820,41 @@ export function StreamRelinkButton({
                     placeholder="Leave empty for whole stream"
                     className="h-8 text-sm"
                   />
+                </div>
+              )}
+
+              {/* Optional series episode mapping in the same submission */}
+              {selectedMedia && isEpisodeMappingSupportedTarget && (
+                <div className="space-y-2 rounded-lg border border-border/50 p-2">
+                  <Label className="text-xs text-muted-foreground">
+                    Episode Mapping (optional, requires file index)
+                  </Label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={seasonNumber}
+                      onChange={(e) => setSeasonNumber(e.target.value)}
+                      placeholder="Season"
+                      className="h-8 text-sm"
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      value={episodeNumber}
+                      onChange={(e) => setEpisodeNumber(e.target.value)}
+                      placeholder="Episode"
+                      className="h-8 text-sm"
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      value={episodeEnd}
+                      onChange={(e) => setEpisodeEnd(e.target.value)}
+                      placeholder="Episode end"
+                      className="h-8 text-sm"
+                    />
+                  </div>
                 </div>
               )}
 

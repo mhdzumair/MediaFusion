@@ -176,7 +176,7 @@ SuggestionTypeLiteral = Literal[
     "other",
 ]
 
-TargetMediaTypeLiteral = Literal["movie", "series"]
+TargetMediaTypeLiteral = Literal["movie", "series", "tv"]
 
 StreamFieldLiteral = Literal[
     "torrent_name",
@@ -220,13 +220,25 @@ class StreamSuggestionCreateRequest(BaseModel):
     )
     target_media_type: TargetMediaTypeLiteral | None = Field(
         None,
-        description="Media type for target_external_id (movie or series)",
+        description="Media type for target_external_id (movie, series, or tv)",
     )
     target_title: str | None = Field(
         None,
         description="Optional target title hint used when creating media from external ID",
     )
     file_index: int | None = Field(None, description="Specific file index within torrent (for multi-file torrents)")
+    season_number: int | None = Field(
+        None,
+        description="Optional season number for a specific file mapping (requires file_index)",
+    )
+    episode_number: int | None = Field(
+        None,
+        description="Optional episode number for a specific file mapping (requires file_index)",
+    )
+    episode_end: int | None = Field(
+        None,
+        description="Optional ending episode number for multi-episode files (requires file_index)",
+    )
 
 
 class StreamSuggestionResponse(BaseModel):
@@ -405,11 +417,27 @@ async def _resolve_target_media_id(
         return None
 
     if normalized_external_id.startswith("mf:"):
+        try:
+            media_id = int(normalized_external_id.split(":", 1)[1])
+        except (TypeError, ValueError):
+            logger.error("Invalid MediaFusion media ID format: %s", normalized_external_id)
+            return None
+
+        media_result = await session.exec(select(Media).where(Media.id == media_id))
+        target_media = media_result.first()
+        if target_media:
+            return target_media.id
+
         logger.error("Target media %s not found", normalized_external_id)
         return None
 
     media_type_literal = target_media_type or "movie"
-    media_type_enum = MediaType.MOVIE if media_type_literal == "movie" else MediaType.SERIES
+    media_type_enum_map = {
+        "movie": MediaType.MOVIE,
+        "series": MediaType.SERIES,
+        "tv": MediaType.TV,
+    }
+    media_type_enum = media_type_enum_map.get(media_type_literal, MediaType.MOVIE)
 
     # Primary lookup with the requested media type.
     existing_media = await get_media_by_external_id(session, normalized_external_id, media_type_enum)
@@ -519,6 +547,9 @@ async def apply_stream_changes(
     target_media_type: TargetMediaTypeLiteral | None = None,
     target_title: str | None = None,
     file_index: int | None = None,
+    season_number: int | None = None,
+    episode_number: int | None = None,
+    episode_end: int | None = None,
 ) -> bool:
     """Apply suggested changes to stream. Returns True if successful.
 
@@ -547,10 +578,13 @@ async def apply_stream_changes(
             old_media_ids = {link.media_id for link in existing_stream_links.all()}
             logger.info(f"Found old stream-level media IDs: {old_media_ids} for stream {base_stream.id}")
 
-            # Remove existing stream-level links
-            existing_links = await session.exec(
-                select(StreamMediaLink).where(StreamMediaLink.stream_id == base_stream.id)
-            )
+            # Remove existing stream-level links.
+            # If file_index is provided, relink only that file's stream-level mapping.
+            existing_links_query = select(StreamMediaLink).where(StreamMediaLink.stream_id == base_stream.id)
+            if file_index is not None:
+                existing_links_query = existing_links_query.where(StreamMediaLink.file_index == file_index)
+
+            existing_links = await session.exec(existing_links_query)
             deleted_count = 0
             for link in existing_links.all():
                 await session.delete(link)
@@ -566,12 +600,12 @@ async def apply_stream_changes(
             session.add(new_link)
             logger.info(f"Re-linked stream {base_stream.id} to media {target_media_id}")
 
-            # For series: Also update file-level links (FileMediaLink)
-            # This handles the case where a series torrent's episodes need to be
-            # re-linked to a different series while keeping season/episode numbers
-
-            # Get all files for this stream
-            files_result = await session.exec(select(StreamFile).where(StreamFile.stream_id == base_stream.id))
+            # For series: Also update file-level links (FileMediaLink).
+            # If file_index is provided, only that file mapping is updated.
+            files_query = select(StreamFile).where(StreamFile.stream_id == base_stream.id)
+            if file_index is not None:
+                files_query = files_query.where(StreamFile.file_index == file_index)
+            files_result = await session.exec(files_query)
             stream_files = files_result.all()
             logger.info(f"Found {len(stream_files)} files for stream {base_stream.id}")
 
@@ -602,6 +636,45 @@ async def apply_stream_changes(
                 )
             else:
                 logger.info(f"No file-level links needed updating for stream {base_stream.id}")
+
+            # Optional one-step episode mapping for targeted file relink flows.
+            if file_index is not None and (
+                season_number is not None or episode_number is not None or episode_end is not None
+            ):
+                target_file_result = await session.exec(
+                    select(StreamFile).where(
+                        StreamFile.stream_id == base_stream.id,
+                        StreamFile.file_index == file_index,
+                    )
+                )
+                target_file = target_file_result.first()
+                if not target_file:
+                    logger.error("File index %s not found for stream %s", file_index, base_stream.id)
+                    return False
+
+                target_file_links_result = await session.exec(
+                    select(FileMediaLink).where(
+                        FileMediaLink.file_id == target_file.id,
+                        FileMediaLink.media_id == target_media_id,
+                    )
+                )
+                target_file_links = target_file_links_result.all()
+                target_file_link = target_file_links[0] if target_file_links else None
+
+                # Keep only one link row for this file+media pair.
+                for duplicate in target_file_links[1:]:
+                    await session.delete(duplicate)
+
+                if not target_file_link:
+                    target_file_link = FileMediaLink(
+                        file_id=target_file.id,
+                        media_id=target_media_id,
+                    )
+
+                target_file_link.season_number = season_number
+                target_file_link.episode_number = episode_number
+                target_file_link.episode_end = episode_end
+                session.add(target_file_link)
 
             return True
 
@@ -639,6 +712,45 @@ async def apply_stream_changes(
             )
             session.add(new_link)
             logger.info(f"Added link: stream {base_stream.id} -> media {target_media_id}")
+
+            # Optional one-step file-level episode mapping for add-link flows.
+            if file_index is not None and (
+                season_number is not None or episode_number is not None or episode_end is not None
+            ):
+                target_file_result = await session.exec(
+                    select(StreamFile).where(
+                        StreamFile.stream_id == base_stream.id,
+                        StreamFile.file_index == file_index,
+                    )
+                )
+                target_file = target_file_result.first()
+                if not target_file:
+                    logger.error("File index %s not found for stream %s", file_index, base_stream.id)
+                    return False
+
+                file_links_result = await session.exec(
+                    select(FileMediaLink).where(
+                        FileMediaLink.file_id == target_file.id,
+                        FileMediaLink.media_id == target_media_id,
+                    )
+                )
+                file_links = file_links_result.all()
+                file_link = file_links[0] if file_links else None
+
+                for duplicate in file_links[1:]:
+                    await session.delete(duplicate)
+
+                if not file_link:
+                    file_link = FileMediaLink(
+                        file_id=target_file.id,
+                        media_id=target_media_id,
+                    )
+
+                file_link.season_number = season_number
+                file_link.episode_number = episode_number
+                file_link.episode_end = episode_end
+                session.add(file_link)
+
             return True
 
         elif suggestion_type == "report_broken":
@@ -1011,6 +1123,18 @@ async def create_stream_suggestion(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="target_media_type is required when target_external_id is provided",
         )
+    if (
+        request.season_number is not None or request.episode_number is not None or request.episode_end is not None
+    ) and request.file_index is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="file_index is required when season/episode mapping is provided",
+        )
+    if request.episode_end is not None and request.episode_number is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="episode_number is required when episode_end is provided",
+        )
 
     # Verify stream exists and load relationships needed for apply logic
     stream = await get_stream_for_suggestion_apply(session, stream_id)
@@ -1094,6 +1218,9 @@ async def create_stream_suggestion(
                 "target_media_type": request.target_media_type,
                 "target_title": request.target_title,
                 "file_index": request.file_index,
+                "season_number": request.season_number,
+                "episode_number": request.episode_number,
+                "episode_end": request.episode_end,
             }
         )
 
@@ -1125,6 +1252,9 @@ async def create_stream_suggestion(
             target_media_type=request.target_media_type,
             target_title=request.target_title,
             file_index=request.file_index,
+            season_number=request.season_number,
+            episode_number=request.episode_number,
+            episode_end=request.episode_end,
         )
 
         if apply_success:
@@ -1159,6 +1289,9 @@ async def create_stream_suggestion(
                 "reason": suggestion.reason,
                 "target_media_id": request.target_media_id,
                 "file_index": request.file_index,
+                "season_number": request.season_number,
+                "episode_number": request.episode_number,
+                "episode_end": request.episode_end,
             }
         )
 
@@ -1460,6 +1593,9 @@ async def review_stream_suggestion(
             target_media_type = None
             target_title = None
             file_index = None
+            season_number = None
+            episode_number = None
+            episode_end = None
             if suggestion_type in ("relink_media", "add_media_link") and suggestion.suggested_value:
                 try:
                     link_data = json.loads(suggestion.suggested_value)
@@ -1468,6 +1604,9 @@ async def review_stream_suggestion(
                     target_media_type = link_data.get("target_media_type")
                     target_title = link_data.get("target_title")
                     file_index = link_data.get("file_index")
+                    season_number = link_data.get("season_number")
+                    episode_number = link_data.get("episode_number")
+                    episode_end = link_data.get("episode_end")
                 except json.JSONDecodeError:
                     logger.warning(f"Failed to parse link data from suggestion {suggestion.id}")
 
@@ -1482,6 +1621,9 @@ async def review_stream_suggestion(
                 target_media_type=target_media_type,
                 target_title=target_title,
                 file_index=file_index,
+                season_number=season_number,
+                episode_number=episode_number,
+                episode_end=episode_end,
             )
             if not apply_success:
                 logger.warning("Approved suggestion %s but failed to apply stream changes", suggestion.id)
@@ -1563,6 +1705,9 @@ async def bulk_review_stream_suggestions(
             target_media_type = None
             target_title = None
             file_index = None
+            season_number = None
+            episode_number = None
+            episode_end = None
             if suggestion_type in ("relink_media", "add_media_link") and suggestion.suggested_value:
                 try:
                     link_data = json.loads(suggestion.suggested_value)
@@ -1571,6 +1716,9 @@ async def bulk_review_stream_suggestions(
                     target_media_type = link_data.get("target_media_type")
                     target_title = link_data.get("target_title")
                     file_index = link_data.get("file_index")
+                    season_number = link_data.get("season_number")
+                    episode_number = link_data.get("episode_number")
+                    episode_end = link_data.get("episode_end")
                 except json.JSONDecodeError:
                     pass
 
@@ -1585,6 +1733,9 @@ async def bulk_review_stream_suggestions(
                 target_media_type=target_media_type,
                 target_title=target_title,
                 file_index=file_index,
+                season_number=season_number,
+                episode_number=episode_number,
+                episode_end=episode_end,
             )
 
             if author:

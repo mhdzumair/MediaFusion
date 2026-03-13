@@ -148,8 +148,6 @@ async def create_stream_link(
         stream_id=request.stream_id,
         media_id=request.media_id,
         file_index=request.file_index,
-        season=request.season,
-        episode=request.episode,
     )
     await session.commit()
 
@@ -158,9 +156,9 @@ async def create_stream_link(
         stream_id=link.stream_id,
         media_id=link.media_id,
         file_index=link.file_index,
-        season=link.season,
-        episode=link.episode,
-        linked_at=link.linked_at,
+        season=None,
+        episode=None,
+        linked_at=link.created_at,
     )
 
 
@@ -215,8 +213,6 @@ async def create_bulk_stream_links(
                 stream_id=link_req.stream_id,
                 media_id=link_req.media_id,
                 file_index=link_req.file_index,
-                season=link_req.season,
-                episode=link_req.episode,
             )
             created += 1
 
@@ -332,8 +328,9 @@ async def get_streams_for_media(
                     "size": size,
                     "resolution": stream.resolution,
                     "file_index": link.file_index,
-                    "season": link.season,
-                    "episode": link.episode,
+                    # Episode mapping is file-level via FileMediaLink.
+                    "season": None,
+                    "episode": None,
                 }
             )
 
