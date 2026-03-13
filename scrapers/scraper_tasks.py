@@ -12,7 +12,6 @@ from db.config import settings
 from db.schemas import MetadataData, TorrentStreamData, UserData
 from db.schemas.config import IndexerConfig, TorznabEndpointConfig
 from scrapers.base_scraper import BaseScraper
-from scrapers.bt4g import BT4GScraper
 from scrapers.imdb_data import get_imdb_title_data, search_imdb, search_multiple_imdb
 from scrapers.jackett import JackettScraper
 from scrapers.kitsu_data import (
@@ -41,7 +40,6 @@ from scrapers.tvdb_data import (
 )
 from scrapers.torznab import TorznabScraper
 from scrapers.torbox_search import TorBoxSearchScraper
-from scrapers.yts import YTSScraper
 from scrapers.zilean import ZileanScraper
 from scrapers.telegram import TelegramScraper
 from utils import runtime_const
@@ -55,8 +53,6 @@ SCRAPERS = [
     (settings.is_scrap_from_zilean, ZileanScraper, "zilean"),
     (settings.is_scrap_from_torrentio, TorrentioScraper, "torrentio"),
     (settings.is_scrap_from_mediafusion, MediafusionScraper, "mediafusion"),
-    (settings.is_scrap_from_yts, YTSScraper, "yts"),
-    (settings.is_scrap_from_bt4g, BT4GScraper, "bt4g"),
     (settings.is_scrap_from_jackett, JackettScraper, "jackett"),
 ]
 
@@ -66,8 +62,6 @@ NON_INDEXER_SCRAPERS = [
     (settings.is_scrap_from_zilean, ZileanScraper, "zilean"),
     (settings.is_scrap_from_torrentio, TorrentioScraper, "torrentio"),
     (settings.is_scrap_from_mediafusion, MediafusionScraper, "mediafusion"),
-    (settings.is_scrap_from_yts, YTSScraper, "yts"),
-    (settings.is_scrap_from_bt4g, BT4GScraper, "bt4g"),
 ]
 
 CACHED_DATA = [
@@ -76,8 +70,6 @@ CACHED_DATA = [
     (TorrentioScraper.cache_key_prefix, runtime_const.TORRENTIO_SEARCH_TTL),
     (ZileanScraper.cache_key_prefix, runtime_const.ZILEAN_SEARCH_TTL),
     (MediafusionScraper.cache_key_prefix, runtime_const.MEDIAFUSION_SEARCH_TTL),
-    (YTSScraper.cache_key_prefix, runtime_const.YTS_SEARCH_TTL),
-    (BT4GScraper.cache_key_prefix, runtime_const.BT4G_SEARCH_TTL),
     (JackettScraper.cache_key_prefix, runtime_const.JACKETT_SEARCH_TTL),
     ("torznab", runtime_const.TORZNAB_SEARCH_TTL),
     ("newznab", runtime_const.NEWZNAB_SEARCH_TTL),

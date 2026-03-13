@@ -3,6 +3,7 @@ import json
 import random
 import re
 import time
+import xml.etree.ElementTree as ET
 from collections.abc import AsyncGenerator
 from datetime import timedelta
 from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlsplit
@@ -19,7 +20,7 @@ from scrapers.public_indexer_registry import (
     ScraplingIndexerDefinition,
     get_indexers_for_catalog,
 )
-from scrapers.source_health import is_source_within_budget, record_source_outcome
+from scrapers.source_health import SourceHealthSnapshot, get_source_health, record_source_outcome
 from utils.parser import convert_size_to_bytes, is_contain_18_plus_keywords
 from utils.runtime_const import PUBLIC_INDEXERS_SEARCH_TTL
 from utils.torrent import parse_magnet
@@ -181,10 +182,23 @@ class PublicIndexerScraper(BaseScraper):
                 collected.extend(indexer_streams)
             return collected[:max_streams]
 
-        semaphore = asyncio.Semaphore(min(parallelism, len(indexers)))
-        tasks = [
-            asyncio.create_task(
-                self._collect_indexer_streams(
+        collected: list[TorrentStreamData] = []
+        collected_lock = asyncio.Lock()
+        indexer_queue: asyncio.Queue[ScraplingIndexerDefinition] = asyncio.Queue()
+        for indexer in indexers:
+            indexer_queue.put_nowait(indexer)
+        stop_requested = asyncio.Event()
+
+        async def _worker() -> None:
+            while not stop_requested.is_set():
+                if time.monotonic() >= deadline:
+                    stop_requested.set()
+                    return
+                try:
+                    indexer = indexer_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                indexer_streams = await self._collect_indexer_streams(
                     indexer=indexer,
                     query=query,
                     metadata=metadata,
@@ -196,35 +210,37 @@ class PublicIndexerScraper(BaseScraper):
                     processed_info_hashes_lock=processed_info_hashes_lock,
                     max_streams=max_streams,
                     deadline=deadline,
-                    semaphore=semaphore,
+                    semaphore=None,
                 )
-            )
-            for indexer in indexers
-        ]
-        collected: list[TorrentStreamData] = []
+                if not indexer_streams:
+                    continue
+                async with collected_lock:
+                    for stream in indexer_streams:
+                        if len(collected) >= max_streams:
+                            stop_requested.set()
+                            break
+                        collected.append(stream)
+                    if len(collected) >= max_streams:
+                        stop_requested.set()
+
+        workers = [asyncio.create_task(_worker()) for _ in range(min(parallelism, len(indexers)))]
         try:
             timeout_seconds = max(0.0, deadline - time.monotonic())
             if timeout_seconds <= 0:
                 self.metrics.record_skip("Max process time")
                 return []
-            for task in asyncio.as_completed(tasks, timeout=timeout_seconds):
-                indexer_streams = await task
-                for stream in indexer_streams:
-                    collected.append(stream)
-                    if len(collected) >= max_streams:
-                        self.metrics.record_skip("Max process limit")
-                        return collected[:max_streams]
-                if time.monotonic() >= deadline:
-                    self.metrics.record_skip("Max process time")
-                    return collected
+            await asyncio.wait_for(asyncio.gather(*workers), timeout=timeout_seconds)
         except TimeoutError:
             self.metrics.record_skip("Max process time")
         finally:
-            for task in tasks:
+            stop_requested.set()
+            for task in workers:
                 if not task.done():
                     task.cancel()
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+            if workers:
+                await asyncio.gather(*workers, return_exceptions=True)
+        if len(collected) >= max_streams:
+            self.metrics.record_skip("Max process limit")
         return collected[:max_streams]
 
     async def _collect_indexer_streams(
@@ -334,11 +350,20 @@ class PublicIndexerScraper(BaseScraper):
         if not settings.public_indexers_source_health_gates_enabled:
             return indexers
 
+        health_by_key: dict[str, SourceHealthSnapshot] = {}
+        for definition in indexers:
+            health_by_key[definition.key] = await get_source_health(definition.key)
+
         allowed_keys: set[str] = set()
         blocked: list[ScraplingIndexerDefinition] = []
         for definition in indexers:
-            allowed = await is_source_within_budget(
-                definition.key,
+            snapshot = health_by_key[definition.key]
+            if self._is_bootstrap_demoted(snapshot):
+                blocked.append(definition)
+                self.metrics.record_skip(f"public indexer bootstrap demote: {definition.key}")
+                continue
+            allowed = self._is_snapshot_within_budget(
+                snapshot,
                 min_samples=settings.public_indexers_source_health_min_samples,
                 min_success_rate=settings.public_indexers_source_min_success_rate,
                 max_timeout_rate=settings.public_indexers_source_max_timeout_rate,
@@ -365,9 +390,36 @@ class PublicIndexerScraper(BaseScraper):
                     probation_keys.add(definition.key)
                     probation_added += 1
 
-        return [
-            definition for definition in indexers if definition.key in allowed_keys or definition.key in probation_keys
-        ]
+        selected: list[ScraplingIndexerDefinition] = []
+        for definition in indexers:
+            if definition.key in allowed_keys:
+                selected.append(definition)
+        for definition in indexers:
+            if definition.key in probation_keys and definition.key not in allowed_keys:
+                selected.append(definition)
+        return selected
+
+    @staticmethod
+    def _is_snapshot_within_budget(
+        snapshot: SourceHealthSnapshot,
+        *,
+        min_samples: int,
+        min_success_rate: float,
+        max_timeout_rate: float,
+    ) -> bool:
+        if snapshot.total < max(1, min_samples):
+            return True
+        return snapshot.success_rate >= min_success_rate and snapshot.timeout_rate <= max_timeout_rate
+
+    @staticmethod
+    def _is_bootstrap_demoted(snapshot: SourceHealthSnapshot) -> bool:
+        if not settings.public_indexers_source_bootstrap_demote_enabled:
+            return False
+        if snapshot.total < max(1, settings.public_indexers_source_bootstrap_min_samples):
+            return False
+        if snapshot.success > 0:
+            return False
+        return snapshot.timeout >= settings.public_indexers_source_bootstrap_timeout_threshold
 
     @staticmethod
     def _parse_indexer_ids(
@@ -466,6 +518,25 @@ class PublicIndexerScraper(BaseScraper):
                     timed_out = timed_out or request_state["timed_out"]
                     break
 
+                if indexer.key == "bt4g" and "page=rss" in search_url:
+                    matched_template = True
+                    request_state = {"timed_out": False}
+                    async for stream in self._search_bt4g_rss(
+                        indexer=indexer,
+                        search_url=search_url,
+                        metadata=metadata,
+                        catalog_type=catalog_type,
+                        season=season,
+                        episode=episode,
+                        processed_info_hashes=processed_info_hashes,
+                        processed_info_hashes_lock=processed_info_hashes_lock,
+                        request_state=request_state,
+                    ):
+                        stream_hits += 1
+                        yield stream
+                    timed_out = timed_out or request_state["timed_out"]
+                    break
+
                 solved, request_timed_out = await self._fetch_page(indexer, search_url)
                 timed_out = timed_out or request_timed_out
                 if not solved:
@@ -479,7 +550,12 @@ class PublicIndexerScraper(BaseScraper):
                 matched_template = True
                 self.metrics.record_found_items(len(rows))
 
-                for row in rows:
+                for row_index, row in enumerate(rows):
+                    if row_index >= settings.public_indexers_max_rows_per_page:
+                        self.metrics.record_skip(
+                            f"Row scan limit reached for {indexer.key}:{settings.public_indexers_max_rows_per_page}"
+                        )
+                        break
                     stream = await self._process_row(
                         indexer=indexer,
                         row=row,
@@ -834,6 +910,124 @@ class PublicIndexerScraper(BaseScraper):
                 self.metrics.record_quality(stream.quality)
                 self.metrics.record_source(stream.source)
                 yield stream
+
+    async def _search_bt4g_rss(
+        self,
+        *,
+        indexer: ScraplingIndexerDefinition,
+        search_url: str,
+        metadata: MetadataData,
+        catalog_type: str,
+        season: int | None,
+        episode: int | None,
+        processed_info_hashes: set[str],
+        processed_info_hashes_lock: asyncio.Lock | None = None,
+        request_state: dict[str, bool] | None = None,
+    ) -> AsyncGenerator[TorrentStreamData, None]:
+        payload, timed_out = await self._fetch_with_http(search_url)
+        if request_state is not None and timed_out:
+            request_state["timed_out"] = True
+        if not payload or not payload.get("html"):
+            return
+
+        try:
+            root = ET.fromstring(str(payload["html"]))
+        except ET.ParseError:
+            self.metrics.record_skip("Invalid BT4G RSS payload")
+            return
+
+        items = root.findall(".//item")
+        if not items:
+            self.metrics.record_skip("No BT4G RSS items")
+            return
+        self.metrics.record_found_items(len(items))
+
+        for item in items:
+            title = self._bt4g_node_text(item, "title")
+            if not title:
+                continue
+            if is_contain_18_plus_keywords(title):
+                self.metrics.record_skip("Adult content")
+                continue
+
+            parsed_data = PTT.parse_title(title, True)
+            if not self.validate_title_and_year(parsed_data, metadata, catalog_type, title):
+                continue
+            if catalog_type == "series" and not self._validate_series(
+                parsed_data, season, episode, strict_season=False
+            ):
+                continue
+
+            magnet_link = self._bt4g_node_text(item, "link")
+            if not magnet_link:
+                self.metrics.record_skip("BT4G missing magnet")
+                continue
+            info_hash, announce_list = parse_magnet(magnet_link.replace("&amp;", "&"))
+            if not info_hash:
+                self.metrics.record_skip("BT4G no info_hash")
+                continue
+            if not await self._mark_info_hash_if_new(
+                info_hash,
+                processed_info_hashes=processed_info_hashes,
+                processed_info_hashes_lock=processed_info_hashes_lock,
+            ):
+                self.metrics.record_skip("Duplicate info_hash")
+                continue
+
+            stream = TorrentStreamData(
+                info_hash=info_hash.lower(),
+                meta_id=metadata.get_canonical_id(),
+                name=title,
+                size=self._bt4g_parse_size_from_description(self._bt4g_node_text(item, "description")) or 0,
+                source=indexer.source_name,
+                seeders=0,
+                announce_list=announce_list,
+                files=self._build_files(title, parsed_data, catalog_type, season, episode),
+                resolution=parsed_data.get("resolution"),
+                codec=parsed_data.get("codec"),
+                quality=parsed_data.get("quality"),
+                bit_depth=parsed_data.get("bit_depth"),
+                release_group=parsed_data.get("group"),
+                audio_formats=parsed_data.get("audio", []) if isinstance(parsed_data.get("audio"), list) else [],
+                channels=parsed_data.get("channels", []) if isinstance(parsed_data.get("channels"), list) else [],
+                hdr_formats=parsed_data.get("hdr", []) if isinstance(parsed_data.get("hdr"), list) else [],
+                languages=parsed_data.get("languages", []),
+                is_remastered=parsed_data.get("remastered", False),
+                is_upscaled=parsed_data.get("upscaled", False),
+                is_proper=parsed_data.get("proper", False),
+                is_repack=parsed_data.get("repack", False),
+                is_extended=parsed_data.get("extended", False),
+                is_complete=parsed_data.get("complete", False),
+                is_dubbed=parsed_data.get("dubbed", False),
+                is_subbed=parsed_data.get("subbed", False),
+            )
+            self.metrics.record_processed_item()
+            self.metrics.record_quality(stream.quality)
+            self.metrics.record_source(stream.source)
+            yield stream
+
+    @staticmethod
+    def _bt4g_node_text(node: ET.Element, tag_name: str) -> str | None:
+        value = node.findtext(tag_name)
+        if not value:
+            return None
+        normalized = re.sub(r"\s+", " ", value).strip()
+        return normalized or None
+
+    @staticmethod
+    def _bt4g_parse_size_from_description(description: str | None) -> int | None:
+        if not description:
+            return None
+        parts = [part.strip() for part in description.split("<br>") if part.strip()]
+        for part in parts:
+            match = re.search(r"(\d+(?:\.\d+)?)\s*(TB|GB|MB|KB|B)", part, flags=re.IGNORECASE)
+            if not match:
+                continue
+            try:
+                return convert_size_to_bytes(f"{match.group(1)} {match.group(2).upper()}")
+            except (ValueError, AttributeError):
+                continue
+        return None
 
     @staticmethod
     def _parse_subsplease_size(download: dict, magnet_link: str) -> int:

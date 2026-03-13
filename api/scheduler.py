@@ -259,6 +259,71 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
+    if not settings.disable_thepiratebay_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.thepiratebay_scheduler_crontab),
+            name="thepiratebay",
+            kwargs={
+                "actor_send_method": run_spider.async_send,
+                "spider_name": "thepiratebay",
+                "scrape_all": "false",
+                "crontab_expression": settings.thepiratebay_scheduler_crontab,
+            },
+        )
+
+    if not settings.disable_rutor_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.rutor_scheduler_crontab),
+            name="rutor",
+            kwargs={
+                "actor_send_method": run_spider.async_send,
+                "spider_name": "rutor",
+                "scrape_all": "false",
+                "crontab_expression": settings.rutor_scheduler_crontab,
+            },
+        )
+
+    if not settings.disable_limetorrents_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.limetorrents_scheduler_crontab),
+            name="limetorrents",
+            kwargs={
+                "actor_send_method": run_spider.async_send,
+                "spider_name": "limetorrents",
+                "scrape_all": "false",
+                "crontab_expression": settings.limetorrents_scheduler_crontab,
+            },
+        )
+
+    if not settings.disable_yts_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.yts_scheduler_crontab),
+            name="yts",
+            kwargs={
+                "actor_send_method": run_spider.async_send,
+                "spider_name": "yts",
+                "scrape_all": "false",
+                "crontab_expression": settings.yts_scheduler_crontab,
+            },
+        )
+
+    if not settings.disable_bt4g_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.bt4g_scheduler_crontab),
+            name="bt4g",
+            kwargs={
+                "actor_send_method": run_spider.async_send,
+                "spider_name": "bt4g",
+                "scrape_all": "false",
+                "crontab_expression": settings.bt4g_scheduler_crontab,
+            },
+        )
+
     if not settings.disable_nyaa_scheduler:
         scheduler.add_job(
             async_send,

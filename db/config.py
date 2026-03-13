@@ -206,14 +206,6 @@ class Settings(BaseSettings):
     dmm_hashlist_commits_per_run: int = 20
     dmm_hashlist_backfill_commits_per_run: int = 20
 
-    # BT4G Settings
-    is_scrap_from_bt4g: bool = True
-    bt4g_url: str = "https://bt4gprx.com"
-    bt4g_search_interval_hour: int = 72
-    bt4g_search_timeout: int = 10
-    bt4g_immediate_max_process: int = 15
-    bt4g_immediate_max_process_time: int = 15
-
     # Native Public Indexers (Scrapling-backed)
     is_scrap_from_public_indexers: bool = True
     public_indexers_search_interval_hour: int = 48
@@ -221,17 +213,21 @@ class Settings(BaseSettings):
     # to movie/series/anime (comma-separated ids, e.g. "uindex,rutor,thepiratebay").
     public_indexers_live_search_sites: str = ""
     # Type-specific live-search allowlists (used when the global allowlist is empty).
-    public_indexers_movie_live_search_sites: str = "uindex,rutor,thepiratebay,yts"
-    public_indexers_series_live_search_sites: str = "uindex,rutor,thepiratebay"
+    public_indexers_movie_live_search_sites: str = "uindex,rutor,oxtorrent,bt4g,yts,thepiratebay"
+    public_indexers_series_live_search_sites: str = "uindex,rutor,oxtorrent,bt4g,thepiratebay"
     public_indexers_anime_live_search_sites: str = (
         "nyaa,animetosho,uindex,limetorrents,subsplease,therarbg,yourbittorrent,eztv,torlock"
     )
-    public_indexers_live_search_parallelism: int = Field(default=32, ge=1, le=32)
+    public_indexers_live_search_parallelism: int = Field(default=16, ge=1, le=32)
+    public_indexers_max_rows_per_page: int = Field(default=12, ge=1, le=100)
     public_indexers_source_health_metrics_ttl_seconds: int = Field(default=60 * 60 * 24 * 3, ge=60)
     public_indexers_source_health_gates_enabled: bool = True
     public_indexers_source_health_min_samples: int = 15
     public_indexers_source_min_success_rate: float = 0.3
     public_indexers_source_max_timeout_rate: float = 0.45
+    public_indexers_source_bootstrap_demote_enabled: bool = True
+    public_indexers_source_bootstrap_min_samples: int = 2
+    public_indexers_source_bootstrap_timeout_threshold: int = 2
     public_indexers_source_health_probation_enabled: bool = True
     public_indexers_source_health_probation_ratio: float = Field(default=0.15, ge=0.0, le=1.0)
     public_indexers_source_health_probation_max_sources_per_query: int = Field(default=1, ge=0)
@@ -294,7 +290,6 @@ class Settings(BaseSettings):
     enable_rate_limit: bool = False
     validate_m3u8_urls_liveness: bool = True
     store_stremthru_magnet_cache: bool = False
-    is_scrap_from_yts: bool = True
     scrape_with_aka_titles: bool = True
     scrape_max_aka_titles_per_query: int = Field(default=8, ge=0)
     scrape_degraded_mode_enabled: bool = True
@@ -444,6 +439,16 @@ class Settings(BaseSettings):
     disable_arab_torrents_scheduler: bool = True
     x1337_scheduler_crontab: str = "0 */6 * * *"
     disable_x1337_scheduler: bool = True
+    thepiratebay_scheduler_crontab: str = "30 */6 * * *"
+    disable_thepiratebay_scheduler: bool = True
+    rutor_scheduler_crontab: str = "45 */6 * * *"
+    disable_rutor_scheduler: bool = True
+    limetorrents_scheduler_crontab: str = "0 */8 * * *"
+    disable_limetorrents_scheduler: bool = True
+    yts_scheduler_crontab: str = "0 */12 * * *"
+    disable_yts_scheduler: bool = True
+    bt4g_scheduler_crontab: str = "15 */8 * * *"
+    disable_bt4g_scheduler: bool = True
     nyaa_scheduler_crontab: str = "15 */3 * * *"
     disable_nyaa_scheduler: bool = False
     animetosho_scheduler_crontab: str = "30 */4 * * *"

@@ -8,6 +8,14 @@
 	  "https://1337x.to/popular-movies",
 	  "https://1337x.to/popular-tv"
 	],
+	"thepiratebay": "https://thepiratebay.org/recent",
+	"rutor": "https://rutor.info/top",
+	"limetorrents": [
+	  "https://www.limetorrents.fun/browse-torrents/Movies/",
+	  "https://www.limetorrents.fun/browse-torrents/TV-shows/"
+	],
+	"yts": "https://yts.mx/browse-movies/0/all/all/0/latest/0/all",
+	"bt4g": "https://bt4gprx.com/search?q=&page=rss",
 	"bt52": [
 	  "https://www.529072.xyz/",
 	  "https://www.529073.xyz/"

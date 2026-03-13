@@ -1,15 +1,34 @@
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote_plus
 
 import scrapy
 
+from scrapers.public_indexer_registry import INDEXER_OVERRIDES
 from utils.config import config_manager
 from utils.parser import convert_size_to_bytes
 from utils.torrent import parse_magnet
 
 MAGNET_RE = re.compile(r"magnet:\?xt=urn:btih:[a-fA-F0-9]{40}[^\"'<>\s]*")
+
+
+def _override_tuple(indexer_key: str, field_name: str) -> tuple[str, ...]:
+    override = INDEXER_OVERRIDES.get(indexer_key, {})
+    value = override.get(field_name, ())
+    if isinstance(value, tuple):
+        return value
+    if isinstance(value, list):
+        return tuple(str(item) for item in value)
+    return ()
+
+
+def _override_first_template(indexer_key: str) -> str | None:
+    templates = _override_tuple(indexer_key, "query_url_templates")
+    if not templates:
+        return None
+    return templates[0]
 
 
 class BasePublicIndexerSpider(scrapy.Spider):
@@ -328,6 +347,97 @@ class X1337Spider(BasePublicIndexerSpider):
     )
 
 
+class ThePirateBaySpider(BasePublicIndexerSpider):
+    name = "thepiratebay"
+    source = "ThePirateBay"
+    catalog_source = "thepiratebay"
+    scraped_info_hash_key = "thepiratebay_scraped_info_hash"
+    default_start_urls = ("https://thepiratebay.org/recent",)
+    search_url_template = _override_first_template("thepiratebay")
+    use_anti_bot_solver = False
+    custom_settings = {
+        **BasePublicIndexerSpider.custom_settings,
+        "SCRAPLING_SOLVE_CLOUDFLARE": False,
+        "SCRAPLING_FETCHER_MODE": "dynamic",
+    }
+    row_selectors = _override_tuple("thepiratebay", "row_selectors")
+    title_selectors = _override_tuple("thepiratebay", "title_selectors")
+    detail_selectors = _override_tuple("thepiratebay", "detail_selectors")
+    magnet_selectors = _override_tuple("thepiratebay", "magnet_selectors")
+    size_selectors = _override_tuple("thepiratebay", "size_selectors")
+    seeder_selectors = _override_tuple("thepiratebay", "seeder_selectors")
+    next_page_selectors = ()
+
+
+class RutorSpider(BasePublicIndexerSpider):
+    name = "rutor"
+    source = "RuTor"
+    catalog_source = "rutor"
+    scraped_info_hash_key = "rutor_scraped_info_hash"
+    default_start_urls = ("https://rutor.info/top",)
+    search_url_template = _override_first_template("rutor")
+    use_anti_bot_solver = False
+    custom_settings = {
+        **BasePublicIndexerSpider.custom_settings,
+        "SCRAPLING_SOLVE_CLOUDFLARE": False,
+        "SCRAPLING_FETCHER_MODE": "dynamic",
+    }
+    row_selectors = _override_tuple("rutor", "row_selectors")
+    title_selectors = _override_tuple("rutor", "title_selectors")
+    detail_selectors = _override_tuple("rutor", "detail_selectors")
+    magnet_selectors = _override_tuple("rutor", "magnet_selectors")
+    size_selectors = _override_tuple("rutor", "size_selectors")
+    seeder_selectors = _override_tuple("rutor", "seeder_selectors")
+    next_page_selectors = ()
+
+
+class LimeTorrentsSpider(BasePublicIndexerSpider):
+    name = "limetorrents"
+    source = "LimeTorrents"
+    catalog_source = "limetorrents"
+    scraped_info_hash_key = "limetorrents_scraped_info_hash"
+    default_start_urls = (
+        "https://www.limetorrents.fun/browse-torrents/Movies/",
+        "https://www.limetorrents.fun/browse-torrents/TV-shows/",
+    )
+    search_url_template = _override_first_template("limetorrents")
+    use_anti_bot_solver = False
+    custom_settings = {
+        **BasePublicIndexerSpider.custom_settings,
+        "SCRAPLING_SOLVE_CLOUDFLARE": False,
+        "SCRAPLING_FETCHER_MODE": "dynamic",
+    }
+    row_selectors = _override_tuple("limetorrents", "row_selectors")
+    title_selectors = _override_tuple("limetorrents", "title_selectors")
+    detail_selectors = _override_tuple("limetorrents", "detail_selectors")
+    magnet_selectors = _override_tuple("limetorrents", "magnet_selectors")
+    size_selectors = _override_tuple("limetorrents", "size_selectors")
+    seeder_selectors = _override_tuple("limetorrents", "seeder_selectors")
+    next_page_selectors = ()
+
+
+class YTSSpider(BasePublicIndexerSpider):
+    name = "yts"
+    source = "YTS"
+    catalog_source = "yts"
+    scraped_info_hash_key = "yts_scraped_info_hash"
+    default_start_urls = ("https://yts.mx/browse-movies/0/all/all/0/latest/0/all",)
+    search_url_template = _override_first_template("yts")
+    use_anti_bot_solver = False
+    custom_settings = {
+        **BasePublicIndexerSpider.custom_settings,
+        "SCRAPLING_SOLVE_CLOUDFLARE": False,
+        "SCRAPLING_FETCHER_MODE": "stealthy",
+    }
+    row_selectors = _override_tuple("yts", "row_selectors")
+    title_selectors = _override_tuple("yts", "title_selectors")
+    detail_selectors = _override_tuple("yts", "detail_selectors")
+    magnet_selectors = _override_tuple("yts", "magnet_selectors")
+    size_selectors = _override_tuple("yts", "size_selectors")
+    seeder_selectors = _override_tuple("yts", "seeder_selectors")
+    next_page_selectors = ()
+
+
 class BT52Spider(BasePublicIndexerSpider):
     name = "bt52"
     source = "52BT"
@@ -513,6 +623,88 @@ class AnimePaheSpider(BasePublicIndexerSpider):
         "a[href*='torrent']::attr(href)",
     )
     max_detail_hops = 3
+
+
+class BT4GRSSSpider(scrapy.Spider):
+    """BT4G RSS spider for movie/series torrents."""
+
+    name = "bt4g"
+    source = "BT4G"
+    catalog_source = "bt4g"
+    scraped_info_hash_key = "bt4g_scraped_info_hash"
+    use_anti_bot_solver = False
+
+    custom_settings = {
+        "ITEM_PIPELINES": {
+            "mediafusion_scrapy.pipelines.MagnetDownloadAndParsePipeline": 100,
+            "mediafusion_scrapy.pipelines.MovieTVParserPipeline": 200,
+            "mediafusion_scrapy.pipelines.CatalogParsePipeline": 300,
+            "mediafusion_scrapy.pipelines.MovieStorePipeline": 400,
+            "mediafusion_scrapy.pipelines.SeriesStorePipeline": 500,
+        },
+    }
+
+    async def start(self):
+        configured_url = config_manager.get_start_url(self.name)
+        if isinstance(configured_url, str) and configured_url.strip():
+            rss_url = configured_url.strip()
+        else:
+            rss_url = "https://bt4gprx.com/search?q=&page=rss"
+        yield scrapy.Request(rss_url, callback=self.parse)
+
+    @staticmethod
+    def _parse_size(description: str | None) -> int | None:
+        if not description:
+            return None
+        parts = [part.strip() for part in description.split("<br>") if part.strip()]
+        for part in parts:
+            match = re.search(r"(\d+(?:\.\d+)?)\s*(TB|GB|MB|KB|B)", part, flags=re.IGNORECASE)
+            if not match:
+                continue
+            try:
+                return convert_size_to_bytes(f"{match.group(1)} {match.group(2).upper()}")
+            except (ValueError, AttributeError):
+                continue
+        return None
+
+    def parse(self, response: scrapy.http.Response):
+        try:
+            root = ET.fromstring(response.text)
+        except ET.ParseError:
+            self.logger.warning("Invalid BT4G RSS payload: %s", response.url)
+            return
+
+        for node in root.findall(".//item"):
+            title = (node.findtext("title") or "").strip()
+            magnet_link = (node.findtext("link") or "").strip().replace("&amp;", "&")
+            if not title or not magnet_link:
+                continue
+
+            info_hash, announce_list = parse_magnet(magnet_link)
+            if not info_hash:
+                continue
+
+            description = node.findtext("description")
+            pub_date = node.findtext("pubDate")
+            item = {
+                "torrent_title": title,
+                "torrent_name": title,
+                "source": self.source,
+                "catalog_source": self.catalog_source,
+                "catalog": [self.catalog_source],
+                "website": response.url,
+                "webpage_url": response.url,
+                "magnet_link": magnet_link,
+                "scraped_info_hash_key": self.scraped_info_hash_key,
+                "expected_sources": [self.source, "Contribution Stream"],
+                "info_hash": info_hash,
+                "announce_list": announce_list,
+                "created_at": BasePublicIndexerSpider._parse_pub_date(pub_date),
+            }
+            size = self._parse_size(description)
+            if size is not None:
+                item["total_size"] = size
+            yield item
 
 
 class EZTVRSSSpider(scrapy.Spider):

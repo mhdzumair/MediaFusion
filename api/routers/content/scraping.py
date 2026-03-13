@@ -81,22 +81,6 @@ SCRAPER_CONFIG = {
         "description": "Search MediaFusion addon (requires debrid)",
         "is_user_configurable": False,
     },
-    "yts": {
-        "name": "YTS",
-        "enabled": settings.is_scrap_from_yts,
-        "requires_debrid": False,
-        "ttl": runtime_const.YTS_SEARCH_TTL,
-        "description": "Search YTS for movies only",
-        "is_user_configurable": False,
-    },
-    "bt4g": {
-        "name": "BT4G",
-        "enabled": settings.is_scrap_from_bt4g,
-        "requires_debrid": False,
-        "ttl": runtime_const.BT4G_SEARCH_TTL,
-        "description": "Search BT4G torrent search",
-        "is_user_configurable": False,
-    },
     "public_indexers": {
         "name": "Public Indexers",
         "enabled": settings.is_scrap_from_public_indexers,

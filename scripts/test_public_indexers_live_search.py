@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from dataclasses import replace
 
 from db.config import settings
@@ -20,30 +21,33 @@ def _configure_logging():
         logging.getLogger(logger_name).setLevel(logging.ERROR)
 
 
-def _movie_metadata(indexer_key: str) -> MetadataData:
+def _movie_metadata(indexer_key: str, run_id: str | None = None) -> MetadataData:
+    suffix = run_id or "default"
     return MetadataData(
         id=1,
-        external_id=f"mf:test:movie:{indexer_key}",
+        external_id=f"mf:test:movie:{indexer_key}:{suffix}",
         type="movie",
         title="Interstellar",
         year=2014,
     )
 
 
-def _series_metadata(indexer_key: str) -> MetadataData:
+def _series_metadata(indexer_key: str, run_id: str | None = None) -> MetadataData:
+    suffix = run_id or "default"
     return MetadataData(
         id=2,
-        external_id=f"mf:test:series:{indexer_key}",
+        external_id=f"mf:test:series:{indexer_key}:{suffix}",
         type="series",
         title="Breaking Bad",
         year=2008,
     )
 
 
-def _anime_metadata(indexer_key: str) -> MetadataData:
+def _anime_metadata(indexer_key: str, run_id: str | None = None) -> MetadataData:
+    suffix = run_id or "default"
     return MetadataData(
         id=3,
-        external_id=f"mf:test:anime:{indexer_key}",
+        external_id=f"mf:test:anime:{indexer_key}:{suffix}",
         type="series",
         title="One Piece",
         year=1999,
@@ -136,17 +140,20 @@ async def _probe_indexer(scraper: PublicIndexerScraper, indexer_key: str, timeou
 
 
 async def _run_end_to_end(scraper: PublicIndexerScraper) -> dict:
+    run_id = uuid.uuid4().hex[:8]
     original_global = settings.public_indexers_live_search_sites
     original_movie = settings.public_indexers_movie_live_search_sites
     original_series = settings.public_indexers_series_live_search_sites
     original_anime = settings.public_indexers_anime_live_search_sites
+    original_health_gate = settings.public_indexers_source_health_gates_enabled
 
     # Keep the end-to-end check bounded to the known healthy subset
     # while the per-indexer sweep covers all definitions.
     settings.public_indexers_live_search_sites = ""
-    settings.public_indexers_movie_live_search_sites = "uindex,rutor,thepiratebay,yts"
-    settings.public_indexers_series_live_search_sites = "uindex,rutor,thepiratebay"
+    settings.public_indexers_movie_live_search_sites = "uindex,rutor,oxtorrent,bt4g,yts"
+    settings.public_indexers_series_live_search_sites = "uindex,rutor,oxtorrent,bt4g"
     settings.public_indexers_anime_live_search_sites = "nyaa,animetosho,uindex,subsplease"
+    settings.public_indexers_source_health_gates_enabled = False
 
     try:
 
@@ -168,17 +175,17 @@ async def _run_end_to_end(scraper: PublicIndexerScraper) -> dict:
                 return []
 
         movie_streams = await _safe_scrape(
-            metadata=_movie_metadata("matrix"),
+            metadata=_movie_metadata("matrix", run_id),
             catalog_type="movie",
         )
         series_streams = await _safe_scrape(
-            metadata=_series_metadata("breakingbad"),
+            metadata=_series_metadata("breakingbad", run_id),
             catalog_type="series",
             season=1,
             episode=1,
         )
         anime_streams = await _safe_scrape(
-            metadata=_anime_metadata("onepiece"),
+            metadata=_anime_metadata("onepiece", run_id),
             catalog_type="series",
             season=1,
             episode=1,
@@ -188,6 +195,7 @@ async def _run_end_to_end(scraper: PublicIndexerScraper) -> dict:
         settings.public_indexers_movie_live_search_sites = original_movie
         settings.public_indexers_series_live_search_sites = original_series
         settings.public_indexers_anime_live_search_sites = original_anime
+        settings.public_indexers_source_health_gates_enabled = original_health_gate
 
     return {
         "movie_streams": len(movie_streams),

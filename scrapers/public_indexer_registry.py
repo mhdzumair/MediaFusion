@@ -193,6 +193,22 @@ INDEXER_OVERRIDES = {
         "solve_cloudflare": False,
         "fetcher_mode": "dynamic",
     },
+    "bt4g": {
+        "source_name": "BT4G",
+        "query_url_templates": ("https://bt4gprx.com/search?q={query}&page=rss",),
+        "row_selectors": ("item",),
+        "title_selectors": ("title::text",),
+        "detail_selectors": ("link::text",),
+        "magnet_selectors": ("link::text",),
+        "size_selectors": ("description::text",),
+        "seeder_selectors": (),
+        "supports_movie": True,
+        "supports_series": True,
+        "supports_anime": False,
+        "solve_cloudflare": False,
+        "fetcher_mode": "dynamic",
+        "http_fallback": True,
+    },
     "animetosho": {
         "source_name": "AnimeTosho",
         "query_url_templates": (
@@ -400,6 +416,7 @@ INDEXER_PRIORITY = {
     "yourbittorrent": 65,
     "oxtorrent": 63,
     "rutor": 60,
+    "bt4g": 58,
     "limetorrents": 55,
     "yts": 50,
 }
@@ -490,7 +507,7 @@ def _load_definitions_from_prowlarr() -> dict[str, ScraplingIndexerDefinition]:
 
 def _build_extra_definitions() -> dict[str, ScraplingIndexerDefinition]:
     extra: dict[str, ScraplingIndexerDefinition] = {}
-    for key in ("x1337", "uindex", "nyaa", "animetosho", "subsplease"):
+    for key in ("x1337", "uindex", "nyaa", "animetosho", "subsplease", "bt4g"):
         override = INDEXER_OVERRIDES.get(key)
         if not override:
             continue
