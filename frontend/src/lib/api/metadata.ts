@@ -9,7 +9,7 @@ import { apiClient } from './client'
 // Types
 // ============================================
 
-export type MetadataProvider = 'imdb' | 'tmdb' | 'tvdb' | 'mal' | 'kitsu'
+export type MetadataProvider = 'imdb' | 'tmdb' | 'tvdb' | 'mal' | 'kitsu' | 'anilist'
 
 export interface RefreshMetadataRequest {
   media_type: 'movie' | 'series'
@@ -24,7 +24,7 @@ export interface RefreshMetadataResponse {
   refreshed_providers?: MetadataProvider[]
 }
 
-export type ExternalProvider = 'imdb' | 'tmdb' | 'tvdb' | 'mal' | 'kitsu'
+export type ExternalProvider = 'imdb' | 'tmdb' | 'tvdb' | 'mal' | 'kitsu' | 'anilist'
 
 export interface LinkExternalIdRequest {
   provider: ExternalProvider
@@ -49,6 +49,7 @@ export interface LinkMultipleExternalIdsRequest {
   tvdb_id?: string | number
   mal_id?: string | number
   kitsu_id?: string | number
+  anilist_id?: string | number
   media_type: 'movie' | 'series'
   fetch_metadata?: boolean
 }
@@ -75,17 +76,18 @@ export interface SearchExternalRequest {
 }
 
 export interface ExternalSearchResult {
-  id: string // Primary ID (imdb_id or tmdb/tvdb/mal/kitsu prefixed ID)
+  id: string // Primary ID (imdb_id or tmdb/tvdb/mal/kitsu/anilist prefixed ID)
   title: string
   year?: number
   poster?: string
   description?: string
-  provider?: string // 'imdb', 'tmdb', 'tvdb', 'mal', 'kitsu'
+  provider?: string // 'imdb', 'tmdb', 'tvdb', 'mal', 'kitsu', 'anilist'
   imdb_id?: string
   tmdb_id?: string
   tvdb_id?: string | number
   mal_id?: string | number
   kitsu_id?: string | number
+  anilist_id?: string | number
   external_ids?: Record<string, string | number | null> // All external IDs
 }
 
@@ -100,7 +102,7 @@ export interface SearchExternalResponse {
 
 export const metadataApi = {
   /**
-   * Refresh metadata from external sources (IMDB/TMDB/TVDB/MAL/Kitsu).
+   * Refresh metadata from external sources (IMDB/TMDB/TVDB/MAL/Kitsu/AniList).
    * Fetches fresh data from all configured providers.
    * @param mediaId Internal media_id
    * @param mediaType Type of media
@@ -121,7 +123,7 @@ export const metadataApi = {
   /**
    * Link an external provider ID to existing media.
    * @param mediaId Internal media_id
-   * @param provider External provider ('imdb', 'tmdb', 'tvdb', 'mal', 'kitsu')
+   * @param provider External provider ('imdb', 'tmdb', 'tvdb', 'mal', 'kitsu', 'anilist')
    * @param externalId The external ID to link
    * @param mediaType Type of media
    * @param fetchMetadata Whether to fetch and update metadata from the provider
@@ -157,7 +159,7 @@ export const metadataApi = {
   },
 
   /**
-   * Search for metadata in external sources (IMDB/TMDB/TVDB/MAL/Kitsu).
+   * Search for metadata in external sources (IMDB/TMDB/TVDB/MAL/Kitsu/AniList).
    * Useful for finding the correct external ID when linking providers.
    */
   searchExternal: (
@@ -181,7 +183,7 @@ export const metadataApi = {
 
   /**
    * Link multiple external provider IDs to a media item at once.
-   * This is useful when a search result contains multiple IDs (IMDb, TMDB, TVDB).
+   * This is useful when a search result contains multiple IDs (IMDb, TMDB, TVDB, MAL, Kitsu, AniList).
    * @param mediaId Internal media_id
    * @param ids Object containing the external IDs to link
    * @param mediaType Type of media
@@ -195,6 +197,7 @@ export const metadataApi = {
       tvdb_id?: string | number
       mal_id?: string | number
       kitsu_id?: string | number
+      anilist_id?: string | number
     },
     mediaType: 'movie' | 'series',
     fetchMetadata: boolean = true,

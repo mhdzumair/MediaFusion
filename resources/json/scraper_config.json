@@ -17,6 +17,10 @@
 	  "https://uindex.org/search.php?c=2",
 	  "https://uindex.org/search.php?c=7"
 	],
+	"nyaa": "https://nyaa.si/?f=0&c=1_2&q=&s=seeders&o=desc",
+	"animetosho": "https://animetosho.org/search?q=&a=0",
+	"subsplease": "https://subsplease.org/shows/",
+	"animepahe": "https://animepahe.ru/anime",
 	"eztv_rss": "https://eztvx.to/ezrss.xml",
 	"ext_to": [
 	  "ext.to"

@@ -1206,7 +1206,7 @@ async def get_canonical_external_id(
         return canonical
 
     # Fallback: get first available by priority
-    priority_order = ["imdb", "tvdb", "tmdb", "mal", "kitsu"]
+    priority_order = ["imdb", "mal", "kitsu", "anilist", "tvdb", "tmdb"]
     for provider in priority_order:
         if provider in id_by_provider:
             canonical = format_external_id(provider, id_by_provider[provider])
@@ -1269,7 +1269,7 @@ async def get_canonical_external_ids_batch(
         ext_ids_by_media[ext.media_id].append(ext)
 
     # Resolve canonical ID for each missing media
-    priority_order = ["imdb", "tvdb", "tmdb", "mal", "kitsu"]
+    priority_order = ["imdb", "mal", "kitsu", "anilist", "tvdb", "tmdb"]
 
     # Collect resolved IDs for batch Redis write
     to_cache: dict[str, str] = {}

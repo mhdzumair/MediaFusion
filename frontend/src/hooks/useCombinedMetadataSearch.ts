@@ -34,8 +34,9 @@ export interface CombinedSearchResult {
   tvdb_id?: string | number
   mal_id?: string | number
   kitsu_id?: string | number
+  anilist_id?: string | number
   external_ids?: Record<string, string | number | null>
-  provider?: string // 'imdb', 'tmdb', 'tvdb', 'mal', 'kitsu'
+  provider?: string // 'imdb', 'tmdb', 'tvdb', 'mal', 'kitsu', 'anilist'
   description?: string
 }
 
@@ -45,6 +46,8 @@ export interface UseCombinedSearchOptions {
   sources?: ('internal' | 'external')[] // Default: both
   limit?: number
   year?: number
+  includeAnime?: boolean
+  animeSources?: ('kitsu' | 'anilist')[]
 }
 
 // Convert internal search result to combined format
@@ -75,10 +78,11 @@ function externalToCombined(result: ExternalSearchResult, metaType?: 'movie' | '
     tvdb: result.tvdb_id || (result.external_ids?.tvdb ?? null),
     mal: result.mal_id || (result.external_ids?.mal ?? result.external_ids?.mal_id ?? null),
     kitsu: result.kitsu_id || (result.external_ids?.kitsu ?? result.external_ids?.kitsu_id ?? null),
+    anilist: result.anilist_id || (result.external_ids?.anilist ?? result.external_ids?.anilist_id ?? null),
   }
 
   return {
-    id: `external-${result.imdb_id || result.tmdb_id || result.tvdb_id || result.mal_id || result.kitsu_id || result.id}`,
+    id: `external-${result.imdb_id || result.mal_id || result.kitsu_id || result.anilist_id || result.tmdb_id || result.tvdb_id || result.id}`,
     title: result.title,
     year: result.year,
     poster: result.poster,
@@ -89,6 +93,7 @@ function externalToCombined(result: ExternalSearchResult, metaType?: 'movie' | '
     tvdb_id: result.tvdb_id,
     mal_id: result.mal_id,
     kitsu_id: result.kitsu_id,
+    anilist_id: result.anilist_id,
     external_ids: normalizedExternalIds,
     provider: result.provider,
     description: result.description,
@@ -102,7 +107,9 @@ function externalToCombined(result: ExternalSearchResult, metaType?: 'movie' | '
             ? `mal:${result.mal_id}`
             : result.kitsu_id
               ? `kitsu:${result.kitsu_id}`
-              : result.id),
+              : result.anilist_id
+                ? `anilist:${result.anilist_id}`
+                : result.id),
   }
 }
 
@@ -150,8 +157,13 @@ function sortResults(results: CombinedSearchResult[]): CombinedSearchResult[] {
 export const combinedSearchKeys = {
   all: ['combined-metadata-search'] as const,
   internal: (query: string, type?: string) => [...combinedSearchKeys.all, 'internal', { query, type }] as const,
-  external: (query: string, type?: string, year?: number) =>
-    [...combinedSearchKeys.all, 'external', { query, type, year }] as const,
+  external: (
+    query: string,
+    type?: string,
+    year?: number,
+    includeAnime?: boolean,
+    animeSources?: ('kitsu' | 'anilist')[],
+  ) => [...combinedSearchKeys.all, 'external', { query, type, year, includeAnime, animeSources }] as const,
 }
 
 /**
@@ -159,7 +171,15 @@ export const combinedSearchKeys = {
  * Results appear progressively as each source completes
  */
 export function useCombinedMetadataSearch(params: UseCombinedSearchOptions, options?: { enabled?: boolean }) {
-  const { query, type = 'all', sources = ['internal', 'external'], limit = 15, year } = params
+  const {
+    query,
+    type = 'all',
+    sources = ['internal', 'external'],
+    limit = 15,
+    year,
+    includeAnime,
+    animeSources,
+  } = params
   const searchInternal = sources.includes('internal')
   const searchExternal = sources.includes('external')
   const isEnabled = options?.enabled !== false && query.length >= 2
@@ -186,10 +206,13 @@ export function useCombinedMetadataSearch(params: UseCombinedSearchOptions, opti
 
   // External search query (movie)
   const externalMovieQuery = useQuery({
-    queryKey: combinedSearchKeys.external(query, 'movie', year),
+    queryKey: combinedSearchKeys.external(query, 'movie', year, includeAnime, animeSources),
     queryFn: async (): Promise<CombinedSearchResult[]> => {
       try {
-        const response = await metadataApi.searchExternal(query, 'movie', year)
+        const response = await metadataApi.searchExternal(query, 'movie', year, {
+          includeAnime,
+          animeSources,
+        })
         return (response.results || []).map((r) => externalToCombined(r, 'movie'))
       } catch {
         return []
@@ -201,10 +224,13 @@ export function useCombinedMetadataSearch(params: UseCombinedSearchOptions, opti
 
   // External search query (series)
   const externalSeriesQuery = useQuery({
-    queryKey: combinedSearchKeys.external(query, 'series', year),
+    queryKey: combinedSearchKeys.external(query, 'series', year, includeAnime, animeSources),
     queryFn: async (): Promise<CombinedSearchResult[]> => {
       try {
-        const response = await metadataApi.searchExternal(query, 'series', year)
+        const response = await metadataApi.searchExternal(query, 'series', year, {
+          includeAnime,
+          animeSources,
+        })
         return (response.results || []).map((r) => externalToCombined(r, 'series'))
       } catch {
         return []
@@ -273,6 +299,7 @@ export function getBestExternalId(result: CombinedSearchResult): string {
     (result.tvdb_id ? `tvdb:${result.tvdb_id}` : '') ||
     (result.mal_id ? `mal:${result.mal_id}` : '') ||
     (result.kitsu_id ? `kitsu:${result.kitsu_id}` : '') ||
+    (result.anilist_id ? `anilist:${result.anilist_id}` : '') ||
     result.id
   )
 }

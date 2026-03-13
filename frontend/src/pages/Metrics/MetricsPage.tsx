@@ -5,6 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   BarChart3,
@@ -51,6 +52,7 @@ import {
   useContributionMetrics,
   useActivityStats,
   useSystemOverview,
+  usePublicIndexerSourceHealth,
   useScraperMetrics,
   useScraperHistory,
 } from '@/hooks'
@@ -84,6 +86,230 @@ function getStartOfWeek(date: Date): Date {
   const day = d.getDay()
   const diff = d.getDate() - day + (day === 0 ? -6 : 1)
   return new Date(d.setDate(diff))
+}
+
+function formatPercent(value: number): string {
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function sourceGateStatusClass(status: 'allowed' | 'blocked' | 'warming'): string {
+  if (status === 'allowed') return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30'
+  if (status === 'blocked') return 'bg-red-500/10 text-red-500 border-red-500/30'
+  return 'bg-primary/10 text-primary border-primary/30'
+}
+
+function SourceHealthPanel({
+  data,
+  isLoading,
+  isFetching,
+  animeOnly,
+  onAnimeOnlyChange,
+  onRefresh,
+}: {
+  data:
+    | {
+        gate: { enabled: boolean; min_samples: number; min_success_rate: number; max_timeout_rate: number }
+        total_sources: number
+        allowed: number
+        blocked: number
+        warming: number
+        sources: Array<{
+          source_key: string
+          source_name: string
+          supports_movie: boolean
+          supports_series: boolean
+          supports_anime: boolean
+          samples: number
+          success: number
+          timeout: number
+          challenge_solved: number
+          success_rate: number
+          timeout_rate: number
+          challenge_solve_rate: number
+          gate_status: 'allowed' | 'blocked' | 'warming'
+          gate_enforced_now: boolean
+        }>
+      }
+    | undefined
+  isLoading: boolean
+  isFetching: boolean
+  animeOnly: boolean
+  onAnimeOnlyChange: (value: boolean) => void
+  onRefresh: () => void
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-emerald-500/10">
+            <Activity className="h-4 w-4 text-emerald-500" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold">Public Indexer Source Health</h3>
+            <p className="text-sm text-muted-foreground">Live gate status for allowed, warming, and blocked sources.</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 rounded-xl border border-border/60 px-3 py-2">
+            <span className="text-xs text-muted-foreground">Anime only</span>
+            <Switch checked={animeOnly} onCheckedChange={onAnimeOnlyChange} />
+          </div>
+          <Button variant="outline" size="sm" onClick={onRefresh} disabled={isFetching}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="glass border-border/50">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Allowed</p>
+            <p className="text-2xl font-bold text-emerald-500">{data?.allowed ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card className="glass border-border/50">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Warming</p>
+            <p className="text-2xl font-bold text-primary">{data?.warming ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card className="glass border-border/50">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Blocked</p>
+            <p className="text-2xl font-bold text-red-500">{data?.blocked ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card className="glass border-border/50">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Total Sources</p>
+            <p className="text-2xl font-bold">{data?.total_sources ?? 0}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="glass border-border/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Gate Configuration</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="grid gap-3 md:grid-cols-4">
+              {[...Array(4)].map((_, index) => (
+                <Skeleton key={index} className="h-14 rounded-lg" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-4 text-sm">
+              <div className="rounded-lg border border-border/50 p-3">
+                <p className="text-xs text-muted-foreground">Gate Enabled</p>
+                <p className="font-semibold mt-1">{data?.gate.enabled ? 'Yes' : 'No'}</p>
+              </div>
+              <div className="rounded-lg border border-border/50 p-3">
+                <p className="text-xs text-muted-foreground">Min Samples</p>
+                <p className="font-semibold mt-1">{data?.gate.min_samples ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-border/50 p-3">
+                <p className="text-xs text-muted-foreground">Min Success Rate</p>
+                <p className="font-semibold mt-1">{formatPercent(data?.gate.min_success_rate ?? 0)}</p>
+              </div>
+              <div className="rounded-lg border border-border/50 p-3">
+                <p className="text-xs text-muted-foreground">Max Timeout Rate</p>
+                <p className="font-semibold mt-1">{formatPercent(data?.gate.max_timeout_rate ?? 0)}</p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="glass border-border/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Sources</CardTitle>
+          <CardDescription>
+            <span className="font-mono text-[11px]">blocked</span> means the source failed gate thresholds.{' '}
+            <span className="font-mono text-[11px]">enforced now</span> means it is actively excluded because gating is
+            enabled.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-2">
+              {[...Array(8)].map((_, index) => (
+                <Skeleton key={index} className="h-12 rounded-lg" />
+              ))}
+            </div>
+          ) : !data?.sources.length ? (
+            <p className="text-sm text-muted-foreground">No source health data is available yet.</p>
+          ) : (
+            <ScrollArea className="h-[520px] rounded-lg border border-border/50">
+              <div className="min-w-[980px]">
+                <div className="grid grid-cols-7 gap-3 px-4 py-2 text-xs font-semibold text-muted-foreground border-b border-border/40">
+                  <div>Source</div>
+                  <div>Supports</div>
+                  <div>Samples</div>
+                  <div>Success</div>
+                  <div>Timeout</div>
+                  <div>Challenge</div>
+                  <div>Status</div>
+                </div>
+                {data.sources.map((source) => (
+                  <div
+                    key={source.source_key}
+                    className="grid grid-cols-7 gap-3 px-4 py-3 text-sm border-b border-border/30 last:border-0"
+                  >
+                    <div>
+                      <p className="font-medium">{source.source_name}</p>
+                      <p className="text-xs text-muted-foreground">{source.source_key}</p>
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {source.supports_movie && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                          movie
+                        </Badge>
+                      )}
+                      {source.supports_series && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                          series
+                        </Badge>
+                      )}
+                      {source.supports_anime && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                          anime
+                        </Badge>
+                      )}
+                    </div>
+                    <div>{source.samples}</div>
+                    <div>
+                      <p>{formatPercent(source.success_rate)}</p>
+                      <p className="text-xs text-muted-foreground">{source.success}</p>
+                    </div>
+                    <div>
+                      <p>{formatPercent(source.timeout_rate)}</p>
+                      <p className="text-xs text-muted-foreground">{source.timeout}</p>
+                    </div>
+                    <div>
+                      <p>{formatPercent(source.challenge_solve_rate)}</p>
+                      <p className="text-xs text-muted-foreground">{source.challenge_solved}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className={sourceGateStatusClass(source.gate_status)}>
+                        {source.gate_status}
+                      </Badge>
+                      {source.gate_enforced_now && (
+                        <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/30">
+                          enforced
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
 }
 
 // Simple pie chart component using SVG
@@ -607,6 +833,7 @@ export function MetricsPage() {
     return formatDateToYYYYMMDD(getStartOfWeek(new Date()))
   })
   const [selectedScraper, setSelectedScraper] = useState<string | null>(null)
+  const [animeOnlySourceHealth, setAnimeOnlySourceHealth] = useState(false)
 
   const { data: torrentCount, isLoading: tcLoading, refetch: refetchTc } = useTorrentCount()
   const { data: torrentSources, isLoading: tsLoading, refetch: refetchTs } = useTorrentSources()
@@ -620,6 +847,12 @@ export function MetricsPage() {
   const { data: contributionStats, isLoading: csLoading, refetch: refetchCs } = useContributionMetrics()
   const { data: activityStats, isLoading: asLoading, refetch: refetchAs } = useActivityStats()
   const { data: systemOverview, isLoading: soLoading, refetch: refetchSo } = useSystemOverview()
+  const {
+    data: sourceHealth,
+    isLoading: sourceHealthLoading,
+    isFetching: sourceHealthFetching,
+    refetch: refetchSourceHealth,
+  } = usePublicIndexerSourceHealth(animeOnlySourceHealth)
   const { data: scraperMetrics, isLoading: smLoading, refetch: refetchSm } = useScraperMetrics()
   const { data: scraperHistory, isLoading: shLoading } = useScraperHistory(selectedScraper)
 
@@ -636,6 +869,7 @@ export function MetricsPage() {
     refetchCs()
     refetchAs()
     refetchSo()
+    refetchSourceHealth()
     refetchSm()
   }
 
@@ -843,7 +1077,7 @@ export function MetricsPage() {
 
       {/* Detailed Metrics Tabs */}
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 gap-1 rounded-xl bg-muted/50 p-1 h-auto sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-9">
+        <TabsList className="grid w-full grid-cols-2 gap-1 rounded-xl bg-muted/50 p-1 h-auto sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-10">
           <TabsTrigger value="overview" className="rounded-lg w-full">
             Overview
           </TabsTrigger>
@@ -852,6 +1086,9 @@ export function MetricsPage() {
           </TabsTrigger>
           <TabsTrigger value="scrapers" className="rounded-lg w-full">
             Scrapers
+          </TabsTrigger>
+          <TabsTrigger value="source-health" className="rounded-lg w-full">
+            Source Health
           </TabsTrigger>
           <TabsTrigger value="scraper-runs" className="rounded-lg w-full">
             Scraper Runs
@@ -1370,6 +1607,18 @@ export function MetricsPage() {
               )}
             </>
           )}
+        </TabsContent>
+
+        {/* Source Health Tab */}
+        <TabsContent value="source-health" className="space-y-6">
+          <SourceHealthPanel
+            data={sourceHealth}
+            isLoading={sourceHealthLoading}
+            isFetching={sourceHealthFetching}
+            animeOnly={animeOnlySourceHealth}
+            onAnimeOnlyChange={setAnimeOnlySourceHealth}
+            onRefresh={() => refetchSourceHealth()}
+          />
         </TabsContent>
 
         {/* Scraper Runs Tab - Live scraper metrics from individual runs */}

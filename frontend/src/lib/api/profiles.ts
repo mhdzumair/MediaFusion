@@ -151,6 +151,10 @@ export interface ProfileConfig {
   mfc?: MediaFlowConfig | null // mediaflow_config
   rpc?: RPDBConfig | null // rpdb_config
   lss?: boolean // live_search_streams
+  ia?: boolean // include_anime
+  aso?: ('kitsu' | 'anilist')[] // anime_source_order
+  also?: string[] // anime_live_source_order
+  asc?: ('public_indexer' | 'hoster')[] // anime_source_classes
   ic?: IndexerConfig | null // indexer_config
   eus?: boolean // enable_usenet_streams
   puot?: boolean // prefer_usenet_over_torrent

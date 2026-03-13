@@ -4,6 +4,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+from scrapers.anime_source_benchmark import (
+    get_source_release_group_hints,
+    get_source_reliability,
+    get_source_tier,
+)
+
 
 @dataclass(frozen=True)
 class ScraplingIndexerDefinition:
@@ -24,6 +30,9 @@ class ScraplingIndexerDefinition:
     fetcher_mode: str | None = None
     http_fallback: bool = False
     max_detail_url_length: int = 260
+    anime_tier: int = 3
+    anime_reliability: float = 0.5
+    anime_release_group_hints: tuple[str, ...] = ()
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -184,6 +193,41 @@ INDEXER_OVERRIDES = {
         "solve_cloudflare": False,
         "fetcher_mode": "dynamic",
     },
+    "animetosho": {
+        "source_name": "AnimeTosho",
+        "query_url_templates": (
+            "https://animetosho.org/search?q={query}",
+            "https://animetosho.org/search?q={query}&page={page}",
+        ),
+        "row_selectors": ("div.home_list_entry", "article", "li", "tr"),
+        "title_selectors": ("a[href*='/view/']::text", "a::text"),
+        "detail_selectors": ("a[href*='/view/']::attr(href)", "a::attr(href)"),
+        "magnet_selectors": ("a[href^='magnet:?']::attr(href)",),
+        "size_selectors": ("span.size::text", "*::text"),
+        "seeder_selectors": ("span.seeders::text",),
+        "supports_movie": False,
+        "supports_series": False,
+        "supports_anime": True,
+        "solve_cloudflare": False,
+        "fetcher_mode": "dynamic",
+        "http_fallback": True,
+    },
+    "subsplease": {
+        "source_name": "SubsPlease",
+        "query_url_templates": ("https://subsplease.org/api/?f=search&tz=UTC&s={query}",),
+        "row_selectors": ("article", "li"),
+        "title_selectors": ("a::text",),
+        "detail_selectors": ("a::attr(href)",),
+        "magnet_selectors": ("a[href^='magnet:?']::attr(href)",),
+        "size_selectors": ("*::text",),
+        "seeder_selectors": ("*::text",),
+        "supports_movie": False,
+        "supports_series": False,
+        "supports_anime": True,
+        "solve_cloudflare": False,
+        "fetcher_mode": "dynamic",
+        "http_fallback": True,
+    },
     "thepiratebay": {
         "query_url_templates": ("https://thepiratebay.org/search.php?q={query}",),
         "row_selectors": ("li.list-entry",),
@@ -343,6 +387,8 @@ INDEXER_OVERRIDES = {
 INDEXER_PRIORITY = {
     "x1337": 100,
     "nyaa": 95,
+    "subsplease": 94,
+    "animetosho": 94,
     "eztv": 93,
     "torrentdownloads": 90,
     "torrentdownload": 88,
@@ -420,6 +466,9 @@ def _build_definition_from_prowlarr(indexer_data: dict) -> ScraplingIndexerDefin
         search_pages_per_query=1,
         solve_cloudflare=True,
         fetcher_mode="stealthy",
+        anime_tier=get_source_tier(key),
+        anime_reliability=get_source_reliability(key),
+        anime_release_group_hints=get_source_release_group_hints(key),
     )
 
     override = INDEXER_OVERRIDES.get(key)
@@ -441,7 +490,7 @@ def _load_definitions_from_prowlarr() -> dict[str, ScraplingIndexerDefinition]:
 
 def _build_extra_definitions() -> dict[str, ScraplingIndexerDefinition]:
     extra: dict[str, ScraplingIndexerDefinition] = {}
-    for key in ("x1337", "uindex"):
+    for key in ("x1337", "uindex", "nyaa", "animetosho", "subsplease"):
         override = INDEXER_OVERRIDES.get(key)
         if not override:
             continue
@@ -463,6 +512,12 @@ def _build_extra_definitions() -> dict[str, ScraplingIndexerDefinition]:
             fetcher_mode=override["fetcher_mode"],
             http_fallback=override.get("http_fallback", False),
             max_detail_url_length=override.get("max_detail_url_length", 260),
+            anime_tier=override.get("anime_tier", get_source_tier(key)),
+            anime_reliability=override.get("anime_reliability", get_source_reliability(key)),
+            anime_release_group_hints=override.get(
+                "anime_release_group_hints",
+                get_source_release_group_hints(key),
+            ),
         )
     return extra
 
@@ -473,7 +528,21 @@ PUBLIC_INDEXER_DEFINITIONS: dict[str, ScraplingIndexerDefinition] = {
 }
 
 
-def _sort_indexers(definitions: list[ScraplingIndexerDefinition]) -> list[ScraplingIndexerDefinition]:
+def _sort_indexers(
+    definitions: list[ScraplingIndexerDefinition],
+    *,
+    is_anime: bool,
+) -> list[ScraplingIndexerDefinition]:
+    if is_anime:
+        return sorted(
+            definitions,
+            key=lambda definition: (
+                definition.anime_tier,
+                -definition.anime_reliability,
+                -INDEXER_PRIORITY.get(definition.key, 0),
+                definition.key,
+            ),
+        )
     return sorted(
         definitions,
         key=lambda definition: (
@@ -486,12 +555,15 @@ def _sort_indexers(definitions: list[ScraplingIndexerDefinition]) -> list[Scrapl
 def get_indexers_for_catalog(*, catalog_type: str, is_anime: bool) -> list[ScraplingIndexerDefinition]:
     if is_anime:
         return _sort_indexers(
-            [definition for definition in PUBLIC_INDEXER_DEFINITIONS.values() if definition.supports_anime]
+            [definition for definition in PUBLIC_INDEXER_DEFINITIONS.values() if definition.supports_anime],
+            is_anime=True,
         )
     if catalog_type == "movie":
         return _sort_indexers(
-            [definition for definition in PUBLIC_INDEXER_DEFINITIONS.values() if definition.supports_movie]
+            [definition for definition in PUBLIC_INDEXER_DEFINITIONS.values() if definition.supports_movie],
+            is_anime=False,
         )
     return _sort_indexers(
-        [definition for definition in PUBLIC_INDEXER_DEFINITIONS.values() if definition.supports_series]
+        [definition for definition in PUBLIC_INDEXER_DEFINITIONS.values() if definition.supports_series],
+        is_anime=False,
     )

@@ -528,18 +528,24 @@ class MetadataData(BaseModel):
         """Get MyAnimeList ID if available."""
         if self.external_ids and self.external_ids.mal_id:
             return self.external_ids.mal_id
+        if self.external_id and self.external_id.startswith("mal:"):
+            return self.external_id.split(":", 1)[1]
         return None
 
     def get_kitsu_id(self) -> str | None:
         """Get Kitsu ID if available."""
         if self.external_ids and self.external_ids.kitsu_id:
             return self.external_ids.kitsu_id
+        if self.external_id and self.external_id.startswith("kitsu:"):
+            return self.external_id.split(":", 1)[1]
         return None
 
     def get_anilist_id(self) -> str | None:
         """Get AniList ID if available."""
         if self.external_ids and self.external_ids.anilist_id:
             return self.external_ids.anilist_id
+        if self.external_id and self.external_id.startswith("anilist:"):
+            return self.external_id.split(":", 1)[1]
         return None
 
     def get_trakt_id(self) -> str | None:
@@ -551,18 +557,47 @@ class MetadataData(BaseModel):
     def get_canonical_id(self) -> str:
         """Get the canonical external ID for this media.
 
-        Priority: IMDb > TMDB > TVDB > external_id
+        Priority:
+        - Anime-first items: IMDb > MAL > Kitsu > AniList > TMDB > TVDB
+        - Other items: IMDb > TMDB > TVDB > MAL > Kitsu > AniList
         Used for cache keys and stream meta_id.
         """
         imdb = self.get_imdb_id()
         if imdb:
             return imdb
+
+        anime_ids = (self.get_mal_id(), self.get_kitsu_id(), self.get_anilist_id())
+        genres = {genre.strip().lower() for genre in self.genres if isinstance(genre, str)}
+        catalogs = {catalog.strip().lower() for catalog in self.catalogs if isinstance(catalog, str)}
+        is_anime = bool(any(anime_ids)) or "anime" in genres or any("anime" in catalog for catalog in catalogs)
+
+        if is_anime:
+            mal = self.get_mal_id()
+            if mal:
+                return f"mal:{mal}"
+            kitsu = self.get_kitsu_id()
+            if kitsu:
+                return f"kitsu:{kitsu}"
+            anilist = self.get_anilist_id()
+            if anilist:
+                return f"anilist:{anilist}"
+
         tmdb = self.get_tmdb_id()
         if tmdb:
             return f"tmdb:{tmdb}"
         tvdb = self.get_tvdb_id()
         if tvdb:
             return f"tvdb:{tvdb}"
+        if not is_anime:
+            mal = self.get_mal_id()
+            if mal:
+                return f"mal:{mal}"
+            kitsu = self.get_kitsu_id()
+            if kitsu:
+                return f"kitsu:{kitsu}"
+            anilist = self.get_anilist_id()
+            if anilist:
+                return f"anilist:{anilist}"
         # Fallback to external_id or database ID
         return self.external_id or f"mf:{self.id}"
 
@@ -624,7 +659,17 @@ class MetadataData(BaseModel):
         if loaded_external_ids:
             # Build lookup and pick by priority
             id_by_provider = {ext.provider: ext.external_id for ext in loaded_external_ids}
-            for provider in ["imdb", "tvdb", "tmdb", "mal", "kitsu"]:
+            is_anime_media = bool(
+                media.type.value == "anime"
+                or any(ext.provider in {"mal", "kitsu", "anilist"} for ext in loaded_external_ids)
+                or any("anime" in str(catalog).lower() for catalog in (media.catalogs or []))
+            )
+            provider_priority = (
+                ["imdb", "mal", "kitsu", "anilist", "tvdb", "tmdb"]
+                if is_anime_media
+                else ["imdb", "tvdb", "tmdb", "mal", "kitsu", "anilist"]
+            )
+            for provider in provider_priority:
                 if provider in id_by_provider:
                     ext_value = id_by_provider[provider]
                     if provider == "imdb":

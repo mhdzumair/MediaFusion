@@ -79,6 +79,7 @@ export {
   useContributionMetrics,
   useActivityStats,
   useSystemOverview,
+  usePublicIndexerSourceHealth,
   useScraperMetrics,
   useScraperAggregatedStats,
   useScraperHistory,

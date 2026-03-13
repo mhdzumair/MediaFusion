@@ -19,10 +19,24 @@ class MetadataSearchPipeline:
     3. Store all provider data in item['_provider_metadata'] so the store pipeline
        can persist everything in a single pass — no need for "Refresh All".
 
-    Note: MAL and Kitsu don't support IMDB-based lookups and are primarily for anime,
-    so they are not included here. They can be added later with title-based search
-    if anime detection is implemented.
+    For anime rows (catalog/genre/title-based detection), this pipeline also
+    performs title-based MAL/Kitsu/AniList resolution and persists those IDs.
     """
+
+    @staticmethod
+    def _is_anime_item(item: dict, metadata: dict | None) -> bool:
+        catalogs = item.get("catalog", [])
+        if isinstance(catalogs, str):
+            catalogs = [catalogs]
+        if any("anime" in str(catalog).lower() for catalog in catalogs):
+            return True
+
+        title = str(item.get("title", "")).lower()
+        if any(token in title for token in ("[subsplease]", "erai-raws", "horriblesubs", "anime")):
+            return True
+
+        genres = metadata.get("genres", []) if isinstance(metadata, dict) else []
+        return any(str(genre).lower() in {"anime", "animation"} for genre in genres)
 
     async def _fetch_additional_providers(self, imdb_id, media_type, title):
         """Fetch TMDB and TVDB data in parallel using the resolved IMDB ID."""
@@ -101,6 +115,44 @@ class MetadataSearchPipeline:
             if imdb_id:
                 additional = await self._fetch_additional_providers(imdb_id, media_type, title)
                 provider_metadata.update(additional)
+            elif self._is_anime_item(item, metadata):
+                try:
+                    anime_results = await meta_fetcher.search_multiple_results(
+                        title=title,
+                        limit=1,
+                        year=year,
+                        media_type=media_type,
+                        include_anime=True,
+                        anime_source_order=settings.anime_metadata_source_order,
+                    )
+                except Exception as exc:
+                    logging.warning("Anime metadata search failed for '%s': %s", title, exc)
+                    anime_results = []
+
+                if anime_results:
+                    anime_best = anime_results[0]
+                    external_ids: dict[str, str] = {}
+                    if anime_best.get("imdb_id"):
+                        item["imdb_id"] = anime_best["imdb_id"]
+                        external_ids["imdb"] = str(anime_best["imdb_id"])
+                    if anime_best.get("tmdb_id"):
+                        external_ids["tmdb"] = str(anime_best["tmdb_id"])
+                    if anime_best.get("tvdb_id"):
+                        external_ids["tvdb"] = str(anime_best["tvdb_id"])
+                    if anime_best.get("mal_id"):
+                        external_ids["mal"] = str(anime_best["mal_id"])
+                    if anime_best.get("kitsu_id"):
+                        external_ids["kitsu"] = str(anime_best["kitsu_id"])
+                    if anime_best.get("anilist_id"):
+                        external_ids["anilist"] = str(anime_best["anilist_id"])
+
+                    if not item.get("poster") and anime_best.get("poster"):
+                        item["poster"] = anime_best["poster"]
+                    if not item.get("year") and anime_best.get("year"):
+                        item["year"] = anime_best["year"]
+
+                    additional = await meta_fetcher.get_metadata_from_all_providers(external_ids, media_type)
+                    provider_metadata.update(additional)
 
             # Store all provider metadata so the store pipeline can
             # persist everything (description, genres, cast, crew, etc.)

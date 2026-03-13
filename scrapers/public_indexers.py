@@ -1,8 +1,11 @@
+import asyncio
+import json
+import random
 import re
 import time
 from collections.abc import AsyncGenerator
 from datetime import timedelta
-from urllib.parse import quote_plus, unquote, urljoin
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlsplit
 
 import httpx
 import PTT
@@ -16,6 +19,7 @@ from scrapers.public_indexer_registry import (
     ScraplingIndexerDefinition,
     get_indexers_for_catalog,
 )
+from scrapers.source_health import is_source_within_budget, record_source_outcome
 from utils.parser import convert_size_to_bytes, is_contain_18_plus_keywords
 from utils.runtime_const import PUBLIC_INDEXERS_SEARCH_TTL
 from utils.torrent import parse_magnet
@@ -50,8 +54,17 @@ class PublicIndexerScraper(BaseScraper):
     ANIME_SERIES_QUERY_TEMPLATES = (
         "{title} - {episode:02d}",
         "{title} {episode:02d}",
+        "{title} episode {episode}",
+        "{title} batch",
+        "{title} complete",
         "{title}",
     )
+    ANIME_RELEASE_GROUP_BONUS = {
+        "subsplease": 20,
+        "erai-raws": 16,
+        "horriblesubs": 14,
+        "nyaa": 10,
+    }
 
     def __init__(self):
         super().__init__(cache_key_prefix=self.cache_key_prefix, logger_name=__name__)
@@ -71,7 +84,10 @@ class PublicIndexerScraper(BaseScraper):
             return []
 
         is_anime = self._is_anime_metadata(metadata)
-        indexers = self._select_indexers(catalog_type, is_anime)
+        if is_anime and user_data and getattr(user_data, "include_anime", True) is False:
+            self.metrics.record_skip("Anime providers disabled in profile")
+            return []
+        indexers = await self._select_indexers(user_data, catalog_type, is_anime)
         if not indexers:
             self.metrics.record_skip("No indexers configured")
             return []
@@ -85,6 +101,8 @@ class PublicIndexerScraper(BaseScraper):
         results: list[TorrentStreamData] = []
         max_streams = max(1, int(settings.prowlarr_immediate_max_process))
         deadline = time.monotonic() + max(5, int(settings.prowlarr_immediate_max_process_time))
+        parallelism = max(1, int(settings.public_indexers_live_search_parallelism))
+        processed_info_hashes_lock = asyncio.Lock() if parallelism > 1 else None
 
         for query in queries:
             if len(results) >= max_streams:
@@ -94,13 +112,59 @@ class PublicIndexerScraper(BaseScraper):
                 self.metrics.record_skip("Max process time")
                 break
 
+            remaining_streams = max_streams - len(results)
+            query_results = await self._search_indexers_for_query(
+                indexers=indexers,
+                query=query,
+                metadata=metadata,
+                catalog_type=catalog_type,
+                season=season,
+                episode=episode,
+                is_anime=is_anime,
+                processed_info_hashes=processed_info_hashes,
+                processed_info_hashes_lock=processed_info_hashes_lock,
+                max_streams=remaining_streams,
+                deadline=deadline,
+                parallelism=parallelism,
+            )
+            results.extend(query_results)
+
+        if is_anime:
+            results = self._rank_anime_results(results)
+        return results
+
+    async def _search_indexers_for_query(
+        self,
+        *,
+        indexers: list[ScraplingIndexerDefinition],
+        query: str,
+        metadata: MetadataData,
+        catalog_type: str,
+        season: int | None,
+        episode: int | None,
+        is_anime: bool,
+        processed_info_hashes: set[str],
+        processed_info_hashes_lock: asyncio.Lock | None,
+        max_streams: int,
+        deadline: float,
+        parallelism: int,
+    ) -> list[TorrentStreamData]:
+        if max_streams <= 0:
+            return []
+        if time.monotonic() >= deadline:
+            self.metrics.record_skip("Max process time")
+            return []
+
+        if parallelism <= 1 or len(indexers) <= 1:
+            collected: list[TorrentStreamData] = []
             for indexer in indexers:
-                if len(results) >= max_streams:
+                if len(collected) >= max_streams:
+                    self.metrics.record_skip("Max process limit")
                     break
                 if time.monotonic() >= deadline:
+                    self.metrics.record_skip("Max process time")
                     break
-
-                async for stream in self._search_indexer(
+                indexer_streams = await self._collect_indexer_streams(
                     indexer=indexer,
                     query=query,
                     metadata=metadata,
@@ -109,16 +173,103 @@ class PublicIndexerScraper(BaseScraper):
                     episode=episode,
                     is_anime=is_anime,
                     processed_info_hashes=processed_info_hashes,
-                ):
-                    results.append(stream)
-                    if len(results) >= max_streams:
-                        self.metrics.record_skip("Max process limit")
-                        break
-                    if time.monotonic() >= deadline:
-                        self.metrics.record_skip("Max process time")
-                        break
+                    processed_info_hashes_lock=processed_info_hashes_lock,
+                    max_streams=max_streams - len(collected),
+                    deadline=deadline,
+                    semaphore=None,
+                )
+                collected.extend(indexer_streams)
+            return collected[:max_streams]
 
-        return results
+        semaphore = asyncio.Semaphore(min(parallelism, len(indexers)))
+        tasks = [
+            asyncio.create_task(
+                self._collect_indexer_streams(
+                    indexer=indexer,
+                    query=query,
+                    metadata=metadata,
+                    catalog_type=catalog_type,
+                    season=season,
+                    episode=episode,
+                    is_anime=is_anime,
+                    processed_info_hashes=processed_info_hashes,
+                    processed_info_hashes_lock=processed_info_hashes_lock,
+                    max_streams=max_streams,
+                    deadline=deadline,
+                    semaphore=semaphore,
+                )
+            )
+            for indexer in indexers
+        ]
+        collected: list[TorrentStreamData] = []
+        try:
+            timeout_seconds = max(0.0, deadline - time.monotonic())
+            if timeout_seconds <= 0:
+                self.metrics.record_skip("Max process time")
+                return []
+            for task in asyncio.as_completed(tasks, timeout=timeout_seconds):
+                indexer_streams = await task
+                for stream in indexer_streams:
+                    collected.append(stream)
+                    if len(collected) >= max_streams:
+                        self.metrics.record_skip("Max process limit")
+                        return collected[:max_streams]
+                if time.monotonic() >= deadline:
+                    self.metrics.record_skip("Max process time")
+                    return collected
+        except TimeoutError:
+            self.metrics.record_skip("Max process time")
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+        return collected[:max_streams]
+
+    async def _collect_indexer_streams(
+        self,
+        *,
+        indexer: ScraplingIndexerDefinition,
+        query: str,
+        metadata: MetadataData,
+        catalog_type: str,
+        season: int | None,
+        episode: int | None,
+        is_anime: bool,
+        processed_info_hashes: set[str],
+        processed_info_hashes_lock: asyncio.Lock | None,
+        max_streams: int,
+        deadline: float,
+        semaphore: asyncio.Semaphore | None,
+    ) -> list[TorrentStreamData]:
+        async def _run_search() -> list[TorrentStreamData]:
+            collected: list[TorrentStreamData] = []
+            if max_streams <= 0 or time.monotonic() >= deadline:
+                return collected
+
+            async for stream in self._search_indexer(
+                indexer=indexer,
+                query=query,
+                metadata=metadata,
+                catalog_type=catalog_type,
+                season=season,
+                episode=episode,
+                is_anime=is_anime,
+                processed_info_hashes=processed_info_hashes,
+                processed_info_hashes_lock=processed_info_hashes_lock,
+            ):
+                if time.monotonic() >= deadline:
+                    break
+                collected.append(stream)
+                if len(collected) >= max_streams:
+                    break
+            return collected
+
+        if semaphore is None:
+            return await _run_search()
+        async with semaphore:
+            return await _run_search()
 
     @staticmethod
     def _is_anime_metadata(metadata: MetadataData) -> bool:
@@ -130,14 +281,36 @@ class PublicIndexerScraper(BaseScraper):
         catalogs = {catalog.strip().lower() for catalog in metadata.catalogs if isinstance(catalog, str)}
         return any("anime" in catalog for catalog in catalogs)
 
-    def _select_indexers(self, catalog_type: str, is_anime: bool) -> list[ScraplingIndexerDefinition]:
+    async def _select_indexers(
+        self,
+        user_data,
+        catalog_type: str,
+        is_anime: bool,
+    ) -> list[ScraplingIndexerDefinition]:
+        if is_anime and user_data and getattr(user_data, "anime_source_classes", None):
+            source_classes = {
+                value.strip().lower() for value in user_data.anime_source_classes if isinstance(value, str)
+            }
+            if "public_indexer" not in source_classes:
+                return []
+
         available = get_indexers_for_catalog(catalog_type=catalog_type, is_anime=is_anime)
         available_by_key = {definition.key: definition for definition in available}
         all_available_ids = tuple(available_by_key.keys())
         global_sites = (settings.public_indexers_live_search_sites or "").strip()
+        user_anime_order = ""
+        if is_anime and user_data:
+            user_anime_order = ",".join(
+                value.strip().lower()
+                for value in getattr(user_data, "anime_live_source_order", [])
+                if isinstance(value, str) and value.strip()
+            )
 
         if global_sites:
             raw_value = global_sites
+            default_ids = all_available_ids
+        elif is_anime and user_anime_order:
+            raw_value = user_anime_order
             default_ids = all_available_ids
         elif is_anime:
             raw_value = settings.public_indexers_anime_live_search_sites
@@ -157,7 +330,44 @@ class PublicIndexerScraper(BaseScraper):
                 self.logger.warning("Unknown public indexer '%s' in live search config.", indexer_id)
                 continue
             indexers.append(definition)
-        return indexers
+
+        if not settings.public_indexers_source_health_gates_enabled:
+            return indexers
+
+        allowed_keys: set[str] = set()
+        blocked: list[ScraplingIndexerDefinition] = []
+        for definition in indexers:
+            allowed = await is_source_within_budget(
+                definition.key,
+                min_samples=settings.public_indexers_source_health_min_samples,
+                min_success_rate=settings.public_indexers_source_min_success_rate,
+                max_timeout_rate=settings.public_indexers_source_max_timeout_rate,
+            )
+            if allowed:
+                allowed_keys.add(definition.key)
+            else:
+                blocked.append(definition)
+                self.metrics.record_skip(f"public indexer failure budget gate: {definition.key}")
+
+        probation_keys: set[str] = set()
+        if (
+            blocked
+            and settings.public_indexers_source_health_probation_enabled
+            and settings.public_indexers_source_health_probation_ratio > 0
+            and settings.public_indexers_source_health_probation_max_sources_per_query > 0
+        ):
+            max_probation = settings.public_indexers_source_health_probation_max_sources_per_query
+            probation_added = 0
+            for definition in blocked:
+                if probation_added >= max_probation:
+                    break
+                if random.random() <= settings.public_indexers_source_health_probation_ratio:
+                    probation_keys.add(definition.key)
+                    probation_added += 1
+
+        return [
+            definition for definition in indexers if definition.key in allowed_keys or definition.key in probation_keys
+        ]
 
     @staticmethod
     def _parse_indexer_ids(
@@ -227,15 +437,40 @@ class PublicIndexerScraper(BaseScraper):
         episode: int | None,
         is_anime: bool,
         processed_info_hashes: set[str],
+        processed_info_hashes_lock: asyncio.Lock | None = None,
     ) -> AsyncGenerator[TorrentStreamData, None]:
+        stream_hits = 0
+        challenge_solved = False
+        timed_out = False
         encoded_query = quote_plus(query)
         for page in range(1, indexer.search_pages_per_query + 1):
             matched_template = False
             for template in indexer.query_url_templates:
                 search_url = template.format(query=encoded_query, page=page)
-                solved = await self._fetch_page(indexer, search_url)
+                if indexer.key == "subsplease" and "api/?f=search" in search_url:
+                    matched_template = True
+                    request_state = {"timed_out": False}
+                    async for stream in self._search_subsplease_api(
+                        indexer=indexer,
+                        search_url=search_url,
+                        metadata=metadata,
+                        catalog_type=catalog_type,
+                        season=season,
+                        episode=episode,
+                        processed_info_hashes=processed_info_hashes,
+                        processed_info_hashes_lock=processed_info_hashes_lock,
+                        request_state=request_state,
+                    ):
+                        stream_hits += 1
+                        yield stream
+                    timed_out = timed_out or request_state["timed_out"]
+                    break
+
+                solved, request_timed_out = await self._fetch_page(indexer, search_url)
+                timed_out = timed_out or request_timed_out
                 if not solved:
                     continue
+                challenge_solved = challenge_solved or bool(solved.get("challenge_solved"))
 
                 selector = Selector(text=solved["html"])
                 rows = self._extract_rows(selector, indexer.row_selectors)
@@ -255,12 +490,20 @@ class PublicIndexerScraper(BaseScraper):
                         episode=episode,
                         is_anime=is_anime,
                         processed_info_hashes=processed_info_hashes,
+                        processed_info_hashes_lock=processed_info_hashes_lock,
                     )
                     if stream:
+                        stream_hits += 1
                         yield stream
                 break
             if not matched_template:
                 self.metrics.record_skip(f"No rows for {indexer.key}")
+        await record_source_outcome(
+            indexer.key,
+            success=stream_hits > 0,
+            timed_out=timed_out,
+            challenge_solved=challenge_solved,
+        )
 
     async def _process_row(
         self,
@@ -274,6 +517,7 @@ class PublicIndexerScraper(BaseScraper):
         episode: int | None,
         is_anime: bool,
         processed_info_hashes: set[str],
+        processed_info_hashes_lock: asyncio.Lock | None = None,
     ) -> TorrentStreamData | None:
         title = self._first(row, indexer.title_selectors)
         detail_href = self._first(row, indexer.detail_selectors)
@@ -357,11 +601,14 @@ class PublicIndexerScraper(BaseScraper):
             self.metrics.record_skip("No magnet or torrent")
             return None
 
-        info_hash = info_hash.lower()
-        if info_hash in processed_info_hashes:
+        if not await self._mark_info_hash_if_new(
+            info_hash,
+            processed_info_hashes=processed_info_hashes,
+            processed_info_hashes_lock=processed_info_hashes_lock,
+        ):
             self.metrics.record_skip("Duplicate info_hash")
             return None
-        processed_info_hashes.add(info_hash)
+        info_hash = info_hash.lower()
 
         stream = TorrentStreamData(
             info_hash=info_hash,
@@ -401,7 +648,7 @@ class PublicIndexerScraper(BaseScraper):
         indexer: ScraplingIndexerDefinition,
         detail_url: str,
     ) -> tuple[str | None, str | None]:
-        solved = await self._fetch_page(indexer, detail_url)
+        solved, _ = await self._fetch_page(indexer, detail_url)
         if not solved:
             return None, None
         selector = Selector(text=solved["html"])
@@ -417,12 +664,15 @@ class PublicIndexerScraper(BaseScraper):
             return None, urljoin(detail_url, torrent_url)
         return None, None
 
-    async def _fetch_page(self, indexer: ScraplingIndexerDefinition, url: str) -> dict | None:
+    async def _fetch_page(self, indexer: ScraplingIndexerDefinition, url: str) -> tuple[dict | None, bool]:
         response: dict | None = None
+        challenge_solved = False
+        timed_out = False
         if indexer.http_fallback:
-            http_first = await self._fetch_with_http(url)
+            http_first, http_first_timed_out = await self._fetch_with_http(url)
+            timed_out = timed_out or http_first_timed_out
             if self._is_response_usable(http_first):
-                return http_first
+                return http_first, timed_out
 
         try:
             response = await self._fetch_with_scrapling(
@@ -439,16 +689,22 @@ class PublicIndexerScraper(BaseScraper):
                         fetcher_mode=indexer.fetcher_mode or settings.scrapling_fetcher_mode,
                         solve_cloudflare=True,
                     )
+                    challenge_solved = True
         except Exception as exc:
+            if "timeout" in str(exc).lower():
+                timed_out = True
             self.logger.debug("Failed to fetch %s via %s: %s", url, indexer.key, exc)
 
         if self._is_response_usable(response):
-            return response
+            if challenge_solved and response is not None:
+                response["challenge_solved"] = True
+            return response, timed_out
 
         if indexer.http_fallback:
-            fallback = await self._fetch_with_http(url)
+            fallback, fallback_timed_out = await self._fetch_with_http(url)
+            timed_out = timed_out or fallback_timed_out
             if self._is_response_usable(fallback):
-                return fallback
+                return fallback, timed_out
 
         if response is None:
             self.metrics.record_error("request_error")
@@ -456,7 +712,142 @@ class PublicIndexerScraper(BaseScraper):
             self.metrics.record_skip("Empty response")
         else:
             self.metrics.record_error("http_error")
-        return None
+        return None, timed_out
+
+    def _rank_anime_results(self, streams: list[TorrentStreamData]) -> list[TorrentStreamData]:
+        def _score(stream: TorrentStreamData) -> tuple[int, int, int]:
+            release_group = (stream.release_group or "").strip().lower()
+            source_name = (stream.source or "").strip().lower()
+            anime_bonus = 0
+            if release_group in self.ANIME_RELEASE_GROUP_BONUS:
+                anime_bonus += self.ANIME_RELEASE_GROUP_BONUS[release_group]
+            for hint, bonus in self.ANIME_RELEASE_GROUP_BONUS.items():
+                if hint in source_name:
+                    anime_bonus += bonus // 2
+            seeders = stream.seeders or 0
+            quality_bonus = 1 if (stream.quality or "").lower() in {"web", "webrip", "bluray", "bdrip"} else 0
+            return (anime_bonus, quality_bonus, seeders)
+
+        return sorted(streams, key=_score, reverse=True)
+
+    async def _search_subsplease_api(
+        self,
+        *,
+        indexer: ScraplingIndexerDefinition,
+        search_url: str,
+        metadata: MetadataData,
+        catalog_type: str,
+        season: int | None,
+        episode: int | None,
+        processed_info_hashes: set[str],
+        processed_info_hashes_lock: asyncio.Lock | None = None,
+        request_state: dict[str, bool] | None = None,
+    ) -> AsyncGenerator[TorrentStreamData, None]:
+        payload, timed_out = await self._fetch_with_http(search_url)
+        if request_state is not None and timed_out:
+            request_state["timed_out"] = True
+        if not payload or not payload.get("html"):
+            return
+
+        try:
+            entries = json.loads(str(payload["html"]))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            self.metrics.record_skip("Invalid SubsPlease API payload")
+            return
+        if not isinstance(entries, dict):
+            self.metrics.record_skip("Unexpected SubsPlease API shape")
+            return
+
+        for release_name, release_data in entries.items():
+            if not isinstance(release_data, dict):
+                continue
+            downloads = release_data.get("downloads")
+            if not isinstance(downloads, list):
+                continue
+
+            show_title = str(release_data.get("show") or metadata.title or release_name)
+            episode_value = self._parse_int(str(release_data.get("episode") or "")) or episode or 1
+
+            for download in downloads:
+                if not isinstance(download, dict):
+                    continue
+                magnet_link = str(download.get("magnet") or "").replace("&amp;", "&").strip()
+                if not magnet_link:
+                    continue
+
+                resolution = str(download.get("res") or "").strip()
+                title = f"{show_title} - {int(episode_value):02d}"
+                if resolution:
+                    title = f"{title} {resolution}p"
+
+                parsed_data = PTT.parse_title(title, True)
+                if catalog_type == "series" and not self._validate_series(
+                    parsed_data,
+                    season,
+                    episode,
+                    strict_season=False,
+                ):
+                    continue
+
+                info_hash, announce_list = parse_magnet(magnet_link)
+                if not info_hash:
+                    self.metrics.record_skip("SubsPlease no info_hash")
+                    continue
+                if not await self._mark_info_hash_if_new(
+                    info_hash,
+                    processed_info_hashes=processed_info_hashes,
+                    processed_info_hashes_lock=processed_info_hashes_lock,
+                ):
+                    self.metrics.record_skip("Duplicate info_hash")
+                    continue
+                info_hash = info_hash.lower()
+
+                stream = TorrentStreamData(
+                    info_hash=info_hash,
+                    meta_id=metadata.get_canonical_id(),
+                    name=title,
+                    size=self._parse_subsplease_size(download, magnet_link),
+                    source=indexer.source_name,
+                    seeders=0,
+                    announce_list=announce_list,
+                    files=self._build_files(title, parsed_data, catalog_type, season, episode),
+                    resolution=f"{resolution}p" if resolution else parsed_data.get("resolution"),
+                    codec=parsed_data.get("codec"),
+                    quality=parsed_data.get("quality"),
+                    bit_depth=parsed_data.get("bit_depth"),
+                    release_group="SubsPlease",
+                    audio_formats=parsed_data.get("audio", []) if isinstance(parsed_data.get("audio"), list) else [],
+                    channels=parsed_data.get("channels", []) if isinstance(parsed_data.get("channels"), list) else [],
+                    hdr_formats=parsed_data.get("hdr", []) if isinstance(parsed_data.get("hdr"), list) else [],
+                    languages=parsed_data.get("languages", []),
+                    is_remastered=parsed_data.get("remastered", False),
+                    is_upscaled=parsed_data.get("upscaled", False),
+                    is_proper=parsed_data.get("proper", False),
+                    is_repack=parsed_data.get("repack", False),
+                    is_extended=parsed_data.get("extended", False),
+                    is_complete=parsed_data.get("complete", False),
+                    is_dubbed=parsed_data.get("dubbed", False),
+                    is_subbed=parsed_data.get("subbed", False),
+                )
+
+                self.metrics.record_processed_item()
+                self.metrics.record_quality(stream.quality)
+                self.metrics.record_source(stream.source)
+                yield stream
+
+    @staticmethod
+    def _parse_subsplease_size(download: dict, magnet_link: str) -> int:
+        size_value = download.get("size")
+        if isinstance(size_value, int) and size_value > 0:
+            return size_value
+        try:
+            query_map = parse_qs(urlsplit(str(magnet_link)).query)
+            raw_xl = query_map.get("xl", [])
+            if raw_xl and str(raw_xl[0]).isdigit():
+                return int(str(raw_xl[0]))
+        except Exception:
+            return 0
+        return 0
 
     async def _fetch_with_scrapling(
         self,
@@ -489,7 +880,7 @@ class PublicIndexerScraper(BaseScraper):
         status = int(response.get("status", 0) or 0)
         return not status or status < 400
 
-    async def _fetch_with_http(self, url: str) -> dict | None:
+    async def _fetch_with_http(self, url: str) -> tuple[dict | None, bool]:
         timeout_seconds = max(5.0, min(30.0, settings.scrapling_timeout_ms / 1000))
         transport = httpx.AsyncHTTPTransport(retries=1)
         try:
@@ -502,13 +893,38 @@ class PublicIndexerScraper(BaseScraper):
             ) as client:
                 response = await client.get(url)
         except Exception as exc:
+            timed_out = "timeout" in str(exc).lower()
             self.logger.debug("HTTP fallback failed for %s: %s", url, exc)
-            return None
-        return {
-            "html": response.text or "",
-            "status": response.status_code,
-            "url": str(response.url),
-        }
+            return None, timed_out
+        return (
+            {
+                "html": response.text or "",
+                "status": response.status_code,
+                "url": str(response.url),
+            },
+            False,
+        )
+
+    @staticmethod
+    async def _mark_info_hash_if_new(
+        info_hash: str,
+        *,
+        processed_info_hashes: set[str],
+        processed_info_hashes_lock: asyncio.Lock | None,
+    ) -> bool:
+        normalized = (info_hash or "").strip().lower()
+        if not normalized:
+            return False
+        if processed_info_hashes_lock is None:
+            if normalized in processed_info_hashes:
+                return False
+            processed_info_hashes.add(normalized)
+            return True
+        async with processed_info_hashes_lock:
+            if normalized in processed_info_hashes:
+                return False
+            processed_info_hashes.add(normalized)
+            return True
 
     @staticmethod
     def _is_cloudflare_challenge_html(html: str) -> bool:

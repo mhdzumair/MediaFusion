@@ -24,7 +24,9 @@ from db.schemas import (
     RSSFeedParsingPatterns as RSSParsingPatterns,
 )
 from scrapers.base_scraper import BaseScraper
+from scrapers.scraper_tasks import meta_fetcher
 from utils.const import CATALOG_DATA
+from utils.crypto import get_text_hash
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import (
     calculate_max_similarity_ratio,
@@ -128,6 +130,24 @@ class RssScraper(BaseScraper):
         """Check if title or description contains blocklist keywords"""
         content = f"{title} {description}".lower()
         return any(keyword.lower() in content for keyword in self.blocklist_keywords)
+
+    @staticmethod
+    def _is_anime_content(title: str, parsed_data: dict, catalogs: list[str]) -> bool:
+        normalized_title = (title or "").lower()
+        anime_markers = (
+            "anime",
+            "[subsplease]",
+            "erai-raws",
+            "horriblesubs",
+            "nyaa",
+            "vostfr",
+        )
+        if any(marker in normalized_title for marker in anime_markers):
+            return True
+        if any("anime" in str(catalog).lower() for catalog in catalogs):
+            return True
+        languages = {str(language).lower() for language in parsed_data.get("languages", []) if language}
+        return "japanese" in languages and bool(parsed_data.get("episodes"))
 
     async def _scrape_and_parse(self, feed: RSSFeed, *args, **kwargs) -> list[TorrentStreamData]:
         """Scrape and parse a single RSS feed"""
@@ -574,13 +594,10 @@ class RssScraper(BaseScraper):
             final_catalogs = catalog_ids + [rss_catalog]
             torrent_data["catalog"] = final_catalogs
 
-            # Get or create metadata - first search for IMDB/TMDB match
-            from scrapers.scraper_tasks import meta_fetcher
-            from utils.crypto import get_text_hash
-
             parsed_title = parsed_data.get("title", title)
             parsed_year = parsed_data.get("year")
             media_type_str = "series" if is_series else "movie"
+            is_anime_item = self._is_anime_content(parsed_title, parsed_data, final_catalogs)
 
             # Try to find existing metadata by searching IMDB/TMDB
             metadata_result = None
@@ -590,7 +607,9 @@ class RssScraper(BaseScraper):
                     year=parsed_year,
                     media_type=media_type_str,
                     limit=5,
-                    min_similarity=80,
+                    min_similarity=70 if is_anime_item else 80,
+                    include_anime=is_anime_item,
+                    anime_source_order=settings.anime_metadata_source_order,
                 )
             except Exception as e:
                 self.logger.debug(f"IMDB/TMDB search failed for '{parsed_title}': {e}")
@@ -1144,6 +1163,16 @@ class RssScraper(BaseScraper):
         # General sports fallback using shared keywords
         if any(keyword in content_lower for keyword in GENERAL_SPORTS_KEYWORDS):
             return ["other_sports"]
+
+        # Anime detection should win over language-derived regional catalogs.
+        anime_release_group = (parsed_data.get("release_group") or "").lower()
+        is_anime = (
+            "anime" in content_lower
+            or any(token in content_lower for token in ("subsplease", "erai-raws", "horriblesubs", "nyaa"))
+            or anime_release_group in {"subsplease", "erai-raws", "horriblesubs"}
+        )
+        if is_anime:
+            return ["anime_series"] if is_series else ["anime_movies"]
 
         # Map language and content type to catalogs
         if is_series:

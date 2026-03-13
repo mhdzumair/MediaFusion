@@ -44,6 +44,19 @@ export function StreamingPreferences({ config, onChange }: ConfigSectionProps) {
   const selectedHdrFormats = config.hf || HDR_FORMATS.map((h) => h.id)
   const sortingPriority = config.tsp || SORTING_OPTIONS.map((o) => ({ k: o.key, d: 'desc' as const }))
   const selectedLanguages = config.ls || LANGUAGES
+  const animeSourceOrder = config.aso || ['kitsu', 'anilist']
+  const animeLiveSourceOrder = config.also || [
+    'nyaa',
+    'animetosho',
+    'uindex',
+    'limetorrents',
+    'subsplease',
+    'therarbg',
+    'yourbittorrent',
+    'eztv',
+    'torlock',
+  ]
+  const animeSourceClasses = config.asc || ['public_indexer', 'hoster']
   const getLanguageLabel = (language: string | null) => language ?? 'Unknown'
 
   const toggleResolution = (value: string | null) => {
@@ -184,6 +197,13 @@ export function StreamingPreferences({ config, onChange }: ConfigSectionProps) {
     const [item] = newOrder.splice(currentIndex, 1)
     newOrder.splice(newIndex, 0, item)
     onChange({ ...config, sto: newOrder })
+  }
+
+  const toggleAnimeSourceClass = (sourceClass: 'public_indexer' | 'hoster') => {
+    const nextClasses = animeSourceClasses.includes(sourceClass)
+      ? animeSourceClasses.filter((entry) => entry !== sourceClass)
+      : [...animeSourceClasses, sourceClass]
+    onChange({ ...config, asc: nextClasses })
   }
 
   // Stream name filter
@@ -859,6 +879,74 @@ export function StreamingPreferences({ config, onChange }: ConfigSectionProps) {
               checked={config.lss === true}
               onCheckedChange={(checked) => onChange({ ...config, lss: checked })}
             />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Include Anime Providers</Label>
+              <p className="text-xs text-muted-foreground">
+                Include MAL/Kitsu/AniList in metadata search and anime-first stream matching.
+              </p>
+            </div>
+            <Switch checked={config.ia !== false} onCheckedChange={(checked) => onChange({ ...config, ia: checked })} />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Anime Metadata Source Priority</Label>
+            <div className="flex gap-2">
+              <Button
+                variant={animeSourceOrder[0] === 'kitsu' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => onChange({ ...config, aso: ['kitsu', 'anilist'] })}
+              >
+                Kitsu First
+              </Button>
+              <Button
+                variant={animeSourceOrder[0] === 'anilist' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => onChange({ ...config, aso: ['anilist', 'kitsu'] })}
+              >
+                AniList First
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Anime Source Classes</Label>
+            <div className="flex gap-2">
+              <Button
+                variant={animeSourceClasses.includes('public_indexer') ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => toggleAnimeSourceClass('public_indexer')}
+              >
+                Public Indexers
+              </Button>
+              <Button
+                variant={animeSourceClasses.includes('hoster') ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => toggleAnimeSourceClass('hoster')}
+              >
+                Hoster Fallbacks
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Anime Live Source Order</Label>
+            <Input
+              value={animeLiveSourceOrder.join(',')}
+              onChange={(e) => {
+                const parsed = e.target.value
+                  .split(',')
+                  .map((entry) => entry.trim().toLowerCase())
+                  .filter((entry, index, all) => entry && all.indexOf(entry) === index)
+                onChange({ ...config, also: parsed })
+              }}
+              placeholder="nyaa,animetosho,uindex,limetorrents,subsplease,therarbg,yourbittorrent,eztv,torlock"
+            />
+            <p className="text-xs text-muted-foreground">
+              Comma-separated source IDs used for anime live search ordering.
+            </p>
           </div>
 
           {/* Stream Type Grouping */}

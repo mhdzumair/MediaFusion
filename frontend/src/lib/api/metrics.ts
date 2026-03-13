@@ -59,6 +59,41 @@ export interface SchedulerJobsResponse {
   global_scheduler_disabled: boolean
 }
 
+export type PublicIndexerGateStatus = 'allowed' | 'blocked' | 'warming'
+
+export interface PublicIndexerSourceHealthGateConfig {
+  enabled: boolean
+  min_samples: number
+  min_success_rate: number
+  max_timeout_rate: number
+}
+
+export interface PublicIndexerSourceHealthItem {
+  source_key: string
+  source_name: string
+  supports_movie: boolean
+  supports_series: boolean
+  supports_anime: boolean
+  samples: number
+  success: number
+  timeout: number
+  challenge_solved: number
+  success_rate: number
+  timeout_rate: number
+  challenge_solve_rate: number
+  gate_status: PublicIndexerGateStatus
+  gate_enforced_now: boolean
+}
+
+export interface PublicIndexerSourceHealthResponse {
+  gate: PublicIndexerSourceHealthGateConfig
+  total_sources: number
+  allowed: number
+  blocked: number
+  warming: number
+  sources: PublicIndexerSourceHealthItem[]
+}
+
 // Redis metrics - matches the actual API response structure
 export interface RedisPoolStats {
   in_use: number
@@ -356,6 +391,15 @@ export const metricsApi = {
   getSchedulerJobs: async (category?: string): Promise<SchedulerJobsResponse> => {
     const params = category ? `?category=${category}` : ''
     return apiClient.get<SchedulerJobsResponse>(`/admin/schedulers${params}`)
+  },
+
+  /**
+   * Get public indexer source health and gate status.
+   * Requires admin role.
+   */
+  getPublicIndexerSourceHealth: async (animeOnly: boolean = false): Promise<PublicIndexerSourceHealthResponse> => {
+    const params = animeOnly ? '?anime_only=true' : ''
+    return apiClient.get<PublicIndexerSourceHealthResponse>(`/admin/public-indexers/source-health${params}`)
   },
 
   /**

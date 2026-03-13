@@ -104,8 +104,6 @@ async def _probe_indexer(scraper: PublicIndexerScraper, indexer_key: str, timeou
             count += 1
             if len(examples) < 2:
                 examples.append(stream.name)
-            if count >= 3:
-                break
         return {"count": count, "examples": examples}
 
     try:
@@ -148,7 +146,7 @@ async def _run_end_to_end(scraper: PublicIndexerScraper) -> dict:
     settings.public_indexers_live_search_sites = ""
     settings.public_indexers_movie_live_search_sites = "uindex,rutor,thepiratebay,yts"
     settings.public_indexers_series_live_search_sites = "uindex,rutor,thepiratebay"
-    settings.public_indexers_anime_live_search_sites = "nyaa,uindex,eztv"
+    settings.public_indexers_anime_live_search_sites = "nyaa,animetosho,uindex,subsplease"
 
     try:
 

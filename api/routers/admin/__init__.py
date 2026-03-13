@@ -28,6 +28,7 @@ def get_router() -> APIRouter:
     from api.routers.admin.request_metrics import router as request_metrics_router
     from api.routers.admin.scheduler_management import router as scheduler_router
     from api.routers.admin.scrapers import router as scrapers_router
+    from api.routers.admin.source_health import router as source_health_router
     from api.routers.admin.task_management import router as task_management_router
     from api.routers.admin.telegram_admin import router as telegram_admin_router
 
@@ -39,6 +40,7 @@ def get_router() -> APIRouter:
     combined.include_router(contribution_settings_router)
     combined.include_router(metrics_router)
     combined.include_router(scrapers_router)
+    combined.include_router(source_health_router)
     combined.include_router(task_management_router)
     combined.include_router(telegram_admin_router)
     combined.include_router(exceptions_router)

@@ -223,7 +223,18 @@ class Settings(BaseSettings):
     # Type-specific live-search allowlists (used when the global allowlist is empty).
     public_indexers_movie_live_search_sites: str = "uindex,rutor,thepiratebay,yts"
     public_indexers_series_live_search_sites: str = "uindex,rutor,thepiratebay"
-    public_indexers_anime_live_search_sites: str = "nyaa,uindex,eztv"
+    public_indexers_anime_live_search_sites: str = (
+        "nyaa,animetosho,uindex,limetorrents,subsplease,therarbg,yourbittorrent,eztv,torlock"
+    )
+    public_indexers_live_search_parallelism: int = Field(default=32, ge=1, le=32)
+    public_indexers_source_health_metrics_ttl_seconds: int = Field(default=60 * 60 * 24 * 3, ge=60)
+    public_indexers_source_health_gates_enabled: bool = True
+    public_indexers_source_health_min_samples: int = 15
+    public_indexers_source_min_success_rate: float = 0.3
+    public_indexers_source_max_timeout_rate: float = 0.45
+    public_indexers_source_health_probation_enabled: bool = True
+    public_indexers_source_health_probation_ratio: float = Field(default=0.15, ge=0.0, le=1.0)
+    public_indexers_source_health_probation_max_sources_per_query: int = Field(default=1, ge=0)
 
     # Jackett Settings
     is_scrap_from_jackett: bool = False
@@ -433,6 +444,14 @@ class Settings(BaseSettings):
     disable_arab_torrents_scheduler: bool = True
     x1337_scheduler_crontab: str = "0 */6 * * *"
     disable_x1337_scheduler: bool = True
+    nyaa_scheduler_crontab: str = "15 */3 * * *"
+    disable_nyaa_scheduler: bool = False
+    animetosho_scheduler_crontab: str = "30 */4 * * *"
+    disable_animetosho_scheduler: bool = False
+    subsplease_scheduler_crontab: str = "45 */4 * * *"
+    disable_subsplease_scheduler: bool = False
+    animepahe_scheduler_crontab: str = "0 */6 * * *"
+    disable_animepahe_scheduler: bool = True
     bt52_scheduler_crontab: str = "30 */6 * * *"
     disable_bt52_scheduler: bool = True
     uindex_scheduler_crontab: str = "0 */4 * * *"

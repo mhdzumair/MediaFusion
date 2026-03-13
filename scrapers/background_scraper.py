@@ -109,6 +109,16 @@ class BackgroundSearchWorker:
         if settings.is_scrap_from_prowlarr:
             self.scrapers.append(ProwlarrScraper())
 
+    @staticmethod
+    def _is_anime_metadata(metadata: MetadataData) -> bool:
+        if metadata.get_mal_id() or metadata.get_kitsu_id() or metadata.get_anilist_id():
+            return True
+        genres = {genre.strip().lower() for genre in metadata.genres if isinstance(genre, str)}
+        if "anime" in genres or "animation" in genres:
+            return True
+        catalogs = {catalog.strip().lower() for catalog in metadata.catalogs if isinstance(catalog, str)}
+        return any("anime" in catalog for catalog in catalogs)
+
     async def close(self) -> None:
         """Close scraper HTTP clients to avoid file descriptor leaks."""
         for scraper in self.scrapers:
@@ -237,6 +247,7 @@ class BackgroundSearchWorker:
                 metadata = MetadataData.from_db(media) if media else None
                 if not metadata:
                     continue
+                is_anime = self._is_anime_metadata(metadata)
 
                 processed_info_hashes: set[str] = set()
                 for scraper in self.scrapers:
@@ -253,7 +264,17 @@ class BackgroundSearchWorker:
 
                     title_streams_generators = []
                     for chunk in indexer_chunks:
-                        for query_template in scraper.SERIES_SEARCH_QUERY_TEMPLATES:
+                        if is_anime:
+                            query_templates = (
+                                "{title} - {episode:02d}",
+                                "{title} {episode:02d}",
+                                "{title} episode {episode}",
+                                "{title}",
+                            )
+                        else:
+                            query_templates = scraper.SERIES_SEARCH_QUERY_TEMPLATES
+
+                        for query_template in query_templates:
                             search_query = query_template.format(title=metadata.title, season=season, episode=episode)
                             title_streams_generators.append(
                                 scraper.scrape_series_by_title(
@@ -265,6 +286,20 @@ class BackgroundSearchWorker:
                                     indexers=chunk,
                                 )
                             )
+                        if is_anime and settings.scrape_with_aka_titles:
+                            for aka_title in metadata.aka_titles:
+                                if not isinstance(aka_title, str) or not aka_title.strip():
+                                    continue
+                                title_streams_generators.append(
+                                    scraper.scrape_series_by_title(
+                                        processed_info_hashes,
+                                        metadata,
+                                        season,
+                                        episode,
+                                        search_query=f"{aka_title.strip()} {episode:02d}",
+                                        indexers=chunk,
+                                    )
+                                )
 
                     try:
                         async for stream in scraper.process_streams(

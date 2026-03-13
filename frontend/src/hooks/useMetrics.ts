@@ -110,6 +110,15 @@ export function useSystemOverview() {
   })
 }
 
+export function usePublicIndexerSourceHealth(animeOnly: boolean = false) {
+  return useQuery({
+    queryKey: [...METRICS_QUERY_KEY, 'public-indexer-source-health', animeOnly],
+    queryFn: () => metricsApi.getPublicIndexerSourceHealth(animeOnly),
+    staleTime: 15 * 1000, // 15 seconds
+    refetchInterval: 30 * 1000, // Keep admin view fresh
+  })
+}
+
 // Scraper Metrics Hooks
 export function useScraperMetrics() {
   return useQuery({

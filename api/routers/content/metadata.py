@@ -39,7 +39,7 @@ def _require_user_id(user: User) -> int:
 
 def _get_canonical_external_id(external_ids: dict[str, str]) -> str:
     """Return canonical external ID string with provider prefix when needed."""
-    provider_priority = ["imdb", "tmdb", "tvdb", "mal", "kitsu"]
+    provider_priority = ["imdb", "mal", "kitsu", "anilist", "tmdb", "tvdb"]
     for provider in provider_priority:
         provider_id = external_ids.get(provider)
         if not provider_id:
@@ -75,7 +75,10 @@ class RefreshMetadataResponse(BaseModel):
 class LinkExternalIdRequest(BaseModel):
     """Request to link an external provider ID to media."""
 
-    provider: Literal["imdb", "tmdb", "tvdb", "mal", "kitsu"] = Field(..., description="External provider to link")
+    provider: Literal["imdb", "tmdb", "tvdb", "mal", "kitsu", "anilist"] = Field(
+        ...,
+        description="External provider to link",
+    )
     external_id: str = Field(..., description="External ID (e.g., tt1234567 for IMDb, 12345 for TMDB)")
     media_type: Literal["movie", "series"]
     fetch_metadata: bool = Field(default=True, description="Whether to fetch and update metadata from the provider")
@@ -101,6 +104,7 @@ class LinkMultipleExternalIdsRequest(BaseModel):
     tvdb_id: str | int | None = None
     mal_id: str | int | None = None
     kitsu_id: str | int | None = None
+    anilist_id: str | int | None = None
     media_type: Literal["movie", "series"]
     fetch_metadata: bool = Field(default=True, description="Whether to fetch and update metadata from providers")
 
@@ -151,6 +155,7 @@ class ExternalSearchResult(BaseModel):
     tvdb_id: str | int | None = None
     mal_id: str | int | None = None
     kitsu_id: str | int | None = None
+    anilist_id: str | int | None = None
     external_ids: dict | None = None  # All external IDs from the result
 
 
@@ -223,7 +228,7 @@ async def refresh_metadata(
             await crud.update_meta_stream(session, canonical_id, request.media_type, recalculate_stream_time=True)
             message = "Could not fetch fresh metadata from any provider. Stream counts updated."
         else:
-            provider_priority = ["imdb", "tmdb", "tvdb", "mal", "kitsu"]
+            provider_priority = ["imdb", "mal", "kitsu", "anilist", "tmdb", "tvdb"]
             for provider in provider_priority:
                 if provider in provider_data:
                     data = provider_data[provider]
@@ -280,7 +285,7 @@ async def link_external_id(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="IMDb ID must start with 'tt' (e.g., tt1234567).",
             )
-    elif request.provider in ("tmdb", "tvdb", "mal"):
+    elif request.provider in ("tmdb", "tvdb", "mal", "kitsu", "anilist"):
         # These should be numeric IDs
         if external_id.isdigit():
             external_id = external_id  # Keep as string but validate it's numeric
@@ -333,6 +338,10 @@ async def link_external_id(
                 provider_data = await meta_fetcher.get_metadata_from_provider("tmdb", external_id, request.media_type)
             elif request.provider == "tvdb":
                 provider_data = await meta_fetcher.get_metadata_from_provider("tvdb", external_id, request.media_type)
+            elif request.provider in {"mal", "anilist"}:
+                provider_data = await meta_fetcher.get_metadata_from_provider("mal", external_id, request.media_type)
+            elif request.provider == "kitsu":
+                provider_data = await meta_fetcher.get_metadata_from_provider("kitsu", external_id, request.media_type)
             else:
                 provider_data = None
 
@@ -423,6 +432,11 @@ async def link_multiple_external_ids(
         kitsu_id = str(request.kitsu_id).strip()
         if kitsu_id.isdigit():
             ids_to_link.append(("kitsu", kitsu_id))
+
+    if request.anilist_id:
+        anilist_id = str(request.anilist_id).strip()
+        if anilist_id.isdigit():
+            ids_to_link.append(("anilist", anilist_id))
 
     if not ids_to_link:
         raise HTTPException(
@@ -557,26 +571,31 @@ async def search_external_metadata(
             tvdb_id = r.get("tvdb_id") or external_ids_payload.get("tvdb")
             mal_id = r.get("mal_id") or external_ids_payload.get("mal") or external_ids_payload.get("mal_id")
             kitsu_id = r.get("kitsu_id") or external_ids_payload.get("kitsu") or external_ids_payload.get("kitsu_id")
+            anilist_id = (
+                r.get("anilist_id") or external_ids_payload.get("anilist") or external_ids_payload.get("anilist_id")
+            )
 
             # Get the actual source provider (where the result came from)
             source_provider = r.get("_source_provider", "imdb")
 
-            # Determine the primary ID for deduplication (IMDb > TMDB > TVDB > MAL > Kitsu)
+            # Determine the primary ID for deduplication.
             if imdb_id:
                 primary_id = imdb_id
-            elif tmdb_id:
-                primary_id = f"tmdb:{tmdb_id}"
-            elif tvdb_id:
-                primary_id = f"tvdb:{tvdb_id}"
             elif mal_id:
                 primary_id = f"mal:{mal_id}"
             elif kitsu_id:
                 primary_id = f"kitsu:{kitsu_id}"
+            elif anilist_id:
+                primary_id = f"anilist:{anilist_id}"
+            elif tmdb_id:
+                primary_id = f"tmdb:{tmdb_id}"
+            elif tvdb_id:
+                primary_id = f"tvdb:{tvdb_id}"
             else:
                 continue
 
             # Count how many external IDs this result has
-            id_count = sum(1 for x in [imdb_id, tmdb_id, tvdb_id, mal_id, kitsu_id] if x)
+            id_count = sum(1 for x in [imdb_id, tmdb_id, tvdb_id, mal_id, kitsu_id, anilist_id] if x)
 
             # Check if we already have a result for this primary ID
             if primary_id in results_by_id:
@@ -591,6 +610,7 @@ async def search_external_metadata(
                     old_tvdb = existing.get("tvdb_id")
                     old_mal = existing.get("mal_id")
                     old_kitsu = existing.get("kitsu_id")
+                    old_anilist = existing.get("anilist_id")
 
                     results_by_id[primary_id] = {
                         "primary_id": primary_id,
@@ -604,6 +624,7 @@ async def search_external_metadata(
                         "tvdb_id": tvdb_id or old_tvdb,
                         "mal_id": mal_id or old_mal,
                         "kitsu_id": kitsu_id or old_kitsu,
+                        "anilist_id": anilist_id or old_anilist,
                         "external_ids": r.get("external_ids"),
                         "_id_count": id_count,
                     }
@@ -619,6 +640,8 @@ async def search_external_metadata(
                         existing["mal_id"] = mal_id
                     if kitsu_id and not existing.get("kitsu_id"):
                         existing["kitsu_id"] = kitsu_id
+                    if anilist_id and not existing.get("anilist_id"):
+                        existing["anilist_id"] = anilist_id
             else:
                 # New entry
                 results_by_id[primary_id] = {
@@ -633,6 +656,7 @@ async def search_external_metadata(
                     "tvdb_id": tvdb_id,
                     "mal_id": mal_id,
                     "kitsu_id": kitsu_id,
+                    "anilist_id": anilist_id,
                     "external_ids": r.get("external_ids"),
                     "_id_count": id_count,
                 }
@@ -653,6 +677,7 @@ async def search_external_metadata(
                     tvdb_id=str(data["tvdb_id"]) if data["tvdb_id"] else None,
                     mal_id=str(data["mal_id"]) if data["mal_id"] else None,
                     kitsu_id=str(data["kitsu_id"]) if data["kitsu_id"] else None,
+                    anilist_id=str(data["anilist_id"]) if data.get("anilist_id") else None,
                     external_ids=data["external_ids"],
                 )
             )

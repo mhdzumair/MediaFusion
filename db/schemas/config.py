@@ -558,6 +558,29 @@ class UserData(BaseModel):
     mediaflow_config: MediaFlowConfig | None = Field(default=None, alias="mfc")
     rpdb_config: RPDBConfig | None = Field(default=None, alias="rpc")
     live_search_streams: bool = Field(default=False, alias="lss")
+    include_anime: bool = Field(default=True, alias="ia")
+    anime_source_order: list[Literal["kitsu", "anilist"]] = Field(
+        default_factory=lambda: ["kitsu", "anilist"],
+        alias="aso",
+    )
+    anime_live_source_order: list[str] = Field(
+        default_factory=lambda: [
+            "nyaa",
+            "animetosho",
+            "uindex",
+            "limetorrents",
+            "subsplease",
+            "therarbg",
+            "yourbittorrent",
+            "eztv",
+            "torlock",
+        ],
+        alias="also",
+    )
+    anime_source_classes: list[Literal["public_indexer", "hoster"]] = Field(
+        default_factory=lambda: ["public_indexer", "hoster"],
+        alias="asc",
+    )
     mdblist_config: MDBListConfig | None = Field(default=None, alias="mdb")
     stream_template: StreamTemplate | None = Field(default_factory=StreamTemplate, alias="st")
     # Indexer configuration for user-level scraping (Prowlarr/Jackett/Torznab/Newznab)
@@ -656,6 +679,54 @@ class UserData(BaseModel):
             if language not in const.SUPPORTED_LANGUAGES:
                 raise ValueError("Invalid language")
         return v
+
+    @field_validator("anime_live_source_order", mode="before")
+    def validate_anime_live_source_order(cls, value):
+        if value is None:
+            return [
+                "nyaa",
+                "animetosho",
+                "uindex",
+                "limetorrents",
+                "subsplease",
+                "therarbg",
+                "yourbittorrent",
+                "eztv",
+                "torlock",
+            ]
+        if not isinstance(value, list):
+            return [
+                "nyaa",
+                "animetosho",
+                "uindex",
+                "limetorrents",
+                "subsplease",
+                "therarbg",
+                "yourbittorrent",
+                "eztv",
+                "torlock",
+            ]
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw in value:
+            if not isinstance(raw, str):
+                continue
+            entry = raw.strip().lower()
+            if not entry or entry in seen:
+                continue
+            seen.add(entry)
+            normalized.append(entry)
+        return normalized or [
+            "nyaa",
+            "animetosho",
+            "uindex",
+            "limetorrents",
+            "subsplease",
+            "therarbg",
+            "yourbittorrent",
+            "eztv",
+            "torlock",
+        ]
 
     @field_validator("max_streams", mode="after")
     def validate_max_streams(cls, v):

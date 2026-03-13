@@ -259,6 +259,58 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
+    if not settings.disable_nyaa_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.nyaa_scheduler_crontab),
+            name="nyaa",
+            kwargs={
+                "actor_send_method": run_spider.async_send,
+                "spider_name": "nyaa",
+                "scrape_all": "false",
+                "crontab_expression": settings.nyaa_scheduler_crontab,
+            },
+        )
+
+    if not settings.disable_animetosho_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.animetosho_scheduler_crontab),
+            name="animetosho",
+            kwargs={
+                "actor_send_method": run_spider.async_send,
+                "spider_name": "animetosho",
+                "scrape_all": "false",
+                "crontab_expression": settings.animetosho_scheduler_crontab,
+            },
+        )
+
+    if not settings.disable_subsplease_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.subsplease_scheduler_crontab),
+            name="subsplease",
+            kwargs={
+                "actor_send_method": run_spider.async_send,
+                "spider_name": "subsplease",
+                "scrape_all": "false",
+                "crontab_expression": settings.subsplease_scheduler_crontab,
+            },
+        )
+
+    if not settings.disable_animepahe_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.animepahe_scheduler_crontab),
+            name="animepahe",
+            kwargs={
+                "actor_send_method": run_spider.async_send,
+                "spider_name": "animepahe",
+                "scrape_all": "false",
+                "crontab_expression": settings.animepahe_scheduler_crontab,
+            },
+        )
+
     if not settings.disable_bt52_scheduler:
         scheduler.add_job(
             async_send,

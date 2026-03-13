@@ -29,6 +29,8 @@ class BasePublicIndexerSpider(scrapy.Spider):
     size_selectors: tuple[str, ...] = ()
     seeder_selectors: tuple[str, ...] = ()
     next_page_selectors: tuple[str, ...] = ()
+    detail_fallback_selectors: tuple[str, ...] = ()
+    max_detail_hops: int = 1
 
     custom_settings = {
         "ITEM_PIPELINES": {
@@ -246,10 +248,25 @@ class BasePublicIndexerSpider(scrapy.Spider):
             return
 
         magnet_link = self._extract_magnet(response)
+        item = dict(response.meta["item"])
+        current_depth = int(response.meta.get("detail_depth", 0))
         if not magnet_link:
+            if current_depth >= self.max_detail_hops:
+                return
+            fallback_href = self._first(response, self.detail_fallback_selectors)
+            if not fallback_href:
+                return
+            fallback_url = response.urljoin(fallback_href)
+            yield scrapy.Request(
+                fallback_url,
+                callback=self.parse_detail,
+                meta={
+                    "item": item,
+                    "detail_depth": current_depth + 1,
+                },
+            )
             return
 
-        item = dict(response.meta["item"])
         item["website"] = response.url
         item["webpage_url"] = response.url
         yield self._apply_magnet(item, magnet_link)
@@ -389,6 +406,113 @@ class UIndexSpider(BasePublicIndexerSpider):
         "td:nth-child(4)::text",
     )
     next_page_selectors = ()
+
+
+class NyaaSpider(BasePublicIndexerSpider):
+    name = "nyaa"
+    source = "Nyaa"
+    catalog_source = "anime_series"
+    scraped_info_hash_key = "nyaa_scraped_info_hash"
+    default_start_urls = ("https://nyaa.si/?f=0&c=1_2&q=&s=seeders&o=desc",)
+    search_url_template = "https://nyaa.si/?f=0&c=1_0&q={query}&p={page}"
+    use_anti_bot_solver = False
+    custom_settings = {
+        **BasePublicIndexerSpider.custom_settings,
+        "SCRAPLING_SOLVE_CLOUDFLARE": False,
+        "SCRAPLING_FETCHER_MODE": "dynamic",
+    }
+    row_selectors = ("table.torrent-list tbody tr",)
+    title_selectors = ("td:nth-child(2) a:last-child::text", "td:nth-child(2) a::text")
+    detail_selectors = ("td:nth-child(2) a:last-child::attr(href)", "td:nth-child(2) a::attr(href)")
+    magnet_selectors = ("td:nth-child(3) a[href^='magnet:?']::attr(href)", "a[href^='magnet:?']::attr(href)")
+    size_selectors = ("td:nth-child(4)::text",)
+    seeder_selectors = ("td:nth-child(6)::text",)
+    next_page_selectors = ("li.next a::attr(href)",)
+
+
+class AnimeToshoSpider(BasePublicIndexerSpider):
+    name = "animetosho"
+    source = "AnimeTosho"
+    catalog_source = "anime_series"
+    scraped_info_hash_key = "animetosho_scraped_info_hash"
+    default_start_urls = ("https://animetosho.org/search?q=&a=0",)
+    search_url_template = "https://animetosho.org/search?q={query}&page={page}"
+    use_anti_bot_solver = False
+    custom_settings = {
+        **BasePublicIndexerSpider.custom_settings,
+        "SCRAPLING_SOLVE_CLOUDFLARE": False,
+        "SCRAPLING_FETCHER_MODE": "dynamic",
+    }
+    row_selectors = ("div.home_list_entry", "article", "li")
+    title_selectors = ("a[href*='/view/']::text", "a::text")
+    detail_selectors = ("a[href*='/view/']::attr(href)", "a::attr(href)")
+    magnet_selectors = ("a[href^='magnet:?']::attr(href)",)
+    size_selectors = ("span.size::text", "*::text")
+    seeder_selectors = ("span.seeders::text",)
+    next_page_selectors = ("a[rel='next']::attr(href)",)
+
+
+class SubsPleaseSpider(BasePublicIndexerSpider):
+    name = "subsplease"
+    source = "SubsPlease"
+    catalog_source = "anime_series"
+    scraped_info_hash_key = "subsplease_scraped_info_hash"
+    default_start_urls = ("https://subsplease.org/shows/",)
+    search_url_template = "https://subsplease.org/?s={query}"
+    custom_settings = {
+        **BasePublicIndexerSpider.custom_settings,
+        "CONCURRENT_REQUESTS": 3,
+        "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+        "DOWNLOAD_DELAY": 4,
+        "SCRAPLING_FETCHER_MODE": "stealthy",
+        "SCRAPLING_SOLVE_CLOUDFLARE": True,
+        "SCRAPLING_WAIT_TIME_MS": 3500,
+    }
+    row_selectors = ("article", "div.all-shows li", "li")
+    title_selectors = ("h2.entry-title a::text", "a::text")
+    detail_selectors = ("h2.entry-title a::attr(href)", "a::attr(href)")
+    magnet_selectors = ("a[href^='magnet:?']::attr(href)",)
+    size_selectors = ("span.size::text", "*::text")
+    seeder_selectors = ("span.seeders::text",)
+    next_page_selectors = ("a.next.page-numbers::attr(href)",)
+    detail_fallback_selectors = (
+        "a[href*='nyaa.si']::attr(href)",
+        "a[href*='torrent']::attr(href)",
+        "a[href*='release']::attr(href)",
+    )
+    max_detail_hops = 2
+
+
+class AnimePaheSpider(BasePublicIndexerSpider):
+    name = "animepahe"
+    source = "AnimePahe"
+    catalog_source = "anime_series"
+    scraped_info_hash_key = "animepahe_scraped_info_hash"
+    default_start_urls = ("https://animepahe.ru/anime",)
+    search_url_template = "https://animepahe.ru/anime?m=search&q={query}&page={page}"
+    custom_settings = {
+        **BasePublicIndexerSpider.custom_settings,
+        "CONCURRENT_REQUESTS": 2,
+        "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+        "DOWNLOAD_DELAY": 6,
+        "SCRAPLING_FETCHER_MODE": "stealthy",
+        "SCRAPLING_SOLVE_CLOUDFLARE": True,
+        "SCRAPLING_WAIT_TIME_MS": 4000,
+        "SCRAPLING_CLOUDFLARE_MAX_ATTEMPTS": 5,
+    }
+    row_selectors = ("div#results li", "article", "li")
+    title_selectors = ("a::attr(title)", "a::text")
+    detail_selectors = ("a::attr(href)",)
+    magnet_selectors = ("a[href^='magnet:?']::attr(href)",)
+    size_selectors = ("span::text",)
+    seeder_selectors = ("span::text",)
+    next_page_selectors = ("a[rel='next']::attr(href)",)
+    detail_fallback_selectors = (
+        "a[href*='nyaa.si']::attr(href)",
+        "a[href*='animetosho']::attr(href)",
+        "a[href*='torrent']::attr(href)",
+    )
+    max_detail_hops = 3
 
 
 class EZTVRSSSpider(scrapy.Spider):

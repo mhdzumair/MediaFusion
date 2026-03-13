@@ -50,8 +50,8 @@ logger = logging.getLogger(__name__)
 
 # Global scrapers - used when user doesn't have custom indexer config
 SCRAPERS = [
-    (settings.is_scrap_from_prowlarr, ProwlarrScraper, "prowlarr"),
     (settings.is_scrap_from_public_indexers, PublicIndexerScraper, "public_indexers"),
+    (settings.is_scrap_from_prowlarr, ProwlarrScraper, "prowlarr"),
     (settings.is_scrap_from_zilean, ZileanScraper, "zilean"),
     (settings.is_scrap_from_torrentio, TorrentioScraper, "torrentio"),
     (settings.is_scrap_from_mediafusion, MediafusionScraper, "mediafusion"),
@@ -232,6 +232,21 @@ async def run_scrapers(
     ic = user_data.indexer_config
 
     async with asyncio.TaskGroup() as tg:
+        # Add non-indexer scrapers first so native providers (including anime-first
+        # public indexers) are treated as first-class in manual/live scrape flows.
+        for is_enabled, scraper_cls, scraper_id in NON_INDEXER_SCRAPERS:
+            if not is_enabled:
+                continue
+            if selected_scrapers is not None and scraper_id not in selected_scrapers:
+                continue
+
+            scraper = scraper_cls()
+            task = tg.create_task(
+                _run_scraper_with_cleanup(scraper, user_data, metadata, catalog_type, season, episode),
+                name=f"{scraper_cls.__name__}",
+            )
+            tasks.append(task)
+
         # Handle Prowlarr: user instance or global
         if selected_scrapers is None or "prowlarr" in selected_scrapers:
             prowlarr_task = _create_prowlarr_task(tg, user_data, ic, metadata, catalog_type, season, episode)
@@ -261,20 +276,6 @@ async def run_scrapers(
             telegram_task = _create_telegram_task(tg, user_data, metadata, catalog_type, season, episode)
             if telegram_task:
                 tasks.append(telegram_task)
-
-        # Add non-indexer scrapers (always use global config)
-        for is_enabled, scraper_cls, scraper_id in NON_INDEXER_SCRAPERS:
-            if not is_enabled:
-                continue
-            if selected_scrapers is not None and scraper_id not in selected_scrapers:
-                continue
-
-            scraper = scraper_cls()
-            task = tg.create_task(
-                _run_scraper_with_cleanup(scraper, user_data, metadata, catalog_type, season, episode),
-                name=f"{scraper_cls.__name__}",
-            )
-            tasks.append(task)
 
     # Process results after all tasks complete
     for task in tasks:
@@ -800,7 +801,7 @@ class MetadataFetcher:
         Fetch metadata from a specific provider.
 
         Args:
-            provider: Provider name (imdb, tmdb, tvdb, mal, kitsu)
+            provider: Provider name (imdb, tmdb, tvdb, mal, kitsu, anilist)
             provider_id: The ID for that provider
             media_type: "movie" or "series"
 
@@ -820,7 +821,7 @@ class MetadataFetcher:
                 else:
                     return await get_tvdb_series_data(provider_id)
 
-            elif provider == "mal":
+            elif provider in {"mal", "anilist"}:
                 return await get_mal_anime_data(provider_id)
 
             elif provider == "kitsu":
@@ -854,7 +855,7 @@ class MetadataFetcher:
         providers = []
 
         # Valid metadata providers (not social media or other non-metadata IDs)
-        valid_metadata_providers = {"imdb", "tmdb", "tvdb", "mal", "kitsu"}
+        valid_metadata_providers = {"imdb", "tmdb", "tvdb", "mal", "kitsu", "anilist"}
 
         # Create tasks for each available provider
         for provider, provider_id in external_ids.items():
@@ -1118,6 +1119,8 @@ class MetadataFetcher:
                         dedup_key = f"mal:{normalized_item['mal_id']}"
                     elif normalized_item.get("kitsu_id"):
                         dedup_key = f"kitsu:{normalized_item['kitsu_id']}"
+                    elif normalized_item.get("anilist_id"):
+                        dedup_key = f"anilist:{normalized_item['anilist_id']}"
 
                     if dedup_key:
                         if dedup_key in seen_ids:
@@ -1184,6 +1187,8 @@ class MetadataFetcher:
                             candidate["mal_id"] = ext_ids["mal"]
                         if ext_ids.get("kitsu"):
                             candidate["kitsu_id"] = ext_ids["kitsu"]
+                        if ext_ids.get("anilist"):
+                            candidate["anilist_id"] = ext_ids["anilist"]
 
                         candidates.append(candidate)
                     return candidates
@@ -1217,6 +1222,8 @@ class MetadataFetcher:
                     dedup_key = f"mal:{item['mal_id']}"
                 elif item.get("kitsu_id"):
                     dedup_key = f"kitsu:{item['kitsu_id']}"
+                elif item.get("anilist_id"):
+                    dedup_key = f"anilist:{item['anilist_id']}"
 
                 if dedup_key and dedup_key in seen_ids:
                     continue
