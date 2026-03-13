@@ -11,7 +11,7 @@ from typing import Any, Literal
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import String, cast, or_
+from sqlalchemy import String, and_, cast, or_
 from sqlalchemy.orm import aliased
 from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -131,6 +131,25 @@ class ContributionListResponse(BaseModel):
     has_more: bool
 
 
+class ContributionContributorOption(BaseModel):
+    """Single contributor option used by moderator filter UI."""
+
+    key: str
+    label: str
+    user_id: int | None = None
+    anonymous_display_name: str | None = None
+    total: int
+    pending: int
+    approved: int
+    rejected: int
+
+
+class ContributionContributorListResponse(BaseModel):
+    """List of contributors with contribution counters."""
+
+    items: list[ContributionContributorOption]
+
+
 class ContributionStats(BaseModel):
     """Contribution statistics response."""
 
@@ -235,6 +254,30 @@ def _normalize_filter_query(value: str | None) -> str | None:
 
     normalized = value.strip()
     return normalized or None
+
+
+def _parse_contributor_filter(value: str) -> tuple[int | None, str | None]:
+    """Parse contributor filter key into user-id or anonymous display name."""
+    normalized_value = value.strip()
+    if not normalized_value:
+        return None, None
+
+    if normalized_value.startswith("user:"):
+        raw_user_id = normalized_value.split(":", 1)[1].strip()
+        if not raw_user_id.isdigit():
+            raise ValueError("Invalid contributor filter: user id must be numeric.")
+        return int(raw_user_id), None
+
+    if normalized_value.startswith("anon:"):
+        anonymous_name = normalized_value.split(":", 1)[1].strip()
+        if not anonymous_name:
+            raise ValueError("Invalid contributor filter: anonymous label is required.")
+        return None, anonymous_name
+
+    if normalized_value.isdigit():
+        return int(normalized_value), None
+
+    return None, normalized_value
 
 
 def _extract_contribution_meta_candidates(contribution: Contribution) -> list[str]:
@@ -550,6 +593,7 @@ async def _apply_contribution_review(
 async def list_contributions(
     contribution_type: str | None = Query(None, pattern=_CONTRIBUTION_TYPE_PATTERN),
     contribution_status: ContributionStatus | None = Query(None),
+    contributor: str | None = Query(None, max_length=180),
     uploader_query: str | None = Query(None, max_length=120),
     reviewer_query: str | None = Query(None, max_length=120),
     me_only: bool = Query(False),
@@ -581,13 +625,32 @@ async def list_contributions(
         query = query.where(Contribution.status == contribution_status)
         count_query = count_query.where(Contribution.status == contribution_status)
 
+    anonymous_display_name_expr = cast(Contribution.data["anonymous_display_name"], String)
+    anonymous_uploader_label_expr = func.coalesce(func.nullif(func.trim(anonymous_display_name_expr), ""), "Anonymous")
+
+    normalized_contributor_filter = _normalize_filter_query(contributor)
+    if normalized_contributor_filter:
+        try:
+            contributor_user_id, contributor_anon_name = _parse_contributor_filter(normalized_contributor_filter)
+        except ValueError as error:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+        if contributor_user_id is not None:
+            contributor_condition = Contribution.user_id == contributor_user_id
+        else:
+            contributor_condition = and_(
+                Contribution.user_id.is_(None),
+                anonymous_uploader_label_expr.ilike(contributor_anon_name or "Anonymous"),
+            )
+
+        query = query.where(contributor_condition)
+        count_query = count_query.where(contributor_condition)
+
     normalized_uploader_query = _normalize_filter_query(uploader_query)
     if normalized_uploader_query:
         uploader_alias = aliased(User)
         query = query.outerjoin(uploader_alias, Contribution.user_id == uploader_alias.id)
         count_query = count_query.outerjoin(uploader_alias, Contribution.user_id == uploader_alias.id)
-
-        anonymous_display_name_expr = cast(Contribution.data["anonymous_display_name"], String)
 
         if normalized_uploader_query.isdigit():
             uploader_id = int(normalized_uploader_query)
@@ -656,6 +719,113 @@ async def list_contributions(
         page_size=page_size,
         has_more=(offset + len(items)) < total,
     )
+
+
+@router.get("/contributors", response_model=ContributionContributorListResponse)
+async def list_contribution_contributors(
+    contribution_type: str | None = Query(None, pattern=_CONTRIBUTION_TYPE_PATTERN),
+    contribution_status: ContributionStatus | None = Query(None),
+    query: str | None = Query(None, max_length=120),
+    limit: int = Query(80, ge=1, le=200),
+    user: User = Depends(require_role(UserRole.MODERATOR)),
+    session: AsyncSession = Depends(get_read_session),
+):
+    """List contributors so moderators can quickly filter contribution feeds."""
+    del user  # Access control handled by dependency.
+
+    base_filters = []
+    if contribution_type:
+        base_filters.append(Contribution.contribution_type == contribution_type)
+    if contribution_status:
+        base_filters.append(Contribution.status == contribution_status)
+
+    normalized_query = _normalize_filter_query(query)
+    anonymous_display_name_expr = cast(Contribution.data["anonymous_display_name"], String)
+    anonymous_label_expr = func.coalesce(func.nullif(func.trim(anonymous_display_name_expr), ""), "Anonymous")
+    user_total_count_expr = func.count(Contribution.id)
+    anonymous_total_count_expr = func.count(Contribution.id)
+
+    user_contributors_query = (
+        select(
+            Contribution.user_id.label("user_id"),
+            User.username.label("username"),
+            user_total_count_expr.label("total"),
+            func.count(Contribution.id).filter(Contribution.status == ContributionStatus.PENDING).label("pending"),
+            func.count(Contribution.id).filter(Contribution.status == ContributionStatus.APPROVED).label("approved"),
+            func.count(Contribution.id).filter(Contribution.status == ContributionStatus.REJECTED).label("rejected"),
+        )
+        .join(User, User.id == Contribution.user_id)
+        .where(Contribution.user_id.is_not(None), *base_filters)
+        .group_by(Contribution.user_id, User.username)
+        .order_by(user_total_count_expr.desc(), User.username.asc())
+        .limit(limit)
+    )
+    if normalized_query:
+        user_contributors_query = user_contributors_query.where(
+            or_(
+                User.username.ilike(f"%{normalized_query}%"),
+                cast(User.id, String).ilike(f"%{normalized_query}%"),
+            )
+        )
+
+    user_contributors_result = await session.exec(user_contributors_query)
+    user_rows = user_contributors_result.all()
+
+    anonymous_contributors_query = (
+        select(
+            anonymous_label_expr.label("anonymous_name"),
+            anonymous_total_count_expr.label("total"),
+            func.count(Contribution.id).filter(Contribution.status == ContributionStatus.PENDING).label("pending"),
+            func.count(Contribution.id).filter(Contribution.status == ContributionStatus.APPROVED).label("approved"),
+            func.count(Contribution.id).filter(Contribution.status == ContributionStatus.REJECTED).label("rejected"),
+        )
+        .where(Contribution.user_id.is_(None), *base_filters)
+        .group_by(anonymous_label_expr)
+        .order_by(anonymous_total_count_expr.desc(), anonymous_label_expr.asc())
+        .limit(limit)
+    )
+    if normalized_query:
+        anonymous_contributors_query = anonymous_contributors_query.where(
+            anonymous_label_expr.ilike(f"%{normalized_query}%")
+        )
+
+    anonymous_contributors_result = await session.exec(anonymous_contributors_query)
+    anonymous_rows = anonymous_contributors_result.all()
+
+    contributors: list[ContributionContributorOption] = []
+    for row in user_rows:
+        label = row.username or f"User #{row.user_id}"
+        contributors.append(
+            ContributionContributorOption(
+                key=f"user:{row.user_id}",
+                label=label,
+                user_id=row.user_id,
+                anonymous_display_name=None,
+                total=int(row.total or 0),
+                pending=int(row.pending or 0),
+                approved=int(row.approved or 0),
+                rejected=int(row.rejected or 0),
+            )
+        )
+
+    for row in anonymous_rows:
+        anonymous_name = str(row.anonymous_name or "Anonymous")
+        label = "Anonymous" if anonymous_name == "Anonymous" else f"Anonymous: {anonymous_name}"
+        contributors.append(
+            ContributionContributorOption(
+                key=f"anon:{anonymous_name}",
+                label=label,
+                user_id=None,
+                anonymous_display_name=anonymous_name,
+                total=int(row.total or 0),
+                pending=int(row.pending or 0),
+                approved=int(row.approved or 0),
+                rejected=int(row.rejected or 0),
+            )
+        )
+
+    contributors.sort(key=lambda item: (-item.total, item.label.lower()))
+    return ContributionContributorListResponse(items=contributors[:limit])
 
 
 @router.get("/stats", response_model=ContributionStats)

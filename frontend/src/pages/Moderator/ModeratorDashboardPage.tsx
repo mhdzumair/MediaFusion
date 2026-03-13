@@ -24,6 +24,18 @@ import {
   type ModeratorTab,
 } from './components'
 
+const CONTRIBUTION_TYPES = [
+  'all',
+  'metadata',
+  'stream',
+  'torrent',
+  'telegram',
+  'youtube',
+  'nzb',
+  'http',
+  'acestream',
+] as const
+
 export function ModeratorDashboardPage() {
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -68,6 +80,19 @@ export function ModeratorDashboardPage() {
       ? contributionStatusParam
       : 'pending'
 
+  const contributionTypeParam = searchParams.get('contentType')
+  const contributionTypeFilter: string = CONTRIBUTION_TYPES.includes(
+    contributionTypeParam as (typeof CONTRIBUTION_TYPES)[number],
+  )
+    ? (contributionTypeParam ?? 'all')
+    : 'all'
+  const contributionContributorFilter = searchParams.get('contentContributor') || 'all'
+  const contributionUploaderQuery = searchParams.get('contentUploader') || ''
+  const contributionReviewerQuery = searchParams.get('contentReviewer') || ''
+  const contributionPageParam = Number(searchParams.get('contentPage') || '1')
+  const contributionPage =
+    Number.isInteger(contributionPageParam) && contributionPageParam > 0 ? contributionPageParam : 1
+
   const streamStatusParam = searchParams.get('streamStatus')
   const streamStatusFilter: 'all' | StreamSuggestionStatus =
     streamStatusParam === 'all' ||
@@ -88,14 +113,20 @@ export function ModeratorDashboardPage() {
       ? metadataStatusParam
       : 'all'
 
-  const updateModeratorParam = (key: string, value: string, defaultValue: string) => {
+  const updateModeratorParams = (updates: Array<{ key: string; value: string; defaultValue: string }>) => {
     const next = new URLSearchParams(searchParams)
-    if (value === defaultValue) {
-      next.delete(key)
-    } else {
-      next.set(key, value)
-    }
+    updates.forEach(({ key, value, defaultValue }) => {
+      if (value === defaultValue) {
+        next.delete(key)
+      } else {
+        next.set(key, value)
+      }
+    })
     setSearchParams(next, { replace: true })
+  }
+
+  const updateModeratorParam = (key: string, value: string, defaultValue: string) => {
+    updateModeratorParams([{ key, value, defaultValue }])
   }
 
   const handleTabChange = (value: string) => {
@@ -278,7 +309,42 @@ export function ModeratorDashboardPage() {
         <TabsContent value="contributions">
           <ContributionsTab
             statusFilter={contributionStatusFilter}
-            onStatusFilterChange={(status) => updateModeratorParam('contentStatus', status, 'pending')}
+            onStatusFilterChange={(status) =>
+              updateModeratorParams([
+                { key: 'contentStatus', value: status, defaultValue: 'pending' },
+                { key: 'contentPage', value: '1', defaultValue: '1' },
+              ])
+            }
+            typeFilter={contributionTypeFilter}
+            onTypeFilterChange={(type) =>
+              updateModeratorParams([
+                { key: 'contentType', value: type, defaultValue: 'all' },
+                { key: 'contentPage', value: '1', defaultValue: '1' },
+              ])
+            }
+            contributorFilter={contributionContributorFilter}
+            onContributorFilterChange={(contributor) =>
+              updateModeratorParams([
+                { key: 'contentContributor', value: contributor, defaultValue: 'all' },
+                { key: 'contentPage', value: '1', defaultValue: '1' },
+              ])
+            }
+            uploaderQuery={contributionUploaderQuery}
+            onUploaderQueryChange={(value) =>
+              updateModeratorParams([
+                { key: 'contentUploader', value, defaultValue: '' },
+                { key: 'contentPage', value: '1', defaultValue: '1' },
+              ])
+            }
+            reviewerQuery={contributionReviewerQuery}
+            onReviewerQueryChange={(value) =>
+              updateModeratorParams([
+                { key: 'contentReviewer', value, defaultValue: '' },
+                { key: 'contentPage', value: '1', defaultValue: '1' },
+              ])
+            }
+            page={contributionPage}
+            onPageChange={(value) => updateModeratorParam('contentPage', String(value), '1')}
           />
         </TabsContent>
 

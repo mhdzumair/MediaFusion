@@ -36,6 +36,7 @@ export {
 // Contributions hooks
 export {
   useContributions,
+  useContributionContributors,
   useInfiniteContributions,
   useContribution,
   useContributionStats,

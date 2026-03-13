@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
 import {
   contributionsApi,
+  type ContributionContributorListParams,
   type ContributionListParams,
   type ContributionBulkReviewRequest,
   type ContributionBulkReviewResponse,
@@ -17,6 +18,14 @@ export function useContributions(params: ContributionListParams = {}) {
   return useQuery({
     queryKey: [...CONTRIBUTIONS_QUERY_KEY, params],
     queryFn: () => contributionsApi.list(params),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useContributionContributors(params: ContributionContributorListParams = {}) {
+  return useQuery({
+    queryKey: [...CONTRIBUTIONS_QUERY_KEY, 'contributors', params],
+    queryFn: () => contributionsApi.listContributors(params),
     placeholderData: keepPreviousData,
   })
 }

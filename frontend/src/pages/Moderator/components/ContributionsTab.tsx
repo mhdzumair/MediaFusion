@@ -46,6 +46,7 @@ import {
   useAdminRejectApprovedContribution,
   useAuth,
   useBulkReviewContributions,
+  useContributionContributors,
   useContributions,
   useDebounce,
   useFlagContributionForAdminReview,
@@ -68,14 +69,33 @@ import { ModeratorMediaPoster } from './ModeratorMediaPoster'
 interface ContributionsTabProps {
   statusFilter: 'all' | ContributionStatus
   onStatusFilterChange: (status: 'all' | ContributionStatus) => void
+  typeFilter: string
+  onTypeFilterChange: (value: string) => void
+  contributorFilter: string
+  onContributorFilterChange: (value: string) => void
+  uploaderQuery: string
+  onUploaderQueryChange: (value: string) => void
+  reviewerQuery: string
+  onReviewerQueryChange: (value: string) => void
+  page: number
+  onPageChange: (value: number) => void
 }
 
-export function ContributionsTab({ statusFilter, onStatusFilterChange }: ContributionsTabProps) {
+export function ContributionsTab({
+  statusFilter,
+  onStatusFilterChange,
+  typeFilter,
+  onTypeFilterChange,
+  contributorFilter,
+  onContributorFilterChange,
+  uploaderQuery,
+  onUploaderQueryChange,
+  reviewerQuery,
+  onReviewerQueryChange,
+  page,
+  onPageChange,
+}: ContributionsTabProps) {
   const { user } = useAuth()
-  const [page, setPage] = useState(1)
-  const [typeFilter, setTypeFilter] = useState<string>('all')
-  const [uploaderQuery, setUploaderQuery] = useState('')
-  const [reviewerQuery, setReviewerQuery] = useState('')
   const [selectedContribution, setSelectedContribution] = useState<Contribution | null>(null)
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
   const [reviewNotes, setReviewNotes] = useState('')
@@ -100,10 +120,16 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
 
   const debouncedUploaderQuery = useDebounce(uploaderQuery, 350)
   const debouncedReviewerQuery = useDebounce(reviewerQuery, 350)
+  const { data: contributorOptions } = useContributionContributors({
+    contribution_type: typeFilter === 'all' ? undefined : (typeFilter as ContributionType),
+    contribution_status: statusFilter === 'all' ? undefined : statusFilter,
+    limit: 100,
+  })
 
   const { data, isLoading, refetch } = useContributions({
     contribution_type: typeFilter === 'all' ? undefined : (typeFilter as ContributionType),
     contribution_status: statusFilter === 'all' ? undefined : statusFilter,
+    contributor: contributorFilter === 'all' ? undefined : contributorFilter,
     uploader_query: debouncedUploaderQuery.trim() || undefined,
     reviewer_query: debouncedReviewerQuery.trim() || undefined,
     page,
@@ -225,8 +251,7 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
         <Select
           value={typeFilter}
           onValueChange={(value) => {
-            setTypeFilter(value)
-            setPage(1)
+            onTypeFilterChange(value)
           }}
         >
           <SelectTrigger className="w-[180px] rounded-xl">
@@ -250,7 +275,6 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
           value={statusFilter}
           onValueChange={(value) => {
             onStatusFilterChange(value as 'all' | ContributionStatus)
-            setPage(1)
           }}
         >
           <SelectTrigger className="w-[180px] rounded-xl">
@@ -265,11 +289,30 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
           </SelectContent>
         </Select>
 
+        <Select
+          value={contributorFilter}
+          onValueChange={(value) => {
+            onContributorFilterChange(value)
+          }}
+        >
+          <SelectTrigger className="w-[280px] rounded-xl">
+            <Clock className="mr-2 h-4 w-4" />
+            <SelectValue placeholder="Contributor" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Contributors</SelectItem>
+            {(contributorOptions?.items ?? []).map((contributor) => (
+              <SelectItem key={contributor.key} value={contributor.key}>
+                {contributor.label} ({contributor.total})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         <Input
           value={uploaderQuery}
           onChange={(event) => {
-            setUploaderQuery(event.target.value)
-            setPage(1)
+            onUploaderQueryChange(event.target.value)
           }}
           placeholder="Submitted by (username, anonymous name, or ID)"
           className="w-[300px] rounded-xl"
@@ -278,8 +321,7 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
         <Input
           value={reviewerQuery}
           onChange={(event) => {
-            setReviewerQuery(event.target.value)
-            setPage(1)
+            onReviewerQueryChange(event.target.value)
           }}
           placeholder='Approved by (username, ID, or "auto")'
           className="w-[260px] rounded-xl"
@@ -472,7 +514,7 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
             variant="outline"
             size="icon"
             disabled={page === 1}
-            onClick={() => setPage((p) => p - 1)}
+            onClick={() => onPageChange(page - 1)}
             className="rounded-xl"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -484,7 +526,7 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
             variant="outline"
             size="icon"
             disabled={page >= Math.ceil(data.total / 20)}
-            onClick={() => setPage((p) => p + 1)}
+            onClick={() => onPageChange(page + 1)}
             className="rounded-xl"
           >
             <ChevronRight className="h-4 w-4" />

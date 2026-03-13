@@ -32,6 +32,7 @@ export interface Contribution {
 export interface ContributionListParams {
   contribution_type?: ContributionType
   contribution_status?: ContributionStatus
+  contributor?: string
   uploader_query?: string
   reviewer_query?: string
   me_only?: boolean
@@ -45,6 +46,28 @@ export interface ContributionListResponse {
   page: number
   page_size: number
   has_more: boolean
+}
+
+export interface ContributionContributor {
+  key: string
+  label: string
+  user_id?: number | null
+  anonymous_display_name?: string | null
+  total: number
+  pending: number
+  approved: number
+  rejected: number
+}
+
+export interface ContributionContributorListParams {
+  contribution_type?: ContributionType
+  contribution_status?: ContributionStatus
+  query?: string
+  limit?: number
+}
+
+export interface ContributionContributorListResponse {
+  items: ContributionContributor[]
 }
 
 export interface ContributionStats {
@@ -94,6 +117,7 @@ export const contributionsApi = {
     const searchParams = new URLSearchParams()
     if (params.contribution_type) searchParams.append('contribution_type', params.contribution_type)
     if (params.contribution_status) searchParams.append('contribution_status', params.contribution_status)
+    if (params.contributor) searchParams.append('contributor', params.contributor)
     if (params.uploader_query) searchParams.append('uploader_query', params.uploader_query)
     if (params.reviewer_query) searchParams.append('reviewer_query', params.reviewer_query)
     if (params.me_only) searchParams.append('me_only', 'true')
@@ -102,6 +126,22 @@ export const contributionsApi = {
 
     const query = searchParams.toString()
     return apiClient.get<ContributionListResponse>(`/contributions${query ? `?${query}` : ''}`)
+  },
+
+  /**
+   * List contributor options for moderator filtering
+   */
+  listContributors: async (
+    params: ContributionContributorListParams = {},
+  ): Promise<ContributionContributorListResponse> => {
+    const searchParams = new URLSearchParams()
+    if (params.contribution_type) searchParams.append('contribution_type', params.contribution_type)
+    if (params.contribution_status) searchParams.append('contribution_status', params.contribution_status)
+    if (params.query) searchParams.append('query', params.query)
+    if (params.limit) searchParams.append('limit', params.limit.toString())
+
+    const query = searchParams.toString()
+    return apiClient.get<ContributionContributorListResponse>(`/contributions/contributors${query ? `?${query}` : ''}`)
   },
 
   /**
