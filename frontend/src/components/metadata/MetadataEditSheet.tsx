@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -37,7 +38,8 @@ import { useCreateSuggestion, useCatalogItem, type CatalogType } from '@/hooks'
 import type { EditableField } from '@/lib/api/suggestions'
 import { AsyncMultiSelect, type AsyncMultiSelectOption } from '@/components/ui/async-multi-select'
 import { TagInput } from '@/components/ui/tag-input'
-import { metadataReferenceApi, NUDITY_STATUS_OPTIONS } from '@/lib/api'
+import { getAppConfig, metadataReferenceApi, NUDITY_STATUS_OPTIONS } from '@/lib/api'
+import { ImageUrlInput } from '@/pages/MetadataCreator/components/ImageUrlInput'
 
 // Helper to get original poster URL (exclude RPDB and similar service URLs)
 // The API returns original database URLs, but this provides extra safety
@@ -126,6 +128,12 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
   const { data: metadata, isLoading: metadataLoading } = useCatalogItem(catalogType, mediaId, { enabled: open })
 
   const createSuggestion = useCreateSuggestion()
+  const { data: appConfig } = useQuery({
+    queryKey: ['appConfig'],
+    queryFn: getAppConfig,
+    staleTime: 5 * 60 * 1000,
+  })
+  const imageUploadEnabled = appConfig?.image_upload_enabled ?? false
   const [genresHasMore, setGenresHasMore] = useState(false)
   const [catalogsHasMore, setCatalogsHasMore] = useState(false)
   const [starsHasMore, setStarsHasMore] = useState(false)
@@ -608,28 +616,27 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
                 </div>
 
                 <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Poster URL</Label>
-                    <Input
-                      value={fields.poster.value}
-                      onChange={(e) => updateField('poster', e.target.value)}
-                      placeholder="https://..."
-                      className={cn('rounded-xl text-xs', fields.poster.isModified && 'border-primary/50 bg-primary/5')}
-                    />
-                  </div>
+                  <ImageUrlInput
+                    label="Poster URL"
+                    value={fields.poster.value}
+                    onChange={(value) => updateField('poster', value)}
+                    placeholder="https://..."
+                    aspectRatio="poster"
+                    allowUpload={imageUploadEnabled}
+                    className={cn(fields.poster.isModified && 'rounded-xl border border-primary/50 bg-primary/5 p-2')}
+                  />
 
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Background URL</Label>
-                    <Input
-                      value={fields.background.value}
-                      onChange={(e) => updateField('background', e.target.value)}
-                      placeholder="https://..."
-                      className={cn(
-                        'rounded-xl text-xs',
-                        fields.background.isModified && 'border-primary/50 bg-primary/5',
-                      )}
-                    />
-                  </div>
+                  <ImageUrlInput
+                    label="Background URL"
+                    value={fields.background.value}
+                    onChange={(value) => updateField('background', value)}
+                    placeholder="https://..."
+                    aspectRatio="backdrop"
+                    allowUpload={imageUploadEnabled}
+                    className={cn(
+                      fields.background.isModified && 'rounded-xl border border-primary/50 bg-primary/5 p-2',
+                    )}
+                  />
                 </div>
               </div>
 

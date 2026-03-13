@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,6 +10,7 @@ import { Film, Tv, Radio, Plus, Search, Trash2, Edit, ChevronRight, Loader2, Spa
 import { cn } from '@/lib/utils'
 import { useUserMetadataList, useDeleteUserMetadata } from '@/hooks'
 import type { UserMediaResponse } from '@/lib/api'
+import { getAppConfig } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { MovieMetadataForm } from './components/MovieMetadataForm'
 import { SeriesMetadataForm } from './components/SeriesMetadataForm'
@@ -40,6 +42,12 @@ export function MetadataCreatorPage() {
   const [mediaToDelete, setMediaToDelete] = useState<UserMediaResponse | null>(null)
 
   const { toast } = useToast()
+  const { data: appConfig } = useQuery({
+    queryKey: ['appConfig'],
+    queryFn: getAppConfig,
+    staleTime: 5 * 60 * 1000,
+  })
+  const imageUploadEnabled = appConfig?.image_upload_enabled ?? false
 
   const {
     data: metadataList,
@@ -123,7 +131,11 @@ export function MetadataCreatorPage() {
           </Button>
           <h1 className="text-2xl font-bold">Create Movie Metadata</h1>
         </div>
-        <MovieMetadataForm onSuccess={handleCreateSuccess} onCancel={handleBack} />
+        <MovieMetadataForm
+          onSuccess={handleCreateSuccess}
+          onCancel={handleBack}
+          allowImageUpload={imageUploadEnabled}
+        />
       </div>
     )
   }
@@ -137,7 +149,11 @@ export function MetadataCreatorPage() {
           </Button>
           <h1 className="text-2xl font-bold">Create Series Metadata</h1>
         </div>
-        <SeriesMetadataForm onSuccess={handleCreateSuccess} onCancel={handleBack} />
+        <SeriesMetadataForm
+          onSuccess={handleCreateSuccess}
+          onCancel={handleBack}
+          allowImageUpload={imageUploadEnabled}
+        />
       </div>
     )
   }
@@ -151,7 +167,7 @@ export function MetadataCreatorPage() {
           </Button>
           <h1 className="text-2xl font-bold">Create TV Channel Metadata</h1>
         </div>
-        <TVMetadataForm onSuccess={handleCreateSuccess} onCancel={handleBack} />
+        <TVMetadataForm onSuccess={handleCreateSuccess} onCancel={handleBack} allowImageUpload={imageUploadEnabled} />
       </div>
     )
   }
@@ -166,7 +182,12 @@ export function MetadataCreatorPage() {
             </Button>
             <h1 className="text-2xl font-bold">Edit Movie: {selectedMedia.title}</h1>
           </div>
-          <MovieMetadataForm initialData={selectedMedia} onSuccess={handleEditSuccess} onCancel={handleBack} />
+          <MovieMetadataForm
+            initialData={selectedMedia}
+            onSuccess={handleEditSuccess}
+            onCancel={handleBack}
+            allowImageUpload={imageUploadEnabled}
+          />
         </div>
       )
     } else if (selectedMedia.type === 'tv') {
@@ -178,7 +199,12 @@ export function MetadataCreatorPage() {
             </Button>
             <h1 className="text-2xl font-bold">Edit TV Channel: {selectedMedia.title}</h1>
           </div>
-          <TVMetadataForm initialData={selectedMedia} onSuccess={handleEditSuccess} onCancel={handleBack} />
+          <TVMetadataForm
+            initialData={selectedMedia}
+            onSuccess={handleEditSuccess}
+            onCancel={handleBack}
+            allowImageUpload={imageUploadEnabled}
+          />
         </div>
       )
     } else {
@@ -190,7 +216,12 @@ export function MetadataCreatorPage() {
             </Button>
             <h1 className="text-2xl font-bold">Edit Series: {selectedMedia.title}</h1>
           </div>
-          <SeriesMetadataForm initialData={selectedMedia} onSuccess={handleEditSuccess} onCancel={handleBack} />
+          <SeriesMetadataForm
+            initialData={selectedMedia}
+            onSuccess={handleEditSuccess}
+            onCancel={handleBack}
+            allowImageUpload={imageUploadEnabled}
+          />
         </div>
       )
     }

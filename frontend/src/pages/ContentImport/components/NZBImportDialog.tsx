@@ -17,7 +17,6 @@ import {
   Calendar,
   FileText,
   Settings2,
-  Image as ImageIcon,
   Hash,
   Users,
 } from 'lucide-react'
@@ -30,6 +29,7 @@ import { type ExtendedMatch } from './MatchResultsGrid'
 import { MatchSearchSection } from './MatchSearchSection'
 import { CatalogSelector } from './CatalogSelector'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
+import { ImageUrlInput } from '@/pages/MetadataCreator/components/ImageUrlInput'
 import type { NZBImportFormData } from './types'
 import { useAuth } from '@/contexts/AuthContext'
 import {
@@ -49,6 +49,7 @@ interface NZBImportDialogProps {
   onReanalyze?: (contentType: ContentType) => void
   isImporting?: boolean
   initialContentType?: ContentType
+  imageUploadEnabled?: boolean
 }
 
 export function NZBImportDialog({
@@ -60,6 +61,7 @@ export function NZBImportDialog({
   onImport,
   onReanalyze,
   isImporting = false,
+  imageUploadEnabled = false,
 }: NZBImportDialogProps) {
   const { user } = useAuth()
   void _nzbSource
@@ -398,18 +400,13 @@ export function NZBImportDialog({
                         className="rounded-lg"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                        <ImageIcon className="h-3 w-3" />
-                        Poster URL
-                      </Label>
-                      <Input
-                        value={poster}
-                        onChange={(e) => setPoster(e.target.value)}
-                        placeholder="https://..."
-                        className="rounded-lg"
-                      />
-                    </div>
+                    <ImageUrlInput
+                      label="Poster URL"
+                      value={poster}
+                      onChange={setPoster}
+                      aspectRatio="poster"
+                      allowUpload={imageUploadEnabled}
+                    />
                     <div className="space-y-2">
                       <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
                         <Calendar className="h-3 w-3" />
@@ -418,6 +415,13 @@ export function NZBImportDialog({
                       <DatePickerInput value={releaseDate} onChange={setReleaseDate} className="h-10" />
                     </div>
                   </div>
+                  <ImageUrlInput
+                    label="Background URL"
+                    value={background}
+                    onChange={setBackground}
+                    aspectRatio="backdrop"
+                    allowUpload={imageUploadEnabled}
+                  />
                 </div>
 
                 {/* Technical Specs */}

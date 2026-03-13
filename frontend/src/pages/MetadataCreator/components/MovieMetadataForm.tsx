@@ -42,9 +42,15 @@ interface MovieMetadataFormProps {
   initialData?: UserMediaResponse
   onSuccess: () => void
   onCancel: () => void
+  allowImageUpload?: boolean
 }
 
-export function MovieMetadataForm({ initialData, onSuccess, onCancel }: MovieMetadataFormProps) {
+export function MovieMetadataForm({
+  initialData,
+  onSuccess,
+  onCancel,
+  allowImageUpload = false,
+}: MovieMetadataFormProps) {
   const isEditing = !!initialData
 
   // Fetch available genres and catalogs from DB
@@ -596,14 +602,27 @@ export function MovieMetadataForm({ initialData, onSuccess, onCancel }: MovieMet
               <CardDescription>Add poster, background, and logo images</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <ImageUrlInput label="Poster URL" value={posterUrl} onChange={setPosterUrl} aspectRatio="poster" />
+              <ImageUrlInput
+                label="Poster URL"
+                value={posterUrl}
+                onChange={setPosterUrl}
+                aspectRatio="poster"
+                allowUpload={allowImageUpload}
+              />
               <ImageUrlInput
                 label="Background URL"
                 value={backgroundUrl}
                 onChange={setBackgroundUrl}
                 aspectRatio="backdrop"
+                allowUpload={allowImageUpload}
               />
-              <ImageUrlInput label="Logo URL" value={logoUrl} onChange={setLogoUrl} aspectRatio="logo" />
+              <ImageUrlInput
+                label="Logo URL"
+                value={logoUrl}
+                onChange={setLogoUrl}
+                aspectRatio="logo"
+                allowUpload={allowImageUpload}
+              />
             </CardContent>
           </Card>
 

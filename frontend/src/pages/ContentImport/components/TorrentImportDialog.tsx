@@ -33,6 +33,7 @@ import { ImportFileAnnotationDialog } from './ImportFileAnnotationDialog'
 import { ValidationWarningDialog } from './ValidationWarningDialog'
 import { MultiContentWizard } from './MultiContentWizard'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
+import { ImageUrlInput } from '@/pages/MetadataCreator/components/ImageUrlInput'
 import type { FileAnnotation, TorrentDialogQueueItem, TorrentImportFormData, TorrentImportSubmitOptions } from './types'
 import { useAuth } from '@/contexts/AuthContext'
 import {
@@ -59,6 +60,7 @@ interface TorrentImportDialogProps {
   totalItems?: number
   queueItems?: TorrentDialogQueueItem[]
   prefillData?: Partial<TorrentImportFormData>
+  imageUploadEnabled?: boolean
 }
 
 export function TorrentImportDialog({
@@ -77,6 +79,7 @@ export function TorrentImportDialog({
   totalItems = 1,
   queueItems = [],
   prefillData,
+  imageUploadEnabled = false,
 }: TorrentImportDialogProps) {
   const normalizeResolutionValue = useCallback((value?: string | null): string | undefined => {
     if (!value) return undefined
@@ -703,18 +706,20 @@ export function TorrentImportDialog({
                           className="rounded-lg"
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                          <ImageIcon className="h-3 w-3" />
-                          Poster URL
-                        </Label>
-                        <Input
-                          value={poster}
-                          onChange={(e) => setPoster(e.target.value)}
-                          placeholder="https://..."
-                          className="rounded-lg"
-                        />
-                      </div>
+                      <ImageUrlInput
+                        label="Poster URL"
+                        value={poster}
+                        onChange={setPoster}
+                        aspectRatio="poster"
+                        allowUpload={imageUploadEnabled}
+                      />
+                      <ImageUrlInput
+                        label="Background URL"
+                        value={background}
+                        onChange={setBackground}
+                        aspectRatio="backdrop"
+                        allowUpload={imageUploadEnabled}
+                      />
                       <div className="space-y-2">
                         <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
                           <Calendar className="h-3 w-3" />

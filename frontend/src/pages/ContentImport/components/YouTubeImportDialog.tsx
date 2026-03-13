@@ -18,7 +18,6 @@ import {
   Clock,
   Link2,
   FileText,
-  Image as ImageIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { YouTubeAnalyzeResponse, ImportResponse } from '@/lib/api'
@@ -28,6 +27,7 @@ import { type ExtendedMatch } from './MatchResultsGrid'
 import { MatchSearchSection } from './MatchSearchSection'
 import { CatalogSelector } from './CatalogSelector'
 import { useAuth } from '@/contexts/AuthContext'
+import { ImageUrlInput } from '@/pages/MetadataCreator/components/ImageUrlInput'
 import {
   getStoredAnonymousDisplayName,
   normalizeAnonymousDisplayName,
@@ -62,6 +62,7 @@ interface YouTubeImportDialogProps {
   onImport: (formData: YouTubeImportFormData) => Promise<ImportResponse>
   isImporting?: boolean
   initialContentType?: ContentType
+  imageUploadEnabled?: boolean
 }
 
 function formatDuration(seconds: number): string {
@@ -94,6 +95,7 @@ export function YouTubeImportDialog({
   onImport,
   isImporting = false,
   initialContentType = 'movie',
+  imageUploadEnabled = false,
 }: YouTubeImportDialogProps) {
   const { user } = useAuth()
   void youtubeUrl
@@ -410,30 +412,20 @@ export function YouTubeImportDialog({
                         className="rounded-lg"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                        <ImageIcon className="h-3 w-3" />
-                        Poster URL
-                      </Label>
-                      <Input
-                        value={poster}
-                        onChange={(e) => setPoster(e.target.value)}
-                        placeholder="https://..."
-                        className="rounded-lg"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                        <ImageIcon className="h-3 w-3" />
-                        Background URL
-                      </Label>
-                      <Input
-                        value={background}
-                        onChange={(e) => setBackground(e.target.value)}
-                        placeholder="https://..."
-                        className="rounded-lg"
-                      />
-                    </div>
+                    <ImageUrlInput
+                      label="Poster URL"
+                      value={poster}
+                      onChange={setPoster}
+                      aspectRatio="poster"
+                      allowUpload={imageUploadEnabled}
+                    />
+                    <ImageUrlInput
+                      label="Background URL"
+                      value={background}
+                      onChange={setBackground}
+                      aspectRatio="backdrop"
+                      allowUpload={imageUploadEnabled}
+                    />
                   </div>
                 </div>
 

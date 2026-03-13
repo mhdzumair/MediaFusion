@@ -108,6 +108,7 @@ class AppConfig(BaseModel):
     authentication_required: bool
     torznab_enabled: bool
     nzb_file_import_enabled: bool
+    image_upload_enabled: bool
     nzbdav_configured: bool  # Whether operator has pre-configured NzbDAV defaults
     telegram: TelegramFeatureConfig
 
@@ -175,6 +176,7 @@ async def get_app_config():
         authentication_required=settings.api_password is not None and not settings.is_public_instance,
         torznab_enabled=settings.enable_torznab_api,
         nzb_file_import_enabled=settings.enable_nzb_file_import,
+        image_upload_enabled=settings.image_upload_enabled,
         nzbdav_configured=bool(settings.default_nzbdav_url and settings.default_nzbdav_api_key),
         telegram=TelegramFeatureConfig(
             enabled=settings.is_scrap_from_telegram,

@@ -1021,7 +1021,11 @@ export function ContentImportPage() {
         {/* AceStream Tab */}
         {isTabEnabled('acestream') && (
           <TabsContent value="acestream" className="space-y-6">
-            <AceStreamTab onSuccess={handleSuccess} onError={handleError} />
+            <AceStreamTab
+              onSuccess={handleSuccess}
+              onError={handleError}
+              imageUploadEnabled={appConfig?.image_upload_enabled ?? false}
+            />
           </TabsContent>
         )}
 
@@ -1055,6 +1059,7 @@ export function ContentImportPage() {
         initialContentType={selectedContentType}
         importMode={importMode}
         onImportModeChange={setImportMode}
+        imageUploadEnabled={appConfig?.image_upload_enabled ?? false}
       />
 
       {/* NZB Import Dialog */}
@@ -1066,6 +1071,7 @@ export function ContentImportPage() {
         onImport={handleNZBImport}
         isImporting={isNZBImporting}
         initialContentType={selectedContentType}
+        imageUploadEnabled={appConfig?.image_upload_enabled ?? false}
       />
 
       {/* YouTube Import Dialog */}
@@ -1077,6 +1083,7 @@ export function ContentImportPage() {
         onImport={handleYouTubeImport}
         isImporting={youtubeImporting}
         initialContentType={selectedContentType}
+        imageUploadEnabled={appConfig?.image_upload_enabled ?? false}
       />
     </div>
   )

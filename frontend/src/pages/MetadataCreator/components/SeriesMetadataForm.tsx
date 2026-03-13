@@ -51,9 +51,15 @@ interface SeriesMetadataFormProps {
   initialData?: UserMediaResponse
   onSuccess: () => void
   onCancel: () => void
+  allowImageUpload?: boolean
 }
 
-export function SeriesMetadataForm({ initialData, onSuccess, onCancel }: SeriesMetadataFormProps) {
+export function SeriesMetadataForm({
+  initialData,
+  onSuccess,
+  onCancel,
+  allowImageUpload = false,
+}: SeriesMetadataFormProps) {
   const isEditing = !!initialData
 
   // Fetch full data if editing (to get seasons/episodes)
@@ -652,14 +658,27 @@ export function SeriesMetadataForm({ initialData, onSuccess, onCancel }: SeriesM
               <CardDescription>Add poster, background, and logo images</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <ImageUrlInput label="Poster URL" value={posterUrl} onChange={setPosterUrl} aspectRatio="poster" />
+              <ImageUrlInput
+                label="Poster URL"
+                value={posterUrl}
+                onChange={setPosterUrl}
+                aspectRatio="poster"
+                allowUpload={allowImageUpload}
+              />
               <ImageUrlInput
                 label="Background URL"
                 value={backgroundUrl}
                 onChange={setBackgroundUrl}
                 aspectRatio="backdrop"
+                allowUpload={allowImageUpload}
               />
-              <ImageUrlInput label="Logo URL" value={logoUrl} onChange={setLogoUrl} aspectRatio="logo" />
+              <ImageUrlInput
+                label="Logo URL"
+                value={logoUrl}
+                onChange={setLogoUrl}
+                aspectRatio="logo"
+                allowUpload={allowImageUpload}
+              />
             </CardContent>
           </Card>
 

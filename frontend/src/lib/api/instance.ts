@@ -58,6 +58,7 @@ export interface AppConfig {
   authentication_required: boolean
   torznab_enabled: boolean
   nzb_file_import_enabled: boolean
+  image_upload_enabled: boolean
   nzbdav_configured: boolean // Whether operator has pre-configured NzbDAV defaults
   telegram: TelegramFeatureConfig
 }

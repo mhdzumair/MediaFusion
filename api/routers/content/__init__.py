@@ -40,6 +40,7 @@ def get_router() -> APIRouter:
     from api.routers.content.xtream_import import router as xtream_import_router
     from api.routers.content.acestream_import import router as acestream_import_router
     from api.routers.content.http_import import router as http_import_router
+    from api.routers.content.image_upload import router as image_upload_router
     from api.routers.content.youtube_import import router as youtube_import_router
 
     combined = APIRouter()
@@ -52,6 +53,7 @@ def get_router() -> APIRouter:
     combined.include_router(iptv_sources_router)
     combined.include_router(acestream_import_router)
     combined.include_router(http_import_router)
+    combined.include_router(image_upload_router)
     combined.include_router(youtube_import_router)
     combined.include_router(voting_router)
     combined.include_router(suggestions_router)

@@ -11,6 +11,7 @@ import { Radio, Loader2, ArrowRight, Info, CheckCircle, AlertCircle, Image, Chev
 import { useMutation } from '@tanstack/react-query'
 import { contentImportApi, type AceStreamAnalyzeResponse, type ImportResponse } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
+import { ImageUrlInput } from '@/pages/MetadataCreator/components/ImageUrlInput'
 import {
   getStoredAnonymousDisplayName,
   normalizeAnonymousDisplayName,
@@ -20,6 +21,7 @@ import {
 interface AceStreamTabProps {
   onSuccess: (message: string) => void
   onError: (message: string) => void
+  imageUploadEnabled?: boolean
 }
 
 // AceStream content_id and info_hash are both 40-character hex strings
@@ -45,7 +47,7 @@ function isValidHex40(value: string | null | undefined): boolean {
 // AceStream is primarily used for live streaming, so we always use 'tv' as the content type
 const ACESTREAM_CONTENT_TYPE = 'tv' as const
 
-export function AceStreamTab({ onSuccess, onError }: AceStreamTabProps) {
+export function AceStreamTab({ onSuccess, onError, imageUploadEnabled = false }: AceStreamTabProps) {
   const { user } = useAuth()
   const [contentIdInput, setContentIdInput] = useState('')
   const [infoHashInput, setInfoHashInput] = useState('')
@@ -386,82 +388,32 @@ export function AceStreamTab({ onSuccess, onError }: AceStreamTabProps) {
             <CollapsibleContent className="space-y-3 pt-2">
               <p className="text-xs text-muted-foreground">
                 Provide image URLs for the media entry. These are only used when creating a new media entry (not when
-                linking to an existing one).
+                linking to an existing one). {imageUploadEnabled ? 'You can upload files or paste URLs.' : 'URL only.'}
               </p>
-              <div className="space-y-2">
-                <Label htmlFor="poster">Poster URL</Label>
-                <Input
-                  id="poster"
-                  placeholder="https://example.com/poster.jpg"
-                  value={poster}
-                  onChange={(e) => setPoster(e.target.value)}
-                  className="rounded-xl text-sm"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="background">Background URL</Label>
-                <Input
-                  id="background"
-                  placeholder="https://example.com/background.jpg"
-                  value={background}
-                  onChange={(e) => setBackground(e.target.value)}
-                  className="rounded-xl text-sm"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="logo">Logo URL</Label>
-                <Input
-                  id="logo"
-                  placeholder="https://example.com/logo.png"
-                  value={logo}
-                  onChange={(e) => setLogo(e.target.value)}
-                  className="rounded-xl text-sm"
-                />
-              </div>
-              {/* Image Previews */}
-              {(poster || background || logo) && (
-                <div className="grid gap-3 md:grid-cols-3 pt-2">
-                  {poster && (
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">Poster Preview</Label>
-                      <img
-                        src={poster}
-                        alt="Poster preview"
-                        className="rounded-lg w-full h-32 object-cover border border-border/50"
-                        onError={(e) => {
-                          ;(e.target as HTMLImageElement).style.display = 'none'
-                        }}
-                      />
-                    </div>
-                  )}
-                  {background && (
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">Background Preview</Label>
-                      <img
-                        src={background}
-                        alt="Background preview"
-                        className="rounded-lg w-full h-32 object-cover border border-border/50"
-                        onError={(e) => {
-                          ;(e.target as HTMLImageElement).style.display = 'none'
-                        }}
-                      />
-                    </div>
-                  )}
-                  {logo && (
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">Logo Preview</Label>
-                      <img
-                        src={logo}
-                        alt="Logo preview"
-                        className="rounded-lg w-full h-32 object-contain border border-border/50 bg-black/20"
-                        onError={(e) => {
-                          ;(e.target as HTMLImageElement).style.display = 'none'
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
+              <ImageUrlInput
+                label="Poster URL"
+                value={poster}
+                onChange={setPoster}
+                placeholder="https://example.com/poster.jpg"
+                aspectRatio="poster"
+                allowUpload={imageUploadEnabled}
+              />
+              <ImageUrlInput
+                label="Background URL"
+                value={background}
+                onChange={setBackground}
+                placeholder="https://example.com/background.jpg"
+                aspectRatio="backdrop"
+                allowUpload={imageUploadEnabled}
+              />
+              <ImageUrlInput
+                label="Logo URL"
+                value={logo}
+                onChange={setLogo}
+                placeholder="https://example.com/logo.png"
+                aspectRatio="logo"
+                allowUpload={imageUploadEnabled}
+              />
             </CollapsibleContent>
           </Collapsible>
         </div>

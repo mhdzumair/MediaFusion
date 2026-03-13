@@ -118,6 +118,7 @@ export {
   type NZBImportRequest,
   type NZBURLImportRequest,
 } from './content-import'
+export { imageUploadApi, type ImageUploadResponse } from './image-upload'
 export {
   rssApi,
   userRssApi,
