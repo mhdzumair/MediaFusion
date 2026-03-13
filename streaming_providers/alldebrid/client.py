@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 import aiohttp
@@ -110,6 +111,27 @@ class AllDebrid(DebridClient):
             params={"link": link},
             is_expected_to_fail=True,
         )
+        if isinstance(response, str):
+            stripped_response = response.strip()
+            if stripped_response.startswith("{") or stripped_response.startswith("["):
+                try:
+                    parsed_response = json.loads(stripped_response)
+                    if isinstance(parsed_response, dict):
+                        response = parsed_response
+                except json.JSONDecodeError:
+                    pass
+
+        if not isinstance(response, dict):
+            lowered_response = str(response).lower()
+            if "too many requests" in lowered_response:
+                raise ProviderException("Too many requests", "too_many_requests.mp4")
+            if "service unavailable" in lowered_response:
+                raise ProviderException("Debrid service is down.", "debrid_service_down_error.mp4")
+            raise ProviderException(
+                f"Failed to create download link from AllDebrid {response}",
+                "transfer_error.mp4",
+            )
+
         if response.get("status") == "success":
             return response
         raise ProviderException(

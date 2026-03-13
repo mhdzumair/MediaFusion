@@ -122,7 +122,11 @@ async def wait_for_download_and_get_link(
     )
 
     response = await ad_client.create_download_link(files_data["files"][file_index]["link"])
-    return response["data"]["link"]
+    data = response.get("data") if isinstance(response, dict) else None
+    direct_link = data.get("link") if isinstance(data, dict) else None
+    if not isinstance(direct_link, str) or not direct_link.strip():
+        raise ProviderException("AllDebrid response missing download link", "transfer_error.mp4")
+    return direct_link
 
 
 async def get_video_url_from_alldebrid(
