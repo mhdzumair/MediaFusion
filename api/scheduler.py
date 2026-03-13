@@ -9,6 +9,11 @@ from mediafusion_scrapy.task import run_spider
 from scrapers.background_scraper import run_background_search
 from scrapers.dmm_hashlist import run_dmm_hashlist_scraper
 from scrapers.feed_scraper import run_jackett_feed_scraper, run_prowlarr_feed_scraper
+from scrapers.non_torrent_background_scraper import (
+    run_acestream_background_scraper,
+    run_telegram_background_scraper,
+    run_youtube_background_scraper,
+)
 from scrapers.rss_scraper import run_rss_feed_scraper
 from scrapers.scraper_tasks import cleanup_expired_scraper_task
 from scrapers.trackers import update_torrent_seeders
@@ -458,6 +463,39 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             kwargs={
                 "actor_send_method": run_dmm_hashlist_scraper.async_send,
                 "crontab_expression": settings.dmm_hashlist_scraper_crontab,
+            },
+        )
+
+    if not settings.disable_youtube_background_scraper and settings.is_scrap_from_youtube_background:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.youtube_background_scraper_crontab),
+            name="youtube_background_scraper",
+            kwargs={
+                "actor_send_method": run_youtube_background_scraper.async_send,
+                "crontab_expression": settings.youtube_background_scraper_crontab,
+            },
+        )
+
+    if not settings.disable_acestream_background_scraper and settings.is_scrap_from_acestream_background:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.acestream_background_scraper_crontab),
+            name="acestream_background_scraper",
+            kwargs={
+                "actor_send_method": run_acestream_background_scraper.async_send,
+                "crontab_expression": settings.acestream_background_scraper_crontab,
+            },
+        )
+
+    if not settings.disable_telegram_background_scraper and settings.is_scrap_from_telegram_background:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.telegram_background_scraper_crontab),
+            name="telegram_background_scraper",
+            kwargs={
+                "actor_send_method": run_telegram_background_scraper.async_send,
+                "crontab_expression": settings.telegram_background_scraper_crontab,
             },
         )
 

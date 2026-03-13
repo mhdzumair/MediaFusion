@@ -166,6 +166,12 @@ class Settings(BaseSettings):
     tmdb_api_key: str | None = None
     tvdb_api_key: str | None = None
     youtube_api_key: str | None = None
+    is_scrap_from_youtube_background: bool = False
+    is_scrap_from_acestream_background: bool = True
+    acestream_background_search_api_key: str | None = None
+    is_scrap_from_telegram_background: bool = False
+    telegram_background_use_indexers: bool = False
+    telegram_background_indexer_api_key: str | None = None
 
     # Prowlarr Settings
     is_scrap_from_prowlarr: bool = True
@@ -338,6 +344,7 @@ class Settings(BaseSettings):
     # Upload Size Limits
     max_torrent_file_size: int = 5_242_880  # 5 MB (torrent files are typically <1MB)
     max_nzb_file_size: int = 104_857_600  # 100 MB
+    max_image_upload_size: int = 5_242_880  # 5 MB for poster/background/logo uploads
 
     # Zyclops NZB Health API Integration (optional)
     # When set, every NZB the system processes is forwarded to Zyclops for ingestion.
@@ -471,6 +478,12 @@ class Settings(BaseSettings):
     disable_rss_feed_scraper: bool = False
     dmm_hashlist_scraper_crontab: str = "0 * * * *"
     disable_dmm_hashlist_scraper: bool = False
+    youtube_background_scraper_crontab: str = "20 */6 * * *"
+    disable_youtube_background_scraper: bool = True
+    acestream_background_scraper_crontab: str = "40 */6 * * *"
+    disable_acestream_background_scraper: bool = False
+    telegram_background_scraper_crontab: str = "10 */6 * * *"
+    disable_telegram_background_scraper: bool = True
     cleanup_expired_scraper_task_crontab: str = "0 * * * *"
     cleanup_expired_cache_task_crontab: str = "0 0 * * *"
     pending_moderation_reminder_crontab: str = "0 */6 * * *"
@@ -497,6 +510,18 @@ class Settings(BaseSettings):
         if not self.poster_host_url:
             self.poster_host_url = self.host_url
         return self
+
+    @property
+    def image_upload_enabled(self) -> bool:
+        """Whether S3-backed image uploads are available."""
+        return all(
+            [
+                self.s3_endpoint_url,
+                self.s3_access_key_id,
+                self.s3_secret_access_key,
+                self.s3_bucket_name,
+            ]
+        )
 
     class Config:
         env_file = ".env"

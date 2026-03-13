@@ -244,6 +244,27 @@ SCHEDULER_JOBS = {
         "crontab_setting": "rss_feed_scraper_crontab",
         "disable_setting": "disable_rss_feed_scraper",
     },
+    "youtube_background_scraper": {
+        "display_name": "YouTube Background",
+        "category": "feed",
+        "description": "Ingests YouTube trending/search results into background streams",
+        "crontab_setting": "youtube_background_scraper_crontab",
+        "disable_setting": "disable_youtube_background_scraper",
+    },
+    "acestream_background_scraper": {
+        "display_name": "AceStream Background",
+        "category": "feed",
+        "description": "Ingests AceStream IDs from configured sources into background streams",
+        "crontab_setting": "acestream_background_scraper_crontab",
+        "disable_setting": "disable_acestream_background_scraper",
+    },
+    "telegram_background_scraper": {
+        "display_name": "Telegram Background",
+        "category": "feed",
+        "description": "Ingests Telegram channel media in feed mode with metadata auto-match/create",
+        "crontab_setting": "telegram_background_scraper_crontab",
+        "disable_setting": "disable_telegram_background_scraper",
+    },
     # Maintenance Jobs
     "validate_tv_streams_in_db": {
         "display_name": "TV Stream Validation",
@@ -627,6 +648,30 @@ async def run_scheduler_job(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
+        elif job_id == "youtube_background_scraper":
+            from scrapers.non_torrent_background_scraper import run_youtube_background_scraper
+
+            crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
+            await run_youtube_background_scraper.async_send(
+                crontab_expression=crontab,
+                force_run=force_run,
+            )
+        elif job_id == "acestream_background_scraper":
+            from scrapers.non_torrent_background_scraper import run_acestream_background_scraper
+
+            crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
+            await run_acestream_background_scraper.async_send(
+                crontab_expression=crontab,
+                force_run=force_run,
+            )
+        elif job_id == "telegram_background_scraper":
+            from scrapers.non_torrent_background_scraper import run_telegram_background_scraper
+
+            crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
+            await run_telegram_background_scraper.async_send(
+                crontab_expression=crontab,
+                force_run=force_run,
+            )
         elif job_id == "validate_tv_streams_in_db":
             from scrapers.tv import validate_tv_streams_in_db
 
@@ -801,6 +846,41 @@ async def run_scheduler_job_inline(
                 "errors": total_errors,
                 "feeds_count": len(result.get("results", {})),
             }
+        elif job_id == "youtube_background_scraper":
+            from scrapers.non_torrent_background_scraper import run_youtube_background_scraper
+
+            if not settings.is_scrap_from_youtube_background:
+                result_data = {
+                    "status": "skipped",
+                    "reason": "YouTube background scraping disabled",
+                }
+            else:
+                await run_youtube_background_scraper.fn(crontab_expression=crontab)
+                result_data = {"status": "completed"}
+
+        elif job_id == "acestream_background_scraper":
+            from scrapers.non_torrent_background_scraper import run_acestream_background_scraper
+
+            if not settings.is_scrap_from_acestream_background:
+                result_data = {
+                    "status": "skipped",
+                    "reason": "AceStream background scraping disabled",
+                }
+            else:
+                await run_acestream_background_scraper.fn(crontab_expression=crontab)
+                result_data = {"status": "completed"}
+
+        elif job_id == "telegram_background_scraper":
+            from scrapers.non_torrent_background_scraper import run_telegram_background_scraper
+
+            if not settings.is_scrap_from_telegram_background:
+                result_data = {
+                    "status": "skipped",
+                    "reason": "Telegram background scraping disabled",
+                }
+            else:
+                await run_telegram_background_scraper.fn(crontab_expression=crontab)
+                result_data = {"status": "completed"}
 
         elif job_id == "validate_tv_streams_in_db":
             from scrapers.tv import validate_tv_streams_in_db

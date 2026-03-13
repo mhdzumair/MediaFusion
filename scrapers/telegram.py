@@ -312,6 +312,158 @@ class TelegramScraper:
 
         return channels
 
+    async def scrape_feed_candidates(
+        self,
+        *,
+        max_channels: int | None = None,
+        extra_channels: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Scrape configured channels and return metadata-agnostic feed candidates.
+
+        This method is used by background ingestion jobs where content is discovered
+        first and metadata is resolved afterwards (match/create flow).
+        """
+        client = await self.get_client()
+        if not client:
+            self.logger.warning("Telegram client not available for feed scraping")
+            return []
+
+        channels = self._get_channels_to_scrape(None)
+        for channel in extra_channels or []:
+            normalized_channel = str(channel or "").strip()
+            if normalized_channel and normalized_channel not in channels:
+                channels.append(normalized_channel)
+        if max_channels is not None:
+            channels = channels[: max(0, max_channels)]
+        if not channels:
+            return []
+
+        candidates: list[dict[str, Any]] = []
+        for channel in channels:
+            try:
+                entity = await client.get_entity(channel)
+                chat_id = str(entity.id)
+                chat_username = getattr(entity, "username", None)
+            except Exception as exc:
+                self.logger.warning("Failed to resolve telegram channel for feed mode %s: %s", channel, exc)
+                continue
+
+            try:
+                async for message in client.iter_messages(
+                    entity,
+                    limit=settings.telegram_scrape_message_limit,
+                ):
+                    candidate = self._extract_feed_candidate(
+                        message=message,
+                        chat_id=chat_id,
+                        chat_username=chat_username,
+                    )
+                    if candidate:
+                        candidates.append(candidate)
+            except Exception as exc:
+                self.logger.warning("Failed to scrape telegram feed channel %s: %s", channel, exc)
+                continue
+        return candidates
+
+    def _extract_feed_candidate(
+        self,
+        *,
+        message: Any,
+        chat_id: str,
+        chat_username: str | None,
+    ) -> dict[str, Any] | None:
+        """Extract a feed candidate from a Telegram message without strict metadata filtering."""
+        try:
+            media = message.video or message.document
+            if not media:
+                return None
+
+            file_unique_id = str(media.id) if getattr(media, "id", None) else None
+            file_name = None
+            mime_type = getattr(media, "mime_type", None) or "application/octet-stream"
+            size = getattr(media, "size", None)
+
+            if hasattr(media, "attributes"):
+                for attr in media.attributes:
+                    if DocumentAttributeFilename and isinstance(attr, DocumentAttributeFilename):
+                        file_name = attr.file_name
+                        break
+
+            if not file_name:
+                if message.video:
+                    file_name = f"video_{message.id}.mp4"
+                else:
+                    file_name = f"file_{message.id}"
+
+            is_video = message.video is not None
+            if not is_video and message.document:
+                ext = "." + file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+                if ext not in VIDEO_EXTENSIONS and not mime_type.startswith("video/"):
+                    return None
+
+            if size and size < settings.min_scraping_video_size:
+                return None
+            if is_contain_18_plus_keywords(file_name):
+                return None
+
+            parsed_data = self._parse_filename(file_name)
+            caption = message.message or ""
+            imdb_match = IMDB_PATTERN.search(caption)
+            caption_imdb_id = imdb_match.group(0) if imdb_match else None
+
+            season_number = None
+            episode_number = None
+            episode_end = None
+            seasons = parsed_data.get("seasons", [])
+            episodes = parsed_data.get("episodes", [])
+            if seasons and episodes:
+                season_number = seasons[0]
+                episode_number = episodes[0]
+                if len(episodes) > 1:
+                    episode_end = episodes[-1]
+
+            inferred_title = str(parsed_data.get("title") or file_name).strip()
+            inferred_year = parsed_data.get("year")
+            return {
+                "chat_id": chat_id,
+                "chat_username": chat_username,
+                "message_id": message.id,
+                "file_id": None,
+                "file_unique_id": file_unique_id,
+                "file_name": file_name,
+                "mime_type": mime_type,
+                "size": size,
+                "posted_at": message.date,
+                "caption": caption[:500] if caption else None,
+                "name": inferred_title,
+                "source": "telegram",
+                "resolution": parsed_data.get("resolution"),
+                "codec": parsed_data.get("codec"),
+                "quality": parsed_data.get("quality"),
+                "bit_depth": parsed_data.get("bit_depth"),
+                "uploader": chat_username or chat_id,
+                "release_group": parsed_data.get("group"),
+                "audio_formats": parsed_data.get("audio", []) if isinstance(parsed_data.get("audio"), list) else [],
+                "channels": parsed_data.get("channels", []) if isinstance(parsed_data.get("channels"), list) else [],
+                "hdr_formats": parsed_data.get("hdr", []) if isinstance(parsed_data.get("hdr"), list) else [],
+                "languages": parsed_data.get("languages", []),
+                "is_remastered": parsed_data.get("remastered", False),
+                "is_proper": parsed_data.get("proper", False),
+                "is_repack": parsed_data.get("repack", False),
+                "is_extended": parsed_data.get("extended", False),
+                "is_dubbed": parsed_data.get("dubbed", False),
+                "is_subbed": parsed_data.get("subbed", False),
+                "season_number": season_number,
+                "episode_number": episode_number,
+                "episode_end": episode_end,
+                "inferred_title": inferred_title,
+                "inferred_year": inferred_year,
+                "imdb_id": caption_imdb_id,
+            }
+        except Exception as exc:
+            self.logger.debug("Failed to extract telegram feed candidate from message %s: %s", message.id, exc)
+            return None
+
     async def _scrape_channel(
         self,
         channel: str,

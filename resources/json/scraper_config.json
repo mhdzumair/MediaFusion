@@ -355,5 +355,185 @@
 	  "rugby": "https://www.sport-video.org.ua/rugby.html",
 	  "other_sports": "https://www.sport-video.org.ua/other.html"
 	}
+  },
+  "youtube_background": {
+	"max_movies_per_run": 10,
+	"max_series_per_run": 10,
+	"max_aka_titles_per_media": 2,
+	"max_queries_per_media": 8,
+	"max_total_queries": 120,
+	"max_results_per_query": 15,
+	"language_profiles": [
+	  {
+		"name": "english",
+		"region_code": "US",
+		"movie_terms": ["full movie", "full length movie"],
+		"series_terms": ["full episode", "full tv episode"],
+		"max_results": 15
+	  },
+	  {
+		"name": "hindi",
+		"region_code": "IN",
+		"movie_terms": ["hindi full movie", "bollywood full movie"],
+		"series_terms": ["hindi serial full episode", "hindi full episode"],
+		"max_results": 15
+	  },
+	  {
+		"name": "tamil",
+		"region_code": "IN",
+		"movie_terms": ["tamil full movie"],
+		"series_terms": ["tamil full episode"],
+		"max_results": 15
+	  },
+	  {
+		"name": "spanish",
+		"region_code": "ES",
+		"movie_terms": ["pelicula completa"],
+		"series_terms": ["serie completa capitulo"],
+		"max_results": 15
+	  },
+	  {
+		"name": "korean",
+		"region_code": "KR",
+		"movie_terms": ["korean full movie"],
+		"series_terms": ["korean full episode"],
+		"max_results": 15
+	  }
+	 ]
+  },
+  "acestream_background": {
+	"search_api": {
+	  "enabled": false,
+	  "url": "https://search.acestream.net",
+	  "query_param": "query",
+	  "page_param": "page",
+	  "limit_param": "page_size",
+	  "max_results": 25,
+	  "max_pages": 2,
+	  "extra_params": {
+		"api_version": 1
+	  },
+	  "queries": [
+		"live sports",
+		"movies",
+		"series"
+	  ],
+	  "api_key_param": "api_key",
+	  "item_keys": {
+		"content_id": [
+		  "content_id",
+		  "contentId",
+		  "acestream_id",
+		  "acestreamId"
+		],
+		"info_hash": [
+		  "infohash",
+		  "info_hash",
+		  "infoHash",
+		  "hash"
+		],
+		"title": [
+		  "title",
+		  "name",
+		  "channel_name",
+		  "channelName"
+		]
+	  }
+	},
+	"sources": [
+	  {
+		"name": "overtakefans",
+		"enabled": true,
+		"urls": [
+		  "https://overtakefans.com/f1-live-stream/sky-sport-f1-live-stream-via-ace-player/"
+		],
+		"media_type": "tv",
+		"upsert_by_channel": true,
+		"channel_key_mode": "server_number",
+		"labeled_server_parser": true,
+		"max_candidates": 12,
+		"target_metadata": {
+		  "id": "mf_tv_f1_live_acestream",
+		  "title": "F1 Live Acestream",
+		  "media_type": "tv",
+		  "tv_language": "en"
+		}
+	  },
+	  {
+		"name": "sample_acestream_source",
+		"enabled": false,
+		"url": "https://example.com/acestream-feed",
+		"media_type": "movie"
+	  }
+	]
+  },
+  "telegram_background": {
+	"max_channels_per_run": 100,
+	"discovery": {
+	  "query_terms": [
+		"movies",
+		"series",
+		"anime",
+		"sports"
+	  ],
+	  "min_members": 1000,
+	  "max_channels": 200,
+	  "timeout_seconds": 20,
+	  "cache_ttl_hours": 24
+	},
+	"indexers": [
+	  {
+		"name": "telegram_index_example",
+		"enabled": false,
+		"search_url": "https://telegramindex.org/search",
+		"query_param": "query",
+		"page_param": "page",
+		"limit_param": "limit",
+		"limit": 25,
+		"type_param": "type",
+		"type_value": "channel",
+		"extra_params": {
+		  "sort": "rlvn"
+		},
+		"member_count_keys": [
+		  "members",
+		  "subscribers",
+		  "member_count"
+		],
+		"channel_keys": [
+		  "username",
+		  "channel_username",
+		  "url",
+		  "link",
+		  "telegram_url"
+		],
+		"api_key_header": "X-API-Key"
+	  },
+	  {
+		"name": "telegramchannelsme_example",
+		"enabled": false,
+		"search_url": "https://telegramchannels.me/api/searchMedia",
+		"query_param": "phrase",
+		"page_param": "p",
+		"limit_param": "limit",
+		"limit": 25,
+		"extra_params": {
+		  "country": "",
+		  "language": "en"
+		},
+		"member_count_keys": [
+		  "subscribers",
+		  "members_count",
+		  "members"
+		],
+		"channel_keys": [
+		  "username",
+		  "channel_username",
+		  "slug",
+		  "url",
+		  "link"
+		]
+	  }
+	]
   }
 }

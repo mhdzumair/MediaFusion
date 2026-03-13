@@ -17,7 +17,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
 from api.routers.content.contributions import award_import_approval_points
-from api.routers.content.import_title_validation import resolve_and_validate_import_title
+from api.routers.content.import_title_validation import is_import_metadata_adult, resolve_and_validate_import_title
 from api.routers.content.upload_guard import enforce_upload_permissions
 from api.routers.user.auth import require_auth
 from db.config import settings
@@ -70,6 +70,7 @@ from utils.sports_parser import (
 
 logger = logging.getLogger(__name__)
 SPORTS_SERIES_CATEGORIES = {"formula_racing", "motogp_racing"}
+ADULT_CONTENT_METADATA_ERROR_MESSAGE = "Adult content metadata is not allowed in user contributions."
 
 
 def _resolve_sports_media_type(sports_category: str | None) -> MediaType:
@@ -237,6 +238,28 @@ def _normalize_string_list(raw_value: Any) -> list[str]:
     if isinstance(raw_value, list):
         return [value.strip() for value in raw_value if isinstance(value, str) and value.strip()]
     return []
+
+
+def _collect_torrent_title_candidates(torrent_data: dict[str, Any]) -> list[str]:
+    """Collect raw torrent source names for adult-keyword validation."""
+    candidates: list[str] = []
+
+    raw_torrent_name = torrent_data.get("torrent_name")
+    if isinstance(raw_torrent_name, str):
+        normalized = raw_torrent_name.strip()
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+
+    for file_info in torrent_data.get("file_data", []) or []:
+        if not isinstance(file_info, dict):
+            continue
+        filename = file_info.get("filename")
+        if isinstance(filename, str):
+            normalized = filename.strip()
+            if normalized and normalized not in candidates:
+                candidates.append(normalized)
+
+    return candidates
 
 
 def _resolve_import_languages(form_languages: str | None, torrent_data: dict[str, Any]) -> list[str]:
@@ -666,6 +689,30 @@ async def fetch_external_metadata_payload(
     return {"id": external_id, "title": fallback_title or "Unknown"}
 
 
+async def _is_import_target_adult(
+    meta_id: str | None,
+    meta_type: str,
+    sports_category: str | None,
+    fallback_title: str | None,
+) -> bool:
+    """Check external/internal metadata target for adult markers before import."""
+    if not meta_id or meta_type == "sports":
+        return False
+
+    async with get_async_session_context() as session:
+        existing_media = await get_media_by_external_id(session, meta_id)
+        if is_import_metadata_adult(existing_media):
+            return True
+
+    media_type = _resolve_fetch_media_type(meta_type, sports_category)
+    metadata_payload = await fetch_external_metadata_payload(
+        external_id=meta_id,
+        media_type=media_type,
+        fallback_title=fallback_title,
+    )
+    return is_import_metadata_adult(metadata_payload)
+
+
 async def fetch_and_create_media_from_external(
     session: AsyncSession,
     external_id: str,
@@ -731,11 +778,14 @@ async def process_torrent_import(
     prefetched_media_payloads: dict[tuple[str, str], dict[str, Any]] = {}
     primary_external_id = meta_id or f"user_{info_hash[:8]}"
     if meta_type != "sports":
-        prefetched_media_payloads[(primary_external_id, meta_type)] = await fetch_external_metadata_payload(
+        prefetched_payload = await fetch_external_metadata_payload(
             primary_external_id,
             meta_type,
             fallback_title=title,
         )
+        if is_import_metadata_adult(prefetched_payload):
+            raise ValueError(ADULT_CONTENT_METADATA_ERROR_MESSAGE)
+        prefetched_media_payloads[(primary_external_id, meta_type)] = prefetched_payload
 
     for file_info in contribution_data.get("file_data", []):
         file_meta_id = file_info.get("meta_id")
@@ -748,11 +798,14 @@ async def process_torrent_import(
         fetch_key = (file_meta_id, file_meta_type)
         if fetch_key in prefetched_media_payloads:
             continue
-        prefetched_media_payloads[fetch_key] = await fetch_external_metadata_payload(
+        prefetched_payload = await fetch_external_metadata_payload(
             file_meta_id,
             file_meta_type,
             fallback_title=file_info.get("meta_title"),
         )
+        if is_import_metadata_adult(prefetched_payload):
+            raise ValueError(ADULT_CONTENT_METADATA_ERROR_MESSAGE)
+        prefetched_media_payloads[fetch_key] = prefetched_payload
 
     # Check if torrent already exists
     existing = await session.exec(select(TorrentStream).where(TorrentStream.info_hash == info_hash))
@@ -818,6 +871,9 @@ async def process_torrent_import(
                     },
                     "series" if media_type_enum == MediaType.SERIES else "movie",
                 )
+
+    if is_import_metadata_adult(media):
+        raise ValueError(ADULT_CONTENT_METADATA_ERROR_MESSAGE)
 
     release_date = _parse_iso_date(contribution_data.get("created_at"))
     if release_date and (meta_type == "sports" or media.release_date is None):
@@ -924,6 +980,8 @@ async def process_torrent_import(
                     logger.warning(f"Failed to fetch/create media for file meta_id {file_meta_id}: {e}")
 
             if file_media:
+                if is_import_metadata_adult(file_media):
+                    raise ValueError(ADULT_CONTENT_METADATA_ERROR_MESSAGE)
                 linked_media_ids.add(file_media.id)
 
         # Fall back to primary media if no per-file metadata
@@ -1367,12 +1425,18 @@ async def import_magnet(
 
         resolved_title, title_validation_error = resolve_and_validate_import_title(
             title,
-            torrent_data.get("title"),
+            torrent_data.get("torrent_name"),
+            additional_titles=_collect_torrent_title_candidates(torrent_data),
         )
         if title_validation_error:
             return ImportResponse(
                 status="error",
                 message=title_validation_error,
+            )
+        if await _is_import_target_adult(meta_id, meta_type, resolved_sports_category, resolved_title):
+            return ImportResponse(
+                status="error",
+                message=ADULT_CONTENT_METADATA_ERROR_MESSAGE,
             )
 
         # Build contribution data with all fields
@@ -1610,12 +1674,18 @@ async def import_torrent_file(
 
         resolved_title, title_validation_error = resolve_and_validate_import_title(
             title,
-            torrent_data.get("title"),
+            torrent_data.get("torrent_name"),
+            additional_titles=_collect_torrent_title_candidates(torrent_data),
         )
         if title_validation_error:
             return ImportResponse(
                 status="error",
                 message=title_validation_error,
+            )
+        if await _is_import_target_adult(meta_id, meta_type, resolved_sports_category, resolved_title):
+            return ImportResponse(
+                status="error",
+                message=ADULT_CONTENT_METADATA_ERROR_MESSAGE,
             )
 
         # Build contribution data with all fields
