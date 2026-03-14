@@ -20,6 +20,8 @@ import { useDebounce } from '@/hooks/useDebounce'
 import { useCombinedMetadataSearch, type CombinedSearchResult } from '@/hooks'
 import { useCreateStreamSuggestion } from '@/hooks/useStreamSuggestions'
 import { useToast } from '@/hooks/use-toast'
+import { userMetadataApi } from '@/lib/api'
+import { resolveExternalImportTarget, toImportedInternalResult } from './externalImport'
 
 // Types
 interface FileInfo {
@@ -107,9 +109,11 @@ function MediaSearchPopover({
   disabled?: boolean
   initialQuery?: string
 }) {
+  const { toast } = useToast()
   const [open, setOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState(initialQuery || '')
   const [searchYear, setSearchYear] = useState('')
+  const [importingResultId, setImportingResultId] = useState<string | null>(null)
   const debouncedQuery = useDebounce(searchQuery, 300)
   const trimmedSearchYear = searchYear.trim()
   const parsedSearchYear = trimmedSearchYear ? Number(trimmedSearchYear) : undefined
@@ -134,16 +138,52 @@ function MediaSearchPopover({
   }
 
   const handleSelect = useCallback(
-    (result: CombinedSearchResult) => {
-      if (result.source !== 'internal' || !result.internal_id) {
-        return // Can only link to internal media
+    async (result: CombinedSearchResult) => {
+      if (result.source === 'internal' && result.internal_id) {
+        onSelect(result)
+        setOpen(false)
+        setSearchQuery('')
+        setSearchYear('')
+        return
       }
-      onSelect(result)
-      setOpen(false)
-      setSearchQuery('')
-      setSearchYear('')
+
+      const importTarget = resolveExternalImportTarget(result)
+      if (!importTarget) {
+        toast({
+          title: 'Cannot import this result',
+          description: 'No supported external ID was found for auto-import.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      setImportingResultId(result.id)
+      try {
+        const imported = await userMetadataApi.importFromExternal({
+          provider: importTarget.provider,
+          external_id: importTarget.externalId,
+          media_type: result.type === 'series' ? 'series' : result.type === 'tv' ? 'tv' : 'movie',
+        })
+
+        onSelect(toImportedInternalResult(imported, result))
+        setOpen(false)
+        setSearchQuery('')
+        setSearchYear('')
+        toast({
+          title: 'Imported and selected',
+          description: imported.title,
+        })
+      } catch (error) {
+        toast({
+          title: 'Import failed',
+          description: error instanceof Error ? error.message : 'Failed to import metadata',
+          variant: 'destructive',
+        })
+      } finally {
+        setImportingResultId(null)
+      }
     },
-    [onSelect],
+    [onSelect, toast],
   )
 
   if (value) {
@@ -226,16 +266,28 @@ function MediaSearchPopover({
             <div className="p-1">
               {results.map((result) => {
                 const isExternal = result.source === 'external'
+                const importTarget = isExternal ? resolveExternalImportTarget(result) : null
+                const isImporting = importingResultId === result.id
+                const isBusy = importingResultId !== null
+                const isDisabled = isImporting || isBusy || (isExternal && !importTarget)
                 return (
                   <button
                     key={result.id}
-                    onClick={() => handleSelect(result)}
-                    disabled={isExternal}
+                    onClick={() => void handleSelect(result)}
+                    disabled={isDisabled}
                     className={cn(
                       'w-full flex items-center gap-2 p-1.5 rounded-md text-left',
-                      isExternal ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted cursor-pointer',
+                      isDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted cursor-pointer',
                     )}
-                    title={isExternal ? 'External - import first' : undefined}
+                    title={
+                      isImporting
+                        ? 'Importing...'
+                        : isExternal && !importTarget
+                          ? 'External source is not supported for auto-import yet'
+                          : isExternal
+                            ? 'External - click to import and select'
+                            : undefined
+                    }
                   >
                     {result.poster ? (
                       <img src={result.poster} alt="" className="w-6 h-9 rounded object-cover flex-shrink-0" />
@@ -259,6 +311,7 @@ function MediaSearchPopover({
                         )}
                       </div>
                     </div>
+                    {isImporting && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                   </button>
                 )
               })}
