@@ -4,6 +4,7 @@ User Profile Management API endpoints.
 
 import copy
 import logging
+import uuid
 from typing import Any
 from urllib.parse import urlparse
 
@@ -87,6 +88,7 @@ class StreamingProvidersSummary(BaseModel):
 
 class ProfileResponse(BaseModel):
     id: int
+    uuid: str
     user_id: int
     name: str
     config: dict[str, Any]
@@ -114,6 +116,13 @@ class SetDefaultResponse(BaseModel):
 
     success: bool
     profile_id: int
+
+
+class ResetProfileUuidResponse(BaseModel):
+    """Response after resetting profile UUID."""
+
+    profile_id: int
+    profile_uuid: str
 
 
 # ============================================
@@ -258,6 +267,7 @@ def profile_to_response(profile: UserProfile, include_full_config: bool = False)
 
     return ProfileResponse(
         id=profile.id,
+        uuid=profile.uuid,
         user_id=profile.user_id,
         name=profile.name,
         config=display_config,
@@ -1097,6 +1107,40 @@ async def set_default_profile(
     await ProfileDataProvider.invalidate_cache(user.id)
 
     return SetDefaultResponse(success=True, profile_id=profile_id)
+
+
+@router.post("/{profile_id}/reset-uuid", response_model=ResetProfileUuidResponse)
+async def reset_profile_uuid(
+    profile_id: int,
+    user: User = Depends(require_auth),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Reset profile UUID to revoke previously shared manifest links."""
+    profile = await session.get(UserProfile, profile_id)
+
+    if not profile or profile.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile not found",
+        )
+
+    previous_profile_uuid = profile.uuid
+    profile.uuid = str(uuid.uuid4())
+    session.add(profile)
+    await session.commit()
+    await session.refresh(profile)
+
+    # Revoke old UUID-based secret immediately.
+    await crypto_utils.invalidate_uuid_cache(previous_profile_uuid)
+    await ProfileDataProvider.invalidate_cache(user.id)
+
+    return JSONResponse(
+        content=ResetProfileUuidResponse(
+            profile_id=profile.id,
+            profile_uuid=profile.uuid,
+        ).model_dump(),
+        headers=const.NO_CACHE_HEADERS,
+    )
 
 
 @router.get("/{profile_id}/manifest-url", response_model=ManifestUrlResponse)

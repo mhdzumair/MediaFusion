@@ -16,6 +16,7 @@ export {
   useDeleteProfile,
   useDefaultProfile,
   useSetDefaultProfile,
+  useResetProfileUuid,
   useManifestUrl,
   useRpdbApiKey,
   profileKeys,

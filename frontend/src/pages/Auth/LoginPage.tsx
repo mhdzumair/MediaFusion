@@ -32,7 +32,8 @@ export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  const from = (location.state as { from?: Location })?.from?.pathname || '/'
+  const fromLocation = (location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null)?.from
+  const from = `${fromLocation?.pathname || '/'}${fromLocation?.search || ''}${fromLocation?.hash || ''}`
 
   const addonName = instanceInfo?.addon_name || 'MediaFusion'
 

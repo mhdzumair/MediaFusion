@@ -34,8 +34,10 @@ export function GuestGuard({ children }: GuestGuardProps) {
     }
 
     // Redirect to the page they came from, or dashboard
-    const from = (location.state as { from?: { pathname?: string } })?.from?.pathname
-    return <Navigate to={from || '/dashboard'} replace />
+    const fromLocation = (location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null)
+      ?.from
+    const from = `${fromLocation?.pathname || '/dashboard'}${fromLocation?.search || ''}${fromLocation?.hash || ''}`
+    return <Navigate to={from} replace />
   }
 
   return <>{children}</>

@@ -25,6 +25,7 @@ export {
   type ProfileUpdateRequest,
   type ManifestUrlResponse,
   type SetDefaultResponse,
+  type ResetProfileUuidResponse,
   type RpdbApiKeyResponse,
   type StreamingProviderSummary,
   type StreamingService,

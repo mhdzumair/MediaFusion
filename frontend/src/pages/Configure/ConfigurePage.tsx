@@ -40,7 +40,14 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useProfiles, useCreateProfile, useUpdateProfile, useDeleteProfile, useSetDefaultProfile } from '@/hooks'
+import {
+  useProfiles,
+  useCreateProfile,
+  useUpdateProfile,
+  useDeleteProfile,
+  useSetDefaultProfile,
+  useResetProfileUuid,
+} from '@/hooks'
 import { useAuth } from '@/contexts/AuthContext'
 import { useInstance } from '@/contexts/InstanceContext'
 import type { Profile } from '@/lib/api'
@@ -64,6 +71,18 @@ import {
   STREAM_TYPES,
 } from './components'
 import type { ProfileConfig } from './components'
+
+const PROFILE_UUID_SECRET_PREFIX = 'U-'
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function getProfileUuidFromSecret(secretStr: string | null): string | null {
+  if (!secretStr || !secretStr.startsWith(PROFILE_UUID_SECRET_PREFIX)) {
+    return null
+  }
+
+  const profileUuid = secretStr.slice(PROFILE_UUID_SECRET_PREFIX.length)
+  return UUID_PATTERN.test(profileUuid) ? profileUuid : null
+}
 
 function sanitizeResolutionList(resolutions: ProfileConfig['sr']): ProfileConfig['sr'] {
   if (!resolutions) return resolutions
@@ -715,8 +734,10 @@ function ProfileEditor({ profile, onBack, isNew = false }: { profile?: Profile; 
   const updateProfile = useUpdateProfile()
   const deleteProfile = useDeleteProfile()
   const setDefaultProfile = useSetDefaultProfile()
+  const resetProfileUuid = useResetProfileUuid()
 
   const [name, setName] = useState(profile?.name || '')
+  const [profileUuid, setProfileUuid] = useState(profile?.uuid || '')
   const [isDefault, setIsDefault] = useState(profile?.is_default || false)
   const [config, setConfig] = useState<ProfileConfig>(() => {
     if (profile?.config) {
@@ -912,10 +933,12 @@ function ProfileEditor({ profile, onBack, isNew = false }: { profile?: Profile; 
           ? sanitizeProfileConfig(updatedProfile.config as ProfileConfig)
           : sanitizedConfig
         const nextName = updatedProfile.name
+        const nextProfileUuid = updatedProfile.uuid
         const nextIsDefault = updatedProfile.is_default
 
         setConfig(nextConfig)
         setName(nextName)
+        setProfileUuid(nextProfileUuid)
         setIsDefault(nextIsDefault)
         setSavedSnapshot(
           buildProfileSnapshot({
@@ -962,6 +985,21 @@ function ProfileEditor({ profile, onBack, isNew = false }: { profile?: Profile; 
         const message = error instanceof Error ? error.message : 'Failed to set default'
         setSaveStatus({ type: 'error', message })
       }
+    }
+  }
+
+  const handleResetProfileUuid = async () => {
+    if (!profile) return
+    try {
+      const result = await resetProfileUuid.mutateAsync(profile.id)
+      setProfileUuid(result.profile_uuid)
+      setSaveStatus({
+        type: 'success',
+        message: 'Profile UUID reset. Reinstall/update external links that used the old UUID.',
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to reset profile UUID'
+      setSaveStatus({ type: 'error', message })
     }
   }
 
@@ -1012,6 +1050,7 @@ function ProfileEditor({ profile, onBack, isNew = false }: { profile?: Profile; 
       {/* Profile Header Card */}
       <ProfileHeader
         profileId={profile?.id}
+        profileUuid={profileUuid}
         name={name}
         isDefault={isDefault}
         isNew={isNew}
@@ -1019,6 +1058,8 @@ function ProfileEditor({ profile, onBack, isNew = false }: { profile?: Profile; 
         onDefaultChange={setIsDefault}
         onDelete={!isNew ? handleDelete : undefined}
         onSetDefault={!isNew && !isDefault ? handleSetDefault : undefined}
+        onResetUuid={!isNew && profile ? handleResetProfileUuid : undefined}
+        isResettingUuid={resetProfileUuid.isPending}
       />
 
       {/* Configuration Tabs */}
@@ -1129,24 +1170,21 @@ function AuthenticatedConfigurePage() {
   // Check for edit param
   const editProfileId = searchParams.get('edit')
 
-  // Sync selected profile when edit param or profiles change (during render, not in effect)
-  // Use a composite key instead of reference checks — avoids cached-reference bug
-  const editKey = editProfileId && profiles ? `${editProfileId}:${profiles.length}` : null
-  const [prevEditKey, setPrevEditKey] = useState(editKey)
-  if (editProfileId && profiles && editKey !== prevEditKey) {
-    setPrevEditKey(editKey)
-    const profileIdNum = parseInt(editProfileId, 10)
-    const profile = profiles.find((p) => p.id === profileIdNum)
-    if (profile) {
-      setSelectedProfile(profile)
-    }
-  }
+  // Resolve deep-linked profile directly from query + cache/fetched profiles.
+  const deepLinkedProfile = useMemo(() => {
+    if (!editProfileId || !profiles) return null
+    const profileIdNum = Number.parseInt(editProfileId, 10)
+    if (Number.isNaN(profileIdNum)) return null
+    return profiles.find((p) => p.id === profileIdNum) ?? null
+  }, [editProfileId, profiles])
+
+  const profileToEdit = selectedProfile ?? deepLinkedProfile
 
   // If editing or creating, show the editor
-  if (selectedProfile || isCreating) {
+  if (profileToEdit || isCreating) {
     return (
       <ProfileEditor
-        profile={selectedProfile || undefined}
+        profile={profileToEdit || undefined}
         isNew={isCreating}
         onBack={() => {
           setSelectedProfile(null)
@@ -1249,11 +1287,42 @@ function AuthenticatedConfigurePage() {
   )
 }
 
+function AccountProfileSecretRedirect({ profileUuid }: { profileUuid: string }) {
+  const { data: profiles, isLoading } = useProfiles()
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-4 w-48" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="p-6">
+              <Skeleton className="h-6 w-32 mb-2" />
+              <Skeleton className="h-4 w-24 mb-4" />
+              <Skeleton className="h-8 w-full" />
+            </Card>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const targetProfile = profiles?.find((profile) => profile.uuid === profileUuid)
+  if (!targetProfile) {
+    return <Navigate to="/dashboard/configure" replace />
+  }
+
+  return <Navigate to={`/dashboard/configure?edit=${targetProfile.id}`} replace />
+}
+
 // Main Configure Page - Switches between authenticated and anonymous modes
 export function ConfigurePage() {
   const { isAuthenticated, isLoading } = useAuth()
   const [searchParams] = useSearchParams()
-  const hasAnonymousSecret = !!searchParams.get('secret_str')
+  const secretStr = searchParams.get('secret_str')
+  const hasAnonymousSecret = !!secretStr
+  const profileUuidFromSecret = getProfileUuidFromSecret(secretStr)
   const kodiCode = searchParams.get('kodi_code')
 
   // Show loading state while checking auth
@@ -1279,6 +1348,26 @@ export function ConfigurePage() {
   // Redirect whenever a kodi_code is present, even if secret_str is included.
   if (isAuthenticated && kodiCode) {
     return <Navigate to={`/dashboard/integrations?kodi_code=${encodeURIComponent(kodiCode)}`} replace />
+  }
+
+  if (profileUuidFromSecret) {
+    if (!isAuthenticated) {
+      const query = searchParams.toString()
+      return (
+        <Navigate
+          to="/login"
+          state={{
+            from: {
+              pathname: '/configure',
+              search: query ? `?${query}` : '',
+            },
+          }}
+          replace
+        />
+      )
+    }
+
+    return <AccountProfileSecretRedirect profileUuid={profileUuidFromSecret} />
   }
 
   // Show anonymous config for non-authenticated users

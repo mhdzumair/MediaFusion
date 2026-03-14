@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Edit, MoreVertical, Star, Trash2, Copy, Check } from 'lucide-react'
+import { Edit, MoreVertical, Star, Trash2, Copy, Check, RefreshCw } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,6 +26,7 @@ import {
 
 interface ProfileHeaderProps {
   profileId?: number
+  profileUuid?: string
   name: string
   isDefault: boolean
   isNew?: boolean
@@ -33,10 +34,13 @@ interface ProfileHeaderProps {
   onDefaultChange: (isDefault: boolean) => void
   onDelete?: () => void
   onSetDefault?: () => void
+  onResetUuid?: () => void
+  isResettingUuid?: boolean
 }
 
 export function ProfileHeader({
   profileId,
+  profileUuid,
   name,
   isDefault,
   isNew,
@@ -44,16 +48,27 @@ export function ProfileHeader({
   onDefaultChange,
   onDelete,
   onSetDefault,
+  onResetUuid,
+  isResettingUuid = false,
 }: ProfileHeaderProps) {
   const [isEditing, setIsEditing] = useState(isNew)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [resetUuidDialogOpen, setResetUuidDialogOpen] = useState(false)
+  const [copiedField, setCopiedField] = useState<'id' | 'uuid' | null>(null)
 
   const copyProfileId = async () => {
-    if (profileId) {
+    if (profileId !== undefined) {
       await navigator.clipboard.writeText(String(profileId))
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      setCopiedField('id')
+      setTimeout(() => setCopiedField(null), 2000)
+    }
+  }
+
+  const copyProfileUuid = async () => {
+    if (profileUuid) {
+      await navigator.clipboard.writeText(profileUuid)
+      setCopiedField('uuid')
+      setTimeout(() => setCopiedField(null), 2000)
     }
   }
 
@@ -90,12 +105,27 @@ export function ProfileHeader({
             </div>
 
             {/* Profile ID */}
-            {profileId && (
+            {profileId !== undefined && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>ID:</span>
-                <code className="bg-muted px-2 py-0.5 rounded text-xs">{String(profileId).slice(0, 12)}...</code>
+                <code className="bg-muted px-2 py-0.5 rounded text-xs">{profileId}</code>
                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={copyProfileId}>
-                  {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                  {copiedField === 'id' ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                </Button>
+              </div>
+            )}
+
+            {/* Profile UUID */}
+            {profileUuid && (
+              <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                <span className="pt-0.5">UUID:</span>
+                <code className="bg-muted px-2 py-0.5 rounded text-xs break-all font-mono">{profileUuid}</code>
+                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={copyProfileUuid}>
+                  {copiedField === 'uuid' ? (
+                    <Check className="h-3 w-3 text-emerald-500" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
                 </Button>
               </div>
             )}
@@ -122,6 +152,12 @@ export function ProfileHeader({
                   <DropdownMenuItem onClick={onSetDefault}>
                     <Star className="h-4 w-4 mr-2" />
                     Set as Default
+                  </DropdownMenuItem>
+                )}
+                {onResetUuid && (
+                  <DropdownMenuItem onClick={() => setResetUuidDialogOpen(true)} disabled={isResettingUuid}>
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isResettingUuid ? 'animate-spin' : ''}`} />
+                    Reset Profile UUID
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
@@ -154,6 +190,31 @@ export function ProfileHeader({
               className="bg-red-500 hover:bg-red-600"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* UUID Reset Confirmation Dialog */}
+      <AlertDialog open={resetUuidDialogOpen} onOpenChange={setResetUuidDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset Profile UUID?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This revokes your current profile UUID and invalidates old manifest links that use it. Anyone with the old
+              link will lose access.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                onResetUuid?.()
+                setResetUuidDialogOpen(false)
+              }}
+              disabled={isResettingUuid}
+            >
+              {isResettingUuid ? 'Resetting...' : 'Reset UUID'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

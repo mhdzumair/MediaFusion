@@ -1,5 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { profilesApi, type Profile, type ProfileCreateRequest, type ProfileUpdateRequest } from '@/lib/api'
+import {
+  profilesApi,
+  type Profile,
+  type ProfileCreateRequest,
+  type ProfileUpdateRequest,
+  type ResetProfileUuidResponse,
+} from '@/lib/api'
 
 // Query keys
 export const profileKeys = {
@@ -86,6 +92,28 @@ export function useSetDefaultProfile() {
     mutationFn: (profileId: number) => profilesApi.setDefault(profileId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: profileKeys.list() })
+    },
+  })
+}
+
+// Reset profile UUID
+export function useResetProfileUuid() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (profileId: number): Promise<ResetProfileUuidResponse> => profilesApi.resetUuid(profileId),
+    onSuccess: (result) => {
+      // Patch cached profile list with the new UUID for immediate UI consistency.
+      queryClient.setQueryData(profileKeys.list(), (old: Profile[] | undefined) => {
+        if (!old) return old
+        return old.map((profile) =>
+          profile.id === result.profile_id ? { ...profile, uuid: result.profile_uuid } : profile,
+        )
+      })
+      queryClient.setQueryData(profileKeys.detail(result.profile_id), (old: Profile | undefined) =>
+        old ? { ...old, uuid: result.profile_uuid } : old,
+      )
+      queryClient.invalidateQueries({ queryKey: profileKeys.all })
     },
   })
 }

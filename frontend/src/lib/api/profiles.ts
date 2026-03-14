@@ -23,6 +23,7 @@ export interface StreamingProviderSummary {
 
 export interface Profile {
   id: number
+  uuid: string
   user_id: number
   name: string
   config: Record<string, unknown>
@@ -56,6 +57,11 @@ export interface ManifestUrlResponse {
 export interface SetDefaultResponse {
   success: boolean
   profile_id: number
+}
+
+export interface ResetProfileUuidResponse {
+  profile_id: number
+  profile_uuid: string
 }
 
 export interface RpdbApiKeyResponse {
@@ -201,6 +207,11 @@ export const profilesApi = {
   // Set as default
   setDefault: async (profileId: number): Promise<SetDefaultResponse> => {
     return apiClient.post<SetDefaultResponse>(`/profiles/${profileId}/set-default`)
+  },
+
+  // Reset profile UUID (revokes old UUID-based links)
+  resetUuid: async (profileId: number): Promise<ResetProfileUuidResponse> => {
+    return apiClient.post<ResetProfileUuidResponse>(`/profiles/${profileId}/reset-uuid`)
   },
 
   // Get manifest URL
