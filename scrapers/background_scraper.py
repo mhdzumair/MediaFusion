@@ -111,13 +111,7 @@ class BackgroundSearchWorker:
 
     @staticmethod
     def _is_anime_metadata(metadata: MetadataData) -> bool:
-        if metadata.get_mal_id() or metadata.get_kitsu_id() or metadata.get_anilist_id():
-            return True
-        genres = {genre.strip().lower() for genre in metadata.genres if isinstance(genre, str)}
-        if "anime" in genres or "animation" in genres:
-            return True
-        catalogs = {catalog.strip().lower() for catalog in metadata.catalogs if isinstance(catalog, str)}
-        return any("anime" in catalog for catalog in catalogs)
+        return metadata.is_anime_metadata()
 
     async def close(self) -> None:
         """Close scraper HTTP clients to avoid file descriptor leaks."""

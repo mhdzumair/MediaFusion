@@ -10,41 +10,68 @@ from scrapers.public_indexer_registry import PUBLIC_INDEXER_DEFINITIONS
 from scrapers.public_indexers import PublicIndexerScraper
 
 
-@pytest.mark.asyncio
-async def test_select_indexers_respects_user_anime_order(monkeypatch):
+def test_is_anime_metadata_detects_japanese_series_without_anime_genre():
     scraper = PublicIndexerScraper()
-    user_data = SimpleNamespace(
-        anime_live_source_order=["subsplease", "nyaa", "uindex"],
-        anime_source_classes=["public_indexer", "hoster"],
+    metadata = MetadataData(
+        id=101,
+        external_id="tt2560140",
+        type="series",
+        title="Attack on Titan",
+        original_title="進撃の巨人",
+        year=2013,
+        genres=["Action & Adventure"],
+        catalogs=["series"],
+        original_language="ja",
+        country="JP",
     )
+
+    assert scraper._is_anime_metadata(metadata) is True
+
+
+def test_is_anime_metadata_ignores_non_anime_series_without_hints():
+    scraper = PublicIndexerScraper()
+    metadata = MetadataData(
+        id=102,
+        external_id="tt0944947",
+        type="series",
+        title="Game of Thrones",
+        year=2011,
+        genres=["Drama", "Action & Adventure"],
+        catalogs=["series"],
+        original_language="en",
+        country="US",
+    )
+
+    assert scraper._is_anime_metadata(metadata) is False
+
+
+@pytest.mark.asyncio
+async def test_select_indexers_uses_env_anime_order(monkeypatch):
+    scraper = PublicIndexerScraper()
 
     monkeypatch.setattr(settings, "public_indexers_live_search_sites", "")
     monkeypatch.setattr(settings, "public_indexers_anime_live_search_sites", "nyaa,uindex,eztv")
     monkeypatch.setattr(settings, "public_indexers_source_health_gates_enabled", False)
 
-    selected = await scraper._select_indexers(user_data, "series", True)
+    selected = await scraper._select_indexers(user_data=None, catalog_type="series", is_anime=True)
     keys = [definition.key for definition in selected]
 
-    assert keys[:3] == ["subsplease", "nyaa", "uindex"]
+    assert keys[:3] == ["nyaa", "uindex", "eztv"]
 
 
 @pytest.mark.asyncio
 async def test_select_indexers_applies_failure_budget_gate(monkeypatch):
     scraper = PublicIndexerScraper()
-    user_data = SimpleNamespace(
-        anime_live_source_order=["subsplease", "nyaa"],
-        anime_source_classes=["public_indexer"],
-    )
 
-    async def _mock_is_source_within_budget(source_key, **_kwargs):
-        return source_key != "subsplease"
+    def _mock_is_snapshot_within_budget(snapshot, **_kwargs):
+        return snapshot.source_key != "subsplease"
 
     monkeypatch.setattr(settings, "public_indexers_live_search_sites", "")
     monkeypatch.setattr(settings, "public_indexers_source_health_gates_enabled", True)
     monkeypatch.setattr(settings, "public_indexers_source_health_probation_enabled", False)
-    monkeypatch.setattr("scrapers.public_indexers.is_source_within_budget", _mock_is_source_within_budget)
+    monkeypatch.setattr(scraper, "_is_snapshot_within_budget", _mock_is_snapshot_within_budget)
 
-    selected = await scraper._select_indexers(user_data, "series", True)
+    selected = await scraper._select_indexers(user_data=None, catalog_type="series", is_anime=True)
     keys = [definition.key for definition in selected]
 
     assert "subsplease" not in keys
@@ -55,14 +82,14 @@ async def test_select_indexers_applies_failure_budget_gate(monkeypatch):
 async def test_select_indexers_applies_public_failure_budget_gate(monkeypatch):
     scraper = PublicIndexerScraper()
 
-    async def _mock_is_source_within_budget(source_key, **_kwargs):
-        return source_key != "uindex"
+    def _mock_is_snapshot_within_budget(snapshot, **_kwargs):
+        return snapshot.source_key != "uindex"
 
     monkeypatch.setattr(settings, "public_indexers_live_search_sites", "")
     monkeypatch.setattr(settings, "public_indexers_movie_live_search_sites", "uindex,thepiratebay")
     monkeypatch.setattr(settings, "public_indexers_source_health_gates_enabled", True)
     monkeypatch.setattr(settings, "public_indexers_source_health_probation_enabled", False)
-    monkeypatch.setattr("scrapers.public_indexers.is_source_within_budget", _mock_is_source_within_budget)
+    monkeypatch.setattr(scraper, "_is_snapshot_within_budget", _mock_is_snapshot_within_budget)
 
     selected = await scraper._select_indexers(user_data=None, catalog_type="movie", is_anime=False)
     keys = [definition.key for definition in selected]
@@ -75,8 +102,8 @@ async def test_select_indexers_applies_public_failure_budget_gate(monkeypatch):
 async def test_select_indexers_probation_sampler_retests_blocked_sources(monkeypatch):
     scraper = PublicIndexerScraper()
 
-    async def _mock_is_source_within_budget(source_key, **_kwargs):
-        return source_key != "uindex"
+    def _mock_is_snapshot_within_budget(snapshot, **_kwargs):
+        return snapshot.source_key != "uindex"
 
     monkeypatch.setattr(settings, "public_indexers_live_search_sites", "")
     monkeypatch.setattr(settings, "public_indexers_movie_live_search_sites", "uindex,thepiratebay")
@@ -84,7 +111,7 @@ async def test_select_indexers_probation_sampler_retests_blocked_sources(monkeyp
     monkeypatch.setattr(settings, "public_indexers_source_health_probation_enabled", True)
     monkeypatch.setattr(settings, "public_indexers_source_health_probation_ratio", 1.0)
     monkeypatch.setattr(settings, "public_indexers_source_health_probation_max_sources_per_query", 1)
-    monkeypatch.setattr("scrapers.public_indexers.is_source_within_budget", _mock_is_source_within_budget)
+    monkeypatch.setattr(scraper, "_is_snapshot_within_budget", _mock_is_snapshot_within_budget)
 
     selected = await scraper._select_indexers(user_data=None, catalog_type="movie", is_anime=False)
     keys = [definition.key for definition in selected]

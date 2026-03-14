@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+from db.config import settings
 from scrapers.anime_source_benchmark import (
     get_source_release_group_hints,
     get_source_reliability,
@@ -568,6 +569,15 @@ def _sort_indexers(
 
 def get_indexers_for_catalog(*, catalog_type: str, is_anime: bool) -> list[ScraplingIndexerDefinition]:
     if is_anime:
+        if settings.public_indexers_anime_include_series_fallback:
+            return _sort_indexers(
+                [
+                    definition
+                    for definition in PUBLIC_INDEXER_DEFINITIONS.values()
+                    if definition.supports_anime or definition.supports_series
+                ],
+                is_anime=True,
+            )
         return _sort_indexers(
             [definition for definition in PUBLIC_INDEXER_DEFINITIONS.values() if definition.supports_anime],
             is_anime=True,

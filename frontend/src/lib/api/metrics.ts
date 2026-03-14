@@ -63,6 +63,8 @@ export type PublicIndexerGateStatus = 'allowed' | 'blocked' | 'warming'
 
 export interface PublicIndexerSourceHealthGateConfig {
   enabled: boolean
+  scope_mode: string
+  scope_key: string | null
   min_samples: number
   min_success_rate: number
   max_timeout_rate: number
@@ -78,11 +80,13 @@ export interface PublicIndexerSourceHealthItem {
   success: number
   timeout: number
   challenge_solved: number
+  consecutive_success: number
   success_rate: number
   timeout_rate: number
   challenge_solve_rate: number
   gate_status: PublicIndexerGateStatus
   gate_enforced_now: boolean
+  recovery_admitted: boolean
 }
 
 export interface PublicIndexerSourceHealthResponse {

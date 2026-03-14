@@ -10,7 +10,7 @@ from db.config import settings
 from db.enums import UserRole
 from db.models import User
 from scrapers.public_indexer_registry import PUBLIC_INDEXER_DEFINITIONS
-from scrapers.source_health import get_source_health, get_source_health_scope
+from scrapers.source_health import SourceHealthSnapshot, get_source_health, get_source_health_scope
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin - Source Health"])
 
@@ -89,7 +89,25 @@ async def get_public_indexer_source_health(
 
     items: list[SourceHealthItem] = []
     for definition in definitions:
-        snapshot = await get_source_health(definition.key)
+        if anime_only:
+            buckets = ("anime",)
+        else:
+            selected_buckets: list[str] = []
+            if definition.supports_movie:
+                selected_buckets.append("movie")
+            if definition.supports_series:
+                selected_buckets.append("series")
+            buckets = tuple(selected_buckets or ["series"])
+
+        snapshots = [await get_source_health(definition.key, health_bucket=bucket) for bucket in buckets]
+        snapshot = SourceHealthSnapshot(
+            source_key=definition.key,
+            total=sum(item.total for item in snapshots),
+            success=sum(item.success for item in snapshots),
+            timeout=sum(item.timeout for item in snapshots),
+            challenge_solved=sum(item.challenge_solved for item in snapshots),
+            consecutive_success=max((item.consecutive_success for item in snapshots), default=0),
+        )
         status = _classify_gate_status(
             samples=snapshot.total,
             success_rate=snapshot.success_rate,

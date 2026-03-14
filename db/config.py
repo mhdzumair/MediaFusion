@@ -217,13 +217,12 @@ class Settings(BaseSettings):
     public_indexers_search_interval_hour: int = 48
     # Optional global allowlist for live-search indexers. When set, this list applies
     # to movie/series/anime (comma-separated ids, e.g. "uindex,rutor,thepiratebay").
-    public_indexers_live_search_sites: str = ""
+    public_indexers_live_search_sites: str = "all"
     # Type-specific live-search allowlists (used when the global allowlist is empty).
-    public_indexers_movie_live_search_sites: str = "uindex,rutor,oxtorrent,bt4g,yts,thepiratebay"
-    public_indexers_series_live_search_sites: str = "uindex,rutor,oxtorrent,bt4g,thepiratebay"
-    public_indexers_anime_live_search_sites: str = (
-        "nyaa,animetosho,uindex,limetorrents,subsplease,therarbg,yourbittorrent,eztv,torlock"
-    )
+    public_indexers_movie_live_search_sites: str = "all"
+    public_indexers_series_live_search_sites: str = "all"
+    public_indexers_anime_live_search_sites: str = "all"
+    public_indexers_anime_include_series_fallback: bool = True
     public_indexers_live_search_parallelism: int = Field(default=16, ge=1, le=32)
     public_indexers_max_rows_per_page: int = Field(default=12, ge=1, le=100)
     public_indexers_source_health_metrics_ttl_seconds: int = Field(default=60 * 60 * 24, ge=60)

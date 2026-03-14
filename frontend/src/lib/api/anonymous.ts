@@ -195,9 +195,6 @@ export interface ProfileConfig {
   rpc?: RPDBConfigType | null // rpdb_config
   lss?: boolean // live_search_streams
   ia?: boolean // include_anime
-  aso?: ('kitsu' | 'anilist')[] // anime_source_order
-  also?: string[] // anime_live_source_order
-  asc?: ('public_indexer' | 'hoster')[] // anime_source_classes
   mdb?: MDBListConfigType | null // mdblist_config
   st?: StreamTemplateConfigType | null // stream_template
   ic?: IndexerConfigType | null // indexer_config
@@ -258,9 +255,6 @@ export interface UserDataPayload {
   stream_template?: StreamTemplatePayload | null
   live_search_streams?: boolean
   include_anime?: boolean
-  anime_source_order?: ('kitsu' | 'anilist')[]
-  anime_live_source_order?: string[]
-  anime_source_classes?: ('public_indexer' | 'hoster')[]
   indexer_config?: IndexerConfigPayload | null
   enable_usenet_streams?: boolean
   prefer_usenet_over_torrent?: boolean
@@ -603,9 +597,6 @@ export function profileConfigToUserData(config: ProfileConfig, apiPassword?: str
   if (config.hf !== undefined) userData.hdr_filter = config.hf
   if (config.lss !== undefined) userData.live_search_streams = config.lss
   if (config.ia !== undefined) userData.include_anime = config.ia
-  if (config.aso !== undefined) userData.anime_source_order = config.aso
-  if (config.also !== undefined) userData.anime_live_source_order = config.also
-  if (config.asc !== undefined) userData.anime_source_classes = config.asc
   if (config.eus !== undefined) userData.enable_usenet_streams = config.eus
   if (config.puot !== undefined) userData.prefer_usenet_over_torrent = config.puot
   if (config.ets !== undefined) userData.enable_telegram_streams = config.ets

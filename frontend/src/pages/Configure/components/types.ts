@@ -175,9 +175,6 @@ export interface ProfileConfig {
   rpc?: RPDBConfig | null // rpdb_config
   lss?: boolean // live_search_streams
   ia?: boolean // include_anime
-  aso?: ('kitsu' | 'anilist')[] // anime_source_order
-  also?: string[] // anime_live_source_order
-  asc?: ('public_indexer' | 'hoster')[] // anime_source_classes
   mdb?: MDBListConfig | null // mdblist_config
   st?: StreamTemplateConfig | null // stream_template
   ic?: IndexerConfig | null // indexer_config

@@ -14,6 +14,7 @@ from scrapers import (  # noqa: F401
     trackers,
     tv,
     dmm_hashlist,
+    non_torrent_background_scraper,
 )
 from streaming_providers import cache_helpers  # noqa: F401
 

@@ -108,7 +108,14 @@ function SourceHealthPanel({
 }: {
   data:
     | {
-        gate: { enabled: boolean; min_samples: number; min_success_rate: number; max_timeout_rate: number }
+        gate: {
+          enabled: boolean
+          scope_mode: string
+          scope_key: string | null
+          min_samples: number
+          min_success_rate: number
+          max_timeout_rate: number
+        }
         total_sources: number
         allowed: number
         blocked: number
@@ -123,11 +130,13 @@ function SourceHealthPanel({
           success: number
           timeout: number
           challenge_solved: number
+          consecutive_success: number
           success_rate: number
           timeout_rate: number
           challenge_solve_rate: number
           gate_status: 'allowed' | 'blocked' | 'warming'
           gate_enforced_now: boolean
+          recovery_admitted: boolean
         }>
       }
     | undefined
@@ -200,10 +209,18 @@ function SourceHealthPanel({
               ))}
             </div>
           ) : (
-            <div className="grid gap-3 md:grid-cols-4 text-sm">
+            <div className="grid gap-3 md:grid-cols-6 text-sm">
               <div className="rounded-lg border border-border/50 p-3">
                 <p className="text-xs text-muted-foreground">Gate Enabled</p>
                 <p className="font-semibold mt-1">{data?.gate.enabled ? 'Yes' : 'No'}</p>
+              </div>
+              <div className="rounded-lg border border-border/50 p-3">
+                <p className="text-xs text-muted-foreground">Scope Mode</p>
+                <p className="font-semibold mt-1">{data?.gate.scope_mode ?? 'unknown'}</p>
+              </div>
+              <div className="rounded-lg border border-border/50 p-3">
+                <p className="text-xs text-muted-foreground">Scope Key</p>
+                <p className="font-semibold mt-1 font-mono text-xs">{data?.gate.scope_key ?? 'global'}</p>
               </div>
               <div className="rounded-lg border border-border/50 p-3">
                 <p className="text-xs text-muted-foreground">Min Samples</p>
@@ -295,9 +312,19 @@ function SourceHealthPanel({
                       <Badge variant="outline" className={sourceGateStatusClass(source.gate_status)}>
                         {source.gate_status}
                       </Badge>
+                      {source.recovery_admitted && (
+                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
+                          recovery
+                        </Badge>
+                      )}
                       {source.gate_enforced_now && (
                         <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/30">
                           enforced
+                        </Badge>
+                      )}
+                      {source.consecutive_success > 0 && (
+                        <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-border/60">
+                          streak {source.consecutive_success}
                         </Badge>
                       )}
                     </div>

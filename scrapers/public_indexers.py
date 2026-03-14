@@ -289,13 +289,13 @@ class PublicIndexerScraper(BaseScraper):
 
     @staticmethod
     def _is_anime_metadata(metadata: MetadataData) -> bool:
-        if metadata.get_mal_id() or metadata.get_kitsu_id() or metadata.get_anilist_id():
-            return True
-        genres = {genre.strip().lower() for genre in metadata.genres if isinstance(genre, str)}
-        if "anime" in genres or "animation" in genres:
-            return True
-        catalogs = {catalog.strip().lower() for catalog in metadata.catalogs if isinstance(catalog, str)}
-        return any("anime" in catalog for catalog in catalogs)
+        return metadata.is_anime_metadata()
+
+    @staticmethod
+    def _health_bucket(*, catalog_type: str, is_anime: bool) -> str:
+        if is_anime:
+            return "anime"
+        return "movie" if catalog_type == "movie" else "series"
 
     async def _select_indexers(
         self,
@@ -303,30 +303,13 @@ class PublicIndexerScraper(BaseScraper):
         catalog_type: str,
         is_anime: bool,
     ) -> list[ScraplingIndexerDefinition]:
-        if is_anime and user_data and getattr(user_data, "anime_source_classes", None):
-            source_classes = {
-                value.strip().lower() for value in user_data.anime_source_classes if isinstance(value, str)
-            }
-            if "public_indexer" not in source_classes:
-                return []
-
         available = get_indexers_for_catalog(catalog_type=catalog_type, is_anime=is_anime)
         available_by_key = {definition.key: definition for definition in available}
         all_available_ids = tuple(available_by_key.keys())
         global_sites = (settings.public_indexers_live_search_sites or "").strip()
-        user_anime_order = ""
-        if is_anime and user_data:
-            user_anime_order = ",".join(
-                value.strip().lower()
-                for value in getattr(user_data, "anime_live_source_order", [])
-                if isinstance(value, str) and value.strip()
-            )
 
         if global_sites:
             raw_value = global_sites
-            default_ids = all_available_ids
-        elif is_anime and user_anime_order:
-            raw_value = user_anime_order
             default_ids = all_available_ids
         elif is_anime:
             raw_value = settings.public_indexers_anime_live_search_sites
@@ -350,9 +333,10 @@ class PublicIndexerScraper(BaseScraper):
         if not settings.public_indexers_source_health_gates_enabled:
             return indexers
 
+        health_bucket = self._health_bucket(catalog_type=catalog_type, is_anime=is_anime)
         health_by_key: dict[str, SourceHealthSnapshot] = {}
         for definition in indexers:
-            health_by_key[definition.key] = await get_source_health(definition.key)
+            health_by_key[definition.key] = await get_source_health(definition.key, health_bucket=health_bucket)
 
         allowed_keys: set[str] = set()
         blocked: list[ScraplingIndexerDefinition] = []
@@ -497,8 +481,10 @@ class PublicIndexerScraper(BaseScraper):
         processed_info_hashes_lock: asyncio.Lock | None = None,
     ) -> AsyncGenerator[TorrentStreamData, None]:
         stream_hits = 0
+        request_succeeded = False
         challenge_solved = False
         timed_out = False
+        health_bucket = self._health_bucket(catalog_type=catalog_type, is_anime=is_anime)
         encoded_query = quote_plus(query)
         for page in range(1, indexer.search_pages_per_query + 1):
             matched_template = False
@@ -506,7 +492,7 @@ class PublicIndexerScraper(BaseScraper):
                 search_url = template.format(query=encoded_query, page=page)
                 if indexer.key == "subsplease" and "api/?f=search" in search_url:
                     matched_template = True
-                    request_state = {"timed_out": False}
+                    request_state = {"timed_out": False, "request_succeeded": False}
                     async for stream in self._search_subsplease_api(
                         indexer=indexer,
                         search_url=search_url,
@@ -521,11 +507,12 @@ class PublicIndexerScraper(BaseScraper):
                         stream_hits += 1
                         yield stream
                     timed_out = timed_out or request_state["timed_out"]
+                    request_succeeded = request_succeeded or request_state["request_succeeded"]
                     break
 
                 if indexer.key == "bt4g" and "page=rss" in search_url:
                     matched_template = True
-                    request_state = {"timed_out": False}
+                    request_state = {"timed_out": False, "request_succeeded": False}
                     async for stream in self._search_bt4g_rss(
                         indexer=indexer,
                         search_url=search_url,
@@ -540,12 +527,14 @@ class PublicIndexerScraper(BaseScraper):
                         stream_hits += 1
                         yield stream
                     timed_out = timed_out or request_state["timed_out"]
+                    request_succeeded = request_succeeded or request_state["request_succeeded"]
                     break
 
                 solved, request_timed_out = await self._fetch_page(indexer, search_url)
                 timed_out = timed_out or request_timed_out
                 if not solved:
                     continue
+                request_succeeded = True
                 challenge_solved = challenge_solved or bool(solved.get("challenge_solved"))
 
                 selector = Selector(text=solved["html"])
@@ -581,9 +570,10 @@ class PublicIndexerScraper(BaseScraper):
                 self.metrics.record_skip(f"No rows for {indexer.key}")
         await record_source_outcome(
             indexer.key,
-            success=stream_hits > 0,
+            success=stream_hits > 0 or request_succeeded,
             timed_out=timed_out,
             challenge_solved=challenge_solved,
+            health_bucket=health_bucket,
         )
 
     async def _process_row(
@@ -772,7 +762,7 @@ class PublicIndexerScraper(BaseScraper):
                     )
                     challenge_solved = True
         except Exception as exc:
-            if "timeout" in str(exc).lower():
+            if self._is_timeout_exception(exc):
                 timed_out = True
             self.logger.debug("Failed to fetch %s via %s: %s", url, indexer.key, exc)
 
@@ -838,6 +828,8 @@ class PublicIndexerScraper(BaseScraper):
         if not isinstance(entries, dict):
             self.metrics.record_skip("Unexpected SubsPlease API shape")
             return
+        if request_state is not None:
+            request_state["request_succeeded"] = True
 
         for release_name, release_data in entries.items():
             if not isinstance(release_data, dict):
@@ -940,6 +932,8 @@ class PublicIndexerScraper(BaseScraper):
         except ET.ParseError:
             self.metrics.record_skip("Invalid BT4G RSS payload")
             return
+        if request_state is not None:
+            request_state["request_succeeded"] = True
 
         items = root.findall(".//item")
         if not items:
@@ -1092,7 +1086,7 @@ class PublicIndexerScraper(BaseScraper):
             ) as client:
                 response = await client.get(url)
         except Exception as exc:
-            timed_out = "timeout" in str(exc).lower()
+            timed_out = self._is_timeout_exception(exc)
             self.logger.debug("HTTP fallback failed for %s: %s", url, exc)
             return None, timed_out
         return (
@@ -1103,6 +1097,13 @@ class PublicIndexerScraper(BaseScraper):
             },
             False,
         )
+
+    @staticmethod
+    def _is_timeout_exception(exc: Exception) -> bool:
+        if isinstance(exc, (TimeoutError, asyncio.TimeoutError, httpx.TimeoutException)):
+            return True
+        message = str(exc).lower()
+        return "timeout" in message or "timed out" in message
 
     @staticmethod
     async def _mark_info_hash_if_new(

@@ -7,6 +7,7 @@ This module provides Pydantic schemas that fully utilize the new database struct
 - ProviderMetadata: Cached provider-specific metadata
 """
 
+import re
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Optional
 
@@ -493,6 +494,62 @@ class MetadataData(BaseModel):
     # External ID Helper Methods for Scrapers
     # ============================================
 
+    @staticmethod
+    def _normalized_token_set(values: list[str] | tuple[str, ...]) -> set[str]:
+        tokens: set[str] = set()
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            for token in re.split(r"[^a-z0-9]+", value.strip().lower()):
+                if token:
+                    tokens.add(token)
+        return tokens
+
+    @staticmethod
+    def _contains_cjk(text: str) -> bool:
+        for char in text:
+            code_point = ord(char)
+            if (
+                0x3040 <= code_point <= 0x30FF  # Hiragana + Katakana
+                or 0x4E00 <= code_point <= 0x9FFF  # CJK Unified Ideographs
+                or 0x3400 <= code_point <= 0x4DBF  # CJK Extension A
+            ):
+                return True
+        return False
+
+    def is_anime_metadata(self) -> bool:
+        """Detect anime content with robust hints beyond genre labels."""
+        if self.get_mal_id() or self.get_kitsu_id() or self.get_anilist_id():
+            return True
+
+        genre_tokens = self._normalized_token_set(self.genres)
+        keyword_tokens = self._normalized_token_set(self.keywords)
+        catalog_tokens = self._normalized_token_set(self.catalogs)
+
+        if "anime" in catalog_tokens:
+            return True
+
+        anime_tokens = {"anime", "manga", "otaku", "shonen", "shojo", "shoujo", "seinen", "josei", "isekai"}
+        if genre_tokens.intersection(anime_tokens) or keyword_tokens.intersection(anime_tokens):
+            return True
+
+        is_japanese_origin = (self.original_language or "").strip().lower() == "ja" or str(
+            self.country or ""
+        ).strip().upper() == "JP"
+        title_candidates = [self.title, self.original_title, *self.aka_titles]
+        has_cjk_title = any(
+            isinstance(candidate, str) and candidate and self._contains_cjk(candidate) for candidate in title_candidates
+        )
+
+        if is_japanese_origin and has_cjk_title:
+            return True
+
+        if is_japanese_origin and self.type in {"series", "tv"}:
+            # Fallback for titles missing explicit anime tags/IDs (e.g., some IMDb-only anime entries).
+            return True
+
+        return False
+
     def get_imdb_id(self) -> str | None:
         """Get IMDb ID if available.
 
@@ -566,10 +623,7 @@ class MetadataData(BaseModel):
         if imdb:
             return imdb
 
-        anime_ids = (self.get_mal_id(), self.get_kitsu_id(), self.get_anilist_id())
-        genres = {genre.strip().lower() for genre in self.genres if isinstance(genre, str)}
-        catalogs = {catalog.strip().lower() for catalog in self.catalogs if isinstance(catalog, str)}
-        is_anime = bool(any(anime_ids)) or "anime" in genres or any("anime" in catalog for catalog in catalogs)
+        is_anime = self.is_anime_metadata()
 
         if is_anime:
             mal = self.get_mal_id()

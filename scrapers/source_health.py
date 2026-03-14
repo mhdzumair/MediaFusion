@@ -9,6 +9,7 @@ from db.redis_database import REDIS_ASYNC_CLIENT
 
 METRICS_KEY_PREFIX = "public_indexer_source_health:"
 METRICS_TTL_SECONDS = settings.public_indexers_source_health_metrics_ttl_seconds
+DEFAULT_HEALTH_BUCKET = "general"
 
 
 @dataclass(frozen=True)
@@ -45,12 +46,13 @@ class SourceHealthSnapshot:
         return self.challenge_solved / self.total
 
 
-def _metrics_key(source_key: str) -> str:
+def _metrics_key(source_key: str, health_bucket: str = DEFAULT_HEALTH_BUCKET) -> str:
     normalized_source_key = (source_key or "").strip().lower()
+    normalized_bucket = _sanitize_scope_component(health_bucket) or DEFAULT_HEALTH_BUCKET
     scope = _resolve_scope()
     if not scope.scope_key:
-        return f"{METRICS_KEY_PREFIX}{normalized_source_key}"
-    return f"{METRICS_KEY_PREFIX}{scope.scope_key}:{normalized_source_key}"
+        return f"{METRICS_KEY_PREFIX}{normalized_bucket}:{normalized_source_key}"
+    return f"{METRICS_KEY_PREFIX}{scope.scope_key}:{normalized_bucket}:{normalized_source_key}"
 
 
 def _sanitize_scope_component(raw_value: str | None) -> str:
@@ -135,8 +137,9 @@ async def record_source_outcome(
     success: bool,
     timed_out: bool = False,
     challenge_solved: bool = False,
+    health_bucket: str = DEFAULT_HEALTH_BUCKET,
 ) -> None:
-    key = _metrics_key(source_key)
+    key = _metrics_key(source_key, health_bucket)
     total = await REDIS_ASYNC_CLIENT.hincrby(key, "total", 1)
     if success:
         await REDIS_ASYNC_CLIENT.hincrby(key, "success", 1)
@@ -157,8 +160,12 @@ async def record_source_outcome(
     await REDIS_ASYNC_CLIENT.expire(key, METRICS_TTL_SECONDS)
 
 
-async def get_source_health(source_key: str) -> SourceHealthSnapshot:
-    key = _metrics_key(source_key)
+async def get_source_health(
+    source_key: str,
+    *,
+    health_bucket: str = DEFAULT_HEALTH_BUCKET,
+) -> SourceHealthSnapshot:
+    key = _metrics_key(source_key, health_bucket)
     raw = await REDIS_ASYNC_CLIENT.hgetall(key)
     if not raw:
         return SourceHealthSnapshot(
@@ -185,8 +192,9 @@ async def is_source_within_budget(
     min_samples: int,
     min_success_rate: float,
     max_timeout_rate: float,
+    health_bucket: str = DEFAULT_HEALTH_BUCKET,
 ) -> bool:
-    snapshot = await get_source_health(source_key)
+    snapshot = await get_source_health(source_key, health_bucket=health_bucket)
     if snapshot.total < max(1, min_samples):
         return True
     return snapshot.success_rate >= min_success_rate and snapshot.timeout_rate <= max_timeout_rate

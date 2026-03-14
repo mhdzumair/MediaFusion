@@ -21,6 +21,7 @@ from db.redis_database import REDIS_SYNC_CLIENT
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SCRAPY_SETTINGS_MODULE = "mediafusion_scrapy.settings"
 _SPIDER_PROCESS_START_METHOD = os.getenv("SCRAPY_PROCESS_START_METHOD", "spawn").strip().lower()
 SPIDER_LOOP_JOIN_POLL_SECONDS = 5.0
 CHALLENGE_HEAVY_SPIDERS = {"tamilmv", "tamil_blasters"}
@@ -35,17 +36,30 @@ except ValueError:
     _PROCESS_CONTEXT = get_context("spawn")
 
 
+def _ensure_scrapy_settings_module() -> None:
+    configured_module = (os.environ.get("SCRAPY_SETTINGS_MODULE") or "").strip()
+    if configured_module == _SCRAPY_SETTINGS_MODULE:
+        return
+    if configured_module:
+        logger.warning(
+            "Overriding SCRAPY_SETTINGS_MODULE=%s with %s for task worker spider runs.",
+            configured_module,
+            _SCRAPY_SETTINGS_MODULE,
+        )
+    os.environ["SCRAPY_SETTINGS_MODULE"] = _SCRAPY_SETTINGS_MODULE
+
+
 def run_spider_in_process(spider_name, *args, **kwargs):
     """
     Function to start a scrapy spider in a new process.
     """
     os.chdir(_PROJECT_ROOT)
-    os.environ.setdefault("SCRAPY_SETTINGS_MODULE", "mediafusion_scrapy.settings")
+    _ensure_scrapy_settings_module()
     # Force INFO at process entry to prevent inherited DEBUG handlers from
     # parent worker contexts leaking noisy logs into Scrapy runs.
     logging.getLogger().setLevel(logging.INFO)
     settings = get_project_settings()
-    settings.set("LOG_LEVEL", "INFO")
+    settings.set("LOG_LEVEL", "INFO", priority="cmdline")
     settings.set("LOG_STDOUT", True)
     if os.getenv("SCRAPY_TEST_LIGHTWEIGHT", "0") == "1":
         # Test mode: disable DB-dependent middleware and heavy pipelines.
