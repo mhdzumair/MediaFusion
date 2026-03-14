@@ -36,6 +36,7 @@ from db.models import (
     MediaRating,
     MovieMetadata,
     ParentalCertificate,
+    PlaybackTracking,
     Person,
     SeriesMetadata,
     Stream,
@@ -888,6 +889,7 @@ async def delete_metadata(
         await session.exec(sa_delete(TelegramStream).where(TelegramStream.stream_id.in_(stream_ids)))
         await session.exec(sa_delete(ExternalLinkStream).where(ExternalLinkStream.stream_id.in_(stream_ids)))
         await session.exec(sa_delete(AceStreamStream).where(AceStreamStream.stream_id.in_(stream_ids)))
+        await session.exec(sa_delete(PlaybackTracking).where(PlaybackTracking.stream_id.in_(stream_ids)))
         await session.exec(sa_delete(Stream).where(Stream.id.in_(stream_ids)))
 
     # Delete type-specific metadata

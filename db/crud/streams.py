@@ -45,6 +45,7 @@ from db.models import (
     Language,
     LinkSource,
     Media,
+    PlaybackTracking,
     # Base stream
     Stream,
     StreamAudioLink,
@@ -137,6 +138,9 @@ async def delete_stream(
     links_query = select(StreamMediaLink.media_id).where(StreamMediaLink.stream_id == stream_id)
     links_result = await session.exec(links_query)
     media_ids = links_result.all()
+
+    # Backward-compatible FK cleanup: some deployments may not have ON DELETE CASCADE yet.
+    await session.exec(sa_delete(PlaybackTracking).where(PlaybackTracking.stream_id == stream_id))
 
     # Delete the stream (cascades to links)
     result = await session.exec(sa_delete(Stream).where(Stream.id == stream_id))

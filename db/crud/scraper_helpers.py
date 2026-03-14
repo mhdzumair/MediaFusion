@@ -1985,6 +1985,7 @@ async def delete_torrent_stream(
     # Delete dependent records before the base stream
     await session.exec(sa_delete(StreamMediaLink).where(StreamMediaLink.stream_id == torrent.stream_id))
     await session.exec(sa_delete(TorrentStream).where(TorrentStream.stream_id == torrent.stream_id))
+    await session.exec(sa_delete(PlaybackTracking).where(PlaybackTracking.stream_id == torrent.stream_id))
     await session.exec(sa_delete(Stream).where(Stream.id == torrent.stream_id))
 
     # Update media stream counts
@@ -2292,6 +2293,7 @@ async def delete_tv_stream(
     stream_id: int,
 ) -> bool:
     """Delete a TV stream."""
+    await session.exec(sa_delete(PlaybackTracking).where(PlaybackTracking.stream_id == stream_id))
     result = await session.exec(sa_delete(Stream).where(Stream.id == stream_id))
     await session.flush()
     return result.rowcount > 0

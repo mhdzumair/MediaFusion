@@ -802,6 +802,7 @@ async def get_or_create_usenet_video_url(
 
     kwargs = dict(
         nzb_hash=nzb_guid,
+        nzb_url=stream.nzb_url,
         streaming_provider=streaming_provider,
         filename=filename,
         user_ip=user_ip,

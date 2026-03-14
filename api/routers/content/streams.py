@@ -3,6 +3,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import delete as sa_delete
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -14,6 +15,7 @@ from db.models import (
     ExternalLinkStream,
     HTTPStream,
     Media,
+    PlaybackTracking,
     Stream,
     StreamMediaLink,
     StreamType,
@@ -66,6 +68,9 @@ async def delete_stream_by_base_id(session: AsyncSession, stream_id: int) -> str
         type_row = type_row_result.first()
         if type_row:
             await session.delete(type_row)
+
+    # Backward-compatible FK cleanup for schemas without stream_id CASCADE on playback_tracking.
+    await session.exec(sa_delete(PlaybackTracking).where(PlaybackTracking.stream_id == stream_id))
 
     # Delete base stream (cascades remove language/quality links, files, etc).
     await session.delete(base_stream)
