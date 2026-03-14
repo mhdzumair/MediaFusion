@@ -110,6 +110,7 @@ class AppConfig(BaseModel):
     nzb_file_import_enabled: bool
     image_upload_enabled: bool
     nzbdav_configured: bool  # Whether operator has pre-configured NzbDAV defaults
+    premiumize_oauth_configured: bool  # Whether Premiumize OAuth client credentials are configured
     telegram: TelegramFeatureConfig
 
 
@@ -178,6 +179,9 @@ async def get_app_config():
         nzb_file_import_enabled=settings.enable_nzb_file_import,
         image_upload_enabled=settings.image_upload_enabled,
         nzbdav_configured=bool(settings.default_nzbdav_url and settings.default_nzbdav_api_key),
+        premiumize_oauth_configured=bool(
+            settings.premiumize_oauth_client_id and settings.premiumize_oauth_client_secret
+        ),
         telegram=TelegramFeatureConfig(
             enabled=settings.is_scrap_from_telegram,
             bot_configured=bool(settings.telegram_bot_token),

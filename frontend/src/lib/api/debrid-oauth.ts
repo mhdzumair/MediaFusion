@@ -21,22 +21,33 @@ export interface AuthorizeResponse {
   message?: string
 }
 
+export type OAuthMode = 'device_code' | 'redirect'
+
+interface OAuthProviderEndpoints {
+  mode: OAuthMode
+  authorize: string
+  getDeviceCode?: string
+}
+
 // OAuth endpoints for different providers
 // Note: AllDebrid does NOT support OAuth - it only uses API key
-const OAUTH_ENDPOINTS: Record<string, { getDeviceCode: string; authorize: string }> = {
+const OAUTH_ENDPOINTS: Record<string, OAuthProviderEndpoints> = {
   realdebrid: {
+    mode: 'device_code',
     getDeviceCode: '/streaming_provider/realdebrid/get-device-code',
     authorize: '/streaming_provider/realdebrid/authorize',
   },
   premiumize: {
-    getDeviceCode: '/streaming_provider/premiumize/get-device-code',
+    mode: 'redirect',
     authorize: '/streaming_provider/premiumize/authorize',
   },
   debridlink: {
+    mode: 'device_code',
     getDeviceCode: '/streaming_provider/debridlink/get-device-code',
     authorize: '/streaming_provider/debridlink/authorize',
   },
   seedr: {
+    mode: 'device_code',
     getDeviceCode: '/streaming_provider/seedr/get-device-code',
     authorize: '/streaming_provider/seedr/authorize',
   },
@@ -49,6 +60,9 @@ export async function getDeviceCode(provider: string): Promise<DeviceCodeRespons
   const endpoints = OAUTH_ENDPOINTS[provider]
   if (!endpoints) {
     throw new Error(`OAuth not supported for provider: ${provider}`)
+  }
+  if (endpoints.mode !== 'device_code' || !endpoints.getDeviceCode) {
+    throw new Error(`${provider} does not use device-code OAuth`)
   }
 
   const response = await fetch(endpoints.getDeviceCode)
@@ -67,6 +81,9 @@ export async function authorizeWithDeviceCode(provider: string, deviceCode: stri
   const endpoints = OAUTH_ENDPOINTS[provider]
   if (!endpoints) {
     throw new Error(`OAuth not supported for provider: ${provider}`)
+  }
+  if (endpoints.mode !== 'device_code') {
+    throw new Error(`${provider} does not support device-code polling`)
   }
 
   const response = await fetch(endpoints.authorize, {
@@ -97,4 +114,18 @@ export function isOAuthSupported(provider: string): boolean {
  */
 export function getOAuthProviders(): string[] {
   return Object.keys(OAUTH_ENDPOINTS)
+}
+
+/**
+ * Get OAuth mode for a provider
+ */
+export function getOAuthMode(provider: string): OAuthMode | null {
+  return OAUTH_ENDPOINTS[provider]?.mode ?? null
+}
+
+/**
+ * Get provider authorization URL endpoint
+ */
+export function getOAuthAuthorizationUrl(provider: string): string | null {
+  return OAUTH_ENDPOINTS[provider]?.authorize ?? null
 }

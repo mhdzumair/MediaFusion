@@ -35,7 +35,14 @@ import type {
   EasynewsConfig,
   StreamingProviderConfigType,
 } from './types'
-import { getDeviceCode, authorizeWithDeviceCode, type DeviceCodeResponse } from '@/lib/api/debrid-oauth'
+import {
+  getDeviceCode,
+  authorizeWithDeviceCode,
+  getOAuthMode,
+  getOAuthAuthorizationUrl,
+  type DeviceCodeResponse,
+} from '@/lib/api/debrid-oauth'
+import { decryptUserData } from '@/lib/api/anonymous'
 
 type SignupLinksByProvider = Record<string, string[]>
 
@@ -65,6 +72,65 @@ const normalizeSignupLinks = (rawValue: unknown): SignupLinksByProvider => {
 
 const DEFAULT_MAX_PROVIDERS = 5
 
+const getSecretStrFromOAuthPopupUrl = (url: string): string | null => {
+  try {
+    const parsedUrl = new URL(url, window.location.origin)
+    const querySecret = parsedUrl.searchParams.get('secret_str')
+    if (querySecret) {
+      return querySecret
+    }
+
+    const legacyPathMatch = parsedUrl.pathname.match(/^\/([^/]+)\/configure\/?$/)
+    if (legacyPathMatch?.[1]) {
+      return decodeURIComponent(legacyPathMatch[1])
+    }
+  } catch {
+    return null
+  }
+
+  return null
+}
+
+const getProviderTokenFromConfig = (config: Record<string, unknown>, providerService: string): string | null => {
+  const getToken = (candidate: unknown): string | null => {
+    if (!candidate || typeof candidate !== 'object') return null
+    const tokenLike = candidate as { tk?: unknown; token?: unknown }
+    if (typeof tokenLike.tk === 'string' && tokenLike.tk.trim()) return tokenLike.tk
+    if (typeof tokenLike.token === 'string' && tokenLike.token.trim()) return tokenLike.token
+    return null
+  }
+
+  const providerMatches = (candidate: unknown): boolean => {
+    if (!candidate || typeof candidate !== 'object') return false
+    const providerLike = candidate as { sv?: unknown; service?: unknown }
+    return providerLike.sv === providerService || providerLike.service === providerService
+  }
+
+  const aliasProviders = Array.isArray(config.sps) ? config.sps : []
+  for (const provider of aliasProviders) {
+    if (providerMatches(provider)) {
+      return getToken(provider)
+    }
+  }
+
+  const verboseProviders = Array.isArray(config.streaming_providers) ? config.streaming_providers : []
+  for (const provider of verboseProviders) {
+    if (providerMatches(provider)) {
+      return getToken(provider)
+    }
+  }
+
+  if (providerMatches(config.sp)) {
+    return getToken(config.sp)
+  }
+
+  if (providerMatches(config.streaming_provider)) {
+    return getToken(config.streaming_provider)
+  }
+
+  return null
+}
+
 interface SingleProviderEditorProps {
   provider: StreamingProviderConfigType
   index: number
@@ -80,6 +146,7 @@ interface SingleProviderEditorProps {
   disabledProviders: string[]
   signupLinksByProvider: SignupLinksByProvider
   hasMediaFlowConfigured: boolean // Whether MediaFlow is globally configured
+  premiumizeOAuthConfigured: boolean
 }
 
 function SingleProviderEditor({
@@ -97,6 +164,7 @@ function SingleProviderEditor({
   disabledProviders,
   signupLinksByProvider,
   hasMediaFlowConfigured,
+  premiumizeOAuthConfigured,
 }: SingleProviderEditorProps) {
   // Filter available providers based on disabled list
   const availableProviders = useMemo(() => {
@@ -120,8 +188,12 @@ function SingleProviderEditor({
   const [oauthSuccess, setOauthSuccess] = useState(false)
   const [codeCopied, setCodeCopied] = useState(false)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const popupPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const oauthPopupRef = useRef<Window | null>(null)
 
   const selectedProvider = STREAMING_PROVIDERS.find((p) => p.value === (provider.sv || ''))
+  const isPremiumizeOAuthAvailable = selectedProvider?.value !== 'premiumize' || premiumizeOAuthConfigured
+  const isOAuthAvailable = Boolean(selectedProvider?.hasOAuth && isPremiumizeOAuthAvailable)
   const signupLink = useMemo(
     () => getRandomSignupLink(provider.sv ? signupLinksByProvider[provider.sv] : undefined),
     [provider.sv, signupLinksByProvider],
@@ -133,6 +205,12 @@ function SingleProviderEditor({
     return () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
+      }
+      if (popupPollRef.current) {
+        clearInterval(popupPollRef.current)
+      }
+      if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
+        oauthPopupRef.current.close()
       }
     }
   }, [])
@@ -200,11 +278,97 @@ function SingleProviderEditor({
   // Start OAuth flow
   const startOAuthFlow = async () => {
     if (!selectedProvider?.value) return
+    if (selectedProvider.value === 'premiumize' && !premiumizeOAuthConfigured) {
+      setOauthError('Premiumize OAuth is not configured on this instance. Use your API token instead.')
+      return
+    }
+
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
+    }
 
     setIsAuthorizing(true)
     setOauthError(null)
     setOauthSuccess(false)
     setCodeCopied(false)
+
+    const oauthMode = getOAuthMode(selectedProvider.value)
+    if (oauthMode === 'redirect') {
+      const authorizationUrl = getOAuthAuthorizationUrl(selectedProvider.value)
+      if (!authorizationUrl) {
+        setOauthError(`OAuth authorization URL not found for ${selectedProvider.label}`)
+        setIsAuthorizing(false)
+        return
+      }
+
+      if (popupPollRef.current) {
+        clearInterval(popupPollRef.current)
+        popupPollRef.current = null
+      }
+
+      const providerValue = selectedProvider.value
+      const authTab = window.open(authorizationUrl, '_blank')
+      if (!authTab) {
+        setOauthError('Could not open authorization tab. Please allow popups/tabs for this site and try again.')
+        setIsAuthorizing(false)
+        return
+      }
+
+      oauthPopupRef.current = authTab
+      popupPollRef.current = setInterval(async () => {
+        const activeTab = oauthPopupRef.current
+        if (!activeTab || activeTab.closed) {
+          if (popupPollRef.current) {
+            clearInterval(popupPollRef.current)
+            popupPollRef.current = null
+          }
+          oauthPopupRef.current = null
+          setOauthError('Authorization tab was closed before completion.')
+          setIsAuthorizing(false)
+          return
+        }
+
+        let tabUrl: string
+        try {
+          tabUrl = activeTab.location.href
+        } catch {
+          return
+        }
+
+        const secretStr = getSecretStrFromOAuthPopupUrl(tabUrl)
+        if (!secretStr) {
+          return
+        }
+
+        if (popupPollRef.current) {
+          clearInterval(popupPollRef.current)
+          popupPollRef.current = null
+        }
+
+        const oauthResult = await decryptUserData(secretStr)
+        if (oauthResult.status === 'error' || !oauthResult.config) {
+          setOauthError(oauthResult.message || 'Premiumize authorization completed, but token fetch failed.')
+          setIsAuthorizing(false)
+          return
+        }
+
+        const token = getProviderTokenFromConfig(oauthResult.config, providerValue)
+        if (!token) {
+          setOauthError('Premiumize authorization completed, but token was not found in the callback payload.')
+          setIsAuthorizing(false)
+          return
+        }
+
+        onUpdate({ tk: token })
+        setOauthSuccess(true)
+        setOauthError(null)
+        setIsAuthorizing(false)
+        activeTab.close()
+        oauthPopupRef.current = null
+      }, 1000)
+      return
+    }
 
     try {
       const deviceCode = await getDeviceCode(selectedProvider.value)
@@ -282,6 +446,14 @@ function SingleProviderEditor({
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current)
     }
+    if (popupPollRef.current) {
+      clearInterval(popupPollRef.current)
+      popupPollRef.current = null
+    }
+    if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
+      oauthPopupRef.current.close()
+    }
+    oauthPopupRef.current = null
     setOauthDialogOpen(false)
     setOauthDeviceCode(null)
     setOauthError(null)
@@ -494,7 +666,7 @@ function SingleProviderEditor({
           )}
 
           {/* OAuth Button */}
-          {selectedProvider?.hasOAuth && (
+          {isOAuthAvailable && (
             <div className="space-y-2">
               <Label>Authorization</Label>
               <div className="flex items-center gap-2">
@@ -512,7 +684,7 @@ function SingleProviderEditor({
                   ) : (
                     <>
                       <ExternalLink className="h-4 w-4" />
-                      Authorize {selectedProvider.label}
+                      Authorize {selectedProvider?.label}
                     </>
                   )}
                 </Button>
@@ -525,6 +697,15 @@ function SingleProviderEditor({
                 </Alert>
               )}
             </div>
+          )}
+
+          {selectedProvider?.value === 'premiumize' && !premiumizeOAuthConfigured && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Premiumize OAuth is not configured by this instance operator. Paste your Premiumize API token below.
+              </AlertDescription>
+            </Alert>
           )}
 
           {/* Token Input */}
@@ -1141,6 +1322,7 @@ export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
   const [disabledProviders, setDisabledProviders] = useState<string[]>([])
   const [signupLinksByProvider, setSignupLinksByProvider] = useState<SignupLinksByProvider>({})
   const [nzbdavConfigured, setNzbdavConfigured] = useState(false)
+  const [premiumizeOAuthConfigured, setPremiumizeOAuthConfigured] = useState(false)
   const [maxProviders, setMaxProviders] = useState(DEFAULT_MAX_PROVIDERS)
 
   // Fetch disabled providers and operator defaults from app config
@@ -1161,6 +1343,7 @@ export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
         if (data.nzbdav_configured) {
           setNzbdavConfigured(true)
         }
+        setPremiumizeOAuthConfigured(data.premiumize_oauth_configured === true)
       })
       .catch((err) => console.error('Failed to fetch app config:', err))
   }, [])
@@ -1323,6 +1506,7 @@ export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
                 disabledProviders={disabledProviders}
                 signupLinksByProvider={signupLinksByProvider}
                 hasMediaFlowConfigured={!!(config.mfc?.pu && config.mfc?.ap)}
+                premiumizeOAuthConfigured={premiumizeOAuthConfigured}
               />
             ))}
           </div>

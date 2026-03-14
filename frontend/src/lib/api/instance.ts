@@ -60,6 +60,7 @@ export interface AppConfig {
   nzb_file_import_enabled: boolean
   image_upload_enabled: boolean
   nzbdav_configured: boolean // Whether operator has pre-configured NzbDAV defaults
+  premiumize_oauth_configured: boolean // Whether Premiumize OAuth is configured on this instance
   telegram: TelegramFeatureConfig
 }
 
