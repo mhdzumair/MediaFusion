@@ -54,6 +54,7 @@ from utils import const, crypto, torrent, wrappers
 from utils.const import CONTENT_TYPE_HEADERS_MAPPING
 from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.network import encode_mediaflow_proxy_url, get_user_data, get_user_public_ip
+from utils.usenet_url_resolver import build_user_scoped_nzb_url
 from utils.nzb_storage import generate_signed_nzb_url
 from utils.telegram_file_id import extract_document_id_from_file_id
 from utils.telegram_bot import telegram_content_bot
@@ -769,6 +770,7 @@ async def fetch_usenet_stream_or_404(nzb_guid: str) -> UsenetStreamData:
 
 async def get_or_create_usenet_video_url(
     stream: UsenetStreamData,
+    user_data: schemas.UserData,
     streaming_provider: schemas.StreamingProvider,
     nzb_guid: str,
     season: int | None,
@@ -780,6 +782,8 @@ async def get_or_create_usenet_video_url(
     """
     Retrieves or generates the video URL for Usenet content.
     """
+    stream.nzb_url = build_user_scoped_nzb_url(stream, user_data)
+
     # Get main file for fallback
     main_file = stream.get_main_file()
 
@@ -910,6 +914,7 @@ async def usenet_playback_endpoint(
 
         video_url, resolved_filename = await get_or_create_usenet_video_url(
             stream,
+            user_data,
             streaming_provider,
             nzb_guid,
             season,

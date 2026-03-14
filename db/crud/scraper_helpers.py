@@ -85,6 +85,7 @@ from db.models import (
     WatchHistory,
 )
 from db.redis_database import REDIS_ASYNC_CLIENT
+from utils.url_safety import sanitize_nzb_url
 
 logger = logging.getLogger(__name__)
 
@@ -1838,7 +1839,7 @@ async def store_new_usenet_streams(
         usenet_stream = UsenetStream(
             stream_id=stream.id,
             nzb_guid=nzb_guid,
-            nzb_url=stream_data.get("nzb_url"),
+            nzb_url=sanitize_nzb_url(stream_data.get("nzb_url")),
             size=stream_data.get("size") or stream_data.get("total_size", 0),
             indexer=stream_data.get("indexer") or stream_data.get("source", ""),
             group_name=stream_data.get("group_name"),

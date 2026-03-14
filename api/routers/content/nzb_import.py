@@ -40,6 +40,7 @@ from utils.nzb import generate_nzb_hash, parse_nzb_content
 from utils.nzb_storage import get_nzb_storage, verify_nzb_signature
 from utils.notification_registry import send_pending_contribution_notification
 from utils.parser import convert_bytes_to_readable
+from utils.url_safety import sanitize_nzb_url
 from utils.zyclops import submit_nzb_to_zyclops
 
 logger = logging.getLogger(__name__)
@@ -297,7 +298,7 @@ async def process_nzb_import(
     usenet_stream = UsenetStream(
         stream_id=stream.id,
         nzb_guid=nzb_guid,
-        nzb_url=contribution_data.get("nzb_url"),
+        nzb_url=sanitize_nzb_url(contribution_data.get("nzb_url")),
         size=total_size,
         indexer=indexer,
         group_name=contribution_data.get("group_name"),
@@ -690,7 +691,7 @@ async def import_nzb_url(
     """
     Import an NZB via URL.
     Downloads the NZB file and processes it.
-    The nzb_url is stored directly (no file storage needed).
+    The NZB URL is sanitized before persistence (no file storage needed).
 
     Set is_anonymous=True to contribute anonymously.
     If not provided, uses your account's default contribution preference.
@@ -747,7 +748,7 @@ async def import_nzb_url(
 
         contribution_data = {
             "nzb_guid": nzb_guid,
-            "nzb_url": data.nzb_url,
+            "nzb_url": sanitize_nzb_url(data.nzb_url),
             "meta_type": data.meta_type,
             "meta_id": data.meta_id,
             "title": resolved_title,

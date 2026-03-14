@@ -18,6 +18,7 @@ from scrapers.base_scraper import BaseScraper, ScraperMetrics
 from streaming_providers.easynews.client import Easynews
 from utils.parser import calculate_max_similarity_ratio, is_contain_18_plus_keywords
 from utils.runtime_const import EASYNEWS_SEARCH_TTL
+from utils.url_safety import sanitize_nzb_url
 
 logger = logging.getLogger(__name__)
 
@@ -322,7 +323,7 @@ class EasynewsScraper(BaseScraper):
             # Create stream data
             stream = UsenetStreamData(
                 nzb_guid=item_hash,
-                nzb_url=download_url,  # For Easynews, this is the direct stream URL
+                nzb_url=sanitize_nzb_url(download_url),
                 name=filename,
                 size=size,
                 indexer="Easynews",

@@ -26,6 +26,7 @@ from db.schemas.media import UsenetStreamData
 from scrapers.base_scraper import BaseScraper, ScraperMetrics
 from utils.parser import calculate_max_similarity_ratio, is_contain_18_plus_keywords
 from utils.runtime_const import NEWZNAB_SEARCH_TTL
+from utils.url_safety import sanitize_nzb_url
 from utils.zyclops import submit_nzb_to_zyclops
 
 logger = logging.getLogger(__name__)
@@ -626,13 +627,23 @@ class NewznabScraper(BaseScraper):
             # Generate unique hash for this NZB
             nzb_hash = hashlib.sha256(f"{indexer.url}:{guid}".encode()).hexdigest()[:40]
 
-            # Build NZB URL
-            nzb_url = item.get("link")
-            if not nzb_url:
-                query = {"t": "get", "id": guid}
-                if indexer.api_key:
-                    query["apikey"] = indexer.api_key
+            # Build credential-free NZB URL that can be user-scoped at playback time.
+            link_url = item.get("link") or ""
+            link_id = ""
+            if link_url:
+                try:
+                    link_query = dict(parse_qsl(urlsplit(link_url).query, keep_blank_values=True))
+                    link_id = str(link_query.get("id") or "").strip()
+                except Exception:
+                    link_id = ""
+
+            download_id = link_id or guid
+            nzb_url = None
+            if download_id:
+                query = {"t": "get", "id": download_id}
                 nzb_url = f"{self._build_api_url(str(indexer.url))}?{urlencode(query)}"
+            elif link_url:
+                nzb_url = sanitize_nzb_url(link_url)
 
             # Build files list for series
             files: list[StreamFileData] = []

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Optional
 from pydantic import BaseModel, Field, computed_field, model_validator
 
 from db.schemas.stremio import StreamBehaviorHints
+from utils.url_safety import sanitize_nzb_url
 
 if TYPE_CHECKING:
     from db.models import (
@@ -1144,6 +1145,7 @@ class UsenetStreamData(BaseModel):
             UsenetStreamData Pydantic model
         """
         stream = usenet_stream.stream
+        nzb_url = sanitize_nzb_url(usenet_stream.nzb_url)
 
         # Extract multi-value attributes from relationships
         languages = [lang.name for lang in stream.languages] if stream.languages else []
@@ -1178,7 +1180,7 @@ class UsenetStreamData(BaseModel):
 
         return cls(
             nzb_guid=usenet_stream.nzb_guid,
-            nzb_url=usenet_stream.nzb_url,
+            nzb_url=nzb_url,
             size=usenet_stream.size,
             indexer=usenet_stream.indexer,
             group_name=usenet_stream.group_name,

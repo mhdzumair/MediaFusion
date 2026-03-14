@@ -72,6 +72,7 @@ from db.models import (
     YouTubeStream,
 )
 from utils.telegram_file_id import extract_document_id_from_file_id
+from utils.url_safety import sanitize_nzb_url
 
 logger = logging.getLogger(__name__)
 
@@ -602,6 +603,8 @@ async def create_usenet_stream(
         is_passworded: Whether content is password protected
         ... quality and relationship args ...
     """
+    sanitized_nzb_url = sanitize_nzb_url(nzb_url)
+
     # Create base stream
     stream = Stream(
         stream_type=StreamType.USENET,
@@ -631,7 +634,7 @@ async def create_usenet_stream(
     usenet_stream = UsenetStream(
         stream_id=stream.id,
         nzb_guid=nzb_guid,
-        nzb_url=nzb_url,
+        nzb_url=sanitized_nzb_url,
         size=size,
         indexer=indexer,
         group_name=group_name,
@@ -725,6 +728,9 @@ async def update_usenet_stream(
 
     if stream_updates:
         await session.exec(sa_update(Stream).where(Stream.id == usenet_stream.stream_id).values(**stream_updates))
+
+    if "nzb_url" in usenet_updates:
+        usenet_updates["nzb_url"] = sanitize_nzb_url(usenet_updates.get("nzb_url"))
 
     if usenet_updates:
         await session.exec(sa_update(UsenetStream).where(UsenetStream.nzb_guid == nzb_guid).values(**usenet_updates))

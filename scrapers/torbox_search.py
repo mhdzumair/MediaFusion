@@ -17,6 +17,7 @@ from db.schemas import MetadataData, StreamFileData, TorrentStreamData, UserData
 from scrapers.base_scraper import BaseScraper
 from utils.parser import calculate_max_similarity_ratio, is_contain_18_plus_keywords
 from utils.runtime_const import TORBOX_SEARCH_TTL
+from utils.url_safety import sanitize_nzb_url
 
 logger = logging.getLogger(__name__)
 
@@ -584,7 +585,7 @@ class TorBoxSearchScraper(BaseScraper):
 
         stream = UsenetStreamData(
             nzb_guid=str(nzb_guid),
-            nzb_url=nzb_url,  # TorBox Search provides direct NZB download URL
+            nzb_url=sanitize_nzb_url(nzb_url),
             name=raw_title,
             meta_id=metadata.get_canonical_id() if metadata else "",
             size=size,

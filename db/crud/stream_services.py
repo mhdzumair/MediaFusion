@@ -58,6 +58,7 @@ from db.schemas import (
 )
 from db.schemas.media import HTTPStreamData, TelegramStreamData, UsenetStreamData
 from utils.network import encode_mediaflow_acestream_url
+from utils.usenet_url_resolver import apply_user_scoped_nzb_urls
 from utils.youtube import format_geo_restriction_label
 
 # Providers that support Usenet content - defined here to avoid circular import
@@ -1354,6 +1355,9 @@ async def get_movie_streams(
     if "youtube" in disabled:
         youtube_stream_data_list = []
 
+    if usenet_stream_data_list:
+        apply_user_scoped_nzb_urls(usenet_stream_data_list, user_data)
+
     if (
         not stream_data_list
         and not usenet_stream_data_list
@@ -1606,6 +1610,9 @@ async def get_series_streams(
         formatted_acestream_streams = []
     if "youtube" in disabled:
         youtube_stream_data_list = []
+
+    if usenet_stream_data_list:
+        apply_user_scoped_nzb_urls(usenet_stream_data_list, user_data)
 
     if (
         not stream_data_list
