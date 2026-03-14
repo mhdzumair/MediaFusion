@@ -63,6 +63,23 @@ from utils.youtube import format_geo_restriction_label
 # Providers that support Usenet content - defined here to avoid circular import
 # This should be kept in sync with streaming_providers.mapper.USENET_CAPABLE_PROVIDERS
 USENET_CAPABLE_PROVIDERS = {"torbox", "debrider", "sabnzbd", "nzbget", "nzbdav", "easynews", "stremio_nntp"}
+# Providers that can play torrent streams directly.
+# Keep in sync with streaming_providers.mapper.GET_VIDEO_URL_FUNCTIONS (+ "p2p").
+TORRENT_CAPABLE_PROVIDERS = {
+    "alldebrid",
+    "debridlink",
+    "offcloud",
+    "pikpak",
+    "premiumize",
+    "qbittorrent",
+    "realdebrid",
+    "seedr",
+    "torbox",
+    "stremthru",
+    "easydebrid",
+    "debrider",
+    "p2p",
+}
 
 # Redis cache settings for raw stream data
 STREAM_CACHE_TTL = 1800  # 30 minutes
@@ -262,22 +279,32 @@ async def _run_live_search_scrapers(
     scraper_tasks = _get_scraper_tasks_module()
     torrent_streams: list[TorrentStreamData] = []
     usenet_streams: list[UsenetStreamData] = []
-
-    try:
-        torrent_streams = list(
-            await scraper_tasks.run_scrapers(
-                user_data=user_data,
-                metadata=metadata,
-                catalog_type=catalog_type,
-                season=season,
-                episode=episode,
-            )
-        )
-    except Exception as exc:
-        logger.warning("Live torrent scraping failed for %s: %s", metadata.external_id, exc)
-
-    has_usenet_provider = any(sp.service in USENET_CAPABLE_PROVIDERS for sp in user_data.get_active_providers())
+    active_providers = user_data.get_active_providers()
+    has_torrent_provider = (
+        True if not active_providers else any(sp.service in TORRENT_CAPABLE_PROVIDERS for sp in active_providers)
+    )
+    has_usenet_provider = any(sp.service in USENET_CAPABLE_PROVIDERS for sp in active_providers)
     has_newznab_indexers = bool(user_data.indexer_config and user_data.indexer_config.newznab_indexers)
+
+    if has_torrent_provider:
+        try:
+            torrent_streams = list(
+                await scraper_tasks.run_scrapers(
+                    user_data=user_data,
+                    metadata=metadata,
+                    catalog_type=catalog_type,
+                    season=season,
+                    episode=episode,
+                )
+            )
+        except Exception as exc:
+            logger.warning("Live torrent scraping failed for %s: %s", metadata.external_id, exc)
+    else:
+        logger.info(
+            "Skipping live torrent scraping for %s: no torrent-capable provider configured",
+            metadata.external_id,
+        )
+
     if user_data.enable_usenet_streams and (has_usenet_provider or has_newznab_indexers):
         try:
             usenet_streams = await scraper_tasks.run_usenet_scrapers(
