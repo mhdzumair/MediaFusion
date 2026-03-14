@@ -92,6 +92,7 @@ export interface ContributionReviewRequest {
 export interface ContributionBulkReviewRequest {
   action: 'approve' | 'reject'
   contribution_type?: ContributionType
+  contribution_ids?: string[]
   review_notes?: string
 }
 

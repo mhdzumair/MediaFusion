@@ -6,7 +6,7 @@ Includes auto-approval for trusted users and full field editing support.
 import json
 import logging
 from datetime import datetime
-from typing import Literal
+from typing import Literal, TypedDict
 
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -28,6 +28,7 @@ from db.models import (
     FileMediaLink,
     HDRFormat,
     Media,
+    MediaImage,
     Stream,
     StreamFile,
     StreamMediaLink,
@@ -250,6 +251,16 @@ class StreamSuggestionResponse(BaseModel):
     stream_id: int
     stream_name: str | None = None
     media_id: int | None = None  # Internal media ID
+    source_media_id: int | None = None
+    source_media_type: str | None = None
+    source_media_title: str | None = None
+    source_media_year: int | None = None
+    source_media_poster_url: str | None = None
+    target_media_id: int | None = None
+    target_media_type: str | None = None
+    target_media_title: str | None = None
+    target_media_year: int | None = None
+    target_media_poster_url: str | None = None
     suggestion_type: str
     field_name: str | None = None
     current_value: str | None = None
@@ -468,6 +479,214 @@ async def _resolve_target_media_id(
 
     logger.error("Failed to resolve or create media for external ID %s", normalized_external_id)
     return None
+
+
+class MediaPreviewContext(TypedDict):
+    media_id: int | None
+    media_type: str | None
+    media_title: str | None
+    media_year: int | None
+    media_poster_url: str | None
+
+
+def _empty_media_preview_context() -> MediaPreviewContext:
+    return {
+        "media_id": None,
+        "media_type": None,
+        "media_title": None,
+        "media_year": None,
+        "media_poster_url": None,
+    }
+
+
+async def _get_media_preview_context_map(
+    session: AsyncSession,
+    media_ids: list[int],
+) -> dict[int, MediaPreviewContext]:
+    """Build media preview context map for a batch of media IDs."""
+    if not media_ids:
+        return {}
+
+    unique_media_ids = list(dict.fromkeys(media_ids))
+    context_by_media_id: dict[int, MediaPreviewContext] = {
+        media_id: _empty_media_preview_context() for media_id in unique_media_ids
+    }
+
+    media_query = select(Media).where(Media.id.in_(unique_media_ids))
+    media_result = await session.exec(media_query)
+    for media in media_result.all():
+        context_by_media_id[media.id].update(
+            {
+                "media_id": media.id,
+                "media_type": media.type.value if media.type else None,
+                "media_title": media.title,
+                "media_year": media.year,
+            }
+        )
+
+    images_query = (
+        select(MediaImage)
+        .where(
+            MediaImage.media_id.in_(unique_media_ids),
+            MediaImage.image_type == "poster",
+        )
+        .order_by(
+            MediaImage.media_id,
+            MediaImage.is_primary.desc(),
+            MediaImage.display_order.asc(),
+            MediaImage.id.asc(),
+        )
+    )
+    images_result = await session.exec(images_query)
+    for image in images_result.all():
+        media_context = context_by_media_id.get(image.media_id)
+        if media_context and not media_context["media_poster_url"]:
+            media_context["media_poster_url"] = image.url
+
+    return context_by_media_id
+
+
+def _parse_stream_suggestion_type(raw_type: str) -> str:
+    """Normalize stored suggestion type values."""
+    if ":" in raw_type:
+        return raw_type.split(":", 1)[0]
+    return raw_type
+
+
+def _parse_link_suggestion_data(suggestion: StreamSuggestion) -> dict[str, object]:
+    """Extract relink/add-link payload from suggested_value JSON."""
+    suggestion_type = _parse_stream_suggestion_type(suggestion.suggestion_type)
+    if suggestion_type not in {"relink_media", "add_media_link"}:
+        return {}
+    if not suggestion.suggested_value:
+        return {}
+
+    try:
+        parsed = json.loads(suggestion.suggested_value)
+    except json.JSONDecodeError:
+        return {}
+
+    if not isinstance(parsed, dict):
+        return {}
+    return parsed
+
+
+def _resolve_media_type_literal(value: object) -> TargetMediaTypeLiteral | None:
+    """Normalize media type value from persisted suggestion payload."""
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"movie", "series", "tv"}:
+        return normalized
+    return None
+
+
+async def _build_source_media_context_map(
+    session: AsyncSession,
+    stream_ids: list[int],
+) -> dict[int, MediaPreviewContext]:
+    """Map stream_id -> source media preview context."""
+    if not stream_ids:
+        return {}
+
+    unique_stream_ids = list(dict.fromkeys(stream_ids))
+    stream_links_query = (
+        select(StreamMediaLink)
+        .where(StreamMediaLink.stream_id.in_(unique_stream_ids))
+        .order_by(StreamMediaLink.stream_id, StreamMediaLink.is_primary.desc(), StreamMediaLink.id.asc())
+    )
+    stream_links_result = await session.exec(stream_links_query)
+    stream_links = stream_links_result.all()
+
+    primary_media_by_stream: dict[int, int] = {}
+    for link in stream_links:
+        if link.stream_id not in primary_media_by_stream:
+            primary_media_by_stream[link.stream_id] = link.media_id
+
+    media_preview_map = await _get_media_preview_context_map(session, list(primary_media_by_stream.values()))
+    source_context_by_stream: dict[int, MediaPreviewContext] = {}
+    for stream_id, media_id in primary_media_by_stream.items():
+        source_context_by_stream[stream_id] = media_preview_map.get(media_id, _empty_media_preview_context())
+
+    return source_context_by_stream
+
+
+async def _build_target_media_context_map(
+    session: AsyncSession,
+    suggestions: list[StreamSuggestion],
+) -> dict[str, MediaPreviewContext]:
+    """Map suggestion_id -> target media preview context for relink/add-link suggestions."""
+    if not suggestions:
+        return {}
+
+    target_media_id_by_suggestion: dict[str, int] = {}
+    target_title_hint_by_suggestion: dict[str, str] = {}
+    fallback_type_by_suggestion: dict[str, TargetMediaTypeLiteral] = {}
+
+    for suggestion in suggestions:
+        link_data = _parse_link_suggestion_data(suggestion)
+        if not link_data:
+            continue
+
+        target_title = link_data.get("target_title")
+        if isinstance(target_title, str) and target_title.strip():
+            target_title_hint_by_suggestion[suggestion.id] = target_title.strip()
+
+        media_type_literal = _resolve_media_type_literal(link_data.get("target_media_type"))
+        if media_type_literal:
+            fallback_type_by_suggestion[suggestion.id] = media_type_literal
+
+        raw_target_media_id = link_data.get("target_media_id")
+        if isinstance(raw_target_media_id, int) and raw_target_media_id > 0:
+            target_media_id_by_suggestion[suggestion.id] = raw_target_media_id
+            continue
+
+        target_external_id = _normalize_external_id_input(link_data.get("target_external_id"))
+        if not target_external_id:
+            continue
+
+        if target_external_id.startswith("mf:"):
+            try:
+                parsed_media_id = int(target_external_id.split(":", 1)[1])
+            except (TypeError, ValueError):
+                continue
+            if parsed_media_id > 0:
+                target_media_id_by_suggestion[suggestion.id] = parsed_media_id
+            continue
+
+        media_type_enum_map = {
+            "movie": MediaType.MOVIE,
+            "series": MediaType.SERIES,
+            "tv": MediaType.TV,
+        }
+        media_type_enum = media_type_enum_map.get(media_type_literal)
+        existing_media = await get_media_by_external_id(session, target_external_id, media_type_enum)
+        if existing_media:
+            target_media_id_by_suggestion[suggestion.id] = existing_media.id
+            continue
+
+        existing_media_any_type = await get_media_by_external_id(session, target_external_id, None)
+        if existing_media_any_type:
+            target_media_id_by_suggestion[suggestion.id] = existing_media_any_type.id
+
+    media_preview_map = await _get_media_preview_context_map(session, list(target_media_id_by_suggestion.values()))
+    context_by_suggestion: dict[str, MediaPreviewContext] = {}
+
+    for suggestion in suggestions:
+        media_id = target_media_id_by_suggestion.get(suggestion.id)
+        if media_id:
+            context_by_suggestion[suggestion.id] = media_preview_map.get(media_id, _empty_media_preview_context())
+            continue
+
+        title_hint = target_title_hint_by_suggestion.get(suggestion.id)
+        media_type_hint = fallback_type_by_suggestion.get(suggestion.id)
+        if title_hint or media_type_hint:
+            fallback_context = _empty_media_preview_context()
+            fallback_context["media_title"] = title_hint
+            fallback_context["media_type"] = media_type_hint
+            context_by_suggestion[suggestion.id] = fallback_context
+
+    return context_by_suggestion
 
 
 async def should_auto_approve(user: User, session: AsyncSession) -> bool:
@@ -927,6 +1146,8 @@ def build_suggestion_response(
     stream: Stream | None = None,
     reviewer_name: str | None = None,
     user: User | None = None,
+    source_media_context: MediaPreviewContext | None = None,
+    target_media_context: MediaPreviewContext | None = None,
 ) -> StreamSuggestionResponse:
     """Build a suggestion response object.
 
@@ -937,14 +1158,8 @@ def build_suggestion_response(
 
     if stream:
         stream_name = stream.name
-        media_links = getattr(stream, "media_links", None)
-        if media_links:
-            try:
-                first_link = media_links[0]
-                if hasattr(first_link, "media") and first_link.media:
-                    media_id = first_link.media.id
-            except (IndexError, AttributeError):
-                pass
+        if source_media_context and source_media_context.get("media_id"):
+            media_id = source_media_context["media_id"]
 
     return StreamSuggestionResponse(
         id=suggestion.id,
@@ -953,6 +1168,16 @@ def build_suggestion_response(
         stream_id=suggestion.stream_id,
         stream_name=stream_name,
         media_id=media_id,
+        source_media_id=source_media_context.get("media_id") if source_media_context else None,
+        source_media_type=source_media_context.get("media_type") if source_media_context else None,
+        source_media_title=source_media_context.get("media_title") if source_media_context else None,
+        source_media_year=source_media_context.get("media_year") if source_media_context else None,
+        source_media_poster_url=source_media_context.get("media_poster_url") if source_media_context else None,
+        target_media_id=target_media_context.get("media_id") if target_media_context else None,
+        target_media_type=target_media_context.get("media_type") if target_media_context else None,
+        target_media_title=target_media_context.get("media_title") if target_media_context else None,
+        target_media_year=target_media_context.get("media_year") if target_media_context else None,
+        target_media_poster_url=target_media_context.get("media_poster_url") if target_media_context else None,
         suggestion_type=suggestion.suggestion_type,
         field_name=getattr(suggestion, "field_name", None),
         current_value=suggestion.current_value,
@@ -1295,12 +1520,17 @@ async def create_stream_suggestion(
             }
         )
 
+    source_media_context_map = await _build_source_media_context_map(session, [suggestion.stream_id])
+    target_media_context_map = await _build_target_media_context_map(session, [suggestion])
+
     return build_suggestion_response(
         suggestion,
         username=current_user.username,
         stream=stream,
         reviewer_name=current_user.username if suggestion.reviewed_by else None,
         user=current_user,
+        source_media_context=source_media_context_map.get(suggestion.stream_id),
+        target_media_context=target_media_context_map.get(suggestion.id),
     )
 
 
@@ -1343,6 +1573,8 @@ async def get_stream_suggestions(
     stream_query = select(Stream).where(Stream.id == stream_id)
     stream_result = await session.exec(stream_query)
     stream = stream_result.first()
+    source_media_context_map = await _build_source_media_context_map(session, [stream_id])
+    target_media_context_map = await _build_target_media_context_map(session, suggestions)
 
     responses = []
     for s in suggestions:
@@ -1354,7 +1586,17 @@ async def get_stream_suggestions(
         user_result = await session.exec(user_query)
         user = user_result.first()
 
-        responses.append(build_suggestion_response(s, username, stream=stream, reviewer_name=reviewer_name, user=user))
+        responses.append(
+            build_suggestion_response(
+                s,
+                username,
+                stream=stream,
+                reviewer_name=reviewer_name,
+                user=user,
+                source_media_context=source_media_context_map.get(stream_id),
+                target_media_context=target_media_context_map.get(s.id),
+            )
+        )
 
     return StreamSuggestionListResponse(
         suggestions=responses,
@@ -1391,6 +1633,8 @@ async def get_my_stream_suggestions(
 
     result = await session.exec(query)
     suggestions = result.all()
+    source_media_context_map = await _build_source_media_context_map(session, [s.stream_id for s in suggestions])
+    target_media_context_map = await _build_target_media_context_map(session, suggestions)
 
     responses = []
     for s in suggestions:
@@ -1406,6 +1650,8 @@ async def get_my_stream_suggestions(
                 stream=stream,
                 reviewer_name=reviewer_name,
                 user=current_user,
+                source_media_context=source_media_context_map.get(s.stream_id),
+                target_media_context=target_media_context_map.get(s.id),
             )
         )
 
@@ -1505,6 +1751,8 @@ async def get_pending_stream_suggestions(
 
     result = await session.exec(query)
     suggestions = result.all()
+    source_media_context_map = await _build_source_media_context_map(session, [s.stream_id for s in suggestions])
+    target_media_context_map = await _build_target_media_context_map(session, suggestions)
 
     responses = []
     for s in suggestions:
@@ -1520,7 +1768,17 @@ async def get_pending_stream_suggestions(
         user_result = await session.exec(user_query)
         user = user_result.first()
 
-        responses.append(build_suggestion_response(s, username, stream=stream, reviewer_name=reviewer_name, user=user))
+        responses.append(
+            build_suggestion_response(
+                s,
+                username,
+                stream=stream,
+                reviewer_name=reviewer_name,
+                user=user,
+                source_media_context=source_media_context_map.get(s.stream_id),
+                target_media_context=target_media_context_map.get(s.id),
+            )
+        )
 
     return StreamSuggestionListResponse(
         suggestions=responses,
@@ -1645,6 +1903,8 @@ async def review_stream_suggestion(
         await session.refresh(author)
 
     username = await get_username(session, suggestion.user_id)
+    source_media_context_map = await _build_source_media_context_map(session, [suggestion.stream_id])
+    target_media_context_map = await _build_target_media_context_map(session, [suggestion])
 
     return build_suggestion_response(
         suggestion,
@@ -1652,6 +1912,8 @@ async def review_stream_suggestion(
         stream=stream,
         reviewer_name=current_user.username,
         user=author,
+        source_media_context=source_media_context_map.get(suggestion.stream_id),
+        target_media_context=target_media_context_map.get(suggestion.id),
     )
 
 

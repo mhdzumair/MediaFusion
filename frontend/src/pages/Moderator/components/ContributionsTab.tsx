@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   CheckCircle2,
@@ -10,9 +10,11 @@ import {
   FileText as FileIcon,
   HardDrive,
   Library,
+  ListChecks,
   Loader2,
   Magnet,
   Tag,
+  Trash2,
   XCircle,
 } from 'lucide-react'
 
@@ -29,6 +31,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -101,6 +104,14 @@ export function ContributionsTab({
   const [reviewNotes, setReviewNotes] = useState('')
   const [bulkApproveDialogOpen, setBulkApproveDialogOpen] = useState(false)
   const [isBulkApproving, setIsBulkApproving] = useState(false)
+  const [bulkApproveSelectedDialogOpen, setBulkApproveSelectedDialogOpen] = useState(false)
+  const [bulkApproveSelectedNotes, setBulkApproveSelectedNotes] = useState('')
+  const [isBulkApprovingSelected, setIsBulkApprovingSelected] = useState(false)
+  const [bulkModeEnabled, setBulkModeEnabled] = useState(false)
+  const [selectedContributionIds, setSelectedContributionIds] = useState<string[]>([])
+  const [bulkRejectDialogOpen, setBulkRejectDialogOpen] = useState(false)
+  const [bulkRejectNotes, setBulkRejectNotes] = useState('')
+  const [isBulkRejectingSelected, setIsBulkRejectingSelected] = useState(false)
 
   const selectedContributionData = (selectedContribution?.data as Record<string, unknown> | undefined) ?? undefined
   const selectedMediaPreview = selectedContribution ? getContributionMediaPreview(selectedContribution) : null
@@ -145,7 +156,75 @@ export function ContributionsTab({
     bulkReviewContributions.isPending ||
     flagForAdminReview.isPending ||
     adminRejectApprovedContribution.isPending
-  const pendingContributions = (data?.items ?? []).filter((contribution) => contribution.status === 'pending')
+  const contributionsOnPage = useMemo(() => data?.items ?? [], [data?.items])
+  const pendingContributions = contributionsOnPage.filter((contribution) => contribution.status === 'pending')
+  const selectableContributions = contributionsOnPage.filter(
+    (contribution) => contribution.status === 'pending' || (isAdmin && contribution.status === 'approved'),
+  )
+  const selectableContributionIds = selectableContributions.map((contribution) => contribution.id)
+  const selectableContributionIdsKey = selectableContributionIds.join('|')
+  const selectableContributionIdSet = useMemo(
+    () => new Set(selectableContributionIdsKey ? selectableContributionIdsKey.split('|') : []),
+    [selectableContributionIdsKey],
+  )
+  const contributionById = useMemo(
+    () =>
+      new Map<string, Contribution>(
+        contributionsOnPage.map((contribution) => [contribution.id, contribution] as const),
+      ),
+    [contributionsOnPage],
+  )
+  const selectedContributionIdSet = new Set(selectedContributionIds)
+  const selectedPendingContributionIds = selectedContributionIds.filter(
+    (contributionId) => contributionById.get(contributionId)?.status === 'pending',
+  )
+  const selectedApprovedContributionIds = selectedContributionIds.filter(
+    (contributionId) => contributionById.get(contributionId)?.status === 'approved',
+  )
+  const selectedPendingCount = selectedPendingContributionIds.length
+  const selectedApprovedCount = selectedApprovedContributionIds.length
+  const selectedTotalCount = selectedPendingCount + selectedApprovedCount
+  const allSelectableOnPageSelected =
+    selectableContributions.length > 0 &&
+    selectableContributions.every((contribution) => selectedContributionIdSet.has(contribution.id))
+  const hasSomeSelectableOnPageSelected = selectedTotalCount > 0 && !allSelectableOnPageSelected
+
+  useEffect(() => {
+    setSelectedContributionIds((previousSelection) => {
+      const nextSelection = previousSelection.filter((contributionId) =>
+        selectableContributionIdSet.has(contributionId),
+      )
+      if (
+        nextSelection.length === previousSelection.length &&
+        nextSelection.every((contributionId, idx) => contributionId === previousSelection[idx])
+      ) {
+        return previousSelection
+      }
+      return nextSelection
+    })
+  }, [selectableContributionIdSet])
+
+  const toggleContributionSelection = (contributionId: string, checked: boolean) => {
+    setSelectedContributionIds((currentSelection) => {
+      if (checked) {
+        if (currentSelection.includes(contributionId)) return currentSelection
+        return [...currentSelection, contributionId]
+      }
+      return currentSelection.filter((item) => item !== contributionId)
+    })
+  }
+
+  const toggleSelectAllSelectableOnPage = (checked: boolean) => {
+    if (checked) {
+      setSelectedContributionIds((currentSelection) =>
+        Array.from(new Set([...currentSelection, ...selectableContributionIds])),
+      )
+      return
+    }
+    setSelectedContributionIds((currentSelection) =>
+      currentSelection.filter((contributionId) => !selectableContributionIdSet.has(contributionId)),
+    )
+  }
   const getReviewerLabel = (contribution: Contribution): string | null => {
     if (contribution.status === 'pending') return null
     if (contribution.reviewer_name) return contribution.reviewer_name
@@ -208,6 +287,57 @@ export function ContributionsTab({
       // Error handled by mutation
     } finally {
       setIsBulkApproving(false)
+    }
+  }
+
+  const handleApproveSelectedContributions = async () => {
+    if (!selectedPendingCount) return
+    setIsBulkApprovingSelected(true)
+    try {
+      await bulkReviewContributions.mutateAsync({
+        action: 'approve',
+        contribution_ids: selectedPendingContributionIds,
+        review_notes: bulkApproveSelectedNotes.trim() || undefined,
+      })
+      setBulkApproveSelectedDialogOpen(false)
+      setBulkApproveSelectedNotes('')
+      setSelectedContributionIds([])
+      refetch()
+    } catch {
+      // Error handled by mutation
+    } finally {
+      setIsBulkApprovingSelected(false)
+    }
+  }
+
+  const handleRejectSelectedContributions = async () => {
+    if (!selectedTotalCount) return
+    setIsBulkRejectingSelected(true)
+    try {
+      const reviewNotes = bulkRejectNotes.trim() || undefined
+      if (selectedPendingContributionIds.length > 0) {
+        await bulkReviewContributions.mutateAsync({
+          action: 'reject',
+          contribution_ids: selectedPendingContributionIds,
+          review_notes: reviewNotes,
+        })
+      }
+      if (isAdmin && selectedApprovedContributionIds.length > 0) {
+        for (const contributionId of selectedApprovedContributionIds) {
+          await adminRejectApprovedContribution.mutateAsync({
+            contributionId,
+            data: { review_notes: reviewNotes },
+          })
+        }
+      }
+      setBulkRejectDialogOpen(false)
+      setBulkRejectNotes('')
+      setSelectedContributionIds([])
+      refetch()
+    } catch {
+      // Error handled by mutation
+    } finally {
+      setIsBulkRejectingSelected(false)
     }
   }
 
@@ -342,7 +472,71 @@ export function ContributionsTab({
             Approve All Pending
           </Button>
         )}
+
+        <Button
+          variant={bulkModeEnabled ? 'default' : 'outline'}
+          className="rounded-xl"
+          onClick={() => {
+            setBulkModeEnabled((value) => !value)
+            setSelectedContributionIds([])
+          }}
+          disabled={isAnyActionPending}
+        >
+          <ListChecks className="h-4 w-4 mr-2" />
+          {bulkModeEnabled ? 'Exit Bulk Mode' : 'Bulk Action Mode'}
+        </Button>
       </div>
+
+      {bulkModeEnabled && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border/50 bg-muted/20 p-3">
+          <span className="text-xs text-muted-foreground">
+            {isAdmin
+              ? 'Bulk reject supports pending and approved contributions.'
+              : 'Bulk reject supports pending only (approved rejection requires admin).'}
+          </span>
+          <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+            <Checkbox
+              checked={allSelectableOnPageSelected ? true : hasSomeSelectableOnPageSelected ? 'indeterminate' : false}
+              onCheckedChange={(checked) => toggleSelectAllSelectableOnPage(checked === true)}
+              disabled={!selectableContributions.length || isAnyActionPending}
+            />
+            Select all eligible on this page
+          </label>
+          <span className="text-sm text-muted-foreground">
+            Selected: <span className="font-medium text-foreground">{selectedTotalCount}</span>
+            {isAdmin ? (
+              <span className="ml-2 text-xs">
+                (pending: {selectedPendingCount}, approved: {selectedApprovedCount})
+              </span>
+            ) : null}
+          </span>
+          <Button
+            className="rounded-xl bg-emerald-600 hover:bg-emerald-700"
+            onClick={() => setBulkApproveSelectedDialogOpen(true)}
+            disabled={!selectedPendingCount || isAnyActionPending || bulkReviewContributions.isPending}
+          >
+            {isBulkApprovingSelected ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+            )}
+            Approve Selected
+          </Button>
+          <Button
+            variant="destructive"
+            className="rounded-xl"
+            onClick={() => setBulkRejectDialogOpen(true)}
+            disabled={!selectedTotalCount || isAnyActionPending || bulkReviewContributions.isPending}
+          >
+            {isBulkRejectingSelected ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Trash2 className="h-4 w-4 mr-2" />
+            )}
+            Reject Selected
+          </Button>
+        </div>
+      )}
 
       {showInitialLoading ? (
         <div className="space-y-4">
@@ -370,6 +564,18 @@ export function ContributionsTab({
               <Card key={contribution.id} className="glass border-border/50 hover:border-primary/30 transition-colors">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-4">
+                    {bulkModeEnabled && (
+                      <div className="pt-1">
+                        <Checkbox
+                          checked={selectedContributionIdSet.has(contribution.id)}
+                          onCheckedChange={(checked) => toggleContributionSelection(contribution.id, checked === true)}
+                          disabled={
+                            (contribution.status !== 'pending' && !(isAdmin && contribution.status === 'approved')) ||
+                            isAnyActionPending
+                          }
+                        />
+                      </div>
+                    )}
                     <div
                       className={`p-2 rounded-xl flex-shrink-0 ${isTorrent ? 'bg-orange-500/10' : isStream ? 'bg-blue-500/10' : 'bg-primary/10'}`}
                     >
@@ -551,6 +757,72 @@ export function ContributionsTab({
             >
               {isBulkApproving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Approve All
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkApproveSelectedDialogOpen} onOpenChange={setBulkApproveSelectedDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve selected pending contributions?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This approves {selectedPendingCount} selected pending contribution{selectedPendingCount === 1 ? '' : 's'}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Review Notes (optional)</label>
+            <Textarea
+              value={bulkApproveSelectedNotes}
+              onChange={(event) => setBulkApproveSelectedNotes(event.target.value)}
+              placeholder="Add notes for the approved contributions..."
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkApprovingSelected}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleApproveSelectedContributions}
+              disabled={isBulkApprovingSelected || bulkReviewContributions.isPending || !selectedPendingCount}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              {isBulkApprovingSelected ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Approve Selected
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkRejectDialogOpen} onOpenChange={setBulkRejectDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject selected contributions?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This rejects {selectedTotalCount} selected contribution{selectedTotalCount === 1 ? '' : 's'}
+              {isAdmin && selectedApprovedCount > 0
+                ? ` (${selectedPendingCount} pending, ${selectedApprovedCount} approved with admin rollback)`
+                : ` (${selectedPendingCount} pending)`}
+              .
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Review Notes (optional)</label>
+            <Textarea
+              value={bulkRejectNotes}
+              onChange={(event) => setBulkRejectNotes(event.target.value)}
+              placeholder="Add notes for the rejected contributions..."
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkRejectingSelected}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleRejectSelectedContributions}
+              disabled={isBulkRejectingSelected || bulkReviewContributions.isPending || !selectedTotalCount}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isBulkRejectingSelected ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Reject Selected
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

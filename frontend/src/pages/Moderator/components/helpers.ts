@@ -123,6 +123,8 @@ export function formatStreamSuggestionType(type: string): string {
     language_add: 'Add Language',
     language_remove: 'Remove Language',
     mark_duplicate: 'Mark Duplicate',
+    relink_media: 'Relink Media',
+    add_media_link: 'Add Media Link',
     other: 'Other',
   }
   return typeMap[type] || type

@@ -116,6 +116,7 @@ function getResultExternalIds(result: CombinedSearchResult): string[] {
 export function StreamRelinkButton({
   streamId,
   streamName,
+  currentMediaId,
   currentMediaTitle,
   variant = 'button',
   trigger,
@@ -336,7 +337,13 @@ export function StreamRelinkButton({
             (targetMediaId
               ? `Link stream to "${selectedMedia?.title || `MediaFusion media #${targetMediaId}`}"`
               : `Link stream to external ID "${targetExternalId}"`),
-          current_value: currentMediaTitle || existingLinks.map((l) => l.title).join(', ') || undefined,
+          current_value:
+            existingLinks.map((link) => `mf:${link.media_id}${link.title ? ` (${link.title})` : ''}`).join(', ') ||
+            (currentMediaId
+              ? `mf:${currentMediaId}${currentMediaTitle ? ` (${currentMediaTitle})` : ''}`
+              : undefined) ||
+            currentMediaTitle ||
+            undefined,
           suggested_value: targetMediaId ? selectedMedia?.title || `mf:${targetMediaId}` : targetExternalId,
         },
       })
@@ -370,6 +377,7 @@ export function StreamRelinkButton({
     episodeNumber,
     episodeEnd,
     reason,
+    currentMediaId,
     currentMediaTitle,
     existingLinks,
     createSuggestion,

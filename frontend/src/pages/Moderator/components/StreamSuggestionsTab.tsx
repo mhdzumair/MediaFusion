@@ -1,5 +1,17 @@
 import { useState } from 'react'
-import { CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, Film, Filter, Loader2, XCircle } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import {
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  ExternalLink,
+  Eye,
+  Film,
+  Filter,
+  Loader2,
+  XCircle,
+} from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,6 +33,7 @@ import { useDebounce, usePendingStreamSuggestions, useReviewStreamSuggestion, us
 import type { StreamSuggestion, StreamSuggestionStatus } from '@/lib/api'
 
 import { formatStreamFieldName, formatStreamSuggestionType, parseEpisodeLinkField, formatTimeAgo } from './helpers'
+import { ModeratorMediaPoster } from './ModeratorMediaPoster'
 
 interface StreamSuggestionsTabProps {
   statusFilter: 'all' | StreamSuggestionStatus
@@ -76,6 +89,58 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
   }
   const selectedReviewerLabel = selectedSuggestion ? getReviewerLabel(selectedSuggestion) : null
   const selectedReviewBadge = selectedSuggestion ? getReviewBadge(selectedSuggestion) : null
+  const getBaseSuggestionType = (value: string): string => (value.includes(':') ? value.split(':', 1)[0] : value)
+  const isRelinkSuggestion = (suggestion: StreamSuggestion): boolean => {
+    const suggestionType = getBaseSuggestionType(suggestion.suggestion_type)
+    return suggestionType === 'relink_media' || suggestionType === 'add_media_link'
+  }
+  const getContentPath = (mediaType: string | null, mediaId: number | null): string | null => {
+    if (!mediaId) return null
+    if (mediaType !== 'movie' && mediaType !== 'series' && mediaType !== 'tv') return null
+    return `/dashboard/content/${mediaType}/${mediaId}`
+  }
+  const getMediaLabel = (
+    mediaTitle: string | null,
+    mediaType: string | null,
+    mediaId: number | null,
+    mediaYear: number | null,
+  ): string => {
+    const title = mediaTitle?.trim() || (mediaId ? `Media #${mediaId}` : 'Unknown media')
+    const yearSuffix = mediaYear ? ` (${mediaYear})` : ''
+    const typePrefix = mediaType ? `${mediaType.toUpperCase()} • ` : ''
+    return `${typePrefix}${title}${yearSuffix}`
+  }
+  const parseRelinkPayload = (value: string | null): Record<string, unknown> | null => {
+    if (!value) return null
+    try {
+      const parsed = JSON.parse(value)
+      return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : null
+    } catch {
+      return null
+    }
+  }
+  const buildRelinkCurrentValue = (suggestion: StreamSuggestion): string => {
+    const sourceMediaId = suggestion.source_media_id ?? suggestion.media_id
+    const sourceTitle = suggestion.source_media_title || suggestion.current_value
+    if (sourceMediaId) {
+      return sourceTitle ? `mf:${sourceMediaId} (${sourceTitle})` : `mf:${sourceMediaId}`
+    }
+    return sourceTitle || '(empty)'
+  }
+  const buildRelinkSuggestedValue = (suggestion: StreamSuggestion): string => {
+    const payload = parseRelinkPayload(suggestion.suggested_value)
+    const payloadTargetMediaId =
+      typeof payload?.target_media_id === 'number' && payload.target_media_id > 0 ? payload.target_media_id : null
+    const targetMediaId = suggestion.target_media_id ?? payloadTargetMediaId
+    const payloadTargetTitle =
+      typeof payload?.target_title === 'string' && payload.target_title.trim() ? payload.target_title.trim() : null
+    const targetTitle = suggestion.target_media_title || payloadTargetTitle
+    if (targetMediaId) {
+      return targetTitle ? `mf:${targetMediaId} (${targetTitle})` : `mf:${targetMediaId}`
+    }
+    if (targetTitle) return targetTitle
+    return suggestion.suggested_value || '(empty)'
+  }
 
   const handleReview = async (action: 'approve' | 'reject') => {
     if (!selectedSuggestion) return
@@ -138,6 +203,8 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
             <SelectItem value="field_correction">Field Corrections</SelectItem>
             <SelectItem value="language_add">Language Add</SelectItem>
             <SelectItem value="language_remove">Language Remove</SelectItem>
+            <SelectItem value="relink_media">Relink Media</SelectItem>
+            <SelectItem value="add_media_link">Add Media Link</SelectItem>
             <SelectItem value="other">Other</SelectItem>
           </SelectContent>
         </Select>
@@ -196,6 +263,7 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
           {data.suggestions.map((suggestion) => {
             const episodeInfo = parseEpisodeLinkField(suggestion.field_name)
             const isEpisodeLink = !!episodeInfo
+            const isRelink = isRelinkSuggestion(suggestion)
             const reviewerLabel = getReviewerLabel(suggestion)
             const reviewBadge = getReviewBadge(suggestion)
 
@@ -242,6 +310,45 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
                         <span className="font-medium text-foreground">Stream:</span>{' '}
                         {suggestion.stream_name || `ID: ${suggestion.stream_id}`}
                       </p>
+
+                      {isRelink && (
+                        <div className="rounded-lg border border-border/50 bg-muted/30 p-2 text-xs text-muted-foreground">
+                          <p
+                            className="truncate"
+                            title={getMediaLabel(
+                              suggestion.source_media_title,
+                              suggestion.source_media_type,
+                              suggestion.source_media_id,
+                              suggestion.source_media_year,
+                            )}
+                          >
+                            <span className="font-medium text-foreground">Source:</span>{' '}
+                            {getMediaLabel(
+                              suggestion.source_media_title,
+                              suggestion.source_media_type,
+                              suggestion.source_media_id,
+                              suggestion.source_media_year,
+                            )}
+                          </p>
+                          <p
+                            className="truncate"
+                            title={getMediaLabel(
+                              suggestion.target_media_title,
+                              suggestion.target_media_type,
+                              suggestion.target_media_id,
+                              suggestion.target_media_year,
+                            )}
+                          >
+                            <span className="font-medium text-foreground">Target:</span>{' '}
+                            {getMediaLabel(
+                              suggestion.target_media_title,
+                              suggestion.target_media_type,
+                              suggestion.target_media_id,
+                              suggestion.target_media_year,
+                            )}
+                          </p>
+                        </div>
+                      )}
 
                       {isEpisodeLink && (
                         <div className="p-3 rounded-lg bg-muted/50 space-y-1">
@@ -393,6 +500,147 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
                   </div>
                 )}
 
+                {isRelinkSuggestion(selectedSuggestion) && (
+                  <div className="space-y-3 rounded-xl border border-border/50 bg-muted/20 p-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Media Relink Preview
+                    </p>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="space-y-2 rounded-lg border border-border/40 bg-background/60 p-3">
+                        <p className="text-xs font-medium text-muted-foreground">Source Media</p>
+                        <div className="flex items-start gap-3">
+                          <div className="h-20 w-14 shrink-0 overflow-hidden rounded-md border border-border/50 bg-muted">
+                            {getContentPath(
+                              selectedSuggestion.source_media_type,
+                              selectedSuggestion.source_media_id,
+                            ) ? (
+                              <Link
+                                to={
+                                  getContentPath(
+                                    selectedSuggestion.source_media_type,
+                                    selectedSuggestion.source_media_id,
+                                  )!
+                                }
+                              >
+                                <ModeratorMediaPoster
+                                  mediaType={selectedSuggestion.source_media_type}
+                                  mediaId={selectedSuggestion.source_media_id}
+                                  posterUrl={selectedSuggestion.source_media_poster_url}
+                                  title={selectedSuggestion.source_media_title}
+                                  fallbackIconSizeClassName="h-4 w-4"
+                                />
+                              </Link>
+                            ) : (
+                              <ModeratorMediaPoster
+                                mediaType={selectedSuggestion.source_media_type}
+                                mediaId={selectedSuggestion.source_media_id}
+                                posterUrl={selectedSuggestion.source_media_poster_url}
+                                title={selectedSuggestion.source_media_title}
+                                fallbackIconSizeClassName="h-4 w-4"
+                              />
+                            )}
+                          </div>
+                          <div className="min-w-0 space-y-1">
+                            <p className="text-sm font-medium break-words">
+                              {selectedSuggestion.source_media_title ||
+                                `Media #${selectedSuggestion.source_media_id || 'N/A'}`}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {[selectedSuggestion.source_media_type, selectedSuggestion.source_media_year]
+                                .map((value) => (value === null || value === undefined ? null : String(value)))
+                                .filter((value): value is string => Boolean(value))
+                                .join(' • ') || 'Unknown'}
+                            </p>
+                            {getContentPath(
+                              selectedSuggestion.source_media_type,
+                              selectedSuggestion.source_media_id,
+                            ) && (
+                              <Link
+                                to={
+                                  getContentPath(
+                                    selectedSuggestion.source_media_type,
+                                    selectedSuggestion.source_media_id,
+                                  )!
+                                }
+                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                              >
+                                Open Source
+                                <ExternalLink className="h-3 w-3" />
+                              </Link>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+                        <p className="text-xs font-medium text-emerald-500">Target Media</p>
+                        <div className="flex items-start gap-3">
+                          <div className="h-20 w-14 shrink-0 overflow-hidden rounded-md border border-border/50 bg-muted">
+                            {getContentPath(
+                              selectedSuggestion.target_media_type,
+                              selectedSuggestion.target_media_id,
+                            ) ? (
+                              <Link
+                                to={
+                                  getContentPath(
+                                    selectedSuggestion.target_media_type,
+                                    selectedSuggestion.target_media_id,
+                                  )!
+                                }
+                              >
+                                <ModeratorMediaPoster
+                                  mediaType={selectedSuggestion.target_media_type}
+                                  mediaId={selectedSuggestion.target_media_id}
+                                  posterUrl={selectedSuggestion.target_media_poster_url}
+                                  title={selectedSuggestion.target_media_title}
+                                  fallbackIconSizeClassName="h-4 w-4"
+                                />
+                              </Link>
+                            ) : (
+                              <ModeratorMediaPoster
+                                mediaType={selectedSuggestion.target_media_type}
+                                mediaId={selectedSuggestion.target_media_id}
+                                posterUrl={selectedSuggestion.target_media_poster_url}
+                                title={selectedSuggestion.target_media_title}
+                                fallbackIconSizeClassName="h-4 w-4"
+                              />
+                            )}
+                          </div>
+                          <div className="min-w-0 space-y-1">
+                            <p className="text-sm font-medium break-words">
+                              {selectedSuggestion.target_media_title ||
+                                `Media #${selectedSuggestion.target_media_id || 'N/A'}`}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {[selectedSuggestion.target_media_type, selectedSuggestion.target_media_year]
+                                .map((value) => (value === null || value === undefined ? null : String(value)))
+                                .filter((value): value is string => Boolean(value))
+                                .join(' • ') || 'Unknown'}
+                            </p>
+                            {getContentPath(
+                              selectedSuggestion.target_media_type,
+                              selectedSuggestion.target_media_id,
+                            ) && (
+                              <Link
+                                to={
+                                  getContentPath(
+                                    selectedSuggestion.target_media_type,
+                                    selectedSuggestion.target_media_id,
+                                  )!
+                                }
+                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                              >
+                                Open Target
+                                <ExternalLink className="h-3 w-3" />
+                              </Link>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {parseEpisodeLinkField(selectedSuggestion.field_name) && (
                   <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 space-y-3">
                     <div className="flex items-center gap-2">
@@ -431,18 +679,32 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
                 )}
 
                 {!parseEpisodeLinkField(selectedSuggestion.field_name) &&
-                  (selectedSuggestion.current_value || selectedSuggestion.suggested_value) && (
+                  (selectedSuggestion.current_value ||
+                    selectedSuggestion.suggested_value ||
+                    isRelinkSuggestion(selectedSuggestion)) && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">Current Value</label>
+                        <label className="text-xs font-medium text-muted-foreground">
+                          {isRelinkSuggestion(selectedSuggestion) ? 'Current Linked Media' : 'Current Value'}
+                        </label>
                         <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/20">
-                          <p className="text-sm break-words">{selectedSuggestion.current_value || '(empty)'}</p>
+                          <p className="text-sm break-words">
+                            {isRelinkSuggestion(selectedSuggestion)
+                              ? buildRelinkCurrentValue(selectedSuggestion)
+                              : selectedSuggestion.current_value || '(empty)'}
+                          </p>
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">Suggested Value</label>
+                        <label className="text-xs font-medium text-muted-foreground">
+                          {isRelinkSuggestion(selectedSuggestion) ? 'Suggested Linked Media' : 'Suggested Value'}
+                        </label>
                         <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
-                          <p className="text-sm break-words">{selectedSuggestion.suggested_value || '(empty)'}</p>
+                          <p className="text-sm break-words">
+                            {isRelinkSuggestion(selectedSuggestion)
+                              ? buildRelinkSuggestedValue(selectedSuggestion)
+                              : selectedSuggestion.suggested_value || '(empty)'}
+                          </p>
                         </div>
                       </div>
                     </div>

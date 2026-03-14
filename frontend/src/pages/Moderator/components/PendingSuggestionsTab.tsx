@@ -57,6 +57,27 @@ export function PendingSuggestionsTab({ statusFilter, onStatusFilterChange }: Pe
       className: 'bg-red-500/10 border-red-500/30 text-red-500',
     }
   }
+  const getReviewerLabel = (suggestion: Suggestion): string | null => {
+    if (suggestion.status === 'pending') return null
+    if (suggestion.reviewed_by) return suggestion.reviewed_by
+    if (suggestion.status === 'auto_approved') return 'Auto-approved'
+    return null
+  }
+  const formatSuggestionValue = (value: string | null | undefined): string => {
+    if (!value) return '(empty)'
+    const normalized = value.trim()
+    if (!normalized) return '(empty)'
+
+    if (normalized.startsWith('{') || normalized.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(normalized)
+        return JSON.stringify(parsed, null, 2)
+      } catch {
+        return normalized
+      }
+    }
+    return normalized
+  }
 
   const handleReview = async (decision: ReviewDecision, notes?: string) => {
     if (!selectedSuggestion) return
@@ -143,6 +164,7 @@ export function PendingSuggestionsTab({ statusFilter, onStatusFilterChange }: Pe
                 <TableHead>Field</TableHead>
                 <TableHead>Media</TableHead>
                 <TableHead>Current → Suggested</TableHead>
+                <TableHead>Submitted By</TableHead>
                 <TableHead>Submitted</TableHead>
                 <TableHead>Reviewed By</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -151,6 +173,9 @@ export function PendingSuggestionsTab({ statusFilter, onStatusFilterChange }: Pe
             <TableBody>
               {data.suggestions.map((suggestion: Suggestion) => {
                 const reviewBadge = getReviewBadge(suggestion)
+                const reviewerLabel = getReviewerLabel(suggestion)
+                const formattedCurrentValue = formatSuggestionValue(suggestion.current_value)
+                const formattedSuggestedValue = formatSuggestionValue(suggestion.suggested_value)
                 return (
                   <TableRow key={suggestion.id} className="hover:bg-muted/20">
                     <TableCell>
@@ -180,20 +205,40 @@ export function PendingSuggestionsTab({ statusFilter, onStatusFilterChange }: Pe
                     </TableCell>
                     <TableCell>
                       <div className="max-w-xs space-y-1">
-                        <p className="truncate text-xs text-red-500">
-                          <span className="text-muted-foreground">Current:</span>{' '}
-                          {suggestion.current_value || '(empty)'}
+                        <p
+                          className="line-clamp-3 whitespace-pre-wrap break-all text-xs text-red-500"
+                          title={formattedCurrentValue}
+                        >
+                          <span className="text-muted-foreground">Current:</span> {formattedCurrentValue}
                         </p>
-                        <p className="truncate text-xs text-emerald-500">
-                          <span className="text-muted-foreground">Suggested:</span> {suggestion.suggested_value}
+                        <p
+                          className="line-clamp-3 whitespace-pre-wrap break-all text-xs text-emerald-500"
+                          title={formattedSuggestedValue}
+                        >
+                          <span className="text-muted-foreground">Suggested:</span> {formattedSuggestedValue}
                         </p>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      <div className="space-y-1">
+                        <p className="font-medium text-foreground">
+                          {suggestion.username || `User #${suggestion.user_id}`}
+                        </p>
+                        {suggestion.user_contribution_level ? (
+                          <Badge
+                            variant="outline"
+                            className="h-5 px-1.5 text-[10px] capitalize bg-primary/10 border-primary/30"
+                          >
+                            {suggestion.user_contribution_level}
+                          </Badge>
+                        ) : null}
                       </div>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {formatTimeAgo(suggestion.created_at)}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {suggestion.reviewed_by ? (
+                      {reviewerLabel ? (
                         <div className="space-y-1">
                           <div className="inline-flex items-center gap-1.5">
                             {reviewBadge ? (
@@ -201,7 +246,7 @@ export function PendingSuggestionsTab({ statusFilter, onStatusFilterChange }: Pe
                                 {reviewBadge.label}
                               </Badge>
                             ) : null}
-                            <p title={suggestion.reviewed_by}>{suggestion.reviewed_by}</p>
+                            <p title={reviewerLabel}>{reviewerLabel}</p>
                           </div>
                           {suggestion.reviewed_at ? <p>({formatTimeAgo(suggestion.reviewed_at)})</p> : null}
                         </div>
@@ -210,21 +255,18 @@ export function PendingSuggestionsTab({ statusFilter, onStatusFilterChange }: Pe
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      {suggestion.status === 'pending' ? (
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            setSelectedSuggestion(suggestion)
-                            setReviewDialogOpen(true)
-                          }}
-                          className="rounded-lg"
-                        >
-                          <Eye className="mr-2 h-4 w-4" />
-                          Review
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Reviewed</span>
-                      )}
+                      <Button
+                        size="sm"
+                        variant={suggestion.status === 'pending' ? 'default' : 'outline'}
+                        onClick={() => {
+                          setSelectedSuggestion(suggestion)
+                          setReviewDialogOpen(true)
+                        }}
+                        className="rounded-lg"
+                      >
+                        <Eye className="mr-2 h-4 w-4" />
+                        {suggestion.status === 'pending' ? 'Review' : 'View'}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 )

@@ -83,6 +83,10 @@ class ContributionBulkReviewRequest(BaseModel):
 
     action: Literal["approve", "reject"]
     contribution_type: str | None = Field(None, pattern=_CONTRIBUTION_TYPE_PATTERN)
+    contribution_ids: list[str] | None = Field(
+        default=None,
+        description="Optional list of pending contribution IDs to review",
+    )
     review_notes: str | None = None
 
 
@@ -1248,13 +1252,15 @@ async def bulk_review_contributions(
     user: User = Depends(require_role(UserRole.MODERATOR)),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Bulk review all pending contributions, optionally filtered by type."""
+    """Bulk review pending contributions, optionally filtered by type or IDs."""
     logger = logging.getLogger(__name__)
     review_status = ContributionStatus.APPROVED if request.action == "approve" else ContributionStatus.REJECTED
 
     query = select(Contribution).where(Contribution.status == ContributionStatus.PENDING)
     if request.contribution_type:
         query = query.where(Contribution.contribution_type == request.contribution_type)
+    if request.contribution_ids:
+        query = query.where(Contribution.id.in_(request.contribution_ids))
 
     result = await session.exec(query.order_by(col(Contribution.created_at).asc()))
     contributions = result.all()

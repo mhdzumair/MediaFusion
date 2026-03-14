@@ -25,7 +25,13 @@ import {
 import type { Suggestion } from '@/lib/api'
 import { useState } from 'react'
 
-import { formatTimeAgo, getSuggestionContentPath, getSuggestionMediaSummary, type ReviewDecision } from './helpers'
+import {
+  formatTimeAgo,
+  getSuggestionContentPath,
+  getSuggestionMediaSummary,
+  statusConfig,
+  type ReviewDecision,
+} from './helpers'
 import { ModeratorMediaPoster } from './ModeratorMediaPoster'
 
 interface ReviewDialogProps {
@@ -67,6 +73,34 @@ export function ReviewDialog({ open, onOpenChange, suggestion, onReview, isRevie
 
   if (!suggestion) return null
   const contentPath = getSuggestionContentPath(suggestion)
+  const formattedCurrentValue = (() => {
+    const rawValue = suggestion.current_value?.trim()
+    if (!rawValue) return '(empty)'
+    if (rawValue.startsWith('{') || rawValue.startsWith('[')) {
+      try {
+        return JSON.stringify(JSON.parse(rawValue), null, 2)
+      } catch {
+        return rawValue
+      }
+    }
+    return rawValue
+  })()
+  const formattedSuggestedValue = (() => {
+    const rawValue = suggestion.suggested_value?.trim()
+    if (!rawValue) return '(empty)'
+    if (rawValue.startsWith('{') || rawValue.startsWith('[')) {
+      try {
+        return JSON.stringify(JSON.parse(rawValue), null, 2)
+      } catch {
+        return rawValue
+      }
+    }
+    return rawValue
+  })()
+  const reviewerLabel =
+    suggestion.status === 'pending'
+      ? null
+      : suggestion.reviewed_by || (suggestion.status === 'auto_approved' ? 'Auto-approved' : null)
 
   return (
     <>
@@ -78,9 +112,13 @@ export function ReviewDialog({ open, onOpenChange, suggestion, onReview, isRevie
           <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-5 w-5 text-primary" />
-              Review Suggestion
+              {suggestion.status === 'pending' ? 'Review Suggestion' : 'Suggestion Details'}
             </DialogTitle>
-            <DialogDescription>Review and approve or reject this metadata correction suggestion.</DialogDescription>
+            <DialogDescription>
+              {suggestion.status === 'pending'
+                ? 'Review and approve or reject this metadata correction suggestion.'
+                : 'View metadata suggestion details and moderation history.'}
+            </DialogDescription>
           </DialogHeader>
 
           <ScrollArea className="flex-1 min-h-0 pr-1">
@@ -127,13 +165,13 @@ export function ReviewDialog({ open, onOpenChange, suggestion, onReview, isRevie
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">Current Value</label>
                   <ScrollArea className="max-h-52 rounded-lg border border-red-500/20 bg-red-500/5">
-                    <p className="whitespace-pre-wrap break-all p-3 text-sm">{suggestion.current_value || '(empty)'}</p>
+                    <p className="whitespace-pre-wrap break-all p-3 text-sm">{formattedCurrentValue}</p>
                   </ScrollArea>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">Suggested Value</label>
                   <ScrollArea className="max-h-52 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
-                    <p className="whitespace-pre-wrap break-all p-3 text-sm">{suggestion.suggested_value}</p>
+                    <p className="whitespace-pre-wrap break-all p-3 text-sm">{formattedSuggestedValue}</p>
                   </ScrollArea>
                 </div>
               </div>
@@ -151,6 +189,21 @@ export function ReviewDialog({ open, onOpenChange, suggestion, onReview, isRevie
                 <span>Submitted by: {suggestion.username || suggestion.user_id}</span>
                 <span>•</span>
                 <span>{formatTimeAgo(suggestion.created_at)}</span>
+                {reviewerLabel ? (
+                  <>
+                    <span>•</span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span>Reviewed by: {reviewerLabel}</span>
+                      <span>({statusConfig[suggestion.status].label})</span>
+                    </span>
+                    {suggestion.reviewed_at ? (
+                      <>
+                        <span>•</span>
+                        <span>Reviewed: {formatTimeAgo(suggestion.reviewed_at)}</span>
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
               </div>
 
               <div className="space-y-2">
@@ -169,20 +222,24 @@ export function ReviewDialog({ open, onOpenChange, suggestion, onReview, isRevie
 
           <DialogFooter className="gap-2 shrink-0">
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isReviewing}>
-              Cancel
+              {suggestion.status === 'pending' ? 'Cancel' : 'Close'}
             </Button>
-            <Button variant="destructive" onClick={() => setConfirmReject(true)} disabled={isReviewing}>
-              <XCircle className="mr-2 h-4 w-4" />
-              Reject
-            </Button>
-            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleApprove} disabled={isReviewing}>
-              {isReviewing ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCircle2 className="mr-2 h-4 w-4" />
-              )}
-              Approve
-            </Button>
+            {suggestion.status === 'pending' ? (
+              <>
+                <Button variant="destructive" onClick={() => setConfirmReject(true)} disabled={isReviewing}>
+                  <XCircle className="mr-2 h-4 w-4" />
+                  Reject
+                </Button>
+                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleApprove} disabled={isReviewing}>
+                  {isReviewing ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                  )}
+                  Approve
+                </Button>
+              </>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>
