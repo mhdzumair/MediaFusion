@@ -226,17 +226,22 @@ class Settings(BaseSettings):
     )
     public_indexers_live_search_parallelism: int = Field(default=16, ge=1, le=32)
     public_indexers_max_rows_per_page: int = Field(default=12, ge=1, le=100)
-    public_indexers_source_health_metrics_ttl_seconds: int = Field(default=60 * 60 * 24 * 3, ge=60)
+    public_indexers_source_health_metrics_ttl_seconds: int = Field(default=60 * 60 * 24, ge=60)
     public_indexers_source_health_gates_enabled: bool = True
-    public_indexers_source_health_min_samples: int = 15
-    public_indexers_source_min_success_rate: float = 0.3
-    public_indexers_source_max_timeout_rate: float = 0.45
+    public_indexers_source_health_scope_mode: Literal["global", "pod", "custom"] = "pod"
+    public_indexers_source_health_scope: str = ""
+    public_indexers_source_health_min_samples: int = 10
+    public_indexers_source_min_success_rate: float = 0.35
+    public_indexers_source_max_timeout_rate: float = 0.35
+    public_indexers_source_health_counter_soft_cap: int = Field(default=120, ge=20)
+    public_indexers_source_health_decay_factor: float = Field(default=0.5, ge=0.1, le=0.95)
+    public_indexers_source_health_recovery_success_streak: int = Field(default=2, ge=0)
     public_indexers_source_bootstrap_demote_enabled: bool = True
     public_indexers_source_bootstrap_min_samples: int = 2
     public_indexers_source_bootstrap_timeout_threshold: int = 2
     public_indexers_source_health_probation_enabled: bool = True
-    public_indexers_source_health_probation_ratio: float = Field(default=0.15, ge=0.0, le=1.0)
-    public_indexers_source_health_probation_max_sources_per_query: int = Field(default=1, ge=0)
+    public_indexers_source_health_probation_ratio: float = Field(default=0.3, ge=0.0, le=1.0)
+    public_indexers_source_health_probation_max_sources_per_query: int = Field(default=2, ge=0)
 
     # Jackett Settings
     is_scrap_from_jackett: bool = False

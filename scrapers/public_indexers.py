@@ -371,6 +371,11 @@ class PublicIndexerScraper(BaseScraper):
             if allowed:
                 allowed_keys.add(definition.key)
             else:
+                recovery_streak_threshold = max(0, settings.public_indexers_source_health_recovery_success_streak)
+                if recovery_streak_threshold > 0 and snapshot.consecutive_success >= recovery_streak_threshold:
+                    allowed_keys.add(definition.key)
+                    self.metrics.record_skip(f"public indexer recovery admit: {definition.key}")
+                    continue
                 blocked.append(definition)
                 self.metrics.record_skip(f"public indexer failure budget gate: {definition.key}")
 

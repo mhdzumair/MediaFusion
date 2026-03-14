@@ -10,13 +10,15 @@ from db.config import settings
 from db.enums import UserRole
 from db.models import User
 from scrapers.public_indexer_registry import PUBLIC_INDEXER_DEFINITIONS
-from scrapers.source_health import get_source_health
+from scrapers.source_health import get_source_health, get_source_health_scope
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin - Source Health"])
 
 
 class SourceHealthGateConfig(BaseModel):
     enabled: bool
+    scope_mode: str
+    scope_key: str | None
     min_samples: int
     min_success_rate: float
     max_timeout_rate: float
@@ -32,11 +34,13 @@ class SourceHealthItem(BaseModel):
     success: int
     timeout: int
     challenge_solved: int
+    consecutive_success: int
     success_rate: float
     timeout_rate: float
     challenge_solve_rate: float
     gate_status: Literal["allowed", "blocked", "warming"]
     gate_enforced_now: bool
+    recovery_admitted: bool
 
 
 class SourceHealthResponse(BaseModel):
@@ -69,8 +73,11 @@ async def get_public_indexer_source_health(
     anime_only: bool = Query(False, description="Only return anime-capable indexers."),
     _admin: User = Depends(require_role(UserRole.ADMIN)),
 ):
+    scope = get_source_health_scope()
     gate = SourceHealthGateConfig(
         enabled=settings.public_indexers_source_health_gates_enabled,
+        scope_mode=scope.mode,
+        scope_key=scope.scope_key,
         min_samples=settings.public_indexers_source_health_min_samples,
         min_success_rate=settings.public_indexers_source_min_success_rate,
         max_timeout_rate=settings.public_indexers_source_max_timeout_rate,
@@ -91,6 +98,11 @@ async def get_public_indexer_source_health(
             min_success_rate=gate.min_success_rate,
             max_timeout_rate=gate.max_timeout_rate,
         )
+        recovery_admitted = (
+            status == "blocked"
+            and snapshot.consecutive_success >= max(0, settings.public_indexers_source_health_recovery_success_streak)
+            and settings.public_indexers_source_health_recovery_success_streak > 0
+        )
         items.append(
             SourceHealthItem(
                 source_key=definition.key,
@@ -102,11 +114,13 @@ async def get_public_indexer_source_health(
                 success=snapshot.success,
                 timeout=snapshot.timeout,
                 challenge_solved=snapshot.challenge_solved,
+                consecutive_success=snapshot.consecutive_success,
                 success_rate=round(snapshot.success_rate, 4),
                 timeout_rate=round(snapshot.timeout_rate, 4),
                 challenge_solve_rate=round(snapshot.challenge_solve_rate, 4),
                 gate_status=status,
-                gate_enforced_now=bool(gate.enabled and status == "blocked"),
+                gate_enforced_now=bool(gate.enabled and status == "blocked" and not recovery_admitted),
+                recovery_admitted=recovery_admitted,
             )
         )
 
