@@ -12,7 +12,7 @@ from typing import Any
 import humanize
 from fastapi import APIRouter, Depends, Query, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -74,6 +74,15 @@ class ScraperMetricsSummary(BaseModel):
     source_distribution: dict[str, int]
     indexer_stats: dict[str, Any] | None = None
     formatted_summary: str | None = None
+
+    @field_validator("meta_id", mode="before")
+    @classmethod
+    def coerce_meta_id_to_string(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        return str(value)
 
 
 class ScraperAggregatedStats(BaseModel):
