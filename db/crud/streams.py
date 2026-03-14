@@ -22,9 +22,16 @@ from sqlalchemy.sql.functions import coalesce
 from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from db.crud.media import decrement_stream_count, increment_stream_count
+from db.crud.media import (
+    create_series_metadata,
+    decrement_stream_count,
+    get_or_create_episode,
+    get_or_create_season,
+    get_series_metadata,
+    increment_stream_count,
+)
 from db.crud.stream_services import invalidate_media_stream_cache
-from db.enums import TorrentType
+from db.enums import MediaType, TorrentType
 from db.models import (
     AceStreamStream,
     AudioChannel,
@@ -37,6 +44,7 @@ from db.models import (
     # Reference
     Language,
     LinkSource,
+    Media,
     # Base stream
     Stream,
     StreamAudioLink,
@@ -862,6 +870,10 @@ async def create_youtube_stream(
     is_live: bool = False,
     geo_restriction_type: str | None = None,
     geo_restriction_countries: list[str] | None = None,
+    file_name: str | None = None,
+    season_number: int | None = None,
+    episode_number: int | None = None,
+    episode_end: int | None = None,
     **kwargs,
 ) -> YouTubeStream:
     """Create a new YouTube stream."""
@@ -884,6 +896,88 @@ async def create_youtube_stream(
     session.add(yt_stream)
 
     await link_stream_to_media(session, stream.id, media_id)
+
+    # For series episode videos, persist file-level linkage and season/episode metadata.
+    normalized_episode = episode_number if isinstance(episode_number, int) and episode_number > 0 else None
+    if normalized_episode is not None:
+        normalized_season = season_number if isinstance(season_number, int) and season_number > 0 else 1
+        normalized_episode_end = (
+            episode_end if isinstance(episode_end, int) and episode_end > normalized_episode else None
+        )
+
+        stream_file_query = (
+            select(StreamFile)
+            .where(StreamFile.stream_id == stream.id)
+            .order_by(coalesce(StreamFile.file_index, 0), StreamFile.id)
+        )
+        stream_file_result = await session.exec(stream_file_query)
+        stream_file = stream_file_result.first()
+        if not stream_file:
+            fallback_filename = (file_name or name).strip() if isinstance(file_name or name, str) else ""
+            if not fallback_filename:
+                fallback_filename = f"youtube-{video_id}.mp4"
+            stream_file = StreamFile(
+                stream_id=stream.id,
+                file_index=0,
+                filename=fallback_filename,
+                size=None,
+                file_type=FileType.VIDEO,
+            )
+            session.add(stream_file)
+            await session.flush()
+
+        exact_link_query = select(FileMediaLink).where(
+            FileMediaLink.file_id == stream_file.id,
+            FileMediaLink.media_id == media_id,
+            FileMediaLink.season_number == normalized_season,
+            FileMediaLink.episode_number == normalized_episode,
+        )
+        exact_link_result = await session.exec(exact_link_query)
+        exact_link = exact_link_result.first()
+        if exact_link:
+            if normalized_episode_end is not None and exact_link.episode_end != normalized_episode_end:
+                exact_link.episode_end = normalized_episode_end
+        else:
+            fallback_link_query = select(FileMediaLink).where(
+                FileMediaLink.file_id == stream_file.id,
+                FileMediaLink.media_id == media_id,
+                FileMediaLink.season_number.is_(None),
+                FileMediaLink.episode_number.is_(None),
+            )
+            fallback_link_result = await session.exec(fallback_link_query)
+            fallback_link = fallback_link_result.first()
+            if fallback_link:
+                fallback_link.season_number = normalized_season
+                fallback_link.episode_number = normalized_episode
+                fallback_link.episode_end = normalized_episode_end
+                fallback_link.link_source = LinkSource.PTT_PARSER
+                fallback_link.confidence = max(fallback_link.confidence, 0.8)
+            else:
+                session.add(
+                    FileMediaLink(
+                        file_id=stream_file.id,
+                        media_id=media_id,
+                        season_number=normalized_season,
+                        episode_number=normalized_episode,
+                        episode_end=normalized_episode_end,
+                        link_source=LinkSource.PTT_PARSER,
+                        confidence=1.0,
+                    )
+                )
+
+        media = await session.get(Media, media_id)
+        if media and media.type == MediaType.SERIES:
+            series_metadata = await get_series_metadata(session, media_id)
+            if not series_metadata:
+                series_metadata = await create_series_metadata(session, media_id)
+            season = await get_or_create_season(session, series_metadata.id, normalized_season)
+            await get_or_create_episode(
+                session,
+                season.id,
+                normalized_episode,
+                title=f"Episode {normalized_episode}",
+            )
+
     await session.flush()
     return yt_stream
 

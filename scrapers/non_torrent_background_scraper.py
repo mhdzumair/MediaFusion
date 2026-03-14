@@ -437,6 +437,30 @@ def _parse_title_data(title: str) -> dict[str, Any]:
         return {}
 
 
+def _extract_series_episode_mapping(parsed_title_data: dict[str, Any]) -> tuple[int | None, int | None, int | None]:
+    raw_episodes = parsed_title_data.get("episodes")
+    raw_seasons = parsed_title_data.get("seasons")
+
+    episode_numbers = (
+        sorted({int(value) for value in raw_episodes if isinstance(value, int) and value > 0})
+        if isinstance(raw_episodes, list)
+        else []
+    )
+    season_numbers = (
+        sorted({int(value) for value in raw_seasons if isinstance(value, int) and value > 0})
+        if isinstance(raw_seasons, list)
+        else []
+    )
+
+    if not episode_numbers:
+        return None, None, None
+
+    season_number = season_numbers[0] if season_numbers else 1
+    episode_number = episode_numbers[0]
+    episode_end = episode_numbers[-1] if episode_numbers[-1] > episode_number else None
+    return season_number, episode_number, episode_end
+
+
 def _is_adult_title(title: str) -> bool:
     return bool(title and is_contain_18_plus_keywords(title))
 
@@ -1494,6 +1518,7 @@ async def run_youtube_background_scraper(**kwargs):
                 parsed = _parse_title_data(info.title)
                 parsed_title = str(parsed.get("title") or info.title).strip()
                 parsed_year = _coerce_year(parsed.get("year"))
+                season_number, episode_number, episode_end = _extract_series_episode_mapping(parsed)
                 media_type = _normalize_media_type(
                     "series" if parsed.get("seasons") or parsed.get("episodes") else candidate.default_media_type,
                     fallback=candidate.default_media_type,
@@ -1529,6 +1554,10 @@ async def run_youtube_background_scraper(**kwargs):
                     geo_restriction_type=info.geo_restriction_type,
                     geo_restriction_countries=info.geo_restriction_countries,
                     uploader=info.channel,
+                    file_name=info.title or parsed_title,
+                    season_number=season_number if media_type == "series" else None,
+                    episode_number=episode_number if media_type == "series" else None,
+                    episode_end=episode_end if media_type == "series" else None,
                 )
                 await session.commit()
                 await tracker.mark_processed(item_key)
