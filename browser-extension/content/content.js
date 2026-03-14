@@ -167,8 +167,7 @@ class MediaFusionContentScript {
       "thepiratebay10.xyz",
       this.handlePirateBay.bind(this)
     );
-    this.siteHandlers.set("yts.mx", this.handleYTS.bind(this));
-    this.siteHandlers.set("yts.am", this.handleYTS.bind(this));
+    this.siteHandlers.set("yts.bz", this.handleYTS.bind(this));
     this.siteHandlers.set("eztvx.to", this.handleEZTV.bind(this));
     this.siteHandlers.set(
       "limetorrents.fun",

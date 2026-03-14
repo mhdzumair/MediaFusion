@@ -421,7 +421,7 @@ class YTSSpider(BasePublicIndexerSpider):
     source = "YTS"
     catalog_source = "yts"
     scraped_info_hash_key = "yts_scraped_info_hash"
-    default_start_urls = ("https://yts.mx/browse-movies/0/all/all/0/latest/0/all",)
+    default_start_urls = ("https://yts.bz/browse-movies/0/all/all/0/latest/0/all",)
     search_url_template = _override_first_template("yts")
     use_anti_bot_solver = False
     custom_settings = {

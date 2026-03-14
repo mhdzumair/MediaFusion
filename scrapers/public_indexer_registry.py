@@ -384,10 +384,7 @@ INDEXER_OVERRIDES = {
         "http_fallback": True,
     },
     "yts": {
-        "query_url_templates": (
-            "https://yts.lt/browse-movies/{query}/all/all/0/latest/0/all",
-            "https://yts.bz/browse-movies/{query}/all/all/0/latest/0/all",
-        ),
+        "query_url_templates": ("https://yts.bz/browse-movies/{query}/all/all/0/latest/0/all",),
         "row_selectors": ("div.browse-movie-wrap",),
         "title_selectors": ("a.browse-movie-title::text",),
         "detail_selectors": ("a.browse-movie-link::attr(href)",),
