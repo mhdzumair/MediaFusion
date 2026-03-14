@@ -1,6 +1,6 @@
 services:
   mediafusion:
-    image: mhdzumair/mediafusion:5.4.1
+    image: mhdzumair/mediafusion:5.4.2
     ports:
       - "8000:8000"
     env_file: .env
@@ -144,7 +144,7 @@ services:
       - mediafusion-network
 
   taskiq-worker-default:
-    image: mhdzumair/mediafusion:5.4.1
+    image: mhdzumair/mediafusion:5.4.2
     command: ["taskiq", "worker", "api.taskiq_worker:broker_default", "--workers", "1", "--max-async-tasks", "8", "--ack-type", "when_executed"]
     env_file: .env
     environment:
