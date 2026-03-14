@@ -84,6 +84,26 @@ export function useReviewStreamSuggestion() {
   })
 }
 
+// Bulk review stream suggestions (moderator)
+export function useBulkReviewStreamSuggestions() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({
+      suggestionIds,
+      action,
+      reviewNotes,
+    }: {
+      suggestionIds: string[]
+      action: 'approve' | 'reject'
+      reviewNotes?: string
+    }) => streamSuggestionsApi.bulkReview(suggestionIds, action, reviewNotes),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.all })
+    },
+  })
+}
+
 // Delete stream suggestion
 export function useDeleteStreamSuggestion() {
   const queryClient = useQueryClient()

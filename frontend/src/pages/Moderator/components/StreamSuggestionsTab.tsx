@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   CheckCircle2,
@@ -9,13 +9,26 @@ import {
   Eye,
   Film,
   Filter,
+  ListChecks,
   Loader2,
+  Trash2,
   XCircle,
 } from 'lucide-react'
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -29,7 +42,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import { useDebounce, usePendingStreamSuggestions, useReviewStreamSuggestion, useStreamSuggestionStats } from '@/hooks'
+import {
+  useBulkReviewStreamSuggestions,
+  useDebounce,
+  usePendingStreamSuggestions,
+  useReviewStreamSuggestion,
+  useStreamSuggestionStats,
+} from '@/hooks'
 import type { StreamSuggestion, StreamSuggestionStatus } from '@/lib/api'
 
 import { formatStreamFieldName, formatStreamSuggestionType, parseEpisodeLinkField, formatTimeAgo } from './helpers'
@@ -48,6 +67,14 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
   const [selectedSuggestion, setSelectedSuggestion] = useState<StreamSuggestion | null>(null)
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
   const [reviewNotes, setReviewNotes] = useState('')
+  const [bulkModeEnabled, setBulkModeEnabled] = useState(false)
+  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([])
+  const [bulkApproveDialogOpen, setBulkApproveDialogOpen] = useState(false)
+  const [bulkRejectDialogOpen, setBulkRejectDialogOpen] = useState(false)
+  const [bulkApproveNotes, setBulkApproveNotes] = useState('')
+  const [bulkRejectNotes, setBulkRejectNotes] = useState('')
+  const [isBulkApprovingSelected, setIsBulkApprovingSelected] = useState(false)
+  const [isBulkRejectingSelected, setIsBulkRejectingSelected] = useState(false)
   const debouncedUploaderQuery = useDebounce(uploaderQuery, 350)
   const debouncedReviewerQuery = useDebounce(reviewerQuery, 350)
 
@@ -61,6 +88,8 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
   })
   const { data: stats } = useStreamSuggestionStats()
   const reviewSuggestion = useReviewStreamSuggestion()
+  const bulkReviewSuggestions = useBulkReviewStreamSuggestions()
+  const isAnyActionPending = reviewSuggestion.isPending || bulkReviewSuggestions.isPending
   const getReviewerLabel = (suggestion: StreamSuggestion): string | null => {
     if (suggestion.status === 'pending') return null
     if (suggestion.reviewer_name) return suggestion.reviewer_name
@@ -89,6 +118,58 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
   }
   const selectedReviewerLabel = selectedSuggestion ? getReviewerLabel(selectedSuggestion) : null
   const selectedReviewBadge = selectedSuggestion ? getReviewBadge(selectedSuggestion) : null
+  const suggestionsOnPage = useMemo(() => data?.suggestions ?? [], [data?.suggestions])
+  const pendingSuggestionsOnPage = suggestionsOnPage.filter((suggestion) => suggestion.status === 'pending')
+  const pendingSuggestionIdsOnPage = pendingSuggestionsOnPage.map((suggestion) => suggestion.id)
+  const pendingSuggestionIdsKey = pendingSuggestionIdsOnPage.join('|')
+  const pendingSuggestionIdSet = useMemo(
+    () => new Set(pendingSuggestionIdsKey ? pendingSuggestionIdsKey.split('|') : []),
+    [pendingSuggestionIdsKey],
+  )
+  const selectedSuggestionIdSet = new Set(selectedSuggestionIds)
+  const selectedPendingSuggestionIds = selectedSuggestionIds.filter((suggestionId) =>
+    pendingSuggestionIdSet.has(suggestionId),
+  )
+  const selectedPendingCount = selectedPendingSuggestionIds.length
+  const allPendingOnPageSelected =
+    pendingSuggestionsOnPage.length > 0 &&
+    pendingSuggestionsOnPage.every((suggestion) => selectedSuggestionIdSet.has(suggestion.id))
+  const hasSomePendingOnPageSelected = selectedPendingCount > 0 && !allPendingOnPageSelected
+
+  useEffect(() => {
+    setSelectedSuggestionIds((previousSelection) => {
+      const nextSelection = previousSelection.filter((suggestionId) => pendingSuggestionIdSet.has(suggestionId))
+      if (
+        nextSelection.length === previousSelection.length &&
+        nextSelection.every((suggestionId, idx) => suggestionId === previousSelection[idx])
+      ) {
+        return previousSelection
+      }
+      return nextSelection
+    })
+  }, [pendingSuggestionIdSet])
+
+  const toggleSuggestionSelection = (suggestionId: string, checked: boolean) => {
+    setSelectedSuggestionIds((currentSelection) => {
+      if (checked) {
+        if (currentSelection.includes(suggestionId)) return currentSelection
+        return [...currentSelection, suggestionId]
+      }
+      return currentSelection.filter((item) => item !== suggestionId)
+    })
+  }
+
+  const toggleSelectAllPendingOnPage = (checked: boolean) => {
+    if (checked) {
+      setSelectedSuggestionIds((currentSelection) =>
+        Array.from(new Set([...currentSelection, ...pendingSuggestionIdsOnPage])),
+      )
+      return
+    }
+    setSelectedSuggestionIds((currentSelection) =>
+      currentSelection.filter((suggestionId) => !pendingSuggestionIdSet.has(suggestionId)),
+    )
+  }
   const getBaseSuggestionType = (value: string): string => (value.includes(':') ? value.split(':', 1)[0] : value)
   const isRelinkSuggestion = (suggestion: StreamSuggestion): boolean => {
     const suggestionType = getBaseSuggestionType(suggestion.suggestion_type)
@@ -155,6 +236,41 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
       refetch()
     } catch {
       // Error handled by mutation
+    }
+  }
+
+  const handleBulkReviewSelected = async (action: 'approve' | 'reject') => {
+    if (!selectedPendingCount) return
+    if (action === 'approve') {
+      setIsBulkApprovingSelected(true)
+    } else {
+      setIsBulkRejectingSelected(true)
+    }
+
+    try {
+      const reviewNotes = (action === 'approve' ? bulkApproveNotes : bulkRejectNotes).trim() || undefined
+      await bulkReviewSuggestions.mutateAsync({
+        suggestionIds: selectedPendingSuggestionIds,
+        action,
+        reviewNotes,
+      })
+      if (action === 'approve') {
+        setBulkApproveDialogOpen(false)
+        setBulkApproveNotes('')
+      } else {
+        setBulkRejectDialogOpen(false)
+        setBulkRejectNotes('')
+      }
+      setSelectedSuggestionIds([])
+      refetch()
+    } catch {
+      // Error handled by mutation
+    } finally {
+      if (action === 'approve') {
+        setIsBulkApprovingSelected(false)
+      } else {
+        setIsBulkRejectingSelected(false)
+      }
     }
   }
 
@@ -245,7 +361,61 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
           placeholder="Approved by (username or ID)"
           className="w-[220px] rounded-xl"
         />
+        <Button
+          variant={bulkModeEnabled ? 'default' : 'outline'}
+          className="rounded-xl"
+          onClick={() => {
+            setBulkModeEnabled((value) => !value)
+            setSelectedSuggestionIds([])
+          }}
+          disabled={isAnyActionPending}
+        >
+          <ListChecks className="h-4 w-4 mr-2" />
+          {bulkModeEnabled ? 'Exit Bulk Mode' : 'Bulk Action Mode'}
+        </Button>
       </div>
+
+      {bulkModeEnabled && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border/50 bg-muted/20 p-3">
+          <span className="text-xs text-muted-foreground">Bulk actions apply to pending suggestions only.</span>
+          <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+            <Checkbox
+              checked={allPendingOnPageSelected ? true : hasSomePendingOnPageSelected ? 'indeterminate' : false}
+              onCheckedChange={(checked) => toggleSelectAllPendingOnPage(checked === true)}
+              disabled={!pendingSuggestionsOnPage.length || isAnyActionPending}
+            />
+            Select all pending on this page
+          </label>
+          <span className="text-sm text-muted-foreground">
+            Selected: <span className="font-medium text-foreground">{selectedPendingCount}</span>
+          </span>
+          <Button
+            className="rounded-xl bg-emerald-600 hover:bg-emerald-700"
+            onClick={() => setBulkApproveDialogOpen(true)}
+            disabled={!selectedPendingCount || isAnyActionPending}
+          >
+            {isBulkApprovingSelected ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+            )}
+            Approve Selected
+          </Button>
+          <Button
+            variant="destructive"
+            className="rounded-xl"
+            onClick={() => setBulkRejectDialogOpen(true)}
+            disabled={!selectedPendingCount || isAnyActionPending}
+          >
+            {isBulkRejectingSelected ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Trash2 className="h-4 w-4 mr-2" />
+            )}
+            Reject Selected
+          </Button>
+        </div>
+      )}
 
       {showInitialLoading ? (
         <div className="space-y-4">
@@ -271,6 +441,15 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
               <Card key={suggestion.id} className="glass border-border/50 hover:border-primary/30 transition-colors">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-4">
+                    {bulkModeEnabled && (
+                      <div className="pt-1">
+                        <Checkbox
+                          checked={selectedSuggestionIdSet.has(suggestion.id)}
+                          onCheckedChange={(checked) => toggleSuggestionSelection(suggestion.id, checked === true)}
+                          disabled={suggestion.status !== 'pending' || isAnyActionPending}
+                        />
+                      </div>
+                    )}
                     <div
                       className={`p-2 rounded-xl flex-shrink-0 ${isEpisodeLink ? 'bg-blue-500/10' : 'bg-primary/10'}`}
                     >
@@ -458,6 +637,68 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
           </Button>
         </div>
       )}
+
+      <AlertDialog open={bulkApproveDialogOpen} onOpenChange={setBulkApproveDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve selected pending stream suggestions?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This approves {selectedPendingCount} selected pending suggestion{selectedPendingCount === 1 ? '' : 's'}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Review Notes (optional)</label>
+            <Textarea
+              value={bulkApproveNotes}
+              onChange={(event) => setBulkApproveNotes(event.target.value)}
+              placeholder="Add notes for approved suggestions..."
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkApprovingSelected}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleBulkReviewSelected('approve')}
+              disabled={isBulkApprovingSelected || !selectedPendingCount}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              {isBulkApprovingSelected ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Approve Selected
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkRejectDialogOpen} onOpenChange={setBulkRejectDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject selected pending stream suggestions?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This rejects {selectedPendingCount} selected pending suggestion{selectedPendingCount === 1 ? '' : 's'}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Review Notes (optional)</label>
+            <Textarea
+              value={bulkRejectNotes}
+              onChange={(event) => setBulkRejectNotes(event.target.value)}
+              placeholder="Add notes for rejected suggestions..."
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkRejectingSelected}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleBulkReviewSelected('reject')}
+              disabled={isBulkRejectingSelected || !selectedPendingCount}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isBulkRejectingSelected ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Reject Selected
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
         <DialogContent

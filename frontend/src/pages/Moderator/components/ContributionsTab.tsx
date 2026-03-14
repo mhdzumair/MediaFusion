@@ -46,13 +46,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  useAdminRejectApprovedContribution,
   useAuth,
   useBulkReviewContributions,
   useContributionContributors,
   useContributions,
   useDebounce,
   useFlagContributionForAdminReview,
+  useRejectApprovedContribution,
   useReviewContribution,
 } from '@/hooks'
 import type { Contribution, ContributionStatus, ContributionType } from '@/lib/api'
@@ -148,18 +148,18 @@ export function ContributionsTab({
   })
   const reviewContribution = useReviewContribution()
   const flagForAdminReview = useFlagContributionForAdminReview()
-  const adminRejectApprovedContribution = useAdminRejectApprovedContribution()
+  const rejectApprovedContribution = useRejectApprovedContribution()
   const bulkReviewContributions = useBulkReviewContributions()
-  const isAdmin = user?.role === 'admin'
+  const canRejectApproved = user?.role === 'admin' || user?.role === 'moderator'
   const isAnyActionPending =
     reviewContribution.isPending ||
     bulkReviewContributions.isPending ||
     flagForAdminReview.isPending ||
-    adminRejectApprovedContribution.isPending
+    rejectApprovedContribution.isPending
   const contributionsOnPage = useMemo(() => data?.items ?? [], [data?.items])
   const pendingContributions = contributionsOnPage.filter((contribution) => contribution.status === 'pending')
   const selectableContributions = contributionsOnPage.filter(
-    (contribution) => contribution.status === 'pending' || (isAdmin && contribution.status === 'approved'),
+    (contribution) => contribution.status === 'pending' || (canRejectApproved && contribution.status === 'approved'),
   )
   const selectableContributionIds = selectableContributions.map((contribution) => contribution.id)
   const selectableContributionIdsKey = selectableContributionIds.join('|')
@@ -322,9 +322,9 @@ export function ContributionsTab({
           review_notes: reviewNotes,
         })
       }
-      if (isAdmin && selectedApprovedContributionIds.length > 0) {
+      if (canRejectApproved && selectedApprovedContributionIds.length > 0) {
         for (const contributionId of selectedApprovedContributionIds) {
-          await adminRejectApprovedContribution.mutateAsync({
+          await rejectApprovedContribution.mutateAsync({
             contributionId,
             data: { review_notes: reviewNotes },
           })
@@ -357,10 +357,10 @@ export function ContributionsTab({
     }
   }
 
-  const handleAdminRejectApproved = async () => {
+  const handleRejectApproved = async () => {
     if (!selectedContribution) return
     try {
-      await adminRejectApprovedContribution.mutateAsync({
+      await rejectApprovedContribution.mutateAsync({
         contributionId: selectedContribution.id,
         data: { review_notes: reviewNotes || undefined },
       })
@@ -490,9 +490,7 @@ export function ContributionsTab({
       {bulkModeEnabled && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border/50 bg-muted/20 p-3">
           <span className="text-xs text-muted-foreground">
-            {isAdmin
-              ? 'Bulk reject supports pending and approved contributions.'
-              : 'Bulk reject supports pending only (approved rejection requires admin).'}
+            Bulk reject supports pending and approved contributions.
           </span>
           <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
             <Checkbox
@@ -504,7 +502,7 @@ export function ContributionsTab({
           </label>
           <span className="text-sm text-muted-foreground">
             Selected: <span className="font-medium text-foreground">{selectedTotalCount}</span>
-            {isAdmin ? (
+            {canRejectApproved ? (
               <span className="ml-2 text-xs">
                 (pending: {selectedPendingCount}, approved: {selectedApprovedCount})
               </span>
@@ -570,7 +568,8 @@ export function ContributionsTab({
                           checked={selectedContributionIdSet.has(contribution.id)}
                           onCheckedChange={(checked) => toggleContributionSelection(contribution.id, checked === true)}
                           disabled={
-                            (contribution.status !== 'pending' && !(isAdmin && contribution.status === 'approved')) ||
+                            (contribution.status !== 'pending' &&
+                              !(canRejectApproved && contribution.status === 'approved')) ||
                             isAnyActionPending
                           }
                         />
@@ -799,8 +798,8 @@ export function ContributionsTab({
             <AlertDialogTitle>Reject selected contributions?</AlertDialogTitle>
             <AlertDialogDescription>
               This rejects {selectedTotalCount} selected contribution{selectedTotalCount === 1 ? '' : 's'}
-              {isAdmin && selectedApprovedCount > 0
-                ? ` (${selectedPendingCount} pending, ${selectedApprovedCount} approved with admin rollback)`
+              {canRejectApproved && selectedApprovedCount > 0
+                ? ` (${selectedPendingCount} pending, ${selectedApprovedCount} approved with rollback)`
                 : ` (${selectedPendingCount} pending)`}
               .
             </AlertDialogDescription>
@@ -1044,7 +1043,7 @@ export function ContributionsTab({
             )}
             {selectedContribution?.status === 'approved' && (
               <>
-                {!isAdmin && (
+                {!canRejectApproved && (
                   <Button
                     variant="outline"
                     onClick={handleFlagForAdmin}
@@ -1059,14 +1058,14 @@ export function ContributionsTab({
                     )}
                   </Button>
                 )}
-                {isAdmin && (
-                  <Button variant="destructive" onClick={handleAdminRejectApproved} disabled={isAnyActionPending}>
+                {canRejectApproved && (
+                  <Button variant="destructive" onClick={handleRejectApproved} disabled={isAnyActionPending}>
                     {isAnyActionPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <>
                         <XCircle className="h-4 w-4 mr-2" />
-                        Reject (Admin)
+                        Reject (Rollback)
                       </>
                     )}
                   </Button>

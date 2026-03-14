@@ -205,10 +205,10 @@ export const contributionsApi = {
   },
 
   /**
-   * Reject approved contribution with rollback (Admin only)
+   * Reject approved contribution with rollback (Mod+)
    */
-  adminRejectApproved: async (contributionId: string, data: ContributionAdminRejectRequest): Promise<Contribution> => {
-    return apiClient.patch<Contribution>(`/contributions/${contributionId}/admin-reject`, data)
+  rejectApproved: async (contributionId: string, data: ContributionAdminRejectRequest): Promise<Contribution> => {
+    return apiClient.patch<Contribution>(`/contributions/${contributionId}/reject-approved`, data)
   },
 
   /**

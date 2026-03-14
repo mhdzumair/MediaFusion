@@ -45,7 +45,7 @@ export {
   usePendingContributions,
   useReviewContribution,
   useFlagContributionForAdminReview,
-  useAdminRejectApprovedContribution,
+  useRejectApprovedContribution,
   useBulkReviewContributions,
   useAllContributionStats,
 } from './useContributions'
@@ -197,6 +197,7 @@ export {
   useStreamSuggestionStats,
   useCreateStreamSuggestion,
   useReviewStreamSuggestion,
+  useBulkReviewStreamSuggestions,
   useDeleteStreamSuggestion,
   streamSuggestionKeys,
 } from './useStreamSuggestions'

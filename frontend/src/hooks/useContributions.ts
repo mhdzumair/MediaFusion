@@ -111,12 +111,12 @@ export function useFlagContributionForAdminReview() {
   })
 }
 
-export function useAdminRejectApprovedContribution() {
+export function useRejectApprovedContribution() {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: ({ contributionId, data }: { contributionId: string; data: ContributionAdminRejectRequest }) =>
-      contributionsApi.adminRejectApproved(contributionId, data),
+      contributionsApi.rejectApproved(contributionId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: CONTRIBUTIONS_QUERY_KEY })
     },

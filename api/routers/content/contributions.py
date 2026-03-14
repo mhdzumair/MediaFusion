@@ -1199,14 +1199,17 @@ async def flag_contribution_for_admin_review(
     return contribution_to_response(contribution, username, media_id, reviewer_name)
 
 
-@router.patch("/{contribution_id}/admin-reject", response_model=ContributionResponse)
-async def admin_reject_approved_contribution(
+@router.patch("/{contribution_id}/reject-approved", response_model=ContributionResponse)
+async def reject_approved_contribution(
     contribution_id: str,
     request: ContributionAdminRejectRequest,
-    user: User = Depends(require_role(UserRole.ADMIN)),
+    user: User = Depends(require_role(UserRole.MODERATOR)),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Reject an approved contribution and make its imported stream non-public/inactive."""
+    """Reject an approved contribution and make its imported stream non-public/inactive.
+
+    Supports the new `/reject-approved` route and legacy `/admin-reject` alias.
+    """
     contribution = await session.get(Contribution, contribution_id)
     if not contribution:
         raise HTTPException(
@@ -1217,16 +1220,18 @@ async def admin_reject_approved_contribution(
     if contribution.status != ContributionStatus.APPROVED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Only approved contributions can be admin-rejected (current status: {contribution.status})",
+            detail=f"Only approved contributions can be rejected (current status: {contribution.status})",
         )
 
     stream = await _resolve_stream_for_contribution(session, contribution)
-    rollback_note = "Admin rejection rollback: no linked stream could be resolved."
+    rollback_note = "Moderation rejection rollback: no linked stream could be resolved."
     if stream:
         stream.is_public = False
         stream.is_active = False
         session.add(stream)
-        rollback_note = f"Admin rejection rollback applied: stream_id={stream.id}, is_public=False, is_active=False."
+        rollback_note = (
+            f"Moderation rejection rollback applied: stream_id={stream.id}, is_public=False, is_active=False."
+        )
 
     contribution.status = ContributionStatus.REJECTED
     contribution.reviewed_by = str(user.id)

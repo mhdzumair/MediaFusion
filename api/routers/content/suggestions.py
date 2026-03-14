@@ -11,7 +11,7 @@ from typing import Literal, TypedDict
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import String, cast, func, or_
+from sqlalchemy import String, case, cast, func, or_
 from sqlalchemy.orm import aliased
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -1029,8 +1029,12 @@ async def list_my_suggestions(
         base_query = base_query.where(MetadataSuggestion.status == suggestion_status)
         count_query = count_query.where(MetadataSuggestion.status == suggestion_status)
 
-    # Order and paginate
-    base_query = base_query.order_by(MetadataSuggestion.created_at.desc())
+    # Order and paginate (pending first, then newest)
+    pending_first_order = case(
+        (MetadataSuggestion.status == STATUS_PENDING, 0),
+        else_=1,
+    )
+    base_query = base_query.order_by(pending_first_order, MetadataSuggestion.created_at.desc())
     base_query = base_query.offset(offset).limit(page_size)
 
     # Execute

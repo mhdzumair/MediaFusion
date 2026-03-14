@@ -11,7 +11,7 @@ from typing import Literal, TypedDict
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import String, cast, func, or_
+from sqlalchemy import String, case, cast, func, or_
 from sqlalchemy.orm import aliased, selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -1745,8 +1745,12 @@ async def get_pending_stream_suggestions(
     count_result = await session.exec(count_query)
     total = count_result.one()
 
-    # Latest first (desc) for better review experience
-    query = query.order_by(StreamSuggestion.created_at.desc())
+    # Pending first, then newest for better moderation flow
+    pending_first_order = case(
+        (StreamSuggestion.status == STATUS_PENDING, 0),
+        else_=1,
+    )
+    query = query.order_by(pending_first_order, StreamSuggestion.created_at.desc())
     query = query.offset((page - 1) * page_size).limit(page_size)
 
     result = await session.exec(query)
