@@ -82,6 +82,8 @@ COPY --from=builder --chown=mediafusion:mediafusion /mediafusion/.cache /mediafu
 
 ENV PATH="/mediafusion/.venv/bin:$PATH"
 ENV PLAYWRIGHT_BROWSERS_PATH="/mediafusion/.cache/ms-playwright"
+ENV XDG_CONFIG_HOME="/tmp/.chromium"
+ENV XDG_CACHE_HOME="/tmp/.chromium"
 
 COPY --chown=mediafusion:mediafusion . /mediafusion
 
