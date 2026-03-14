@@ -89,6 +89,25 @@ class NewznabScraper(BaseScraper):
             return "default"
         return hashlib.md5("|".join(normalized_urls).encode()).hexdigest()[:10]
 
+    @staticmethod
+    def _build_api_url(url: str) -> str:
+        """Return a normalized Newznab API URL, avoiding duplicate /api segments."""
+        raw_url = str(url or "").strip().rstrip("/")
+        if not raw_url:
+            return ""
+
+        try:
+            parts = urlsplit(raw_url)
+            # Fallback for values without scheme/netloc (keep legacy behavior)
+            if not parts.scheme or not parts.netloc:
+                return raw_url if raw_url.endswith("/api") else f"{raw_url}/api"
+
+            path = parts.path.rstrip("/")
+            api_path = path if path.endswith("/api") else f"{path}/api" if path else "/api"
+            return urlunsplit((parts.scheme, parts.netloc, api_path, "", ""))
+        except Exception:
+            return raw_url if raw_url.endswith("/api") else f"{raw_url}/api"
+
     def get_cache_key(
         self,
         user_data,
@@ -280,15 +299,17 @@ class NewznabScraper(BaseScraper):
             params["apikey"] = indexer.api_key
         params["o"] = "json"  # Request JSON output
 
+        api_url = self._build_api_url(str(indexer.url))
+
         if indexer.use_zyclops:
             # Proxy through Zyclops health check proxy
             url = "https://zyclops.elfhosted.com/api"
-            params["target"] = f"{str(indexer.url).rstrip('/')}/api"
+            params["target"] = api_url
             params["single_ip"] = "true"
             if indexer.zyclops_backbones:
                 params["backbone"] = ",".join(indexer.zyclops_backbones)
         else:
-            url = f"{str(indexer.url).rstrip('/')}/api"
+            url = api_url
 
         try:
             response = await self.http_client.get(url, params=params, timeout=30)
@@ -311,7 +332,8 @@ class NewznabScraper(BaseScraper):
                     yield stream
 
         except httpx.HTTPStatusError as e:
-            self.logger.error(f"HTTP error from {indexer.name}: {e.response.status_code}")
+            request_url = str(e.request.url) if e.request else url
+            self.logger.error(f"HTTP error from {indexer.name}: {e.response.status_code} ({request_url})")
             self.metrics.record_indexer_error(indexer.name, f"HTTP {e.response.status_code}")
         except httpx.RequestError as e:
             self.logger.error(f"Request error for {indexer.name}: {e}")
@@ -610,7 +632,7 @@ class NewznabScraper(BaseScraper):
                 query = {"t": "get", "id": guid}
                 if indexer.api_key:
                     query["apikey"] = indexer.api_key
-                nzb_url = f"{str(indexer.url).rstrip('/')}/api?{urlencode(query)}"
+                nzb_url = f"{self._build_api_url(str(indexer.url))}?{urlencode(query)}"
 
             # Build files list for series
             files: list[StreamFileData] = []
@@ -715,7 +737,7 @@ class NewznabScraper(BaseScraper):
         Returns:
             NZB file content as bytes or None on error
         """
-        url = f"{str(indexer.url).rstrip('/')}/api"
+        url = self._build_api_url(str(indexer.url))
         params = {
             "t": "get",
             "id": guid,
