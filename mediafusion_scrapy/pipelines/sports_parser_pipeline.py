@@ -278,6 +278,8 @@ class UFCParserPipeline(BaseParserPipeline):
         while torrent titles often include card-type variants like "UFC 325 Early Prelims"
         or "UFC 314 PPV Volkanovski vs Lopes".
         """
+        if not isinstance(title, str):
+            return ""
         title = cls._card_suffix_re.sub("", title).strip()
         title = cls._ppv_mid_re.sub("", title).strip()
         return title
@@ -286,15 +288,23 @@ class UFCParserPipeline(BaseParserPipeline):
         date = torrent_data.get("date")
         year = date.year if date else None
         title = torrent_data.get("event")
+        if not title:
+            if not torrent_data.get("poster"):
+                torrent_data["poster"] = random.choice(SPORTS_ARTIFACTS[self.event_name.upper()]["poster"])
+            return
 
         # Strip card-type suffixes for TMDB lookup
         clean_title = self._clean_event_title(title)
+        if not clean_title:
+            if not torrent_data.get("poster"):
+                torrent_data["poster"] = random.choice(SPORTS_ARTIFACTS[self.event_name.upper()]["poster"])
+            return
 
         # Use partial_ratio because torrent event titles are often a prefix of the
         # TMDB title (e.g. "UFC 325" vs "UFC 325: Volkanovski vs. Lopes 2")
         tmdb_data = await search_tmdb(clean_title, year, use_partial_ratio=True)
         if not tmdb_data:
-            if not torrent_data["poster"]:
+            if not torrent_data.get("poster"):
                 torrent_data["poster"] = random.choice(SPORTS_ARTIFACTS[self.event_name.upper()]["poster"])
             return
         torrent_data.update(

@@ -56,6 +56,7 @@ SPIDER_MIDDLEWARES = {
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 
 DOWNLOADER_MIDDLEWARES = {
+    "mediafusion_scrapy.middlewares.MediafusionScrapyDownloaderMiddleware": 542,
     "mediafusion_scrapy.middlewares.TooManyRequestsRetryMiddleware": 543,
     "scrapy.downloadermiddlewares.retry.RetryMiddleware": 550,
     # Scrapling anti-bot middleware must have higher priority number than RetryMiddleware

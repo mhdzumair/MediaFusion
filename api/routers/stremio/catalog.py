@@ -221,7 +221,10 @@ async def get_catalog(
         # Parse mdblist ID from catalog_id (format: mdblist_{type}_{id})
         parts = catalog_id.split("_")
         if len(parts) >= 3:
-            mdblist_id = int(parts[-1])  # Last part is the list ID
+            raw_mdblist_id = parts[-1].split(".", 1)[0]
+            if not raw_mdblist_id.isdigit():
+                return public_schemas.Metas(metas=[])
+            mdblist_id = int(raw_mdblist_id)  # Last part is the list ID
             # Find matching list config
             list_config = next(
                 (lst for lst in user_data.mdblist_config.lists if lst.id == mdblist_id),

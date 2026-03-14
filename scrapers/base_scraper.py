@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Any, Literal
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 import PTT
@@ -854,12 +855,21 @@ class BaseScraper(abc.ABC):
         episode_name_parser: str = None,
     ) -> tuple[dict | None, bool]:
         """Common method to get torrent data from magnet or URL"""
+        if not isinstance(download_url, str) or not download_url.strip():
+            return None, False
+
+        download_url = download_url.strip()
         if download_url.startswith("magnet:"):
             try:
                 magnet = Magnet.from_string(download_url)
             except (MagnetError, TorfURLError, TypeError, ValueError):
                 return None, False
             return {"info_hash": magnet.infohash, "announce_list": magnet.tr}, True
+
+        parsed_download_url = urlsplit(download_url)
+        if parsed_download_url.scheme.lower() not in {"http", "https"} or not parsed_download_url.netloc:
+            self.logger.debug("Skipping unsupported torrent URL: %s", download_url)
+            return None, False
 
         max_5xx_retries = 2
         for attempt in range(max_5xx_retries + 1):
@@ -876,6 +886,7 @@ class BaseScraper(abc.ABC):
                     if not redirect_url:
                         self.logger.warning("Redirect without location while fetching torrent data: %s", download_url)
                         return None, False
+                    redirect_url = urljoin(str(response.request.url), redirect_url)
                     return await self.get_torrent_data(redirect_url, parsed_data, headers, episode_name_parser)
 
                 response.raise_for_status()

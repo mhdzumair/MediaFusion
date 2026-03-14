@@ -68,6 +68,12 @@ def _site_origin(url: str) -> str:
     return url
 
 
+def _is_target_closed_error(error: Exception) -> bool:
+    message = str(error).lower()
+    error_name = error.__class__.__name__.lower()
+    return "targetclosederror" in error_name or "target page, context or browser has been closed" in message
+
+
 async def _download_torrent_via_browser_fetch(
     torrent_url: str,
     *,
@@ -148,21 +154,26 @@ async def _download_torrent_via_browser_fetch(
         if isinstance(result, dict):
             page_result.update(result)
 
-    async with AsyncStealthySession(
-        headless=headless,
-        disable_resources=disable_resources,
-        network_idle=network_idle,
-        wait=wait_time_ms,
-        timeout=timeout_ms,
-        google_search=google_search_referer,
-        proxy=proxy_url,
-        solve_cloudflare=solve_cloudflare,
-        real_chrome=real_chrome,
-        block_webrtc=True,
-        max_pages=2,
-    ) as browser_session:
-        await browser_session.fetch(referer_url)
-        await browser_session.fetch(referer_url, page_action=run_browser_fetch, wait=0)
+    try:
+        async with AsyncStealthySession(
+            headless=headless,
+            disable_resources=disable_resources,
+            network_idle=network_idle,
+            wait=wait_time_ms,
+            timeout=timeout_ms,
+            google_search=google_search_referer,
+            proxy=proxy_url,
+            solve_cloudflare=solve_cloudflare,
+            real_chrome=real_chrome,
+            block_webrtc=True,
+            max_pages=2,
+        ) as browser_session:
+            await browser_session.fetch(referer_url)
+            await browser_session.fetch(referer_url, page_action=run_browser_fetch, wait=0)
+    except Exception as error:
+        if _is_target_closed_error(error):
+            return None
+        raise
 
     if page_result.get("status") != 200:
         return None
@@ -192,31 +203,42 @@ async def solve_protected_page(
     real_chrome: bool = False,
 ) -> dict:
     use_stealthy = fetcher_mode == "stealthy"
-    if use_stealthy:
-        response = await StealthyFetcher.async_fetch(
-            url=url,
-            headless=headless,
-            disable_resources=disable_resources,
-            network_idle=network_idle,
-            wait=wait_time_ms,
-            timeout=timeout_ms,
-            google_search=google_search_referer,
-            proxy=proxy_url,
-            solve_cloudflare=solve_cloudflare,
-            real_chrome=real_chrome,
-            block_webrtc=True,
-        )
-    else:
-        response = await DynamicFetcher.async_fetch(
-            url=url,
-            headless=headless,
-            disable_resources=disable_resources,
-            network_idle=network_idle,
-            wait=wait_time_ms,
-            timeout=timeout_ms,
-            google_search=google_search_referer,
-            proxy=proxy_url,
-        )
+    try:
+        if use_stealthy:
+            response = await StealthyFetcher.async_fetch(
+                url=url,
+                headless=headless,
+                disable_resources=disable_resources,
+                network_idle=network_idle,
+                wait=wait_time_ms,
+                timeout=timeout_ms,
+                google_search=google_search_referer,
+                proxy=proxy_url,
+                solve_cloudflare=solve_cloudflare,
+                real_chrome=real_chrome,
+                block_webrtc=True,
+            )
+        else:
+            response = await DynamicFetcher.async_fetch(
+                url=url,
+                headless=headless,
+                disable_resources=disable_resources,
+                network_idle=network_idle,
+                wait=wait_time_ms,
+                timeout=timeout_ms,
+                google_search=google_search_referer,
+                proxy=proxy_url,
+            )
+    except Exception as error:
+        if not _is_target_closed_error(error):
+            raise
+        return {
+            "url": url,
+            "status": 0,
+            "html": "",
+            "cookies": {},
+            "user_agent": None,
+        }
 
     return {
         "url": getattr(response, "url", url),

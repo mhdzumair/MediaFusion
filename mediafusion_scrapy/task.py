@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SPIDER_PROCESS_START_METHOD = os.getenv("SCRAPY_PROCESS_START_METHOD", "spawn").strip().lower()
 SPIDER_LOOP_JOIN_POLL_SECONDS = 5.0
+CHALLENGE_HEAVY_SPIDERS = {"tamilmv", "tamil_blasters"}
 
 try:
     _PROCESS_CONTEXT = get_context(_SPIDER_PROCESS_START_METHOD)
@@ -73,8 +74,15 @@ def _ensure_project_import_path() -> None:
         os.environ["PYTHONPATH"] = os.pathsep.join(pythonpath_parts)
 
 
-def _read_runtime_timeouts() -> tuple[int, int, int]:
+def _read_runtime_timeouts(spider_name: str | None = None) -> tuple[int, int, int]:
     timeout_seconds = int(os.getenv("SCRAPY_PROCESS_TIMEOUT_SECONDS", "3300"))
+    if spider_name:
+        timeout_env_suffix = spider_name.upper().replace("-", "_")
+        per_spider_timeout = os.getenv(f"SCRAPY_PROCESS_TIMEOUT_SECONDS_{timeout_env_suffix}")
+        if per_spider_timeout:
+            timeout_seconds = int(per_spider_timeout)
+        elif spider_name in CHALLENGE_HEAVY_SPIDERS:
+            timeout_seconds = max(timeout_seconds, 5400)
     terminate_grace_seconds = int(os.getenv("SCRAPY_PROCESS_TERMINATE_GRACE_SECONDS", "30"))
     progress_log_interval_seconds = int(os.getenv("SCRAPY_PROCESS_PROGRESS_LOG_INTERVAL_SECONDS", "60"))
     return timeout_seconds, terminate_grace_seconds, progress_log_interval_seconds
@@ -100,7 +108,7 @@ def run_spider(spider_name: str, *args, **kwargs):
     child's stdout/stderr
     back to the current process so the worker captures the logs.
     """
-    timeout_seconds, terminate_grace_seconds, progress_log_interval_seconds = _read_runtime_timeouts()
+    timeout_seconds, terminate_grace_seconds, progress_log_interval_seconds = _read_runtime_timeouts(spider_name)
     task_id = get_current_task_id()
     _ensure_project_import_path()
     logger.info(

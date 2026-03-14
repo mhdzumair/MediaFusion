@@ -86,6 +86,12 @@ class MediafusionScrapyDownloaderMiddleware:
         # - or return a Request object
         # - or raise IgnoreRequest: process_exception() methods of
         #   installed downloader middleware will be called
+        scheme = (urlparse(request.url).scheme or "").lower()
+        if scheme not in {"http", "https"}:
+            spider.logger.warning(
+                "Skipping request with unsupported URL scheme '%s': %s", scheme or "unknown", request.url
+            )
+            raise IgnoreRequest(f"Unsupported URL scheme: {scheme or 'unknown'}")
         return None
 
     def process_response(self, request, response, spider):
