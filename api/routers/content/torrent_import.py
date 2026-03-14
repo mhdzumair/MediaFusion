@@ -31,7 +31,13 @@ from db.crud.media import (
     get_media_by_id,
     get_media_by_title_year,
 )
-from db.crud.reference import get_or_create_catalog, get_or_create_language
+from db.crud.reference import (
+    get_or_create_audio_channel,
+    get_or_create_audio_format,
+    get_or_create_catalog,
+    get_or_create_hdr_format,
+    get_or_create_language,
+)
 from db.crud.scraper_helpers import get_or_create_metadata
 from db.database import get_async_session_context
 from db.enums import ContributionStatus, MediaType, TorrentType, UserRole
@@ -50,6 +56,9 @@ from db.models import (
 )
 from db.models.streams import (
     FileMediaLink,
+    StreamAudioLink,
+    StreamChannelLink,
+    StreamHDRLink,
     StreamLanguageLink,
     StreamType,
     TorrentStream,
@@ -240,6 +249,27 @@ def _normalize_string_list(raw_value: Any) -> list[str]:
     return []
 
 
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    """De-duplicate values while preserving first-seen order."""
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = value.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
+
+
+def _resolve_import_multi_value(form_value: str | None, torrent_data: dict[str, Any], key: str) -> list[str]:
+    """Prefer form list values; fallback to parsed torrent values for a given key."""
+    parsed_form_values = _parse_csv_form_values(form_value)
+    if parsed_form_values:
+        return _dedupe_preserve_order(parsed_form_values)
+    return _dedupe_preserve_order(_normalize_string_list(torrent_data.get(key)))
+
+
 def _collect_torrent_title_candidates(torrent_data: dict[str, Any]) -> list[str]:
     """Collect raw torrent source names for adult-keyword validation."""
     candidates: list[str] = []
@@ -264,10 +294,7 @@ def _collect_torrent_title_candidates(torrent_data: dict[str, Any]) -> list[str]
 
 def _resolve_import_languages(form_languages: str | None, torrent_data: dict[str, Any]) -> list[str]:
     """Prefer user-provided languages; fallback to parsed torrent languages."""
-    parsed_form_languages = _parse_csv_form_values(form_languages)
-    if parsed_form_languages:
-        return parsed_form_languages
-    return _normalize_string_list(torrent_data.get("languages"))
+    return _resolve_import_multi_value(form_languages, torrent_data, "languages")
 
 
 def _resolve_created_at_date(form_created_at: str | None, torrent_data: dict[str, Any]) -> str | None:
@@ -896,8 +923,18 @@ async def process_torrent_import(
         resolution=contribution_data.get("resolution"),
         codec=contribution_data.get("codec"),
         quality=contribution_data.get("quality"),
+        bit_depth=contribution_data.get("bit_depth"),
         uploader=uploader_name,
         uploader_user_id=uploader_user_id,
+        release_group=contribution_data.get("release_group"),
+        is_remastered=bool(contribution_data.get("is_remastered", False)),
+        is_upscaled=bool(contribution_data.get("is_upscaled", False)),
+        is_proper=bool(contribution_data.get("is_proper", False)),
+        is_repack=bool(contribution_data.get("is_repack", False)),
+        is_extended=bool(contribution_data.get("is_extended", False)),
+        is_complete=bool(contribution_data.get("is_complete", False)),
+        is_dubbed=bool(contribution_data.get("is_dubbed", False)),
+        is_subbed=bool(contribution_data.get("is_subbed", False)),
         is_public=is_public,
     )
     session.add(stream)
@@ -923,7 +960,7 @@ async def process_torrent_import(
     primary_stream_link_time = stream_media_link.created_at or datetime.now(pytz.UTC)
 
     # Add languages
-    languages = contribution_data.get("languages", [])
+    languages = _dedupe_preserve_order(_normalize_string_list(contribution_data.get("languages")))
     for lang_name in languages:
         if lang_name:
             try:
@@ -932,6 +969,43 @@ async def process_torrent_import(
                 session.add(lang_link)
             except Exception as e:
                 logger.warning(f"Failed to add language {lang_name}: {e}")
+
+    # Add audio format links
+    audio_formats = _dedupe_preserve_order(
+        _normalize_string_list(contribution_data.get("audio_formats") or contribution_data.get("audio"))
+    )
+    for audio_name in audio_formats:
+        if audio_name:
+            try:
+                audio_format = await get_or_create_audio_format(session, audio_name)
+                audio_link = StreamAudioLink(stream_id=stream.id, audio_format_id=audio_format.id)
+                session.add(audio_link)
+            except Exception as e:
+                logger.warning(f"Failed to add audio format {audio_name}: {e}")
+
+    # Add audio channel links
+    channels = _dedupe_preserve_order(_normalize_string_list(contribution_data.get("channels")))
+    for channel_name in channels:
+        if channel_name:
+            try:
+                channel = await get_or_create_audio_channel(session, channel_name)
+                channel_link = StreamChannelLink(stream_id=stream.id, channel_id=channel.id)
+                session.add(channel_link)
+            except Exception as e:
+                logger.warning(f"Failed to add audio channel {channel_name}: {e}")
+
+    # Add HDR format links
+    hdr_formats = _dedupe_preserve_order(
+        _normalize_string_list(contribution_data.get("hdr_formats") or contribution_data.get("hdr"))
+    )
+    for hdr_name in hdr_formats:
+        if hdr_name:
+            try:
+                hdr_format = await get_or_create_hdr_format(session, hdr_name)
+                hdr_link = StreamHDRLink(stream_id=stream.id, hdr_format_id=hdr_format.id)
+                session.add(hdr_link)
+            except Exception as e:
+                logger.warning(f"Failed to add HDR format {hdr_name}: {e}")
 
     # Add files with per-file metadata support
     file_data = contribution_data.get("file_data", [])
@@ -1410,6 +1484,9 @@ async def import_magnet(
         )
         resolved_catalogs = _resolve_catalogs(meta_type, catalogs, resolved_sports_category)
         resolved_created_at = _resolve_created_at_date(created_at, torrent_data)
+        resolved_audio_formats = _resolve_import_multi_value(audio, torrent_data, "audio")
+        resolved_hdr_formats = _resolve_import_multi_value(hdr, torrent_data, "hdr")
+        resolved_channels = _resolve_import_multi_value(None, torrent_data, "channels")
 
         # Parse file_data if provided, otherwise use from torrent
         parsed_file_data = []
@@ -1453,8 +1530,22 @@ async def import_magnet(
             "resolution": resolution or torrent_data.get("resolution"),
             "quality": quality or torrent_data.get("quality"),
             "codec": codec or torrent_data.get("codec"),
-            "audio": _parse_csv_form_values(audio),
-            "hdr": _parse_csv_form_values(hdr),
+            # Keep legacy keys for compatibility while writing normalized relation fields.
+            "audio": resolved_audio_formats,
+            "hdr": resolved_hdr_formats,
+            "audio_formats": resolved_audio_formats,
+            "hdr_formats": resolved_hdr_formats,
+            "channels": resolved_channels,
+            "bit_depth": torrent_data.get("bit_depth"),
+            "release_group": torrent_data.get("group"),
+            "is_remastered": bool(torrent_data.get("remastered", False)),
+            "is_upscaled": bool(torrent_data.get("upscaled", False)),
+            "is_proper": bool(torrent_data.get("proper", False)),
+            "is_repack": bool(torrent_data.get("repack", False)),
+            "is_extended": bool(torrent_data.get("extended", False)),
+            "is_complete": bool(torrent_data.get("complete", False)),
+            "is_dubbed": bool(torrent_data.get("dubbed", False)),
+            "is_subbed": bool(torrent_data.get("subbed", False)),
             "file_data": parsed_file_data,
             "file_count": len(parsed_file_data) or len(torrent_data.get("file_data", [])) or 1,
             "created_at": resolved_created_at,
@@ -1628,6 +1719,9 @@ async def import_torrent_file(
         )
         resolved_catalogs = _resolve_catalogs(meta_type, catalogs, resolved_sports_category)
         resolved_created_at = _resolve_created_at_date(created_at, torrent_data)
+        resolved_audio_formats = _resolve_import_multi_value(audio, torrent_data, "audio")
+        resolved_hdr_formats = _resolve_import_multi_value(hdr, torrent_data, "hdr")
+        resolved_channels = _resolve_import_multi_value(None, torrent_data, "channels")
 
         info_hash = torrent_data.get("info_hash", "").lower()
 
@@ -1701,8 +1795,22 @@ async def import_torrent_file(
             "resolution": resolution or torrent_data.get("resolution"),
             "quality": quality or torrent_data.get("quality"),
             "codec": codec or torrent_data.get("codec"),
-            "audio": _parse_csv_form_values(audio),
-            "hdr": _parse_csv_form_values(hdr),
+            # Keep legacy keys for compatibility while writing normalized relation fields.
+            "audio": resolved_audio_formats,
+            "hdr": resolved_hdr_formats,
+            "audio_formats": resolved_audio_formats,
+            "hdr_formats": resolved_hdr_formats,
+            "channels": resolved_channels,
+            "bit_depth": torrent_data.get("bit_depth"),
+            "release_group": torrent_data.get("group"),
+            "is_remastered": bool(torrent_data.get("remastered", False)),
+            "is_upscaled": bool(torrent_data.get("upscaled", False)),
+            "is_proper": bool(torrent_data.get("proper", False)),
+            "is_repack": bool(torrent_data.get("repack", False)),
+            "is_extended": bool(torrent_data.get("extended", False)),
+            "is_complete": bool(torrent_data.get("complete", False)),
+            "is_dubbed": bool(torrent_data.get("dubbed", False)),
+            "is_subbed": bool(torrent_data.get("subbed", False)),
             "file_data": parsed_file_data,
             "file_count": len(parsed_file_data) or len(torrent_data.get("file_data", [])) or 1,
             "created_at": resolved_created_at,
