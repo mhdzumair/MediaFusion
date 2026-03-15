@@ -11,6 +11,7 @@ services:
       # - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@postgres-replica:5432/mediafusion
       - REDIS_URL=redis://redis:6379
       - PROWLARR_URL=http://prowlarr:9696
+      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
       # Standard compose runs in single-worker mode by default.
       - TASKIQ_SINGLE_WORKER_MODE=true
     depends_on:
@@ -18,6 +19,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      browserless:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 1m
@@ -143,6 +146,22 @@ services:
     networks:
       - mediafusion-network
 
+  browserless:
+    image: browserless/chrome:latest
+    environment:
+      - ENABLE_DEBUGGER=false
+      - PREBOOT_CHROME=true
+      - MAX_CONCURRENT_SESSIONS=4
+      - CONNECTION_TIMEOUT=60000
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mediafusion-network
+
   taskiq-worker-default:
     image: mhdzumair/mediafusion:5.4.2
     command: ["taskiq", "worker", "api.taskiq_worker:broker_default", "--workers", "1", "--max-async-tasks", "8", "--ack-type", "when_executed"]
@@ -150,12 +169,15 @@ services:
     environment:
       - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@postgres:5432/mediafusion
       - REDIS_URL=redis://redis:6379
+      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
       - TASKIQ_SINGLE_WORKER_MODE=true
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      browserless:
+        condition: service_started
     restart: unless-stopped
     logging:
       driver: "json-file"

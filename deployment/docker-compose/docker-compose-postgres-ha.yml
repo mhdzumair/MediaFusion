@@ -204,6 +204,7 @@ services:
       # Use read replica PgBouncer for read operations
       - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
       - REDIS_URL=redis://redis:6379
+      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
       - TASKIQ_SINGLE_WORKER_MODE=false
     depends_on:
       pgbouncer:
@@ -212,6 +213,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      browserless:
+        condition: service_started
 
   # Override Taskiq workers to use PgBouncer
   taskiq-worker-default:
@@ -219,12 +222,15 @@ services:
       - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
       - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
       - REDIS_URL=redis://redis:6379
+      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
       - TASKIQ_SINGLE_WORKER_MODE=false
     depends_on:
       pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
+      browserless:
+        condition: service_started
 
   taskiq-worker-scrapy:
     image: mhdzumair/mediafusion:5.4.2
@@ -234,12 +240,15 @@ services:
       - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
       - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
       - REDIS_URL=redis://redis:6379
+      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
       - TASKIQ_SINGLE_WORKER_MODE=false
     depends_on:
       pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
+      browserless:
+        condition: service_started
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -257,12 +266,15 @@ services:
       - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
       - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
       - REDIS_URL=redis://redis:6379
+      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
       - TASKIQ_SINGLE_WORKER_MODE=false
     depends_on:
       pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
+      browserless:
+        condition: service_started
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -280,12 +292,15 @@ services:
       - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
       - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
       - REDIS_URL=redis://redis:6379
+      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
       - TASKIQ_SINGLE_WORKER_MODE=false
     depends_on:
       pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
+      browserless:
+        condition: service_started
     restart: unless-stopped
     logging:
       driver: "json-file"

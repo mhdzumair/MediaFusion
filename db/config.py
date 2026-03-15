@@ -150,6 +150,7 @@ class Settings(BaseSettings):
     # External Service URLs
     requests_proxy_url: str | None = None
     scrapling_proxy_url: str | None = None
+    scrapling_cdp_url: str | None = None
     scrapling_headless: bool = True
     scrapling_disable_resources: bool = False
     scrapling_network_idle: bool = True
@@ -222,6 +223,9 @@ class Settings(BaseSettings):
     public_indexers_movie_live_search_sites: str = "all"
     public_indexers_series_live_search_sites: str = "all"
     public_indexers_anime_live_search_sites: str = "all"
+    # When False, live search skips indexers that require browser-based Cloudflare solving.
+    # When True, those indexers are allowed and use Scrapling solver on demand.
+    public_indexers_live_search_enable_cloudflare_solver: bool = False
     public_indexers_anime_include_series_fallback: bool = True
     public_indexers_live_search_parallelism: int = Field(default=16, ge=1, le=32)
     public_indexers_max_rows_per_page: int = Field(default=12, ge=1, le=100)

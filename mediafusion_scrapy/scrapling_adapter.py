@@ -85,6 +85,7 @@ async def _download_torrent_via_browser_fetch(
     timeout_ms: int,
     google_search_referer: bool,
     proxy_url: str | None,
+    cdp_url: str | None,
     solve_cloudflare: bool,
     real_chrome: bool,
 ) -> bytes | None:
@@ -163,6 +164,7 @@ async def _download_torrent_via_browser_fetch(
             timeout=timeout_ms,
             google_search=google_search_referer,
             proxy=proxy_url,
+            cdp_url=cdp_url,
             solve_cloudflare=solve_cloudflare,
             real_chrome=real_chrome,
             block_webrtc=True,
@@ -198,6 +200,7 @@ async def solve_protected_page(
     timeout_ms: int,
     google_search_referer: bool,
     proxy_url: str | None = None,
+    cdp_url: str | None = None,
     fetcher_mode: str = "stealthy",
     solve_cloudflare: bool = False,
     real_chrome: bool = False,
@@ -214,6 +217,7 @@ async def solve_protected_page(
                 timeout=timeout_ms,
                 google_search=google_search_referer,
                 proxy=proxy_url,
+                cdp_url=cdp_url,
                 solve_cloudflare=solve_cloudflare,
                 real_chrome=real_chrome,
                 block_webrtc=True,
@@ -228,6 +232,7 @@ async def solve_protected_page(
                 timeout=timeout_ms,
                 google_search=google_search_referer,
                 proxy=proxy_url,
+                cdp_url=cdp_url,
             )
     except Exception as error:
         if not _is_target_closed_error(error):
@@ -259,6 +264,7 @@ async def download_torrent_with_challenge(
     timeout_ms: int,
     google_search_referer: bool,
     proxy_url: str | None = None,
+    cdp_url: str | None = None,
     client: httpx.AsyncClient | None = None,
     referer_url: str | None = None,
     fetcher_mode: str = "stealthy",
@@ -281,6 +287,7 @@ async def download_torrent_with_challenge(
             timeout_ms=timeout_ms,
             google_search_referer=google_search_referer,
             proxy_url=proxy_url,
+            cdp_url=cdp_url,
             solve_cloudflare=solve_cloudflare,
             real_chrome=real_chrome,
         )
@@ -299,6 +306,7 @@ async def download_torrent_with_challenge(
         timeout_ms=timeout_ms,
         google_search_referer=google_search_referer,
         proxy_url=proxy_url,
+        cdp_url=cdp_url,
         fetcher_mode=fetcher_mode,
         solve_cloudflare=solve_cloudflare,
         real_chrome=real_chrome,
@@ -319,6 +327,7 @@ async def download_torrent_with_challenge(
             timeout_ms=timeout_ms,
             google_search_referer=google_search_referer,
             proxy_url=proxy_url,
+            cdp_url=cdp_url,
             fetcher_mode=fetcher_mode,
             solve_cloudflare=solve_cloudflare,
             real_chrome=real_chrome,

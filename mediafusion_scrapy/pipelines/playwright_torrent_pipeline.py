@@ -58,6 +58,7 @@ class PlaywrightTorrentDownloadPipeline:
                 timeout_ms=settings.scrapling_timeout_ms,
                 google_search_referer=settings.scrapling_google_search_referer,
                 proxy_url=proxy_url,
+                cdp_url=settings.scrapling_cdp_url,
                 client=self._http_client,
                 referer_url=referer_url,
                 fetcher_mode=settings.scrapling_fetcher_mode,

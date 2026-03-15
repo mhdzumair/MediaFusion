@@ -4,11 +4,15 @@ services:
     ports:
       - "8000:8000"
     env_file: .env
+    environment:
+      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      browserless:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 1m
@@ -111,6 +115,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mediafusion-network
+
+  browserless:
+    image: browserless/chrome:latest
+    environment:
+      - ENABLE_DEBUGGER=false
+      - PREBOOT_CHROME=true
+      - MAX_CONCURRENT_SESSIONS=2
+      - CONNECTION_TIMEOUT=60000
+    restart: unless-stopped
     logging:
       driver: "json-file"
       options:

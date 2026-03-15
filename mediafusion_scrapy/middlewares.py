@@ -212,6 +212,7 @@ class ScraplingAntiBotMiddleware:
             "wait_time_ms": crawler.settings.get("SCRAPLING_WAIT_TIME_MS", 0),
             "google_search_referer": crawler.settings.get("SCRAPLING_GOOGLE_SEARCH_REFERER", False),
             "proxy_url": crawler.settings.get("SCRAPLING_PROXY_URL"),
+            "cdp_url": crawler.settings.get("SCRAPLING_CDP_URL"),
             "fetcher_mode": crawler.settings.get("SCRAPLING_FETCHER_MODE", "stealthy"),
             "solve_cloudflare": crawler.settings.get("SCRAPLING_SOLVE_CLOUDFLARE", False),
             "real_chrome": crawler.settings.get("SCRAPLING_REAL_CHROME", False),

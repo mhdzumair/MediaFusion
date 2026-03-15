@@ -8,9 +8,9 @@ from collections.abc import AsyncGenerator
 from datetime import timedelta
 from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlsplit
 
-import httpx
 import PTT
 from parsel import Selector
+from scrapling.fetchers import AsyncFetcher
 
 from db.config import settings
 from db.schemas import MetadataData, StreamFileData, TorrentStreamData
@@ -329,6 +329,15 @@ class PublicIndexerScraper(BaseScraper):
                 self.logger.warning("Unknown public indexer '%s' in live search config.", indexer_id)
                 continue
             indexers.append(definition)
+
+        if not settings.public_indexers_live_search_enable_cloudflare_solver:
+            non_solver_indexers: list[ScraplingIndexerDefinition] = []
+            for definition in indexers:
+                if definition.solve_cloudflare:
+                    self.metrics.record_skip(f"public indexer requires cloudflare solver: {definition.key}")
+                    continue
+                non_solver_indexers.append(definition)
+            indexers = non_solver_indexers
 
         if not settings.public_indexers_source_health_gates_enabled:
             return indexers
@@ -737,45 +746,22 @@ class PublicIndexerScraper(BaseScraper):
 
     async def _fetch_page(self, indexer: ScraplingIndexerDefinition, url: str) -> tuple[dict | None, bool]:
         response: dict | None = None
-        challenge_solved = False
         timed_out = False
-        if indexer.http_fallback:
-            http_first, http_first_timed_out = await self._fetch_with_http(url)
-            timed_out = timed_out or http_first_timed_out
-            if self._is_response_usable(http_first):
-                return http_first, timed_out
 
-        try:
-            response = await self._fetch_with_scrapling(
+        if settings.public_indexers_live_search_enable_cloudflare_solver and indexer.solve_cloudflare:
+            response, solver_timed_out = await self._fetch_with_scrapling_solver(
                 url=url,
                 fetcher_mode=indexer.fetcher_mode or settings.scrapling_fetcher_mode,
-                solve_cloudflare=False,
             )
-            if indexer.solve_cloudflare and settings.scrapling_solve_cloudflare:
-                html = str(response.get("html", "") or "")
-                status = int(response.get("status", 0) or 0)
-                if status in {403, 429, 503} or self._is_cloudflare_challenge_html(html):
-                    response = await self._fetch_with_scrapling(
-                        url=url,
-                        fetcher_mode=indexer.fetcher_mode or settings.scrapling_fetcher_mode,
-                        solve_cloudflare=True,
-                    )
-                    challenge_solved = True
-        except Exception as exc:
-            if self._is_timeout_exception(exc):
-                timed_out = True
-            self.logger.debug("Failed to fetch %s via %s: %s", url, indexer.key, exc)
+            timed_out = timed_out or solver_timed_out
+            if self._is_response_usable(response):
+                response["challenge_solved"] = True
+                return response, timed_out
+
+        response, timed_out = await self._fetch_with_http(url)
 
         if self._is_response_usable(response):
-            if challenge_solved and response is not None:
-                response["challenge_solved"] = True
             return response, timed_out
-
-        if indexer.http_fallback:
-            fallback, fallback_timed_out = await self._fetch_with_http(url)
-            timed_out = timed_out or fallback_timed_out
-            if self._is_response_usable(fallback):
-                return fallback, timed_out
 
         if response is None:
             self.metrics.record_error("request_error")
@@ -1042,27 +1028,6 @@ class PublicIndexerScraper(BaseScraper):
             return 0
         return 0
 
-    async def _fetch_with_scrapling(
-        self,
-        *,
-        url: str,
-        fetcher_mode: str,
-        solve_cloudflare: bool,
-    ) -> dict:
-        return await solve_protected_page(
-            url,
-            headless=settings.scrapling_headless,
-            disable_resources=settings.scrapling_disable_resources,
-            network_idle=settings.scrapling_network_idle,
-            wait_time_ms=settings.scrapling_wait_time_ms,
-            timeout_ms=settings.scrapling_timeout_ms,
-            google_search_referer=settings.scrapling_google_search_referer,
-            proxy_url=settings.scrapling_proxy_url or settings.requests_proxy_url,
-            fetcher_mode=fetcher_mode,
-            solve_cloudflare=solve_cloudflare,
-            real_chrome=settings.scrapling_real_chrome,
-        )
-
     @staticmethod
     def _is_response_usable(response: dict | None) -> bool:
         if not response:
@@ -1075,32 +1040,66 @@ class PublicIndexerScraper(BaseScraper):
 
     async def _fetch_with_http(self, url: str) -> tuple[dict | None, bool]:
         timeout_seconds = max(5.0, min(30.0, settings.scrapling_timeout_ms / 1000))
-        transport = httpx.AsyncHTTPTransport(retries=1)
         try:
-            async with httpx.AsyncClient(
+            response = await AsyncFetcher.get(
+                url,
                 follow_redirects=True,
                 timeout=timeout_seconds,
-                proxy=settings.requests_proxy_url or None,
-                transport=transport,
+                proxy=settings.scrapling_proxy_url or settings.requests_proxy_url or None,
                 headers={"User-Agent": "Mozilla/5.0"},
-            ) as client:
-                response = await client.get(url)
+                retries=1,
+            )
         except Exception as exc:
             timed_out = self._is_timeout_exception(exc)
             self.logger.debug("HTTP fallback failed for %s: %s", url, exc)
             return None, timed_out
+
+        body = getattr(response, "body", b"")
+        if isinstance(body, bytes):
+            html = body.decode("utf-8", errors="ignore")
+        else:
+            html = str(body or "")
+
+        response_url = getattr(response, "url", url)
         return (
             {
-                "html": response.text or "",
-                "status": response.status_code,
-                "url": str(response.url),
+                "html": html,
+                "status": int(getattr(response, "status", 0) or 0),
+                "url": str(response_url),
             },
             False,
         )
 
+    async def _fetch_with_scrapling_solver(
+        self,
+        *,
+        url: str,
+        fetcher_mode: str,
+    ) -> tuple[dict | None, bool]:
+        try:
+            response = await solve_protected_page(
+                url,
+                headless=settings.scrapling_headless,
+                disable_resources=settings.scrapling_disable_resources,
+                network_idle=settings.scrapling_network_idle,
+                wait_time_ms=settings.scrapling_wait_time_ms,
+                timeout_ms=settings.scrapling_timeout_ms,
+                google_search_referer=settings.scrapling_google_search_referer,
+                proxy_url=settings.scrapling_proxy_url or settings.requests_proxy_url,
+                cdp_url=settings.scrapling_cdp_url,
+                fetcher_mode=fetcher_mode,
+                solve_cloudflare=True,
+                real_chrome=settings.scrapling_real_chrome,
+            )
+            return response, False
+        except Exception as exc:
+            timed_out = self._is_timeout_exception(exc)
+            self.logger.debug("Scrapling Cloudflare solver failed for %s: %s", url, exc)
+            return None, timed_out
+
     @staticmethod
     def _is_timeout_exception(exc: Exception) -> bool:
-        if isinstance(exc, (TimeoutError, asyncio.TimeoutError, httpx.TimeoutException)):
+        if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
             return True
         message = str(exc).lower()
         return "timeout" in message or "timed out" in message

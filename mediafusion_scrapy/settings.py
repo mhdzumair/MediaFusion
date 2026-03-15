@@ -134,6 +134,7 @@ RETRY_HTTP_CODES = [
 RETRY_TIMES = 5
 
 SCRAPLING_PROXY_URL = settings.scrapling_proxy_url or settings.requests_proxy_url
+SCRAPLING_CDP_URL = settings.scrapling_cdp_url
 SCRAPLING_HEADLESS = settings.scrapling_headless
 SCRAPLING_DISABLE_RESOURCES = settings.scrapling_disable_resources
 SCRAPLING_NETWORK_IDLE = settings.scrapling_network_idle
