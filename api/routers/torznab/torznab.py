@@ -11,7 +11,7 @@ Authentication:
 
 import logging
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 from xml.etree import ElementTree as ET
 
@@ -28,6 +28,7 @@ from db.crud.torznab import (
     search_torrents_by_tmdb,
 )
 from db.database import get_read_session
+from db.enums import MediaType
 from db.models import User
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,41 @@ def check_feature_enabled() -> Response | None:
     if not settings.enable_torznab_api:
         return create_error_response(503, "Torznab API is disabled on this server")
     return None
+
+
+def get_validation_sample_results(limit: int) -> list[dict]:
+    """Return deterministic sample entries for indexer validation flows."""
+    samples = [
+        {
+            "info_hash": "1111111111111111111111111111111111111111",
+            "name": "MediaFusion Validation Sample Movie 1080p",
+            "size": 2_147_483_648,
+            "seeders": 250,
+            "leechers": 10,
+            "uploaded_at": datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+            "resolution": "1080p",
+            "media_type": MediaType.MOVIE,
+            "imdb_id": "tt0000001",
+            "tmdb_id": "550",
+            "trackers": [],
+            "source": "validation",
+        },
+        {
+            "info_hash": "2222222222222222222222222222222222222222",
+            "name": "MediaFusion Validation Sample Series S01E01 1080p",
+            "size": 1_073_741_824,
+            "seeders": 180,
+            "leechers": 8,
+            "uploaded_at": datetime(2024, 1, 2, 0, 0, 0, tzinfo=timezone.utc),
+            "resolution": "1080p",
+            "media_type": MediaType.SERIES,
+            "imdb_id": "tt0000002",
+            "tmdb_id": "1399",
+            "trackers": [],
+            "source": "validation",
+        },
+    ]
+    return samples[: min(limit, len(samples))]
 
 
 def build_magnet_link(info_hash: str, name: str, trackers: list[str]) -> str:
@@ -353,8 +389,11 @@ async def torznab_api(
     elif q:
         results = await search_torrents_by_title(session, q, media_type, limit=limit)
     else:
-        # No search parameters provided
-        return create_error_response(200, "Missing search parameters (q, imdbid, or tmdbid required)")
+        # Some clients (e.g., Prowlarr Generic Torznab validation) issue
+        if t == "search":
+            results = get_validation_sample_results(limit)
+        else:
+            return create_error_response(200, "Missing search parameters (q, imdbid, or tmdbid required)")
 
     # Apply offset
     if offset > 0:
