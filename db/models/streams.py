@@ -190,24 +190,26 @@ class Stream(TimestampMixin, table=True):
     # MULTI-VALUE RELATIONSHIPS (Normalized for flexibility)
     # =========================================================================
 
+    # Shared lookup references: deleting a stream should only remove link rows.
+    # Never cascade-delete lookup rows (Language/AudioFormat/AudioChannel/HDRFormat).
     # Languages (many-to-many via StreamLanguageLink)
     languages: list["Language"] = Relationship(
         link_model=StreamLanguageLink,
-        sa_relationship_kwargs={"cascade": "all, delete"},
+        sa_relationship_kwargs={"cascade": "save-update, merge"},
     )
 
     # Audio formats/codecs (many-to-many via StreamAudioLink)
     # e.g., AAC, DTS, DTS-HD MA, Atmos, TrueHD, EAC3, FLAC
     audio_formats: list["AudioFormat"] = Relationship(
         link_model=StreamAudioLink,
-        sa_relationship_kwargs={"cascade": "all, delete"},
+        sa_relationship_kwargs={"cascade": "save-update, merge"},
     )
 
     # Audio channels (many-to-many via StreamChannelLink)
     # e.g., 2.0, 5.1, 7.1, Atmos
     channels: list["AudioChannel"] = Relationship(
         link_model=StreamChannelLink,
-        sa_relationship_kwargs={"cascade": "all, delete"},
+        sa_relationship_kwargs={"cascade": "save-update, merge"},
     )
 
     # HDR formats (many-to-many via StreamHDRLink)
@@ -215,7 +217,7 @@ class Stream(TimestampMixin, table=True):
     # A stream can have multiple (e.g., HDR10 + Dolby Vision combo)
     hdr_formats: list["HDRFormat"] = Relationship(
         link_model=StreamHDRLink,
-        sa_relationship_kwargs={"cascade": "all, delete"},
+        sa_relationship_kwargs={"cascade": "save-update, merge"},
     )
 
     # =========================================================================
@@ -266,7 +268,7 @@ class TorrentStream(TimestampMixin, table=True):
     )
 
     id: int = Field(default=None, primary_key=True)
-    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True)
+    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True, ondelete="CASCADE")
 
     # Torrent-specific
     info_hash: str = Field(unique=True, index=True)  # 40-char hex
@@ -282,7 +284,7 @@ class TorrentStream(TimestampMixin, table=True):
     stream: Stream = Relationship(sa_relationship_kwargs={"uselist": False, "back_populates": "torrent_stream"})
     trackers: list[Tracker] = Relationship(
         link_model=TorrentTrackerLink,
-        sa_relationship_kwargs={"cascade": "all, delete"},
+        sa_relationship_kwargs={"cascade": "save-update, merge"},
     )
 
 
@@ -413,7 +415,7 @@ class HTTPStream(SQLModel, table=True):
     )
 
     id: int = Field(default=None, primary_key=True)
-    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True)
+    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True, ondelete="CASCADE")
 
     url: str  # Playback URL
     format: str | None = None  # mp4, mkv, hls, dash, webm
@@ -448,7 +450,7 @@ class YouTubeStream(SQLModel, table=True):
     )
 
     id: int = Field(default=None, primary_key=True)
-    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True)
+    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True, ondelete="CASCADE")
 
     video_id: str = Field(unique=True, index=True)  # YouTube video ID
     channel_id: str | None = None
@@ -480,7 +482,7 @@ class UsenetStream(SQLModel, table=True):
     )
 
     id: int = Field(default=None, primary_key=True)
-    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True)
+    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True, ondelete="CASCADE")
 
     nzb_guid: str = Field(unique=True, index=True)  # Unique NZB identifier
     nzb_url: str | None = None  # URL to NZB file
@@ -513,7 +515,7 @@ class TelegramStream(SQLModel, table=True):
     )
 
     id: int = Field(default=None, primary_key=True)
-    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True)
+    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True, ondelete="CASCADE")
 
     # Source location (where content was originally found/contributed)
     chat_id: str  # Channel/group ID or user's DM chat ID
@@ -562,7 +564,7 @@ class TelegramUserForward(SQLModel, table=True):
     )
 
     id: int = Field(default=None, primary_key=True)
-    telegram_stream_id: int = Field(foreign_key="telegram_stream.id", index=True)
+    telegram_stream_id: int = Field(foreign_key="telegram_stream.id", index=True, ondelete="CASCADE")
     user_id: int = Field(foreign_key="users.id", index=True, ondelete="CASCADE")
 
     # Telegram user ID (for the user's DM with the bot)
@@ -591,7 +593,7 @@ class ExternalLinkStream(SQLModel, table=True):
     )
 
     id: int = Field(default=None, primary_key=True)
-    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True)
+    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True, ondelete="CASCADE")
 
     url: str  # External service URL
     service_name: str  # netflix, prime, disney, hulu, etc.
@@ -632,7 +634,7 @@ class AceStreamStream(SQLModel, table=True):
     )
 
     id: int = Field(default=None, primary_key=True)
-    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True)
+    stream_id: int = Field(foreign_key="stream.id", unique=True, index=True, ondelete="CASCADE")
 
     # AceStream identifiers - at least one required (enforced in application code)
     content_id: str | None = Field(default=None, index=True)  # AceStream content ID (40-char hex)

@@ -95,7 +95,7 @@ class MediaImage(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("media_id", "provider_id", "image_type", "url", name="uq_media_image"),)
 
     id: int = Field(default=None, primary_key=True)
-    media_id: int = Field(foreign_key="media.id", index=True)
+    media_id: int = Field(foreign_key="media.id", index=True, ondelete="CASCADE")
     provider_id: int = Field(foreign_key="metadata_provider.id")
     image_type: str = Field(index=True)  # poster, background, logo, banner, thumb, clearart
     url: str
@@ -150,7 +150,7 @@ class MediaRating(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("media_id", "rating_provider_id", "rating_type", name="uq_media_rating"),)
 
     id: int = Field(default=None, primary_key=True)
-    media_id: int = Field(foreign_key="media.id", index=True)
+    media_id: int = Field(foreign_key="media.id", index=True, ondelete="CASCADE")
     rating_provider_id: int = Field(foreign_key="rating_provider.id")
     rating: float  # Normalized value (0-10)
     rating_raw: float | None = None  # Original scale value
@@ -179,7 +179,7 @@ class MediaFusionRating(SQLModel, table=True):
     __tablename__ = "mediafusion_rating"
 
     id: int = Field(default=None, primary_key=True)
-    media_id: int = Field(foreign_key="media.id", unique=True, index=True)
+    media_id: int = Field(foreign_key="media.id", unique=True, index=True, ondelete="CASCADE")
     average_rating: float = Field(default=0.0)  # 1-10 scale
     total_votes: int = Field(default=0)
     upvotes: int = Field(default=0)

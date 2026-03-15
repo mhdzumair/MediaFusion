@@ -257,22 +257,23 @@ class Media(TimestampMixin, table=True):
     external_ids: list["MediaExternalID"] = Relationship(
         back_populates="media", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
+    # Shared lookup references: never delete lookup rows when deleting a media row.
     genres: list["Genre"] = Relationship(
         link_model=MediaGenreLink,
-        sa_relationship_kwargs={"cascade": "all, delete"},
+        sa_relationship_kwargs={"cascade": "save-update, merge"},
     )
     catalogs: list["Catalog"] = Relationship(
         link_model=MediaCatalogLink,
-        sa_relationship_kwargs={"cascade": "all, delete"},
+        sa_relationship_kwargs={"cascade": "save-update, merge"},
     )
     aka_titles: list["AkaTitle"] = Relationship(sa_relationship_kwargs={"cascade": "all, delete"})
     keywords: list["Keyword"] = Relationship(
         link_model=MediaKeywordLink,
-        sa_relationship_kwargs={"cascade": "all, delete"},
+        sa_relationship_kwargs={"cascade": "save-update, merge"},
     )
     parental_certificates: list["ParentalCertificate"] = Relationship(
         link_model=MediaParentalCertificateLink,
-        sa_relationship_kwargs={"cascade": "all, delete"},
+        sa_relationship_kwargs={"cascade": "save-update, merge"},
     )
     # Images from all providers
     images: list["MediaImage"] = Relationship(sa_relationship_kwargs={"cascade": "all, delete"})
