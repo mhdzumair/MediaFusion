@@ -782,7 +782,7 @@ def _build_stream_entries(
                     if episode_data:
                         stream_url += f"/{season}/{episode}"
                     if file_name:
-                        stream_url += f"/{quote(file_name)}"
+                        stream_url += f"/{quote(file_name, safe='')}"
                     # Mark addon playback URLs so backend can apply per-provider MediaFlow toggle only here.
                     stream_url += "?stremio=1"
                 else:
@@ -796,7 +796,7 @@ def _build_stream_entries(
                     if episode_data:
                         stream_url += f"/{season}/{episode}"
                     if file_name:
-                        stream_url += f"/{quote(file_name)}"
+                        stream_url += f"/{quote(file_name, safe='')}"
                     # Mark addon playback URLs so backend can apply per-provider MediaFlow toggle only here.
                     stream_url += "?stremio=1"
                 else:

@@ -8,6 +8,7 @@ import re
 from datetime import datetime
 from os.path import basename
 from typing import Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -50,6 +51,7 @@ from db.models.streams import StreamType
 from db.schemas import StreamTemplate, TorrentStreamData
 from streaming_providers import mapper
 from streaming_providers.cache_helpers import get_cached_status, store_cached_info_hashes
+from streaming_providers.usenet_compatibility import is_usenet_stream_compatible
 from utils.const import (
     ADULT_GENRE_NAMES,
     CERTIFICATION_MAPPING,
@@ -78,6 +80,12 @@ def _extract_year_from_text(text: str | None) -> str | None:
         return None
     match = re.search(r"(19|20)\d{2}", text)
     return match.group(0) if match else None
+
+
+def _append_optional_filename(path: str, filename: str | None) -> str:
+    if not filename:
+        return path
+    return f"{path}/{quote(filename, safe='')}"
 
 
 def _calculate_age_fields(created_at: datetime | None) -> tuple[str | None, int | None]:
@@ -1717,6 +1725,12 @@ async def get_catalog_item_streams(
         if usenet and not provider_supports_usenet:
             continue
 
+        # Skip incompatible Usenet source/provider combinations.
+        if usenet and selected_provider_obj:
+            compatible, _ = is_usenet_stream_compatible(usenet, selected_provider_obj, profile_ctx.user_data)
+            if not compatible:
+                continue
+
         # Skip torrent streams if provider doesn't support torrent playback
         if torrent and selected_provider_obj and not is_p2p_provider and not provider_supports_torrent:
             continue
@@ -1973,15 +1987,29 @@ async def get_catalog_item_streams(
         elif secret_str and usenet and usenet.nzb_guid:
             # Usenet streams with debrid
             if catalog_type == "series" and season is not None and episode is not None:
-                playback_url = f"{settings.host_url}/streaming_provider/{secret_str}/usenet/{primary_provider_name}/{usenet.nzb_guid}/{season}/{episode}"
+                playback_url = (
+                    f"{settings.host_url}/streaming_provider/{secret_str}/usenet/"
+                    f"{primary_provider_name}/{usenet.nzb_guid}/{season}/{episode}"
+                )
             else:
-                playback_url = f"{settings.host_url}/streaming_provider/{secret_str}/usenet/{primary_provider_name}/{usenet.nzb_guid}"
+                playback_url = (
+                    f"{settings.host_url}/streaming_provider/{secret_str}/usenet/"
+                    f"{primary_provider_name}/{usenet.nzb_guid}"
+                )
+            playback_url = _append_optional_filename(playback_url, stream_filename)
         elif secret_str and torrent and torrent.info_hash:
             # Torrent streams with debrid
             if catalog_type == "series" and season is not None and episode is not None:
-                playback_url = f"{settings.host_url}/streaming_provider/{secret_str}/playback/{primary_provider_name}/{torrent.info_hash}/{season}/{episode}"
+                playback_url = (
+                    f"{settings.host_url}/streaming_provider/{secret_str}/playback/"
+                    f"{primary_provider_name}/{torrent.info_hash}/{season}/{episode}"
+                )
             else:
-                playback_url = f"{settings.host_url}/streaming_provider/{secret_str}/playback/{primary_provider_name}/{torrent.info_hash}"
+                playback_url = (
+                    f"{settings.host_url}/streaming_provider/{secret_str}/playback/"
+                    f"{primary_provider_name}/{torrent.info_hash}"
+                )
+            playback_url = _append_optional_filename(playback_url, stream_filename)
 
         formatted_streams.append(
             StreamInfo(
