@@ -71,12 +71,10 @@ export function IntegrationsPage() {
     errorDescription: string | null
   } | null>(null)
 
-  // Build Torznab API key based on whether authentication is required
-  const torznabApiKey = user?.uuid
-    ? appConfig?.authentication_required
-      ? `<api_password>:${user.uuid}`
-      : user.uuid
-    : null
+  // Torznab API key format:
+  // - Private instances: API_PASSWORD
+  // - Public instances: optional (can be left blank)
+  const torznabApiKey = appConfig?.authentication_required ? '<api_password>' : 'Not required (leave blank)'
   const torznabUrl = appConfig?.host_url ? `${appConfig.host_url}/torznab` : null
   const simklRedirectUrl = appConfig?.host_url
     ? `${appConfig.host_url.replace(/\/+$/, '')}/api/v1/integrations/simkl/callback`
@@ -550,10 +548,14 @@ export function IntegrationsPage() {
                       <TooltipContent>{copiedField === 'torznab-key' ? 'Copied!' : 'Copy API Key'}</TooltipContent>
                     </Tooltip>
                   </div>
-                  {appConfig?.authentication_required && (
+                  {appConfig?.authentication_required ? (
                     <p className="text-xs text-muted-foreground">
                       Replace <code className="bg-muted px-1 rounded">&lt;api_password&gt;</code> with your server's API
-                      password
+                      password.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Public instance: API key is optional and can be left blank.
                     </p>
                   )}
                 </div>
@@ -582,11 +584,11 @@ export function IntegrationsPage() {
                   <AccordionContent className="text-sm text-muted-foreground space-y-2">
                     <p>
                       <strong>For Prowlarr:</strong> Add a new indexer → Generic Torznab → Enter the URL and API Key
-                      above.
+                      above (leave API Key blank on public instances).
                     </p>
                     <p>
                       <strong>For Sonarr/Radarr:</strong> Settings → Indexers → Add → Torznab → Custom → Enter URL and
-                      API Key.
+                      API Key (leave blank on public instances).
                     </p>
                     <p>
                       <strong>Categories:</strong> Movies (2000-2060), TV (5000-5070)

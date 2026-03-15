@@ -5,8 +5,8 @@ Implements the Torznab protocol to expose MediaFusion's torrent database
 to external applications like Sonarr, Radarr, and Prowlarr.
 
 Authentication:
-- Public instances: apikey is "user-uuid"
-- Private instances: apikey format is "password:user-uuid"
+- Public instances: apikey is optional
+- Private instances: apikey must be API_PASSWORD
 """
 
 import logging
@@ -17,7 +17,6 @@ from xml.etree import ElementTree as ET
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
-from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.config import settings
@@ -29,7 +28,6 @@ from db.crud.torznab import (
 )
 from db.database import get_read_session
 from db.enums import MediaType
-from db.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -76,39 +74,25 @@ def create_error_response(code: int, description: str) -> Response:
     return create_xml_response(root)
 
 
-async def validate_apikey(
-    apikey: str | None,
-    session: AsyncSession,
-) -> User | None:
+def validate_apikey(apikey: str | None) -> bool:
     """
-    Validate the API key and return the user.
+    Validate the API key.
 
     API key format:
-    - Public instances: "user-uuid"
-    - Private instances: "password:user-uuid"
-
-    Returns None if validation fails.
+    - Public instances: optional
+    - Private instances: "API_PASSWORD" (or legacy "API_PASSWORD:any-suffix")
     """
-    if not apikey:
-        return None
-
-    user_uuid = apikey
-
     # Require password only for private instances to match frontend app-config.
     require_password = bool(settings.api_password) and not settings.is_public_instance
-    if require_password:
-        if ":" not in apikey:
-            return None
-        parts = apikey.split(":", 1)
-        if len(parts) != 2:
-            return None
-        password, user_uuid = parts
-        if password != settings.api_password:
-            return None
+    if not require_password:
+        return True
 
-    # Validate user UUID
-    result = await session.exec(select(User).where(User.uuid == user_uuid, User.is_active.is_(True)))
-    return result.first()
+    if not apikey:
+        return False
+
+    # Support both "password" and legacy "password:uuid" formats.
+    provided_password = apikey.split(":", 1)[0]
+    return provided_password == settings.api_password
 
 
 def check_feature_enabled() -> Response | None:
@@ -334,7 +318,7 @@ async def torznab_api(
     t: str = Query(..., description="Request type (caps, search, movie, tvsearch)"),
     apikey: str | None = Query(
         None,
-        description="API key (public: user UUID, private: password:uuid)",
+        description="API key (public: optional, private: API_PASSWORD)",
     ),
     q: str | None = Query(None, description="Search query"),
     imdbid: str | None = Query(None, description="IMDb ID"),
@@ -365,8 +349,7 @@ async def torznab_api(
         return create_xml_response(build_caps_xml())
 
     # All other requests require authentication
-    user = await validate_apikey(apikey, session)
-    if not user:
+    if not validate_apikey(apikey):
         return create_error_response(100, "Invalid API key")
 
     # Determine media type from request type

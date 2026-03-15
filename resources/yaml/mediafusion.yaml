@@ -13,8 +13,8 @@
 # 2. Configure:
 #    - Name:     MediaFusion
 #    - URL:      https://your-mediafusion-url.com/torznab
-#    - API Key:  <your-user-uuid>
-#                (If API password is set on the server, use: <password>:<user-uuid>)
+#    - API Key:  <api_password> (private instances)
+#                Leave blank on public instances
 #    - Categories:
 #        Movies:  2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060
 #        TV:      5000, 5010, 5020, 5030, 5040, 5045, 5060, 5070
@@ -36,10 +36,8 @@
 # API KEY FORMAT
 # ============================================================================
 #
-# - Without server API password: Your user UUID (e.g., "a1b2c3d4-...")
-# - With server API password:    "password:user-uuid" (e.g., "mypass:a1b2c3d4-...")
-#
-# You can find your User UUID in the MediaFusion web UI under Settings/Profile.
+# - Public instances: API key is optional (leave blank)
+# - Private instances: API_PASSWORD
 #
 # ============================================================================
 # TORZNAB API ENDPOINTS
@@ -102,7 +100,7 @@ settings:
     type: text
     label: API Key
     default: ""
-    tooltip: "Your MediaFusion User UUID. If the server has an API password set, use the format: password:user-uuid"
+    tooltip: "Private instances: enter API_PASSWORD. Public instances: leave blank."
 
 search:
   paths:
