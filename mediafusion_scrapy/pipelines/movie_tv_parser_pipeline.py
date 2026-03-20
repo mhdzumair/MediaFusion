@@ -1,11 +1,18 @@
+import logging
+
 import PTT
 from scrapy.exceptions import DropItem
 
 from scrapers.scraper_tasks import meta_fetcher
 from utils.const import QUALITY_GROUPS
+from utils.sports_parser import detect_sports_category
+
+logger = logging.getLogger(__name__)
 
 
 class MovieTVParserPipeline:
+    _RACING_CATALOGS = {"formula_racing", "motogp_racing"}
+
     async def process_item(self, item):
         data = item.copy()
         title = data["torrent_title"]
@@ -30,16 +37,34 @@ class MovieTVParserPipeline:
                 title, data.get("year"), data["type"], data.get("created_at")
             )
 
-        if not imdb_data:
-            raise DropItem(f"IMDb data not found for title: {title}")
-
-        data.update(imdb_data)
-        data["is_search_imdb_title"] = False
-        data["id"] = data["imdb_id"]
-        data["catalog"] = [
-            data["catalog_source"],
-            f"{data['catalog_source']}_{data['type']}",
-        ]
+        if imdb_data:
+            data.update(imdb_data)
+            data["is_search_imdb_title"] = False
+            if data.get("imdb_id"):
+                data["id"] = data["imdb_id"]
+        else:
+            # Keep scraping resilient when IMDb lookups fail/transiently timeout.
+            # Downstream store pipelines can persist items without external IDs.
+            logger.warning(
+                "IMDb data not found for title '%s'; continuing with parsed torrent metadata",
+                title,
+            )
+            data["is_search_imdb_title"] = True
+        title_for_category = data.get("torrent_title") or data.get("torrent_name") or data.get("title", "")
+        detected_sports_category = detect_sports_category(title_for_category)
+        if detected_sports_category in self._RACING_CATALOGS:
+            data["catalog_source"] = detected_sports_category
+            data["catalog"] = [detected_sports_category]
+            logger.info(
+                "Routing racing title '%s' to catalog '%s'",
+                data.get("torrent_title") or data.get("title"),
+                detected_sports_category,
+            )
+        else:
+            data["catalog"] = [
+                data["catalog_source"],
+                f"{data['catalog_source']}_{data['type']}",
+            ]
 
         if data["type"] == "series":
             data["video_type"] = "series"

@@ -6,7 +6,7 @@ from scrapy.logformatter import LogFormatter
 
 
 class CompactDropItemLogFormatter(LogFormatter):
-    """Avoid logging huge item payloads for dropped items."""
+    """Avoid logging huge item payloads for dropped/scraped items."""
 
     _MAX_FIELD_LEN = 160
     _MAX_REASON_LEN = 220
@@ -67,5 +67,22 @@ class CompactDropItemLogFormatter(LogFormatter):
                 "spider": getattr(spider, "name", "unknown"),
                 "reason": reason,
                 "summary": summary_suffix,
+            },
+        }
+
+    def scraped(self, item, response, spider):
+        summary = self._extract_summary(item)
+        if not summary:
+            summary = f"item_type={type(item).__name__}"
+
+        source = getattr(response, "url", "unknown")
+        source = self._compact_text(source, max_len=self._MAX_FIELD_LEN)
+        return {
+            "level": logging.DEBUG,
+            "msg": "Scraped (%(spider)s): %(summary)s [from %(source)s]",
+            "args": {
+                "spider": getattr(spider, "name", "unknown"),
+                "summary": summary,
+                "source": source,
             },
         }
