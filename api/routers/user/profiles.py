@@ -32,7 +32,7 @@ from db.schemas import UserData
 from db.schemas.config import MediaFlowConfig, StreamingProvider
 from streaming_providers.validator import validate_provider_credentials
 from utils import const
-from utils.crypto import UUID_PREFIX, crypto_utils
+from utils.crypto import crypto_utils
 from utils.profile_context import ProfileDataProvider
 from utils.profile_crypto import profile_crypto
 
@@ -283,12 +283,9 @@ async def generate_manifest_secret(profile: UserProfile, user: User, api_passwor
     """
     Generate a UUID-based secret string for manifest URL.
 
-    Returns a stable U-{profile_uuid} string that dynamically resolves to the
-    current profile config on every request. The profile data is pre-cached in
-    Redis so the first Stremio request is fast.
-
-    This eliminates the need to re-install the addon when config changes,
-    since the UUID remains stable and always resolves to the latest config.
+    Returns U-{profile_uuid}; config is resolved on each request. Optionally primes Redis
+    (see prime_profile_uuid_cache) for a faster first Stremio hit and to attach X-API-Key
+    when the instance password is not stored in the profile.
 
     Args:
         profile: The user profile
@@ -296,24 +293,8 @@ async def generate_manifest_secret(profile: UserProfile, user: User, api_passwor
         api_password: Optional API password from X-API-Key header (for private instances)
     """
     try:
-        # Build cache data for pre-caching in Redis
-        cache_data = {
-            "config": profile.config or {},
-            "encrypted_secrets": profile.encrypted_secrets,
-            "user_id": user.id,
-            "profile_id": profile.id,
-            "user_uuid": user.uuid,
-            "profile_uuid": profile.uuid,
-        }
-
-        # Include API password if provided (for private instances)
-        if api_password:
-            cache_data["api_password"] = api_password
-
-        # Pre-cache the profile data in Redis so the first Stremio request is fast
-        await crypto_utils._cache_uuid_profile(profile.uuid, cache_data)
-
-        return f"{UUID_PREFIX}{profile.uuid}"
+        await crypto_utils.prime_profile_uuid_cache(profile, user, api_password=api_password)
+        return crypto_utils.format_profile_uuid_secret(profile.uuid)
     except Exception as e:
         logger.error(f"Failed to generate manifest secret: {e}")
         return ""

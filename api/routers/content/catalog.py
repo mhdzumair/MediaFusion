@@ -58,7 +58,7 @@ from utils.const import (
     LANGUAGE_COUNTRY_FLAGS,
     STREAMING_PROVIDERS_SHORT_NAMES,
 )
-from utils.crypto import crypto_utils
+from utils.authenticated_playback_secret import resolve_playback_secret_str_for_ui
 from utils.network import encode_mediaflow_acestream_url, get_user_public_ip
 from utils.parser import render_stream_template
 from utils.profile_context import ProfileContext, ProfileDataProvider
@@ -1574,8 +1574,8 @@ async def get_catalog_item_streams(
         if api_password:
             user_data.api_password = api_password
 
-        # Generate encrypted secret string for playback URLs
-        secret_str = await crypto_utils.process_user_data(user_data)
+        # Prefer UUID-based secret for stored profiles (same as manifest URLs)
+        secret_str = await resolve_playback_secret_str_for_ui(session, profile_ctx, current_user, user_data)
 
         # Use the selected provider's name for playback URLs
         if selected_provider_obj.name:
@@ -1961,7 +1961,7 @@ async def get_catalog_item_streams(
                 api_password = request.headers.get("X-API-Key")
                 if api_password:
                     user_data.api_password = api_password
-                secret_str = await crypto_utils.process_user_data(user_data)
+                secret_str = await resolve_playback_secret_str_for_ui(session, profile_ctx, current_user, user_data)
             playback_url = (
                 f"{settings.host_url}/streaming_provider/{secret_str}/telegram/{telegram.chat_id}/{telegram.message_id}"
             )

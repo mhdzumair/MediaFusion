@@ -455,6 +455,41 @@ class CryptoUtils:
         except Exception as e:
             logger.warning(f"Failed to invalidate UUID cache for {profile_uuid}: {e}")
 
+    def format_profile_uuid_secret(self, profile_uuid: str) -> str:
+        """Return the U-{{uuid}} path segment for profile-backed addon and playback URLs."""
+        if not profile_uuid:
+            return ""
+        return f"{UUID_PREFIX}{profile_uuid}"
+
+    async def prime_profile_uuid_cache(
+        self,
+        profile: UserProfile,
+        user: User,
+        api_password: str | None = None,
+    ) -> None:
+        """
+        Optional Redis warm-up before the first U-{{uuid}} request.
+
+        Not required for correctness: cache miss loads the profile from the database and
+        populates Redis (see _load_and_cache_uuid_profile). Used when exposing manifest
+        install links so the first addon hit can avoid a DB round trip.
+
+        api_password: if the instance API key is not stored in the profile config, the
+        manifest URL handler may pass X-API-Key here so Stremio (no header) still resolves
+        UserData with the correct key on private instances.
+        """
+        cache_data = {
+            "config": profile.config or {},
+            "encrypted_secrets": profile.encrypted_secrets,
+            "user_id": user.id,
+            "profile_id": profile.id,
+            "user_uuid": user.uuid,
+            "profile_uuid": profile.uuid,
+        }
+        if api_password:
+            cache_data["api_password"] = api_password
+        await self._cache_uuid_profile(profile.uuid, cache_data)
+
     def decode_user_data(self, encoded_user_data: str) -> UserData:
         """Decode and decrypt user data from URL-safe string"""
         try:
