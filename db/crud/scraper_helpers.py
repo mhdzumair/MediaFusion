@@ -25,6 +25,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from db.crud.media import (
     add_external_id,
     get_media_by_external_id,
+    get_media_by_id,
     get_media_by_title_year,
     get_or_create_episode,
     get_or_create_metadata_provider,
@@ -277,6 +278,8 @@ async def get_or_create_metadata(
     *,
     is_search_imdb_title: bool = True,
     is_imdb_only: bool = False,
+    load_genres: bool = False,
+    load_catalogs: bool = False,
 ) -> Media | None:
     """
     Get or create metadata from scraped data.
@@ -327,13 +330,26 @@ async def get_or_create_metadata(
         if candidate_external_id in seen_candidate_ids:
             continue
         seen_candidate_ids.add(candidate_external_id)
-        existing = await get_media_by_external_id(session, candidate_external_id, media_type_enum)
+        existing = await get_media_by_external_id(
+            session,
+            candidate_external_id,
+            media_type_enum,
+            load_genres=load_genres,
+            load_catalogs=load_catalogs,
+        )
         if existing:
             return existing
 
     # Fallback for temporary IDs (mf_tmp_...) where no provider ID was linked.
     if title and year is not None:
-        existing_by_title_year = await get_media_by_title_year(session, title, year, media_type_enum)
+        existing_by_title_year = await get_media_by_title_year(
+            session,
+            title,
+            year,
+            media_type_enum,
+            load_genres=load_genres,
+            load_catalogs=load_catalogs,
+        )
         if existing_by_title_year:
             return existing_by_title_year
 
@@ -436,9 +452,25 @@ async def get_or_create_metadata(
                 canonical_media_id=canonical_media.id,
             )
             await session.flush()
+            if load_genres or load_catalogs:
+                reloaded = await get_media_by_id(
+                    session,
+                    canonical_media.id,
+                    load_genres=load_genres,
+                    load_catalogs=load_catalogs,
+                )
+                return reloaded
             return canonical_media
 
     await session.flush()
+    if load_genres or load_catalogs:
+        reloaded = await get_media_by_id(
+            session,
+            media.id,
+            load_genres=load_genres,
+            load_catalogs=load_catalogs,
+        )
+        return reloaded
     return media
 
 

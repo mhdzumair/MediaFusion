@@ -83,6 +83,9 @@ async def get_media_by_external_id(
     session: AsyncSession,
     external_id: str,
     media_type: MediaType | None = None,
+    *,
+    load_genres: bool = False,
+    load_catalogs: bool = False,
 ) -> Media | None:
     """Get media by external ID using the MediaExternalID table.
 
@@ -106,6 +109,12 @@ async def get_media_by_external_id(
     if not external_id:
         return None
 
+    load_options: list = []
+    if load_genres:
+        load_options.append(selectinload(Media.genres))
+    if load_catalogs:
+        load_options.append(selectinload(Media.catalogs))
+
     # Parse the external ID format to determine provider
     provider = None
     provider_external_id = None
@@ -118,12 +127,19 @@ async def get_media_by_external_id(
         # MediaFusion internal ID - direct PK lookup (fastest path)
         try:
             internal_id = int(external_id[3:])
-            media = await session.get(Media, internal_id)
-            if media and (media_type is None or media.type == media_type):
-                return media
-            return None
         except ValueError:
             return None
+        if load_options:
+            query = select(Media).where(Media.id == internal_id)
+            if media_type is not None:
+                query = query.where(Media.type == media_type)
+            query = query.options(*load_options)
+            result = await session.exec(query)
+            return result.first()
+        media = await session.get(Media, internal_id)
+        if media and (media_type is None or media.type == media_type):
+            return media
+        return None
     elif external_id.startswith("mftmdb"):
         # Legacy TMDB format: mftmdb123456
         provider = "tmdb"
@@ -147,6 +163,8 @@ async def get_media_by_external_id(
         )
         if media_type:
             query = query.where(Media.type == media_type)
+        if load_options:
+            query = query.options(*load_options)
 
         result = await session.exec(query)
         return result.first()
@@ -271,6 +289,9 @@ async def get_media_by_title_year(
     title: str,
     year: int | None,
     media_type: MediaType,
+    *,
+    load_genres: bool = False,
+    load_catalogs: bool = False,
 ) -> Media | None:
     """Find media by title and year."""
     query = select(Media).where(
@@ -279,6 +300,14 @@ async def get_media_by_title_year(
     )
     if year:
         query = query.where(Media.year == year)
+
+    load_options: list = []
+    if load_genres:
+        load_options.append(selectinload(Media.genres))
+    if load_catalogs:
+        load_options.append(selectinload(Media.catalogs))
+    if load_options:
+        query = query.options(*load_options)
 
     result = await session.exec(query)
     return result.first()

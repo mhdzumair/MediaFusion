@@ -3,6 +3,8 @@
 from collections.abc import Iterable
 from typing import Any
 
+from sqlalchemy import inspect as sa_inspect
+
 from utils.parser import is_contain_18_plus_keywords
 
 
@@ -26,8 +28,14 @@ def is_import_metadata_adult(metadata: Any) -> bool:
         catalogs = metadata.get("catalogs")
     else:
         adult_value = getattr(metadata, "adult", None)
-        genres = getattr(metadata, "genres", None)
-        catalogs = getattr(metadata, "catalogs", None)
+        insp = sa_inspect(metadata, raiseerr=False)
+        if insp is not None and insp.mapper is not None:
+            unloaded = insp.unloaded
+            genres = None if (unloaded and "genres" in unloaded) else getattr(metadata, "genres", None)
+            catalogs = None if (unloaded and "catalogs" in unloaded) else getattr(metadata, "catalogs", None)
+        else:
+            genres = getattr(metadata, "genres", None)
+            catalogs = getattr(metadata, "catalogs", None)
 
     if isinstance(adult_value, bool) and adult_value:
         return True

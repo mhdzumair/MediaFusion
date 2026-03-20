@@ -727,7 +727,12 @@ async def _is_import_target_adult(
         return False
 
     async with get_async_session_context() as session:
-        existing_media = await get_media_by_external_id(session, meta_id)
+        existing_media = await get_media_by_external_id(
+            session,
+            meta_id,
+            load_genres=True,
+            load_catalogs=True,
+        )
         if is_import_metadata_adult(existing_media):
             return True
 
@@ -856,15 +861,32 @@ async def process_torrent_import(
         if meta_id.startswith("mf:"):
             try:
                 media_id = int(meta_id.split(":", 1)[1])
-                media = await get_media_by_id(session, media_id)
+                media = await get_media_by_id(
+                    session,
+                    media_id,
+                    load_genres=True,
+                    load_catalogs=True,
+                )
             except (TypeError, ValueError):
                 media = None
         if not media:
-            media = await get_media_by_external_id(session, meta_id)
+            media = await get_media_by_external_id(
+                session,
+                meta_id,
+                load_genres=True,
+                load_catalogs=True,
+            )
 
     if not media:
         if meta_type == "sports":
-            media = await get_media_by_title_year(session, title, contribution_data.get("year"), sports_media_type)
+            media = await get_media_by_title_year(
+                session,
+                title,
+                contribution_data.get("year"),
+                sports_media_type,
+                load_genres=True,
+                load_catalogs=True,
+            )
             if not media:
                 media = Media(
                     title=title,
@@ -880,7 +902,13 @@ async def process_torrent_import(
                     "title": title,
                     "year": contribution_data.get("year"),
                 }
-                media = await get_or_create_metadata(session, payload, meta_type)
+                media = await get_or_create_metadata(
+                    session,
+                    payload,
+                    meta_type,
+                    load_genres=True,
+                    load_catalogs=True,
+                )
             except Exception as e:
                 logger.warning(f"Failed to fetch/create media for {meta_id}: {e}")
                 media_type_map = {
@@ -897,6 +925,8 @@ async def process_torrent_import(
                         "year": contribution_data.get("year"),
                     },
                     "series" if media_type_enum == MediaType.SERIES else "movie",
+                    load_genres=True,
+                    load_catalogs=True,
                 )
 
     if is_import_metadata_adult(media):
@@ -1030,7 +1060,12 @@ async def process_torrent_import(
 
         if file_meta_id:
             # Per-file metadata: look up the specified media
-            file_media = await get_media_by_external_id(session, file_meta_id)
+            file_media = await get_media_by_external_id(
+                session,
+                file_meta_id,
+                load_genres=True,
+                load_catalogs=True,
+            )
 
             # If media doesn't exist, fetch from external provider and create
             if not file_media:
@@ -1043,12 +1078,20 @@ async def process_torrent_import(
                 try:
                     payload = prefetched_media_payloads.get((file_meta_id, file_meta_type))
                     if payload:
-                        file_media = await get_or_create_metadata(session, payload, file_meta_type)
+                        file_media = await get_or_create_metadata(
+                            session,
+                            payload,
+                            file_meta_type,
+                            load_genres=True,
+                            load_catalogs=True,
+                        )
                     elif file_meta_title:
                         file_media = await get_or_create_metadata(
                             session,
                             {"id": file_meta_id, "title": file_meta_title},
                             file_meta_type,
+                            load_genres=True,
+                            load_catalogs=True,
                         )
                 except Exception as e:
                     logger.warning(f"Failed to fetch/create media for file meta_id {file_meta_id}: {e}")
