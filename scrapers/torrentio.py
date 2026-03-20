@@ -24,6 +24,19 @@ SUPPORTED_DEBRID_SERVICE = {
 }
 
 
+def _is_torrentio_error_placeholder_url(url: str | None) -> bool:
+    """True when Torrentio returns a dummy video URL instead of a real magnet/debrid link."""
+    if not url:
+        return False
+    u = url.lower()
+    # e.g. https://torrentio.strem.fun/videos/failed_access_v2.mp4
+    if "failed_access" in u:
+        return True
+    if "/videos/" in u and u.endswith(".mp4") and ("error" in u or "unavailable" in u or "not_cached" in u):
+        return True
+    return False
+
+
 class TorrentioScraper(StremioScraper):
     cache_key_prefix = "torrentio"
 
@@ -90,6 +103,8 @@ class TorrentioScraper(StremioScraper):
             info_hash = stream.get("infoHash")
             if not info_hash:
                 url = stream.get("url", "")
+                if _is_torrentio_error_placeholder_url(url):
+                    return None, False
                 match = re.search(r"\b([a-fA-F0-9]{40})\b", url)
                 if match:
                     info_hash = match.group(1)
