@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import re
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from os import path
@@ -16,6 +15,7 @@ from db.schemas import StreamingProvider
 from db.schemas.media import UsenetStreamData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.sabnzbd.client import SABnzbd
+from streaming_providers.usenet_file_selection import select_usenet_file_dict
 
 
 @asynccontextmanager
@@ -110,6 +110,7 @@ async def select_file_from_usenet(
     filename: str | None,
     season: int | None,
     episode: int | None,
+    episode_air_date: str | None = None,
 ) -> dict | None:
     """Select the appropriate file from usenet download files.
 
@@ -119,42 +120,19 @@ async def select_file_from_usenet(
         filename: Target filename
         season: Season number for series
         episode: Episode number for series
+        episode_air_date: Optional YYYY-MM-DD for dated releases
 
     Returns:
         Selected file dict or None
     """
-    if not files:
-        return None
-
-    video_extensions = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".webm"}
-
-    # If filename is provided, try to match it
-    if filename:
-        for f in files:
-            file_name = f.get("name", "").lower()
-            if file_name == filename.lower():
-                return f
-
-    # For series, try to match season/episode
-    if season is not None and episode is not None:
-        pattern = rf"[sS]{season:02d}[eE]{episode:02d}"
-        for f in files:
-            file_name = f.get("name", "")
-            if re.search(pattern, file_name):
-                return f
-
-    # Return the largest video file
-    video_files = []
-    for f in files:
-        file_name = f.get("name", "").lower()
-        if any(file_name.endswith(ext) for ext in video_extensions):
-            video_files.append(f)
-
-    if video_files:
-        return max(video_files, key=lambda x: x.get("size", 0))
-
-    # Fallback to largest file
-    return max(files, key=lambda x: x.get("size", 0)) if files else None
+    return select_usenet_file_dict(
+        files,
+        filename=filename,
+        season=season,
+        episode=episode,
+        display_name=lambda f: f.get("name", ""),
+        episode_air_date=episode_air_date,
+    )
 
 
 async def find_file_in_sabnzbd_downloads(
@@ -165,6 +143,7 @@ async def find_file_in_sabnzbd_downloads(
     filename: str | None,
     season: int | None,
     episode: int | None,
+    episode_air_date: str | None = None,
 ) -> dict | None:
     """Find a file in SABnzbd completed downloads.
 
@@ -192,7 +171,7 @@ async def find_file_in_sabnzbd_downloads(
     if not files:
         return None
 
-    return await select_file_from_usenet(files, stream, filename, season, episode)
+    return await select_file_from_usenet(files, stream, filename, season, episode, episode_air_date)
 
 
 def generate_webdav_url(streaming_provider: StreamingProvider, selected_file: dict) -> str:
@@ -293,6 +272,7 @@ async def get_video_url_from_sabnzbd(
     """
     config = streaming_provider.sabnzbd_config
     category = config.category if config else "MediaFusion"
+    episode_air_date = kwargs.get("episode_air_date")
 
     async with initialize_sabnzbd(streaming_provider) as sabnzbd:
         # Check if download already exists
@@ -302,7 +282,14 @@ async def get_video_url_from_sabnzbd(
             # Download exists and is complete, find the file
             async with initialize_webdav(streaming_provider) as webdav:
                 selected_file = await find_file_in_sabnzbd_downloads(
-                    webdav, streaming_provider, existing["filename"], stream, filename, season, episode
+                    webdav,
+                    streaming_provider,
+                    existing["filename"],
+                    stream,
+                    filename,
+                    season,
+                    episode,
+                    episode_air_date,
                 )
                 if selected_file:
                     return generate_webdav_url(streaming_provider, selected_file)
@@ -322,7 +309,14 @@ async def get_video_url_from_sabnzbd(
         # Find the file in completed downloads
         async with initialize_webdav(streaming_provider) as webdav:
             selected_file = await find_file_in_sabnzbd_downloads(
-                webdav, streaming_provider, status["filename"], stream, filename, season, episode
+                webdav,
+                streaming_provider,
+                status["filename"],
+                stream,
+                filename,
+                season,
+                episode,
+                episode_air_date,
             )
             if not selected_file:
                 raise ProviderException("No matching file found in download", "no_video_file_found.mp4")

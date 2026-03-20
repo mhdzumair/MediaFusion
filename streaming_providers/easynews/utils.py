@@ -9,6 +9,12 @@ from db.schemas import StreamingProvider
 from db.schemas.media import UsenetStreamData
 from streaming_providers.easynews.client import Easynews
 from streaming_providers.exceptions import ProviderException
+from streaming_providers.usenet_file_selection import (
+    easynews_episode_match_text,
+    easynews_row_looks_like_video,
+    usenet_label_matches_air_date,
+    usenet_label_matches_season_episode,
+)
 
 
 @asynccontextmanager
@@ -35,6 +41,7 @@ def select_best_result(
     season: int | None,
     episode: int | None,
     preferred_resolution: str | None = None,
+    episode_air_date: str | None = None,
 ) -> dict | None:
     """Select the best result from search results.
 
@@ -44,6 +51,7 @@ def select_best_result(
         season: Season number for series
         episode: Episode number for series
         preferred_resolution: Preferred resolution (e.g., "1080p", "4k")
+        episode_air_date: Optional YYYY-MM-DD for dated releases (late-night / daily shows)
 
     Returns:
         Best matching result or None
@@ -51,18 +59,10 @@ def select_best_result(
     if not results:
         return None
 
-    video_extensions = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".webm"}
-
-    # Filter to video files only
-    video_results = []
-    for r in results:
-        ext = r.get("extension", "").lower()
-        fname = r.get("filename", "").lower()
-        if ext in video_extensions or any(fname.endswith(e) for e in video_extensions):
-            video_results.append(r)
-
+    # Only consider video rows (same extension rules as other Usenet providers)
+    video_results = [r for r in results if easynews_row_looks_like_video(r)]
     if not video_results:
-        video_results = results
+        return None
 
     # If filename is provided, try to match it
     if filename:
@@ -71,14 +71,19 @@ def select_best_result(
             if r.get("filename", "").lower() == filename_lower:
                 return r
 
-    # For series, try to match season/episode
+    # Narrow by season/episode (PTT + same fallback patterns as torrent/usenet parser) or air date
     if season is not None and episode is not None:
-        pattern = rf"[sS]{season:02d}[eE]{episode:02d}"
-        matching = []
-        for r in video_results:
-            fname = r.get("filename", "") or r.get("subject", "")
-            if re.search(pattern, fname):
-                matching.append(r)
+        matching = [
+            r
+            for r in video_results
+            if usenet_label_matches_season_episode(easynews_episode_match_text(r), season, episode)
+        ]
+        if matching:
+            video_results = matching
+    elif episode_air_date:
+        matching = [
+            r for r in video_results if usenet_label_matches_air_date(easynews_episode_match_text(r), episode_air_date)
+        ]
         if matching:
             video_results = matching
 
@@ -172,7 +177,13 @@ async def get_video_url_from_easynews(
             raise ProviderException("No results found on Easynews", "no_video_file_found.mp4")
 
         # Select the best result
-        best_result = select_best_result(results, filename, season, episode)
+        best_result = select_best_result(
+            results,
+            filename,
+            season,
+            episode,
+            episode_air_date=kwargs.get("episode_air_date"),
+        )
 
         if not best_result:
             raise ProviderException("No matching video found on Easynews", "no_video_file_found.mp4")

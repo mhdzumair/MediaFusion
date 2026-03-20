@@ -768,6 +768,36 @@ async def fetch_usenet_stream_or_404(nzb_guid: str) -> UsenetStreamData:
     raise HTTPException(status_code=400, detail="Usenet stream not found.")
 
 
+async def resolve_usenet_episode_air_date_iso(
+    nzb_guid: str,
+    season: int | None,
+    episode: int | None,
+) -> str | None:
+    """Return catalog episode air date as YYYY-MM-DD for dated Usenet release names."""
+    if season is None or episode is None:
+        return None
+    async with get_read_session_context() as session:
+        media_row = await session.exec(
+            select(StreamMediaLink.media_id)
+            .join(UsenetStream, UsenetStream.stream_id == StreamMediaLink.stream_id)
+            .where(UsenetStream.nzb_guid == nzb_guid)
+            .limit(1)
+        )
+        media_id = media_row.first()
+        if media_id is None:
+            return None
+        sm = await crud.get_series_metadata(session, media_id)
+        if sm is None:
+            return None
+        sea = await crud.get_season(session, sm.id, season)
+        if sea is None:
+            return None
+        ep = await crud.get_episode(session, sea.id, episode)
+        if ep is None or ep.air_date is None:
+            return None
+        return ep.air_date.isoformat()
+
+
 async def get_or_create_usenet_video_url(
     stream: UsenetStreamData,
     user_data: schemas.UserData,
@@ -804,6 +834,8 @@ async def get_or_create_usenet_video_url(
     if not stream.nzb_url:
         stream.nzb_url = generate_signed_nzb_url(nzb_guid)
 
+    episode_air_date = await resolve_usenet_episode_air_date_iso(nzb_guid, season, episode)
+
     kwargs = dict(
         nzb_hash=nzb_guid,
         nzb_url=stream.nzb_url,
@@ -814,6 +846,7 @@ async def get_or_create_usenet_video_url(
         episode=episode,
         stream=stream,
         background_tasks=background_tasks,
+        episode_air_date=episode_air_date,
     )
 
     video_url = await get_video_url(**kwargs)

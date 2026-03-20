@@ -7,6 +7,7 @@ from db.schemas import StreamingProvider, TorrentStreamData
 from db.schemas.media import UsenetStreamData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
+from streaming_providers.usenet_file_selection import select_usenet_file_index
 from streaming_providers.torbox.client import Torbox
 
 
@@ -248,9 +249,13 @@ async def get_video_url_from_usenet_torbox(
         # Check if the usenet download already exists
         usenet_info = await torbox_client.get_available_usenet(nzb_hash)
 
+        episode_air_date = kwargs.get("episode_air_date")
+
         if usenet_info:
             if usenet_info.get("download_finished") is True and usenet_info.get("download_present") is True:
-                file_id = await select_file_id_from_usenet(usenet_info, filename, stream, season, episode)
+                file_id = await select_file_id_from_usenet(
+                    usenet_info, filename, stream, season, episode, episode_air_date=episode_air_date
+                )
                 response = await torbox_client.create_usenet_download_link(
                     usenet_info["id"],
                     file_id,
@@ -271,7 +276,9 @@ async def get_video_url_from_usenet_torbox(
             if "Found Cached" in response.get("detail", ""):
                 usenet_info = await torbox_client.get_available_usenet(nzb_hash)
                 if usenet_info:
-                    file_id = await select_file_id_from_usenet(usenet_info, filename, stream, season, episode)
+                    file_id = await select_file_id_from_usenet(
+                        usenet_info, filename, stream, season, episode, episode_air_date=episode_air_date
+                    )
                     response = await torbox_client.create_usenet_download_link(
                         usenet_info["id"],
                         file_id,
@@ -291,6 +298,7 @@ async def select_file_id_from_usenet(
     stream: UsenetStreamData,
     season: int | None,
     episode: int | None,
+    episode_air_date: str | None = None,
 ) -> int:
     """Select the file id from the usenet download info.
 
@@ -300,6 +308,7 @@ async def select_file_id_from_usenet(
         stream: Usenet stream data
         season: Season number for series
         episode: Episode number for series
+        episode_air_date: Optional YYYY-MM-DD for dated releases
 
     Returns:
         File ID for the target file
@@ -311,36 +320,15 @@ async def select_file_id_from_usenet(
             "no_video_file_found.mp4",
         )
 
-    # If filename is provided, try to match it
-    if filename:
-        for f in files:
-            if f.get("short_name", "").lower() == filename.lower() or f.get("name", "").lower() == filename.lower():
-                return f["id"]
-
-    # For series, try to match season/episode
-    if season is not None and episode is not None:
-        import re
-
-        pattern = rf"[sS]{season:02d}[eE]{episode:02d}"
-        for f in files:
-            file_name = f.get("short_name", f.get("name", ""))
-            if re.search(pattern, file_name):
-                return f["id"]
-
-    # Return the largest video file
-    video_extensions = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".webm"}
-    video_files = []
-    for f in files:
-        file_name = f.get("short_name", f.get("name", "")).lower()
-        if any(file_name.endswith(ext) for ext in video_extensions):
-            video_files.append(f)
-
-    if video_files:
-        largest = max(video_files, key=lambda x: x.get("size", 0))
-        return largest["id"]
-
-    # Fallback to first file
-    return files[0]["id"]
+    idx = select_usenet_file_index(
+        files,
+        filename=filename,
+        season=season,
+        episode=episode,
+        display_name=lambda f: f.get("short_name") or f.get("name", ""),
+        episode_air_date=episode_air_date,
+    )
+    return files[idx]["id"]
 
 
 async def update_usenet_chunk_cache_status(torbox_client: Torbox, streams_chunk: list[UsenetStreamData]) -> None:

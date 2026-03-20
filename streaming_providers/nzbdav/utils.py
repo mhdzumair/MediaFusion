@@ -89,6 +89,7 @@ async def find_file_in_nzbdav_downloads(
     filename: str | None,
     season: int | None,
     episode: int | None,
+    episode_air_date: str | None = None,
 ) -> dict | None:
     """Find a file in NzbDAV completed downloads.
 
@@ -121,7 +122,7 @@ async def find_file_in_nzbdav_downloads(
     if not files:
         return None
 
-    return await select_file_from_usenet(files, stream, filename, season, episode)
+    return await select_file_from_usenet(files, stream, filename, season, episode, episode_air_date)
 
 
 def generate_webdav_url(streaming_provider: StreamingProvider, selected_file: dict) -> str:
@@ -220,6 +221,7 @@ async def get_video_url_from_nzbdav(
     """
     config = streaming_provider.nzbdav_config
     category = config.category if config else "MediaFusion"
+    episode_air_date = kwargs.get("episode_air_date")
 
     async with initialize_nzbdav(streaming_provider) as client:
         existing = await client.find_download_by_name(stream.name)
@@ -227,7 +229,14 @@ async def get_video_url_from_nzbdav(
         if existing and existing["status"] == "completed":
             async with initialize_webdav(streaming_provider) as webdav:
                 selected_file = await find_file_in_nzbdav_downloads(
-                    webdav, streaming_provider, existing["filename"], stream, filename, season, episode
+                    webdav,
+                    streaming_provider,
+                    existing["filename"],
+                    stream,
+                    filename,
+                    season,
+                    episode,
+                    episode_air_date,
                 )
                 if selected_file:
                     return generate_webdav_url(streaming_provider, selected_file)
@@ -244,7 +253,14 @@ async def get_video_url_from_nzbdav(
 
         async with initialize_webdav(streaming_provider) as webdav:
             selected_file = await find_file_in_nzbdav_downloads(
-                webdav, streaming_provider, status["filename"], stream, filename, season, episode
+                webdav,
+                streaming_provider,
+                status["filename"],
+                stream,
+                filename,
+                season,
+                episode,
+                episode_air_date,
             )
             if not selected_file:
                 raise ProviderException("No matching file found in download", "no_video_file_found.mp4")

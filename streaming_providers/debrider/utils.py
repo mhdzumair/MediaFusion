@@ -8,6 +8,7 @@ from db.schemas.media import UsenetStreamData
 from streaming_providers.debrider.client import Debrider
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
+from streaming_providers.usenet_file_selection import select_usenet_file_index
 
 
 async def get_video_url_from_debrider(
@@ -137,6 +138,7 @@ async def get_video_url_from_usenet_debrider(
             filename=filename,
             season=season,
             episode=episode,
+            episode_air_date=kwargs.get("episode_air_date"),
         )
         return usenet_info["files"][file_index]["download_link"]
 
@@ -147,6 +149,7 @@ async def select_file_index_from_usenet(
     filename: str,
     season: int | None,
     episode: int | None,
+    episode_air_date: str | None = None,
 ) -> int:
     """Select the file index from the usenet download info.
 
@@ -156,6 +159,7 @@ async def select_file_index_from_usenet(
         filename: Target filename
         season: Season number for series
         episode: Episode number for series
+        episode_air_date: Optional YYYY-MM-DD for dated releases
 
     Returns:
         File index for the target file
@@ -167,37 +171,15 @@ async def select_file_index_from_usenet(
             "no_video_file_found.mp4",
         )
 
-    # If filename is provided, try to match it
-    if filename:
-        for idx, f in enumerate(files):
-            file_name = f.get("name", "").lower()
-            if file_name == filename.lower() or file_name.endswith(f"/{filename.lower()}"):
-                return idx
-
-    # For series, try to match season/episode
-    if season is not None and episode is not None:
-        import re
-
-        pattern = rf"[sS]{season:02d}[eE]{episode:02d}"
-        for idx, f in enumerate(files):
-            file_name = f.get("name", "")
-            if re.search(pattern, file_name):
-                return idx
-
-    # Return the largest video file
-    video_extensions = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".webm"}
-    video_files = []
-    for idx, f in enumerate(files):
-        file_name = f.get("name", "").lower()
-        if any(file_name.endswith(ext) for ext in video_extensions):
-            video_files.append((idx, f))
-
-    if video_files:
-        largest_idx, _ = max(video_files, key=lambda x: x[1].get("size", 0))
-        return largest_idx
-
-    # Fallback to first file
-    return 0
+    return select_usenet_file_index(
+        files,
+        filename=filename,
+        season=season,
+        episode=episode,
+        display_name=lambda f: f.get("name", ""),
+        match_path_suffix=True,
+        episode_air_date=episode_air_date,
+    )
 
 
 async def update_usenet_chunk_cache_status(debrider_client: Debrider, streams_chunk: list[UsenetStreamData]) -> None:
