@@ -1,4 +1,6 @@
 import asyncio
+import json
+import logging
 from abc import abstractmethod
 from base64 import b64decode, b64encode
 from contextlib import AsyncContextDecorator
@@ -9,6 +11,8 @@ from aiohttp_socks import ProxyConnector, ProxyError
 
 from db.config import settings
 from streaming_providers.exceptions import ProviderException
+
+logger = logging.getLogger(__name__)
 
 
 class DebridClient(AsyncContextDecorator):
@@ -186,6 +190,14 @@ class DebridClient(AsyncContextDecorator):
                 return response
             if is_expected_to_fail:
                 return response_text
+            if isinstance(error, json.JSONDecodeError):
+                prefix = (response_text[:500] + "…") if len(response_text) > 500 else response_text
+                logger.warning("Debrid JSON decode failed: %s; body prefix: %s", error, prefix)
+                raise ProviderException(
+                    "Streaming provider returned invalid or incomplete data. Please try again.",
+                    "debrid_service_down_error.mp4",
+                    retryable=True,
+                )
             raise ProviderException(
                 f"Failed to parse response error: {error}. \nresponse: {response_text}",
                 "api_error.mp4",

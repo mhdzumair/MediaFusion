@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+from aiohttp import ClientResponseError
 from aioseedrcc import Login
 from aioseedrcc.exception import SeedrException
 from fastapi import APIRouter
@@ -47,6 +48,11 @@ async def get_device_code():
     except OSError as error:
         logger.warning("Seedr get-device-code network failure: %s", error)
         return _oauth_error_response(ProviderException("Seedr request failed. Please try again.", "api_error.mp4"))
+    except ClientResponseError as error:
+        logger.warning("Seedr get-device-code HTTP %s: %s", error.status, error.message)
+        return _oauth_error_response(
+            ProviderException("Seedr service error. Please try again.", "debrid_service_down_error.mp4")
+        )
 
 
 @router.post("/authorize")
@@ -67,3 +73,8 @@ async def authorize(data: AuthorizeData):
     except OSError as error:
         logger.warning("Seedr authorize network failure: %s", error)
         return _oauth_error_response(ProviderException("Seedr request failed. Please try again.", "api_error.mp4"))
+    except ClientResponseError as error:
+        logger.warning("Seedr authorize HTTP %s: %s", error.status, error.message)
+        return _oauth_error_response(
+            ProviderException("Seedr service error. Please try again.", "debrid_service_down_error.mp4")
+        )

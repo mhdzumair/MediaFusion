@@ -246,6 +246,23 @@ def _is_geo_restriction_error(error_message: str) -> bool:
     return any(hint in lower_message for hint in geo_hints)
 
 
+def _is_video_unavailable_ytdlp_error(error_message: str) -> bool:
+    """yt-dlp errors when the video is private, deleted, or region-blocked without geo phrasing."""
+    lower_message = error_message.lower()
+    hints = (
+        "this video is not available",
+        "video is not available",
+        "video unavailable",
+        "private video",
+        "no longer available",
+        "has been removed",
+        "this video has been deleted",
+        "members only",
+        "sign in to confirm your age",
+    )
+    return any(h in lower_message for h in hints)
+
+
 def _fetch_video_info_sync(video_id: str) -> dict[str, Any]:
     """
     Synchronous function to fetch video info using yt-dlp.
@@ -404,9 +421,9 @@ async def analyze_youtube_video(video_id: str) -> YouTubeVideoInfo:
             geo_restriction_type = extracted_type
             geo_restriction_countries = extracted_countries
 
-        # If yt-dlp failed due to geo restrictions, still return metadata from
-        # YouTube Data API / oEmbed so the user can import and label correctly.
-        if _is_geo_restriction_error(error_message):
+        # If yt-dlp failed due to geo restrictions or generic unavailability, still return
+        # metadata from YouTube Data API / oEmbed so the user can import and label correctly.
+        if _is_geo_restriction_error(error_message) or _is_video_unavailable_ytdlp_error(error_message):
             oembed_metadata = await _fetch_youtube_oembed_metadata(video_id)
             fallback_title = api_metadata.get("title") or oembed_metadata.get("title") or f"YouTube Video ({video_id})"
             fallback_channel = api_metadata.get("channel") or oembed_metadata.get("channel")

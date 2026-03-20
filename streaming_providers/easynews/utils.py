@@ -85,10 +85,14 @@ def select_best_result(
     # Score results based on quality
     def score_result(r: dict) -> int:
         score = 0
-        resolution = r.get("resolution", "")
+        raw_resolution = r.get("resolution")
+        resolution = (
+            raw_resolution if isinstance(raw_resolution, str) else (str(raw_resolution) if raw_resolution else "")
+        )
+        resolution_lower = resolution.lower()
 
         # Resolution scoring
-        if "2160" in resolution or "4k" in resolution.lower():
+        if "2160" in resolution or "4k" in resolution_lower:
             score += 100
         elif "1080" in resolution:
             score += 80
@@ -107,7 +111,8 @@ def select_best_result(
             score += 10
 
         # Codec preference
-        codec = r.get("codec", "").lower()
+        raw_codec = r.get("codec")
+        codec = raw_codec.lower() if isinstance(raw_codec, str) else ""
         if "x265" in codec or "hevc" in codec:
             score += 15
         elif "x264" in codec or "h264" in codec:
@@ -115,7 +120,7 @@ def select_best_result(
 
         # Preferred resolution bonus
         if preferred_resolution:
-            if preferred_resolution.lower() in resolution.lower():
+            if preferred_resolution.lower() in resolution_lower:
                 score += 50
 
         return score

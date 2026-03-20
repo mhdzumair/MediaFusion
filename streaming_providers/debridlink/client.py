@@ -8,7 +8,8 @@ from streaming_providers.exceptions import ProviderException
 
 logger = logging.getLogger(__name__)
 
-DL_TORRENT_LIST_PAGE_SIZE = 50
+# Smaller pages reduce huge JSON payloads that some proxies/APIs truncate mid-stream.
+DL_TORRENT_LIST_PAGE_SIZE = 25
 DL_TORRENT_LIST_MAX_PAGES = 100
 
 
