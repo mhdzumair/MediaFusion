@@ -154,7 +154,12 @@ class Easynews:
         response = await self._make_request(self.SEARCH_URL, params)
 
         results = []
+        if not isinstance(response, dict):
+            return results
+
         data = response.get("data", [])
+        if not isinstance(data, list):
+            data = []
         down_url = response.get("downURL")
         dl_farm = response.get("dlFarm")
         dl_port = response.get("dlPort")

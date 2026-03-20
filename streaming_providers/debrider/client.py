@@ -18,7 +18,14 @@ class Debrider(DebridClient):
         pass
 
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
-        pass
+        if status_code != 403:
+            return
+        raw = error_data.get("message")
+        if not isinstance(raw, str) or not raw.strip():
+            return
+        lowered = raw.lower()
+        if "subscription" in lowered and "api" in lowered:
+            raise ProviderException(raw.strip(), "need_premium.mp4")
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await super().__aexit__(exc_type, exc_val, exc_tb)

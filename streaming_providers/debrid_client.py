@@ -118,6 +118,13 @@ class DebridClient(AsyncContextDecorator):
             if error.status == 429:
                 raise ProviderException("Too many requests", "too_many_requests.mp4")
 
+            if error.status == 403:
+                if isinstance(error_content, dict):
+                    message = error_content.get("message")
+                    if isinstance(message, str) and message.strip():
+                        raise ProviderException(message.strip(), "api_error.mp4")
+                raise ProviderException("Access forbidden", "api_error.mp4")
+
             if error.status in [500, 502, 503, 504]:
                 raise ProviderException("Debrid service is down.", "debrid_service_down_error.mp4")
 

@@ -3,7 +3,6 @@
 from urllib.parse import urlparse
 
 from db.schemas import StreamingProvider, UserData
-from db.schemas.media import UsenetStreamData
 
 # Providers that are bound to a specific Usenet source family.
 # These providers should not be offered streams scraped from unrelated sources.
@@ -33,10 +32,13 @@ def _extract_hostname(url: str | None) -> str | None:
     return parsed.hostname.lower()
 
 
-def _stream_source_candidates(stream: UsenetStreamData) -> set[str]:
+def _stream_source_candidates(stream: object) -> set[str]:
+    # API schema (UsenetStreamData) has both source and indexer; ORM UsenetStream has indexer only.
+    source = getattr(stream, "source", None)
+    indexer = getattr(stream, "indexer", None)
     return {
-        _normalize_text(stream.source),
-        _normalize_text(stream.indexer),
+        _normalize_text(source if isinstance(source, str) else None),
+        _normalize_text(indexer if isinstance(indexer, str) else None),
     }
 
 
@@ -78,7 +80,7 @@ def _get_enabled_newznab_signatures(user_data: UserData) -> tuple[set[str], set[
 
 
 def is_usenet_stream_compatible(
-    stream: UsenetStreamData,
+    stream: object,
     streaming_provider: StreamingProvider,
     user_data: UserData,
 ) -> tuple[bool, str | None]:

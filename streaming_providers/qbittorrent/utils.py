@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -17,7 +18,7 @@ from aioqbt.api import AddFormBuilder, InfoFilter, TorrentInfo
 from aioqbt.client import APIClient, create_client
 from aioqbt.exc import AddTorrentError, LoginError, NotFoundError
 from aiowebdav.client import Client as WebDavClient
-from aiowebdav.exceptions import NoConnection, RemoteResourceNotFound
+from aiowebdav.exceptions import MethodNotSupported, NoConnection, RemoteResourceNotFound
 
 from db.enums import TorrentType
 from db.schemas import StreamingProvider, TorrentStreamData
@@ -331,6 +332,19 @@ async def fetch_info_hashes_from_webdav(streaming_provider: StreamingProvider, *
         async with initialize_webdav(streaming_provider) as webdav:
             directories = await webdav.list(streaming_provider.qbittorrent_config.webdav_downloads_path)
     except ProviderException:
+        return []
+    except MethodNotSupported:
+        logging.warning(
+            "WebDAV server does not support LIST for qBittorrent downloads path (tunnel or limited WebDAV): %s",
+            streaming_provider.qbittorrent_config.webdav_url,
+        )
+        return []
+    except Exception as err:
+        logging.warning(
+            "WebDAV list failed while fetching qBittorrent info hashes (%s): %s",
+            streaming_provider.qbittorrent_config.webdav_url,
+            err,
+        )
         return []
 
     # Filter out directory names that match the length of an info hash (40 chars) plus the trailing slash

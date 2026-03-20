@@ -6,6 +6,7 @@ from io import BytesIO
 import aiohttp
 from aiohttp_socks import ProxyConnector
 from PIL import Image, ImageDraw, ImageFont, ImageStat, UnidentifiedImageError
+from PIL.Image import DecompressionBombError
 
 from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
@@ -156,7 +157,7 @@ def process_poster_image(content: bytes, mediafusion_data: PosterData) -> BytesI
         byte_io.seek(0)
 
         return byte_io
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
+    except (UnidentifiedImageError, DecompressionBombError, OSError, ValueError) as exc:
         poster_url = getattr(mediafusion_data, "poster", "unknown")
         raise PosterProcessingError(f"Cannot identify image from URL: {poster_url}") from exc
 

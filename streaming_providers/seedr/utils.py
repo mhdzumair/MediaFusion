@@ -92,7 +92,8 @@ async def get_seedr_client(streaming_provider: StreamingProvider) -> AsyncGenera
             if "error" in response:
                 raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
             yield seedr
-    except (SyntaxError, BinasciiError, TypeError, ValueError):
+    except (SyntaxError, BinasciiError, NameError, TypeError, ValueError):
+        # aioseedrcc decodes token via eval(); garbage or wrong encoding raises NameError etc.
         raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
     except ProviderException as error:
         raise error

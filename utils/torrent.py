@@ -22,7 +22,7 @@ from anyio import (
 )
 from anyio.streams.memory import MemoryObjectSendStream
 from demagnetize.core import Demagnetizer
-from torf import Magnet, MagnetError
+from torf import Magnet, TorfError
 
 import utils.runtime_const
 from db.config import settings
@@ -459,7 +459,8 @@ def parse_magnet(magnet_link: str) -> tuple[str, list[str]]:
     try:
         magnet = Magnet.from_string(magnet_link)
         return magnet.infohash.lower(), _filter_valid_trackers(magnet.tr)
-    except MagnetError:
+    except TorfError:
+        # Malformed magnet (e.g. bogus &tr= values) — fall back to manual parse below.
         pass
 
     try:
