@@ -225,9 +225,23 @@ class BackgroundSearchWorker:
 
         for item in pending_series:
             key = item["key"]
-            meta_id, season, episode = key.split(":")
-            season = int(season)
-            episode = int(episode)
+            parts = key.rsplit(":", 2)
+            if len(parts) != 3:
+                logger.warning(
+                    "Skipping invalid series background-search key %r (expected meta_id:season:episode)",
+                    key,
+                )
+                continue
+            meta_id, season_raw, episode_raw = parts
+            try:
+                season = int(season_raw)
+                episode = int(episode_raw)
+            except ValueError:
+                logger.warning(
+                    "Skipping series background-search key %r: invalid season or episode",
+                    key,
+                )
+                continue
             await self.manager.mark_as_processing(key)
 
             try:
