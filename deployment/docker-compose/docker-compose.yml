@@ -131,7 +131,8 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes --save 60 1
+    # Evict LRU keys when maxmemory is set (avoids write failures under memory pressure).
+    command: redis-server --appendonly yes --save 60 1 --maxmemory-policy allkeys-lru
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "redis-cli --raw INFO | grep -q '^loading:0$'"]

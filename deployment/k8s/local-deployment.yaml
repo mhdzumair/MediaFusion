@@ -586,6 +586,8 @@ spec:
           - --save
           - "60"
           - "1"
+          - --maxmemory-policy
+          - allkeys-lru
         volumeMounts:
         - name: redis-storage
           mountPath: /data

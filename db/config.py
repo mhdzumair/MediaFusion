@@ -323,6 +323,12 @@ class Settings(BaseSettings):
     poster_failure_ttl: int = 3600  # TTL in seconds for a single failure record (1 hour)
     poster_failure_threshold: int = 3  # Number of failures before marking a poster URL as dead
     poster_dead_ttl: int = 86400  # TTL in seconds for a dead poster URL marker (24 hours)
+    # Rendered Stremio poster JPEG bytes in Redis (api/routers/stremio/poster.py)
+    poster_jpeg_cache_ttl_seconds: int = Field(default=259200, ge=60)  # default 3 days
+    # Raw source image bytes keyed by URL in Redis (utils/poster.fetch_poster_image)
+    poster_source_image_cache_ttl_seconds: int = Field(default=3600, ge=60)
+    # Max members per scraper cooldown zset after time trim; 0 = unlimited
+    scraper_cooldown_zset_max_members: int = Field(default=0, ge=0)
 
     # Exception Tracking
     enable_exception_tracking: bool = False

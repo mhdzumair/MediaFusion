@@ -12,6 +12,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db import crud, schemas
+from db.config import settings
 from db.database import get_async_session_context, get_read_session_context
 from db.models.links import MediaGenreLink
 from db.models.reference import Genre
@@ -172,8 +173,7 @@ async def get_poster(
         image_byte_io = await poster.create_poster(poster_data)
         # Convert BytesIO to bytes for Redis
         image_bytes = image_byte_io.getvalue()
-        # Save the generated image to Redis. expire in 7 days
-        await REDIS_ASYNC_CLIENT.set(cache_key, image_bytes, ex=604800)
+        await REDIS_ASYNC_CLIENT.set(cache_key, image_bytes, ex=settings.poster_jpeg_cache_ttl_seconds)
         image_byte_io.seek(0)
         return StreamingResponse(
             image_byte_io,

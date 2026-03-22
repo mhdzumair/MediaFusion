@@ -116,9 +116,8 @@ async def fetch_poster_image(url: str, max_retries: int = 1) -> bytes:
                         except (OSError, UnidentifiedImageError, ValueError) as exc:
                             raise PosterFetchError(f"Unexpected non-image payload for URL: {url}") from exc
 
-                    # Cache the image in Redis for 1 hour
                     logging.info(f"Caching image for URL: {url}")
-                    await REDIS_ASYNC_CLIENT.set(url, content, ex=3600)
+                    await REDIS_ASYNC_CLIENT.set(url, content, ex=settings.poster_source_image_cache_ttl_seconds)
                     return content
         except PosterFetchError as e:
             last_exception = e

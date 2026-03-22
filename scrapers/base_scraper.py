@@ -831,12 +831,24 @@ class BaseScraper(abc.ABC):
         return 30
 
     @staticmethod
+    async def _trim_scraper_zset_to_max(name: str) -> None:
+        """Drop oldest members if zset still exceeds scraper_cooldown_zset_max_members."""
+        cap = settings.scraper_cooldown_zset_max_members
+        if cap <= 0:
+            return
+        card = await REDIS_ASYNC_CLIENT.zcard(name)
+        if not card or card <= cap:
+            return
+        await REDIS_ASYNC_CLIENT.zremrangebyrank(name, 0, card - cap - 1)
+
+    @staticmethod
     async def remove_expired_items(scraper_prefix: str, ttl: int = 3600):
         """
         Remove expired items from the cache.
         """
         current_time = int(time.time())
         await REDIS_ASYNC_CLIENT.zremrangebyscore(scraper_prefix, 0, current_time - ttl)
+        await BaseScraper._trim_scraper_zset_to_max(scraper_prefix)
 
     @staticmethod
     async def remove_expired_items_by_pattern(scraper_prefix_pattern: str, ttl: int = 3600):
@@ -846,6 +858,7 @@ class BaseScraper(abc.ABC):
         current_time = int(time.time())
         async for key in REDIS_ASYNC_CLIENT.scan_iter(match=scraper_prefix_pattern, count=100):
             await REDIS_ASYNC_CLIENT.zremrangebyscore(key, 0, current_time - ttl)
+            await BaseScraper._trim_scraper_zset_to_max(key)
 
     async def get_torrent_data(
         self,

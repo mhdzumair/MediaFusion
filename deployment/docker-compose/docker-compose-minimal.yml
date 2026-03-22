@@ -108,7 +108,7 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes --save 60 1
+    command: redis-server --appendonly yes --save 60 1 --maxmemory-policy allkeys-lru
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
