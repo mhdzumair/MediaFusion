@@ -102,6 +102,8 @@ class Settings(BaseSettings):
     poster_host_url: str | None = None
     min_scraping_video_size: int = 26214400  # 25 MB in bytes
     metadata_primary_source: Literal["imdb", "tmdb"] = "imdb"
+    # When True, failed cinemagoerng IMDb title fetch falls back to v3-cinemeta.strem.io.
+    imdb_cinemeta_fallback_enabled: bool = True
     startup_migrate_only: bool = False  # Skip startup DB bootstrap checks; run Alembic + Gunicorn only
     gunicorn_workers: int = Field(default=3, ge=1)  # Gunicorn worker process count
     gunicorn_timeout: int = Field(default=120, ge=1)  # Gunicorn worker timeout in seconds

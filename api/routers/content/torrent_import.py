@@ -17,7 +17,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
 from api.routers.content.contributions import award_import_approval_points
-from api.routers.content.import_title_validation import is_import_metadata_adult, resolve_and_validate_import_title
+from api.routers.content.import_title_validation import (
+    resolve_and_validate_import_title,
+    stream_texts_indicate_adult,
+    stream_texts_indicate_adult_from_file_rows,
+)
 from api.routers.content.upload_guard import enforce_upload_permissions
 from api.routers.user.auth import require_auth
 from db.config import settings
@@ -290,6 +294,17 @@ def _collect_torrent_title_candidates(torrent_data: dict[str, Any]) -> list[str]
                 candidates.append(normalized)
 
     return candidates
+
+
+def _contribution_stream_titles_indicate_adult(contribution_data: dict[str, Any]) -> bool:
+    """Block imports when torrent display name or per-file strings match adult title rules."""
+    raw_name = contribution_data.get("name")
+    raw_title = contribution_data.get("title")
+    name = raw_name if isinstance(raw_name, str) else None
+    title = raw_title if isinstance(raw_title, str) else None
+    if stream_texts_indicate_adult(name, title):
+        return True
+    return stream_texts_indicate_adult_from_file_rows(contribution_data.get("file_data"))
 
 
 def _resolve_import_languages(form_languages: str | None, torrent_data: dict[str, Any]) -> list[str]:
@@ -716,35 +731,6 @@ async def fetch_external_metadata_payload(
     return {"id": external_id, "title": fallback_title or "Unknown"}
 
 
-async def _is_import_target_adult(
-    meta_id: str | None,
-    meta_type: str,
-    sports_category: str | None,
-    fallback_title: str | None,
-) -> bool:
-    """Check external/internal metadata target for adult markers before import."""
-    if not meta_id or meta_type == "sports":
-        return False
-
-    async with get_async_session_context() as session:
-        existing_media = await get_media_by_external_id(
-            session,
-            meta_id,
-            load_genres=True,
-            load_catalogs=True,
-        )
-        if is_import_metadata_adult(existing_media):
-            return True
-
-    media_type = _resolve_fetch_media_type(meta_type, sports_category)
-    metadata_payload = await fetch_external_metadata_payload(
-        external_id=meta_id,
-        media_type=media_type,
-        fallback_title=fallback_title,
-    )
-    return is_import_metadata_adult(metadata_payload)
-
-
 async def fetch_and_create_media_from_external(
     session: AsyncSession,
     external_id: str,
@@ -806,6 +792,9 @@ async def process_torrent_import(
     if not info_hash:
         raise ValueError("Missing info_hash in contribution data")
 
+    if _contribution_stream_titles_indicate_adult(contribution_data):
+        raise ValueError(ADULT_CONTENT_METADATA_ERROR_MESSAGE)
+
     # Fetch external metadata before opening heavy DB transaction work.
     prefetched_media_payloads: dict[tuple[str, str], dict[str, Any]] = {}
     primary_external_id = meta_id or f"user_{info_hash[:8]}"
@@ -815,8 +804,6 @@ async def process_torrent_import(
             meta_type,
             fallback_title=title,
         )
-        if is_import_metadata_adult(prefetched_payload):
-            raise ValueError(ADULT_CONTENT_METADATA_ERROR_MESSAGE)
         prefetched_media_payloads[(primary_external_id, meta_type)] = prefetched_payload
 
     for file_info in contribution_data.get("file_data", []):
@@ -835,8 +822,6 @@ async def process_torrent_import(
             file_meta_type,
             fallback_title=file_info.get("meta_title"),
         )
-        if is_import_metadata_adult(prefetched_payload):
-            raise ValueError(ADULT_CONTENT_METADATA_ERROR_MESSAGE)
         prefetched_media_payloads[fetch_key] = prefetched_payload
 
     # Check if torrent already exists
@@ -928,9 +913,6 @@ async def process_torrent_import(
                     load_genres=True,
                     load_catalogs=True,
                 )
-
-    if is_import_metadata_adult(media):
-        raise ValueError(ADULT_CONTENT_METADATA_ERROR_MESSAGE)
 
     release_date = _parse_iso_date(contribution_data.get("created_at"))
     if release_date and (meta_type == "sports" or media.release_date is None):
@@ -1097,7 +1079,12 @@ async def process_torrent_import(
                     logger.warning(f"Failed to fetch/create media for file meta_id {file_meta_id}: {e}")
 
             if file_media:
-                if is_import_metadata_adult(file_media):
+                if stream_texts_indicate_adult(
+                    file_info.get("filename") if isinstance(file_info.get("filename"), str) else None,
+                    file_info.get("meta_title") if isinstance(file_info.get("meta_title"), str) else None,
+                    file_info.get("episode_title") if isinstance(file_info.get("episode_title"), str) else None,
+                    file_info.get("title") if isinstance(file_info.get("title"), str) else None,
+                ):
                     raise ValueError(ADULT_CONTENT_METADATA_ERROR_MESSAGE)
                 linked_media_ids.add(file_media.id)
 
@@ -1553,7 +1540,7 @@ async def import_magnet(
                 status="error",
                 message=title_validation_error,
             )
-        if await _is_import_target_adult(meta_id, meta_type, resolved_sports_category, resolved_title):
+        if stream_texts_indicate_adult_from_file_rows(parsed_file_data):
             return ImportResponse(
                 status="error",
                 message=ADULT_CONTENT_METADATA_ERROR_MESSAGE,
@@ -1688,11 +1675,18 @@ async def import_magnet(
                 },
             )
 
-    except Exception as e:
-        logger.exception(f"Failed to import magnet: {e}")
+    except ExceptionGroup as e:
+        for error in e.exceptions:
+            if isinstance(error, ValueError):
+                return ImportResponse(
+                    status="error",
+                    message=str(error),
+                )
+            elif isinstance(error, Exception):
+                logger.exception(f"Failed to import magnet: {error}")
         return ImportResponse(
             status="error",
-            message=f"Failed to import magnet: {str(e)}",
+            message="Failed to import magnet. Report this issue if it persists.",
         )
 
 
@@ -1819,7 +1813,7 @@ async def import_torrent_file(
                 status="error",
                 message=title_validation_error,
             )
-        if await _is_import_target_adult(meta_id, meta_type, resolved_sports_category, resolved_title):
+        if stream_texts_indicate_adult_from_file_rows(parsed_file_data):
             return ImportResponse(
                 status="error",
                 message=ADULT_CONTENT_METADATA_ERROR_MESSAGE,

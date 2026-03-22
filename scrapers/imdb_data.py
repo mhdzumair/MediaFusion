@@ -67,15 +67,47 @@ def _safe_int(value: Any) -> int | None:
 
 async def get_imdb_title(imdb_id: str, media_type: str) -> model.Title | None:
     media_type = _canonical_media_type(media_type)
+    title: model.Title | None = None
+    from_cinemeta_fallback = False
+
     try:
         title = await web.get_title_async(imdb_id, httpx_kwargs={"proxy": settings.requests_proxy_url})
-        if media_type == "series":
+    except Exception as e:
+        if settings.imdb_cinemeta_fallback_enabled:
+            logging.warning(
+                "cinemagoerng get_title_async failed for %s (%s), falling back to Cinemeta: %s: %r",
+                imdb_id,
+                media_type,
+                type(e).__name__,
+                e,
+            )
+            title = await get_imdb_data_via_cinemeta(imdb_id, media_type)
+            from_cinemeta_fallback = True
+            if not title:
+                return None
+        else:
+            logging.warning(
+                "cinemagoerng get_title_async failed for %s (%s); Cinemeta fallback disabled (imdb_cinemeta_fallback_enabled=false): %s: %r",
+                imdb_id,
+                media_type,
+                type(e).__name__,
+                e,
+            )
+            return None
+
+    if media_type == "series" and not from_cinemeta_fallback and title is not None:
+        try:
             await web.set_all_episodes_async(
                 title,
                 httpx_kwargs={"proxy": settings.requests_proxy_url},
             )
-    except Exception:
-        title = await get_imdb_data_via_cinemeta(imdb_id, media_type)
+        except Exception as e:
+            logging.warning(
+                "cinemagoerng set_all_episodes_async failed for %s; using title without full IMDb episode scrape: %s: %r",
+                imdb_id,
+                type(e).__name__,
+                e,
+            )
 
     if not title:
         return None
@@ -648,7 +680,13 @@ async def get_imdb_data_via_cinemeta(title_id: str, media_type: str) -> model.Ti
                 break
         except httpx.RequestError as e:
             if proxy_url is None:
-                logging.error(f"Error fetching Cinemeta data: {e}")
+                logging.error(
+                    "Error fetching Cinemeta data for %s (%s): %s: %r",
+                    title_id,
+                    media_type,
+                    type(e).__name__,
+                    e,
+                )
                 return None
 
     if response is None:

@@ -867,6 +867,16 @@ class MetadataFetcher:
             providers.append(provider)
             tasks.append(self.get_metadata_from_provider(provider, str(provider_id), media_type))
 
+        # IMDb refresh uses Cinemagoer (and optional Cinemeta fallback inside imdb_data). If Cinemeta is
+        # blocked or IMDb fetch fails, still resolve TMDB by IMDb ID when the API key is set and the
+        # media has no explicit TMDB external ID yet.
+        imdb_raw = external_ids.get("imdb")
+        imdb_id = str(imdb_raw).strip() if imdb_raw else ""
+        has_explicit_tmdb = bool(external_ids.get("tmdb") and str(external_ids["tmdb"]).strip())
+        if imdb_id and self.config.can_use_tmdb and not has_explicit_tmdb:
+            providers.append("tmdb")
+            tasks.append(get_tmdb_data_by_imdb(imdb_id, media_type))
+
         if not tasks:
             return results
 

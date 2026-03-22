@@ -7,6 +7,8 @@ import re
 from datetime import UTC, datetime
 from os.path import basename
 from typing import Any, Optional, Union
+
+from pydantic import BaseModel, ConfigDict, Field
 from urllib.parse import quote, urlparse
 
 from thefuzz import fuzz
@@ -48,8 +50,32 @@ from utils.template_engine import render_template as engine_render_template
 from utils.youtube import format_geo_restriction_label
 from utils.validation_helper import validate_m3u8_or_mpd_url_with_cache
 
+
+class CatalogFilterStreamData(BaseModel):
+    """Minimal stream shape for catalog UI preference filtering (e.g. AceStream)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    catalog_stream_id: int
+    name: str = ""
+    size: int = 0
+    resolution: str | None = None
+    quality: str | None = None
+    hdr_formats: list[str] = Field(default_factory=list)
+    languages: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+    torrent_type: TorrentType = TorrentType.PUBLIC
+
+
 # Union type for all stream data types that go through parse_stream_data
-AnyStreamData = Union[TorrentStreamData, UsenetStreamData, TelegramStreamData, HTTPStreamData, YouTubeStreamData]
+AnyStreamData = Union[
+    TorrentStreamData,
+    UsenetStreamData,
+    TelegramStreamData,
+    HTTPStreamData,
+    YouTubeStreamData,
+    CatalogFilterStreamData,
+]
 
 MAX_STREAM_NAME_FILTER_PATTERNS = 10
 MAX_STREAM_NAME_FILTER_PATTERN_LENGTH = 120
@@ -101,16 +127,17 @@ def _resolution_to_dimensions(resolution: str | None) -> tuple[int | None, int |
     return resolution_map.get(resolution.lower(), (None, None))
 
 
-async def filter_and_sort_streams(
+async def filter_streams_by_user_preferences(
     streams: list[AnyStreamData],
     user_data: UserData,
-    stremio_video_id: str,
-    user_ip: str | None = None,
+    *,
     provider_override: StreamingProvider | None = None,
-    disable_total_stream_cap: bool = False,
     is_usenet: bool = False,
 ) -> tuple[list[AnyStreamData], dict]:
-    # Convert to sets for faster lookups
+    """Apply resolution, size, quality, HDR, language, and name filters (Stremio parity).
+
+    Does not perform debrid cache checks, sorting, or per-resolution/total caps.
+    """
     selected_resolutions_set = set(user_data.selected_resolutions)
     quality_filter_set = set(quality for group in user_data.quality_filter for quality in const.QUALITY_GROUPS[group])
     hdr_filter_set = set(user_data.hdr_filter)
@@ -121,7 +148,6 @@ async def filter_and_sort_streams(
     valid_hdr_formats = const.SUPPORTED_HDR_FORMATS
     valid_languages = const.SUPPORTED_LANGUAGES
 
-    # Pre-compile stream name filter patterns
     stream_name_filter_mode = user_data.stream_name_filter_mode
     compiled_name_patterns: list[re.Pattern] | list[str] = []
     raw_filter_patterns = (user_data.stream_name_filter_patterns or [])[:MAX_STREAM_NAME_FILTER_PATTERNS]
@@ -138,8 +164,7 @@ async def filter_and_sort_streams(
         else:
             compiled_name_patterns = [p.lower() for p in safe_filter_patterns]
 
-    # Step 1: Filter streams and add normalized attributes
-    filtered_streams = []
+    filtered_streams: list[AnyStreamData] = []
     filtered_reasons = {
         "Requires Streaming Provider": 0,
         "Requires Private Tracker Support": 0,
@@ -154,7 +179,6 @@ async def filter_and_sort_streams(
         "No Cached Streams": 0,
     }
 
-    # Use provider_override if given; otherwise fall back to primary provider
     primary_provider = provider_override or user_data.get_primary_provider()
 
     if is_usenet and primary_provider:
@@ -168,8 +192,6 @@ async def filter_and_sort_streams(
         streams = compatible_streams
 
     for stream in streams:
-        # Skip private torrents if streaming provider is not supported
-        # Non-torrent streams (usenet, telegram) don't have torrent_type; treat as public
         torrent_type = getattr(stream, "torrent_type", TorrentType.PUBLIC)
         if torrent_type != TorrentType.PUBLIC:
             if not primary_provider:
@@ -181,16 +203,13 @@ async def filter_and_sort_streams(
             ):
                 filtered_reasons["Requires Private Tracker Support"] += 1
                 continue
-        # Create a copy of the stream model to avoid modifying the original
         stream = stream.model_copy()
-        # Add normalized attributes as dynamic properties
         stream.filtered_resolution = (
             stream.resolution if getattr(stream, "resolution", None) in valid_resolutions else None
         )
         stream.filtered_quality = stream.quality if getattr(stream, "quality", None) in valid_qualities else None
         stream_hdr_formats = getattr(stream, "hdr_formats", []) or []
         stream.filtered_hdr_formats = [hdr for hdr in stream_hdr_formats if hdr in valid_hdr_formats]
-        # Treat missing/unknown HDR metadata as SDR so users can explicitly include/exclude it.
         if not stream.filtered_hdr_formats:
             stream.filtered_hdr_formats = ["SDR"]
         stream_languages = getattr(stream, "languages", []) or []
@@ -225,7 +244,6 @@ async def filter_and_sort_streams(
             filtered_reasons["Strict 18+ Keyword Filter"] += 1
             continue
 
-        # Apply stream name include/exclude filter
         if stream_name_filter_mode != "disabled" and compiled_name_patterns:
             stream_name_lower = (stream.name or "").lower()
             if user_data.stream_name_filter_use_regex:
@@ -236,14 +254,35 @@ async def filter_and_sort_streams(
             if stream_name_filter_mode == "include" and not matches_any:
                 filtered_reasons["Stream Name Filter"] += 1
                 continue
-            elif stream_name_filter_mode == "exclude" and matches_any:
+            if stream_name_filter_mode == "exclude" and matches_any:
                 filtered_reasons["Stream Name Filter"] += 1
                 continue
 
         filtered_streams.append(stream)
 
+    return filtered_streams, filtered_reasons
+
+
+async def filter_and_sort_streams(
+    streams: list[AnyStreamData],
+    user_data: UserData,
+    stremio_video_id: str,
+    user_ip: str | None = None,
+    provider_override: StreamingProvider | None = None,
+    disable_total_stream_cap: bool = False,
+    is_usenet: bool = False,
+) -> tuple[list[AnyStreamData], dict]:
+    filtered_streams, filtered_reasons = await filter_streams_by_user_preferences(
+        streams,
+        user_data,
+        provider_override=provider_override,
+        is_usenet=is_usenet,
+    )
     if not filtered_streams:
         return filtered_streams, filtered_reasons
+
+    primary_provider = provider_override or user_data.get_primary_provider()
+    language_filter_set = set(user_data.language_sorting)
 
     # Step 2: Update cache status based on provider
     # Cache checking only applies to torrent streams (which have info_hash)
@@ -497,14 +536,8 @@ async def parse_stream_data(
         else:
             streaming_provider_name = "P2P"
 
-        # Keep legacy provider-prefixed addon naming for provider-backed streams,
-        # but avoid mislabeling direct streams (Telegram/HTTP/YouTube) as P2P.
-        if is_telegram or is_http or is_youtube:
-            addon_name = settings.addon_name
-        else:
-            addon_name = f"{settings.addon_name} {streaming_provider_name}".strip()
-            if is_usenet:
-                addon_name = f"{addon_name} 📰".strip()
+        # Use base addon title for {addon.name} in StreamTemplate — same as catalog UI.
+        addon_name = settings.addon_name
 
         # Telegram, HTTP, and YouTube streams don't require a debrid provider
         if is_telegram or is_http or is_youtube:
@@ -974,7 +1007,14 @@ def _build_stream_entries(
                 # Fall back to hardcoded format if template fails
                 logging.warning(f"Template rendering failed: {e}")
                 if has_streaming_provider:
-                    stream_name = f"{addon_name} {resolution} {streaming_provider_status}"
+                    if is_usenet:
+                        stream_name = (
+                            f"{addon_name} 📰 {streaming_provider_name} {resolution} {streaming_provider_status}"
+                        )
+                    else:
+                        stream_name = (
+                            f"{addon_name} 🧲 {streaming_provider_name} {resolution} {streaming_provider_status}"
+                        )
                 else:
                     stream_name = f"{addon_name} {resolution}"
 

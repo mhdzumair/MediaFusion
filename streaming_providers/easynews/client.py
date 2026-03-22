@@ -7,6 +7,7 @@ from urllib.parse import quote
 import aiohttp
 
 from streaming_providers.exceptions import ProviderException
+from utils.sports_parser import normalize_resolution
 
 
 class Easynews:
@@ -105,6 +106,25 @@ class Easynews:
             return normalized or None
         return None
 
+    @staticmethod
+    def _normalize_easynews_resolution_field(raw: Any) -> str | None:
+        """Map Easynews Solr field 15 to a canonical label (1080p, 4k, …)."""
+        if raw is None:
+            return None
+        if isinstance(raw, (int, float)):
+            h = int(raw)
+            if h >= 2160:
+                return "4k"
+            if h in (240, 360, 480, 576, 720, 1080, 1440, 2160):
+                return f"{h}p"
+            return None
+        text = Easynews._parse_optional_text(raw)
+        if not text:
+            return None
+        if text.isdigit():
+            return Easynews._normalize_easynews_resolution_field(int(text))
+        return normalize_resolution(text)
+
     async def search(
         self,
         query: str,
@@ -182,7 +202,7 @@ class Easynews:
                 "group": item.get("6"),  # Newsgroup
                 "extension": extension,  # File extension
                 "duration": item.get("14"),  # Video duration
-                "resolution": self._parse_optional_text(item.get("15")),  # Video resolution
+                "resolution": self._normalize_easynews_resolution_field(item.get("15")),
                 "codec": self._parse_optional_text(item.get("16")),  # Video codec
                 "sig": item.get("sig"),  # Signature for download
                 # Response-derived URL building fields

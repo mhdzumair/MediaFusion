@@ -7,6 +7,7 @@ without requiring a separate download client.
 
 import hashlib
 import logging
+import re
 from collections.abc import AsyncGenerator
 from datetime import datetime
 
@@ -21,6 +22,38 @@ from utils.runtime_const import EASYNEWS_SEARCH_TTL
 from utils.url_safety import sanitize_nzb_url
 
 logger = logging.getLogger(__name__)
+
+# Broad Easynews queries (title-only) match unrelated posts; keep movies plausible.
+EASYNEWS_MIN_MOVIE_SIZE_BYTES = 300 * 1024 * 1024  # ~300 MB — clips, samples, TV caps
+EASYNEWS_MOVIE_TITLE_SIMILARITY_MIN = 88  # stricter than series; blocks wrong primary titles
+_TV_EPISODE_IN_FILENAME_RE = re.compile(r"(?i)\bS\d{1,2}[-.\s]?E\d{1,3}\b")
+
+
+def _ptt_looks_like_series_episode(parsed: dict) -> bool:
+    """True if PTT extracted season/episode numbering (TV or false positive like ``204`` → ep)."""
+    seasons = parsed.get("seasons") or []
+    episodes = parsed.get("episodes") or []
+    return bool(seasons) or bool(episodes)
+
+
+def _ptt_scalar_field(parsed: dict, key: str) -> str | None:
+    """Single string from PTT (handles list values for some keys)."""
+    raw = parsed.get(key)
+    if raw is None:
+        return None
+    if isinstance(raw, list):
+        raw = raw[0] if raw else None
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    return s or None
+
+
+def _ptt_tags_sample(parsed: dict) -> bool:
+    """PTT puts ``Sample`` in ``extras`` for sample releases; skip them as non-main streams."""
+    if parsed.get("sample"):
+        return True
+    return any(str(x).strip().lower() == "sample" for x in (parsed.get("extras") or []))
 
 
 class EasynewsScraper(BaseScraper):
@@ -124,7 +157,7 @@ class EasynewsScraper(BaseScraper):
 
         for query in search_queries:
             try:
-                results = await self._client.search(query, max_results=50, video_only=True)
+                results = await self._client.search(query, max_results=100, video_only=True)
                 self.metrics.record_found_items(len(results))
 
                 for item in results:
@@ -132,9 +165,9 @@ class EasynewsScraper(BaseScraper):
                     if stream:
                         yield stream
 
-                # If we found results, don't try fallback queries
-                if results:
-                    break
+                # Run every query variant: the first (title + IMDb) is often very narrow (few hits)
+                # while "title + year" / "title" return many more. Duplicates are dropped via
+                # processed_hashes inside _parse_item.
             except Exception as e:
                 self.logger.warning(f"Easynews search error for '{query}': {e}")
 
@@ -165,7 +198,7 @@ class EasynewsScraper(BaseScraper):
 
         for query in search_queries:
             try:
-                results = await self._client.search(query, max_results=30, video_only=True)
+                results = await self._client.search(query, max_results=80, video_only=True)
                 self.metrics.record_found_items(len(results))
 
                 for item in results:
@@ -173,9 +206,6 @@ class EasynewsScraper(BaseScraper):
                     if stream:
                         yield stream
 
-                # If we found results, don't try fallback queries
-                if results:
-                    break
             except Exception as e:
                 self.logger.warning(f"Easynews search error for '{query}': {e}")
 
@@ -221,12 +251,31 @@ class EasynewsScraper(BaseScraper):
                 self.metrics.record_skip("Adult content")
                 return None
 
-            # Parse title with PTT
+            # Parse title with PTT (same model as other Usenet/torrent scrapers)
             parsed = PTT.parse_title(filename, True)
 
-            # Validate title similarity
+            if _ptt_tags_sample(parsed):
+                self.metrics.record_skip("Sample (PTT extras)")
+                return None
+
+            # Get size early for movie gates
+            size = int(item.get("size", 0) or 0)
+
+            if catalog_type == "movie":
+                if _TV_EPISODE_IN_FILENAME_RE.search(filename):
+                    self.metrics.record_skip("TV episode pattern in movie search")
+                    return None
+                if _ptt_looks_like_series_episode(parsed):
+                    self.metrics.record_skip("PTT season/episode in movie search")
+                    return None
+                if size < EASYNEWS_MIN_MOVIE_SIZE_BYTES:
+                    self.metrics.record_skip("Too small for movie")
+                    return None
+
+            # Validate title similarity (stricter for movies — broad queries pull wrong primaries)
             max_ratio = calculate_max_similarity_ratio(parsed.get("title", ""), metadata.title, metadata.aka_titles)
-            if max_ratio < 80:
+            min_sim = EASYNEWS_MOVIE_TITLE_SIMILARITY_MIN if catalog_type == "movie" else 80
+            if max_ratio < min_sim:
                 self.metrics.record_skip("Title mismatch")
                 return None
 
@@ -237,14 +286,9 @@ class EasynewsScraper(BaseScraper):
                     self.metrics.record_skip("Year mismatch")
                     return None
 
-            # Get size
-            size = item.get("size", 0)
-
-            # Get resolution
-            resolution = item.get("resolution", parsed.get("resolution"))
-
-            # Get codec
-            codec = item.get("codec", parsed.get("codec"))
+            # Quality from PTT only — Easynews API field 15 can disagree with the filename
+            resolution = _ptt_scalar_field(parsed, "resolution")
+            codec = _ptt_scalar_field(parsed, "codec")
 
             # Parse posted date
             posted_at = None

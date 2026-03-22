@@ -536,6 +536,7 @@ async def get_usenet_stream_by_guid(
 
     if load_relations:
         query = query.options(
+            selectinload(UsenetStream.stream).selectinload(Stream.uploader_user),
             selectinload(UsenetStream.stream).selectinload(Stream.languages),
             selectinload(UsenetStream.stream).selectinload(Stream.audio_formats),
             selectinload(UsenetStream.stream).selectinload(Stream.channels),

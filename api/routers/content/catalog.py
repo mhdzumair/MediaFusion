@@ -5,6 +5,7 @@ Provides browsing, searching, and stream fetching capabilities.
 
 import logging
 import re
+from collections import defaultdict
 from datetime import datetime
 from os.path import basename
 from typing import Literal
@@ -44,11 +45,21 @@ from db.models import (
     Stream,
     StreamFile,
     StreamMediaLink,
+    TorrentStream,
     User,
 )
 from db.models.reference import format_catalog_name
 from db.models.streams import StreamType
-from db.schemas import StreamTemplate, TorrentStreamData
+from db.schemas import (
+    HTTPStreamData,
+    StreamTemplate,
+    StreamingProvider,
+    TelegramStreamData,
+    TorrentStreamData,
+    UserData,
+    UsenetStreamData,
+    YouTubeStreamData,
+)
 from streaming_providers import mapper
 from streaming_providers.cache_helpers import get_cached_status, store_cached_info_hashes
 from streaming_providers.usenet_compatibility import is_usenet_stream_compatible
@@ -60,7 +71,7 @@ from utils.const import (
 )
 from utils.authenticated_playback_secret import resolve_playback_secret_str_for_ui
 from utils.network import encode_mediaflow_acestream_url, get_user_public_ip
-from utils.parser import render_stream_template
+from utils.parser import CatalogFilterStreamData, filter_streams_by_user_preferences, render_stream_template
 from utils.profile_context import ProfileContext, ProfileDataProvider
 
 logger = logging.getLogger(__name__)
@@ -98,6 +109,150 @@ def _calculate_age_fields(created_at: datetime | None) -> tuple[str | None, int 
     if age_hours < 24 * 30:
         return f"{age_hours // 24}d", age_hours
     return f"{age_hours // (24 * 30)}mo", age_hours
+
+
+async def _catalog_stream_ids_matching_profile(
+    streams: list[Stream],
+    metadata: Media,
+    user_data: UserData,
+    selected_provider: StreamingProvider | None,
+    season: int | None,
+    episode: int | None,
+) -> set[int]:
+    """Apply the same preference filters as the Stremio stream pipeline (HDR, resolution, etc.)."""
+    provider_for_filter = selected_provider or user_data.get_primary_provider()
+    allowed: set[int] = set()
+
+    torrent_data: list[TorrentStreamData] = []
+    torrent_ids: list[int] = []
+    usenet_data: list[UsenetStreamData] = []
+    usenet_ids: list[int] = []
+    telegram_data: list[TelegramStreamData] = []
+    telegram_ids: list[int] = []
+    http_data: list[HTTPStreamData] = []
+    http_ids: list[int] = []
+    yt_data: list[YouTubeStreamData] = []
+    yt_ids: list[int] = []
+    generic_data: list[CatalogFilterStreamData] = []
+    generic_ids: list[int] = []
+
+    def hdr_names(stream_row: Stream) -> list[str]:
+        return [h.name for h in stream_row.hdr_formats] if stream_row.hdr_formats else []
+
+    for stream in streams:
+        if stream.torrent_stream:
+            torrent_data.append(TorrentStreamData.from_db(stream.torrent_stream, stream, metadata))
+            torrent_ids.append(stream.id)
+        elif stream.usenet_stream:
+            usenet_data.append(UsenetStreamData.from_db(stream.usenet_stream))
+            usenet_ids.append(stream.id)
+        elif stream.telegram_stream:
+            telegram_data.append(TelegramStreamData.from_db(stream.telegram_stream, stream, metadata))
+            telegram_ids.append(stream.id)
+        elif stream.http_stream:
+            http_row = HTTPStreamData.from_db(
+                stream.http_stream,
+                stream,
+                metadata,
+                season=season,
+                episode=episode,
+            )
+            http_data.append(http_row.model_copy(update={"hdr_formats": hdr_names(stream)}))
+            http_ids.append(stream.id)
+        elif stream.youtube_stream:
+            yt_row = YouTubeStreamData.from_db(stream.youtube_stream, stream, metadata)
+            yt_data.append(yt_row.model_copy(update={"hdr_formats": hdr_names(stream)}))
+            yt_ids.append(stream.id)
+        elif stream.acestream_stream:
+            generic_data.append(
+                CatalogFilterStreamData(
+                    catalog_stream_id=stream.id,
+                    name=stream.name or "",
+                    size=0,
+                    resolution=stream.resolution,
+                    quality=stream.quality,
+                    hdr_formats=hdr_names(stream),
+                    languages=[lang.name for lang in stream.languages] if stream.languages else [],
+                    created_at=stream.created_at,
+                )
+            )
+            generic_ids.append(stream.id)
+        else:
+            allowed.add(stream.id)
+
+    if torrent_data:
+        filtered, _ = await filter_streams_by_user_preferences(
+            torrent_data,
+            user_data,
+            provider_override=provider_for_filter,
+            is_usenet=False,
+        )
+        hash_to_ids: dict[str, list[int]] = defaultdict(list)
+        for sid, td in zip(torrent_ids, torrent_data, strict=True):
+            hash_to_ids[td.info_hash].append(sid)
+        for item in filtered:
+            for sid in hash_to_ids.get(item.info_hash, []):
+                allowed.add(sid)
+
+    if usenet_data:
+        filtered, _ = await filter_streams_by_user_preferences(
+            usenet_data,
+            user_data,
+            provider_override=provider_for_filter,
+            is_usenet=True,
+        )
+        guid_to_ids: dict[str, list[int]] = defaultdict(list)
+        for sid, ud in zip(usenet_ids, usenet_data, strict=True):
+            guid_to_ids[ud.nzb_guid].append(sid)
+        for item in filtered:
+            for sid in guid_to_ids.get(item.nzb_guid, []):
+                allowed.add(sid)
+
+    if telegram_data:
+        filtered, _ = await filter_streams_by_user_preferences(
+            telegram_data,
+            user_data,
+            provider_override=provider_for_filter,
+            is_usenet=False,
+        )
+        key_to_ids: dict[tuple[int, int], list[int]] = defaultdict(list)
+        for sid, td in zip(telegram_ids, telegram_data, strict=True):
+            key_to_ids[(td.chat_id, td.message_id)].append(sid)
+        for item in filtered:
+            for sid in key_to_ids.get((item.chat_id, item.message_id), []):
+                allowed.add(sid)
+
+    if http_data:
+        filtered, _ = await filter_streams_by_user_preferences(
+            http_data,
+            user_data,
+            provider_override=provider_for_filter,
+            is_usenet=False,
+        )
+        for item in filtered:
+            allowed.add(item.stream_id)
+
+    if yt_data:
+        filtered, _ = await filter_streams_by_user_preferences(
+            yt_data,
+            user_data,
+            provider_override=provider_for_filter,
+            is_usenet=False,
+        )
+        for item in filtered:
+            allowed.add(item.stream_id)
+
+    if generic_data:
+        filtered, _ = await filter_streams_by_user_preferences(
+            generic_data,
+            user_data,
+            provider_override=provider_for_filter,
+            is_usenet=False,
+        )
+        for item in filtered:
+            allowed.add(item.catalog_stream_id)
+
+    return allowed
 
 
 def get_certification_category(certificates: list[str]) -> str | None:
@@ -1488,7 +1643,7 @@ async def get_catalog_item_streams(
 
     # Eagerly load relationships - include http_stream for TV channels, usenet_stream for NZBs, telegram_stream, and acestream_stream
     stream_query = stream_query.options(
-        selectinload(Stream.torrent_stream),
+        selectinload(Stream.torrent_stream).selectinload(TorrentStream.trackers),
         selectinload(Stream.http_stream),
         selectinload(Stream.youtube_stream),
         selectinload(Stream.usenet_stream),
@@ -1498,9 +1653,9 @@ async def get_catalog_item_streams(
         selectinload(Stream.audio_formats),
         selectinload(Stream.channels),
         selectinload(Stream.hdr_formats),
+        selectinload(Stream.uploader_user),
+        selectinload(Stream.files).selectinload(StreamFile.media_links),
     )
-    if template_uses_filename:
-        stream_query = stream_query.options(selectinload(Stream.files))
 
     # Increase limit to account for filtering (e.g., Usenet streams filtered for non-Usenet providers)
     stream_query = stream_query.order_by(Stream.created_at.desc()).limit(500)
@@ -1587,6 +1742,21 @@ async def get_catalog_item_streams(
         # For P2P, use the provider name or "P2P" as default
         primary_provider_name = selected_provider_obj.name or "P2P"
 
+    user_data_for_filter = profile_ctx.user_data.model_copy()
+    api_password_header = request.headers.get("X-API-Key")
+    if api_password_header:
+        user_data_for_filter.api_password = api_password_header
+
+    allowed_stream_ids = await _catalog_stream_ids_matching_profile(
+        streams,
+        metadata,
+        user_data_for_filter,
+        selected_provider_obj,
+        season if catalog_type == "series" else None,
+        episode if catalog_type == "series" else None,
+    )
+    streams = [s for s in streams if s.id in allowed_stream_ids]
+
     # Get streaming provider info for formatting
     streaming_provider_name = (
         STREAMING_PROVIDERS_SHORT_NAMES.get(selected_provider_obj.service, "P2P") if selected_provider_obj else "P2P"
@@ -1613,6 +1783,7 @@ async def get_catalog_item_streams(
                     {
                         "file_id": link.file_id,
                         "file_name": file.filename or f"File {link.file_id}",
+                        "file_size": file.size,
                         "season_number": link.season_number,
                         "episode_number": link.episode_number,
                         "episode_end": link.episode_end,
@@ -1761,6 +1932,7 @@ async def get_catalog_item_streams(
         # Get episode links for this stream (series only)
         episode_links = stream_episode_links.get(stream.id, None) if catalog_type == "series" else None
         stream_filename = None
+        episode_file_size: int | None = None
         if episode_links:
             exact_episode_link = next(
                 (
@@ -1773,6 +1945,12 @@ async def get_catalog_item_streams(
             selected_episode_link = exact_episode_link or (episode_links[0] if episode_links else None)
             if selected_episode_link and selected_episode_link.get("file_name"):
                 stream_filename = basename(selected_episode_link["file_name"])
+            if selected_episode_link:
+                ep_sz = selected_episode_link.get("file_size")
+                if isinstance(ep_sz, int) and ep_sz > 0:
+                    episode_file_size = ep_sz
+        if catalog_type == "series" and episode_file_size is not None and (torrent or usenet):
+            file_size = episode_file_size
         elif template_uses_filename:
             stream_files = stream.files or []
             if stream_files:

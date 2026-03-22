@@ -3,8 +3,6 @@
 from collections.abc import Iterable
 from typing import Any
 
-from sqlalchemy import inspect as sa_inspect
-
 from utils.parser import is_contain_18_plus_keywords
 
 
@@ -17,41 +15,30 @@ def normalize_import_title(value: str | None) -> str | None:
     return normalized or None
 
 
-def is_import_metadata_adult(metadata: Any) -> bool:
-    """Return True when metadata payload/object indicates adult content."""
-    if metadata is None:
+def stream_texts_indicate_adult(*texts: str | None) -> bool:
+    """Return True if any non-empty string matches configured adult torrent/stream title rules."""
+    for raw in texts:
+        if not raw:
+            continue
+        normalized = normalize_import_title(raw)
+        if normalized and is_contain_18_plus_keywords(normalized):
+            return True
+    return False
+
+
+def stream_texts_indicate_adult_from_file_rows(file_rows: Iterable[dict[str, Any]] | None) -> bool:
+    """Check per-file fields (filename, meta_title, episode_title, title) from import file_data payloads."""
+    if not file_rows:
         return False
-
-    if isinstance(metadata, dict):
-        adult_value = metadata.get("adult")
-        genres = metadata.get("genres")
-        catalogs = metadata.get("catalogs")
-    else:
-        adult_value = getattr(metadata, "adult", None)
-        insp = sa_inspect(metadata, raiseerr=False)
-        if insp is not None and insp.mapper is not None:
-            unloaded = insp.unloaded
-            genres = None if (unloaded and "genres" in unloaded) else getattr(metadata, "genres", None)
-            catalogs = None if (unloaded and "catalogs" in unloaded) else getattr(metadata, "catalogs", None)
-        else:
-            genres = getattr(metadata, "genres", None)
-            catalogs = getattr(metadata, "catalogs", None)
-
-    if isinstance(adult_value, bool) and adult_value:
-        return True
-    if isinstance(adult_value, str) and adult_value.strip().lower() in {"1", "true", "yes"}:
-        return True
-
-    if isinstance(genres, list):
-        for genre in genres:
-            if isinstance(genre, str) and genre.strip().lower() == "adult":
-                return True
-
-    if isinstance(catalogs, list):
-        for catalog in catalogs:
-            if isinstance(catalog, str) and catalog.strip().lower() == "adult":
-                return True
-
+    for row in file_rows:
+        if not isinstance(row, dict):
+            continue
+        texts: list[str | None] = []
+        for key in ("filename", "meta_title", "episode_title", "title"):
+            val = row.get(key)
+            texts.append(val if isinstance(val, str) else None)
+        if stream_texts_indicate_adult(*texts):
+            return True
     return False
 
 
