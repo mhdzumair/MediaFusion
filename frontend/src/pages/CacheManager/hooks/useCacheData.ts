@@ -6,7 +6,8 @@ import type { CacheStats, CacheKeysResponse, CacheValueResponse, ClearCacheRespo
 export const cacheQueryKeys = {
   all: ['cache'] as const,
   stats: () => [...cacheQueryKeys.all, 'stats'] as const,
-  keys: (pattern: string, typeFilter: string) => [...cacheQueryKeys.all, 'keys', pattern, typeFilter] as const,
+  keys: (pattern: string, typeFilter: string, cacheCategory?: string | null) =>
+    [...cacheQueryKeys.all, 'keys', pattern, typeFilter, cacheCategory ?? ''] as const,
   key: (key: string) => [...cacheQueryKeys.all, 'key', key] as const,
 }
 
@@ -23,24 +24,27 @@ export function useCacheStats() {
 }
 
 // Fetch cache keys with infinite scroll
-export function useCacheKeys(pattern: string, typeFilter: string = '') {
+export function useCacheKeys(pattern: string, typeFilter: string = '', cacheCategory?: string | null) {
   return useInfiniteQuery({
-    queryKey: cacheQueryKeys.keys(pattern, typeFilter),
+    queryKey: cacheQueryKeys.keys(pattern, typeFilter, cacheCategory),
     queryFn: async ({ pageParam = '0' }) => {
       const params = new URLSearchParams({
-        pattern: pattern || '*',
-        cursor: pageParam,
+        pattern: cacheCategory ? '*' : pattern || '*',
+        cursor: String(pageParam),
         count: '50',
       })
       if (typeFilter && typeFilter !== 'all') {
         params.append('type_filter', typeFilter)
+      }
+      if (cacheCategory) {
+        params.append('cache_category', cacheCategory)
       }
       const response = await apiClient.get<CacheKeysResponse>(`/admin/cache/keys?${params.toString()}`)
       return response
     },
     getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.cursor : undefined),
     initialPageParam: '0',
-    enabled: pattern.length > 0,
+    enabled: Boolean(cacheCategory || (pattern && pattern.length > 0)),
   })
 }
 
@@ -63,11 +67,12 @@ export function useClearCache() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ cacheType, pattern }: { cacheType?: string; pattern?: string }) => {
-      const response = await apiClient.post<ClearCacheResponse>('/admin/cache/clear', {
-        cache_type: cacheType,
-        pattern,
-      })
+    mutationFn: async ({ type, pattern }: { type: string; pattern?: string }) => {
+      const body: { type: string; pattern?: string } = { type }
+      if (pattern !== undefined) {
+        body.pattern = pattern
+      }
+      const response = await apiClient.post<ClearCacheResponse>('/admin/cache/clear', body)
       return response
     },
     onSuccess: () => {

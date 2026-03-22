@@ -3,18 +3,20 @@ import { HardDrive } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { OverviewTab, BrowseTab, OperationsTab, KeyDetailDialog } from './components'
-import type { ActionHistoryItem } from './types'
+import type { ActionHistoryItem, CacheTypeInfo } from './types'
 
 export function CacheManagerPage() {
   const [activeTab, setActiveTab] = useState('overview')
   const [searchPattern, setSearchPattern] = useState('')
+  const [browseBackendCategory, setBrowseBackendCategory] = useState<string | undefined>(undefined)
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [actionHistory, setActionHistory] = useState<ActionHistoryItem[]>([])
 
   // Handle clicking on a cache type card to browse its keys
-  const handleCacheTypeClick = useCallback((pattern: string) => {
-    setSearchPattern(pattern)
+  const handleCacheTypeClick = useCallback((ct: Pick<CacheTypeInfo, 'pattern' | 'backendCategory'>) => {
+    setSearchPattern(ct.pattern || '*')
+    setBrowseBackendCategory(ct.backendCategory)
     setActiveTab('browse')
   }, [])
 
@@ -57,7 +59,11 @@ export function CacheManagerPage() {
             </TabsContent>
 
             <TabsContent value="browse" className="mt-6">
-              <BrowseTab initialPattern={searchPattern} onViewKey={handleViewKey} />
+              <BrowseTab
+                initialPattern={searchPattern}
+                initialBackendCategory={browseBackendCategory}
+                onViewKey={handleViewKey}
+              />
             </TabsContent>
 
             <TabsContent value="operations" className="mt-6">

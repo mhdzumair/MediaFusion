@@ -37,7 +37,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { useClearCache } from '../hooks/useCacheData'
-import { CACHE_TYPES, getTypeColorClasses, type ActionHistoryItem } from '../types'
+import { CACHE_TYPES, getTypeColorClasses, type ActionHistoryItem, type CacheTypeInfo } from '../types'
 
 // Icon mapping for cache types
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -65,18 +65,14 @@ interface OperationsTabProps {
 function ClearCacheButton({
   name,
   pattern,
+  backendCategory,
   icon,
   color,
   description,
   onClear,
   isClearing,
-}: {
-  name: string
-  pattern: string
-  icon: string
-  color: string
-  description: string
-  onClear: (pattern: string, name: string) => Promise<void>
+}: CacheTypeInfo & {
+  onClear: (ct: CacheTypeInfo) => Promise<void>
   isClearing: boolean
 }) {
   const IconComponent = iconMap[icon] || Database
@@ -107,15 +103,32 @@ function ClearCacheButton({
             Clear {name} Cache
           </AlertDialogTitle>
           <AlertDialogDescription>
-            This will delete all cache keys matching the pattern:
-            <code className="block mt-2 p-2 bg-muted rounded text-sm font-mono">{pattern}</code>
-            This action cannot be undone.
+            {backendCategory ? (
+              <>
+                Clears the <strong>{name}</strong> category (server-defined patterns, same as Overview).
+              </>
+            ) : (
+              <>
+                This will delete all cache keys matching the pattern:
+                <code className="block mt-2 p-2 bg-muted rounded text-sm font-mono">{pattern}</code>
+              </>
+            )}
+            <span className="block mt-2">This action cannot be undone.</span>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            onClick={() => onClear(pattern, name)}
+            onClick={() =>
+              onClear({
+                name,
+                pattern,
+                backendCategory,
+                icon,
+                color,
+                description,
+              })
+            }
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
             Clear Cache
@@ -131,31 +144,33 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
   const clearCache = useClearCache()
   const [clearingPattern, setClearingPattern] = useState<string | null>(null)
 
-  const handleClearCache = async (pattern: string, name: string) => {
-    setClearingPattern(pattern)
+  const handleClearCache = async (ct: CacheTypeInfo) => {
+    setClearingPattern(ct.backendCategory ?? ct.pattern)
 
     try {
-      const result = await clearCache.mutateAsync({ pattern })
+      const result = ct.backendCategory
+        ? await clearCache.mutateAsync({ type: ct.backendCategory })
+        : await clearCache.mutateAsync({ type: 'pattern', pattern: ct.pattern })
 
       const action: ActionHistoryItem = {
         id: Date.now().toString(),
         action: 'clear',
-        target: name,
+        target: ct.name,
         timestamp: new Date(),
-        result: `Deleted ${result.keys_deleted} keys`,
+        result: `Deleted ${result.cleared_keys} keys`,
         admin: result.admin_username,
       }
       onActionComplete(action)
 
       toast({
         title: 'Cache Cleared',
-        description: `Deleted ${result.keys_deleted} keys from ${name} cache`,
+        description: `Deleted ${result.cleared_keys} keys from ${ct.name} cache`,
       })
     } catch {
       const action: ActionHistoryItem = {
         id: Date.now().toString(),
         action: 'clear',
-        target: name,
+        target: ct.name,
         timestamp: new Date(),
         result: 'Failed',
       }
@@ -163,7 +178,7 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
 
       toast({
         title: 'Error',
-        description: `Failed to clear ${name} cache`,
+        description: `Failed to clear ${ct.name} cache`,
         variant: 'destructive',
       })
     } finally {
@@ -175,21 +190,21 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
     setClearingPattern('all')
 
     try {
-      const result = await clearCache.mutateAsync({ pattern: '*' })
+      const result = await clearCache.mutateAsync({ type: 'all' })
 
       const action: ActionHistoryItem = {
         id: Date.now().toString(),
         action: 'clear_all',
         target: 'All Caches',
         timestamp: new Date(),
-        result: `Deleted ${result.keys_deleted} keys`,
+        result: `Deleted ${result.cleared_keys} keys`,
         admin: result.admin_username,
       }
       onActionComplete(action)
 
       toast({
         title: 'All Caches Cleared',
-        description: `Deleted ${result.keys_deleted} keys`,
+        description: `Deleted ${result.cleared_keys} keys`,
       })
     } catch {
       const action: ActionHistoryItem = {
@@ -228,7 +243,7 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
               key={cacheType.name}
               {...cacheType}
               onClear={handleClearCache}
-              isClearing={clearingPattern === cacheType.pattern}
+              isClearing={clearingPattern === (cacheType.backendCategory ?? cacheType.pattern)}
             />
           ))}
         </div>

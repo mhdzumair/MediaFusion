@@ -350,6 +350,13 @@ class Settings(BaseSettings):
     # Max members per scraper cooldown zset after time trim; 0 = unlimited
     scraper_cooldown_zset_max_members: int = Field(default=0, ge=0)
 
+    # Raw stream list Redis cache (keys stream_data:* in db/crud/stream_services.py)
+    stream_raw_redis_cache_enabled: bool = True
+    stream_raw_redis_cache_ttl_seconds: int = Field(default=900, ge=60)
+    stream_raw_redis_cache_zlib_compress: bool = True
+    # If > 0, skip caching when the stored blob (after compression) would exceed this size
+    stream_raw_redis_cache_max_stored_bytes: int = Field(default=0, ge=0)
+
     # Exception Tracking
     enable_exception_tracking: bool = False
     exception_tracking_ttl: int = 259200  # 3 days in seconds

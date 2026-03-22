@@ -2,7 +2,10 @@
 
 export interface CacheTypeInfo {
   name: string
+  /** Default glob for manual browse (legacy). Prefer backendCategory for Overview clicks. */
   pattern: string
+  /** Matches api/routers/admin/cache.py CACHE_PATTERNS — used for Browse + clear-by-type */
+  backendCategory?: string
   icon: string
   color: string
   description: string
@@ -51,6 +54,7 @@ export interface CacheTypeStats {
   description: string
   keys_count: number
   memory_bytes?: number
+  count_note?: string | null
 }
 
 // Matches backend CacheStatsResponse
@@ -60,14 +64,14 @@ export interface CacheStats {
 }
 
 export interface ClearCacheRequest {
-  cache_type?: string
+  type: string
   pattern?: string
 }
 
 export interface ClearCacheResponse {
   success: boolean
   message: string
-  keys_deleted: number
+  cleared_keys: number
   admin_username?: string
 }
 
@@ -90,23 +94,108 @@ export interface ActionHistoryItem {
 export const CACHE_TYPES: CacheTypeInfo[] = [
   {
     name: 'Scrapers',
-    pattern: 'scrapy:*',
+    pattern: '*',
+    backendCategory: 'scrapers',
     icon: 'Radio',
     color: 'violet',
-    description: 'Scraper job data and messages',
+    description: 'Scraper cooldown sorted sets',
   },
-  { name: 'Metadata', pattern: 'meta_cache:*', icon: 'FileJson', color: 'blue', description: 'Movie/TV show metadata' },
-  { name: 'Catalog', pattern: 'catalog:*', icon: 'Database', color: 'emerald', description: 'Catalog browse cache' },
-  { name: 'Streams', pattern: 'stream*', icon: 'Film', color: 'amber', description: 'Stream data cache' },
-  { name: 'Debrid', pattern: 'debrid_cache:*', icon: 'Server', color: 'rose', description: 'Debrid service cache' },
-  { name: 'Profiles', pattern: 'user_data:*', icon: 'Users', color: 'cyan', description: 'User profile data' },
-  { name: 'Events', pattern: 'events:*', icon: 'Calendar', color: 'orange', description: 'Sports events cache' },
-  { name: 'Genres', pattern: 'genres:*', icon: 'Layers', color: 'pink', description: 'Genre mappings' },
-  { name: 'Lookup', pattern: '*_id:*', icon: 'Search', color: 'indigo', description: 'ID lookup cache' },
-  { name: 'Scheduler', pattern: 'scheduler:*', icon: 'Clock', color: 'slate', description: 'Scheduler job state' },
-  { name: 'Streaming', pattern: 'streaming:*', icon: 'Zap', color: 'yellow', description: 'Active streaming sessions' },
-  { name: 'Images', pattern: '*.jpg', icon: 'Image', color: 'teal', description: 'Cached poster images' },
-  { name: 'Rate Limit', pattern: 'rate_limit:*', icon: 'Shield', color: 'red', description: 'Rate limiting counters' },
+  {
+    name: 'Metadata',
+    pattern: 'meta_cache:*',
+    backendCategory: 'metadata',
+    icon: 'FileJson',
+    color: 'blue',
+    description: 'Movie/TV show metadata',
+  },
+  {
+    name: 'Catalog',
+    pattern: 'catalog:*',
+    backendCategory: 'catalog',
+    icon: 'Database',
+    color: 'emerald',
+    description: 'Catalog browse cache',
+  },
+  {
+    name: 'Streams',
+    pattern: 'stream_data:*',
+    backendCategory: 'streams',
+    icon: 'Film',
+    color: 'amber',
+    description: 'Stream data cache',
+  },
+  {
+    name: 'Debrid',
+    pattern: 'debrid_cache:*',
+    backendCategory: 'debrid',
+    icon: 'Server',
+    color: 'rose',
+    description: 'Debrid service cache',
+  },
+  {
+    name: 'Profiles',
+    pattern: 'profile_enc:*',
+    backendCategory: 'profiles',
+    icon: 'Users',
+    color: 'cyan',
+    description: 'User profile data',
+  },
+  {
+    name: 'Events',
+    pattern: 'events:*',
+    backendCategory: 'events',
+    icon: 'Calendar',
+    color: 'orange',
+    description: 'Sports events cache',
+  },
+  {
+    name: 'Genres',
+    pattern: 'genres:*',
+    backendCategory: 'genres',
+    icon: 'Layers',
+    color: 'pink',
+    description: 'Genre mappings',
+  },
+  {
+    name: 'Lookup',
+    pattern: 'lang:*',
+    backendCategory: 'lookup',
+    icon: 'Search',
+    color: 'indigo',
+    description: 'ID lookup cache',
+  },
+  {
+    name: 'Scheduler',
+    pattern: 'scheduler:*',
+    backendCategory: 'scheduler',
+    icon: 'Clock',
+    color: 'slate',
+    description: 'Scheduler job state',
+  },
+  {
+    name: 'Streaming',
+    pattern: 'streaming_provider_*',
+    backendCategory: 'streaming',
+    icon: 'Zap',
+    color: 'yellow',
+    description: 'Active streaming sessions',
+  },
+  {
+    name: 'Images',
+    pattern: '*.jpg',
+    backendCategory: 'images',
+    icon: 'Image',
+    color: 'teal',
+    description: 'Cached poster images',
+  },
+  {
+    name: 'Rate Limit',
+    pattern: 'rate_limit:*',
+    backendCategory: 'rate_limit',
+    icon: 'Shield',
+    color: 'red',
+    description: 'Rate limiting counters',
+  },
 ]
 
 // Helper to get color classes for cache types

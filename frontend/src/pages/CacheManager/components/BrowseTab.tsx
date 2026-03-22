@@ -22,6 +22,8 @@ import { formatBytes, formatTTL, REDIS_TYPE_BADGES } from '../types'
 
 interface BrowseTabProps {
   initialPattern?: string
+  /** When set (from Overview card), uses GET /keys?cache_category=… */
+  initialBackendCategory?: string
   onViewKey: (key: string) => void
 }
 
@@ -45,9 +47,10 @@ function TypeBadge({ type }: { type: string }) {
   )
 }
 
-export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
+export function BrowseTab({ initialPattern = '', initialBackendCategory, onViewKey }: BrowseTabProps) {
   const [searchPattern, setSearchPattern] = useState(initialPattern)
   const [debouncedPattern, setDebouncedPattern] = useState(initialPattern)
+  const [backendCategory, setBackendCategory] = useState<string | undefined>(initialBackendCategory)
   const [typeFilter, setTypeFilter] = useState('all')
   const loadMoreRef = useRef<HTMLDivElement>(null)
 
@@ -57,6 +60,12 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
     setPrevInitialPattern(initialPattern)
     setSearchPattern(initialPattern)
     setDebouncedPattern(initialPattern)
+  }
+
+  const [prevInitialCategory, setPrevInitialCategory] = useState(initialBackendCategory)
+  if (initialBackendCategory !== prevInitialCategory) {
+    setPrevInitialCategory(initialBackendCategory)
+    setBackendCategory(initialBackendCategory)
   }
 
   // Debounce search input
@@ -70,6 +79,7 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } = useCacheKeys(
     debouncedPattern,
     typeFilter,
+    backendCategory,
   )
 
   // Infinite scroll observer
@@ -110,7 +120,10 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
           <Input
             placeholder="Search pattern (e.g., meta_cache:*, *.jpg)"
             value={searchPattern}
-            onChange={(e) => setSearchPattern(e.target.value)}
+            onChange={(e) => {
+              setSearchPattern(e.target.value)
+              setBackendCategory(undefined)
+            }}
             className="pl-9"
           />
         </div>
@@ -131,13 +144,15 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
       </div>
 
       {/* Results summary */}
-      {debouncedPattern && (
+      {(debouncedPattern || backendCategory) && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>
             Showing {allKeys.length} of {totalKeys.toLocaleString()} keys
             {typeFilter !== 'all' && ` (filtered by ${typeFilter})`}
           </span>
-          <span className="font-mono text-xs">Pattern: {debouncedPattern}</span>
+          <span className="font-mono text-xs text-right max-w-[60%] truncate">
+            {backendCategory ? `Category: ${backendCategory}` : `Pattern: ${debouncedPattern}`}
+          </span>
         </div>
       )}
 
@@ -162,11 +177,15 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
       )}
 
       {/* Empty state */}
-      {!isLoading && !error && allKeys.length === 0 && debouncedPattern && (
+      {!isLoading && !error && allKeys.length === 0 && (debouncedPattern || backendCategory) && (
         <div className="flex items-center justify-center py-16">
           <div className="flex flex-col items-center gap-3 text-muted-foreground">
             <Search className="h-8 w-8" />
-            <p className="text-sm">No keys found matching "{debouncedPattern}"</p>
+            <p className="text-sm">
+              {backendCategory
+                ? `No keys in category "${backendCategory}"`
+                : `No keys found matching "${debouncedPattern}"`}
+            </p>
           </div>
         </div>
       )}

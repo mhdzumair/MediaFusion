@@ -13,6 +13,7 @@ import importlib
 import json
 import logging
 import time
+import zlib
 from collections.abc import Awaitable
 from typing import Any
 
@@ -82,14 +83,59 @@ TORRENT_CAPABLE_PROVIDERS = {
     "p2p",
 }
 
-# Redis cache settings for raw stream data
-STREAM_CACHE_TTL = 1800  # 30 minutes
+# Redis cache for raw stream payloads (see settings.stream_raw_redis_cache_*)
 STREAM_CACHE_PREFIX = "stream_data:"
+_STREAM_CACHE_MAGIC = b"\x01MFsc1"  # zlib-compressed JSON blob prefix
 LIVE_TORRENT_FALLBACK_CACHE_TTL = 180  # 3 minutes
 RELATED_MEDIA_FETCH_CONCURRENCY = 4
 LIVE_TORRENT_FALLBACK_CACHE_PREFIX = "live_torrent_fallback:"
 
 logger = logging.getLogger(__name__)
+
+
+def _encode_stream_cache_blob(data: dict) -> bytes | None:
+    """Serialize stream cache payload for Redis. Returns None if over max_stored_bytes."""
+    raw = json.dumps(data, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+    if settings.stream_raw_redis_cache_zlib_compress:
+        body = _STREAM_CACHE_MAGIC + zlib.compress(raw, 6)
+    else:
+        body = raw
+    max_b = settings.stream_raw_redis_cache_max_stored_bytes
+    if max_b > 0 and len(body) > max_b:
+        return None
+    return body
+
+
+def _decode_stream_cache_blob(blob: bytes | memoryview | str | None) -> dict | None:
+    """Parse stream cache payload from Redis (compressed or legacy JSON string/bytes)."""
+    if blob is None:
+        return None
+    if isinstance(blob, str):
+        return json.loads(blob)
+    if isinstance(blob, memoryview):
+        blob = bytes(blob)
+    if blob.startswith(_STREAM_CACHE_MAGIC):
+        return json.loads(zlib.decompress(blob[len(_STREAM_CACHE_MAGIC) :]))
+    return json.loads(blob.decode("utf-8"))
+
+
+async def _store_stream_cache(cache_key: str, data: dict) -> None:
+    if not settings.stream_raw_redis_cache_enabled:
+        return
+    try:
+        blob = _encode_stream_cache_blob(data)
+        if blob is None:
+            logger.debug("Stream cache skip SET (oversize): %s", cache_key)
+            return
+        await REDIS_ASYNC_CLIENT.set(
+            cache_key,
+            blob,
+            ex=settings.stream_raw_redis_cache_ttl_seconds,
+        )
+    except Exception as exc:
+        logger.warning("Stream cache SET failed for %s: %s", cache_key, exc)
+
+
 _scraper_tasks_module = None
 LIVE_SEARCH_EXTERNAL_PROVIDERS = {"tmdb", "tvdb", "mal", "kitsu"}
 
@@ -844,11 +890,16 @@ async def _get_cached_movie_streams(media_id: int, visibility_filter, user_id: i
     visibility_scope = f"user:{user_id}" if user_id else "public"
     cache_key = f"{STREAM_CACHE_PREFIX}movie:{media_id}:{visibility_scope}"
 
-    # Try Redis cache first
-    cached = await REDIS_ASYNC_CLIENT.get(cache_key)
-    if cached:
-        logger.debug(f"Stream cache HIT for movie media_id={media_id}")
-        return json.loads(cached)
+    if settings.stream_raw_redis_cache_enabled:
+        cached = await REDIS_ASYNC_CLIENT.get(cache_key)
+        if cached:
+            try:
+                parsed = _decode_stream_cache_blob(cached)
+                if parsed is not None:
+                    logger.debug(f"Stream cache HIT for movie media_id={media_id}")
+                    return parsed
+            except Exception as exc:
+                logger.warning("Stream cache corrupt for movie media_id=%s: %s", media_id, exc)
 
     logger.debug(f"Stream cache MISS for movie media_id={media_id}")
     t0 = time.monotonic()
@@ -860,8 +911,7 @@ async def _get_cached_movie_streams(media_id: int, visibility_filter, user_id: i
     elapsed = time.monotonic() - t0
     logger.info(f"DB fetch for movie media_id={media_id} took {elapsed:.3f}s")
 
-    # Store in Redis
-    await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(data), ex=STREAM_CACHE_TTL)
+    await _store_stream_cache(cache_key, data)
     return data
 
 
@@ -1067,10 +1117,22 @@ async def _get_cached_series_streams(
     visibility_scope = f"user:{user_id}" if user_id else "public"
     cache_key = f"{STREAM_CACHE_PREFIX}series:{media_id}:{season}:{episode}:{visibility_scope}"
 
-    cached = await REDIS_ASYNC_CLIENT.get(cache_key)
-    if cached:
-        logger.debug(f"Stream cache HIT for series media_id={media_id} S{season}E{episode}")
-        return json.loads(cached)
+    if settings.stream_raw_redis_cache_enabled:
+        cached = await REDIS_ASYNC_CLIENT.get(cache_key)
+        if cached:
+            try:
+                parsed = _decode_stream_cache_blob(cached)
+                if parsed is not None:
+                    logger.debug(f"Stream cache HIT for series media_id={media_id} S{season}E{episode}")
+                    return parsed
+            except Exception as exc:
+                logger.warning(
+                    "Stream cache corrupt for series media_id=%s S%sE%s: %s",
+                    media_id,
+                    season,
+                    episode,
+                    exc,
+                )
 
     logger.debug(f"Stream cache MISS for series media_id={media_id} S{season}E{episode}")
     t0 = time.monotonic()
@@ -1082,7 +1144,7 @@ async def _get_cached_series_streams(
     elapsed = time.monotonic() - t0
     logger.info(f"DB fetch for series media_id={media_id} S{season}E{episode} took {elapsed:.3f}s")
 
-    await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(data), ex=STREAM_CACHE_TTL)
+    await _store_stream_cache(cache_key, data)
     return data
 
 

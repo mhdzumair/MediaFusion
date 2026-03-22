@@ -44,12 +44,16 @@ CACHE_PATTERNS = {
             "easynews",
             "torbox_search",
             "newznab",
+            "torznab:*",
+            "newznab:*",
+            "jackett:*",
+            "prowlarr:*",
         ],
         "type": "zset",
     },
     "metadata": {
-        "description": "Metadata existence checks",
-        "patterns": ["movie_exists:*", "series_exists:*", "tv_exists:*"],
+        "description": "Metadata existence checks and scraper meta cache",
+        "patterns": ["movie_exists:*", "series_exists:*", "tv_exists:*", "meta_cache:*"],
         "type": "string",
     },
     "catalog": {
@@ -58,8 +62,8 @@ CACHE_PATTERNS = {
         "type": "string",
     },
     "streams": {
-        "description": "Torrent stream data",
-        "patterns": ["torrent_streams:*", "stream:*"],
+        "description": "Torrent stream data and raw list cache",
+        "patterns": ["torrent_streams:*", "stream:*", "stream_data:*"],
         "type": "string",
     },
     "debrid": {
@@ -120,6 +124,7 @@ class CacheTypeStats(BaseModel):
     description: str
     keys_count: int
     memory_bytes: int | None = None
+    count_note: str | None = None
 
 
 class RedisInfoStats(BaseModel):
@@ -280,15 +285,57 @@ async def get_cache_type_stats() -> list[CacheTypeStats]:
             else:
                 total_keys += await count_keys_by_pattern(pattern)
 
+        count_note = None
+        if cache_name == "scrapers":
+            count_note = (
+                "This total is sorted-set members (cooldown entries), not Redis keys. "
+                "Browse lists each zset key (e.g. prowlarr, torznab:…)."
+            )
+
         stats.append(
             CacheTypeStats(
                 name=cache_name,
                 description=cache_info["description"],
                 keys_count=total_keys,
+                count_note=count_note,
             )
         )
 
     return stats
+
+
+async def collect_category_redis_key_names(cache_type: str) -> list[str]:
+    """Collect unique Redis key names for a CACHE_PATTERNS category (for admin browse)."""
+    if cache_type not in CACHE_PATTERNS:
+        return []
+
+    cache_info = CACHE_PATTERNS[cache_type]
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    for pattern in cache_info["patterns"]:
+        if cache_info["type"] == "zset" and "*" not in pattern:
+            try:
+                exists = await REDIS_ASYNC_CLIENT.exists(pattern)
+            except Exception:
+                exists = 0
+            if exists:
+                ps = pattern.decode("utf-8") if isinstance(pattern, bytes) else str(pattern)
+                if ps not in seen:
+                    seen.add(ps)
+                    ordered.append(ps)
+            continue
+
+        try:
+            async for key in REDIS_ASYNC_CLIENT.scan_iter(match=pattern, count=500):
+                ks = key.decode("utf-8") if isinstance(key, bytes) else str(key)
+                if ks not in seen:
+                    seen.add(ks)
+                    ordered.append(ks)
+        except Exception as e:
+            logger.warning("scan_iter failed for pattern %s: %s", pattern, e)
+
+    return sorted(ordered)
 
 
 async def clear_cache_by_type(cache_type: str) -> int:
@@ -453,9 +500,13 @@ async def get_cache_stats(
 @router.get("/keys", response_model=CacheKeysResponse)
 async def browse_cache_keys(
     pattern: str = Query("*", description="Pattern to match keys (supports wildcards)"),
-    cursor: str = Query("0", description="Cursor for pagination"),
+    cursor: str = Query("0", description="Cursor for pagination (offset when cache_category is set)"),
     count: int = Query(50, ge=1, le=200, description="Number of keys to return per scan"),
     type_filter: str | None = Query(None, description="Filter by Redis type (string, hash, list, set, zset)"),
+    cache_category: str | None = Query(
+        None,
+        description="If set, list keys for this CACHE_PATTERNS category (matches Overview cards)",
+    ),
     _admin: User = Depends(require_role(UserRole.ADMIN)),
 ):
     """
@@ -469,6 +520,56 @@ async def browse_cache_keys(
         )
 
     try:
+        if cache_category:
+            if cache_category not in CACHE_PATTERNS:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Unknown cache_category '{cache_category}'",
+                )
+            all_names = await collect_category_redis_key_names(cache_category)
+            filtered_names = all_names
+            if type_filter and type_filter != "all":
+                tmp: list[str] = []
+                for name in all_names:
+                    key_type_raw = await REDIS_ASYNC_CLIENT.type(name)
+                    key_type = key_type_raw.decode() if isinstance(key_type_raw, bytes) else key_type_raw
+                    if key_type == type_filter:
+                        tmp.append(name)
+                filtered_names = tmp
+
+            try:
+                offset = max(0, int(cursor))
+            except ValueError:
+                offset = 0
+            slice_keys = filtered_names[offset : offset + count]
+            keys_info = []
+            for key_str in slice_keys:
+                key_type_raw = await REDIS_ASYNC_CLIENT.type(key_str)
+                key_type = key_type_raw.decode() if isinstance(key_type_raw, bytes) else key_type_raw
+                ttl = await REDIS_ASYNC_CLIENT.ttl(key_str)
+                try:
+                    size = await REDIS_ASYNC_CLIENT.memory_usage(key_str)
+                except Exception:
+                    size = None
+                keys_info.append(
+                    CacheKeyInfo(
+                        key=key_str,
+                        type=key_type,
+                        ttl=ttl,
+                        size=size,
+                    )
+                )
+
+            next_offset = offset + len(slice_keys)
+            total = len(filtered_names)
+            has_more = next_offset < len(filtered_names)
+            return CacheKeysResponse(
+                keys=keys_info,
+                total=total,
+                cursor=str(next_offset) if has_more else "0",
+                has_more=has_more,
+            )
+
         keys_info = []
         current_cursor = int(cursor)
         scanned_count = 0

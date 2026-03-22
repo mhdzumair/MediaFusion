@@ -24,7 +24,7 @@ import { useCacheStats } from '../hooks/useCacheData'
 import { CACHE_TYPES, getTypeColorClasses } from '../types'
 
 interface OverviewTabProps {
-  onCacheTypeClick: (pattern: string) => void
+  onCacheTypeClick: (ct: { pattern: string; backendCategory?: string }) => void
 }
 
 // Icon mapping for cache types
@@ -101,6 +101,7 @@ function CacheTypeCard({
   color,
   description,
   count,
+  countNote,
   onClick,
 }: {
   name: string
@@ -108,6 +109,7 @@ function CacheTypeCard({
   color: string
   description: string
   count: number
+  countNote?: string | null
   onClick: () => void
 }) {
   const IconComponent = iconMap[icon] || Database
@@ -132,6 +134,7 @@ function CacheTypeCard({
           <div>
             <p className={cn('font-medium', colors.text)}>{name}</p>
             <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+            {countNote ? <p className="text-[10px] text-muted-foreground/90 mt-1 leading-snug">{countNote}</p> : null}
           </div>
         </div>
         <Badge variant="secondary" className="text-xs font-mono">
@@ -167,8 +170,10 @@ export function OverviewTab({ onCacheTypeClick }: OverviewTabProps) {
 
   // Build a map of cache type name -> keys_count from the array
   const cacheTypeCounts: Record<string, number> = {}
+  const cacheTypeNotes: Record<string, string | null | undefined> = {}
   stats?.cache_types?.forEach((ct) => {
     cacheTypeCounts[ct.name.toLowerCase()] = ct.keys_count
+    cacheTypeNotes[ct.name.toLowerCase()] = ct.count_note
   })
 
   return (
@@ -215,8 +220,11 @@ export function OverviewTab({ onCacheTypeClick }: OverviewTabProps) {
             <CacheTypeCard
               key={cacheType.name}
               {...cacheType}
-              count={cacheTypeCounts[cacheType.name.toLowerCase()] || 0}
-              onClick={() => onCacheTypeClick(cacheType.pattern)}
+              count={cacheTypeCounts[cacheType.backendCategory ?? cacheType.name.toLowerCase()] || 0}
+              countNote={cacheTypeNotes[cacheType.backendCategory ?? cacheType.name.toLowerCase()]}
+              onClick={() =>
+                onCacheTypeClick({ pattern: cacheType.pattern, backendCategory: cacheType.backendCategory })
+              }
             />
           ))}
         </div>
