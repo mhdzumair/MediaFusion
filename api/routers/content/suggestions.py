@@ -742,7 +742,7 @@ async def _set_media_image(session: AsyncSession, media_id: int, image_type: str
         MediaImage(
             media_id=media_id,
             provider_id=user_provider.id,
-            image_type="backdrop" if image_type == "background" else image_type,
+            image_type=image_type,
             url=normalized,
             is_primary=True,
         )

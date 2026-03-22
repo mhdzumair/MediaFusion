@@ -543,7 +543,7 @@ async def create_user_metadata(
         if request.background_url:
             background = MediaImage(
                 media_id=media.id,
-                image_type="backdrop",
+                image_type="background",
                 url=request.background_url,
                 provider_id=user_provider.id,
             )
@@ -775,7 +775,7 @@ async def update_user_metadata(
         await session.exec(
             sa_delete(MediaImage).where(
                 MediaImage.media_id == media_id,
-                MediaImage.image_type == "backdrop",
+                MediaImage.image_type == "background",
             )
         )
         # Add new background if provided
@@ -784,7 +784,7 @@ async def update_user_metadata(
             background = MediaImage(
                 media_id=media.id,
                 provider_id=user_provider.id,
-                image_type="backdrop",
+                image_type="background",
                 url=request.background_url,
             )
             session.add(background)
@@ -1896,7 +1896,7 @@ async def import_from_external(
                 background = MediaImage(
                     media_id=media.id,
                     provider_id=metadata_provider.id,
-                    image_type="backdrop",
+                    image_type="background",
                     url=data["background"],
                 )
                 session.add(background)
