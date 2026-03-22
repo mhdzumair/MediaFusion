@@ -51,7 +51,14 @@ import {
 } from '@/hooks'
 import type { StreamSuggestion, StreamSuggestionStatus } from '@/lib/api'
 
-import { formatStreamFieldName, formatStreamSuggestionType, parseEpisodeLinkField, formatTimeAgo } from './helpers'
+import { IssueTriageControls } from './IssueTriageControls'
+import {
+  formatStreamFieldName,
+  formatStreamSuggestionType,
+  formatTimeAgo,
+  isIssueStreamSuggestion,
+  parseEpisodeLinkField,
+} from './helpers'
 import { ModeratorMediaPoster } from './ModeratorMediaPoster'
 
 interface StreamSuggestionsTabProps {
@@ -473,6 +480,11 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
                         <Badge variant="outline" className="text-xs">
                           {formatStreamSuggestionType(suggestion.suggestion_type)}
                         </Badge>
+                        {isIssueStreamSuggestion(suggestion) && suggestion.issue_triage_status && (
+                          <Badge variant="secondary" className="text-xs capitalize">
+                            triage: {suggestion.issue_triage_status}
+                          </Badge>
+                        )}
                         {suggestion.field_name && (
                           <Badge variant="secondary" className="text-xs">
                             {formatStreamFieldName(suggestion.field_name)}
@@ -570,6 +582,10 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
                         <p className="text-xs text-muted-foreground truncate" title={suggestion.reason}>
                           <span className="font-medium">Reason:</span> {suggestion.reason}
                         </p>
+                      )}
+
+                      {isIssueStreamSuggestion(suggestion) && (
+                        <IssueTriageControls suggestion={suggestion} onUpdated={() => void refetch()} />
                       )}
 
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">

@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Progress } from '@/components/ui/progress'
 import {
   Dialog,
   DialogContent,
@@ -17,7 +16,18 @@ import {
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Flag, Loader2, AlertTriangle, Wrench, Languages, MoreHorizontal, CheckCircle2, Users, Ban } from 'lucide-react'
+import {
+  Flag,
+  Loader2,
+  AlertTriangle,
+  Wrench,
+  Languages,
+  MoreHorizontal,
+  CheckCircle2,
+  Ban,
+  ThumbsUp,
+  ThumbsDown,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCreateStreamSuggestion } from '@/hooks'
 import { streamSuggestionsApi } from '@/lib/api/stream-suggestions'
@@ -83,20 +93,19 @@ export function StreamReport({
   const [suggestedValue, setSuggestedValue] = useState('')
   const [reason, setReason] = useState('')
 
-  // Fetch broken status when dialog opens and report_broken is selected
-  const { data: brokenStatus, refetch: refetchBrokenStatus } = useQuery({
-    queryKey: ['broken-status', streamId],
-    queryFn: () => streamSuggestionsApi.getBrokenStatus(streamId),
-    enabled: dialogOpen && selectedType === 'report_broken',
-    staleTime: 30000, // 30 seconds
+  const showCommunityPanel = selectedType === 'report_broken' || selectedType === 'other'
+  const { data: signals, refetch: refetchSignals } = useQuery({
+    queryKey: ['stream-signals', streamId],
+    queryFn: () => streamSuggestionsApi.getStreamSignals(streamId),
+    enabled: dialogOpen && showCommunityPanel,
+    staleTime: 20_000,
   })
 
-  // Refetch broken status when dialog opens
   useEffect(() => {
-    if (dialogOpen && selectedType === 'report_broken') {
-      refetchBrokenStatus()
+    if (dialogOpen && showCommunityPanel) {
+      refetchSignals()
     }
-  }, [dialogOpen, selectedType, refetchBrokenStatus])
+  }, [dialogOpen, showCommunityPanel, refetchSignals])
 
   const selectedTypeInfo = suggestionTypes.find((t) => t.value === selectedType)
 
@@ -204,55 +213,61 @@ export function StreamReport({
             {selectedTypeInfo && <p className="text-xs text-muted-foreground">{selectedTypeInfo.description}</p>}
           </div>
 
-          {/* Broken report status indicator */}
-          {selectedType === 'report_broken' && brokenStatus && (
-            <Alert
-              variant={brokenStatus.is_blocked ? 'destructive' : brokenStatus.user_has_reported ? 'default' : undefined}
-            >
-              {brokenStatus.is_blocked ? (
+          {/* Community signals (issue reports + thumbs) */}
+          {showCommunityPanel && signals && (
+            <Alert variant={signals.is_blocked ? 'destructive' : undefined}>
+              {signals.is_blocked ? (
                 <>
                   <Ban className="h-4 w-4" />
-                  <AlertDescription>This stream is already blocked due to broken reports.</AlertDescription>
-                </>
-              ) : brokenStatus.user_has_reported ? (
-                <>
-                  <CheckCircle2 className="h-4 w-4" />
-                  <AlertDescription>
-                    <div className="space-y-2">
-                      <p>You have already reported this stream as broken.</p>
-                      <div className="flex items-center gap-2 text-sm">
-                        <Users className="h-3.5 w-3.5" />
-                        <span>
-                          {brokenStatus.report_count} of {brokenStatus.threshold} reports
-                        </span>
-                      </div>
-                      <Progress value={(brokenStatus.report_count / brokenStatus.threshold) * 100} className="h-2" />
-                      {brokenStatus.reports_needed > 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          {brokenStatus.reports_needed} more report{brokenStatus.reports_needed !== 1 ? 's' : ''} needed
-                          to block this stream
-                        </p>
-                      )}
-                    </div>
-                  </AlertDescription>
+                  <AlertDescription>This stream is blocked and may be hidden from some views.</AlertDescription>
                 </>
               ) : (
                 <>
-                  <Users className="h-4 w-4" />
+                  <Flag className="h-4 w-4" />
                   <AlertDescription>
-                    <div className="space-y-2">
-                      <p>Broken reports require consensus from multiple users.</p>
-                      <div className="flex items-center gap-2 text-sm">
-                        <span>
-                          {brokenStatus.report_count} of {brokenStatus.threshold} reports received
+                    <div className="space-y-2 text-sm">
+                      <p className="text-muted-foreground">
+                        Reports are visible to the community. Moderators may triage or block streams manually.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3 text-foreground">
+                        <span className="inline-flex items-center gap-1">
+                          <Flag className="h-3.5 w-3.5" />
+                          {signals.issue_report_count} issue report{signals.issue_report_count === 1 ? '' : 's'}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <ThumbsUp className="h-3.5 w-3.5 text-emerald-500" />
+                          {signals.rating_up}
+                          <ThumbsDown className="h-3.5 w-3.5 text-red-500" />
+                          {signals.rating_down}
+                          <span className="text-muted-foreground">(score {signals.rating_score})</span>
                         </span>
                       </div>
-                      <Progress value={(brokenStatus.report_count / brokenStatus.threshold) * 100} className="h-2" />
-                      {brokenStatus.reports_needed > 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          {brokenStatus.reports_needed} more report{brokenStatus.reports_needed !== 1 ? 's' : ''} needed
-                          to block this stream
+                      {selectedType === 'report_broken' &&
+                        signals.user_has_report_broken === true &&
+                        signals.auto_block_on_broken_reports &&
+                        signals.reports_needed_for_auto_block > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            You already reported as broken. Auto-block (if enabled) uses{' '}
+                            {signals.legacy_approved_broken_reporters} of {signals.broken_report_threshold} approved
+                            reporter{signals.broken_report_threshold === 1 ? '' : 's'};{' '}
+                            {signals.reports_needed_for_auto_block} more needed.
+                          </p>
+                        )}
+                      {selectedType === 'report_broken' && signals.user_has_report_broken === true && (
+                        <p className="text-xs flex items-center gap-1 text-foreground">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          You have already submitted a broken report for this stream.
                         </p>
+                      )}
+                      {signals.recent_reasons.length > 0 && (
+                        <div className="text-xs text-muted-foreground space-y-1">
+                          <p className="font-medium text-foreground/80">Recent notes</p>
+                          <ul className="list-disc pl-4 space-y-0.5">
+                            {signals.recent_reasons.map((r, i) => (
+                              <li key={i}>{r}</li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
                     </div>
                   </AlertDescription>
@@ -315,8 +330,8 @@ export function StreamReport({
             disabled={
               createSuggestion.isPending ||
               (needsSuggestedValue && !suggestedValue.trim()) ||
-              (selectedType === 'report_broken' && brokenStatus?.user_has_reported) ||
-              (selectedType === 'report_broken' && brokenStatus?.is_blocked)
+              (selectedType === 'report_broken' && signals?.user_has_report_broken === true) ||
+              (selectedType === 'report_broken' && signals?.is_blocked === true)
             }
           >
             {createSuggestion.isPending ? (
@@ -324,9 +339,9 @@ export function StreamReport({
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Submitting...
               </>
-            ) : selectedType === 'report_broken' && brokenStatus?.user_has_reported ? (
+            ) : selectedType === 'report_broken' && signals?.user_has_report_broken === true ? (
               'Already Reported'
-            ) : selectedType === 'report_broken' && brokenStatus?.is_blocked ? (
+            ) : selectedType === 'report_broken' && signals?.is_blocked === true ? (
               'Already Blocked'
             ) : (
               'Submit Report'

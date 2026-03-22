@@ -12,23 +12,24 @@ export interface StreamVoteRequest {
 
 export interface StreamVoteResponse {
   id: string
-  stream_id: string
+  stream_id: number
+  user_id: number
+  vote: number
   vote_type: VoteType
-  quality_status: QualityStatus | null
+  quality_status: string | null
   comment: string | null
-  created_at: string
+  voted_at: string
 }
 
 export interface StreamVoteSummary {
-  stream_id: string
+  stream_id: number
   upvotes: number
   downvotes: number
-  working_count: number
-  broken_count: number
-  good_quality_count: number
-  poor_quality_count: number
-  user_vote: StreamVoteResponse | null
+  score: number
   score_percent: number
+  user_vote: number | null
+  quality_status: string | null
+  comment: string | null
 }
 
 export interface BulkStreamVoteSummary {

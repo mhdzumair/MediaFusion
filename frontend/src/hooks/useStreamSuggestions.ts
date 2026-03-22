@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   streamSuggestionsApi,
+  type StreamIssueTriageRequest,
   type StreamSuggestionCreateRequest,
   type StreamSuggestionReviewRequest,
   type StreamSuggestionListParams,
@@ -14,6 +15,11 @@ export const streamSuggestionKeys = {
   my: () => [...streamSuggestionKeys.all, 'my'] as const,
   pending: () => [...streamSuggestionKeys.all, 'pending'] as const,
   stats: () => [...streamSuggestionKeys.all, 'stats'] as const,
+}
+
+export const streamSignalsKeys = {
+  all: ['stream-signals'] as const,
+  stream: (streamId: number) => [...streamSignalsKeys.all, streamId] as const,
 }
 
 // Get suggestions for a stream
@@ -67,6 +73,7 @@ export function useCreateStreamSuggestion() {
       queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.stream(String(streamId)) })
       queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.pending() })
       queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.stats() })
+      queryClient.invalidateQueries({ queryKey: streamSignalsKeys.stream(streamId) })
     },
   })
 }
@@ -112,6 +119,28 @@ export function useDeleteStreamSuggestion() {
     mutationFn: (suggestionId: string) => streamSuggestionsApi.deleteSuggestion(suggestionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.all })
+    },
+  })
+}
+
+export function useStreamSignals(streamId: number | undefined) {
+  return useQuery({
+    queryKey: streamSignalsKeys.stream(streamId!),
+    queryFn: () => streamSuggestionsApi.getStreamSignals(streamId!),
+    enabled: streamId !== undefined,
+    staleTime: 20_000,
+  })
+}
+
+export function useUpdateStreamIssueTriage() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ suggestionId, data }: { suggestionId: string; data: StreamIssueTriageRequest }) =>
+      streamSuggestionsApi.updateIssueTriage(suggestionId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.all })
+      queryClient.invalidateQueries({ queryKey: streamSignalsKeys.all })
     },
   })
 }

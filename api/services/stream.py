@@ -179,8 +179,8 @@ class StreamService(BaseService):
                 "is_complete": stream.is_complete,
                 "is_dubbed": stream.is_dubbed,
                 "is_subbed": stream.is_subbed,
-                # Aggregates
-                "vote_score": stream.vote_score,
+                # Aggregates (vote_score not on Stream ORM; use thumb aggregates from voting API / catalog context)
+                "vote_score": 0,
                 "playback_count": stream.playback_count,
                 "created_at": stream.created_at.isoformat() if stream.created_at else None,
             }

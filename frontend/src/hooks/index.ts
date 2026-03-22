@@ -200,7 +200,10 @@ export {
   useReviewStreamSuggestion,
   useBulkReviewStreamSuggestions,
   useDeleteStreamSuggestion,
+  useStreamSignals,
+  useUpdateStreamIssueTriage,
   streamSuggestionKeys,
+  streamSignalsKeys,
 } from './useStreamSuggestions'
 
 // Episode Suggestions hooks

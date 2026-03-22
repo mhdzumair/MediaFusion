@@ -5,6 +5,7 @@ Handles StreamVote, MetadataVote, Contribution, MetadataSuggestion, StreamSugges
 """
 
 import logging
+import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
@@ -21,7 +22,6 @@ from db.models import (
     ContributionSettings,
     MetadataSuggestion,
     MetadataVote,
-    Stream,
     StreamSuggestion,
     StreamVote,
 )
@@ -39,9 +39,14 @@ async def vote_on_stream(
     user_id: int,
     stream_id: int,
     vote: int,  # 1 for upvote, -1 for downvote
+    *,
+    comment: str | None = None,
+    quality_status: str | None = None,
 ) -> StreamVote:
-    """Vote on a stream (upvote or downvote)."""
-    # Check for existing vote
+    """Vote on a stream (upvote or downvote). Persists vote_type up/down."""
+    vote_type = "up" if vote > 0 else "down"
+    now = datetime.now(pytz.UTC)
+
     query = select(StreamVote).where(
         StreamVote.user_id == user_id,
         StreamVote.stream_id == stream_id,
@@ -50,34 +55,34 @@ async def vote_on_stream(
     existing = result.first()
 
     if existing:
-        # Update existing vote
-        old_vote = existing.vote
-        if old_vote != vote:
+        new_comment = comment if comment is not None else existing.comment
+        new_quality = quality_status if quality_status is not None else existing.quality_status
+        if existing.vote_type != vote_type or new_comment != existing.comment or new_quality != existing.quality_status:
             await session.exec(
                 sa_update(StreamVote)
                 .where(StreamVote.id == existing.id)
-                .values(vote=vote, voted_at=datetime.now(pytz.UTC))
-            )
-            # Update stream vote count
-            vote_diff = vote - old_vote
-            await session.exec(
-                sa_update(Stream).where(Stream.id == stream_id).values(vote_score=Stream.vote_score + vote_diff)
+                .values(
+                    vote_type=vote_type,
+                    comment=new_comment,
+                    quality_status=new_quality,
+                    updated_at=now,
+                )
             )
         await session.flush()
+        await session.refresh(existing)
         return existing
 
-    # Create new vote
     stream_vote = StreamVote(
+        id=str(uuid.uuid4()),
         user_id=user_id,
         stream_id=stream_id,
-        vote=vote,
+        vote_type=vote_type,
+        comment=comment,
+        quality_status=quality_status,
     )
     session.add(stream_vote)
-
-    # Update stream vote count
-    await session.exec(sa_update(Stream).where(Stream.id == stream_id).values(vote_score=Stream.vote_score + vote))
-
     await session.flush()
+    await session.refresh(stream_vote)
     return stream_vote
 
 
@@ -98,12 +103,7 @@ async def remove_stream_vote(
     if not existing:
         return False
 
-    # Remove vote and adjust count
     await session.exec(sa_delete(StreamVote).where(StreamVote.id == existing.id))
-    await session.exec(
-        sa_update(Stream).where(Stream.id == stream_id).values(vote_score=Stream.vote_score - existing.vote)
-    )
-
     await session.flush()
     return True
 

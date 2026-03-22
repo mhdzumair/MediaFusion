@@ -284,6 +284,8 @@ class StreamTemplate(BaseModel):
     - Stream types: torrent, usenet, telegram, http, youtube
     - Stream arrays: audio_formats, channels, hdr_formats, languages, language_flags
     - Stream info: size, folderSize, seeders, source, release_group, uploader, cached
+    - Community (catalog/Stremio templates): issue_reports, rating_up, rating_down,
+      rating_score, rating_total, vote_score (alias of rating_score)
     - Service: service.name, service.shortName, service.cached
     - Addon: addon.name
     """

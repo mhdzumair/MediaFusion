@@ -3,6 +3,7 @@ export { StreamRelinkButton } from './StreamRelinkButton'
 export { CollectionAnnotationDialog } from './CollectionAnnotationDialog'
 export { StreamVoteButtons } from './StreamVoteButtons'
 export { StreamReport } from './StreamReport'
+export { StreamCommunityRow } from './StreamCommunityRow'
 export { StreamCard } from './StreamCard'
 export {
   StreamFilters,

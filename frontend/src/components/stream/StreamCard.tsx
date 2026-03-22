@@ -24,6 +24,7 @@ import { useCreateStreamSuggestion, useDeleteStream } from '@/hooks'
 import type { CatalogStreamInfo } from '@/lib/api'
 import { StreamEditSheet } from './StreamEditSheet'
 import { StreamRelinkButton } from './StreamRelinkButton'
+import { StreamCommunityRow } from './StreamCommunityRow'
 import { StreamReport } from './StreamReport'
 import { FileAnnotationDialog, type FileLink, type EditedFileLink } from './FileAnnotationDialog'
 import { catalogApi } from '@/lib/api'
@@ -228,6 +229,7 @@ export function StreamCard({
         {stream.description && (
           <p className="text-xs text-muted-foreground whitespace-pre-line leading-relaxed">{stream.description}</p>
         )}
+        {stream.id && <StreamCommunityRow streamId={stream.id} className="pt-1" />}
       </div>
 
       {/* Compact Actions Menu */}

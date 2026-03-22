@@ -199,6 +199,13 @@ from db.crud.scraper_helpers import (
     update_user_rss_feed_by_uuid,
     update_user_rss_feed_metrics,
 )
+from db.crud.stream_community import (
+    ISSUE_SUGGESTION_TYPES,
+    fetch_recent_issue_reasons_for_stream,
+    fetch_stream_community_signals_batch,
+    int_vote_to_type,
+    vote_type_to_int,
+)
 
 # Stream service operations (Stremio API)
 from db.crud.stream_services import (
@@ -220,6 +227,10 @@ from db.crud.streams import (
     create_external_link_stream,
     # HTTP streams
     create_http_stream,
+    # Telegram streams
+    create_telegram_stream,
+    # Telegram user forwards (per-user forwarded copies for MediaFlow)
+    create_telegram_user_forward,
     create_torrent_stream,
     create_tracker,
     # Usenet streams
@@ -229,6 +240,9 @@ from db.crud.streams import (
     delete_file_media_links_for_stream,
     delete_files_for_stream,
     delete_stream,
+    delete_telegram_user_forward,
+    delete_telegram_user_forwards_for_stream,
+    delete_telegram_user_forwards_for_user,
     delete_torrent_by_info_hash,
     delete_usenet_stream_by_guid,
     # AceStream lookups
@@ -243,6 +257,11 @@ from db.crud.streams import (
     # Base stream
     get_stream_by_id,
     get_streams_for_media,
+    get_telegram_stream_by_chat_message,
+    get_telegram_stream_by_file_id,
+    get_telegram_stream_by_file_unique_id,
+    get_telegram_streams_for_media,
+    get_telegram_user_forward,
     # Torrent streams
     get_torrent_by_info_hash,
     # Metrics
@@ -256,29 +275,17 @@ from db.crud.streams import (
     get_usenet_streams_for_media,
     get_weekly_top_uploaders,
     get_working_trackers,
-    # Telegram streams
-    create_telegram_stream,
-    get_telegram_stream_by_chat_message,
-    get_telegram_stream_by_file_id,
-    get_telegram_stream_by_file_unique_id,
-    get_telegram_streams_for_media,
-    telegram_stream_exists,
-    update_telegram_stream_file_id,
-    # Telegram user forwards (per-user forwarded copies for MediaFlow)
-    create_telegram_user_forward,
-    delete_telegram_user_forward,
-    delete_telegram_user_forwards_for_stream,
-    delete_telegram_user_forwards_for_user,
-    get_telegram_user_forward,
     # File media links (NEW in v5 - replaces StreamEpisodeFile)
     link_file_to_media,
     link_stream_to_media,
+    telegram_stream_exists,
     unlink_stream_from_media,
     update_stream_files,
+    update_telegram_stream_file_id,
     update_torrent_seeders,
-    update_usenet_stream,
     update_torrent_stream,
     update_tracker_status,
+    update_usenet_stream,
 )
 
 # User content operations (catalogs, library)
@@ -509,6 +516,11 @@ __all__ = [
     "remove_stream_vote",
     "get_user_stream_vote",
     "get_stream_vote_count",
+    "ISSUE_SUGGESTION_TYPES",
+    "fetch_stream_community_signals_batch",
+    "fetch_recent_issue_reasons_for_stream",
+    "vote_type_to_int",
+    "int_vote_to_type",
     "vote_on_metadata",
     "create_contribution",
     "get_contribution",

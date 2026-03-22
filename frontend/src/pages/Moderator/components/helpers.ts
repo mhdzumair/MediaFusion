@@ -1,6 +1,6 @@
 import { CheckCircle2, Clock, XCircle } from 'lucide-react'
 
-import type { Contribution, Suggestion, SuggestionStatus } from '@/lib/api'
+import type { Contribution, StreamSuggestion, Suggestion, SuggestionStatus } from '@/lib/api'
 
 export type ReviewDecision = 'approve' | 'reject'
 export type ModeratorTab = 'contributions' | 'annotations' | 'streams' | 'pending' | 'migration' | 'settings'
@@ -117,6 +117,7 @@ export function formatStreamFieldName(fieldName: string | null): string {
 }
 
 export function formatStreamSuggestionType(type: string): string {
+  const base = type.includes(':') ? type.split(':', 1)[0] : type
   const typeMap: Record<string, string> = {
     report_broken: 'Broken Report',
     field_correction: 'Field Correction',
@@ -127,7 +128,10 @@ export function formatStreamSuggestionType(type: string): string {
     add_media_link: 'Add Media Link',
     other: 'Other',
   }
-  return typeMap[type] || type
+  if (base === 'field_correction' && type.includes(':')) {
+    return `Field: ${type.split(':', 2)[1] || 'correction'}`
+  }
+  return typeMap[base] || type
 }
 
 export function formatTorrentData(
@@ -259,4 +263,13 @@ export function getContentDetailLink(preview: { metaType: string | null }, media
     return null
   }
   return `/dashboard/content/${preview.metaType}/${mediaId}`
+}
+
+function baseStreamSuggestionType(type: string): string {
+  return type.includes(':') ? type.split(':', 1)[0] : type
+}
+
+export function isIssueStreamSuggestion(suggestion: StreamSuggestion): boolean {
+  const b = baseStreamSuggestionType(suggestion.suggestion_type)
+  return b === 'report_broken' || b === 'other'
 }

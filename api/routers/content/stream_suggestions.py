@@ -9,18 +9,27 @@ from datetime import datetime
 from typing import Literal, TypedDict
 
 import pytz
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import String, case, cast, func, or_
 from sqlalchemy.orm import aliased, selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from api.routers.user.auth import require_auth, require_role
 from api.routers.content.torrent_import import fetch_and_create_media_from_external
+from api.routers.user.auth import optional_auth, require_auth, require_role
+from db.crud.contributions import get_user_stream_vote
+from db.crud.media import get_media_by_external_id, parse_external_id
+from db.crud.reference import get_or_create_language
+from db.crud.stream_community import (
+    ISSUE_SUGGESTION_TYPES,
+    empty_stream_signals_dict,
+    fetch_recent_issue_reasons_for_stream,
+    fetch_stream_community_signals_batch,
+    vote_type_to_int,
+)
 from db.database import get_async_session
 from db.enums import MediaType, UserRole
-from db.crud.media import get_media_by_external_id, parse_external_id
 from db.models import (
     AudioChannel,
     AudioFormat,
@@ -33,10 +42,10 @@ from db.models import (
     StreamFile,
     StreamMediaLink,
     StreamSuggestion,
+    StreamVote,
     User,
 )
 from db.models.links import StreamLanguageLink
-from db.crud.reference import get_or_create_language
 from utils.notification_registry import send_pending_stream_suggestion_notification
 
 logger = logging.getLogger(__name__)
@@ -276,6 +285,8 @@ class StreamSuggestionResponse(BaseModel):
     # User reputation info
     user_contribution_level: str | None = None
     user_contribution_points: int | None = None
+    issue_triage_status: str | None = None
+    issue_triage_note: str | None = None
 
 
 class StreamSuggestionListResponse(BaseModel):
@@ -340,6 +351,50 @@ class BrokenReportStatus(BaseModel):
     threshold: int
     user_has_reported: bool
     reports_needed: int  # How many more reports needed to block (0 if already blocked)
+
+
+class StreamSignalsResponse(BaseModel):
+    """Community-visible issue reports + thumb votes for a stream."""
+
+    stream_id: int
+    is_blocked: bool
+    issue_report_count: int
+    auto_block_on_broken_reports: bool
+    broken_report_threshold: int
+    rating_up: int
+    rating_down: int
+    rating_score: int
+    rating_total: int
+    user_has_issue_report: bool | None = None
+    user_has_report_broken: bool | None = None
+    user_vote: int | None = None
+    recent_reasons: list[str] = Field(default_factory=list)
+    legacy_approved_broken_reporters: int = 0
+    reports_needed_for_auto_block: int = 0
+
+
+class StreamSignalsSummary(BaseModel):
+    """Lightweight signals for bulk responses (no recent reasons)."""
+
+    issue_report_count: int
+    rating_up: int
+    rating_down: int
+    rating_score: int
+    rating_total: int
+    user_vote: int | None = None
+    user_has_issue_report: bool | None = None
+
+
+class BulkStreamSignalsResponse(BaseModel):
+    signals: dict[int, StreamSignalsSummary]
+
+
+IssueTriageStatusLiteral = Literal["open", "reviewed", "dismissed", "action_taken"]
+
+
+class StreamIssueTriageRequest(BaseModel):
+    issue_triage_status: IssueTriageStatusLiteral
+    issue_triage_note: str | None = Field(None, max_length=500)
 
 
 # ============================================
@@ -973,8 +1028,16 @@ async def apply_stream_changes(
             return True
 
         elif suggestion_type == "report_broken":
-            # Consensus-based blocking: Only block after multiple unique users report
-            # Count approved/auto-approved broken reports for this stream from unique users
+            settings_query = select(ContributionSettings).where(ContributionSettings.id == "default")
+            settings_result = await session.exec(settings_query)
+            settings = settings_result.first()
+            if not settings or not settings.auto_block_on_broken_reports:
+                logger.info(
+                    "report_broken apply: auto_block_on_broken_reports disabled; stream %s left unchanged",
+                    base_stream.id,
+                )
+                return True
+            # Legacy consensus-based blocking (opt-in via ContributionSettings)
             broken_reports_query = select(StreamSuggestion).where(
                 StreamSuggestion.stream_id == base_stream.id,
                 StreamSuggestion.suggestion_type == "report_broken",
@@ -983,15 +1046,9 @@ async def apply_stream_changes(
             broken_reports_result = await session.exec(broken_reports_query)
             broken_reports = broken_reports_result.all()
 
-            # Count unique users who reported (excluding duplicates from same user)
             unique_reporters = {report.user_id for report in broken_reports}
-            # Add +1 for the current report being processed (not yet in DB)
             report_count = len(unique_reporters) + 1
 
-            # Get threshold from settings
-            settings_query = select(ContributionSettings).where(ContributionSettings.id == "default")
-            settings_result = await session.exec(settings_query)
-            settings = settings_result.first()
             threshold = settings.broken_report_threshold if settings else 3
 
             if report_count >= threshold:
@@ -1192,6 +1249,8 @@ def build_suggestion_response(
         review_notes=suggestion.review_notes,
         user_contribution_level=user.contribution_level if user else None,
         user_contribution_points=user.contribution_points if user else None,
+        issue_triage_status=suggestion.issue_triage_status,
+        issue_triage_note=suggestion.issue_triage_note,
     )
 
 
@@ -1449,6 +1508,8 @@ async def create_stream_suggestion(
             }
         )
 
+    issue_triage_status = "open" if request.suggestion_type in ("report_broken", "other") else None
+
     suggestion = StreamSuggestion(
         user_id=current_user.id,
         stream_id=stream_id,
@@ -1457,6 +1518,7 @@ async def create_stream_suggestion(
         suggested_value=suggested_value,
         reason=request.reason,
         status=STATUS_AUTO_APPROVED if can_auto_approve else STATUS_PENDING,
+        issue_triage_status=issue_triage_status,
     )
 
     # If auto-approved, apply changes immediately
@@ -2164,6 +2226,140 @@ async def get_stream_suggestion_stats(
     )
 
 
+@router.get("/streams/{stream_id}/signals", response_model=StreamSignalsResponse)
+async def get_stream_signals(
+    stream_id: int,
+    current_user: User | None = Depends(optional_auth),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Aggregated issue reports (StreamSuggestion) and thumb votes for a stream."""
+    stream_query = select(Stream).where(Stream.id == stream_id)
+    stream_result = await session.exec(stream_query)
+    stream = stream_result.first()
+
+    if not stream:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Stream not found",
+        )
+
+    settings = await get_contribution_settings(session)
+    sig_map = await fetch_stream_community_signals_batch(session, [stream_id])
+    sig = sig_map.get(stream_id, empty_stream_signals_dict())
+    recent = await fetch_recent_issue_reasons_for_stream(session, stream_id)
+
+    legacy_broken_q = select(StreamSuggestion).where(
+        StreamSuggestion.stream_id == stream_id,
+        StreamSuggestion.suggestion_type == "report_broken",
+        StreamSuggestion.status.in_([STATUS_APPROVED, STATUS_AUTO_APPROVED]),
+    )
+    legacy_broken_res = await session.exec(legacy_broken_q)
+    legacy_broken_rows = legacy_broken_res.all()
+    legacy_approved_broken_reporters = len({r.user_id for r in legacy_broken_rows})
+    reports_needed_for_auto_block = (
+        max(0, settings.broken_report_threshold - legacy_approved_broken_reporters)
+        if settings.auto_block_on_broken_reports and not stream.is_blocked
+        else 0
+    )
+
+    user_has_issue_report: bool | None = None
+    user_has_report_broken: bool | None = None
+    user_vote: int | None = None
+    if current_user:
+        user_rep = await session.exec(
+            select(StreamSuggestion.id).where(
+                StreamSuggestion.stream_id == stream_id,
+                StreamSuggestion.user_id == current_user.id,
+                StreamSuggestion.suggestion_type.in_(ISSUE_SUGGESTION_TYPES),
+            )
+        )
+        user_has_issue_report = user_rep.first() is not None
+        rb_rep = await session.exec(
+            select(StreamSuggestion.id).where(
+                StreamSuggestion.stream_id == stream_id,
+                StreamSuggestion.user_id == current_user.id,
+                StreamSuggestion.suggestion_type == "report_broken",
+            )
+        )
+        user_has_report_broken = rb_rep.first() is not None
+        uv = await get_user_stream_vote(session, current_user.id, stream_id)
+        user_vote = vote_type_to_int(uv.vote_type) if uv else None
+
+    return StreamSignalsResponse(
+        stream_id=stream_id,
+        is_blocked=stream.is_blocked,
+        issue_report_count=sig["issue_report_count"],
+        auto_block_on_broken_reports=settings.auto_block_on_broken_reports,
+        broken_report_threshold=settings.broken_report_threshold,
+        rating_up=sig["rating_up"],
+        rating_down=sig["rating_down"],
+        rating_score=sig["rating_score"],
+        rating_total=sig["rating_total"],
+        user_has_issue_report=user_has_issue_report,
+        user_has_report_broken=user_has_report_broken,
+        user_vote=user_vote,
+        recent_reasons=recent,
+        legacy_approved_broken_reporters=legacy_approved_broken_reporters,
+        reports_needed_for_auto_block=reports_needed_for_auto_block,
+    )
+
+
+@router.post("/streams/signals/bulk", response_model=BulkStreamSignalsResponse)
+async def post_bulk_stream_signals(
+    stream_ids: list[int] = Body(...),
+    current_user: User | None = Depends(optional_auth),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Batch community signals for many streams (e.g. stream lists)."""
+    if len(stream_ids) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 50 streams per request",
+        )
+    if not stream_ids:
+        return BulkStreamSignalsResponse(signals={})
+
+    sig_map = await fetch_stream_community_signals_batch(session, stream_ids)
+    vote_by_stream: dict[int, int] = {}
+    reported_streams: set[int] = set()
+    if current_user:
+        vote_rows = await session.exec(
+            select(StreamVote.stream_id, StreamVote.vote_type).where(
+                StreamVote.user_id == current_user.id,
+                StreamVote.stream_id.in_(stream_ids),
+            )
+        )
+        for row in vote_rows.all():
+            sid, vtype = row[0], row[1]
+            vi = vote_type_to_int(vtype)
+            if vi is not None:
+                vote_by_stream[sid] = vi
+        rep_rows = await session.exec(
+            select(StreamSuggestion.stream_id)
+            .where(
+                StreamSuggestion.user_id == current_user.id,
+                StreamSuggestion.stream_id.in_(stream_ids),
+                StreamSuggestion.suggestion_type.in_(ISSUE_SUGGESTION_TYPES),
+            )
+            .distinct()
+        )
+        reported_streams = {row[0] for row in rep_rows.all()}
+
+    out: dict[int, StreamSignalsSummary] = {}
+    for sid in stream_ids:
+        s = sig_map.get(sid, empty_stream_signals_dict())
+        out[sid] = StreamSignalsSummary(
+            issue_report_count=s["issue_report_count"],
+            rating_up=s["rating_up"],
+            rating_down=s["rating_down"],
+            rating_score=s["rating_score"],
+            rating_total=s["rating_total"],
+            user_vote=vote_by_stream.get(sid) if current_user else None,
+            user_has_issue_report=sid in reported_streams if current_user else None,
+        )
+    return BulkStreamSignalsResponse(signals=out)
+
+
 @router.get("/streams/{stream_id}/broken-status", response_model=BrokenReportStatus)
 async def get_broken_report_status(
     stream_id: int,
@@ -2171,8 +2367,7 @@ async def get_broken_report_status(
     session: AsyncSession = Depends(get_async_session),
 ):
     """
-    Get the broken report status for a stream.
-    Shows how many users have reported it and how many more are needed to block it.
+    Legacy shape for the report dialog. Prefer GET /streams/{id}/signals for full data.
     """
     stream_query = select(Stream).where(Stream.id == stream_id)
     stream_result = await session.exec(stream_query)
@@ -2186,11 +2381,12 @@ async def get_broken_report_status(
 
     is_blocked = stream.is_blocked
 
-    # Get threshold from settings
     settings = await get_contribution_settings(session)
     threshold = settings.broken_report_threshold
 
-    # Count approved/auto-approved broken reports from unique users
+    sig_map = await fetch_stream_community_signals_batch(session, [stream_id])
+    visible_issue_count = sig_map.get(stream_id, empty_stream_signals_dict())["issue_report_count"]
+
     broken_reports_query = select(StreamSuggestion).where(
         StreamSuggestion.stream_id == stream_id,
         StreamSuggestion.suggestion_type == "report_broken",
@@ -2199,9 +2395,8 @@ async def get_broken_report_status(
     broken_reports_result = await session.exec(broken_reports_query)
     broken_reports = broken_reports_result.all()
     unique_reporters = {report.user_id for report in broken_reports}
-    report_count = len(unique_reporters)
+    legacy_approved_count = len(unique_reporters)
 
-    # Check if current user has already reported
     user_report_query = select(StreamSuggestion).where(
         StreamSuggestion.stream_id == stream_id,
         StreamSuggestion.suggestion_type == "report_broken",
@@ -2210,13 +2405,70 @@ async def get_broken_report_status(
     user_report_result = await session.exec(user_report_query)
     user_has_reported = user_report_result.first() is not None
 
-    reports_needed = max(0, threshold - report_count) if not is_blocked else 0
+    if settings.auto_block_on_broken_reports and not is_blocked:
+        reports_needed = max(0, threshold - legacy_approved_count)
+    else:
+        reports_needed = 0
 
     return BrokenReportStatus(
         stream_id=stream_id,
         is_blocked=is_blocked,
-        report_count=report_count,
+        report_count=visible_issue_count,
         threshold=threshold,
         user_has_reported=user_has_reported,
         reports_needed=reports_needed,
+    )
+
+
+@router.patch(
+    "/stream-suggestions/{suggestion_id}/issue-triage",
+    response_model=StreamSuggestionResponse,
+)
+async def update_stream_issue_triage(
+    suggestion_id: str,
+    request: StreamIssueTriageRequest,
+    current_user: User = Depends(require_role(UserRole.MODERATOR)),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Set triage state for issue-type stream suggestions (report_broken / other)."""
+    query = select(StreamSuggestion).where(StreamSuggestion.id == suggestion_id)
+    result = await session.exec(query)
+    suggestion = result.first()
+
+    if not suggestion:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Suggestion not found")
+
+    base_type = (
+        suggestion.suggestion_type.split(":", 1)[0] if ":" in suggestion.suggestion_type else suggestion.suggestion_type
+    )
+    if base_type not in ISSUE_SUGGESTION_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Issue triage applies only to report_broken and other suggestions",
+        )
+
+    now = datetime.now(pytz.UTC)
+    suggestion.issue_triage_status = request.issue_triage_status
+    suggestion.issue_triage_note = request.issue_triage_note
+    suggestion.updated_at = now
+    session.add(suggestion)
+    await session.commit()
+    await session.refresh(suggestion)
+
+    stream = await get_stream_for_suggestion_apply(session, suggestion.stream_id)
+    username = await get_username(session, suggestion.user_id)
+    source_media_context_map = await _build_source_media_context_map(session, [suggestion.stream_id])
+    target_media_context_map = await _build_target_media_context_map(session, [suggestion])
+
+    user_row = await session.exec(select(User).where(User.id == suggestion.user_id))
+    author = user_row.first()
+
+    return build_suggestion_response(
+        suggestion,
+        username,
+        stream=stream,
+        reviewer_name=None,
+        user=author,
+        source_media_context=source_media_context_map.get(suggestion.stream_id),
+        target_media_context=target_media_context_map.get(suggestion.id),
     )

@@ -234,6 +234,11 @@ export {
   type StreamSuggestionReviewRequest,
   type StreamSuggestionStats,
   type StreamSuggestionListParams,
+  type StreamSignalsResponse,
+  type StreamSignalsSummary,
+  type BulkStreamSignalsResponse,
+  type StreamIssueTriageRequest,
+  type IssueTriageStatus,
   type StreamFieldName,
   type EpisodeLinkFieldName,
 } from './stream-suggestions'

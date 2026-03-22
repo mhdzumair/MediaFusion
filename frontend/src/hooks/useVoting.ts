@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { votingApi, type StreamVoteRequest } from '@/lib/api'
 
+import { streamSignalsKeys } from './useStreamSuggestions'
+
 // Query keys
 export const votingKeys = {
   all: ['voting'] as const,
@@ -36,7 +38,7 @@ export function useVoteOnStream() {
       votingApi.voteOnStream(streamId, data),
     onSuccess: (_, { streamId }) => {
       queryClient.invalidateQueries({ queryKey: votingKeys.streamVotes(streamId) })
-      // Also invalidate any bulk queries that might include this stream
+      queryClient.invalidateQueries({ queryKey: streamSignalsKeys.stream(streamId) })
       queryClient.invalidateQueries({
         queryKey: votingKeys.all,
         predicate: (query) => query.queryKey[1] === 'streams',
@@ -53,6 +55,7 @@ export function useRemoveStreamVote() {
     mutationFn: (streamId: number) => votingApi.removeStreamVote(streamId),
     onSuccess: (_, streamId) => {
       queryClient.invalidateQueries({ queryKey: votingKeys.streamVotes(streamId) })
+      queryClient.invalidateQueries({ queryKey: streamSignalsKeys.stream(streamId) })
       queryClient.invalidateQueries({
         queryKey: votingKeys.all,
         predicate: (query) => query.queryKey[1] === 'streams',

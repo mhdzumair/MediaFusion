@@ -152,6 +152,13 @@ class StreamSuggestion(TimestampMixin, table=True):
     reviewed_by: str | None = Field(default=None)
     reviewed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     review_notes: str | None = Field(default=None)
+    # Issue reports (report_broken / other): moderator triage without implying "approve = valid report"
+    issue_triage_status: str | None = Field(
+        default=None,
+        index=True,
+        description="open | reviewed | dismissed | action_taken",
+    )
+    issue_triage_note: str | None = Field(default=None, sa_type=Text)
 
     # Relationships
     user: "User" = Relationship(back_populates="stream_suggestions")
@@ -215,3 +222,5 @@ class ContributionSettings(SQLModel, table=True):
     # Broken stream report settings
     # Number of unique users required to report a stream as broken before it's blocked
     broken_report_threshold: int = Field(default=3)
+    # When False (default), community reports do not auto-block streams (admin may block manually)
+    auto_block_on_broken_reports: bool = Field(default=False)

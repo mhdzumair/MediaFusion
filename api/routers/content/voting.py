@@ -7,11 +7,11 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from api.routers.user.auth import require_auth
+from api.routers.user.auth import optional_auth, require_auth
 from db.crud import (
     get_stream_vote_count,
     get_user_stream_vote,
@@ -19,6 +19,7 @@ from db.crud import (
     vote_on_metadata,
     vote_on_stream,
 )
+from db.crud.stream_community import vote_type_to_int
 from db.database import get_async_session
 from db.models import Media, MetadataVote, Stream, User
 
@@ -34,19 +35,35 @@ VoteTypeLiteral = Literal["up", "down"]
 
 
 class StreamVoteRequest(BaseModel):
-    """Request to vote on a stream"""
+    """Request to vote on a stream (vote or vote_type required)."""
 
-    vote: int = Field(..., ge=-1, le=1, description="Vote value: 1 for upvote, -1 for downvote")
+    vote: int | None = Field(None, ge=-1, le=1, description="1 up, -1 down")
+    vote_type: VoteTypeLiteral | None = None
+    quality_status: str | None = Field(None, max_length=64)
     comment: str | None = Field(None, max_length=500)
+
+    @model_validator(mode="after")
+    def require_vote_or_type(self) -> "StreamVoteRequest":
+        if self.vote is None and self.vote_type is None:
+            raise ValueError("Provide vote (1 or -1) or vote_type (up/down)")
+        return self
+
+    def resolved_vote_int(self) -> int:
+        if self.vote is not None:
+            return self.vote
+        return 1 if self.vote_type == "up" else -1
 
 
 class StreamVoteResponse(BaseModel):
     """Response for a stream vote"""
 
-    id: int
+    id: str
     stream_id: int
     user_id: int
     vote: int
+    vote_type: VoteTypeLiteral
+    quality_status: str | None = None
+    comment: str | None = None
     voted_at: datetime
 
 
@@ -57,7 +74,10 @@ class StreamVoteSummary(BaseModel):
     upvotes: int = 0
     downvotes: int = 0
     score: int = 0
-    user_vote: int | None = None  # User's current vote: 1, -1, or None
+    score_percent: int = 0
+    user_vote: int | None = None  # 1, -1, or None
+    quality_status: str | None = None
+    comment: str | None = None
 
 
 class ContentRatingRequest(BaseModel):
@@ -88,6 +108,10 @@ class BulkStreamVoteSummary(BaseModel):
     """Bulk stream vote summaries"""
 
     summaries: dict[int, StreamVoteSummary]
+
+
+def _vote_int_to_literal(v: int) -> VoteTypeLiteral:
+    return "up" if v > 0 else "down"
 
 
 class BulkContentRatingSummary(BaseModel):
@@ -141,16 +165,27 @@ async def vote_stream(
             detail="Stream not found",
         )
 
-    # Vote using CRUD function
-    vote = await vote_on_stream(session, current_user.id, stream_id, request.vote)
+    vi = request.resolved_vote_int()
+    vote_row = await vote_on_stream(
+        session,
+        current_user.id,
+        stream_id,
+        vi,
+        comment=request.comment,
+        quality_status=request.quality_status,
+    )
+    voted_at = vote_row.updated_at or vote_row.created_at
     await session.commit()
 
     return StreamVoteResponse(
-        id=vote.id,
-        stream_id=vote.stream_id,
-        user_id=vote.user_id,
-        vote=vote.vote,
-        voted_at=vote.voted_at,
+        id=vote_row.id,
+        stream_id=vote_row.stream_id,
+        user_id=vote_row.user_id,
+        vote=vi,
+        vote_type=_vote_int_to_literal(vi),
+        quality_status=vote_row.quality_status,
+        comment=vote_row.comment,
+        voted_at=voted_at,
     )
 
 
@@ -177,35 +212,45 @@ async def delete_stream_vote(
 @router.get("/streams/{stream_id}/votes", response_model=StreamVoteSummary)
 async def get_stream_votes(
     stream_id: int,
-    current_user: User | None = Depends(require_auth),
+    current_user: User | None = Depends(optional_auth),
     session: AsyncSession = Depends(get_async_session),
 ):
     """
     Get vote summary for a stream.
     """
-    # Get vote counts
     vote_stats = await get_stream_vote_count(session, stream_id)
 
-    # Get user's vote if authenticated
-    user_vote = None
+    user_vote: int | None = None
+    quality_status: str | None = None
+    comment: str | None = None
     if current_user:
         user_vote_obj = await get_user_stream_vote(session, current_user.id, stream_id)
         if user_vote_obj:
-            user_vote = user_vote_obj.vote
+            user_vote = vote_type_to_int(user_vote_obj.vote_type)
+            quality_status = user_vote_obj.quality_status
+            comment = user_vote_obj.comment
+
+    up = vote_stats["upvotes"]
+    down = vote_stats["downvotes"]
+    total = up + down
+    score_percent = int(round(100 * up / total)) if total else 0
 
     return StreamVoteSummary(
         stream_id=stream_id,
-        upvotes=vote_stats["upvotes"],
-        downvotes=vote_stats["downvotes"],
+        upvotes=up,
+        downvotes=down,
         score=vote_stats["score"],
+        score_percent=score_percent,
         user_vote=user_vote,
+        quality_status=quality_status,
+        comment=comment,
     )
 
 
 @router.post("/streams/votes/bulk", response_model=BulkStreamVoteSummary)
 async def get_bulk_stream_votes(
     stream_ids: list[int],
-    current_user: User | None = Depends(require_auth),
+    current_user: User | None = Depends(optional_auth),
     session: AsyncSession = Depends(get_async_session),
 ):
     """
@@ -221,18 +266,30 @@ async def get_bulk_stream_votes(
     for stream_id in stream_ids:
         vote_stats = await get_stream_vote_count(session, stream_id)
 
-        user_vote = None
+        user_vote: int | None = None
+        quality_status: str | None = None
+        comment: str | None = None
         if current_user:
             user_vote_obj = await get_user_stream_vote(session, current_user.id, stream_id)
             if user_vote_obj:
-                user_vote = user_vote_obj.vote
+                user_vote = vote_type_to_int(user_vote_obj.vote_type)
+                quality_status = user_vote_obj.quality_status
+                comment = user_vote_obj.comment
+
+        up = vote_stats["upvotes"]
+        down = vote_stats["downvotes"]
+        total = up + down
+        score_percent = int(round(100 * up / total)) if total else 0
 
         summaries[stream_id] = StreamVoteSummary(
             stream_id=stream_id,
-            upvotes=vote_stats["upvotes"],
-            downvotes=vote_stats["downvotes"],
+            upvotes=up,
+            downvotes=down,
             score=vote_stats["score"],
+            score_percent=score_percent,
             user_vote=user_vote,
+            quality_status=quality_status,
+            comment=comment,
         )
 
     return BulkStreamVoteSummary(summaries=summaries)

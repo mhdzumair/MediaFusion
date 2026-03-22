@@ -22,6 +22,7 @@ from api.dependencies import get_profile_context
 from api.routers.user.auth import require_auth
 from db import crud
 from db.config import settings
+from db.crud.stream_community import empty_stream_signals_dict, fetch_stream_community_signals_batch
 from db.database import get_read_session
 from db.enums import MediaType, UserRole
 from db.models import (
@@ -52,24 +53,24 @@ from db.models.reference import format_catalog_name
 from db.models.streams import StreamType
 from db.schemas import (
     HTTPStreamData,
-    StreamTemplate,
     StreamingProvider,
+    StreamTemplate,
     TelegramStreamData,
     TorrentStreamData,
-    UserData,
     UsenetStreamData,
+    UserData,
     YouTubeStreamData,
 )
 from streaming_providers import mapper
 from streaming_providers.cache_helpers import get_cached_status, store_cached_info_hashes
 from streaming_providers.usenet_compatibility import is_usenet_stream_compatible
+from utils.authenticated_playback_secret import resolve_playback_secret_str_for_ui
 from utils.const import (
     ADULT_GENRE_NAMES,
     CERTIFICATION_MAPPING,
     LANGUAGE_COUNTRY_FLAGS,
     STREAMING_PROVIDERS_SHORT_NAMES,
 )
-from utils.authenticated_playback_secret import resolve_playback_secret_str_for_ui
 from utils.network import encode_mediaflow_acestream_url, get_user_public_ip
 from utils.parser import CatalogFilterStreamData, filter_streams_by_user_preferences, render_stream_template
 from utils.profile_context import ProfileContext, ProfileDataProvider
@@ -1882,6 +1883,7 @@ async def get_catalog_item_streams(
     )
 
     # Format streams for API response
+    signals_by_stream = await fetch_stream_community_signals_batch(session, [s.id for s in streams])
     formatted_streams = []
     for stream in streams:
         # Get type-specific data
@@ -2079,6 +2081,14 @@ async def get_catalog_item_streams(
             "seadexBest": False,
             "provider_type": provider_type,
         }
+
+        sig = signals_by_stream.get(stream.id, empty_stream_signals_dict())
+        stream_context["issue_reports"] = sig["issue_report_count"]
+        stream_context["rating_up"] = sig["rating_up"]
+        stream_context["rating_down"] = sig["rating_down"]
+        stream_context["rating_score"] = sig["rating_score"]
+        stream_context["rating_total"] = sig["rating_total"]
+        stream_context["vote_score"] = sig["rating_score"]
 
         # Build service context for template
         if selected_provider_obj:

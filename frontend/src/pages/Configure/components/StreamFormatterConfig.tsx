@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
@@ -62,6 +62,9 @@ const PRESETS = {
 {if stream.hdr_formats}🎨 {stream.hdr_formats|join(' ')} {/if}{if stream.audio_formats}🎧 {stream.audio_formats|join(' ')} {/if}{if stream.channels}🔊 {stream.channels|join(' ')} {/if}
 {if stream.size > 0}📦 {stream.size|bytes}{if stream.folderSize > stream.size} / {stream.folderSize|bytes}{/if} {/if}{if stream.seeders > 0}👤 {stream.seeders} seeders {/if}
 {if stream.languages}🌐 {stream.languages|join(' | ')}{/if}
+{if stream.issue_reports > 0}⚠️ {stream.issue_reports} issue report(s)
+{/if}{if stream.rating_total > 0}👍 {stream.rating_up} · 👎 {stream.rating_down} · net {stream.rating_score}
+{/if}
 🔗 {stream.source}{if stream.release_group} | 🏷️ {stream.release_group}{/if}{if stream.uploader} | 🧑‍💻 {stream.uploader}{/if}`,
   },
   usenetFocused: {
@@ -107,6 +110,12 @@ const PREVIEW_CONTEXTS = {
         source: 'TGx Movies',
         release_group: 'FraMeSToR',
         uploader: 'UploaderMovie',
+        issue_reports: 1,
+        rating_up: 42,
+        rating_down: 5,
+        rating_score: 37,
+        rating_total: 47,
+        vote_score: 37,
       },
     },
   },
@@ -140,6 +149,12 @@ const PREVIEW_CONTEXTS = {
         source: 'TGx Series',
         release_group: 'NTb',
         uploader: 'UploaderOne',
+        issue_reports: 0,
+        rating_up: 12,
+        rating_down: 2,
+        rating_score: 10,
+        rating_total: 14,
+        vote_score: 10,
       },
     },
   },
@@ -173,6 +188,12 @@ const PREVIEW_CONTEXTS = {
         source: 'Prowlarr Series',
         release_group: 'NOGRP',
         uploader: 'ScenePoster',
+        issue_reports: 0,
+        rating_up: 3,
+        rating_down: 0,
+        rating_score: 3,
+        rating_total: 3,
+        vote_score: 3,
       },
     },
   },
@@ -206,6 +227,12 @@ const PREVIEW_CONTEXTS = {
         source: 'Live TV',
         release_group: '',
         uploader: '',
+        issue_reports: 0,
+        rating_up: 0,
+        rating_down: 0,
+        rating_score: 0,
+        rating_total: 0,
+        vote_score: 0,
       },
     },
   },
@@ -256,6 +283,17 @@ const FIELD_GROUPS = {
       { field: 'stream.source', description: 'Source/catalog name' },
       { field: 'stream.release_group', description: 'Release group name' },
       { field: 'stream.uploader', description: 'Uploader name' },
+    ],
+  },
+  community: {
+    label: '👥 Community (catalog / Stremio)',
+    fields: [
+      { field: 'stream.issue_reports', description: 'Open issue report count (broken, etc.)' },
+      { field: 'stream.rating_up', description: 'Thumb-up count' },
+      { field: 'stream.rating_down', description: 'Thumb-down count' },
+      { field: 'stream.rating_score', description: 'Net score (up minus down)' },
+      { field: 'stream.rating_total', description: 'Total thumb votes' },
+      { field: 'stream.vote_score', description: 'Same as rating_score (alias)' },
     ],
   },
   aioCompat: {
@@ -871,7 +909,10 @@ JSON example:
           <Code className="h-5 w-5 text-primary" />
           Stream Formatter
         </CardTitle>
-        <CardDescription>Customize how stream information is displayed in Stremio using templates</CardDescription>
+        <p className="text-sm text-muted-foreground">
+          Customize how stream titles and descriptions appear in Stremio. Use{' '}
+          <span className="font-medium text-foreground">Available Fields</span> below to copy template variables.
+        </p>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Preset Selection */}

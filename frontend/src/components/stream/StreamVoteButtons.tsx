@@ -45,12 +45,14 @@ export function StreamVoteButtons({ streamId, compact = false, showCounts = true
 
   const [pendingVote, setPendingVote] = useState<VoteType | null>(null)
 
-  const userVote = voteSummary?.user_vote
+  const userVoteInt = voteSummary?.user_vote ?? null
+  const userVoteType: VoteType | null = userVoteInt === 1 ? 'up' : userVoteInt === -1 ? 'down' : null
+  const userQuality = (voteSummary?.quality_status as QualityStatus | null) || null
   const isVoting = voteOnStream.isPending || removeVote.isPending
 
   const handleVote = async (voteType: VoteType, qualityStatus?: QualityStatus) => {
     // If clicking the same vote type without quality status, remove vote
-    if (userVote?.vote_type === voteType && !qualityStatus) {
+    if (userVoteType === voteType && !qualityStatus) {
       await removeVote.mutateAsync(streamId)
       return
     }
@@ -90,9 +92,9 @@ export function StreamVoteButtons({ streamId, compact = false, showCounts = true
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant={userVote?.vote_type === 'up' ? 'default' : 'ghost'}
+                  variant={userVoteType === 'up' ? 'default' : 'ghost'}
                   size={compact ? 'sm' : 'default'}
-                  className={cn('gap-1', userVote?.vote_type === 'up' && 'bg-emerald-600 hover:bg-emerald-700')}
+                  className={cn('gap-1', userVoteType === 'up' && 'bg-emerald-600 hover:bg-emerald-700')}
                   disabled={isVoting}
                 >
                   {pendingVote === 'up' ? (
@@ -133,9 +135,9 @@ export function StreamVoteButtons({ streamId, compact = false, showCounts = true
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant={userVote?.vote_type === 'down' ? 'default' : 'ghost'}
+                  variant={userVoteType === 'down' ? 'default' : 'ghost'}
                   size={compact ? 'sm' : 'default'}
-                  className={cn('gap-1', userVote?.vote_type === 'down' && 'bg-red-600 hover:bg-red-700')}
+                  className={cn('gap-1', userVoteType === 'down' && 'bg-red-600 hover:bg-red-700')}
                   disabled={isVoting}
                 >
                   {pendingVote === 'down' ? (
@@ -197,12 +199,12 @@ export function StreamVoteButtons({ streamId, compact = false, showCounts = true
         )}
 
         {/* User's quality status indicator */}
-        {userVote?.quality_status && (
+        {userQuality && qualityStatusConfig[userQuality] && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Badge variant="secondary" className="ml-1 gap-1">
                 {(() => {
-                  const config = qualityStatusConfig[userVote.quality_status]
+                  const config = qualityStatusConfig[userQuality]
                   const Icon = config.icon
                   return (
                     <>
@@ -268,7 +270,7 @@ export function StreamPopularityBadge({
  * Compact vote summary display (read-only)
  */
 export function StreamVoteSummary({ summary, className }: { summary: StreamVoteSummary; className?: string }) {
-  const { upvotes, downvotes, working_count, broken_count, score_percent } = summary
+  const { upvotes, downvotes, score_percent } = summary
   const totalVotes = upvotes + downvotes
 
   if (totalVotes === 0) return null
@@ -299,34 +301,6 @@ export function StreamVoteSummary({ summary, className }: { summary: StreamVoteS
             <p>{downvotes} downvotes</p>
           </TooltipContent>
         </Tooltip>
-
-        {working_count > 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center gap-1 text-emerald-500">
-                <CheckCircle2 className="h-3 w-3" />
-                <span>{working_count}</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{working_count} users say working</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
-
-        {broken_count > 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center gap-1 text-red-500">
-                <XCircle className="h-3 w-3" />
-                <span>{broken_count}</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{broken_count} users report broken</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
 
         <Badge
           variant="outline"
