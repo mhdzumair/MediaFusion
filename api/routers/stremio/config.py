@@ -14,7 +14,7 @@ from db import schemas
 from db.config import settings
 from streaming_providers.validator import validate_provider_credentials
 from utils import const, wrappers
-from utils.crypto import crypto_utils
+from utils.crypto import UserFacingSecretError, crypto_utils
 from utils.network import get_user_data
 from utils.profile_crypto import profile_crypto
 from utils.validation_helper import (
@@ -125,6 +125,8 @@ async def encrypt_user_data(
     if existing_secret_str:
         try:
             existing_config = await crypto_utils.decrypt_user_data(existing_secret_str)
+        except UserFacingSecretError as e:
+            return {"status": "error", "message": str(e)}
         except ValueError:
             existing_config = schemas.UserData()
 
@@ -144,5 +146,11 @@ async def encrypt_user_data(
     if validation_result["status"] == "error":
         return validation_result
 
-    encrypted_str = await crypto_utils.process_user_data(user_data)
+    try:
+        encrypted_str = await crypto_utils.process_user_data(user_data)
+    except UserFacingSecretError as e:
+        return {"status": "error", "message": str(e)}
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+
     return {"status": "success", "encrypted_str": encrypted_str}

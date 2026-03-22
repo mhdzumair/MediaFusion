@@ -17,7 +17,7 @@ async def resolve_playback_secret_str_for_ui(
     user_data_embed_fallback: UserData,
 ) -> str:
     """
-    Prefer U-{{uuid}} for a stored profile; fall back to D-/R- only when no DB profile exists.
+    Prefer U-{{uuid}} for a stored profile; fall back to D- only when no DB profile exists (no R-).
     """
     if profile_ctx.profile_id is not None:
         profile = await session.get(UserProfile, profile_ctx.profile_id)

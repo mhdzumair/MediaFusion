@@ -15,7 +15,7 @@ from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
 from utils import const
-from utils.crypto import crypto_utils
+from utils.crypto import UserFacingSecretError, crypto_utils
 from utils.network import get_client_ip
 from utils.parser import create_exception_stream
 from utils.request_tracker import record_request
@@ -111,7 +111,12 @@ class UserDataMiddleware(BaseHTTPMiddleware):
             else:
                 secret_str = request.path_params.get("secret_str") or request.query_params.get("secret_str")
                 user_data = await crypto_utils.decrypt_user_data(secret_str)
-        except (ValueError, ValidationError):
+        except (ValueError, ValidationError) as e:
+            user_hint = str(e) if isinstance(e, UserFacingSecretError) else ""
+            base_invalid = (
+                "Invalid MediaFusion configuration.\nDelete the Invalid MediaFusion installed addon and reconfigure it."
+            )
+            streams_msg = f"{base_invalid}\n\n{user_hint}" if user_hint else base_invalid
             # check if the endpoint is for /streams
             if endpoint and endpoint.__name__ == "get_streams":
                 return JSONResponse(
@@ -119,7 +124,7 @@ class UserDataMiddleware(BaseHTTPMiddleware):
                         "streams": [
                             create_exception_stream(
                                 settings.addon_name,
-                                "Invalid MediaFusion configuration.\nDelete the Invalid MediaFusion installed addon and reconfigure it.",
+                                streams_msg,
                                 "invalid_config.mp4",
                             ).model_dump(exclude_none=True, by_alias=True)
                         ]
@@ -130,7 +135,7 @@ class UserDataMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 {
                     "status": "error",
-                    "message": "Invalid user data",
+                    "message": user_hint or "Invalid user data",
                 }
             )
 

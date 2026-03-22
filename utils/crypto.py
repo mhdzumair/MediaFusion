@@ -1,7 +1,6 @@
 import hashlib
 import json
 import logging
-import secrets
 import time
 import zlib
 from base64 import urlsafe_b64decode, urlsafe_b64encode
@@ -23,17 +22,32 @@ from utils.profile_crypto import profile_crypto
 logger = logging.getLogger(__name__)
 
 # Constants
-REDIS_THRESHOLD = 1000  # Threshold for Redis storage in characters
+URL_EMBEDDED_USERDATA_MAX_LEN = 2000  # Max url-safe chars for D- (direct) encrypted payload
 DIRECT_PREFIX = "D-"  # Prefix for direct encrypted data
-REDIS_PREFIX = "R-"  # Prefix for Redis-stored data
+REDIS_LEGACY_PREFIX = "R-"  # Deprecated: was Redis-stored pointer; rejected with guidance to use U-
 UUID_PREFIX = "U-"  # Prefix for UUID-based dynamic config resolution
 UUID_CACHE_PREFIX = "user_profile:"  # Redis key prefix for UUID-cached profile data
-UUID_CACHE_TTL = 2592000  # 30 days in seconds (same as R- expiry)
+UUID_CACHE_TTL = 2592000  # 30 days in seconds
+
+CONFIG_TOO_LARGE_FOR_URL_MESSAGE = (
+    "Your configuration is too large to embed in the install URL. "
+    "Sign in and save a profile (logged-in install), then use the install link that starts with U-."
+)
+
+DEPRECATED_REDIS_BACKED_SECRET_MESSAGE = (
+    "This link used a removed configuration format that depended on server cache (R-). "
+    "Sign in, save your settings as a profile, and install using the profile link (starts with U-)."
+)
+
 DECRYPT_CACHE_TTL_SECONDS = 120  # in-process cache TTL for decrypted secret strings
 DECRYPT_CACHE_MAX_ENTRIES = 2048  # bounded cache size to avoid unbounded memory growth
 INVALID_SECRET_CACHE_TTL_SECONDS = 300  # short-circuit repeated invalid secrets for 5 minutes
 INVALID_SECRET_CACHE_MAX_ENTRIES = 4096  # bounded size for invalid-secret bloom cache
 MAX_SECRET_STR_LENGTH = 4096  # defensive cap against very large malformed inputs
+
+
+class UserFacingSecretError(ValueError):
+    """Raised when secret handling fails with a message that is safe to show to the user."""
 
 
 def make_urlsafe(data: bytes) -> str:
@@ -152,16 +166,6 @@ class CryptoUtils:
         with self._invalid_secret_cache_mu:
             self._invalid_secret_cache.pop(digest, None)
 
-    def _generate_storage_key(self, data_hash: str, random_chars: str) -> str:
-        """Generate Redis storage key with prefix"""
-        return f"user_{data_hash}{random_chars}"
-
-    def _generate_random_chars(self, length: int = None) -> str:
-        """Generate random characters of variable length to add entropy"""
-        if length is None:
-            length = secrets.randbelow(14) + 5  # Random length between 5-18
-        return secrets.token_urlsafe(length)[:length]
-
     def _compress_and_encrypt(self, data: str) -> tuple[bytes, bytes]:
         """Compress and encrypt data, returning both IV and final data"""
         # First compress the data
@@ -184,10 +188,12 @@ class CryptoUtils:
         unpadded_data = unpad(decrypted_data, AES.block_size)
         return zlib.decompress(unpadded_data).decode("utf-8")
 
-    async def process_user_data(self, user_data: UserData, expire_seconds: int = 2592000) -> str:
+    async def process_user_data(self, user_data: UserData) -> str:
         """
-        Process user data with optimized compression and encryption
-        Returns prefixed string indicating storage method used
+        Compress, encrypt, and return a D- prefixed URL-safe secret.
+
+        Config larger than URL_EMBEDDED_USERDATA_MAX_LEN cannot be embedded; callers must use a
+        stored profile (U-{{uuid}}) instead of Redis-backed R- pointers.
         """
         try:
             # Convert user data to JSON
@@ -208,30 +214,22 @@ class CryptoUtils:
             # Convert to URL-safe string
             urlsafe_data = make_urlsafe(final_data)
 
-            # Check length and decide storage method
-            if len(urlsafe_data) <= REDIS_THRESHOLD:
+            if len(urlsafe_data) <= URL_EMBEDDED_USERDATA_MAX_LEN:
                 return f"{DIRECT_PREFIX}{urlsafe_data}"
 
-            # Store in Redis if too long
-            data_hash = hashlib.md5(final_data).hexdigest()
-            random_chars = self._generate_random_chars()
-            storage_key = self._generate_storage_key(data_hash, random_chars)
+            raise UserFacingSecretError(CONFIG_TOO_LARGE_FOR_URL_MESSAGE)
 
-            # Store raw encrypted data in Redis (no need for URL-safe encoding)
-            await REDIS_ASYNC_CLIENT.setex(storage_key, expire_seconds, final_data)
-
-            return f"{REDIS_PREFIX}{data_hash}{random_chars}"
-
+        except UserFacingSecretError:
+            raise
         except Exception as e:
             logger.error(f"Failed to process user data: {e}")
             raise ValueError("Failed to process user data")
 
     async def decrypt_user_data(self, secret_str: str) -> UserData:
         """
-        Decrypt user data from either storage method
+        Decrypt user data from a D- (direct) or U- (profile UUID) secret.
         Args:
-            secret_str: Prefixed string containing either direct data, Redis key,
-                        or UUID for dynamic config resolution
+            secret_str: Prefixed string (D- encrypted payload or U- profile UUID).
         Returns:
             UserData object
         """
@@ -250,8 +248,10 @@ class CryptoUtils:
             return cached_user_data
 
         try:
-            # Handle legacy format (no prefix)
-            if not secret_str.startswith((DIRECT_PREFIX, REDIS_PREFIX, UUID_PREFIX)):
+            if secret_str.startswith(REDIS_LEGACY_PREFIX):
+                raise UserFacingSecretError(DEPRECATED_REDIS_BACKED_SECRET_MESSAGE)
+
+            if not secret_str.startswith((DIRECT_PREFIX, UUID_PREFIX)):
                 raise ValueError("Invalid user data")
 
             prefix = secret_str[:2]
@@ -268,21 +268,16 @@ class CryptoUtils:
                 self._cache_decrypted_user_data(secret_str, user_data)
                 return user_data
 
-            elif prefix == REDIS_PREFIX:
-                user_data = await self.retrieve_and_decrypt(data)
-                self._clear_invalid_secret(secret_str)
-                self._cache_decrypted_user_data(secret_str, user_data)
-                return user_data
-
-            elif prefix == UUID_PREFIX:
+            if prefix == UUID_PREFIX:
                 user_data = await self._resolve_uuid_profile(data)
                 self._clear_invalid_secret(secret_str)
                 self._cache_decrypted_user_data(secret_str, user_data)
                 return user_data
 
-            else:
-                raise ValueError("Invalid prefix")
+            raise ValueError("Invalid prefix")
 
+        except UserFacingSecretError:
+            raise
         except ValueError as e:
             is_new_invalid_secret = self._mark_invalid_secret(secret_str)
             log_fn = logger.warning if is_new_invalid_secret else logger.debug
@@ -511,36 +506,6 @@ class CryptoUtils:
             return make_urlsafe(json_str.encode("utf-8"))
         except Exception:
             raise ValueError("Failed to encode user data")
-
-    async def retrieve_and_decrypt(self, storage_id: str) -> UserData:
-        """Retrieve and decrypt user data from Redis"""
-        if not storage_id or len(storage_id) < 37:
-            raise ValueError("Invalid storage ID")
-
-        try:
-            data_hash = storage_id[:32]
-            random_chars = storage_id[32:]
-            storage_key = self._generate_storage_key(data_hash, random_chars)
-
-            # Get data and update expiry
-            encrypted_data = await REDIS_ASYNC_CLIENT.getex(
-                storage_key,
-                ex=2592000,  # Reset expiry to 30 days on access
-            )
-
-            if not encrypted_data:
-                raise ValueError("User data not found or expired")
-
-            # Decrypt the raw data from Redis
-            iv = encrypted_data[:16]
-            data = encrypted_data[16:]
-            json_str = self._decrypt_and_decompress(iv, data)
-
-            return UserData.model_validate_json(json_str)
-
-        except Exception as e:
-            logger.error(f"Failed to retrieve and decrypt user data: {e}")
-            raise ValueError("Invalid or expired user data")
 
 
 # Keep existing functions for backward compatibility
