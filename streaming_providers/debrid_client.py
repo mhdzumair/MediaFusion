@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from abc import abstractmethod
+from typing import ClassVar
 from base64 import b64decode, b64encode
 from contextlib import AsyncContextDecorator
 
@@ -16,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 class DebridClient(AsyncContextDecorator):
+    # Subclass: streaming provider service id (for requests_proxy_exclude_debrid_providers).
+    debrid_proxy_provider_id: ClassVar[str] = ""
+
     def __init__(self, token: str | None = None):
         self.token = token
         self.is_private_token = False
@@ -27,8 +31,9 @@ class DebridClient(AsyncContextDecorator):
     def session(self) -> aiohttp.ClientSession:
         if self._session is None:
             connector = aiohttp.TCPConnector(ttl_dns_cache=300)
-            if settings.requests_proxy_url:
-                connector = ProxyConnector.from_url(settings.requests_proxy_url)
+            proxy_url = settings.requests_proxy_url_for_debrid_provider(self.__class__.debrid_proxy_provider_id)
+            if proxy_url:
+                connector = ProxyConnector.from_url(proxy_url)
             self._session = aiohttp.ClientSession(timeout=self._timeout, connector=connector)
         return self._session
 

@@ -1,5 +1,5 @@
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 import aiohttp
 
@@ -8,6 +8,7 @@ from streaming_providers.exceptions import ProviderException
 
 
 class AllDebrid(DebridClient):
+    debrid_proxy_provider_id: ClassVar[str] = "alldebrid"
     BASE_URL = "https://api.alldebrid.com/v4.1"
     AGENT = "mediafusion"
 

@@ -17,6 +17,8 @@ from streaming_providers.torbox.client import Torbox
 
 
 class _DummyDebridClient(DebridClient):
+    debrid_proxy_provider_id = "_dummy"
+
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
         return
 

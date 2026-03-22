@@ -1,6 +1,6 @@
 from base64 import b64decode, b64encode
 from binascii import Error as BinasciiError
-from typing import Any
+from typing import Any, ClassVar
 
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
@@ -48,6 +48,7 @@ REALDEBRID_ERROR_CODE_MAP: dict[int, tuple[str, str]] = {
 
 
 class RealDebrid(DebridClient):
+    debrid_proxy_provider_id: ClassVar[str] = "realdebrid"
     BASE_URL = "https://api.real-debrid.com/rest/1.0"
     OAUTH_URL = "https://api.real-debrid.com/oauth/v2"
     OPENSOURCE_CLIENT_ID = "X245A4XAIBGVM"

@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 import aiohttp
 
@@ -14,6 +14,7 @@ DL_TORRENT_LIST_MAX_PAGES = 100
 
 
 class DebridLink(DebridClient):
+    debrid_proxy_provider_id: ClassVar[str] = "debridlink"
     BASE_URL = "https://debrid-link.com/api/v2"
     OAUTH_URL = "https://debrid-link.com/api/oauth"
     OPENSOURCE_CLIENT_ID = "RyrV22FOg30DsxjYPziRKA"

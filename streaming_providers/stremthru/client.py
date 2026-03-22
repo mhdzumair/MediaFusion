@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urljoin
 
 from streaming_providers.debrid_client import DebridClient
@@ -14,6 +14,7 @@ class StremThruError(Exception):
 
 
 class StremThru(DebridClient):
+    debrid_proxy_provider_id: ClassVar[str] = "stremthru"
     AGENT = "mediafusion"
     auth: str | dict
 

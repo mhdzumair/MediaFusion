@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 import aiohttp
 
@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class Torbox(DebridClient):
+    debrid_proxy_provider_id: ClassVar[str] = "torbox"
     BASE_URL = "https://api.torbox.app/v1/api"
 
     async def initialize_headers(self):

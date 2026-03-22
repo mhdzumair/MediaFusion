@@ -2,7 +2,7 @@ import json
 from copy import deepcopy
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -68,6 +68,24 @@ def _dedupe_links(links: list[str]) -> list[str]:
         seen.add(link)
         deduped.append(link)
     return deduped
+
+
+# Valid ids for requests_proxy_exclude_debrid_providers (same names as streaming provider service).
+REQUESTS_PROXY_EXCLUDE_DEBRID_IDS: frozenset[str] = frozenset(
+    {
+        "realdebrid",
+        "seedr",
+        "debridlink",
+        "alldebrid",
+        "offcloud",
+        "pikpak",
+        "torbox",
+        "premiumize",
+        "stremthru",
+        "easydebrid",
+        "debrider",
+    }
+)
 
 
 class Settings(BaseSettings):
@@ -151,6 +169,8 @@ class Settings(BaseSettings):
 
     # External Service URLs
     requests_proxy_url: str | None = None
+    # Do not route these debrid/streaming API clients through requests_proxy_url (direct egress).
+    requests_proxy_exclude_debrid_providers: list[str] = Field(default_factory=list)
     scrapling_proxy_url: str | None = None
     scrapling_cdp_url: str | None = None
     scrapling_headless: bool = True
@@ -521,6 +541,45 @@ class Settings(BaseSettings):
         data["provider_signup_links"] = merged_links
         return data
 
+    @field_validator("requests_proxy_exclude_debrid_providers", mode="before")
+    @classmethod
+    def coerce_requests_proxy_exclude_debrid_providers(cls, value: object) -> list[str]:
+        if value is None or value == "":
+            return []
+        items: list[str] = []
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                items = [p.strip() for p in value.split(",") if p.strip()]
+            else:
+                if not isinstance(parsed, list):
+                    raise ValueError(
+                        "requests_proxy_exclude_debrid_providers must be a JSON array or comma-separated ids"
+                    )
+                items = [str(x).strip() for x in parsed if str(x).strip()]
+        elif isinstance(value, list):
+            items = [str(x).strip() for x in value if str(x).strip()]
+        else:
+            raise ValueError("Invalid requests_proxy_exclude_debrid_providers")
+        normalized: list[str] = []
+        for raw in items:
+            key = raw.casefold()
+            if key not in REQUESTS_PROXY_EXCLUDE_DEBRID_IDS:
+                raise ValueError(
+                    f"Unknown provider {raw!r} for requests_proxy_exclude_debrid_providers; "
+                    f"allowed: {sorted(REQUESTS_PROXY_EXCLUDE_DEBRID_IDS)}"
+                )
+            normalized.append(key)
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for k in normalized:
+            if k in seen:
+                continue
+            seen.add(k)
+            deduped.append(k)
+        return deduped
+
     @model_validator(mode="after")
     def default_poster_host_url(self) -> "Settings":
         if not self.poster_host_url:
@@ -538,6 +597,14 @@ class Settings(BaseSettings):
                 self.s3_bucket_name,
             ]
         )
+
+    def requests_proxy_url_for_debrid_provider(self, provider_id: str) -> str | None:
+        """Global requests proxy unless this streaming/debrid service id is excluded."""
+        if not self.requests_proxy_url:
+            return None
+        if provider_id.casefold() in self.requests_proxy_exclude_debrid_providers:
+            return None
+        return self.requests_proxy_url
 
     class Config:
         env_file = ".env"

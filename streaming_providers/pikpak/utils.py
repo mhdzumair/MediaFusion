@@ -163,7 +163,7 @@ async def initialize_pikpak(streaming_provider: StreamingProvider):
             httpx_client_args={
                 "transport": httpx.AsyncHTTPTransport(retries=3),
                 "timeout": 10,
-                "proxy": settings.requests_proxy_url,
+                "proxy": settings.requests_proxy_url_for_debrid_provider("pikpak"),
             },
             token_refresh_callback=store_pikpak_token_in_cache,
             token_refresh_callback_kwargs={"streaming_provider": streaming_provider},
@@ -175,7 +175,7 @@ async def initialize_pikpak(streaming_provider: StreamingProvider):
             httpx_client_args={
                 "transport": httpx.AsyncHTTPTransport(retries=3),
                 "timeout": 10,
-                "proxy": settings.requests_proxy_url,
+                "proxy": settings.requests_proxy_url_for_debrid_provider("pikpak"),
             },
             token_refresh_callback=store_pikpak_token_in_cache,
             token_refresh_callback_kwargs={"streaming_provider": streaming_provider},

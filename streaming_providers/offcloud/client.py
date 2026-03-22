@@ -1,5 +1,6 @@
 import asyncio
 from os import path
+from typing import ClassVar
 
 import aiohttp
 
@@ -12,6 +13,7 @@ from streaming_providers.parser import (
 
 
 class OffCloud(DebridClient):
+    debrid_proxy_provider_id: ClassVar[str] = "offcloud"
     BASE_URL = "https://offcloud.com"
 
     async def initialize_headers(self):

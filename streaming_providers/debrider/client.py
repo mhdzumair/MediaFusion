@@ -1,8 +1,11 @@
+from typing import ClassVar
+
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
 
 
 class Debrider(DebridClient):
+    debrid_proxy_provider_id: ClassVar[str] = "debrider"
     BASE_URL = "https://debrider.app/api/v1"
 
     def __init__(self, token: str | None = None, user_ip: str | None = None):

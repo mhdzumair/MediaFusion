@@ -1,3 +1,4 @@
+from typing import ClassVar
 from urllib.parse import quote_plus
 from uuid import uuid4
 
@@ -9,6 +10,7 @@ from streaming_providers.exceptions import ProviderException
 
 
 class Premiumize(DebridClient):
+    debrid_proxy_provider_id: ClassVar[str] = "premiumize"
     BASE_URL = "https://www.premiumize.me/api"
     OAUTH_TOKEN_URL = "https://www.premiumize.me/token"
     OAUTH_URL = "https://www.premiumize.me/authorize"
