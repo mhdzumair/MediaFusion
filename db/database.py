@@ -4,6 +4,7 @@ import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+import asyncpg
 from sqlalchemy import event, exc, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -88,9 +89,24 @@ def _install_asyncpg_guards(engine: AsyncEngine) -> None:
                 raise exc.DisconnectionError(f"asyncpg protocol in state {state}, expected idle (0)")
 
     @event.listens_for(engine.sync_engine, "handle_error")
-    def _handle_replica_conflict(context):
-        if context.original_exception and _REPLICA_CONFLICT_MSG in str(context.original_exception):
+    def _handle_asyncpg_disconnect_signals(context):
+        orig = context.original_exception
+        if orig is None:
+            return
+        msg = str(orig)
+        if _REPLICA_CONFLICT_MSG in msg:
             logger.warning("Read replica conflict detected, invalidating connection")
+            context.invalidate_pool_on_disconnect = False
+            context.is_disconnect = True
+            return
+        if isinstance(orig, asyncpg.exceptions.ConnectionDoesNotExistError):
+            logger.warning("asyncpg connection closed mid-operation, invalidating connection")
+            context.invalidate_pool_on_disconnect = False
+            context.is_disconnect = True
+            return
+        lowered = msg.lower()
+        if "connection was closed in the middle of operation" in lowered:
+            logger.warning("DB connection closed mid-operation, invalidating connection")
             context.invalidate_pool_on_disconnect = False
             context.is_disconnect = True
 

@@ -37,6 +37,8 @@ class StremioScraper(BaseScraper):
         episode: int | None = None,
     ) -> list[TorrentStreamData]:
         url = self._generate_url(user_data, metadata, catalog_type, season, episode)
+        if not url:
+            return []
         try:
             response = await self.make_request(url)
             response.raise_for_status()

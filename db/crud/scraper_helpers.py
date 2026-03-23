@@ -18,7 +18,7 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, or_
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import noload, selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -1225,11 +1225,14 @@ async def get_stream_by_info_hash(
     if load_relations:
         query = query.options(
             selectinload(TorrentStream.trackers),
-            selectinload(TorrentStream.stream).selectinload(Stream.languages),
-            selectinload(TorrentStream.stream).selectinload(Stream.audio_formats),
-            selectinload(TorrentStream.stream).selectinload(Stream.channels),
-            selectinload(TorrentStream.stream).selectinload(Stream.hdr_formats),
-            selectinload(TorrentStream.stream).selectinload(Stream.files).selectinload(StreamFile.media_links),
+            selectinload(TorrentStream.stream).options(
+                noload(Stream.uploader_user),
+                selectinload(Stream.languages),
+                selectinload(Stream.audio_formats),
+                selectinload(Stream.channels),
+                selectinload(Stream.hdr_formats),
+                selectinload(Stream.files).selectinload(StreamFile.media_links),
+            ),
         )
 
     result = await session.exec(query)

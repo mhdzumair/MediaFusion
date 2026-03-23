@@ -848,7 +848,7 @@ async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
                 "quality": ace.stream.quality,
                 "codec": ace.stream.codec,
                 "source": ace.stream.source,
-                "languages": [lang.lang for lang in (ace.stream.languages or [])],
+                "languages": [lang.name for lang in (ace.stream.languages or [])],
             }
             for ace in acestream_streams
         ]
@@ -1069,7 +1069,7 @@ async def _fetch_series_raw_streams(media_id: int, season: int, episode: int, vi
                 "quality": ace.stream.quality,
                 "codec": ace.stream.codec,
                 "source": ace.stream.source,
-                "languages": [lang.lang for lang in (ace.stream.languages or [])],
+                "languages": [lang.name for lang in (ace.stream.languages or [])],
             }
             for ace in acestream_streams
         ]

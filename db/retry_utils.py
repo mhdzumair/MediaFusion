@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
+import asyncpg
 from sqlalchemy.exc import DBAPIError, PendingRollbackError, TimeoutError as SQLAlchemyTimeoutError
 
 T = TypeVar("T")
@@ -26,6 +27,7 @@ RETRYABLE_DB_ERROR_MARKERS = (
     "canceling statement due to conflict with recovery",
     "queuepool limit",
     "connection timed out",
+    "connectiondoesnotexist",
 )
 
 
@@ -45,6 +47,8 @@ def is_retryable_db_error(exc: BaseException) -> bool:
         if isinstance(current, PendingRollbackError):
             return True
         if isinstance(current, DBAPIError) and current.connection_invalidated:
+            return True
+        if isinstance(current, asyncpg.exceptions.ConnectionDoesNotExistError):
             return True
 
         message = str(current).lower()

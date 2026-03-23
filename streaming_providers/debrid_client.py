@@ -101,6 +101,18 @@ class DebridClient(AsyncContextDecorator):
         except Exception as error:
             await self._handle_request_error(error)
 
+    def _maybe_raise_need_premium_for_subscription_api_message(self, error_dict: dict | None) -> None:
+        """Map plan/subscription errors that mention API access (e.g. Debrider) to need_premium."""
+        if error_dict is None:
+            return
+        raw = error_dict.get("message")
+        if not isinstance(raw, str) or not raw.strip():
+            return
+        text = raw.strip()
+        lowered = text.lower()
+        if "subscription" in lowered and "api" in lowered:
+            raise ProviderException(text, "need_premium.mp4")
+
     async def _check_response_status(self, response: ClientResponse, is_expected_to_fail: bool):
         """Check response status and handle HTTP errors."""
         try:
@@ -111,15 +123,29 @@ class DebridClient(AsyncContextDecorator):
 
             content_type = response.headers.get("Content-Type", "").lower()
             error_content: dict | str
-            if "application/json" in content_type:
+            if "application/json" in content_type or "+json" in content_type:
                 try:
                     error_content = await response.json()
                 except (ValueError, ContentTypeError):
                     error_content = await response.text()
-                if isinstance(error_content, dict):
-                    await self._handle_service_specific_errors(error_content, error.status)
             else:
                 error_content = await response.text()
+
+            error_dict: dict | None = None
+            if isinstance(error_content, dict):
+                error_dict = error_content
+            elif isinstance(error_content, str) and error_content.strip():
+                try:
+                    parsed = json.loads(error_content.strip())
+                    if isinstance(parsed, dict):
+                        error_dict = parsed
+                except (ValueError, TypeError):
+                    pass
+
+            if error_dict is not None:
+                await self._handle_service_specific_errors(error_dict, error.status)
+
+            self._maybe_raise_need_premium_for_subscription_api_message(error_dict)
 
             if error.status == 401:
                 raise ProviderException("Invalid token", "invalid_token.mp4")
@@ -128,10 +154,12 @@ class DebridClient(AsyncContextDecorator):
                 raise ProviderException("Too many requests", "too_many_requests.mp4")
 
             if error.status == 403:
-                if isinstance(error_content, dict):
-                    message = error_content.get("message")
+                if error_dict is not None:
+                    message = error_dict.get("message")
                     if isinstance(message, str) and message.strip():
                         raise ProviderException(message.strip(), "api_error.mp4")
+                elif isinstance(error_content, str) and error_content.strip():
+                    raise ProviderException(error_content.strip(), "api_error.mp4")
                 raise ProviderException("Access forbidden", "api_error.mp4")
 
             if error.status in [500, 502, 503, 504]:

@@ -34,7 +34,25 @@ def _is_torrentio_error_placeholder_url(url: str | None) -> bool:
         return True
     if "/videos/" in u and u.endswith(".mp4") and ("error" in u or "unavailable" in u or "not_cached" in u):
         return True
+    # Any plugin-hosted .mp4 under /videos/ is a status placeholder, not a torrent URL
+    if "/videos/" in u and u.endswith(".mp4"):
+        return True
     return False
+
+
+def _torrentio_stream_url_candidates(stream: dict) -> list[str]:
+    """Collect URL-like fields Stremio / Torrentio may use for the stream target."""
+    out: list[str] = []
+    for key in ("url", "externalUrl", "videoUrl"):
+        val = stream.get(key)
+        if isinstance(val, str) and val.strip():
+            out.append(val.strip())
+    sources = stream.get("sources")
+    if isinstance(sources, list):
+        for item in sources:
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip())
+    return out
 
 
 class TorrentioScraper(StremioScraper):
@@ -59,11 +77,11 @@ class TorrentioScraper(StremioScraper):
         catalog_type: str,
         season: int | None = None,
         episode: int | None = None,
-    ) -> str:
+    ) -> str | None:
         # Torrentio requires IMDb ID
         imdb_id = metadata.get_imdb_id()
         if not imdb_id:
-            raise ValueError(f"Torrentio requires IMDb ID, but none available for {metadata.title}")
+            return None
 
         primary_provider = user_data.get_primary_provider()
         user_data_str = (
@@ -86,34 +104,61 @@ class TorrentioScraper(StremioScraper):
         season: int = None,
         episode: int = None,
     ) -> list[TorrentStreamData]:
+        if not metadata.get_imdb_id():
+            self.logger.info(
+                "Skipping Torrentio: no IMDb ID for %r (catalog_type=%s)",
+                metadata.title,
+                catalog_type,
+            )
+            self.metrics.record_skip("no_imdb_id")
+            return []
         return await super()._scrape_and_parse(user_data, metadata, catalog_type, season, episode)
 
     def get_adult_content_field(self, stream_data: dict[str, Any]) -> str:
-        return stream_data["title"]
+        title = stream_data.get("title")
+        return str(title) if title is not None else ""
 
     def get_scraper_name(self) -> str:
         return "Torrentio"
 
     def parse_stream_title(self, stream: dict) -> tuple[dict, bool]:
         try:
+            for candidate in _torrentio_stream_url_candidates(stream):
+                if _is_torrentio_error_placeholder_url(candidate):
+                    return None, False
+
             descriptions = stream.get("title")
-            torrent_name = descriptions.splitlines()[0]
+            if not descriptions or not str(descriptions).strip():
+                return None, False
+            torrent_name = str(descriptions).splitlines()[0]
             metadata = PTT.parse_title(torrent_name, True)
-            source = stream["name"].splitlines()[0].split()[-1]
+            name_raw = stream.get("name")
+            if not name_raw or not str(name_raw).strip():
+                return None, False
+            name_first_line = str(name_raw).splitlines()[0].split()
+            if not name_first_line:
+                return None, False
+            source = name_first_line[-1]
             info_hash = stream.get("infoHash")
             if not info_hash:
-                url = stream.get("url", "")
-                if _is_torrentio_error_placeholder_url(url):
-                    return None, False
-                match = re.search(r"\b([a-fA-F0-9]{40})\b", url)
-                if match:
-                    info_hash = match.group(1)
+                last_url = ""
+                for candidate in _torrentio_stream_url_candidates(stream):
+                    if _is_torrentio_error_placeholder_url(candidate):
+                        return None, False
+                    last_url = candidate
+                    match = re.search(r"\b([a-fA-F0-9]{40})\b", candidate)
+                    if match:
+                        info_hash = match.group(1)
+                        break
                 if not info_hash:
-                    raise ValueError(
-                        f"Cannot extract info_hash from stream: no infoHash and URL has unexpected format: {url!r}"
+                    self.logger.debug(
+                        "Skipping Torrentio stream: no info_hash (url=%r, keys=%s)",
+                        last_url,
+                        list(stream.keys()),
                     )
+                    return None, False
 
-            is_cached = "+" in stream["name"]
+            is_cached = "+" in str(name_raw)
             metadata.update(
                 {
                     "source": source,

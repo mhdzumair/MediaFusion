@@ -21,14 +21,10 @@ class Debrider(DebridClient):
         pass
 
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
-        if status_code != 403:
-            return
-        raw = error_data.get("message")
-        if not isinstance(raw, str) or not raw.strip():
-            return
-        lowered = raw.lower()
-        if "subscription" in lowered and "api" in lowered:
-            raise ProviderException(raw.strip(), "need_premium.mp4")
+        # Subscription / API plan errors are handled in DebridClient._check_response_status
+        # (_maybe_raise_need_premium_for_subscription_api_message) so JSON bodies work for any
+        # Content-Type and HTTP status (e.g. 400 + JSON).
+        pass
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await super().__aexit__(exc_type, exc_val, exc_tb)
