@@ -250,6 +250,7 @@ STREAMING_PROVIDERS_SHORT_NAMES = {
     # Usenet providers
     "sabnzbd": "SAB",
     "nzbget": "NZB",
+    "nzbdav": "DAV",
     "easynews": "EN",
     "stremio_nntp": "NNTP",
 }
