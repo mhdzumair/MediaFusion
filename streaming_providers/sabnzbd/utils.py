@@ -91,7 +91,10 @@ async def get_files_from_folder(webdav: WebDavClient, base_url_path: str, root_p
             continue
 
         if item["isdir"]:
-            files.extend(await get_files_from_folder(webdav, base_url_path, item["path"].removeprefix(base_url_path)))
+            nested = item["path"].removeprefix(base_url_path)
+            if not nested.startswith("/"):
+                nested = f"/{nested}"
+            files.extend(await get_files_from_folder(webdav, base_url_path, nested))
         else:
             item.update(
                 {

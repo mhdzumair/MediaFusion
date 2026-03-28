@@ -14,7 +14,7 @@ from typing import Any
 from urllib.parse import quote, urljoin, urlparse
 
 from aiowebdav.client import Client as WebDavClient
-from aiowebdav.exceptions import NoConnection
+from aiowebdav.exceptions import NoConnection, ResponseErrorCode
 
 from db.schemas import StreamingProvider
 from db.schemas.media import UsenetStreamData
@@ -24,6 +24,18 @@ from streaming_providers.sabnzbd.utils import (
     get_files_from_folder,
     select_file_from_usenet,
 )
+
+
+def _nzbdav_job_folder_guesses(download_name: str, stream: UsenetStreamData) -> list[str]:
+    """SAB API job name and stream title may differ from the Dav folder name; try both."""
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for raw in (download_name, getattr(stream, "name", None) or ""):
+        name = (raw or "").strip()
+        if name and name not in seen:
+            seen.add(name)
+            ordered.append(name)
+    return ordered
 
 
 @asynccontextmanager
@@ -65,20 +77,48 @@ async def initialize_webdav(streaming_provider: StreamingProvider) -> AsyncGener
 
     webdav = None
     try:
+        # NzbDAV returns 204 for collection HEAD; aiowebdav's check() only accepts 200 and blocks PROPFIND.
         webdav_options = {
             "webdav_hostname": config.url.rstrip("/"),
             "webdav_login": config.webdav_username,
             "webdav_password": config.webdav_password,
+            "webdav_disable_check": True,
         }
         webdav = WebDavClient(webdav_options)
-        if not await webdav.check():
-            raise ProviderException("Failed to connect to NzbDAV WebDAV server", "invalid_credentials.mp4")
+        try:
+            await webdav.list("/", get_info=True)
+        except ResponseErrorCode as exc:
+            if int(exc.code) in (401, 403):
+                raise ProviderException(
+                    "NzbDAV WebDAV rejected credentials (HTTP %s). Set WebDAV username and password from "
+                    "NzbDAV Settings → WebDAV in your MediaFusion profile." % int(exc.code),
+                    "invalid_credentials.mp4",
+                ) from exc
+            raise ProviderException("Failed to connect to NzbDAV WebDAV server", "invalid_credentials.mp4") from exc
         yield webdav
     except NoConnection:
         raise ProviderException("Failed to connect to the NzbDAV WebDAV server", "webdav_error.mp4")
     finally:
         if webdav:
             await webdav.close()
+
+
+def _nzbdav_download_path_candidates(category: str, download_name: str) -> list[str]:
+    """Try NzbDAV ``/content/...`` first, then flat paths for odd deployments."""
+    ordered: list[tuple[str, ...]] = [
+        ("content", category, download_name),
+        ("content", download_name),
+        (category, download_name),
+        (download_name,),
+    ]
+    roots: list[str] = []
+    seen: set[str] = set()
+    for segs in ordered:
+        root = path.join("/", *segs)
+        if root not in seen:
+            seen.add(root)
+            roots.append(root)
+    return roots
 
 
 async def find_file_in_nzbdav_downloads(
@@ -107,17 +147,25 @@ async def find_file_in_nzbdav_downloads(
     """
     config = streaming_provider.nzbdav_config
     base_url_path = urlparse(config.url).path or "/"
+    category = config.category or "MediaFusion"
 
-    downloads_root_path = path.join(
-        "/",
-        config.category,
-        download_name,
-    )
-
-    files = await get_files_from_folder(webdav, base_url_path, downloads_root_path)
-    if not files:
-        downloads_root_path = path.join("/", download_name)
-        files = await get_files_from_folder(webdav, base_url_path, downloads_root_path)
+    files: list[dict] = []
+    for folder_guess in _nzbdav_job_folder_guesses(download_name, stream):
+        for downloads_root_path in _nzbdav_download_path_candidates(category, folder_guess):
+            try:
+                files = await get_files_from_folder(webdav, base_url_path, downloads_root_path)
+            except ResponseErrorCode as exc:
+                if int(exc.code) in (401, 403):
+                    raise ProviderException(
+                        "NzbDAV WebDAV returned HTTP %s (not authorized). Set WebDAV username and password from "
+                        "NzbDAV Settings → WebDAV in your MediaFusion profile." % int(exc.code),
+                        "invalid_credentials.mp4",
+                    ) from exc
+                raise
+            if files:
+                break
+        if files:
+            break
 
     if not files:
         return None

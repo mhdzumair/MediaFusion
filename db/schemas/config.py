@@ -797,6 +797,15 @@ class UserData(BaseModel):
         if self.streaming_provider and name in service_shorthands:
             if self.streaming_provider.service == service_shorthands[name]:
                 return self.streaming_provider
+        # Operator-injected providers (e.g. NzbDAV) exist only on get_active_providers().
+        for provider in self.get_active_providers():
+            if provider.name == name:
+                return provider
+        if name in service_shorthands:
+            target_service = service_shorthands[name]
+            for provider in self.get_active_providers():
+                if provider.service == target_service:
+                    return provider
         return None
 
     def has_any_provider(self) -> bool:

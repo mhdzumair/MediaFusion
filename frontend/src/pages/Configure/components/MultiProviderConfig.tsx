@@ -1115,15 +1115,15 @@ function SingleProviderEditor({
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>WebDAV Username (optional)</Label>
+                      <Label>WebDAV username</Label>
                       <Input
                         value={provider.ndc?.wus || ''}
                         onChange={(e) => updateNzbDAVConfig({ wus: e.target.value })}
-                        placeholder="webdav_user"
+                        placeholder="Same as NzbDAV → WebDAV"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>WebDAV Password (optional)</Label>
+                      <Label>WebDAV password</Label>
                       <div className="relative">
                         <Input
                           type={showWdPassword ? 'text' : 'password'}
@@ -1144,8 +1144,9 @@ function SingleProviderEditor({
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    NzbDAV provides a built-in WebDAV server and SABnzbd-compatible API on the same URL. Set WebDAV
-                    credentials only if your NzbDAV WebDAV endpoint requires authentication.
+                    NzbDAV serves WebDAV on the same URL as the SABnzbd API. WebDAV uses its own login (NzbDAV Settings
+                    → WebDAV)—not the API key. If WebDAV auth is enabled (default), enter that username and password
+                    here or listing files during playback will fail with HTTP 401.
                   </p>
                 </AccordionContent>
               </AccordionItem>
