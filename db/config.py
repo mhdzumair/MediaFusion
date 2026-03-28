@@ -122,6 +122,8 @@ class Settings(BaseSettings):
     metadata_primary_source: Literal["imdb", "tmdb"] = "imdb"
     # When True, failed cinemagoerng IMDb title fetch falls back to v3-cinemeta.strem.io.
     imdb_cinemeta_fallback_enabled: bool = True
+    # When True, curl_cffi IMDb fetches may fall back to Scrapling (browser) before Cinemeta.
+    imdb_scrapling_fallback_enabled: bool = True
     startup_migrate_only: bool = False  # Skip startup DB bootstrap checks; run Alembic + Gunicorn only
     gunicorn_workers: int = Field(default=3, ge=1)  # Gunicorn worker process count
     gunicorn_timeout: int = Field(default=120, ge=1)  # Gunicorn worker timeout in seconds
