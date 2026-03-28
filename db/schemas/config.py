@@ -29,16 +29,42 @@ class QBittorrentConfig(BaseModel):
     qbittorrent_url: str = Field(alias="qur")
     qbittorrent_username: str = Field(alias="qus")
     qbittorrent_password: str = Field(alias="qpw")
-    seeding_time_limit: int = Field(default=1440, alias="stl")  # 24 hours
-    seeding_ratio_limit: float = Field(default=1.0, alias="srl")
+    seeding_time_limit: int = Field(
+        default=1440,
+        alias="stl",
+        description="Seeding time cap in minutes passed to qBittorrent when adding a torrent. "
+        "Use your qBittorrent version’s Web API docs for special values (e.g. global vs unlimited).",
+    )
+    seeding_ratio_limit: float = Field(
+        default=1.0,
+        alias="srl",
+        description="Ratio limit passed to qBittorrent when adding a torrent. See qBittorrent Web API docs.",
+    )
     play_video_after: int = Field(default=100, le=100, ge=0, alias="pva")
     category: str = Field(default="MediaFusion", alias="cat")
     webdav_url: str = Field(alias="wur")
     webdav_username: str = Field(alias="wus")
     webdav_password: str = Field(alias="wpw")
     webdav_downloads_path: str = Field(default="/", alias="wdp")
+    webdav_extra_paths: list[str] = Field(
+        default_factory=list,
+        alias="wep",
+        description="Extra WebDAV roots (besides webdav_downloads_path) where completed torrents "
+        "may appear as <root>/<info_hash>/ for playback and cache hash listing.",
+    )
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    @field_validator("webdav_extra_paths", mode="before")
+    @classmethod
+    def _strip_extra_paths(cls, v: object) -> list[str]:
+        if v is None:
+            return []
+        if isinstance(v, str):
+            v = [v]
+        if not isinstance(v, list):
+            return []
+        return [p.strip() for p in v if isinstance(p, str) and p.strip()]
 
 
 class MediaFlowConfig(BaseModel):

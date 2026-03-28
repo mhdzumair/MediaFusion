@@ -25,6 +25,36 @@ from db.schemas import StreamingProvider, TorrentStreamData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
 
+logger = logging.getLogger(__name__)
+
+
+def _qbittorrent_webdav_download_roots(streaming_provider: StreamingProvider) -> list[str]:
+    cfg = streaming_provider.qbittorrent_config
+    roots: list[str] = []
+    primary = (cfg.webdav_downloads_path or "/").strip() or "/"
+    roots.append(primary)
+    for extra in cfg.webdav_extra_paths:
+        e = extra.strip()
+        if e and e not in roots:
+            roots.append(e)
+    return roots
+
+
+def _is_duplicate_or_existing_torrent_add_error(message: str) -> bool:
+    """qBittorrent returns plain-text failures for torrents/add; 'already in list' is common."""
+    m = message.lower()
+    return any(
+        phrase in m
+        for phrase in (
+            "already in the list",
+            "already in the download list",
+            "torrent is already present",
+            "already present",
+            "duplicate torrent",
+            "is already queued",
+        )
+    )
+
 
 async def check_torrent_status(qbittorrent: APIClient, info_hash: str) -> TorrentInfo | None:
     """Checks the status of a torrent with a given info_hash or torrent_name."""
@@ -40,6 +70,10 @@ async def add_torrent_or_magnet(
     stream: TorrentStreamData,
 ):
     """Adds a magnet link to the qbittorrent server."""
+    if await check_torrent_status(qbittorrent, info_hash):
+        logger.info("qBittorrent already has torrent %s; skipping add", info_hash)
+        return
+
     try:
         torrent_form = AddFormBuilder.with_client(qbittorrent)
         if stream.torrent_type != TorrentType.PUBLIC and stream.torrent_file:
@@ -56,8 +90,16 @@ async def add_torrent_or_magnet(
             .build()
         )
         await qbittorrent.torrents.add(torrent_form)
-    except AddTorrentError:
-        raise ProviderException("Failed to add the torrent to qBittorrent", "add_torrent_failed.mp4")
+    except AddTorrentError as exc:
+        if _is_duplicate_or_existing_torrent_add_error(exc.message):
+            logger.info(
+                "qBittorrent refused add for %s (treating as already present): %s",
+                info_hash,
+                exc.message,
+            )
+            return
+        logger.error("qBittorrent torrents/add failed for %s: %s", info_hash, exc.message)
+        raise ProviderException("Failed to add the torrent to qBittorrent", "add_torrent_failed.mp4") from exc
 
 
 async def wait_for_torrent_to_complete(
@@ -117,12 +159,13 @@ async def find_file_in_folder_tree(
 ) -> dict | None:
     base_url_path = urlparse(streaming_provider.qbittorrent_config.webdav_url).path
 
-    downloads_root_path = path.join(
-        streaming_provider.qbittorrent_config.webdav_downloads_path,
-        info_hash,
-    )
+    files: list[dict] = []
+    for download_root in _qbittorrent_webdav_download_roots(streaming_provider):
+        downloads_root_path = path.join(download_root, info_hash)
+        files = await get_files_from_folder(webdav, base_url_path, downloads_root_path)
+        if files:
+            break
 
-    files = await get_files_from_folder(webdav, base_url_path, downloads_root_path)
     if not files:
         return None
 
@@ -328,29 +371,35 @@ async def update_qbittorrent_cache_status(
 
 async def fetch_info_hashes_from_webdav(streaming_provider: StreamingProvider, **kwargs) -> list[str]:
     """Fetches the info_hashes from directories in the WebDAV server that are named after the torrent's info hashes."""
+    merged: set[str] = set()
     try:
         async with initialize_webdav(streaming_provider) as webdav:
-            directories = await webdav.list(streaming_provider.qbittorrent_config.webdav_downloads_path)
+            for download_root in _qbittorrent_webdav_download_roots(streaming_provider):
+                try:
+                    directories = await webdav.list(download_root)
+                except Exception as list_err:
+                    logger.debug("Skipping WebDAV list for root %r: %s", download_root, list_err)
+                    continue
+                for dirname in directories:
+                    if len(dirname) == 41 and dirname.endswith("/"):
+                        merged.add(dirname.removesuffix("/"))
     except ProviderException:
         return []
     except MethodNotSupported:
-        logging.warning(
+        logger.warning(
             "WebDAV server does not support LIST for qBittorrent downloads path (tunnel or limited WebDAV): %s",
             streaming_provider.qbittorrent_config.webdav_url,
         )
         return []
     except Exception as err:
-        logging.warning(
+        logger.warning(
             "WebDAV list failed while fetching qBittorrent info hashes (%s): %s",
             streaming_provider.qbittorrent_config.webdav_url,
             err,
         )
         return []
 
-    # Filter out directory names that match the length of an info hash (40 chars) plus the trailing slash
-    info_hashes = [dirname.removesuffix("/") for dirname in directories if len(dirname) == 41 and dirname.endswith("/")]
-
-    return info_hashes
+    return sorted(merged)
 
 
 async def delete_all_torrents_from_qbittorrent(streaming_provider: StreamingProvider, **kwargs):

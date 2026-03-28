@@ -17,6 +17,8 @@ export interface QBittorrentConfig {
   wus: string // webdav_username
   wpw: string // webdav_password
   wdp: string // webdav_downloads_path
+  /** Extra WebDAV roots (lines) where torrents live as <root>/<info_hash>/ */
+  wep?: string[]
 }
 
 // Usenet provider configurations

@@ -100,6 +100,7 @@ export interface QBittorrentConfig {
   webdav_username: string
   webdav_password: string
   webdav_downloads_path: string
+  webdav_extra_paths?: string[]
 }
 
 export interface MediaFlowConfig {

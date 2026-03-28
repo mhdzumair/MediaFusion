@@ -17,6 +17,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -228,6 +229,7 @@ function SingleProviderEditor({
       wus: '',
       wpw: '',
       wdp: '/',
+      wep: [],
     }
     onUpdate({ qbc: { ...currentQbc, ...updates } })
   }
@@ -860,6 +862,40 @@ function SingleProviderEditor({
                         </Button>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>WebDAV downloads path</Label>
+                    <Input
+                      value={provider.qbc?.wdp ?? '/'}
+                      onChange={(e) => updateQBConfig({ wdp: e.target.value || '/' })}
+                      placeholder="/"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Path under your WebDAV root where qBittorrent stores each job as &lt;info_hash&gt; (often matches
+                      your WebDAV export of the qB save folder).
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Additional WebDAV roots (optional)</Label>
+                    <Textarea
+                      value={(provider.qbc?.wep ?? []).join('\n')}
+                      onChange={(e) => {
+                        const lines = e.target.value
+                          .split('\n')
+                          .map((s) => s.trim())
+                          .filter(Boolean)
+                        updateQBConfig({ wep: lines.length ? lines : [] })
+                      }}
+                      placeholder={'/downloads/radarr\n/downloads/sonarr'}
+                      rows={3}
+                      className="font-mono text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      One path per line. Used to find completed torrents when media is spread across multiple folders on
+                      the same WebDAV server.
+                    </p>
                   </div>
                 </AccordionContent>
               </AccordionItem>

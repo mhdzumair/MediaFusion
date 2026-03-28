@@ -21,6 +21,7 @@ export interface QBittorrentConfigType {
   wus: string // webdav_username
   wpw: string // webdav_password
   wdp: string // webdav_downloads_path
+  wep?: string[] // webdav_extra_paths
 }
 
 export interface SABnzbdConfigType {
@@ -304,6 +305,7 @@ export interface QBittorrentConfigPayload {
   webdav_username?: string
   webdav_password?: string
   webdav_downloads_path?: string
+  webdav_extra_paths?: string[]
 }
 
 export interface SABnzbdConfigPayload {
@@ -453,6 +455,7 @@ function mapQBittorrentConfig(config?: QBittorrentConfigType): QBittorrentConfig
     webdav_username: config.wus,
     webdav_password: config.wpw,
     webdav_downloads_path: config.wdp,
+    ...(config.wep?.length ? { webdav_extra_paths: config.wep } : {}),
   }
 }
 
