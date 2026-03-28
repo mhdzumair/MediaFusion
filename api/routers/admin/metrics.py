@@ -727,7 +727,7 @@ async def get_activity_stats(
 
         # Recent watch history (last 7 days)
         recent_watch_result = await session.exec(
-            select(func.count(WatchHistory.id)).where(WatchHistory.created_at >= week_ago)
+            select(func.count(WatchHistory.id)).where(WatchHistory.watched_at >= week_ago)
         )
         recent_watch_history = recent_watch_result.first() or 0
 
