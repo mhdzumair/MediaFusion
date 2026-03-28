@@ -532,7 +532,8 @@ class UserData(BaseModel):
     selected_catalogs: list[str] = Field(alias="sc", default_factory=list)
     selected_resolutions: list[str | None] = Field(default=const.RESOLUTIONS, alias="sr")
     enable_catalogs: bool = Field(default=True, alias="ec")
-    enable_imdb_metadata: bool = Field(default=True, alias="eim")
+    # Legacy name ``eim``: gates tt, tmdb:, tvdb:, mal: on the Stremio *meta* resource; mf/dl always on.
+    enable_imdb_metadata: bool = Field(default=False, alias="eim")
     max_size: int | str | float = Field(default=math.inf, alias="ms")
     min_size: int = Field(default=0, alias="mns")
     max_streams_per_resolution: int = Field(default=10, alias="mspr")

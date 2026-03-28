@@ -16,10 +16,11 @@
       "types": ["movie", "series", "tv", "events"],
       "idPrefixes": ["tt", "tmdb:", "tvdb:", "mal:", "mf", "dl"]
     },
+    {# Meta: external id prefixes (IMDb/TMDB/TVDB/MAL) only if enable_imdb_metadata; mf/dl always #}
     {
       "name": "meta",
       "types": ["movie", "series", "tv", "events"],
-      "idPrefixes": [{% if enable_imdb_metadata %}"tt", {% endif %}"tmdb:", "tvdb:", "mal:", "mf", "dl"]
+      "idPrefixes": [{% if enable_imdb_metadata %}"tt", "tmdb:", "tvdb:", "mal:", {% endif %}"mf", "dl"]
     }
   ],
   "types": ["movie", "series", "tv", "events"],

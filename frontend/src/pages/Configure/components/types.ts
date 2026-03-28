@@ -160,7 +160,7 @@ export interface ProfileConfig {
   sc?: string[] // selected_catalogs (deprecated: use cc instead)
   sr?: (string | null)[] // selected_resolutions
   ec?: boolean // enable_catalogs
-  eim?: boolean // enable_imdb_metadata
+  eim?: boolean // enable_imdb_metadata: meta idPrefixes tt/tmdb/tvdb/mal
   ms?: number | string // max_size (bytes or 'inf')
   mns?: number // min_size (bytes, 0 = no minimum)
   mspr?: number // max_streams_per_resolution

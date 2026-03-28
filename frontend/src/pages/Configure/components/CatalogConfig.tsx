@@ -318,11 +318,16 @@ export function CatalogConfig({ config, onChange }: ConfigSectionProps) {
           <Switch checked={config.ec !== false} onCheckedChange={(checked) => onChange({ ...config, ec: checked })} />
         </div>
 
-        {/* Enable IMDb Metadata */}
+        {/* eim: meta idPrefixes tt + tmdb: + tvdb: + mal: (stream resource unchanged). */}
         <div className="flex items-center justify-between pb-4 border-b">
           <div className="space-y-0.5">
-            <Label>Enable IMDb Metadata</Label>
-            <p className="text-xs text-muted-foreground">Use IMDb for additional metadata</p>
+            <Label>Offer MediaFusion meta for external ids</Label>
+            <p className="text-xs text-muted-foreground">
+              When on, the manifest registers IMDb (<code className="text-xs">tt</code>), TMDB, TVDB, and MAL id
+              prefixes on the <code className="text-xs">meta</code> resource. Turn off to use another meta addon for
+              those pages. Internal prefixes <code className="text-xs">mf</code>/<code className="text-xs">dl</code>{' '}
+              stay on.
+            </p>
           </div>
           <Switch checked={config.eim === true} onCheckedChange={(checked) => onChange({ ...config, eim: checked })} />
         </div>
