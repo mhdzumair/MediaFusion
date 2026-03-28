@@ -11,7 +11,7 @@ from typing import Literal, TypedDict
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import String, case, cast, func, or_
+from sqlalchemy import String, case, cast, delete as sa_delete, func, or_
 from sqlalchemy.orm import aliased
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -511,11 +511,19 @@ async def _replace_catalogs(session: AsyncSession, media_id: int, names: list[st
 
 
 async def _replace_aka_titles(session: AsyncSession, media_id: int, titles: list[str]) -> None:
-    existing = (await session.exec(select(AkaTitle).where(AkaTitle.media_id == media_id))).all()
-    for aka in existing:
-        await session.delete(aka)
-
+    # Bulk DELETE then flush before INSERT so the unique (media_id, title) constraint
+    # cannot race with batched inserts (ORM flush can otherwise order INSERT before DELETE).
+    seen: set[str] = set()
+    unique_titles: list[str] = []
     for title in titles:
+        if title not in seen:
+            seen.add(title)
+            unique_titles.append(title)
+
+    await session.exec(sa_delete(AkaTitle).where(AkaTitle.media_id == media_id))
+    await session.flush()
+
+    for title in unique_titles:
         session.add(AkaTitle(media_id=media_id, title=title))
 
 

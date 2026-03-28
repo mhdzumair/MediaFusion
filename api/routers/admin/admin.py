@@ -796,15 +796,18 @@ async def update_metadata_parental_certificates(session: AsyncSession, media_id:
 
 async def update_metadata_aka_titles(session: AsyncSession, media_id: int, titles: list[str]):
     """Update metadata AKA titles."""
-    # Remove existing
-    existing = (await session.exec(select(AkaTitle).where(AkaTitle.media_id == media_id))).all()
-    for aka in existing:
-        await session.delete(aka)
-
-    # Add new
+    seen: set[str] = set()
+    unique_titles: list[str] = []
     for title in titles:
-        aka = AkaTitle(media_id=media_id, title=title)
-        session.add(aka)
+        if title not in seen:
+            seen.add(title)
+            unique_titles.append(title)
+
+    await session.exec(sa_delete(AkaTitle).where(AkaTitle.media_id == media_id))
+    await session.flush()
+
+    for title in unique_titles:
+        session.add(AkaTitle(media_id=media_id, title=title))
 
 
 async def update_stream_languages(session: AsyncSession, stream_id: int, language_names: list[str]):

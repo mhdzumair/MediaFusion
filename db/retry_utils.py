@@ -69,6 +69,11 @@ def is_retryable_db_error(exc: BaseException) -> bool:
                 if isinstance(grouped_error, BaseException):
                     to_visit.append(grouped_error)
 
+        if isinstance(current, DBAPIError):
+            orig = getattr(current, "orig", None)
+            if isinstance(orig, BaseException):
+                to_visit.append(orig)
+
     return False
 
 

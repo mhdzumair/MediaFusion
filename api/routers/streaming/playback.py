@@ -31,7 +31,7 @@ from db.crud.stream_services import get_cached_live_torrent_fallback_stream
 from db.models import User
 from db.config import settings
 from db.database import get_async_session_context, get_read_session_context
-from db.retry_utils import run_db_operation_with_retry
+from db.retry_utils import run_db_operation_with_retry, run_db_read_with_primary_fallback
 from db.models import (
     Media,
     MediaExternalID,
@@ -197,10 +197,24 @@ async def fetch_stream_or_404(info_hash: str) -> tuple[TorrentStreamData, bool]:
                 return TorrentStreamData.from_db(torrent_stream)
         return None
 
-    stream_data = await run_db_operation_with_retry(
-        _load_from_read_replica,
-        operation_name="fetch_stream_by_info_hash",
-    )
+    async def _load_from_primary() -> TorrentStreamData | None:
+        async with get_async_session_context() as session:
+            torrent_stream = await crud.get_stream_by_info_hash(session, info_hash, load_relations=True)
+            if torrent_stream:
+                return TorrentStreamData.from_db(torrent_stream)
+        return None
+
+    if settings.postgres_read_uri:
+        stream_data = await run_db_read_with_primary_fallback(
+            _load_from_read_replica,
+            _load_from_primary,
+            operation_name="fetch_stream_by_info_hash",
+        )
+    else:
+        stream_data = await run_db_operation_with_retry(
+            _load_from_read_replica,
+            operation_name="fetch_stream_by_info_hash",
+        )
     if stream_data is not None:
         return stream_data, False
 
