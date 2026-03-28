@@ -25,6 +25,7 @@ from scrapers.mal_data import (
 from scrapers.mediafusion import MediafusionScraper
 from scrapers.prowlarr import ProwlarrScraper
 from scrapers.public_indexers import PublicIndexerScraper
+from scrapers.public_usenet_indexers import PublicUsenetIndexerScraper
 from scrapers.tmdb_data import (
     get_imdb_id_from_tmdb,
     get_tmdb_data,
@@ -76,6 +77,7 @@ CACHED_DATA = [
     ("easynews", runtime_const.EASYNEWS_SEARCH_TTL),
     (TorBoxSearchScraper.cache_key_prefix, runtime_const.TORBOX_SEARCH_TTL),
     (TelegramScraper.CACHE_KEY_PREFIX, runtime_const.TELEGRAM_SEARCH_TTL),
+    (PublicUsenetIndexerScraper.cache_key_prefix, runtime_const.PUBLIC_USENET_INDEXERS_SEARCH_TTL),
 ]
 
 # Dynamic cache namespaces used when endpoint URLs are user-specific.
@@ -505,6 +507,7 @@ async def run_usenet_scrapers(
     """Run selected Usenet scrapers and return unique streams.
 
     Combines results from:
+    - Public HTML Usenet indexers (e.g. Binsearch) when enabled
     - Newznab indexers (if configured and selected)
     - TorBox Search Usenet (if TorBox is configured and selected)
     - Easynews (if configured and selected)
@@ -520,8 +523,8 @@ async def run_usenet_scrapers(
     Returns:
         List of UsenetStreamData objects
     """
-    from scrapers.newznab import scrape_usenet_streams
     from scrapers.easynews import scrape_easynews_streams
+    from scrapers.newznab import scrape_usenet_streams
 
     all_streams = []
     tasks = []
@@ -530,7 +533,22 @@ async def run_usenet_scrapers(
     def is_selected(scraper_id: str) -> bool:
         return selected_scrapers is None or scraper_id in selected_scrapers
 
+    async def _run_public_usenet_indexers() -> list:
+        scraper = PublicUsenetIndexerScraper()
+        try:
+            return await scraper.scrape_usenet_and_parse(user_data, metadata, catalog_type, season, episode)
+        finally:
+            await scraper.close()
+
     async with asyncio.TaskGroup() as tg:
+        if is_selected("public_usenet_indexers") and settings.is_scrap_from_public_usenet_indexers:
+            tasks.append(
+                tg.create_task(
+                    _run_public_usenet_indexers(),
+                    name="PublicUsenetIndexers",
+                )
+            )
+
         # Newznab indexer scraping (from indexer_config.newznab_indexers)
         if is_selected("newznab") and user_data.indexer_config and user_data.indexer_config.newznab_indexers:
             tasks.append(

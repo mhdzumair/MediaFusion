@@ -131,6 +131,15 @@ SCRAPER_CONFIG = {
         "is_user_configurable": True,
         "is_usenet": True,  # Mark as Usenet scraper
     },
+    "public_usenet_indexers": {
+        "name": "Public Usenet Indexers",
+        "enabled": settings.is_scrap_from_public_usenet_indexers,
+        "requires_debrid": False,
+        "ttl": runtime_const.PUBLIC_USENET_INDEXERS_SEARCH_TTL,
+        "description": "Search public Usenet sites (e.g. Binsearch) for NZB links",
+        "is_user_configurable": False,
+        "is_usenet": True,
+    },
 }
 
 
@@ -891,8 +900,9 @@ async def trigger_scrape(
     )
     # Check indexer_config.newznab_indexers
     has_newznab_indexers = user_data and user_data.indexer_config and user_data.indexer_config.newznab_indexers
+    has_public_usenet = settings.is_scrap_from_public_usenet_indexers
 
-    if has_usenet_provider or has_newznab_indexers:
+    if has_usenet_provider or has_newznab_indexers or has_public_usenet:
         try:
             usenet_streams = await scraper_tasks.run_usenet_scrapers(
                 user_data=user_data,

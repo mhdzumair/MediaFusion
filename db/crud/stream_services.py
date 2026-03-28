@@ -332,6 +332,7 @@ async def _run_live_search_scrapers(
     )
     has_usenet_provider = any(sp.service in USENET_CAPABLE_PROVIDERS for sp in active_providers)
     has_newznab_indexers = bool(user_data.indexer_config and user_data.indexer_config.newznab_indexers)
+    has_public_usenet = settings.is_scrap_from_public_usenet_indexers
 
     if has_torrent_provider:
         try:
@@ -352,7 +353,7 @@ async def _run_live_search_scrapers(
             metadata.external_id,
         )
 
-    if user_data.enable_usenet_streams and (has_usenet_provider or has_newznab_indexers):
+    if user_data.enable_usenet_streams and (has_usenet_provider or has_newznab_indexers or has_public_usenet):
         try:
             usenet_streams = await scraper_tasks.run_usenet_scrapers(
                 user_data=user_data,

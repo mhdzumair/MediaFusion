@@ -268,6 +268,14 @@ class Settings(BaseSettings):
     public_indexers_source_health_probation_ratio: float = Field(default=0.3, ge=0.0, le=1.0)
     public_indexers_source_health_probation_max_sources_per_query: int = Field(default=2, ge=0)
 
+    # Native public Usenet indexers (HTML search; not Newznab — e.g. Binsearch).
+    is_scrap_from_public_usenet_indexers: bool = True
+    public_usenet_indexers_search_interval_hour: int = 48
+    public_usenet_indexers_live_search_sites: str = "all"
+    public_usenet_indexers_movie_live_search_sites: str = "all"
+    public_usenet_indexers_series_live_search_sites: str = "all"
+    public_usenet_indexers_anime_live_search_sites: str = "all"
+
     # Jackett Settings
     is_scrap_from_jackett: bool = False
     jackett_url: str = "http://jackett-service:9117"

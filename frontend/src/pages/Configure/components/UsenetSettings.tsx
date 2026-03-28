@@ -314,9 +314,9 @@ export function UsenetSettings({ config, onChange }: UsenetSettingsProps) {
               <Newspaper className="h-4 w-4" />
               <AlertDescription>
                 To use Usenet streams, configure a Usenet-capable provider in the Provider tab (TorBox, Debrider,
-                SABnzbd, NZBGet, NzbDAV, or Easynews). If you use SABnzbd/NZBGet/NzbDAV, add at least one enabled
-                Newznab indexer here. For fresh on-demand NZB discovery, also enable Live Search Streams in your profile
-                settings.
+                SABnzbd, NZBGet, NzbDAV, or Easynews). Newznab indexers below add private indexers and API-keyed NZB
+                URLs; this instance may also discover NZBs via built-in public Usenet indexers when enabled by the
+                operator. For on-demand catalog scraping, enable Live Search Streams (lss) in your profile settings.
               </AlertDescription>
             </Alert>
           </>
