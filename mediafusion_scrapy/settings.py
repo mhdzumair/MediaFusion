@@ -58,6 +58,7 @@ SPIDER_MIDDLEWARES = {
 DOWNLOADER_MIDDLEWARES = {
     "mediafusion_scrapy.middlewares.MediafusionScrapyDownloaderMiddleware": 542,
     "mediafusion_scrapy.middlewares.TooManyRequestsRetryMiddleware": 543,
+    "mediafusion_scrapy.middlewares.ExtToMagnetPayloadMiddleware": 549,
     "scrapy.downloadermiddlewares.retry.RetryMiddleware": 550,
     # Scrapling anti-bot middleware must have higher priority number than RetryMiddleware
     # so it intercepts Cloudflare pages first in process_response (reverse order).

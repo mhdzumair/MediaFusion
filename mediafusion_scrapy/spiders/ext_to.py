@@ -1,3 +1,4 @@
+import json
 import random
 import re
 from copy import deepcopy
@@ -12,10 +13,22 @@ from db.database import get_async_session_context
 from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.config import config_manager
 from utils.parser import convert_size_to_bytes, is_non_video_title
+from utils.validation_helper import is_video_file
 from utils.runtime_const import SPORTS_ARTIFACTS
 from utils.torrent import parse_magnet
 
-MAGNET_RE = re.compile(r"magnet:\?xt=urn:btih:[a-fA-F0-9]{40}[^\"'<>\s]*")
+# ext.to (2026): magnets are not in HTML; they are returned from /ajax/getTorrentMagnet.php
+# using SHA256(torrent_id|timestamp|pageToken) and window.csrfToken — see /static/js/main.min.js.
+_EXT_PAGE_TOKEN_RE = re.compile(
+    r"window\.pageToken\s*=\s*(?:\\'|')([a-f0-9]{32})(?:\\'|')",
+    re.I,
+)
+_EXT_CSRF_RE = re.compile(
+    r"window\.csrfToken\s*=\s*(?:\\'|')([a-f0-9]{32})(?:\\'|')",
+    re.I,
+)
+# Rare legacy: inline magnet in HTML (older layout).
+_MAGNET_INLINE_RE = re.compile(r"magnet:\?[^\s\"'<>]+", re.I)
 
 
 class ExtToSpider(scrapy.Spider):
@@ -45,7 +58,9 @@ class ExtToSpider(scrapy.Spider):
         - Seeders: td .add-block-wrapper span.text-success
         - IMDB: a[href*="imdb_id="]
       Detail page:
-        - Magnet: embedded in "Watch online" link (webga.zx), extracted via regex
+        - Magnet: via POST ``/ajax/getTorrentMagnet.php`` (``window.pageToken`` + ``csrfToken``
+          + HMAC); see ``parse_torrent_details`` / ``parse_ext_magnet_ajax``. Legacy inline
+          ``magnet:`` in HTML is still tried if tokens are missing.
     """
 
     allowed_domains = config_manager.get_start_url("ext_to") or ["ext.to"]
@@ -224,7 +239,11 @@ class ExtToSpider(scrapy.Spider):
             yield scrapy.Request(
                 detail_url,
                 self.parse_torrent_details,
-                meta={"torrent_data": torrent_data},
+                meta={
+                    "torrent_data": torrent_data,
+                    # Cookie-only HTTP gets 403 or redirects to browse; fetch detail HTML via Scrapling.
+                    "force_scrapling_solve": True,
+                },
             )
 
         if self.scrape_all:
@@ -267,17 +286,31 @@ class ExtToSpider(scrapy.Spider):
 
         return None
 
-    def _extract_magnet(self, response):
-        """Extract magnet link from the detail page.
+    @staticmethod
+    def _parse_ext_security_tokens(html: str) -> tuple[str | None, str | None]:
+        """Parse ``window.pageToken`` and ``window.csrfToken`` from detail HTML."""
+        pt = _EXT_PAGE_TOKEN_RE.search(html)
+        cs = _EXT_CSRF_RE.search(html)
+        if not pt or not cs:
+            return None, None
+        return pt.group(1).lower(), cs.group(1).lower()
 
-        ext.to does not expose magnet links via standard <a href="magnet:..."> tags.
-        Instead, the magnet URI is embedded as a query parameter in the "Watch online"
-        link (webga.zx). We extract it via regex from the full page HTML.
-        """
-        match = MAGNET_RE.search(response.text)
-        if match:
-            raw = match.group(0)
-            return unquote(raw.replace("&amp;", "&"))
+    def _ext_numeric_torrent_id(self, response, torrent_data: dict) -> int | None:
+        raw = response.css(".download-btn-magnet::attr(data-id)").get()
+        if raw and raw.isdigit():
+            return int(raw)
+        uid = torrent_data.get("unique_id")
+        if uid is not None and str(uid).isdigit():
+            return int(uid)
+        return None
+
+    def _magnet_from_inline_html(self, response) -> str | None:
+        m = _MAGNET_INLINE_RE.search(response.text)
+        if not m:
+            return None
+        candidate = unquote(m.group(0).replace("&amp;", "&"))
+        if parse_magnet(candidate)[0]:
+            return candidate
         return None
 
     def _extract_uploader(self, response):
@@ -292,20 +325,6 @@ class ExtToSpider(scrapy.Spider):
     async def parse_torrent_details(self, response):
         torrent_data = deepcopy(response.meta["torrent_data"])
 
-        magnet_link = self._extract_magnet(response)
-        if not magnet_link:
-            self.logger.warning(f"No magnet link found on detail page: {response.url}")
-            return
-
-        info_hash, announce_list = parse_magnet(magnet_link)
-        if not info_hash:
-            self.logger.warning(f"Failed to parse magnet link: {response.url}")
-            return
-
-        torrent_data["info_hash"] = info_hash
-        torrent_data["magnet_link"] = magnet_link
-        torrent_data["announce_list"] = announce_list
-
         detected_uploader = torrent_data.get("uploader") or self._extract_uploader(response)
         inferred_uploader = self._infer_uploader_from_torrent_name(torrent_data.get("torrent_title", ""))
         if inferred_uploader and detected_uploader and detected_uploader.lower() != inferred_uploader.lower():
@@ -319,18 +338,14 @@ class ExtToSpider(scrapy.Spider):
         else:
             torrent_data["uploader"] = detected_uploader or inferred_uploader
 
-        if await self.redis.sismember(self.scraped_info_hash_key, info_hash):
-            self.logger.info(f"Torrent already scraped: {torrent_data['torrent_name']}")
-            async with get_async_session_context() as session:
-                await crud.update_torrent_seeders(session, info_hash, torrent_data.get("seeders"))
-            return
-
         file_data = []
         for row in response.css("#torrent_files table tr"):
             file_name = row.css("td.file-name-line-td span.folder-name a::text").get()
             if not file_name:
                 continue
             file_name = file_name.strip()
+            if not is_video_file(file_name):
+                continue
 
             size_divs = [s.strip() for s in row.css("td.file-size-td div.file-size::text").getall() if s.strip()]
             file_size = size_divs[1] if len(size_divs) >= 2 else (size_divs[0] if size_divs else None)
@@ -354,6 +369,11 @@ class ExtToSpider(scrapy.Spider):
 
         if file_data:
             torrent_data["file_data"] = file_data
+        else:
+            self.logger.info(
+                "No video file rows in HTML listing (will rely on magnet metadata): %s",
+                torrent_data.get("torrent_name"),
+            )
 
         description_parts = response.css("#main ::text, div.tab-pane.active ::text").getall()
         torrent_data["description"] = " ".join(part.strip() for part in description_parts if part.strip()).replace(
@@ -385,7 +405,93 @@ class ExtToSpider(scrapy.Spider):
                 if "created_at" in torrent_data:
                     break
 
-        yield torrent_data
+        numeric_id = self._ext_numeric_torrent_id(response, torrent_data)
+        page_token, csrf = self._parse_ext_security_tokens(response.text)
+        if numeric_id and page_token and csrf:
+            ajax_url = response.urljoin("/ajax/getTorrentMagnet.php")
+            solved_cookies = response.request.meta.get("scrapling_solved_cookies") or {}
+            form_headers = {
+                "Referer": response.url,
+                "X-Requested-With": "XMLHttpRequest",
+            }
+            ua_text = response.request.meta.get("scrapling_user_agent")
+            if ua_text:
+                form_headers["User-Agent"] = ua_text
+            magnet_req = scrapy.Request(
+                url=ajax_url,
+                method="POST",
+                headers=form_headers,
+                meta={
+                    "torrent_data": torrent_data,
+                    "dont_merge_cookies": True,
+                    "ext_to_magnet_ajax": {
+                        "torrent_id": numeric_id,
+                        "page_token": page_token,
+                        "sessid": csrf,
+                    },
+                    **({"scrapling_session_cookies": True} if solved_cookies else {}),
+                },
+                callback=self.parse_ext_magnet_ajax,
+                dont_filter=True,
+            )
+            if solved_cookies:
+                magnet_req.headers[b"Cookie"] = "; ".join(f"{k}={v}" for k, v in sorted(solved_cookies.items())).encode(
+                    "latin-1", "replace"
+                )
+            yield magnet_req
+            return
+
+        magnet_link = self._magnet_from_inline_html(response)
+        if not magnet_link:
+            self.logger.warning(
+                "No ext.to magnet (missing ajax tokens or legacy magnet) for %s",
+                response.url,
+            )
+            return
+        item = await self._build_ext_torrent_item(torrent_data, magnet_link)
+        if item:
+            yield item
+
+    async def parse_ext_magnet_ajax(self, response):
+        torrent_data = response.meta["torrent_data"]
+        try:
+            payload = json.loads(response.text)
+        except json.JSONDecodeError:
+            self.logger.warning("getTorrentMagnet invalid JSON for %s", torrent_data.get("torrent_name"))
+            return
+        if not payload.get("success"):
+            self.logger.warning(
+                "getTorrentMagnet failed for %s: %s",
+                torrent_data.get("torrent_name"),
+                payload.get("error") or payload,
+            )
+            return
+        magnet_link = (payload.get("url") or "").strip()
+        if not magnet_link and payload.get("hash"):
+            magnet_link = f"magnet:?xt=urn:btih:{payload['hash']}"
+        if not magnet_link:
+            self.logger.warning("getTorrentMagnet missing url/hash for %s", torrent_data.get("torrent_name"))
+            return
+        item = await self._build_ext_torrent_item(torrent_data, magnet_link)
+        if item:
+            yield item
+
+    async def _build_ext_torrent_item(self, torrent_data: dict, magnet_link: str) -> dict | None:
+        info_hash, announce_list = parse_magnet(magnet_link)
+        if not info_hash:
+            self.logger.warning("Failed to parse magnet for %s", torrent_data.get("torrent_name"))
+            return None
+        torrent_data["info_hash"] = info_hash
+        torrent_data["magnet_link"] = magnet_link
+        torrent_data["announce_list"] = announce_list
+
+        if await self.redis.sismember(self.scraped_info_hash_key, info_hash):
+            self.logger.info("Torrent already scraped: %s", torrent_data["torrent_name"])
+            async with get_async_session_context() as session:
+                await crud.update_torrent_seeders(session, info_hash, torrent_data.get("seeders"))
+            return None
+
+        return torrent_data
 
 
 class FormulaExtSpider(ExtToSpider):

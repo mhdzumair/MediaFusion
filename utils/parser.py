@@ -1470,6 +1470,8 @@ def is_contain_18_plus_keywords(title: str) -> bool:
 NON_VIDEO_BLOCKLIST_KEYWORDS = [
     ".exe", ".zip", ".rar", ".iso", ".bin", ".tar", ".7z", ".pdf", ".xyz",
     ".epub", ".mobi", ".azw3", ".doc", ".docx", ".txt", ".rtf",
+    ".flac", ".mp3", ".m4a", ".wv", ".ape",
+    "[flac", "(flac",  # common music release tagging, e.g. (2026)[Flac 24-48]
     "setup", "install", "crack", "patch", "trainer", "readme",
     "manual", "keygen", "license", "tutorial", "ebook", "software", "book",
     "repack", "fitgirl",

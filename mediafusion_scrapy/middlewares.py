@@ -3,8 +3,10 @@
 # See documentation in:
 # https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 import asyncio
+import hashlib
 import random
-from urllib.parse import urlparse
+import time
+from urllib.parse import urlparse, urlencode
 
 from scrapy import signals
 from scrapy.downloadermiddlewares.retry import RetryMiddleware
@@ -131,6 +133,38 @@ class DatabaseInitializationMiddleware:
         spider.logger.info("Database initialized successfully.")
 
 
+class ExtToMagnetPayloadMiddleware:
+    """Rebuild ext.to ``getTorrentMagnet.php`` form body when the request is sent.
+
+    The HMAC embeds a unix timestamp; detail pages may wait in the Scrapy queue for a long
+    time behind other browser fetches, so the payload must be generated at download time.
+    """
+
+    async def process_request(self, request):
+        mag = request.meta.get("ext_to_magnet_ajax")
+        if not mag or request.method != "POST" or "getTorrentMagnet.php" not in request.url:
+            return None
+
+        torrent_id = mag["torrent_id"]
+        page_token = str(mag["page_token"]).lower()
+        sessid = str(mag["sessid"]).lower()
+        ts = int(time.time())
+        hmac_payload = f"{torrent_id}|{ts}|{page_token}"
+        hmac_tok = hashlib.sha256(hmac_payload.encode("utf-8")).hexdigest()
+        body = urlencode(
+            {
+                "torrent_id": str(torrent_id),
+                "download_type": "magnet",
+                "timestamp": str(ts),
+                "hmac": hmac_tok,
+                "sessid": sessid,
+            }
+        )
+        headers = request.headers.copy()
+        headers.setdefault(b"Content-Type", b"application/x-www-form-urlencoded")
+        return request.replace(body=body.encode("utf-8"), headers=headers)
+
+
 class TooManyRequestsRetryMiddleware(RetryMiddleware):
     """
     Middleware to handle 429 Too Many Requests with a backoff retry mechanism.
@@ -242,6 +276,14 @@ class ScraplingAntiBotMiddleware:
         if not self._is_solver_enabled(spider):
             return None
 
+        if request.meta.get("force_scrapling_solve"):
+            request.meta.pop("force_scrapling_solve", None)
+            return await self._handle_cloudflare(request, force_refresh=True)
+
+        # Follow-up XHR (e.g. ext.to magnet) must keep the same PHPSESSID / cf_clearance as the detail page.
+        if request.meta.get("scrapling_session_cookies"):
+            return None
+
         domain = urlparse(request.url).netloc
         current_time = reactor.seconds()
         cached = self.solved_domains.get(domain)
@@ -267,16 +309,17 @@ class ScraplingAntiBotMiddleware:
             return await self._handle_cloudflare(request)
         return response
 
-    async def _handle_cloudflare(self, request):
+    async def _handle_cloudflare(self, request, force_refresh=False):
         spider = self.crawler.spider
         domain = urlparse(request.url).netloc
         current_time = reactor.seconds()
 
-        cached = self.solved_domains.get(domain)
-        if cached:
-            last_solved_time, solution = cached
-            if current_time - last_solved_time < self.cache_duration:
-                return self._build_solved_response(request, solution)
+        if not force_refresh:
+            cached = self.solved_domains.get(domain)
+            if cached:
+                last_solved_time, solution = cached
+                if current_time - last_solved_time < self.cache_duration:
+                    return self._build_solved_response(request, solution)
 
         for attempt in range(self.max_attempts):
             timeout_ms = min(self.max_timeout, 30000 * (2**attempt))
@@ -312,14 +355,18 @@ class ScraplingAntiBotMiddleware:
     def _build_solved_response(self, original_request, solution):
         html_body = solution.get("html", "")
         solved_url = solution.get("url", original_request.url)
-        cookies = solution.get("cookies", {})
+        cookies = solution.get("cookies", {}) or {}
         user_agent = solution.get("user_agent", "")
 
         headers = {}
         if user_agent:
             headers["User-Agent"] = user_agent
+            original_request.meta["scrapling_user_agent"] = user_agent
         if cookies:
             headers["Set-Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
+
+        # Scrapy's jar often mis-parses a single merged Set-Cookie; pass dict on follow-up requests.
+        original_request.meta["scrapling_solved_cookies"] = dict(cookies)
 
         original_request.meta["anti_bot_solved"] = True
         return TextResponse(

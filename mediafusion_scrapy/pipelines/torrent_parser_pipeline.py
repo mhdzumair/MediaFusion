@@ -8,8 +8,23 @@ from scrapy.http.request import NO_CALLBACK
 from db import crud
 from db.database import get_async_session_context
 from utils import torrent
+from utils.validation_helper import is_video_file
 
 COMMON_TAMIL_SOURCES = {"TamilMV", "TamilBlasters"}
+
+
+def _video_file_data_only(item: dict) -> None:
+    """Keep only playable video entries in ``file_data`` (drops HTML-parsed FLAC/images/etc.)."""
+    file_data = item.get("file_data")
+    if not file_data:
+        return
+    filtered = [
+        entry for entry in file_data if isinstance(entry, dict) and is_video_file((entry.get("filename") or ""))
+    ]
+    if filtered:
+        item["file_data"] = filtered
+    else:
+        item.pop("file_data", None)
 
 
 def _has_episode_signals(item: dict) -> bool:
@@ -143,9 +158,16 @@ class MagnetDownloadAndParsePipeline:
         torrent_metadata = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers)
 
         if not torrent_metadata:
-            if item.get("file_data"):
-                return item
-            raise DropItem("Failed to extract torrent metadata.")
+            _video_file_data_only(item)
+            if not item.get("file_data"):
+                raise DropItem("Failed to extract torrent metadata.")
+            return item
 
-        item.update(torrent_metadata[0])
+        magnet_meta = torrent_metadata[0] or {}
+        item.update(magnet_meta)
+
+        if not magnet_meta.get("file_data"):
+            _video_file_data_only(item)
+            if not item.get("file_data"):
+                raise DropItem("No video files in torrent; skipping non-video release.")
         return item
