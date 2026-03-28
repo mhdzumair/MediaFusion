@@ -67,6 +67,13 @@ async def _delete_folder_contents(seedr: Seedr, folder_id: str, delete_torrents:
             continue
         await seedr.delete_item(torrent_id, "torrent")
 
+    for file_entry in sub_content.get("files", []):
+        file_id = _extract_seedr_item_id(file_entry)
+        if not file_id:
+            logging.warning("Seedr file entry missing id while clearing folder %s: %s", folder_id, file_entry)
+            continue
+        await seedr.delete_item(file_id, "file")
+
     for subfolder in sub_content.get("folders", []):
         subfolder_id = _extract_seedr_item_id(subfolder)
         if not subfolder_id:
@@ -399,6 +406,13 @@ async def delete_all_torrents_from_seedr(streaming_provider: StreamingProvider, 
                 continue
             await seedr.delete_item(torrent_id, "torrent")
 
+        for file_entry in root_content.get("files", []):
+            file_id = _extract_seedr_item_id(file_entry)
+            if not file_id:
+                logging.warning("Seedr root file missing id while clearing account: %s", file_entry)
+                continue
+            await seedr.delete_item(file_id, "file")
+
         # Delete all folders and their contents, including active torrents.
         for folder in root_content.get("folders", []):
             folder_id = _extract_seedr_item_id(folder)
@@ -416,11 +430,9 @@ async def delete_torrent_from_seedr(streaming_provider: StreamingProvider, info_
             contents = await seedr.list_contents()
             for folder in contents["folders"]:
                 if folder["name"].lower() == info_hash.lower():
-                    # Delete folder contents first
-                    sub_content = await seedr.list_contents(folder["id"])
-                    for subfolder in sub_content["folders"]:
-                        await seedr.delete_item(subfolder["id"], "folder")
-                    await seedr.delete_item(folder["id"], "folder")
+                    folder_id = str(folder["id"])
+                    await _delete_folder_contents(seedr, folder_id, delete_torrents=True)
+                    await seedr.delete_item(folder_id, "folder")
                     return True
             return False
     except ProviderException:
