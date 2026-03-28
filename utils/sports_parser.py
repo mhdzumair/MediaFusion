@@ -540,8 +540,10 @@ SPORTS_RELEASE_GROUPS: list[str] = [
 DATE_PATTERNS: list[tuple[str, str]] = [
     (r"\d{4}\.\d{2}\.\d{2}", "%Y.%m.%d"),  # 2026.02.08
     (r"\d{4}-\d{2}-\d{2}", "%Y-%m-%d"),  # 2026-02-08
+    (r"\d{4}\s+\d{2}\s+\d{2}", "%Y %m %d"),  # 2026 03 27 (common in WWE/SmackDown releases)
     (r"\d{2}\.\d{2}\.\d{4}", "%d.%m.%Y"),  # 08.02.2026
     (r"\d{2}-\d{2}-\d{4}", "%d-%m-%Y"),  # 08-02-2026
+    (r"\d{2}\s+\d{2}\s+\d{4}", "%d %m %Y"),  # 27 03 2026
     (r"\d{4}_\d{2}_\d{2}", "%Y_%m_%d"),  # 2026_02_08
 ]
 

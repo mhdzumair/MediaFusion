@@ -19,9 +19,13 @@ class BaseParserPipeline:
 
     name_parser_patterns = [
         r"{event}[.\s](?P<Event>[\w\s.]+)[.\s](?P<Date>\d{{4}}\.\d{{2}}\.\d{{2}})[.\s](?P<Resolution>\d{{3,4}}[pi])[.\s]",
+        r"{event}[.\s](?P<Event>[\w\s.]+)[.\s](?P<Date>\d{{4}}\s+\d{{2}}\s+\d{{2}})[.\s](?P<Resolution>\d{{3,4}}[pi])[.\s]",
         r"{event}[.\s](?P<Event>[\w\s.]+)[.\s](?P<Date>\d{{4}}\.\d{{2}}\.\d{{2}})[.\s]",
+        r"{event}[.\s](?P<Event>[\w\s.]+)[.\s](?P<Date>\d{{4}}\s+\d{{2}}\s+\d{{2}})[.\s]",
         r"{event}[.\s](?P<Event>[\w\s.]+)[.\s](?P<Date>\d{{2}}\.\d{{2}}\.\d{{4}})[.\s](?P<Resolution>\d{{3,4}}[pi])[.\s](?P<Language>\w+)",
+        r"{event}[.\s](?P<Event>[\w\s.]+)[.\s](?P<Date>\d{{2}}\s+\d{{2}}\s+\d{{4}})[.\s](?P<Resolution>\d{{3,4}}[pi])[.\s](?P<Language>\w+)",
         r"{event}[.\s](?P<Event>[\w\s.]+)[.\s](?P<Date>\d{{2}}\.\d{{2}}\.\d{{4}})[.\s]",
+        r"{event}[.\s](?P<Event>[\w\s.]+)[.\s](?P<Date>\d{{2}}\s+\d{{2}}\s+\d{{4}})[.\s]",
         r"{event}[.\s](?P<Event>[\w\s.]+)[.\s](?P<Date>\d{{4}}-\d{{2}}-\d{{2}})[.\s](?P<Resolution>\d{{3,4}}[pi])[.\s]",
         r"{event}[.\s](?P<Event>[\w\s.]+)[.\s](?P<Date>\d{{4}}-\d{{2}}-\d{{2}})[.\s]",
         r"{event}[.\s](?P<Event>[\w\s.]+)[.\s](?P<Year>\d{{4}})[.\s](?P<Resolution>\d{{3,4}}[pi])[.\s]",
@@ -190,25 +194,36 @@ class BaseParserPipeline:
                 imdb_rating=filtered_episode.get("imdb_rating"),
             )
         )
+        season_num = filtered_episode.get("season_number")
+        episode_num = filtered_episode.get("episode_number")
+        if season_num is not None and episode_num is not None:
+            files = torrent_data.get("file_data") or []
+            if len(files) == 1:
+                files[0]["season_number"] = season_num
+                files[0]["episode_number"] = episode_num
 
     @staticmethod
     def _episode_date(episode: dict) -> date | None:
-        """Extract a date object from an episode's released field.
+        """Extract a date object from an episode's air/release fields.
 
         The field can be a datetime, a date, or an ISO date string.
         """
-        released = episode.get("released")
-        if released is None:
-            return None
-        if isinstance(released, datetime):
-            return released.date()
-        if isinstance(released, date):
-            return released
-        if isinstance(released, str):
-            try:
-                return date.fromisoformat(released)
-            except ValueError:
-                return None
+        for raw in (
+            episode.get("released"),
+            episode.get("air_date"),
+            episode.get("release_date"),
+        ):
+            if raw is None:
+                continue
+            if isinstance(raw, datetime):
+                return raw.date()
+            if isinstance(raw, date):
+                return raw
+            if isinstance(raw, str):
+                try:
+                    return date.fromisoformat(raw[:10])
+                except ValueError:
+                    continue
         return None
 
     @classmethod

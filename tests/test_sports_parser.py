@@ -668,6 +668,9 @@ class TestExtractDateFromTitle:
             ("UFC-Fight-08-02-2024", date(2024, 2, 8), "08-02-2024"),
             # YYYY_MM_DD format
             ("MotoGP_2024_03_15_Race", date(2024, 3, 15), "2024_03_15"),
+            # Space-separated (WWE / SmackDown style: "WWE SmackDown 2026 03 27 ...")
+            ("WWE SmackDown 2026 03 27 NF 720p WEBRip", date(2026, 3, 27), "2026 03 27"),
+            ("WWE SmackDown 27 03 2026 720p HDTV", date(2026, 3, 27), "27 03 2026"),
         ],
     )
     def test_date_format_extraction(self, title, expected_date, expected_str):

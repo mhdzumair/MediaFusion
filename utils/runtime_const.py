@@ -58,5 +58,8 @@ TORBOX_SEARCH_TTL = PROWLARR_SEARCH_TTL
 TELEGRAM_SEARCH_TTL = int(timedelta(hours=settings.telegram_scrape_interval_hour).total_seconds())
 
 DATE_STR_REGEX = re.compile(
-    r"\d{4}\.\d{2}\.\d{2}|\d{4}-\d{2}-\d{2}|\d{4}_\d{2}_\d{2}|\d{2}\.\d{2}\.\d{4}|\d{2}-\d{2}-\d{4}|\d{2}_\d{2}_\d{4}",
+    r"\d{4}\.\d{2}\.\d{2}|\d{4}-\d{2}-\d{2}|\d{4}_\d{2}_\d{2}|"
+    r"\d{4}\s+\d{2}\s+\d{2}|"
+    r"\d{2}\.\d{2}\.\d{4}|\d{2}-\d{2}-\d{4}|\d{2}_\d{2}_\d{4}|"
+    r"\d{2}\s+\d{2}\s+\d{4}",
 )
