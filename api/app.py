@@ -62,6 +62,7 @@ def create_app() -> FastAPI:
     app.add_middleware(middleware.UserDataMiddleware)
     app.add_middleware(middleware.TimingMiddleware)
     app.add_middleware(middleware.SecureLoggingMiddleware)
+    app.add_middleware(middleware.TransientDatabaseRetryMiddleware)
 
     # Mount static files
     app.mount("/static", StaticFiles(directory="resources"), name="static")

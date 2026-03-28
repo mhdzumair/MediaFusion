@@ -11,8 +11,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from starlette.routing import Match
 
+from sqlalchemy.exc import DBAPIError, StatementError
+
 from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
+from db.retry_utils import is_retryable_db_error
 from db.schemas import UserData
 from utils import const
 from utils.crypto import UserFacingSecretError, crypto_utils
@@ -327,6 +330,41 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # Log error but allow the request to proceed to avoid blocking legitimate requests
             logging.error(f"Rate limit error: {e}")
             return True
+
+
+class TransientDatabaseRetryMiddleware(BaseHTTPMiddleware):
+    """Retry GET/HEAD once when the DB driver drops the connection mid-request.
+
+    Read paths typically open one AsyncSession per request; a dead pooled socket
+    surfaces as DBAPIError (e.g. asyncpg ConnectionDoesNotExistError). Pool
+    invalidation fixes the next checkout; this retry re-runs the handler so the
+    client sees a successful response instead of a 500.
+
+    Only safe, idempotent methods are retried to avoid double side effects.
+    """
+
+    _MAX_ATTEMPTS = 2
+    _SAFE_METHODS = frozenset({"GET", "HEAD"})
+    _log = logging.getLogger(__name__)
+
+    async def dispatch(self, request: Request, call_next: Callable):
+        if request.method.upper() not in self._SAFE_METHODS:
+            return await call_next(request)
+
+        for attempt in range(self._MAX_ATTEMPTS):
+            try:
+                return await call_next(request)
+            except (DBAPIError, StatementError) as exc:
+                if attempt >= self._MAX_ATTEMPTS - 1 or not is_retryable_db_error(exc):
+                    raise
+                self._log.warning(
+                    "Retrying %s %s after transient DB error (attempt %s/%s): %s",
+                    request.method,
+                    request.url.path,
+                    attempt + 1,
+                    self._MAX_ATTEMPTS,
+                    exc,
+                )
 
 
 class TimingMiddleware(BaseHTTPMiddleware):
