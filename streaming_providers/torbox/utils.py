@@ -5,7 +5,7 @@ from typing import Any
 
 from db.schemas import StreamingProvider, TorrentStreamData
 from db.schemas.media import UsenetStreamData
-from streaming_providers.exceptions import ProviderException
+from streaming_providers.exceptions import ProviderException, USENET_TRANSFER_ERROR_VIDEO
 from streaming_providers.parser import select_file_index_from_torrent
 from streaming_providers.usenet_file_selection import select_usenet_file_index
 from streaming_providers.torbox.client import Torbox
@@ -269,7 +269,7 @@ async def get_video_url_from_usenet_torbox(
             else:
                 raise ProviderException(
                     "No NZB URL available for this stream. Try importing the NZB from a Newznab indexer.",
-                    "transfer_error.mp4",
+                    USENET_TRANSFER_ERROR_VIDEO,
                 )
 
             # Check if it was found cached
@@ -288,7 +288,7 @@ async def get_video_url_from_usenet_torbox(
 
     raise ProviderException(
         "Usenet download did not reach downloaded status.",
-        "torrent_not_downloaded.mp4",
+        USENET_TRANSFER_ERROR_VIDEO,
     )
 
 

@@ -13,9 +13,43 @@ from aiowebdav.exceptions import NoConnection, RemoteResourceNotFound
 
 from db.schemas import StreamingProvider
 from db.schemas.media import UsenetStreamData
-from streaming_providers.exceptions import ProviderException
+from streaming_providers.exceptions import ProviderException, USENET_TRANSFER_ERROR_VIDEO
 from streaming_providers.sabnzbd.client import SABnzbd
 from streaming_providers.usenet_file_selection import select_usenet_file_dict
+
+# ``fail_message`` substrings that often indicate transient Usenet/network issues.
+# SABnzbd can re-queue these via ``mode=retry`` (NzbDAV currently does not).
+_FAIL_MESSAGE_SAB_AUTO_RETRY_SUBSTRINGS: tuple[str, ...] = (
+    "timeout",
+    "timed out",
+    "time out",
+    "connection reset",
+    "connection refused",
+    "broken pipe",
+    "too many connections",
+    "server busy",
+    "temporary failure",
+    "temporary error",
+    "503",
+    "502",
+    "504",
+    "500 internal",
+    "cannot connect",
+    "failed to connect",
+    "errno",
+    "ssl handshake",
+    "tls",
+    "network is unreachable",
+    "name or service not known",
+    "getaddrinfo failed",
+)
+
+
+def _sab_fail_message_is_auto_retryable(fail_message: str) -> bool:
+    if not (fail_message or "").strip():
+        return False
+    low = fail_message.lower()
+    return any(needle in low for needle in _FAIL_MESSAGE_SAB_AUTO_RETRY_SUBSTRINGS)
 
 
 @asynccontextmanager
@@ -207,21 +241,48 @@ def generate_webdav_url(streaming_provider: StreamingProvider, selected_file: di
     )
 
 
+def _sab_download_failed_user_message(status: dict, *, provider_label: str) -> str:
+    """Build a user-visible message from SAB-compatible queue/history status."""
+    fail = (status.get("fail_message") or "").strip()
+    if fail:
+        return f"{provider_label}: {fail}"
+    raw = (status.get("raw_history_status") or "").strip()
+    if raw and raw.lower() != "failed":
+        return f"{provider_label}: download failed ({raw})"
+    return f"{provider_label}: download failed"
+
+
 async def wait_for_download_completion(
     sabnzbd: SABnzbd,
     nzo_id: str,
     max_retries: int = 60,
     retry_interval: int = 5,
     min_progress: float = 100.0,
+    provider_label: str = "SABnzbd",
+    *,
+    stream_name: str | None = None,
+    sab_auto_retry_failed: int = 1,
 ) -> dict:
-    """Wait for an NZB download to complete.
+    """Wait for an NZB download to reach a terminal history state (completed or failed).
+
+    ``min_progress`` is kept for backward compatibility; completion is determined only when
+    the job appears in history as **completed**, not when the queue percentage hits 100%
+    (verify/repair/extract may still be running).
+
+    For failures whose ``fail_message`` looks transient, calls SABnzbd's ``mode=retry``
+    (``value=<nzo_id>``) up to ``sab_auto_retry_failed`` times before surfacing the error.
+    Downloader stacks that do not implement retry (e.g. NzbDAV) return ``status: false``
+    and behave as before.
 
     Args:
-        sabnzbd: SABnzbd client
+        sabnzbd: SABnzbd-compatible client (SABnzbd or NzbDAV)
         nzo_id: NZO ID of the download
         max_retries: Maximum number of retries
         retry_interval: Seconds between retries
-        min_progress: Minimum progress percentage to consider complete
+        min_progress: Unused (legacy)
+        provider_label: Product name for error messages (e.g. ``NzbDAV``)
+        stream_name: Stream display name used to re-resolve ``nzo_id`` after a retry
+        sab_auto_retry_failed: Max SAB ``mode=retry`` attempts for retryable messages
 
     Returns:
         Download status dict
@@ -229,22 +290,82 @@ async def wait_for_download_completion(
     Raises:
         ProviderException: If download doesn't complete in time
     """
+    del min_progress
     retries = 0
+    sab_retries_used = 0
     while retries < max_retries:
         status = await sabnzbd.get_nzb_status(nzo_id)
         if not status:
-            raise ProviderException("Download not found in SABnzbd", "transfer_error.mp4")
+            raise ProviderException(
+                f"{provider_label}: download not found (missing from queue and history)",
+                USENET_TRANSFER_ERROR_VIDEO,
+            )
 
-        if status["status"] == "completed" or status["progress"] >= min_progress:
+        norm = (status.get("status") or "unknown").strip().lower()
+        if norm == "failed":
+            fail_raw = (status.get("fail_message") or "").strip()
+            if (
+                sab_auto_retry_failed > 0
+                and sab_retries_used < sab_auto_retry_failed
+                and stream_name
+                and _sab_fail_message_is_auto_retryable(fail_raw)
+            ):
+                if await sabnzbd.retry_failed_history_item(nzo_id):
+                    sab_retries_used += 1
+                    retries = 0
+                    logging.info(
+                        "%s: SAB mode=retry re-queued failed job (%s)",
+                        provider_label,
+                        fail_raw[:160],
+                    )
+                    await asyncio.sleep(2)
+                    found = await sabnzbd.find_download_by_name(stream_name)
+                    if found and found.get("nzo_id"):
+                        nzo_id = str(found["nzo_id"])
+                    continue
+            raise ProviderException(
+                _sab_download_failed_user_message(status, provider_label=provider_label),
+                USENET_TRANSFER_ERROR_VIDEO,
+            )
+        if norm == "completed":
             return status
-
-        if status["status"] in ("failed", "Failed"):
-            raise ProviderException("Download failed in SABnzbd", "transfer_error.mp4")
 
         await asyncio.sleep(retry_interval)
         retries += 1
 
-    raise ProviderException("Download did not complete in time", "torrent_not_downloaded.mp4")
+    raise ProviderException(
+        f"{provider_label}: download did not finish in time; check queue/history for errors",
+        USENET_TRANSFER_ERROR_VIDEO,
+    )
+
+
+async def raise_no_matching_usenet_video_file(
+    client: SABnzbd,
+    nzo_id: str,
+    last_status: dict,
+    folder_hint: str,
+    *,
+    provider_label: str = "SABnzbd",
+) -> None:
+    """Raise when WebDAV lists no playable file but the SAB API reported completion."""
+    refreshed = await client.get_nzb_status(nzo_id)
+    st = refreshed if refreshed else last_status
+    fail = (st.get("fail_message") or "").strip()
+    if fail:
+        raise ProviderException(f"{provider_label}: {fail}", USENET_TRANSFER_ERROR_VIDEO)
+    raw = (st.get("raw_history_status") or "").strip()
+    norm = (st.get("status") or "").strip().lower()
+    if norm == "failed" or (raw and raw.lower() == "failed"):
+        raise ProviderException(
+            _sab_download_failed_user_message(st, provider_label=provider_label),
+            USENET_TRANSFER_ERROR_VIDEO,
+        )
+    raise ProviderException(
+        f"{provider_label}: job finished but no playable video was found under WebDAV "
+        f"(folder {folder_hint!r}). Open {provider_label} history for repair/unpack/par errors "
+        f"(e.g. missing articles, bad RAR set).",
+        "no_video_file_found.mp4",
+    )
 
 
 async def get_video_url_from_sabnzbd(
@@ -296,18 +417,31 @@ async def get_video_url_from_sabnzbd(
                 )
                 if selected_file:
                     return generate_webdav_url(streaming_provider, selected_file)
+            await raise_no_matching_usenet_video_file(
+                sabnzbd,
+                existing["nzo_id"],
+                existing,
+                existing.get("filename") or stream.name,
+                provider_label="SABnzbd",
+            )
 
         # Add the NZB if not exists or not complete
         if not existing:
             if stream.nzb_url:
                 nzo_id = await sabnzbd.add_nzb_by_url(stream.nzb_url, category, stream.name)
             else:
-                raise ProviderException("No NZB URL available for this stream", "transfer_error.mp4")
+                raise ProviderException("No NZB URL available for this stream", USENET_TRANSFER_ERROR_VIDEO)
         else:
             nzo_id = existing["nzo_id"]
 
         # Wait for completion
-        status = await wait_for_download_completion(sabnzbd, nzo_id, max_retries, retry_interval)
+        status = await wait_for_download_completion(
+            sabnzbd,
+            nzo_id,
+            max_retries,
+            retry_interval,
+            stream_name=stream.name,
+        )
 
         # Find the file in completed downloads
         async with initialize_webdav(streaming_provider) as webdav:
@@ -322,7 +456,13 @@ async def get_video_url_from_sabnzbd(
                 episode_air_date,
             )
             if not selected_file:
-                raise ProviderException("No matching file found in download", "no_video_file_found.mp4")
+                await raise_no_matching_usenet_video_file(
+                    sabnzbd,
+                    nzo_id,
+                    status,
+                    status.get("filename") or stream.name,
+                    provider_label="SABnzbd",
+                )
 
             return generate_webdav_url(streaming_provider, selected_file)
 

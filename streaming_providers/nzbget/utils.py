@@ -13,7 +13,7 @@ from aiowebdav.exceptions import NoConnection, RemoteResourceNotFound
 
 from db.schemas import StreamingProvider
 from db.schemas.media import UsenetStreamData
-from streaming_providers.exceptions import ProviderException
+from streaming_providers.exceptions import ProviderException, USENET_TRANSFER_ERROR_VIDEO
 from streaming_providers.nzbget.client import NZBGet
 from streaming_providers.usenet_file_selection import select_usenet_file_dict
 
@@ -230,18 +230,18 @@ async def wait_for_download_completion(
     while retries < max_retries:
         status = await nzbget.get_nzb_status(nzb_id)
         if not status:
-            raise ProviderException("Download not found in NZBGet", "transfer_error.mp4")
+            raise ProviderException("Download not found in NZBGet", USENET_TRANSFER_ERROR_VIDEO)
 
         if status["status"] == "completed" or status["progress"] >= min_progress:
             return status
 
         if status["status"] in ("failure", "failed"):
-            raise ProviderException("Download failed in NZBGet", "transfer_error.mp4")
+            raise ProviderException("Download failed in NZBGet", USENET_TRANSFER_ERROR_VIDEO)
 
         await asyncio.sleep(retry_interval)
         retries += 1
 
-    raise ProviderException("Download did not complete in time", "torrent_not_downloaded.mp4")
+    raise ProviderException("Download did not complete in time", USENET_TRANSFER_ERROR_VIDEO)
 
 
 async def get_video_url_from_nzbget(
@@ -299,7 +299,7 @@ async def get_video_url_from_nzbget(
             if stream.nzb_url:
                 nzb_id = await nzbget.add_nzb_by_url(stream.nzb_url, category, stream.name)
             else:
-                raise ProviderException("No NZB URL available for this stream", "transfer_error.mp4")
+                raise ProviderException("No NZB URL available for this stream", USENET_TRANSFER_ERROR_VIDEO)
         else:
             nzb_id = existing["nzb_id"]
 

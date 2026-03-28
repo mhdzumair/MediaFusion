@@ -5,7 +5,6 @@ on the same host/port. This module reuses the SABnzbd client and
 auto-derives the WebDAV URL from the NzbDAV base URL.
 """
 
-import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -18,11 +17,13 @@ from aiowebdav.exceptions import NoConnection, ResponseErrorCode
 
 from db.schemas import StreamingProvider
 from db.schemas.media import UsenetStreamData
-from streaming_providers.exceptions import ProviderException
+from streaming_providers.exceptions import ProviderException, USENET_TRANSFER_ERROR_VIDEO
 from streaming_providers.nzbdav.client import NzbDAVClient
 from streaming_providers.sabnzbd.utils import (
     get_files_from_folder,
+    raise_no_matching_usenet_video_file,
     select_file_from_usenet,
+    wait_for_download_completion,
 )
 
 
@@ -201,46 +202,6 @@ def generate_webdav_url(streaming_provider: StreamingProvider, selected_file: di
     )
 
 
-async def wait_for_download_completion(
-    client: NzbDAVClient,
-    nzo_id: str,
-    max_retries: int = 60,
-    retry_interval: int = 5,
-    min_progress: float = 100.0,
-) -> dict:
-    """Wait for an NZB download to complete in NzbDAV.
-
-    Args:
-        client: NzbDAV client
-        nzo_id: NZO ID of the download
-        max_retries: Maximum number of retries
-        retry_interval: Seconds between retries
-        min_progress: Minimum progress percentage to consider complete
-
-    Returns:
-        Download status dict
-
-    Raises:
-        ProviderException: If download doesn't complete in time
-    """
-    retries = 0
-    while retries < max_retries:
-        status = await client.get_nzb_status(nzo_id)
-        if not status:
-            raise ProviderException("Download not found in NzbDAV", "transfer_error.mp4")
-
-        if status["status"] == "completed" or status["progress"] >= min_progress:
-            return status
-
-        if status["status"] in ("failed", "Failed"):
-            raise ProviderException("Download failed in NzbDAV", "transfer_error.mp4")
-
-        await asyncio.sleep(retry_interval)
-        retries += 1
-
-    raise ProviderException("Download did not complete in time", "torrent_not_downloaded.mp4")
-
-
 async def get_video_url_from_nzbdav(
     nzb_hash: str,
     streaming_provider: StreamingProvider,
@@ -288,16 +249,30 @@ async def get_video_url_from_nzbdav(
                 )
                 if selected_file:
                     return generate_webdav_url(streaming_provider, selected_file)
+            await raise_no_matching_usenet_video_file(
+                client,
+                existing["nzo_id"],
+                existing,
+                existing.get("filename") or stream.name,
+                provider_label="NzbDAV",
+            )
 
         if not existing:
             if stream.nzb_url:
                 nzo_id = await client.add_nzb_by_url(stream.nzb_url, category, stream.name)
             else:
-                raise ProviderException("No NZB URL available for this stream", "transfer_error.mp4")
+                raise ProviderException("No NZB URL available for this stream", USENET_TRANSFER_ERROR_VIDEO)
         else:
             nzo_id = existing["nzo_id"]
 
-        status = await wait_for_download_completion(client, nzo_id, max_retries, retry_interval)
+        status = await wait_for_download_completion(
+            client,
+            nzo_id,
+            max_retries,
+            retry_interval,
+            provider_label="NzbDAV",
+            stream_name=stream.name,
+        )
 
         async with initialize_webdav(streaming_provider) as webdav:
             selected_file = await find_file_in_nzbdav_downloads(
@@ -311,7 +286,13 @@ async def get_video_url_from_nzbdav(
                 episode_air_date,
             )
             if not selected_file:
-                raise ProviderException("No matching file found in download", "no_video_file_found.mp4")
+                await raise_no_matching_usenet_video_file(
+                    client,
+                    nzo_id,
+                    status,
+                    status.get("filename") or stream.name,
+                    provider_label="NzbDAV",
+                )
 
             return generate_webdav_url(streaming_provider, selected_file)
 

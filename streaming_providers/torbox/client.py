@@ -5,7 +5,7 @@ from typing import Any, ClassVar
 import aiohttp
 
 from streaming_providers.debrid_client import DebridClient
-from streaming_providers.exceptions import ProviderException
+from streaming_providers.exceptions import ProviderException, USENET_TRANSFER_ERROR_VIDEO
 
 logger = logging.getLogger(__name__)
 
@@ -403,7 +403,7 @@ class Torbox(DebridClient):
         await self._handle_service_specific_errors(response, 200)
         raise ProviderException(
             f"Failed to create Usenet download link from Torbox: {response}",
-            "transfer_error.mp4",
+            USENET_TRANSFER_ERROR_VIDEO,
         )
 
     async def delete_usenet(self, usenet_id: int) -> dict:

@@ -5,7 +5,7 @@ from typing import Any
 
 import aiohttp
 
-from streaming_providers.exceptions import ProviderException
+from streaming_providers.exceptions import ProviderException, USENET_TRANSFER_ERROR_VIDEO
 
 
 class NZBGet:
@@ -144,7 +144,7 @@ class NZBGet:
         )
 
         if not result or result <= 0:
-            raise ProviderException("Failed to add NZB URL to NZBGet", "transfer_error.mp4")
+            raise ProviderException("Failed to add NZB URL to NZBGet", USENET_TRANSFER_ERROR_VIDEO)
 
         return result
 
@@ -186,7 +186,7 @@ class NZBGet:
         )
 
         if not result or result <= 0:
-            raise ProviderException("Failed to add NZB to NZBGet", "transfer_error.mp4")
+            raise ProviderException("Failed to add NZB to NZBGet", USENET_TRANSFER_ERROR_VIDEO)
 
         return result
 

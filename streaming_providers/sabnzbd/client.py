@@ -5,7 +5,32 @@ from typing import Any
 
 import aiohttp
 
-from streaming_providers.exceptions import ProviderException
+from streaming_providers.exceptions import ProviderException, USENET_TRANSFER_ERROR_VIDEO
+
+_HISTORY_LOOKUP_LIMIT = 500
+
+
+def _normalize_history_status(raw: str | None) -> str:
+    """Normalize SABnzbd history ``status`` (e.g. Completed / Failed) to lowercase token."""
+    s = (raw or "").strip().lower()
+    if s == "completed":
+        return "completed"
+    if s == "failed":
+        return "failed"
+    return s or "unknown"
+
+
+def _coerce_fail_message(raw: object | None) -> str | None:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+        return text or None
+    if isinstance(raw, list):
+        parts = [str(x).strip() for x in raw if x is not None and str(x).strip()]
+        return "; ".join(parts) if parts else None
+    text = str(raw).strip()
+    return text or None
 
 
 class SABnzbd:
@@ -127,12 +152,12 @@ class SABnzbd:
         if response.get("status") is False:
             raise ProviderException(
                 f"Failed to add NZB URL to SABnzbd: {response.get('error', 'Unknown error')}",
-                "transfer_error.mp4",
+                USENET_TRANSFER_ERROR_VIDEO,
             )
 
         nzo_ids = response.get("nzo_ids", [])
         if not nzo_ids:
-            raise ProviderException("No NZO ID returned from SABnzbd", "transfer_error.mp4")
+            raise ProviderException("No NZO ID returned from SABnzbd", USENET_TRANSFER_ERROR_VIDEO)
 
         return nzo_ids[0]
 
@@ -173,12 +198,12 @@ class SABnzbd:
             if response.get("status") is False:
                 raise ProviderException(
                     f"Failed to add NZB to SABnzbd: {response.get('error', 'Unknown error')}",
-                    "transfer_error.mp4",
+                    USENET_TRANSFER_ERROR_VIDEO,
                 )
 
         nzo_ids = response.get("nzo_ids", [])
         if not nzo_ids:
-            raise ProviderException("No NZO ID returned from SABnzbd", "transfer_error.mp4")
+            raise ProviderException("No NZO ID returned from SABnzbd", USENET_TRANSFER_ERROR_VIDEO)
 
         return nzo_ids[0]
 
@@ -189,12 +214,15 @@ class SABnzbd:
             nzo_id: NZO ID of the download
 
         Returns:
-            Download status dict or None if not found
+            Download status dict or None if not found.
+            Keys include ``status`` (completed|failed|downloading|unknown), ``fail_message``,
+            ``queue_stage`` (raw SAB queue phase while still in queue), and ``progress``.
         """
         # Check queue first
         queue = await self.get_queue()
         for slot in queue.get("slots", []):
             if slot.get("nzo_id") == nzo_id:
+                queue_stage = (slot.get("status") or "").strip()
                 return {
                     "status": "downloading",
                     "progress": float(slot.get("percentage", 0)),
@@ -202,19 +230,27 @@ class SABnzbd:
                     "size": slot.get("mb", 0) * 1024 * 1024,
                     "eta": slot.get("timeleft", ""),
                     "nzo_id": nzo_id,
+                    "fail_message": None,
+                    "queue_stage": queue_stage,
                 }
 
-        # Check history
-        history = await self.get_history()
+        # Check history (large limit so recent jobs are still resolved)
+        history = await self.get_history(limit=_HISTORY_LOOKUP_LIMIT)
         for slot in history.get("slots", []):
             if slot.get("nzo_id") == nzo_id:
+                raw_status = slot.get("status") or ""
+                norm = _normalize_history_status(raw_status)
+                fail_message = _coerce_fail_message(slot.get("fail_message"))
                 return {
-                    "status": "completed" if slot.get("status") == "Completed" else slot.get("status", "unknown"),
+                    "status": norm,
                     "progress": 100.0,
                     "filename": slot.get("name", ""),
                     "size": slot.get("bytes", 0),
                     "storage": slot.get("storage", ""),
                     "nzo_id": nzo_id,
+                    "fail_message": fail_message,
+                    "queue_stage": None,
+                    "raw_history_status": raw_status,
                 }
 
         return None
@@ -285,6 +321,22 @@ class SABnzbd:
         response = await self._make_request("queue", {"name": "resume", "value": nzo_id})
         return response.get("status", False)
 
+    async def retry_failed_history_item(self, nzo_id: str) -> bool:
+        """Re-queue a failed job from history (SABnzbd ``mode=retry``).
+
+        API: ``api?mode=retry&value=NZO_ID`` — see SABnzbd wiki (Configuration → API,
+        "Retry history item"). Some SAB-compatible apps do not implement this mode
+        (they return ``status: false``).
+
+        Args:
+            nzo_id: History job identifier
+
+        Returns:
+            True if the server accepted the retry request.
+        """
+        response = await self._make_request("retry", {"value": nzo_id})
+        return response.get("status") is True
+
     async def get_categories(self) -> list[str]:
         """Get available download categories.
 
@@ -312,20 +364,25 @@ class SABnzbd:
                     "status": "downloading",
                     "progress": float(slot.get("percentage", 0)),
                     "size": slot.get("mb", 0) * 1024 * 1024,
+                    "fail_message": None,
                 }
             )
 
         # Get history items
         history = await self.get_history()
         for slot in history.get("slots", []):
+            raw_status = slot.get("status") or ""
+            norm = _normalize_history_status(raw_status)
+            fail_message = _coerce_fail_message(slot.get("fail_message"))
             downloads.append(
                 {
                     "nzo_id": slot.get("nzo_id"),
                     "filename": slot.get("name", ""),
-                    "status": "completed" if slot.get("status") == "Completed" else slot.get("status", "unknown"),
+                    "status": norm,
                     "progress": 100.0,
                     "size": slot.get("bytes", 0),
                     "storage": slot.get("storage", ""),
+                    "fail_message": fail_message,
                 }
             )
 
