@@ -127,6 +127,95 @@ def _resolution_to_dimensions(resolution: str | None) -> tuple[int | None, int |
     return resolution_map.get(resolution.lower(), (None, None))
 
 
+def _hdr_normalize_token_key(token: str) -> str:
+    return " ".join(token.strip().lower().split())
+
+
+def _resolve_hdr_token_to_filter_value(token: str) -> str | None:
+    """Map a single raw HDR token to a value in ``const.SUPPORTED_HDR_FORMATS``, or None if unrecognized."""
+    stripped = str(token).strip()
+    if not stripped:
+        return None
+    key = _hdr_normalize_token_key(stripped)
+    if key == "unknown":
+        return "Unknown"
+    mapped = const.HDR_FORMAT_ALIASES.get(key)
+    if mapped is not None:
+        return mapped
+    if stripped in const.SUPPORTED_HDR_FORMATS:
+        return stripped
+    return None
+
+
+def normalized_hdr_filter_and_display(
+    raw_formats: list[str] | None,
+) -> tuple[list[str], list[str]]:
+    """Derive HDR tags for preference matching and for Stremio/catalog display.
+
+    Returns:
+        filter_formats: Tags matched against ``user_data.hdr_filter``. Uses ``Unknown`` when
+            metadata is missing, lists an explicit unknown signal, or contains tokens that do
+            not map to a known format. ``SDR`` is only used when the source explicitly indicates SDR.
+        display_formats: Canonical labels for the UI (omits ``Unknown``; empty when the signal
+            is unknown-only so the palette line can be omitted).
+    """
+    raw = [str(t).strip() for t in (raw_formats or []) if t is not None and str(t).strip()]
+    if not raw:
+        return (["Unknown"], [])
+
+    mapped_values: list[str] = []
+    unmapped = False
+    for token in raw:
+        resolved = _resolve_hdr_token_to_filter_value(token)
+        if resolved is None:
+            unmapped = True
+        else:
+            mapped_values.append(resolved)
+
+    seen: set[str] = set()
+    filter_formats: list[str] = []
+    for value in mapped_values:
+        if value not in seen:
+            seen.add(value)
+            filter_formats.append(value)
+
+    if unmapped and "Unknown" not in filter_formats:
+        filter_formats.append("Unknown")
+
+    display_formats = [h for h in filter_formats if h != "Unknown"]
+    return (filter_formats, display_formats)
+
+
+def _season_episode_from_stremio_video_id(stremio_video_id: str) -> tuple[int | None, int | None]:
+    """Parse trailing ``season:episode`` from a Stremio video id (e.g. ``tt123:1:5`` or ``mf:12:1:5``)."""
+    parts = stremio_video_id.split(":")
+    if len(parts) < 3:
+        return None, None
+    try:
+        episode_num = int(parts[-1])
+        season_num = int(parts[-2])
+    except ValueError:
+        return None, None
+    return season_num, episode_num
+
+
+def _sort_size_bytes_for_stream(
+    stream: AnyStreamData,
+    season: int | None,
+    episode: int | None,
+) -> int:
+    """Byte size for ``size`` sorting: per-episode file when linked, otherwise total stream size."""
+    total = stream.size or 0
+    if season is None or episode is None:
+        return total
+    get_file_for_episode = getattr(stream, "get_file_for_episode", None)
+    if callable(get_file_for_episode):
+        ep_file = get_file_for_episode(season, episode)
+        if ep_file is not None and (ep_file.size or 0) > 0:
+            return ep_file.size or 0
+    return total
+
+
 async def filter_streams_by_user_preferences(
     streams: list[AnyStreamData],
     user_data: UserData,
@@ -145,7 +234,6 @@ async def filter_streams_by_user_preferences(
 
     valid_resolutions = const.SUPPORTED_RESOLUTIONS
     valid_qualities = const.SUPPORTED_QUALITIES
-    valid_hdr_formats = const.SUPPORTED_HDR_FORMATS
     valid_languages = const.SUPPORTED_LANGUAGES
 
     stream_name_filter_mode = user_data.stream_name_filter_mode
@@ -209,9 +297,7 @@ async def filter_streams_by_user_preferences(
         )
         stream.filtered_quality = stream.quality if getattr(stream, "quality", None) in valid_qualities else None
         stream_hdr_formats = getattr(stream, "hdr_formats", []) or []
-        stream.filtered_hdr_formats = [hdr for hdr in stream_hdr_formats if hdr in valid_hdr_formats]
-        if not stream.filtered_hdr_formats:
-            stream.filtered_hdr_formats = ["SDR"]
+        stream.filtered_hdr_formats, _ = normalized_hdr_filter_and_display(stream_hdr_formats)
         stream_languages = getattr(stream, "languages", []) or []
         stream.filtered_languages = [lang for lang in stream_languages if lang in valid_languages] or [None]
         stream.cached = False
@@ -280,6 +366,8 @@ async def filter_and_sort_streams(
     )
     if not filtered_streams:
         return filtered_streams, filtered_reasons
+
+    sort_season, sort_episode = _season_episode_from_stremio_video_id(stremio_video_id)
 
     primary_provider = provider_override or user_data.get_primary_provider()
     language_filter_set = set(user_data.language_sorting)
@@ -372,7 +460,7 @@ async def filter_and_sort_streams(
                                 break
                     return multiplier * -rank
                 case "size":
-                    return multiplier * (torrent_stream.size or 0)
+                    return multiplier * _sort_size_bytes_for_stream(torrent_stream, sort_season, sort_episode)
                 case "seeders":
                     return multiplier * (getattr(torrent_stream, "seeders", 0) or 0)
                 case "created_at":
@@ -710,13 +798,15 @@ def _build_stream_entries(
             file_name = basename(file_name) if file_name else None
 
             # Compute quality_detail - use getattr for attributes not present on all stream types
-            hdr_formats = getattr(stream_data, "hdr_formats", []) or []
+            hdr_display_formats = [
+                h for h in (getattr(stream_data, "filtered_hdr_formats", None) or []) if h != "Unknown"
+            ]
             audio_formats = getattr(stream_data, "audio_formats", []) or []
             quality_detail = " ".join(
                 filter(
                     None,
                     [
-                        f"🎨 {'|'.join(hdr_formats)}" if hdr_formats else None,
+                        f"🎨 {'|'.join(hdr_display_formats)}" if hdr_display_formats else None,
                         f"📺 {stream_data.quality}" if stream_data.quality else None,
                         f"🎞️ {stream_data.codec}" if stream_data.codec else None,
                         f"🎵 {'|'.join(audio_formats)}" if audio_formats else None,
@@ -909,7 +999,7 @@ def _build_stream_entries(
                 "bit_depth": getattr(stream_data, "bit_depth", None),
                 "audio_formats": list(audio_formats),
                 "channels": list(getattr(stream_data, "channels", []) or []),
-                "hdr_formats": list(hdr_formats),
+                "hdr_formats": list(hdr_display_formats),
                 "languages": display_languages,
                 "language_flags": language_flags,
                 "size": file_size,
@@ -936,7 +1026,7 @@ def _build_stream_entries(
                 "uSmallLanguageCodes": [],
                 "wedontknowwhatakilometeris": list(language_flags),
                 "uWedontknowwhatakilometeris": [],
-                "visualTags": list(hdr_formats),
+                "visualTags": list(hdr_display_formats),
                 "audioTags": list(audio_formats),
                 "releaseGroup": getattr(stream_data, "release_group", None),
                 "regexScore": None,
@@ -1061,7 +1151,7 @@ def _build_stream_entries(
                     bit_depth=getattr(stream_data, "bit_depth", None),
                     audio_formats=list(audio_formats),
                     channels=list(getattr(stream_data, "channels", []) or []),
-                    hdr_formats=list(hdr_formats),
+                    hdr_formats=list(hdr_display_formats),
                     is_remastered=bool(getattr(stream_data, "is_remastered", False)),
                     is_upscaled=bool(getattr(stream_data, "is_upscaled", False)),
                     is_proper=bool(getattr(stream_data, "is_proper", False)),

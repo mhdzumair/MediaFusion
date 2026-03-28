@@ -162,7 +162,12 @@ export const HDR_FORMATS = [
   { id: 'HDR10+', label: 'HDR10+', desc: 'HDR10+ streams' },
   { id: 'Dolby Vision', label: 'Dolby Vision', desc: 'Dolby Vision streams' },
   { id: 'HLG', label: 'HLG', desc: 'Hybrid Log-Gamma streams' },
-  { id: 'SDR', label: 'SDR', desc: 'Standard dynamic range or unknown HDR metadata' },
+  { id: 'SDR', label: 'SDR', desc: 'Standard dynamic range (only when the release is tagged SDR)' },
+  {
+    id: 'Unknown',
+    label: 'Unknown',
+    desc: 'Missing HDR metadata or tags that are not mapped (not treated as SDR)',
+  },
 ]
 
 export const SORTING_OPTIONS = [
@@ -278,7 +283,7 @@ export const DEFAULT_CONFIG: ProfileConfig = {
   cf: ['Adults+'],
   ls: LANGUAGES,
   qf: ['BluRay/UHD', 'WEB/HD', 'DVD/TV/SAT', 'CAM/Screener', 'Unknown'],
-  hf: ['HDR10', 'HDR10+', 'Dolby Vision', 'HLG', 'SDR'],
+  hf: ['HDR10', 'HDR10+', 'Dolby Vision', 'HLG', 'SDR', 'Unknown'],
   lss: false,
   ia: true,
   mxs: 25,

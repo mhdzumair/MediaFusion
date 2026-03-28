@@ -72,7 +72,12 @@ from utils.const import (
     STREAMING_PROVIDERS_SHORT_NAMES,
 )
 from utils.network import encode_mediaflow_acestream_url, get_user_public_ip
-from utils.parser import CatalogFilterStreamData, filter_streams_by_user_preferences, render_stream_template
+from utils.parser import (
+    CatalogFilterStreamData,
+    filter_streams_by_user_preferences,
+    normalized_hdr_filter_and_display,
+    render_stream_template,
+)
 from utils.profile_context import ProfileContext, ProfileDataProvider
 
 logger = logging.getLogger(__name__)
@@ -1919,7 +1924,8 @@ async def get_catalog_item_streams(
         # Format multi-value attributes
         audio_formats = [af.name for af in stream.audio_formats] if stream.audio_formats else []
         channels = [ch.name for ch in stream.channels] if stream.channels else []
-        hdr_formats = [hdr.name for hdr in stream.hdr_formats] if stream.hdr_formats else []
+        raw_hdr_names = [hdr.name for hdr in stream.hdr_formats] if stream.hdr_formats else []
+        _, hdr_formats = normalized_hdr_filter_and_display(raw_hdr_names)
         languages = [lang.name for lang in stream.languages] if stream.languages else []
 
         # Calculate file size (torrent has total_size, HTTP stream has size, usenet has size, telegram has size)

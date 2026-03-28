@@ -523,8 +523,31 @@ HDR_FORMATS_FILTERS = [
     "Dolby Vision",
     "HLG",
     "SDR",
+    "Unknown",
 ]
 SUPPORTED_HDR_FORMATS = set(HDR_FORMATS_FILTERS)
+
+# Lowercase keys → canonical names in ``HDR_FORMATS_FILTERS`` (excludes ``Unknown``).
+# Covers parse-torrent-title and common release naming (e.g. ``DV``, bare ``HDR``).
+HDR_FORMAT_ALIASES: dict[str, str] = {
+    "hdr10": "HDR10",
+    "hdr 10": "HDR10",
+    "hdr-10": "HDR10",
+    "hdr10+": "HDR10+",
+    "hdr10plus": "HDR10+",
+    "hdr 10+": "HDR10+",
+    "dv": "Dolby Vision",
+    "dovi": "Dolby Vision",
+    "dovi.": "Dolby Vision",
+    "dolby vision": "Dolby Vision",
+    "dolby-vision": "Dolby Vision",
+    "hlg": "HLG",
+    "sdr": "SDR",
+    # Scene/common: bare HDR on UHD releases is typically HDR10 base layer.
+    "hdr": "HDR10",
+    "uhdr": "HDR10",
+}
+HDR_CANONICAL_TAGS: frozenset[str] = frozenset(h for h in HDR_FORMATS_FILTERS if h != "Unknown")
 
 QUALITY_RANKING = {
     quality: rank for rank, qualities in enumerate(reversed(QUALITY_GROUPS.values())) for quality in qualities

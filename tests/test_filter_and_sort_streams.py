@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 import pytest
 
 from db.schemas.config import UserData
-from db.schemas.media import TorrentStreamData
+from db.schemas.media import StreamFileData, TorrentStreamData
 from utils.parser import filter_and_sort_streams
 
 
@@ -46,6 +46,7 @@ def make_stream(
     languages: list[str] | None = None,
     seeders: int = 10,
     created_at: datetime | None = None,
+    files: list[StreamFileData] | None = None,
 ) -> TorrentStreamData:
     """Create a minimal TorrentStreamData for testing.
 
@@ -70,6 +71,7 @@ def make_stream(
         seeders=seeders,
         created_at=created_at or datetime.now(UTC),
         meta_id="tt1234567",
+        files=files if files is not None else [],
     )
 
 
@@ -78,7 +80,7 @@ def make_user_data(**overrides) -> UserData:
     defaults = {
         "sr": ["1080p", "720p", "480p"],
         "qf": ["WEB/HD", "BluRay/UHD"],
-        "hf": ["HDR10", "HDR10+", "Dolby Vision", "HLG", "SDR"],
+        "hf": ["HDR10", "HDR10+", "Dolby Vision", "HLG", "SDR", "Unknown"],
         "ls": ["English", "Hindi", "Tamil"],
         "tsp": [
             {"k": "resolution", "d": "desc"},
@@ -247,12 +249,41 @@ class TestHDRFiltering:
         assert reasons["HDR Not Selected"] == 2
 
     @pytest.mark.asyncio
-    async def test_missing_hdr_metadata_treated_as_sdr(self):
+    async def test_missing_hdr_metadata_matches_unknown_filter(self):
         streams = [make_stream(name="S.UnknownHDR", hdr_formats=[])]
-        user_data = make_user_data(hf=["SDR"])
+        user_data = make_user_data(hf=["Unknown"])
         result, reasons = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
         assert len(result) == 1
         assert result[0].name == "S.UnknownHDR"
+        assert result[0].filtered_hdr_formats == ["Unknown"]
+        assert reasons["HDR Not Selected"] == 0
+
+    @pytest.mark.asyncio
+    async def test_missing_hdr_metadata_not_treated_as_sdr(self):
+        streams = [make_stream(name="S.UnknownHDR", hdr_formats=[])]
+        user_data = make_user_data(hf=["SDR"])
+        result, reasons = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
+        assert len(result) == 0
+        assert reasons["HDR Not Selected"] == 1
+
+    @pytest.mark.asyncio
+    async def test_explicit_sdr_requires_sdr_tag(self):
+        streams = [
+            make_stream(name="S.Tagged", hdr_formats=["SDR"]),
+            make_stream(name="S.EmptyMeta", hdr_formats=[]),
+        ]
+        user_data = make_user_data(hf=["SDR"])
+        result, _ = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
+        assert len(result) == 1
+        assert result[0].name == "S.Tagged"
+
+    @pytest.mark.asyncio
+    async def test_hdr_aliases_map_to_canonical_filters(self):
+        streams = [make_stream(name="S.DV.HDR", hdr_formats=["DV", "HDR"])]
+        user_data = make_user_data(hf=["Dolby Vision", "HDR10"])
+        result, reasons = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
+        assert len(result) == 1
+        assert result[0].filtered_hdr_formats == ["Dolby Vision", "HDR10"]
         assert reasons["HDR Not Selected"] == 0
 
 
@@ -312,6 +343,60 @@ class TestLanguageSorting:
 # ---------------------------------------------------------------------------
 # File size filtering
 # ---------------------------------------------------------------------------
+
+
+class TestEpisodeAwareSizeSorting:
+    @pytest.mark.asyncio
+    async def test_series_sort_prefers_linked_episode_file_over_pack_total(self):
+        """Multi-file season pack should sort by the requested episode's file size, not total torrent size."""
+        ep_bytes = int(10.9 * GB)
+        pack_total = int(85.3 * GB)
+        streams = [
+            make_stream(
+                name="season.pack",
+                size=pack_total,
+                files=[
+                    StreamFileData(
+                        file_index=0,
+                        filename="Show.S01E01.2160p.mkv",
+                        size=ep_bytes,
+                        file_type="video",
+                        season_number=1,
+                        episode_number=1,
+                    )
+                ],
+            ),
+            make_stream(name="single.large", size=int(12.1 * GB)),
+            make_stream(name="single.mid", size=int(11.2 * GB)),
+        ]
+        user_data = make_user_data(tsp=[{"k": "size", "d": "desc"}])
+        result, _ = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
+        assert [s.name for s in result] == ["single.large", "single.mid", "season.pack"]
+
+    @pytest.mark.asyncio
+    async def test_movie_context_sort_uses_total_torrent_size(self):
+        ep_bytes = int(10.9 * GB)
+        pack_total = int(85.3 * GB)
+        streams = [
+            make_stream(
+                name="season.pack",
+                size=pack_total,
+                files=[
+                    StreamFileData(
+                        file_index=0,
+                        filename="Show.S01E01.2160p.mkv",
+                        size=ep_bytes,
+                        file_type="video",
+                        season_number=1,
+                        episode_number=1,
+                    )
+                ],
+            ),
+            make_stream(name="single.large", size=int(12.1 * GB)),
+        ]
+        user_data = make_user_data(tsp=[{"k": "size", "d": "desc"}])
+        result, _ = await filter_and_sort_streams(streams, user_data, "tt1234567")
+        assert [s.name for s in result] == ["season.pack", "single.large"]
 
 
 class TestFileSizeFiltering:

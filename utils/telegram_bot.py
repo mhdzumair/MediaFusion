@@ -197,7 +197,7 @@ LANGUAGE_OPTIONS = [lang for lang in const.LANGUAGES_FILTERS if lang]
 # These don't exist in const — keep locally
 CODEC_OPTIONS = ["x265", "HEVC", "x264", "AVC", "AV1", "VP9", "MPEG-4"]
 AUDIO_OPTIONS = ["AAC", "AC3", "DTS", "DTS-HD MA", "TrueHD", "Atmos", "FLAC", "MP3", "EAC3"]
-HDR_OPTIONS = ["HDR10", "HDR10+", "Dolby Vision", "HLG", "SDR"]
+HDR_OPTIONS = ["HDR10", "HDR10+", "Dolby Vision", "HLG", "SDR", "Unknown"]
 
 
 class TelegramNotifier:
