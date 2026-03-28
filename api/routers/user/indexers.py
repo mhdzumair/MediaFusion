@@ -223,66 +223,101 @@ async def test_jackett_connection(
             message="URL and API key are required",
         )
 
+    base = url.rstrip("/")
+    torznab_indexers_url = f"{base}/api/v2.0/indexers/!status:failing/results/torznab/api"
+    search_smoke_url = f"{base}/api/v2.0/indexers/all/results"
+
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            # Get indexers list from Jackett
-            response = await client.get(
-                f"{url}/api/v2.0/indexers",
+            torznab_response = await client.get(
+                torznab_indexers_url,
                 params={
                     "apikey": api_key,
+                    "t": "indexers",
                     "configured": "true",
                 },
             )
-            response.raise_for_status()
-            indexers = response.json()
 
-            # Also try to get server config to verify connection
-            config_response = await client.get(
-                f"{url}/api/v2.0/server/config",
-                params={"apikey": api_key},
-            )
-            config_response.raise_for_status()
+            indexer_health_list: list[IndexerHealth] = []
+            if torznab_response.is_success:
+                try:
+                    root = ElementTree.fromstring(torznab_response.text)
+                    for indexer in root.findall("indexer"):
+                        raw_id = indexer.get("id")
+                        if not raw_id:
+                            continue
+                        title_el = indexer.find("title")
+                        indexer_name = title_el.text if title_el is not None and title_el.text else str(raw_id)
+                        indexer_health_list.append(
+                            IndexerHealth(
+                                name=indexer_name,
+                                id=raw_id,
+                                enabled=True,
+                                status="healthy",
+                                error_message=None,
+                            )
+                        )
+                except ElementTree.ParseError:
+                    indexer_health_list = []
 
-            # Build health list
-            indexer_health_list = []
-            healthy_count = 0
-
-            for indexer in indexers:
-                indexer_id = indexer.get("id", "unknown")
-                indexer_name = indexer.get("name", "Unknown")
-                is_configured = indexer.get("configured", False)
-                last_error = indexer.get("last_error")
-
-                if not is_configured:
-                    health_status = "disabled"
-                    error_msg = "Not configured"
-                elif last_error:
-                    health_status = "unhealthy"
-                    error_msg = last_error
-                else:
-                    health_status = "healthy"
-                    error_msg = None
-                    healthy_count += 1
-
-                indexer_health_list.append(
-                    IndexerHealth(
-                        name=indexer_name,
-                        id=indexer_id,
-                        enabled=is_configured,
-                        status=health_status,
-                        error_message=error_msg,
-                    )
+            if indexer_health_list:
+                indexer_health_list.sort(key=lambda x: x.name)
+                healthy_count = len(indexer_health_list)
+                return ConnectionTestResult(
+                    success=True,
+                    message=(f"Connected successfully. {healthy_count} indexer(s) reachable (non-failing)."),
+                    indexer_count=healthy_count,
+                    indexer_names=[i.name for i in indexer_health_list],
+                    indexers=indexer_health_list,
                 )
 
-            # Sort alphabetically
-            indexer_health_list.sort(key=lambda x: x.name)
+            search_response = await client.get(
+                search_smoke_url,
+                params=[
+                    ("apikey", api_key),
+                    ("Query", "test"),
+                    ("Category[]", "2000"),
+                ],
+            )
+            search_response.raise_for_status()
+            payload = search_response.json()
+            results = payload.get("Results") if isinstance(payload, dict) else None
+            if not isinstance(results, list):
+                return ConnectionTestResult(
+                    success=False,
+                    message="Unexpected Jackett search response shape.",
+                )
 
+            by_tracker: dict[str, IndexerHealth] = {}
+            for item in results:
+                if not isinstance(item, dict):
+                    continue
+                tracker = item.get("Tracker")
+                if not tracker:
+                    continue
+                tid = item.get("TrackerId", tracker)
+                if tracker not in by_tracker:
+                    by_tracker[tracker] = IndexerHealth(
+                        name=tracker,
+                        id=tid,
+                        enabled=True,
+                        status="healthy",
+                        error_message=None,
+                    )
+
+            fallback_list = sorted(by_tracker.values(), key=lambda x: x.name)
+            healthy_count = len(fallback_list)
+            hint = (
+                f"{healthy_count} indexer(s) returned results for the probe query."
+                if healthy_count
+                else "API key accepted; no indexers returned results for the probe query."
+            )
             return ConnectionTestResult(
                 success=True,
-                message=f"Connected successfully. {healthy_count}/{len(indexers)} indexers healthy.",
+                message=f"Connected successfully. {hint}",
                 indexer_count=healthy_count,
-                indexer_names=[i.name for i in indexer_health_list if i.status == "healthy"],
-                indexers=indexer_health_list,
+                indexer_names=[i.name for i in fallback_list],
+                indexers=fallback_list,
             )
 
     except httpx.HTTPStatusError as e:
