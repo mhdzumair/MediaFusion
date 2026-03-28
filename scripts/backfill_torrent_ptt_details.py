@@ -2,6 +2,7 @@
 Backfill missing torrent stream technical metadata from PTT parsing.
 
 Default mode is dry-run. Use --apply to persist changes.
+By default all torrent streams are scanned (no ``stream.source`` filter).
 
 Safety-first defaults:
 - Scalar fields are filled only when blank.
@@ -26,8 +27,12 @@ import PTT
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
-# Add project root to import path.
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root to import path (cwd fallback for IPython / notebooks where __file__ is absent).
+try:
+    _PROJECT_ROOT = Path(__file__).resolve().parent.parent
+except NameError:
+    _PROJECT_ROOT = Path.cwd()
+sys.path.insert(0, str(_PROJECT_ROOT))
 
 from db.crud.reference import (
     get_or_create_audio_channel,
@@ -41,6 +46,28 @@ from db.models.links import StreamAudioLink, StreamChannelLink, StreamHDRLink, S
 from db.models.streams import StreamType
 
 logger = logging.getLogger("backfill_torrent_ptt_details")
+
+
+def _configure_logging(level: int = logging.INFO) -> None:
+    """Ensure INFO logs appear when embedded (e.g. IPython), where root is often WARNING-only."""
+    logger.setLevel(level)
+    if logger.handlers:
+        return
+    root = logging.getLogger()
+    if root.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setLevel(level)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"),
+        )
+        logger.addHandler(handler)
+        logger.propagate = False
+        return
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
+
 
 SCALAR_FIELD_MAPPING: dict[str, str] = {
     "resolution": "resolution",
@@ -394,6 +421,7 @@ async def _scan_and_maybe_apply(args: argparse.Namespace) -> tuple[dict[str, int
             if remaining is not None:
                 remaining -= len(streams)
 
+            batch_planned = 0
             for stream in streams:
                 discovery_stats["scanned"] += 1
                 parsed = _safe_parse_ptt(stream.name or "")
@@ -425,6 +453,7 @@ async def _scan_and_maybe_apply(args: argparse.Namespace) -> tuple[dict[str, int
                     continue
 
                 discovery_stats["planned"] += 1
+                batch_planned += 1
                 if len(preview_plans) < args.preview:
                     preview_plans.append(plan)
 
@@ -437,6 +466,16 @@ async def _scan_and_maybe_apply(args: argparse.Namespace) -> tuple[dict[str, int
                     await session.rollback()
                     apply_stats["failed_streams"] += 1
                     logger.warning("Failed stream_id=%s: %s", plan.stream_id, error)
+
+            logger.info(
+                "Batch: fetched=%s planned_in_batch=%s total_scanned=%s total_planned=%s cursor_id<%s apply=%s",
+                len(streams),
+                batch_planned,
+                discovery_stats["scanned"],
+                discovery_stats["planned"],
+                last_seen_stream_id,
+                args.apply,
+            )
 
     return discovery_stats, apply_stats, preview_plans
 
@@ -460,6 +499,7 @@ def _log_preview(plans: list[BackfillPlan], preview_count: int) -> None:
 
 
 async def run(args: argparse.Namespace) -> None:
+    _configure_logging()
     discovery_stats, apply_stats, preview_plans = await _scan_and_maybe_apply(args)
     logger.info("Discovery stats: %s", discovery_stats)
     logger.info("Planned updates: %s streams", discovery_stats["planned"])
@@ -473,7 +513,7 @@ async def run(args: argparse.Namespace) -> None:
     logger.info("Apply stats: %s", apply_stats)
 
 
-def parse_args() -> argparse.Namespace:
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Backfill missing torrent stream technical metadata from PTT parsing.",
     )
@@ -485,10 +525,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--sources",
         type=str,
-        default="Contribution Stream",
+        default="",
         help=(
-            "Comma-separated stream.source values to target "
-            '(default: "Contribution Stream"). Use empty string to target all sources.'
+            "Comma-separated stream.source values to restrict the scan "
+            "(default: all sources). Example: Contribution Stream,Public"
         ),
     )
     parser.add_argument(
@@ -536,8 +576,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Backfill boolean flags (only False -> True, conservative behavior).",
     )
+    return parser
 
-    parsed = parser.parse_args()
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = build_arg_parser()
+    parsed = parser.parse_args(argv)
     if parsed.batch_size <= 0:
         parser.error("--batch-size must be greater than 0")
     parsed.sources = _parse_csv_sources(parsed.sources)
@@ -546,5 +590,5 @@ def parse_args() -> argparse.Namespace:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+    _configure_logging()
     asyncio.run(run(parse_args()))
