@@ -237,7 +237,10 @@ async def get_series_data_by_id(
         .where(Media.id == media.id)
         .options(
             *_metadata_base_options(),
-            selectinload(Media.series_metadata).selectinload(SeriesMetadata.seasons).selectinload(Season.episodes),
+            selectinload(Media.series_metadata)
+            .selectinload(SeriesMetadata.seasons)
+            .selectinload(Season.episodes)
+            .selectinload(Episode.images),
         )
     )
 

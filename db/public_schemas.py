@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from db.config import settings
 
@@ -12,10 +12,15 @@ class Catalog(BaseModel):
 
 
 class Video(BaseModel):
+    """Stremio meta ``Video`` object — ``released`` is required (ISO 8601); see stremio-addon-sdk meta.md."""
+
     id: str
     title: str
-    released: str | None = None
-    description: str | None = None
+    released: str
+    overview: str | None = Field(
+        None,
+        validation_alias=AliasChoices("overview", "description"),
+    )
     thumbnail: str | None = None
     season: int | None = None
     episode: int | None = None

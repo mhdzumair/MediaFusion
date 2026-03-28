@@ -36,6 +36,32 @@ def _get_stars(media) -> list[str]:
     return [c.person.name for c in media.cast[:10] if c.person]
 
 
+def _episode_still_thumbnail_url(episode) -> str | None:
+    """Pick primary still/thumbnail for Stremio ``Video.thumbnail`` (episode poster)."""
+    images = getattr(episode, "images", None) or []
+    if not images:
+        return None
+    stills = [img for img in images if (img.image_type or "") in ("still", "thumbnail")]
+    if not stills:
+        return None
+    primary = next((img for img in stills if img.is_primary), None)
+    return (primary or stills[0]).url
+
+
+def _stremio_video_released(air_date: object | None, *, fallback_year: int) -> str:
+    """Stremio requires each episode ``released`` as ISO 8601 (see addon-sdk meta.md Video object)."""
+    if air_date is not None:
+        s = str(air_date).strip()
+        if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+            return f"{s[:10]}T00:00:00.000Z"
+        if "T" in s or s.endswith("Z"):
+            return s
+        if s:
+            return f"{s}T00:00:00.000Z"
+    y = fallback_year if fallback_year and fallback_year > 0 else 2000
+    return f"{y}-01-01T00:00:00.000Z"
+
+
 @router.get(
     "/{secret_str}/meta/{catalog_type}/{meta_id}.json",
     tags=["meta"],
@@ -141,18 +167,25 @@ async def get_meta(
     if catalog_type == MediaType.SERIES:
         # Get series-specific metadata
         series_meta = media.series_metadata
+        fallback_year = media.year if media.year else 2000
 
         # Build episodes from series_metadata.seasons
         episodes = []
         if series_meta and series_meta.seasons:
-            for season in series_meta.seasons:
-                for episode in season.episodes or []:
+            seasons_sorted = sorted(
+                series_meta.seasons,
+                key=lambda s: (s.season_number is None, s.season_number or 0),
+            )
+            for season in seasons_sorted:
+                eps = season.episodes or []
+                for episode in sorted(eps, key=lambda e: (e.episode_number is None, e.episode_number or 0)):
                     episodes.append(
                         public_schemas.Video(
                             id=f"{meta_id}:{season.season_number}:{episode.episode_number}",
                             title=episode.title or f"Episode {episode.episode_number}",
-                            released=str(episode.air_date) if episode.air_date else None,
-                            description=episode.overview,
+                            released=_stremio_video_released(episode.air_date, fallback_year=fallback_year),
+                            overview=episode.overview,
+                            thumbnail=_episode_still_thumbnail_url(episode),
                             season=season.season_number,
                             episode=episode.episode_number,
                         )

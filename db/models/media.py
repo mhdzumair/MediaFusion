@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from db.models.cast_crew import MediaCast, MediaCrew
     from db.models.contributions import MetadataSuggestion, MetadataVote
     from db.models.providers import (
+        EpisodeImage,
         MediaExternalID,
         MediaFusionRating,
         MediaImage,
@@ -147,6 +148,10 @@ class Episode(SQLModel, table=True):
 
     # Relationships
     season: Season = Relationship(back_populates="episodes")
+    images: list["EpisodeImage"] = Relationship(
+        back_populates="episode",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
     source_provider: Optional["MetadataProvider"] = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[Episode.source_provider_id]"}
     )

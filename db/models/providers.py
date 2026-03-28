@@ -1,7 +1,7 @@
 """Metadata and rating provider models."""
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import pytz
 from sqlalchemy import JSON, DateTime, UniqueConstraint, text
@@ -10,7 +10,7 @@ from sqlmodel import Field, Index, Relationship, SQLModel
 from db.models.base import TimestampMixin
 
 if TYPE_CHECKING:
-    from db.models.media import Media
+    from db.models.media import Episode, Media
 
 
 class MetadataProvider(SQLModel, table=True):
@@ -137,6 +137,7 @@ class EpisodeImage(SQLModel, table=True):
     is_primary: bool = Field(default=False, index=True)
 
     # Relationships
+    episode: Optional["Episode"] = Relationship(back_populates="images")
     provider: MetadataProvider = Relationship()
 
 
