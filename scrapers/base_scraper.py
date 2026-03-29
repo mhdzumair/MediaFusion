@@ -23,6 +23,7 @@ from torf._errors import URLError as TorfURLError
 
 from db import crud
 from db.config import settings
+from db.crud.stream_services import invalidate_media_stream_cache
 from db.database import get_background_session
 from db.enums import TorrentType
 from db.redis_database import REDIS_ASYNC_CLIENT
@@ -797,11 +798,16 @@ class BaseScraper(abc.ABC):
         :param streams: List of TorrentStreamData objects
         :param session: Optional existing session to reuse
         """
+        deferred_media_ids: set[int] = set()
+        stream_payload = [s.model_dump(by_alias=True) for s in streams]
+
         if session is None:
             async with get_background_session() as managed_session:
                 try:
                     await crud.store_new_torrent_streams(
-                        managed_session, [s.model_dump(by_alias=True) for s in streams]
+                        managed_session,
+                        stream_payload,
+                        deferred_cache_invalidation=deferred_media_ids,
                     )
                     await managed_session.commit()
                 except IntegrityError as exc:
@@ -809,16 +815,25 @@ class BaseScraper(abc.ABC):
                         await managed_session.rollback()
                         return
                     raise
+                for media_id in deferred_media_ids:
+                    await invalidate_media_stream_cache(media_id)
             return
 
         try:
-            await crud.store_new_torrent_streams(session, [s.model_dump(by_alias=True) for s in streams])
+            await crud.store_new_torrent_streams(
+                session,
+                stream_payload,
+                deferred_cache_invalidation=deferred_media_ids,
+            )
             await session.commit()
         except IntegrityError as exc:
             if _is_duplicate_info_hash_error(exc):
                 await session.rollback()
                 return
             raise
+
+        for media_id in deferred_media_ids:
+            await invalidate_media_stream_cache(media_id)
 
     @property
     def search_query_timeout(self) -> int:

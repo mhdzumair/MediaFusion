@@ -25,6 +25,24 @@ from db.retry_utils import run_db_operation_with_retry
 logger = logging.getLogger(__name__)
 
 
+def _session_rollback_before_retry(session: AsyncSession):
+    """Clear failed transaction state on the request session before retrying."""
+
+    async def _before_retry(attempt: int, total_attempts: int, exc: Exception) -> None:
+        logger.warning(
+            "Retryable DB error in torznab search (attempt %d/%d): %s",
+            attempt,
+            total_attempts,
+            exc,
+        )
+        try:
+            await session.rollback()
+        except Exception as rollback_err:
+            logger.warning("Session rollback before DB retry failed: %s", rollback_err)
+
+    return _before_retry
+
+
 # Resolution to Torznab category mapping
 RESOLUTION_TO_CATEGORY = {
     # Movies
@@ -143,7 +161,11 @@ async def search_torrents_by_imdb(
 
         return results
 
-    return await run_db_operation_with_retry(_run, operation_name="search_torrents_by_imdb")
+    return await run_db_operation_with_retry(
+        _run,
+        operation_name="search_torrents_by_imdb",
+        before_retry=_session_rollback_before_retry(session),
+    )
 
 
 async def search_torrents_by_title(
@@ -233,7 +255,11 @@ async def search_torrents_by_title(
 
         return results
 
-    return await run_db_operation_with_retry(_run, operation_name="search_torrents_by_title")
+    return await run_db_operation_with_retry(
+        _run,
+        operation_name="search_torrents_by_title",
+        before_retry=_session_rollback_before_retry(session),
+    )
 
 
 async def search_torrents_by_tmdb(
@@ -315,4 +341,8 @@ async def search_torrents_by_tmdb(
 
         return results
 
-    return await run_db_operation_with_retry(_run, operation_name="search_torrents_by_tmdb")
+    return await run_db_operation_with_retry(
+        _run,
+        operation_name="search_torrents_by_tmdb",
+        before_retry=_session_rollback_before_retry(session),
+    )

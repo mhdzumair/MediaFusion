@@ -1335,6 +1335,8 @@ def _normalize_string_values(value: Any) -> list[str]:
 async def store_new_torrent_streams(
     session: AsyncSession,
     streams_data: list[dict[str, Any]],
+    *,
+    deferred_cache_invalidation: set[int] | None = None,
 ) -> int:
     """
     Store multiple torrent streams from scraped data.
@@ -1343,6 +1345,10 @@ async def store_new_torrent_streams(
 
     Args:
         streams_data: List of stream dictionaries with torrent data
+        deferred_cache_invalidation: When set, media IDs are stored here instead of
+            invalidating Redis immediately. Callers should run invalidation after
+            commit so network I/O does not run between the last DB flush and commit
+            on the same asyncpg connection.
 
     Returns:
         Number of streams stored
@@ -1656,12 +1662,15 @@ async def store_new_torrent_streams(
 
     await session.flush()
 
-    # Invalidate stream cache for all affected media
+    # Invalidate stream cache for all affected media (after commit when deferred)
     if media_ids_to_update:
         from db.crud.stream_services import invalidate_media_stream_cache
 
-        for media_id in media_ids_to_update:
-            await invalidate_media_stream_cache(media_id)
+        if deferred_cache_invalidation is not None:
+            deferred_cache_invalidation.update(media_ids_to_update)
+        else:
+            for media_id in media_ids_to_update:
+                await invalidate_media_stream_cache(media_id)
 
     return stored
 

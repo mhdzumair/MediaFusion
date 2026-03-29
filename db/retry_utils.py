@@ -3,7 +3,12 @@ from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 import asyncpg
-from sqlalchemy.exc import DBAPIError, PendingRollbackError, TimeoutError as SQLAlchemyTimeoutError
+from sqlalchemy.exc import (
+    DBAPIError,
+    InterfaceError as SQLAlchemyInterfaceError,
+    PendingRollbackError,
+    TimeoutError as SQLAlchemyTimeoutError,
+)
 
 T = TypeVar("T")
 
@@ -44,11 +49,15 @@ def is_retryable_db_error(exc: BaseException) -> bool:
 
         if isinstance(current, (BrokenPipeError, ConnectionError, TimeoutError, SQLAlchemyTimeoutError)):
             return True
+        if isinstance(current, SQLAlchemyInterfaceError):
+            return True
         if isinstance(current, PendingRollbackError):
             return True
         if isinstance(current, DBAPIError) and current.connection_invalidated:
             return True
         if isinstance(current, asyncpg.exceptions.ConnectionDoesNotExistError):
+            return True
+        if isinstance(current, asyncpg.exceptions.InternalClientError):
             return True
 
         message = str(current).lower()

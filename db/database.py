@@ -218,12 +218,14 @@ def _create_fresh_engine() -> AsyncEngine:
     With NullPool, each connection is opened and closed inline — no pool state
     bleeds across event loops.
     """
-    return create_async_engine(
+    engine = create_async_engine(
         settings.postgres_uri,
         echo=False,
         poolclass=NullPool,
         pool_pre_ping=True,
     )
+    _install_asyncpg_guards(engine)
+    return engine
 
 
 @asynccontextmanager

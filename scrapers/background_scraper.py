@@ -56,30 +56,27 @@ async def _safe_session_rollback(session: AsyncSession) -> None:
         logger.warning("Rollback failed in background search worker: %s", exc, exc_info=exc)
 
 
-async def _safe_session_close(session: AsyncSession) -> None:
-    """Close session without surfacing expected shutdown failures."""
-    try:
-        await session.close()
-    except BaseException as exc:
-        if _is_expected_shutdown_error(exc):
-            return
-        logger.warning("Session close failed in background search worker: %s", exc, exc_info=exc)
-
-
-async def _reset_session_before_retry(session: AsyncSession) -> None:
-    """Reset session state so next attempt can grab a fresh DB connection."""
+async def _rollback_session_before_retry(session: AsyncSession) -> None:
+    """Clear failed transaction state; do not close (caller still holds the session)."""
     await _safe_session_rollback(session)
-    await _safe_session_close(session)
 
 
 async def _run_with_db_retry(
     operation: Callable[[], Awaitable[T]],
-    session: AsyncSession,
+    session: AsyncSession | None,
     *,
     operation_name: str,
     max_attempts: int = 3,
 ) -> T:
-    """Run a DB operation with retry on transient disconnect errors."""
+    """Run a DB operation with retry on transient disconnect errors.
+
+    Pass ``session=None`` when each ``operation()`` call opens its own
+    :func:`get_background_session` — required for retries after a dead connection,
+    since closing the same session would leave the next attempt with a closed client.
+
+    Pass a shared ``session`` only when the operation reuses it; then we rollback
+    before retry (we never close it here).
+    """
 
     async def _before_retry(attempt: int, total_attempts: int, exc: Exception) -> None:
         logger.warning(
@@ -89,7 +86,8 @@ async def _run_with_db_retry(
             total_attempts,
             exc,
         )
-        await _reset_session_before_retry(session)
+        if session is not None:
+            await _rollback_session_before_retry(session)
 
     return await run_db_operation_with_retry(
         operation=operation,
@@ -135,12 +133,16 @@ class BackgroundSearchWorker:
             await self.manager.mark_as_processing(meta_id)
 
             try:
-                async with get_background_session() as read_session:
-                    media = await _run_with_db_retry(
-                        lambda: crud.get_movie_data_by_id(read_session, meta_id, load_relations=True),
-                        read_session,
-                        operation_name=f"loading movie metadata {meta_id}",
-                    )
+
+                async def _load_movie_metadata():
+                    async with get_background_session() as read_session:
+                        return await crud.get_movie_data_by_id(read_session, meta_id, load_relations=True)
+
+                media = await _run_with_db_retry(
+                    _load_movie_metadata,
+                    None,
+                    operation_name=f"loading movie metadata {meta_id}",
+                )
 
                 metadata = MetadataData.from_db(media) if media else None
                 if not metadata:
@@ -186,12 +188,11 @@ class BackgroundSearchWorker:
                             max_process=None,
                             max_process_time=None,
                         ):
-                            async with get_background_session() as write_session:
-                                await _run_with_db_retry(
-                                    lambda: scraper.store_streams([stream], session=write_session),
-                                    write_session,
-                                    operation_name=f"storing movie stream {meta_id}",
-                                )
+                            await _run_with_db_retry(
+                                lambda st=stream: scraper.store_streams([st]),
+                                None,
+                                operation_name=f"storing movie stream {meta_id}",
+                            )
                     finally:
                         scraper.metrics.stop()
                         scraper.metrics.log_summary(scraper.logger)
@@ -245,12 +246,16 @@ class BackgroundSearchWorker:
             await self.manager.mark_as_processing(key)
 
             try:
-                async with get_background_session() as read_session:
-                    media = await _run_with_db_retry(
-                        lambda: crud.get_series_data_by_id(read_session, meta_id, load_relations=True),
-                        read_session,
-                        operation_name=f"loading series metadata {meta_id}",
-                    )
+
+                async def _load_series_metadata():
+                    async with get_background_session() as read_session:
+                        return await crud.get_series_data_by_id(read_session, meta_id, load_relations=True)
+
+                media = await _run_with_db_retry(
+                    _load_series_metadata,
+                    None,
+                    operation_name=f"loading series metadata {meta_id}",
+                )
 
                 metadata = MetadataData.from_db(media) if media else None
                 if not metadata:
@@ -318,12 +323,11 @@ class BackgroundSearchWorker:
                             season=season,
                             episode=episode,
                         ):
-                            async with get_background_session() as write_session:
-                                await _run_with_db_retry(
-                                    lambda: scraper.store_streams([stream], session=write_session),
-                                    write_session,
-                                    operation_name=f"storing series stream {meta_id} S{season}E{episode}",
-                                )
+                            await _run_with_db_retry(
+                                lambda st=stream: scraper.store_streams([st]),
+                                None,
+                                operation_name=f"storing series stream {meta_id} S{season}E{episode}",
+                            )
                     finally:
                         scraper.metrics.stop()
                         scraper.metrics.log_summary(scraper.logger)
