@@ -36,15 +36,11 @@ def _get_running_loop_id() -> int | None:
         return None
 
 
-def _derive_pool_sizes() -> tuple[int, int]:
-    """Derive per-process pool sizes from DB_MAX_CONNECTIONS.
+def get_sqlalchemy_pool_budget_snapshot() -> dict[str, int | bool]:
+    """Compute how SQLAlchemy pool sizes are derived from settings (per worker process).
 
-    DB_MAX_CONNECTIONS is treated as the total connection budget for one app
-    instance (all workers + engines combined). We divide that budget by the
-    configured Gunicorn worker count and active engine count (primary + read
-    replica when configured), then split each engine budget into:
-    - pool_size: 75% steady-state connections
-    - max_overflow: 25% burst capacity
+    Useful for startup logs and capacity planning. See DB_MAX_CONNECTIONS and
+    GUNICORN_WORKERS in settings.
     """
     total_budget = max(1, settings.db_max_connections)
     worker_count = max(1, settings.gunicorn_workers)
@@ -55,7 +51,36 @@ def _derive_pool_sizes() -> tuple[int, int]:
 
     pool_size = max(1, (per_engine_budget * 3) // 4)
     max_overflow = max(0, per_engine_budget - pool_size)
-    return pool_size, max_overflow
+    return {
+        "db_max_connections": total_budget,
+        "gunicorn_workers": worker_count,
+        "engine_count_per_worker": engine_count,
+        "per_worker_budget": per_worker_budget,
+        "per_engine_budget": per_engine_budget,
+        "pool_size": pool_size,
+        "max_overflow": max_overflow,
+        "max_checkouts_per_engine": pool_size + max_overflow,
+        "read_replica_configured": bool(settings.postgres_read_uri),
+    }
+
+
+def _derive_pool_sizes() -> tuple[int, int]:
+    """Derive per-process pool sizes from DB_MAX_CONNECTIONS.
+
+    DB_MAX_CONNECTIONS is treated as the total connection budget for one app
+    instance (all workers + engines combined). We divide that budget by the
+    configured Gunicorn worker count and active engine count (primary + read
+    replica when configured), then split each engine budget into:
+    - pool_size: 75% steady-state connections
+    - max_overflow: 25% burst capacity
+    """
+    snap = get_sqlalchemy_pool_budget_snapshot()
+    return snap["pool_size"], snap["max_overflow"]
+
+
+def get_per_engine_connection_budget() -> int:
+    """Maximum concurrent connections per engine in this process (pool_size + max_overflow)."""
+    return get_sqlalchemy_pool_budget_snapshot()["max_checkouts_per_engine"]
 
 
 def _install_asyncpg_guards(engine: AsyncEngine) -> None:
@@ -113,6 +138,26 @@ def _install_asyncpg_guards(engine: AsyncEngine) -> None:
 
 def _create_primary_engine() -> AsyncEngine:
     pool_size, max_overflow = _derive_pool_sizes()
+    snap = get_sqlalchemy_pool_budget_snapshot()
+    logger.info(
+        "SQLAlchemy primary engine: pool_size=%s max_overflow=%s max_checkouts=%s "
+        "(DB_MAX_CONNECTIONS=%s GUNICORN_WORKERS=%s engines_per_worker=%s per_engine_budget=%s)",
+        pool_size,
+        max_overflow,
+        snap["max_checkouts_per_engine"],
+        snap["db_max_connections"],
+        snap["gunicorn_workers"],
+        snap["engine_count_per_worker"],
+        snap["per_engine_budget"],
+    )
+    if snap["per_engine_budget"] <= 4:
+        logger.warning(
+            "Low per-engine SQLAlchemy pool (%s max checkouts per engine). "
+            "Under load, raise DB_MAX_CONNECTIONS and/or PostgreSQL max_connections, "
+            "reduce GUNICORN_WORKERS, or avoid splitting budget across read replica "
+            "unless the database can accept more connections.",
+            snap["per_engine_budget"],
+        )
     engine = create_async_engine(
         settings.postgres_uri,
         echo=False,
@@ -129,6 +174,13 @@ def _create_primary_engine() -> AsyncEngine:
 def _create_read_engine() -> AsyncEngine:
     if settings.postgres_read_uri:
         pool_size, max_overflow = _derive_pool_sizes()
+        snap = get_sqlalchemy_pool_budget_snapshot()
+        logger.info(
+            "SQLAlchemy read-replica engine: pool_size=%s max_overflow=%s max_checkouts=%s",
+            pool_size,
+            max_overflow,
+            snap["max_checkouts_per_engine"],
+        )
         engine = create_async_engine(
             settings.postgres_read_uri,
             echo=False,

@@ -159,7 +159,9 @@ class Settings(BaseSettings):
     # Database and Cache Settings
     postgres_uri: str  # Primary read-write PostgreSQL URI
     postgres_read_uri: str | None = None  # Optional read replica URI (if None, uses primary)
-    db_max_connections: int = Field(default=50, ge=1)  # Total SQLAlchemy connection budget per app instance
+    # Total SQLAlchemy connection budget per app instance. Divided by GUNICORN_WORKERS and 1 or 2 (if POSTGRES_READ_URI set) to size each pool;
+    # raise together with PostgreSQL max_connections if you see QueuePool timeouts.
+    db_max_connections: int = Field(default=50, ge=1)
     redis_url: str = "redis://redis-service:6379"
     redis_max_connections: int = 100
     redis_retry_attempts: int = 3

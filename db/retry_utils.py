@@ -12,6 +12,43 @@ from sqlalchemy.exc import (
 
 T = TypeVar("T")
 
+
+def _walk_exception_tree(exc: BaseException, visit: Callable[[BaseException], None]) -> None:
+    """Depth-first traverse exc, __cause__, __context__, and ExceptionGroup members."""
+    stack: list[BaseException] = [exc]
+    seen: set[int] = set()
+    while stack:
+        current = stack.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        visit(current)
+        cause = getattr(current, "__cause__", None)
+        if isinstance(cause, BaseException):
+            stack.append(cause)
+        context = getattr(current, "__context__", None)
+        if isinstance(context, BaseException):
+            stack.append(context)
+        grouped = getattr(current, "exceptions", None)
+        if isinstance(grouped, tuple):
+            for sub in grouped:
+                if isinstance(sub, BaseException):
+                    stack.append(sub)
+
+
+def is_sqlalchemy_pool_exhaustion_error(exc: BaseException) -> bool:
+    """True when checkout timed out because the QueuePool is saturated (not a network blip)."""
+    found = False
+
+    def _check(e: BaseException) -> None:
+        nonlocal found
+        if isinstance(e, SQLAlchemyTimeoutError) and "queuepool" in str(e).lower():
+            found = True
+
+    _walk_exception_tree(exc, _check)
+    return found
+
+
 RETRYABLE_DB_ERROR_MARKERS = (
     "broken pipe",
     "connection reset by peer",
@@ -38,6 +75,9 @@ RETRYABLE_DB_ERROR_MARKERS = (
 
 def is_retryable_db_error(exc: BaseException) -> bool:
     """Return True when exception chain indicates a transient DB disconnect."""
+    if is_sqlalchemy_pool_exhaustion_error(exc):
+        return False
+
     to_visit: list[BaseException] = [exc]
     visited: set[int] = set()
 
@@ -47,8 +87,11 @@ def is_retryable_db_error(exc: BaseException) -> bool:
             continue
         visited.add(id(current))
 
-        if isinstance(current, (BrokenPipeError, ConnectionError, TimeoutError, SQLAlchemyTimeoutError)):
+        if isinstance(current, (BrokenPipeError, ConnectionError, TimeoutError)):
             return True
+        if isinstance(current, SQLAlchemyTimeoutError):
+            # Pool checkout timeout is handled above; other TimeoutError cases are rare here.
+            return not is_sqlalchemy_pool_exhaustion_error(current)
         if isinstance(current, SQLAlchemyInterfaceError):
             return True
         if isinstance(current, PendingRollbackError):

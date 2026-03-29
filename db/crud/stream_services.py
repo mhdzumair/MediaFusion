@@ -16,12 +16,13 @@ import logging
 import time
 import zlib
 from collections.abc import Awaitable
-from typing import Any
+from typing import Any, cast
 
 from fastapi import BackgroundTasks
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload, selectinload
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.config import settings
 from db.crud.scraper_helpers import (
@@ -88,7 +89,6 @@ TORRENT_CAPABLE_PROVIDERS = {
 STREAM_CACHE_PREFIX = "stream_data:"
 _STREAM_CACHE_MAGIC = b"\x01MFsc1"  # zlib-compressed JSON blob prefix
 LIVE_TORRENT_FALLBACK_CACHE_TTL = 180  # 3 minutes
-RELATED_MEDIA_FETCH_CONCURRENCY = 4
 LIVE_TORRENT_FALLBACK_CACHE_PREFIX = "live_torrent_fallback:"
 
 logger = logging.getLogger(__name__)
@@ -236,6 +236,28 @@ async def _get_related_media_ids_by_external_id_with_retry(
 
     return await run_db_operation_with_retry(
         operation=_lookup_media_ids,
+        operation_name=operation_name,
+        on_retry=_log_db_retry_attempt(operation_name),
+    )
+
+
+async def _get_media_and_related_media_ids_by_external_id_with_retry(
+    video_id: str,
+    media_type: MediaType,
+    operation_name: str,
+) -> tuple[Media | None, list[int]]:
+    """Single read session for media + related IDs (avoids two pool checkouts per request)."""
+
+    async def _lookup() -> tuple[Media | None, list[int]]:
+        async with get_read_session_context() as read_session:
+            media = await get_media_by_external_id(read_session, video_id, media_type)
+            if not media:
+                return None, []
+            related = await get_related_media_ids_by_external_id(read_session, video_id, media_type)
+            return media, related
+
+    return await run_db_operation_with_retry(
+        operation=_lookup,
         operation_name=operation_name,
         on_retry=_log_db_retry_attempt(operation_name),
     )
@@ -767,170 +789,447 @@ async def invalidate_media_stream_cache(media_id: int) -> None:
         logger.warning(f"Error invalidating stream cache for media_id={media_id}: {e}")
 
 
+async def _fetch_movie_raw_streams_in_session(
+    session: AsyncSession,
+    media_id: int,
+    visibility_filter,
+) -> dict:
+    """Fetch all raw stream data for one movie using an existing read session."""
+    # Query torrent streams
+    torrent_query = (
+        select(TorrentStream)
+        .join(Stream, Stream.id == TorrentStream.stream_id)
+        .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+        .where(StreamMediaLink.media_id == media_id)
+        .where(Stream.is_active.is_(True))
+        .where(Stream.is_blocked.is_(False))
+        .where(visibility_filter)
+        .options(
+            joinedload(TorrentStream.stream).options(
+                selectinload(Stream.languages),
+                selectinload(Stream.audio_formats),
+                selectinload(Stream.channels),
+                selectinload(Stream.hdr_formats),
+                selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
+            ),
+            selectinload(TorrentStream.trackers),
+        )
+        .limit(500)
+    )
+    result = await session.exec(torrent_query)
+    torrents = result.unique().all()
+
+    # We need a Media object for from_db; fetch it
+    media = await session.get(Media, media_id)
+
+    # Exclude binary fields that can't be JSON-serialized (torrent_file)
+    _torrent_exclude = {"torrent_file"}
+    torrent_data = [
+        TorrentStreamData.from_db(t, t.stream, media).model_dump(mode="json", exclude=_torrent_exclude)
+        for t in torrents
+    ]
+
+    # Query usenet streams
+    usenet_query = (
+        select(UsenetStream)
+        .join(Stream, Stream.id == UsenetStream.stream_id)
+        .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+        .where(StreamMediaLink.media_id == media_id)
+        .where(Stream.is_active.is_(True))
+        .where(Stream.is_blocked.is_(False))
+        .where(visibility_filter)
+        .options(
+            joinedload(UsenetStream.stream).options(
+                selectinload(Stream.uploader_user),
+                selectinload(Stream.languages),
+                selectinload(Stream.audio_formats),
+                selectinload(Stream.channels),
+                selectinload(Stream.hdr_formats),
+                selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
+            ),
+        )
+        .limit(200)
+    )
+    usenet_result = await session.exec(usenet_query)
+    usenet_streams = usenet_result.unique().all()
+    usenet_data = [UsenetStreamData.from_db(u).model_dump(mode="json") for u in usenet_streams]
+
+    # Query telegram streams
+    telegram_query = (
+        select(TelegramStream)
+        .join(Stream, Stream.id == TelegramStream.stream_id)
+        .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+        .where(StreamMediaLink.media_id == media_id)
+        .where(Stream.is_active.is_(True))
+        .where(Stream.is_blocked.is_(False))
+        .where(visibility_filter)
+        .options(
+            joinedload(TelegramStream.stream).options(
+                selectinload(Stream.languages),
+                selectinload(Stream.audio_formats),
+                selectinload(Stream.channels),
+                selectinload(Stream.hdr_formats),
+                selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
+            ),
+        )
+        .limit(100)
+    )
+    telegram_result = await session.exec(telegram_query)
+    telegram_streams = telegram_result.unique().all()
+    telegram_data = [
+        TelegramStreamData.from_db(tg, tg.stream, media).model_dump(mode="json") for tg in telegram_streams
+    ]
+
+    # Query HTTP streams
+    http_query = (
+        select(HTTPStream)
+        .join(Stream, Stream.id == HTTPStream.stream_id)
+        .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+        .where(StreamMediaLink.media_id == media_id)
+        .where(Stream.is_active.is_(True))
+        .where(Stream.is_blocked.is_(False))
+        .where(visibility_filter)
+        .options(
+            joinedload(HTTPStream.stream).options(
+                selectinload(Stream.languages),
+            ),
+        )
+        .limit(100)
+    )
+    http_result = await session.exec(http_query)
+    http_streams = http_result.unique().all()
+    http_data = [HTTPStreamData.from_db(hs, hs.stream, media).model_dump(mode="json") for hs in http_streams]
+
+    # Query AceStream streams
+    acestream_query = (
+        select(AceStreamStream)
+        .join(Stream, Stream.id == AceStreamStream.stream_id)
+        .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+        .where(StreamMediaLink.media_id == media_id)
+        .where(Stream.is_active.is_(True))
+        .where(Stream.is_blocked.is_(False))
+        .where(visibility_filter)
+        .options(
+            joinedload(AceStreamStream.stream).options(
+                selectinload(Stream.languages),
+            ),
+        )
+        .limit(100)
+    )
+    acestream_result = await session.exec(acestream_query)
+    acestream_streams = acestream_result.unique().all()
+    acestream_data = [
+        {
+            "content_id": ace.content_id,
+            "info_hash": ace.info_hash,
+            "stream_name": ace.stream.name,
+            "resolution": ace.stream.resolution,
+            "quality": ace.stream.quality,
+            "codec": ace.stream.codec,
+            "source": ace.stream.source,
+            "languages": [lang.name for lang in (ace.stream.languages or [])],
+        }
+        for ace in acestream_streams
+    ]
+
+    # Query YouTube streams
+    youtube_query = (
+        select(YouTubeStream)
+        .join(Stream, Stream.id == YouTubeStream.stream_id)
+        .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+        .where(StreamMediaLink.media_id == media_id)
+        .where(Stream.is_active.is_(True))
+        .where(Stream.is_blocked.is_(False))
+        .where(visibility_filter)
+        .options(
+            joinedload(YouTubeStream.stream).options(
+                selectinload(Stream.languages),
+            )
+        )
+        .limit(100)
+    )
+    youtube_result = await session.exec(youtube_query)
+    youtube_streams = youtube_result.unique().all()
+    youtube_data = [YouTubeStreamData.from_db(yt, yt.stream, media).model_dump(mode="json") for yt in youtube_streams]
+
+    return {
+        "torrents": torrent_data,
+        "usenet": usenet_data,
+        "telegram": telegram_data,
+        "http": http_data,
+        "acestream": acestream_data,
+        "youtube": youtube_data,
+    }
+
+
 async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
     """Fetch all raw stream data for a movie from DB (read replica) and cache as JSON.
 
     Returns a dict with serialized stream data lists keyed by type.
     """
     async with get_read_session_context() as session:
-        # Query torrent streams
-        torrent_query = (
-            select(TorrentStream)
-            .join(Stream, Stream.id == TorrentStream.stream_id)
-            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-            .where(StreamMediaLink.media_id == media_id)
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(TorrentStream.stream).options(
-                    selectinload(Stream.languages),
-                    selectinload(Stream.audio_formats),
-                    selectinload(Stream.channels),
-                    selectinload(Stream.hdr_formats),
-                    selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
-                ),
-                selectinload(TorrentStream.trackers),
-            )
-            .limit(500)
-        )
-        result = await session.exec(torrent_query)
-        torrents = result.unique().all()
+        return await _fetch_movie_raw_streams_in_session(session, media_id, visibility_filter)
 
-        # We need a Media object for from_db; fetch it
-        media = await session.get(Media, media_id)
 
-        # Exclude binary fields that can't be JSON-serialized (torrent_file)
-        _torrent_exclude = {"torrent_file"}
-        torrent_data = [
-            TorrentStreamData.from_db(t, t.stream, media).model_dump(mode="json", exclude=_torrent_exclude)
-            for t in torrents
-        ]
+async def _fetch_movie_raw_streams_batch(media_ids: list[int], visibility_filter) -> dict[int, dict]:
+    """Load several movies in one read session (one pool checkout) to avoid fan-out under load."""
+    out: dict[int, dict] = {}
+    async with get_read_session_context() as session:
+        for media_id in media_ids:
+            out[media_id] = await _fetch_movie_raw_streams_in_session(session, media_id, visibility_filter)
+    return out
 
-        # Query usenet streams
-        usenet_query = (
-            select(UsenetStream)
-            .join(Stream, Stream.id == UsenetStream.stream_id)
-            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-            .where(StreamMediaLink.media_id == media_id)
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(UsenetStream.stream).options(
-                    selectinload(Stream.uploader_user),
-                    selectinload(Stream.languages),
-                    selectinload(Stream.audio_formats),
-                    selectinload(Stream.channels),
-                    selectinload(Stream.hdr_formats),
-                    selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
-                ),
-            )
-            .limit(200)
-        )
-        usenet_result = await session.exec(usenet_query)
-        usenet_streams = usenet_result.unique().all()
-        usenet_data = [UsenetStreamData.from_db(u).model_dump(mode="json") for u in usenet_streams]
 
-        # Query telegram streams
-        telegram_query = (
-            select(TelegramStream)
-            .join(Stream, Stream.id == TelegramStream.stream_id)
-            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-            .where(StreamMediaLink.media_id == media_id)
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(TelegramStream.stream).options(
-                    selectinload(Stream.languages),
-                    selectinload(Stream.audio_formats),
-                    selectinload(Stream.channels),
-                    selectinload(Stream.hdr_formats),
-                    selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
-                ),
-            )
-            .limit(100)
-        )
-        telegram_result = await session.exec(telegram_query)
-        telegram_streams = telegram_result.unique().all()
-        telegram_data = [
-            TelegramStreamData.from_db(tg, tg.stream, media).model_dump(mode="json") for tg in telegram_streams
-        ]
+async def _get_cached_movie_streams_bulk(
+    media_ids: list[int],
+    visibility_filter,
+    user_id: int | None = None,
+) -> list[dict]:
+    """Get raw movie stream payloads with Redis caching; DB misses run in one read session."""
+    n = len(media_ids)
+    if n == 0:
+        return []
+    visibility_scope = f"user:{user_id}" if user_id else "public"
+    cache_keys = [f"{STREAM_CACHE_PREFIX}movie:{mid}:{visibility_scope}" for mid in media_ids]
+    out: list[dict | None] = [None] * n
+    miss_indices: list[int] = []
 
-        # Query HTTP streams
-        http_query = (
-            select(HTTPStream)
-            .join(Stream, Stream.id == HTTPStream.stream_id)
-            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-            .where(StreamMediaLink.media_id == media_id)
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(HTTPStream.stream).options(
-                    selectinload(Stream.languages),
-                ),
-            )
-            .limit(100)
-        )
-        http_result = await session.exec(http_query)
-        http_streams = http_result.unique().all()
-        http_data = [HTTPStreamData.from_db(hs, hs.stream, media).model_dump(mode="json") for hs in http_streams]
-
-        # Query AceStream streams
-        acestream_query = (
-            select(AceStreamStream)
-            .join(Stream, Stream.id == AceStreamStream.stream_id)
-            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-            .where(StreamMediaLink.media_id == media_id)
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(AceStreamStream.stream).options(
-                    selectinload(Stream.languages),
-                ),
-            )
-            .limit(100)
-        )
-        acestream_result = await session.exec(acestream_query)
-        acestream_streams = acestream_result.unique().all()
-        acestream_data = [
-            {
-                "content_id": ace.content_id,
-                "info_hash": ace.info_hash,
-                "stream_name": ace.stream.name,
-                "resolution": ace.stream.resolution,
-                "quality": ace.stream.quality,
-                "codec": ace.stream.codec,
-                "source": ace.stream.source,
-                "languages": [lang.name for lang in (ace.stream.languages or [])],
-            }
-            for ace in acestream_streams
-        ]
-
-        # Query YouTube streams
-        youtube_query = (
-            select(YouTubeStream)
-            .join(Stream, Stream.id == YouTubeStream.stream_id)
-            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-            .where(StreamMediaLink.media_id == media_id)
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(YouTubeStream.stream).options(
-                    selectinload(Stream.languages),
+    for i, cache_key in enumerate(cache_keys):
+        if settings.stream_raw_redis_cache_enabled:
+            cached = await REDIS_ASYNC_CLIENT.get(cache_key)
+            if cached:
+                parsed = _decode_stream_cache_blob(cached)
+                if parsed is not None:
+                    logger.debug("Stream cache HIT for movie media_id=%s", media_ids[i])
+                    out[i] = parsed
+                    continue
+                logger.warning(
+                    "Stream cache unreadable for movie media_id=%s; evicting key %s",
+                    media_ids[i],
+                    cache_key,
                 )
-            )
-            .limit(100)
+                try:
+                    await REDIS_ASYNC_CLIENT.delete(cache_key)
+                except Exception as exc:
+                    logger.debug("Stream cache evict failed for %s: %s", cache_key, exc)
+        miss_indices.append(i)
+
+    if miss_indices:
+        ids_to_fetch = [media_ids[i] for i in miss_indices]
+        batch_op_name = f"movie stream batch fetch media_ids={ids_to_fetch}"
+        logger.debug("Stream cache MISS for movie media_ids=%s", ids_to_fetch)
+        t0 = time.monotonic()
+
+        async def _run_batch():
+            return await _fetch_movie_raw_streams_batch(ids_to_fetch, visibility_filter)
+
+        batch = await run_db_operation_with_retry(
+            operation=_run_batch,
+            operation_name=batch_op_name,
+            on_retry=_log_db_retry_attempt(batch_op_name),
         )
-        youtube_result = await session.exec(youtube_query)
-        youtube_streams = youtube_result.unique().all()
-        youtube_data = [
-            YouTubeStreamData.from_db(yt, yt.stream, media).model_dump(mode="json") for yt in youtube_streams
-        ]
+        elapsed = time.monotonic() - t0
+        logger.info("DB batch fetch for movie media_ids=%s took %.3fs", ids_to_fetch, elapsed)
+        for idx in miss_indices:
+            mid = media_ids[idx]
+            data = batch[mid]
+            out[idx] = data
+            await _store_stream_cache(cache_keys[idx], data)
+
+    if any(x is None for x in out):
+        raise RuntimeError("incomplete movie stream cache bulk fetch")
+    return cast(list[dict], out)
+
+
+async def _get_cached_movie_streams(media_id: int, visibility_filter, user_id: int | None = None) -> dict:
+    """Get raw movie stream data with Redis caching."""
+    rows = await _get_cached_movie_streams_bulk([media_id], visibility_filter, user_id)
+    return rows[0]
+
+
+async def _fetch_series_raw_streams_in_session(
+    session: AsyncSession,
+    media_id: int,
+    season: int,
+    episode: int,
+    visibility_filter,
+) -> dict:
+    """Fetch all raw stream data for one series episode using an existing read session."""
+    media = await session.get(Media, media_id)
+
+    # Torrent streams
+    torrent_query = (
+        select(TorrentStream)
+        .join(Stream, Stream.id == TorrentStream.stream_id)
+        .join(StreamFile, StreamFile.stream_id == Stream.id)
+        .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
+        .where(
+            FileMediaLink.media_id == media_id,
+            FileMediaLink.season_number == season,
+            FileMediaLink.episode_number == episode,
+        )
+        .where(Stream.is_active.is_(True))
+        .where(Stream.is_blocked.is_(False))
+        .where(visibility_filter)
+        .options(
+            joinedload(TorrentStream.stream).options(
+                selectinload(Stream.languages),
+                selectinload(Stream.audio_formats),
+                selectinload(Stream.channels),
+                selectinload(Stream.hdr_formats),
+                selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
+            ),
+            selectinload(TorrentStream.trackers),
+        )
+        .limit(500)
+    )
+    result = await session.exec(torrent_query)
+    torrents = result.unique().all()
+    _torrent_exclude = {"torrent_file"}
+    torrent_data = [
+        TorrentStreamData.from_db(t, t.stream, media).model_dump(mode="json", exclude=_torrent_exclude)
+        for t in torrents
+    ]
+
+    # Usenet streams
+    usenet_query = (
+        select(UsenetStream)
+        .join(Stream, Stream.id == UsenetStream.stream_id)
+        .join(StreamFile, StreamFile.stream_id == Stream.id)
+        .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
+        .where(
+            FileMediaLink.media_id == media_id,
+            FileMediaLink.season_number == season,
+            FileMediaLink.episode_number == episode,
+        )
+        .where(Stream.is_active.is_(True))
+        .where(Stream.is_blocked.is_(False))
+        .where(visibility_filter)
+        .options(
+            joinedload(UsenetStream.stream).options(
+                selectinload(Stream.uploader_user),
+                selectinload(Stream.languages),
+                selectinload(Stream.audio_formats),
+                selectinload(Stream.channels),
+                selectinload(Stream.hdr_formats),
+                selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
+            ),
+        )
+        .limit(200)
+    )
+    usenet_result = await session.exec(usenet_query)
+    usenet_streams = usenet_result.unique().all()
+    usenet_data = [UsenetStreamData.from_db(u).model_dump(mode="json") for u in usenet_streams]
+
+    # Telegram streams
+    telegram_query = (
+        select(TelegramStream)
+        .join(Stream, Stream.id == TelegramStream.stream_id)
+        .join(StreamFile, StreamFile.stream_id == Stream.id)
+        .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
+        .where(
+            FileMediaLink.media_id == media_id,
+            FileMediaLink.season_number == season,
+            FileMediaLink.episode_number == episode,
+        )
+        .where(Stream.is_active.is_(True))
+        .where(Stream.is_blocked.is_(False))
+        .where(visibility_filter)
+        .options(
+            joinedload(TelegramStream.stream).options(
+                selectinload(Stream.languages),
+                selectinload(Stream.audio_formats),
+                selectinload(Stream.channels),
+                selectinload(Stream.hdr_formats),
+                selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
+            ),
+        )
+        .limit(100)
+    )
+    telegram_result = await session.exec(telegram_query)
+    telegram_streams = telegram_result.unique().all()
+    telegram_data = [
+        TelegramStreamData.from_db(tg, tg.stream, media).model_dump(mode="json") for tg in telegram_streams
+    ]
+
+    # HTTP streams
+    http_query = (
+        select(HTTPStream)
+        .join(Stream, Stream.id == HTTPStream.stream_id)
+        .join(StreamFile, StreamFile.stream_id == Stream.id)
+        .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
+        .where(
+            FileMediaLink.media_id == media_id,
+            FileMediaLink.season_number == season,
+            FileMediaLink.episode_number == episode,
+        )
+        .where(Stream.is_active.is_(True))
+        .where(Stream.is_blocked.is_(False))
+        .where(visibility_filter)
+        .options(
+            joinedload(HTTPStream.stream).options(
+                selectinload(Stream.languages),
+            ),
+        )
+        .limit(100)
+    )
+    http_result = await session.exec(http_query)
+    http_streams = http_result.unique().all()
+    http_data = [
+        HTTPStreamData.from_db(hs, hs.stream, media, season, episode).model_dump(mode="json") for hs in http_streams
+    ]
+
+    # AceStream streams (uses StreamMediaLink, not FileMediaLink)
+    acestream_query = (
+        select(AceStreamStream)
+        .join(Stream, Stream.id == AceStreamStream.stream_id)
+        .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+        .where(StreamMediaLink.media_id == media_id)
+        .where(Stream.is_active.is_(True))
+        .where(Stream.is_blocked.is_(False))
+        .where(visibility_filter)
+        .options(
+            joinedload(AceStreamStream.stream).options(
+                selectinload(Stream.languages),
+            ),
+        )
+        .limit(100)
+    )
+    acestream_result = await session.exec(acestream_query)
+    acestream_streams = acestream_result.unique().all()
+    acestream_data = [
+        {
+            "content_id": ace.content_id,
+            "info_hash": ace.info_hash,
+            "stream_name": ace.stream.name,
+            "resolution": ace.stream.resolution,
+            "quality": ace.stream.quality,
+            "codec": ace.stream.codec,
+            "source": ace.stream.source,
+            "languages": [lang.name for lang in (ace.stream.languages or [])],
+        }
+        for ace in acestream_streams
+    ]
+
+    # YouTube streams (uses StreamMediaLink, not FileMediaLink)
+    youtube_query = (
+        select(YouTubeStream)
+        .join(Stream, Stream.id == YouTubeStream.stream_id)
+        .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+        .where(StreamMediaLink.media_id == media_id)
+        .where(Stream.is_active.is_(True))
+        .where(Stream.is_blocked.is_(False))
+        .where(visibility_filter)
+        .options(
+            joinedload(YouTubeStream.stream).options(
+                selectinload(Stream.languages),
+            )
+        )
+        .limit(100)
+    )
+    youtube_result = await session.exec(youtube_query)
+    youtube_streams = youtube_result.unique().all()
+    youtube_data = [YouTubeStreamData.from_db(yt, yt.stream, media).model_dump(mode="json") for yt in youtube_streams]
 
     return {
         "torrents": torrent_data,
@@ -940,233 +1239,98 @@ async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
         "acestream": acestream_data,
         "youtube": youtube_data,
     }
-
-
-async def _get_cached_movie_streams(media_id: int, visibility_filter, user_id: int | None = None) -> dict:
-    """Get raw movie stream data with Redis caching."""
-    visibility_scope = f"user:{user_id}" if user_id else "public"
-    cache_key = f"{STREAM_CACHE_PREFIX}movie:{media_id}:{visibility_scope}"
-
-    if settings.stream_raw_redis_cache_enabled:
-        cached = await REDIS_ASYNC_CLIENT.get(cache_key)
-        if cached:
-            parsed = _decode_stream_cache_blob(cached)
-            if parsed is not None:
-                logger.debug(f"Stream cache HIT for movie media_id={media_id}")
-                return parsed
-            logger.warning(
-                "Stream cache unreadable for movie media_id=%s; evicting key %s",
-                media_id,
-                cache_key,
-            )
-            try:
-                await REDIS_ASYNC_CLIENT.delete(cache_key)
-            except Exception as exc:
-                logger.debug("Stream cache evict failed for %s: %s", cache_key, exc)
-
-    logger.debug(f"Stream cache MISS for movie media_id={media_id}")
-    t0 = time.monotonic()
-    data = await run_db_operation_with_retry(
-        lambda: _fetch_movie_raw_streams(media_id, visibility_filter),
-        operation_name=f"movie stream fetch media_id={media_id}",
-        on_retry=_log_db_retry_attempt(f"movie stream fetch media_id={media_id}"),
-    )
-    elapsed = time.monotonic() - t0
-    logger.info(f"DB fetch for movie media_id={media_id} took {elapsed:.3f}s")
-
-    await _store_stream_cache(cache_key, data)
-    return data
 
 
 async def _fetch_series_raw_streams(media_id: int, season: int, episode: int, visibility_filter) -> dict:
     """Fetch all raw stream data for a series episode from DB (read replica)."""
     async with get_read_session_context() as session:
-        media = await session.get(Media, media_id)
+        return await _fetch_series_raw_streams_in_session(session, media_id, season, episode, visibility_filter)
 
-        # Torrent streams
-        torrent_query = (
-            select(TorrentStream)
-            .join(Stream, Stream.id == TorrentStream.stream_id)
-            .join(StreamFile, StreamFile.stream_id == Stream.id)
-            .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
-            .where(
-                FileMediaLink.media_id == media_id,
-                FileMediaLink.season_number == season,
-                FileMediaLink.episode_number == episode,
-            )
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(TorrentStream.stream).options(
-                    selectinload(Stream.languages),
-                    selectinload(Stream.audio_formats),
-                    selectinload(Stream.channels),
-                    selectinload(Stream.hdr_formats),
-                    selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
-                ),
-                selectinload(TorrentStream.trackers),
-            )
-            .limit(500)
-        )
-        result = await session.exec(torrent_query)
-        torrents = result.unique().all()
-        _torrent_exclude = {"torrent_file"}
-        torrent_data = [
-            TorrentStreamData.from_db(t, t.stream, media).model_dump(mode="json", exclude=_torrent_exclude)
-            for t in torrents
-        ]
 
-        # Usenet streams
-        usenet_query = (
-            select(UsenetStream)
-            .join(Stream, Stream.id == UsenetStream.stream_id)
-            .join(StreamFile, StreamFile.stream_id == Stream.id)
-            .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
-            .where(
-                FileMediaLink.media_id == media_id,
-                FileMediaLink.season_number == season,
-                FileMediaLink.episode_number == episode,
+async def _fetch_series_raw_streams_batch(
+    media_ids: list[int],
+    season: int,
+    episode: int,
+    visibility_filter,
+) -> dict[int, dict]:
+    """Load several series episodes (same S/E) in one read session (one pool checkout)."""
+    out: dict[int, dict] = {}
+    async with get_read_session_context() as session:
+        for media_id in media_ids:
+            out[media_id] = await _fetch_series_raw_streams_in_session(
+                session, media_id, season, episode, visibility_filter
             )
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(UsenetStream.stream).options(
-                    selectinload(Stream.uploader_user),
-                    selectinload(Stream.languages),
-                    selectinload(Stream.audio_formats),
-                    selectinload(Stream.channels),
-                    selectinload(Stream.hdr_formats),
-                    selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
-                ),
-            )
-            .limit(200)
-        )
-        usenet_result = await session.exec(usenet_query)
-        usenet_streams = usenet_result.unique().all()
-        usenet_data = [UsenetStreamData.from_db(u).model_dump(mode="json") for u in usenet_streams]
+    return out
 
-        # Telegram streams
-        telegram_query = (
-            select(TelegramStream)
-            .join(Stream, Stream.id == TelegramStream.stream_id)
-            .join(StreamFile, StreamFile.stream_id == Stream.id)
-            .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
-            .where(
-                FileMediaLink.media_id == media_id,
-                FileMediaLink.season_number == season,
-                FileMediaLink.episode_number == episode,
-            )
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(TelegramStream.stream).options(
-                    selectinload(Stream.languages),
-                    selectinload(Stream.audio_formats),
-                    selectinload(Stream.channels),
-                    selectinload(Stream.hdr_formats),
-                    selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
-                ),
-            )
-            .limit(100)
-        )
-        telegram_result = await session.exec(telegram_query)
-        telegram_streams = telegram_result.unique().all()
-        telegram_data = [
-            TelegramStreamData.from_db(tg, tg.stream, media).model_dump(mode="json") for tg in telegram_streams
-        ]
 
-        # HTTP streams
-        http_query = (
-            select(HTTPStream)
-            .join(Stream, Stream.id == HTTPStream.stream_id)
-            .join(StreamFile, StreamFile.stream_id == Stream.id)
-            .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
-            .where(
-                FileMediaLink.media_id == media_id,
-                FileMediaLink.season_number == season,
-                FileMediaLink.episode_number == episode,
-            )
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(HTTPStream.stream).options(
-                    selectinload(Stream.languages),
-                ),
-            )
-            .limit(100)
-        )
-        http_result = await session.exec(http_query)
-        http_streams = http_result.unique().all()
-        http_data = [
-            HTTPStreamData.from_db(hs, hs.stream, media, season, episode).model_dump(mode="json") for hs in http_streams
-        ]
+async def _get_cached_series_streams_bulk(
+    media_ids: list[int],
+    season: int,
+    episode: int,
+    visibility_filter,
+    user_id: int | None = None,
+) -> list[dict]:
+    """Get raw series stream payloads with Redis caching; DB misses run in one read session."""
+    n = len(media_ids)
+    if n == 0:
+        return []
+    visibility_scope = f"user:{user_id}" if user_id else "public"
+    cache_keys = [f"{STREAM_CACHE_PREFIX}series:{mid}:{season}:{episode}:{visibility_scope}" for mid in media_ids]
+    out: list[dict | None] = [None] * n
+    miss_indices: list[int] = []
 
-        # AceStream streams (uses StreamMediaLink, not FileMediaLink)
-        acestream_query = (
-            select(AceStreamStream)
-            .join(Stream, Stream.id == AceStreamStream.stream_id)
-            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-            .where(StreamMediaLink.media_id == media_id)
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(AceStreamStream.stream).options(
-                    selectinload(Stream.languages),
-                ),
-            )
-            .limit(100)
-        )
-        acestream_result = await session.exec(acestream_query)
-        acestream_streams = acestream_result.unique().all()
-        acestream_data = [
-            {
-                "content_id": ace.content_id,
-                "info_hash": ace.info_hash,
-                "stream_name": ace.stream.name,
-                "resolution": ace.stream.resolution,
-                "quality": ace.stream.quality,
-                "codec": ace.stream.codec,
-                "source": ace.stream.source,
-                "languages": [lang.name for lang in (ace.stream.languages or [])],
-            }
-            for ace in acestream_streams
-        ]
-
-        # YouTube streams (uses StreamMediaLink, not FileMediaLink)
-        youtube_query = (
-            select(YouTubeStream)
-            .join(Stream, Stream.id == YouTubeStream.stream_id)
-            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-            .where(StreamMediaLink.media_id == media_id)
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(YouTubeStream.stream).options(
-                    selectinload(Stream.languages),
+    for i, cache_key in enumerate(cache_keys):
+        if settings.stream_raw_redis_cache_enabled:
+            cached = await REDIS_ASYNC_CLIENT.get(cache_key)
+            if cached:
+                parsed = _decode_stream_cache_blob(cached)
+                if parsed is not None:
+                    logger.debug(
+                        "Stream cache HIT for series media_id=%s S%sE%s",
+                        media_ids[i],
+                        season,
+                        episode,
+                    )
+                    out[i] = parsed
+                    continue
+                logger.warning(
+                    "Stream cache unreadable for series media_id=%s S%sE%s; evicting key %s",
+                    media_ids[i],
+                    season,
+                    episode,
+                    cache_key,
                 )
-            )
-            .limit(100)
-        )
-        youtube_result = await session.exec(youtube_query)
-        youtube_streams = youtube_result.unique().all()
-        youtube_data = [
-            YouTubeStreamData.from_db(yt, yt.stream, media).model_dump(mode="json") for yt in youtube_streams
-        ]
+                try:
+                    await REDIS_ASYNC_CLIENT.delete(cache_key)
+                except Exception as exc:
+                    logger.debug("Stream cache evict failed for %s: %s", cache_key, exc)
+        miss_indices.append(i)
 
-    return {
-        "torrents": torrent_data,
-        "usenet": usenet_data,
-        "telegram": telegram_data,
-        "http": http_data,
-        "acestream": acestream_data,
-        "youtube": youtube_data,
-    }
+    if miss_indices:
+        ids_to_fetch = [media_ids[i] for i in miss_indices]
+        batch_op_name = f"series stream batch fetch S{season}E{episode} media_ids={ids_to_fetch}"
+        logger.debug("Stream cache MISS for series media_ids=%s S%sE%s", ids_to_fetch, season, episode)
+        t0 = time.monotonic()
+
+        async def _run_batch():
+            return await _fetch_series_raw_streams_batch(ids_to_fetch, season, episode, visibility_filter)
+
+        batch = await run_db_operation_with_retry(
+            operation=_run_batch,
+            operation_name=batch_op_name,
+            on_retry=_log_db_retry_attempt(batch_op_name),
+        )
+        elapsed = time.monotonic() - t0
+        logger.info("DB batch fetch for series media_ids=%s S%sE%s took %.3fs", ids_to_fetch, season, episode, elapsed)
+        for idx in miss_indices:
+            mid = media_ids[idx]
+            data = batch[mid]
+            out[idx] = data
+            await _store_stream_cache(cache_keys[idx], data)
+
+    if any(x is None for x in out):
+        raise RuntimeError("incomplete series stream cache bulk fetch")
+    return cast(list[dict], out)
 
 
 async def _get_cached_series_streams(
@@ -1177,40 +1341,8 @@ async def _get_cached_series_streams(
     user_id: int | None = None,
 ) -> dict:
     """Get raw series stream data with Redis caching."""
-    visibility_scope = f"user:{user_id}" if user_id else "public"
-    cache_key = f"{STREAM_CACHE_PREFIX}series:{media_id}:{season}:{episode}:{visibility_scope}"
-
-    if settings.stream_raw_redis_cache_enabled:
-        cached = await REDIS_ASYNC_CLIENT.get(cache_key)
-        if cached:
-            parsed = _decode_stream_cache_blob(cached)
-            if parsed is not None:
-                logger.debug(f"Stream cache HIT for series media_id={media_id} S{season}E{episode}")
-                return parsed
-            logger.warning(
-                "Stream cache unreadable for series media_id=%s S%sE%s; evicting key %s",
-                media_id,
-                season,
-                episode,
-                cache_key,
-            )
-            try:
-                await REDIS_ASYNC_CLIENT.delete(cache_key)
-            except Exception as exc:
-                logger.debug("Stream cache evict failed for %s: %s", cache_key, exc)
-
-    logger.debug(f"Stream cache MISS for series media_id={media_id} S{season}E{episode}")
-    t0 = time.monotonic()
-    data = await run_db_operation_with_retry(
-        lambda: _fetch_series_raw_streams(media_id, season, episode, visibility_filter),
-        operation_name=f"series stream fetch media_id={media_id} S{season}E{episode}",
-        on_retry=_log_db_retry_attempt(f"series stream fetch media_id={media_id} S{season}E{episode}"),
-    )
-    elapsed = time.monotonic() - t0
-    logger.info(f"DB fetch for series media_id={media_id} S{season}E{episode} took {elapsed:.3f}s")
-
-    await _store_stream_cache(cache_key, data)
-    return data
+    rows = await _get_cached_series_streams_bulk([media_id], season, episode, visibility_filter, user_id)
+    return rows[0]
 
 
 def _deserialize_acestream_streams(
@@ -1365,9 +1497,13 @@ async def get_movie_streams(
     live_search_id = _parse_live_search_id(video_id)
     live_search_enabled = user_data.live_search_streams and live_search_id is not None
 
-    # Resolve video_id to media
+    # Resolve video_id to media + related IDs (single read session)
     media_lookup_name = f"movie media lookup video_id={video_id}"
-    media = await _get_media_by_external_id_with_retry(video_id, MediaType.MOVIE, media_lookup_name)
+    media, related_media_ids = await _get_media_and_related_media_ids_by_external_id_with_retry(
+        video_id,
+        MediaType.MOVIE,
+        media_lookup_name,
+    )
     scraper_metadata = _build_scraper_metadata(media, video_id, MediaType.MOVIE)
 
     if not media and live_search_enabled and live_search_id:
@@ -1377,6 +1513,12 @@ async def get_movie_streams(
             live_search_id[0],
             live_search_id[1],
         )
+        if media:
+            related_media_ids = await _get_related_media_ids_by_external_id_with_retry(
+                video_id,
+                MediaType.MOVIE,
+                f"movie related media lookup video_id={video_id}",
+            )
 
     if not media:
         logger.warning(f"Movie not found for video_id: {video_id}")
@@ -1384,23 +1526,13 @@ async def get_movie_streams(
             return []
 
     visibility_filter = _get_visibility_filter(user_id)
-    related_media_ids: list[int] = []
 
-    if media:
-        related_media_ids = await _get_related_media_ids_by_external_id_with_retry(
-            video_id,
-            MediaType.MOVIE,
-            f"movie related media lookup video_id={video_id}",
-        )
-        if media.id not in related_media_ids:
-            related_media_ids.insert(0, media.id)
+    if media and media.id not in related_media_ids:
+        related_media_ids.insert(0, media.id)
 
-    # Get cached or fresh raw stream data
+    # Get cached or fresh raw stream data (one DB session for all cache misses)
     if related_media_ids:
-        raw_payloads = await _gather_with_concurrency_limit(
-            [_get_cached_movie_streams(media_id, visibility_filter, user_id) for media_id in related_media_ids],
-            RELATED_MEDIA_FETCH_CONCURRENCY,
-        )
+        raw_payloads = await _get_cached_movie_streams_bulk(related_media_ids, visibility_filter, user_id)
         raw_data = _merge_raw_stream_payloads(raw_payloads)
     else:
         raw_data = {
@@ -1620,9 +1752,13 @@ async def get_series_streams(
     live_search_id = _parse_live_search_id(video_id)
     live_search_enabled = user_data.live_search_streams and live_search_id is not None
 
-    # Resolve video_id to media
+    # Resolve video_id to media + related IDs (single read session)
     media_lookup_name = f"series media lookup video_id={video_id}"
-    media = await _get_media_by_external_id_with_retry(video_id, MediaType.SERIES, media_lookup_name)
+    media, related_media_ids = await _get_media_and_related_media_ids_by_external_id_with_retry(
+        video_id,
+        MediaType.SERIES,
+        media_lookup_name,
+    )
     scraper_metadata = _build_scraper_metadata(media, video_id, MediaType.SERIES)
 
     if not media and live_search_enabled and live_search_id:
@@ -1632,6 +1768,12 @@ async def get_series_streams(
             live_search_id[0],
             live_search_id[1],
         )
+        if media:
+            related_media_ids = await _get_related_media_ids_by_external_id_with_retry(
+                video_id,
+                MediaType.SERIES,
+                f"series related media lookup video_id={video_id}",
+            )
 
     if not media:
         logger.warning(f"Series not found for video_id: {video_id}")
@@ -1639,25 +1781,14 @@ async def get_series_streams(
             return []
 
     visibility_filter = _get_visibility_filter(user_id)
-    related_media_ids: list[int] = []
 
-    if media:
-        related_media_ids = await _get_related_media_ids_by_external_id_with_retry(
-            video_id,
-            MediaType.SERIES,
-            f"series related media lookup video_id={video_id}",
-        )
-        if media.id not in related_media_ids:
-            related_media_ids.insert(0, media.id)
+    if media and media.id not in related_media_ids:
+        related_media_ids.insert(0, media.id)
 
-    # Get cached or fresh raw stream data
+    # Get cached or fresh raw stream data (one DB session for all cache misses)
     if related_media_ids:
-        raw_payloads = await _gather_with_concurrency_limit(
-            [
-                _get_cached_series_streams(media_id, season, episode, visibility_filter, user_id)
-                for media_id in related_media_ids
-            ],
-            RELATED_MEDIA_FETCH_CONCURRENCY,
+        raw_payloads = await _get_cached_series_streams_bulk(
+            related_media_ids, season, episode, visibility_filter, user_id
         )
         raw_data = _merge_raw_stream_payloads(raw_payloads)
     else:
