@@ -15,10 +15,7 @@ from typedload.exceptions import TypedloadValueError
 
 from db.config import settings
 from db.schemas import SeriesEpisodeData
-from scrapers.imdb_cinemagoer_http import install_imdb_cinemagoer_http_client
 from utils.const import UA_HEADER
-
-install_imdb_cinemagoer_http_client()
 
 MOVIE_TYPE_IDS = {"movie", "tvMovie", "short", "tvShort", "tvSpecial", "video"}
 SERIES_TYPE_IDS = {"series", "tvSeries", "tvMiniSeries"}
