@@ -18,14 +18,18 @@ class StremThru(DebridClient):
     AGENT = "mediafusion"
     auth: str | dict
 
-    def __init__(self, url: str, token: str, **kwargs):
+    def __init__(self, url: str, token: str, store_name: str | None = None, **kwargs):
         self.BASE_URL = url
+        # Store mode: either "store:api_token" in one field (anonymous / docs) or
+        # backend store from config (stremthru_store_name) plus token (configure UI).
         if ":" in token:
-            parts = token.split(":")
+            parts = token.split(":", 1)
             self.auth = {
                 "store": parts[0],
                 "token": parts[1],
             }
+        elif store_name:
+            self.auth = {"store": store_name, "token": token}
         else:
             self.auth = token
         super().__init__(token)
