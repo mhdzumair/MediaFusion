@@ -19,6 +19,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db import public_schemas, schemas
+from db.crud.catalog_sort import effective_release_date
 from db.crud.media import get_canonical_external_ids_batch
 from db.enums import MediaType
 from db.models import (
@@ -193,9 +194,18 @@ async def get_catalog_meta_list(
         order_expr = (
             order_func(UserLibraryItem.added_at) if is_my_library_catalog else order_func(Media.last_stream_added)
         )
-        query = query.order_by(getattr(order_expr, nulls_position)())
-    elif sort in ("popular", "rating"):
-        # Sort by IMDb rating with fallback to total_streams
+        query = query.order_by(getattr(order_expr, nulls_position)(), Media.id.asc())
+    elif sort == "popular":
+        pop_order = order_func(Media.popularity)
+        streams_order = order_func(Media.total_streams)
+        added_order = order_func(Media.last_stream_added)
+        query = query.order_by(
+            getattr(pop_order, nulls_position)(),
+            getattr(streams_order, nulls_position)(),
+            getattr(added_order, nulls_position)(),
+            Media.id.asc(),
+        )
+    elif sort == "rating":
         imdb_rating_subq = (
             select(MediaRating.rating)
             .join(RatingProvider, RatingProvider.id == MediaRating.rating_provider_id)
@@ -211,19 +221,20 @@ async def get_catalog_meta_list(
         query = query.order_by(
             getattr(rating_order, nulls_position)(),
             getattr(streams_order, nulls_position)(),
+            Media.id.asc(),
         )
     elif sort == "year":
         order_expr = order_func(Media.year)
-        query = query.order_by(getattr(order_expr, nulls_position)())
+        query = query.order_by(getattr(order_expr, nulls_position)(), Media.id.asc())
     elif sort == "release_date":
-        order_expr = order_func(Media.release_date)
-        query = query.order_by(getattr(order_expr, nulls_position)())
+        order_expr = order_func(effective_release_date())
+        query = query.order_by(getattr(order_expr, nulls_position)(), Media.id.asc())
     elif sort == "title":
-        query = query.order_by(order_func(Media.title))
+        query = query.order_by(order_func(Media.title), Media.id.asc())
     else:
         # Fallback to latest
         order_expr = order_func(Media.last_stream_added)
-        query = query.order_by(getattr(order_expr, nulls_position)())
+        query = query.order_by(getattr(order_expr, nulls_position)(), Media.id.asc())
 
     # Apply pagination
     query = query.offset(skip).limit(limit)

@@ -22,6 +22,7 @@ from api.dependencies import get_profile_context
 from api.routers.user.auth import require_auth
 from db import crud
 from db.config import settings
+from db.crud.catalog_sort import effective_release_date
 from db.crud.stream_community import empty_stream_signals_dict, fetch_stream_community_signals_batch
 from db.database import get_read_session
 from db.enums import MediaType, UserRole
@@ -671,7 +672,7 @@ async def browse_catalog(
     offset = (page - 1) * page_size
     today = date_type.today()
 
-    # For popular sorting, use IMDb rating from MediaRating table via subquery
+    # For rating sorts and list payload, use IMDb from MediaRating via subquery
     imdb_rating_subq = (
         select(MediaRating.rating)
         .join(RatingProvider, RatingProvider.id == MediaRating.rating_provider_id)
@@ -683,7 +684,7 @@ async def browse_catalog(
         .scalar_subquery()
     )
 
-    # Base query - for popular/rating sorting, include the rating subquery
+    # Base query — include IMDb in row for rating sort and for popular (card display)
     if sort in ("popular", "rating"):
         base_query = select(Media, imdb_rating_subq.label("imdb_rating")).where(Media.type == media_type)
     else:
@@ -830,32 +831,34 @@ async def browse_catalog(
 
     if sort == "latest":
         order_expr = order_func(Media.last_stream_added)
-        base_query = base_query.order_by(getattr(order_expr, nulls_position)())
+        base_query = base_query.order_by(getattr(order_expr, nulls_position)(), Media.id.asc())
     elif sort == "popular":
-        # Sort by IMDb rating from the subquery, fall back to total_streams for nulls
-        rating_order = order_func(imdb_rating_subq)
+        pop_order = order_func(Media.popularity)
         streams_order = order_func(Media.total_streams)
+        added_order = order_func(Media.last_stream_added)
         base_query = base_query.order_by(
-            getattr(rating_order, nulls_position)(),
+            getattr(pop_order, nulls_position)(),
             getattr(streams_order, nulls_position)(),
+            getattr(added_order, nulls_position)(),
+            Media.id.asc(),
         )
     elif sort == "rating":
-        # Explicit rating sort (same as popular but more semantic)
         rating_order = order_func(imdb_rating_subq)
         streams_order = order_func(Media.total_streams)
         base_query = base_query.order_by(
             getattr(rating_order, nulls_position)(),
             getattr(streams_order, nulls_position)(),
+            Media.id.asc(),
         )
     elif sort == "year":
         order_expr = order_func(Media.year)
-        base_query = base_query.order_by(getattr(order_expr, nulls_position)())
+        base_query = base_query.order_by(getattr(order_expr, nulls_position)(), Media.id.asc())
     elif sort == "release_date":
-        order_expr = order_func(Media.release_date)
-        base_query = base_query.order_by(getattr(order_expr, nulls_position)())
+        order_expr = order_func(effective_release_date())
+        base_query = base_query.order_by(getattr(order_expr, nulls_position)(), Media.id.asc())
     elif sort == "title":
         # Title sort: asc = A-Z, desc = Z-A
-        base_query = base_query.order_by(order_func(Media.title))
+        base_query = base_query.order_by(order_func(Media.title), Media.id.asc())
 
     # Always load genres to avoid lazy loading in async context (MissingGreenlet error)
     base_query = base_query.options(selectinload(Media.genres))

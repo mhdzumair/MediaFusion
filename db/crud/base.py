@@ -7,6 +7,7 @@ from sqlalchemy import asc, desc, func, union
 from sqlmodel import select
 from sqlmodel.sql._expression_select_cls import Select
 
+from db.crud.catalog_sort import effective_release_date
 from db.enums import MediaType
 from db.models import (
     AkaTitle,
@@ -166,10 +167,18 @@ class CatalogQueryBuilder(CatalogBaseQueryBuilder["CatalogQueryBuilder"]):
 
         if sort == "latest":
             order_expr = order_func(Media.last_stream_added)
-            self.base_query = self.base_query.order_by(getattr(order_expr, nulls_position)())
-        elif sort in ("popular", "rating"):
-            # Sort by IMDb rating with fallback to total_streams
-            # Uses a correlated subquery to get IMDb rating
+            self.base_query = self.base_query.order_by(getattr(order_expr, nulls_position)(), Media.id.asc())
+        elif sort == "popular":
+            pop_order = order_func(Media.popularity)
+            streams_order = order_func(Media.total_streams)
+            added_order = order_func(Media.last_stream_added)
+            self.base_query = self.base_query.order_by(
+                getattr(pop_order, nulls_position)(),
+                getattr(streams_order, nulls_position)(),
+                getattr(added_order, nulls_position)(),
+                Media.id.asc(),
+            )
+        elif sort == "rating":
             imdb_rating_subq = (
                 select(MediaRating.rating)
                 .join(RatingProvider, RatingProvider.id == MediaRating.rating_provider_id)
@@ -185,20 +194,21 @@ class CatalogQueryBuilder(CatalogBaseQueryBuilder["CatalogQueryBuilder"]):
             self.base_query = self.base_query.order_by(
                 getattr(rating_order, nulls_position)(),
                 getattr(streams_order, nulls_position)(),
+                Media.id.asc(),
             )
         elif sort == "year":
             order_expr = order_func(Media.year)
-            self.base_query = self.base_query.order_by(getattr(order_expr, nulls_position)())
+            self.base_query = self.base_query.order_by(getattr(order_expr, nulls_position)(), Media.id.asc())
         elif sort == "release_date":
-            order_expr = order_func(Media.release_date)
-            self.base_query = self.base_query.order_by(getattr(order_expr, nulls_position)())
+            order_expr = order_func(effective_release_date())
+            self.base_query = self.base_query.order_by(getattr(order_expr, nulls_position)(), Media.id.asc())
         elif sort == "title":
             # Title sort: asc = A-Z, desc = Z-A
-            self.base_query = self.base_query.order_by(order_func(Media.title))
+            self.base_query = self.base_query.order_by(order_func(Media.title), Media.id.asc())
         else:
             # Fallback to latest
             order_expr = order_func(Media.last_stream_added)
-            self.base_query = self.base_query.order_by(getattr(order_expr, nulls_position)())
+            self.base_query = self.base_query.order_by(getattr(order_expr, nulls_position)(), Media.id.asc())
 
         return self
 
