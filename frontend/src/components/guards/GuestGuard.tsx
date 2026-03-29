@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
-import { Skeleton } from '@/components/ui/skeleton'
+import { AppLoadingScreen } from '@/components/ui/app-loading-screen'
 
 interface GuestGuardProps {
   children: React.ReactNode
@@ -12,15 +12,7 @@ export function GuestGuard({ children }: GuestGuardProps) {
 
   // Show loading state while checking authentication
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="space-y-4 w-full max-w-md p-8">
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-4 w-1/2" />
-        </div>
-      </div>
-    )
+    return <AppLoadingScreen />
   }
 
   // Only redirect if authenticated AND not already on a guest page

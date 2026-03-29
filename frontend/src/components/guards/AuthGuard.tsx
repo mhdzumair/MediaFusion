@@ -2,7 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useMemo, useContext } from 'react'
 import { AuthContext } from '@/contexts/AuthContext'
 import { InstanceContext } from '@/contexts/InstanceContext'
-import { Skeleton } from '@/components/ui/skeleton'
+import { AppLoadingScreen } from '@/components/ui/app-loading-screen'
 
 interface AuthGuardProps {
   children: React.ReactNode
@@ -19,15 +19,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
   // During hot reload or initial render, contexts might not be available yet
   // Show loading state until contexts are ready
   if (!authContext || !instanceContext) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="space-y-4 w-full max-w-md p-8">
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-4 w-1/2" />
-        </div>
-      </div>
-    )
+    return <AppLoadingScreen />
   }
 
   const { isAuthenticated, isLoading: authLoading } = authContext
@@ -36,15 +28,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const isLoading = authLoading || instanceLoading
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="space-y-4 w-full max-w-md p-8">
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-4 w-1/2" />
-        </div>
-      </div>
-    )
+    return <AppLoadingScreen />
   }
 
   // On private instances, require API key to be set before allowing access

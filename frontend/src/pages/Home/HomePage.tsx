@@ -44,7 +44,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useInstance } from '@/contexts/InstanceContext'
 import { getAppConfig } from '@/lib/api'
 import { ThemeSelector } from '@/components/ui/theme-selector'
-import { Skeleton } from '@/components/ui/skeleton'
+import { AppLoadingScreen } from '@/components/ui/app-loading-screen'
 
 // Platform Features - What makes MediaFusion special
 // Each feature can optionally specify disableKeys: if ANY key is in disabled_content_types, the feature is hidden.
@@ -173,15 +173,7 @@ export function HomePage() {
 
   // Show loading while checking auth
   if (authLoading || instanceLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="space-y-4 w-full max-w-md p-8">
-          <Skeleton className="h-16 w-16 mx-auto rounded-full" />
-          <Skeleton className="h-8 w-48 mx-auto" />
-          <Skeleton className="h-4 w-64 mx-auto" />
-        </div>
-      </div>
-    )
+    return <AppLoadingScreen />
   }
 
   // Redirect authenticated users to dashboard
