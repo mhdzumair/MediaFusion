@@ -598,7 +598,7 @@ const handleMessage = async (message, sender, sendResponse) => {
             pageTitle: popupData.title,
           });
 
-          const popupUrl = getExtensionUrl("popup/index.html");
+          const popupUrl = toTabViewUrl(getExtensionUrl("popup/index.html"));
           await openExtensionUi(popupUrl, { width: 500, height: 700 });
 
           sendResponse({ success: true });
