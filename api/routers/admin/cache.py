@@ -103,7 +103,7 @@ CACHE_PATTERNS = {
     },
     "images": {
         "description": "Cached images/posters",
-        "patterns": ["movie_*.jpg", "series_*.jpg", "tv_*.jpg"],
+        "patterns": ["movie_*.jpg", "series_*.jpg", "tv_*.jpg", "poster_src:*"],
         "type": "string",
     },
     "rate_limit": {

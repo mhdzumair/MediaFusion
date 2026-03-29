@@ -355,8 +355,10 @@ class Settings(BaseSettings):
     poster_dead_ttl: int = 86400  # TTL in seconds for a dead poster URL marker (24 hours)
     # Rendered Stremio poster JPEG bytes in Redis (api/routers/stremio/poster.py)
     poster_jpeg_cache_ttl_seconds: int = Field(default=259200, ge=60)  # default 3 days
-    # Raw source image bytes keyed by URL in Redis (utils/poster.fetch_poster_image)
+    # Downscaled JPEG source bytes in Redis under poster_src:{sha256(url)} (utils/poster.fetch_poster_image)
     poster_source_image_cache_ttl_seconds: int = Field(default=3600, ge=60)
+    poster_source_cache_max_edge: int = Field(default=480, ge=32)
+    poster_source_cache_jpeg_quality: int = Field(default=82, ge=60, le=95)
     # Max members per scraper cooldown zset after time trim; 0 = unlimited
     scraper_cooldown_zset_max_members: int = Field(default=0, ge=0)
 

@@ -106,6 +106,10 @@ def _encode_stream_cache_blob(data: dict) -> bytes | None:
     return body
 
 
+# Zlib wrappers typically start with CMF 0x78; FLG is commonly 0x01 / 0x5E / 0x9C / 0xDA (RFC 1950).
+_ZLIB_FLG_BYTES = frozenset((0x01, 0x5E, 0x9C, 0xDA))
+
+
 def _decode_stream_cache_blob(blob: bytes | memoryview | str | None) -> dict | None:
     """Parse stream cache payload from Redis (compressed or legacy JSON string/bytes)."""
     if blob is None:
@@ -114,9 +118,23 @@ def _decode_stream_cache_blob(blob: bytes | memoryview | str | None) -> dict | N
         return json.loads(blob)
     if isinstance(blob, memoryview):
         blob = bytes(blob)
+    if not blob:
+        return None
+
+    def _loads_json_bytes(raw: bytes) -> dict:
+        return json.loads(raw.decode("utf-8"))
+
     if blob.startswith(_STREAM_CACHE_MAGIC):
-        return json.loads(zlib.decompress(blob[len(_STREAM_CACHE_MAGIC) :]))
-    return json.loads(blob.decode("utf-8"))
+        return _loads_json_bytes(zlib.decompress(blob[len(_STREAM_CACHE_MAGIC) :]))
+
+    # Zlib-compressed JSON without magic (legacy or keys written by another release).
+    if len(blob) >= 2 and blob[0] == 0x78 and blob[1] in _ZLIB_FLG_BYTES:
+        try:
+            return _loads_json_bytes(zlib.decompress(blob))
+        except (zlib.error, UnicodeDecodeError, json.JSONDecodeError):
+            pass
+
+    return _loads_json_bytes(blob)
 
 
 async def _store_stream_cache(cache_key: str, data: dict) -> None:

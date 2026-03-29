@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
@@ -19,6 +20,7 @@ executor = ThreadPoolExecutor(max_workers=4)
 
 POSTER_FAIL_PREFIX = "poster_fail:"
 POSTER_DEAD_PREFIX = "poster_dead:"
+POSTER_SRC_CACHE_PREFIX = "poster_src:"
 
 
 class PosterURLDeadError(Exception):
@@ -31,6 +33,36 @@ class PosterFetchError(Exception):
 
 class PosterProcessingError(Exception):
     """Raised when fetched bytes cannot be processed into a raster poster."""
+
+
+def _poster_src_cache_key(url: str) -> str:
+    return f"{POSTER_SRC_CACHE_PREFIX}{hashlib.sha256(url.encode('utf-8')).hexdigest()}"
+
+
+def _shrink_image_bytes_for_cache(content: bytes) -> bytes:
+    """Resize and JPEG-recompress source image bytes to reduce Redis footprint."""
+    try:
+        with Image.open(BytesIO(content)) as image:
+            image = image.convert("RGB")
+            max_edge = settings.poster_source_cache_max_edge
+            w, h = image.size
+            if max(w, h) > max_edge:
+                if w >= h:
+                    new_w, new_h = max_edge, max(1, round(h * max_edge / w))
+                else:
+                    new_h, new_w = max_edge, max(1, round(w * max_edge / h))
+                image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            out = BytesIO()
+            image.save(
+                out,
+                format="JPEG",
+                quality=settings.poster_source_cache_jpeg_quality,
+                optimize=True,
+            )
+            return out.getvalue()
+    except (UnidentifiedImageError, DecompressionBombError, OSError, ValueError) as exc:
+        logging.debug("Poster cache shrink skipped, storing raw bytes: %s", exc)
+        return content
 
 
 def _looks_like_svg_content(content: bytes) -> bool:
@@ -75,11 +107,13 @@ async def fetch_poster_image(url: str, max_retries: int = 1) -> bytes:
     if await is_poster_url_dead(url):
         raise PosterURLDeadError(f"Poster URL is marked as dead (too many failures): {url}")
 
+    cache_key = _poster_src_cache_key(url)
+
     # Check if the image is cached in Redis
-    cached_image = await REDIS_ASYNC_CLIENT.get(url)
+    cached_image = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_image:
         if _looks_like_svg_content(cached_image):
-            await REDIS_ASYNC_CLIENT.delete(url)
+            await REDIS_ASYNC_CLIENT.delete(cache_key)
             await _record_poster_failure(url)
             raise PosterFetchError(f"Unsupported SVG poster format for URL: {url}")
         logging.info(f"Using cached image for URL: {url}")
@@ -117,8 +151,14 @@ async def fetch_poster_image(url: str, max_retries: int = 1) -> bytes:
                             raise PosterFetchError(f"Unexpected non-image payload for URL: {url}") from exc
 
                     logging.info(f"Caching image for URL: {url}")
-                    await REDIS_ASYNC_CLIENT.set(url, content, ex=settings.poster_source_image_cache_ttl_seconds)
-                    return content
+                    loop = asyncio.get_running_loop()
+                    to_store = await loop.run_in_executor(executor, _shrink_image_bytes_for_cache, content)
+                    await REDIS_ASYNC_CLIENT.set(
+                        cache_key,
+                        to_store,
+                        ex=settings.poster_source_image_cache_ttl_seconds,
+                    )
+                    return to_store
         except PosterFetchError as e:
             last_exception = e
             break
@@ -180,7 +220,7 @@ async def create_poster(mediafusion_data: PosterData) -> BytesIO:
         )
     except PosterProcessingError as exc:
         # Cached bytes can be stale/non-image (e.g. SVG served as image/*); purge and track failures.
-        await REDIS_ASYNC_CLIENT.delete(mediafusion_data.poster)
+        await REDIS_ASYNC_CLIENT.delete(_poster_src_cache_key(mediafusion_data.poster))
         await _record_poster_failure(mediafusion_data.poster)
         raise PosterFetchError(str(exc)) from exc
 
