@@ -252,6 +252,10 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
 async def get_async_session_context() -> AsyncGenerator[AsyncSession, None]:
     """Get a read-write session as a context manager for background tasks.
     Use this when you need a session outside of FastAPI dependency injection.
+
+    Persists changes: call ``await session.commit()`` before exiting the block
+    when you performed writes. On exit without commit, the session rolls back
+    and no data is saved (CRUD helpers do not commit on their own).
     """
     session = AsyncSession(_get_engine(), expire_on_commit=False)
     try:

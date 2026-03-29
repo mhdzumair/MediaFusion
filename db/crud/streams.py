@@ -12,6 +12,7 @@ New in v5:
 import logging
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any
 
 import pytz
 from sqlalchemy import delete as sa_delete
@@ -367,12 +368,15 @@ async def update_torrent_stream(
     session: AsyncSession,
     info_hash: str,
     updates: dict,
+    *,
+    torrent: TorrentStream | None = None,
 ) -> bool:
     """Update a torrent stream by info hash.
 
     Updates both the base Stream and TorrentStream records.
     """
-    torrent = await get_torrent_by_info_hash(session, info_hash)
+    if torrent is None:
+        torrent = await get_torrent_by_info_hash(session, info_hash)
     if not torrent:
         return False
 
@@ -422,6 +426,8 @@ async def update_stream_files(
     session: AsyncSession,
     info_hash: str,
     files: list,
+    *,
+    torrent: TorrentStream | None = None,
 ) -> bool:
     """Update stream files for a torrent.
 
@@ -431,8 +437,10 @@ async def update_stream_files(
         session: Database session
         info_hash: Torrent info_hash
         files: List of StreamFileData objects (or dicts with file info)
+        torrent: Optional pre-loaded torrent row to avoid an extra SELECT
     """
-    torrent = await get_torrent_by_info_hash(session, info_hash)
+    if torrent is None:
+        torrent = await get_torrent_by_info_hash(session, info_hash)
     if not torrent:
         return False
 
@@ -446,7 +454,9 @@ async def update_stream_files(
     # Delete existing StreamFile records (CASCADE will delete FileMediaLink)
     await session.exec(sa_delete(StreamFile).where(StreamFile.stream_id == stream_id))
 
-    # Create new StreamFile records
+    pending_links: list[tuple[StreamFile, int | None, int | None, Any]] = []
+
+    # Create new StreamFile records (single flush — avoids N round-trips per torrent)
     for file_data in files:
         if isinstance(file_data, dict):
             file_index = file_data.get("file_index", 0)
@@ -480,9 +490,11 @@ async def update_stream_files(
             file_type=file_type,
         )
         session.add(stream_file)
-        await session.flush()
+        pending_links.append((stream_file, season_number, episode_number, episode_end))
 
-        # Create FileMediaLink if we have media and episode info
+    await session.flush()
+
+    for stream_file, season_number, episode_number, episode_end in pending_links:
         if media_id and (season_number is not None or episode_number is not None):
             file_link = FileMediaLink(
                 file_id=stream_file.id,

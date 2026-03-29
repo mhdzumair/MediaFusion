@@ -152,6 +152,7 @@ class MagnetDownloadAndParsePipeline:
                 )
                 async with get_async_session_context() as session:
                     await crud.delete_torrent_stream(session, info_hash)
+                    await session.commit()
             else:
                 raise DropItem(f"Torrent stream already exists: {stream_name} from {stream_source}")
 

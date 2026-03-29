@@ -489,6 +489,7 @@ class ExtToSpider(scrapy.Spider):
             self.logger.info("Torrent already scraped: %s", torrent_data["torrent_name"])
             async with get_async_session_context() as session:
                 await crud.update_torrent_seeders(session, info_hash, torrent_data.get("seeders"))
+                await session.commit()
             return None
 
         return torrent_data

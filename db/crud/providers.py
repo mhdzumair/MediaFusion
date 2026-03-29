@@ -999,6 +999,226 @@ async def update_provider_metadata(
         return None
 
 
+def _normalize_imdb_id(imdb_id: Any) -> str | None:
+    if imdb_id is None or imdb_id == "":
+        return None
+    s = str(imdb_id).strip()
+    return s or None
+
+
+def _normalize_tmdb_id(tmdb_id: Any) -> int | None:
+    if tmdb_id is None:
+        return None
+    return int(tmdb_id) if not isinstance(tmdb_id, int) else tmdb_id
+
+
+async def _batch_resolve_people(
+    session: AsyncSession,
+    rows: list[dict[str, Any]],
+) -> list[Person]:
+    """Load or create Person rows with at most one flush (plus batched SELECTs)."""
+    if not rows:
+        return []
+
+    imdb_vals = list({_normalize_imdb_id(r.get("imdb_id")) for r in rows})
+    imdb_vals = [x for x in imdb_vals if x]
+    by_imdb: dict[str, Person] = {}
+    if imdb_vals:
+        res = await session.exec(select(Person).where(Person.imdb_id.in_(imdb_vals)))
+        for p in res.all():
+            if p.imdb_id:
+                by_imdb[p.imdb_id] = p
+
+    tmdb_vals = list({_normalize_tmdb_id(r.get("tmdb_id")) for r in rows})
+    tmdb_vals = [x for x in tmdb_vals if x is not None]
+    by_tmdb: dict[int, Person] = {}
+    if tmdb_vals:
+        res = await session.exec(select(Person).where(Person.tmdb_id.in_(tmdb_vals)))
+        for p in res.all():
+            if p.tmdb_id is not None:
+                by_tmdb[p.tmdb_id] = p
+
+    names = list({r["name"] for r in rows})
+    by_name_first: dict[str, Person] = {}
+    if names:
+        res = await session.exec(select(Person).where(Person.name.in_(names)))
+        for p in res.all():
+            if p.name not in by_name_first:
+                by_name_first[p.name] = p
+
+    resolved: list[Person] = []
+    for r in rows:
+        ik = _normalize_imdb_id(r.get("imdb_id"))
+        tid = _normalize_tmdb_id(r.get("tmdb_id"))
+        name = r["name"]
+        person: Person | None = None
+        if ik and ik in by_imdb:
+            person = by_imdb[ik]
+        elif tid is not None and tid in by_tmdb:
+            person = by_tmdb[tid]
+        elif name in by_name_first:
+            person = by_name_first[name]
+        else:
+            person = Person(
+                name=name,
+                imdb_id=ik,
+                tmdb_id=tid,
+                profile_url=r.get("profile_path"),
+            )
+            session.add(person)
+            if ik:
+                by_imdb[ik] = person
+            if tid is not None:
+                by_tmdb[tid] = person
+            by_name_first[name] = person
+        resolved.append(person)
+
+    await session.flush()
+
+    for r, person in zip(rows, resolved, strict=True):
+        ik = _normalize_imdb_id(r.get("imdb_id"))
+        tid = _normalize_tmdb_id(r.get("tmdb_id"))
+        if ik and not person.imdb_id:
+            person.imdb_id = ik
+        if tid is not None and not person.tmdb_id:
+            person.tmdb_id = tid
+        if r.get("profile_path") and not person.profile_url:
+            person.profile_url = r["profile_path"]
+
+    return resolved
+
+
+async def batch_replace_media_keyword_links(
+    session: AsyncSession,
+    media_id: int,
+    keyword_names: list[str],
+    *,
+    max_keywords: int = 50,
+) -> None:
+    await session.exec(sa_delete(MediaKeywordLink).where(MediaKeywordLink.media_id == media_id))
+    names = list(dict.fromkeys(keyword_names))[:max_keywords]
+    if not names:
+        return
+    res = await session.exec(select(Keyword).where(Keyword.name.in_(names)))
+    by_name = {k.name: k for k in res.all()}
+    for name in names:
+        if name not in by_name:
+            kw = Keyword(name=name)
+            session.add(kw)
+            by_name[name] = kw
+    await session.flush()
+    for name in names:
+        session.add(MediaKeywordLink(media_id=media_id, keyword_id=by_name[name].id))
+
+
+async def batch_replace_media_parental_certificate_links(
+    session: AsyncSession,
+    media_id: int,
+    certificate_names: list[str],
+    *,
+    max_certs: int = 10,
+) -> None:
+    await session.exec(sa_delete(MediaParentalCertificateLink).where(MediaParentalCertificateLink.media_id == media_id))
+    names = list(dict.fromkeys(certificate_names))[:max_certs]
+    if not names:
+        return
+    res = await session.exec(select(ParentalCertificate).where(ParentalCertificate.name.in_(names)))
+    by_name = {c.name: c for c in res.all()}
+    for name in names:
+        if name not in by_name:
+            cert = ParentalCertificate(name=name)
+            session.add(cert)
+            by_name[name] = cert
+    await session.flush()
+    for name in names:
+        session.add(MediaParentalCertificateLink(media_id=media_id, certificate_id=by_name[name].id))
+
+
+async def batch_replace_media_cast(
+    session: AsyncSession,
+    media_id: int,
+    cast_list: list[dict],
+    *,
+    max_cast: int = 30,
+) -> None:
+    await session.exec(sa_delete(MediaCast).where(MediaCast.media_id == media_id))
+    row_specs: list[dict[str, Any]] = []
+    for idx, cast_data in enumerate(cast_list[:max_cast]):
+        person_name = cast_data.get("name")
+        if not person_name:
+            continue
+        character = cast_data.get("character") or cast_data.get("characters")
+        if isinstance(character, list):
+            character = ", ".join(character) if character else None
+        row_specs.append(
+            {
+                "name": person_name,
+                "imdb_id": cast_data.get("imdb_id"),
+                "tmdb_id": cast_data.get("tmdb_id"),
+                "profile_path": cast_data.get("profile_path"),
+                "character": character,
+                "display_order": cast_data.get("order", idx),
+            }
+        )
+    if not row_specs:
+        return
+    people_keys = [
+        {"name": r["name"], "imdb_id": r["imdb_id"], "tmdb_id": r["tmdb_id"], "profile_path": r["profile_path"]}
+        for r in row_specs
+    ]
+    people = await _batch_resolve_people(session, people_keys)
+    for r, person in zip(row_specs, people, strict=True):
+        session.add(
+            MediaCast(
+                media_id=media_id,
+                person_id=person.id,
+                character=r["character"],
+                display_order=r["display_order"],
+            )
+        )
+
+
+async def batch_replace_media_crew(
+    session: AsyncSession,
+    media_id: int,
+    crew_list: list[dict],
+    *,
+    max_crew: int = 20,
+) -> None:
+    await session.exec(sa_delete(MediaCrew).where(MediaCrew.media_id == media_id))
+    row_specs: list[dict[str, Any]] = []
+    for crew_data in crew_list[:max_crew]:
+        person_name = crew_data.get("name")
+        if not person_name:
+            continue
+        row_specs.append(
+            {
+                "name": person_name,
+                "imdb_id": crew_data.get("imdb_id"),
+                "tmdb_id": crew_data.get("tmdb_id"),
+                "profile_path": crew_data.get("profile_path"),
+                "job": crew_data.get("job"),
+                "department": crew_data.get("department"),
+            }
+        )
+    if not row_specs:
+        return
+    people_keys = [
+        {"name": r["name"], "imdb_id": r["imdb_id"], "tmdb_id": r["tmdb_id"], "profile_path": r["profile_path"]}
+        for r in row_specs
+    ]
+    people = await _batch_resolve_people(session, people_keys)
+    for r, person in zip(row_specs, people, strict=True):
+        session.add(
+            MediaCrew(
+                media_id=media_id,
+                person_id=person.id,
+                job=r["job"],
+                department=r["department"],
+            )
+        )
+
+
 async def apply_multi_provider_metadata(
     session: AsyncSession,
     media_id: int,
@@ -1210,119 +1430,17 @@ async def apply_multi_provider_metadata(
         # === Update keywords (merged) ===
         keywords = merge_lists("keywords")
         if keywords:
-            await session.exec(sa_delete(MediaKeywordLink).where(MediaKeywordLink.media_id == media.id))
-            for keyword_name in keywords[:50]:
-                keyword_result = await session.exec(select(Keyword).where(Keyword.name == keyword_name))
-                keyword = keyword_result.first()
-                if not keyword:
-                    keyword = Keyword(name=keyword_name)
-                    session.add(keyword)
-                    await session.flush()
-                link = MediaKeywordLink(media_id=media.id, keyword_id=keyword.id)
-                session.add(link)
+            await batch_replace_media_keyword_links(session, media.id, keywords)
 
         # === Update cast (merged from all providers, deduplicated) ===
         cast_list = merge_lists("cast")
         if cast_list:
-            await session.exec(sa_delete(MediaCast).where(MediaCast.media_id == media.id))
-
-            for idx, cast_data in enumerate(cast_list[:30]):
-                person_name = cast_data.get("name")
-                if not person_name:
-                    continue
-
-                imdb_id = cast_data.get("imdb_id")
-                tmdb_id = cast_data.get("tmdb_id")
-                if tmdb_id is not None:
-                    tmdb_id = int(tmdb_id) if not isinstance(tmdb_id, int) else tmdb_id
-
-                # Find or create person
-                person = None
-                if imdb_id:
-                    person_result = await session.exec(select(Person).where(Person.imdb_id == imdb_id))
-                    person = person_result.first()
-                elif tmdb_id:
-                    person_result = await session.exec(select(Person).where(Person.tmdb_id == tmdb_id))
-                    person = person_result.first()
-
-                if not person:
-                    person_result = await session.exec(select(Person).where(Person.name == person_name))
-                    person = person_result.first()
-
-                if not person:
-                    person = Person(
-                        name=person_name,
-                        imdb_id=imdb_id,
-                        tmdb_id=tmdb_id,
-                        profile_url=cast_data.get("profile_path"),
-                    )
-                    session.add(person)
-                    await session.flush()
-                else:
-                    if imdb_id and not person.imdb_id:
-                        person.imdb_id = imdb_id
-                    if tmdb_id and not person.tmdb_id:
-                        person.tmdb_id = tmdb_id
-                    if cast_data.get("profile_path") and not person.profile_url:
-                        person.profile_url = cast_data["profile_path"]
-
-                # Handle character name - could be string or list
-                character = cast_data.get("character") or cast_data.get("characters")
-                if isinstance(character, list):
-                    character = ", ".join(character) if character else None
-
-                media_cast = MediaCast(
-                    media_id=media.id,
-                    person_id=person.id,
-                    character=character,
-                    display_order=cast_data.get("order", idx),
-                )
-                session.add(media_cast)
+            await batch_replace_media_cast(session, media.id, cast_list)
 
         # === Update crew (merged from all providers, deduplicated) ===
         crew_list = merge_lists("crew", allow_duplicate_names=True)
         if crew_list:
-            await session.exec(sa_delete(MediaCrew).where(MediaCrew.media_id == media.id))
-
-            for crew_data in crew_list[:20]:
-                person_name = crew_data.get("name")
-                if not person_name:
-                    continue
-
-                imdb_id = crew_data.get("imdb_id")
-                tmdb_id = crew_data.get("tmdb_id")
-                if tmdb_id is not None:
-                    tmdb_id = int(tmdb_id) if not isinstance(tmdb_id, int) else tmdb_id
-
-                person = None
-                if imdb_id:
-                    person_result = await session.exec(select(Person).where(Person.imdb_id == imdb_id))
-                    person = person_result.first()
-                elif tmdb_id:
-                    person_result = await session.exec(select(Person).where(Person.tmdb_id == tmdb_id))
-                    person = person_result.first()
-
-                if not person:
-                    person_result = await session.exec(select(Person).where(Person.name == person_name))
-                    person = person_result.first()
-
-                if not person:
-                    person = Person(
-                        name=person_name,
-                        imdb_id=imdb_id,
-                        tmdb_id=tmdb_id,
-                        profile_url=crew_data.get("profile_path"),
-                    )
-                    session.add(person)
-                    await session.flush()
-
-                media_crew = MediaCrew(
-                    media_id=media.id,
-                    person_id=person.id,
-                    job=crew_data.get("job"),
-                    department=crew_data.get("department"),
-                )
-                session.add(media_crew)
+            await batch_replace_media_crew(session, media.id, crew_list)
 
         # === Update trailers/videos (from first provider that has them) ===
         videos = get_first_value("videos", [])
@@ -1351,20 +1469,7 @@ async def apply_multi_provider_metadata(
         # === Update parental certificates ===
         certificates = get_first_value("parent_guide_certificates", [])
         if certificates:
-            await session.exec(
-                sa_delete(MediaParentalCertificateLink).where(MediaParentalCertificateLink.media_id == media.id)
-            )
-            for cert_name in certificates[:10]:
-                cert_result = await session.exec(
-                    select(ParentalCertificate).where(ParentalCertificate.name == cert_name)
-                )
-                cert = cert_result.first()
-                if not cert:
-                    cert = ParentalCertificate(name=cert_name)
-                    session.add(cert)
-                    await session.flush()
-                link = MediaParentalCertificateLink(media_id=media.id, certificate_id=cert.id)
-                session.add(link)
+            await batch_replace_media_parental_certificate_links(session, media.id, certificates)
 
         # === Update ratings from provider data ===
         for prov_name in provider_priority:

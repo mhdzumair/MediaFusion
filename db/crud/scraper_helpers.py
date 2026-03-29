@@ -33,7 +33,12 @@ from db.crud.media import (
     invalidate_meta_cache,
     parse_external_id,
 )
-from db.crud.providers import get_or_create_provider
+from db.crud.providers import (
+    batch_replace_media_cast,
+    batch_replace_media_crew,
+    batch_replace_media_keyword_links,
+    get_or_create_provider,
+)
 from db.crud.reference import (
     get_or_create_catalog,
     get_or_create_genre,
@@ -50,7 +55,6 @@ from db.models import (
     FileType,
     HDRFormat,
     HTTPStream,
-    Keyword,
     Language,
     LinkSource,
     Media,
@@ -66,7 +70,6 @@ from db.models import (
     MediaRating,
     MediaTrailer,
     MovieMetadata,
-    Person,
     PlaybackTracking,
     ProviderMetadata,
     RSSFeed,
@@ -89,6 +92,34 @@ from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.url_safety import sanitize_nzb_url
 
 logger = logging.getLogger(__name__)
+
+
+async def _upsert_episode_primary_still(
+    session: AsyncSession,
+    *,
+    episode_id: int,
+    thumbnail_url: str,
+    provider_id: int,
+) -> None:
+    existing_img = await session.exec(
+        select(EpisodeImage).where(
+            EpisodeImage.episode_id == episode_id,
+            EpisodeImage.is_primary.is_(True),
+        )
+    )
+    img = existing_img.first()
+    if img:
+        img.url = thumbnail_url
+    else:
+        session.add(
+            EpisodeImage(
+                episode_id=episode_id,
+                provider_id=provider_id,
+                image_type="still",
+                url=thumbnail_url,
+                is_primary=True,
+            )
+        )
 
 
 # =============================================================================
@@ -927,121 +958,15 @@ async def update_single_imdb_metadata(
 
     # Update keywords
     if keywords := fetched_data.get("keywords"):
-        await session.exec(sa_delete(MediaKeywordLink).where(MediaKeywordLink.media_id == media.id))
-        for keyword_name in keywords[:50]:  # Limit to 50 keywords
-            # Get or create keyword
-            keyword_result = await session.exec(select(Keyword).where(Keyword.name == keyword_name))
-            keyword = keyword_result.first()
-            if not keyword:
-                keyword = Keyword(name=keyword_name)
-                session.add(keyword)
-                await session.flush()
-            link = MediaKeywordLink(media_id=media.id, keyword_id=keyword.id)
-            session.add(link)
+        await batch_replace_media_keyword_links(session, media.id, keywords)
 
     # Update cast
     if cast_list := fetched_data.get("cast"):
-        # Clear existing cast
-        await session.exec(sa_delete(MediaCast).where(MediaCast.media_id == media.id))
-
-        for idx, cast_data in enumerate(cast_list[:30]):  # Limit to 30 cast members
-            person_name = cast_data.get("name")
-            if not person_name:
-                continue
-
-            # Get or create person
-            imdb_id = cast_data.get("imdb_id")
-            tmdb_id = cast_data.get("tmdb_id")
-            # Ensure tmdb_id is an integer if present
-            if tmdb_id is not None:
-                tmdb_id = int(tmdb_id) if not isinstance(tmdb_id, int) else tmdb_id
-
-            person = None
-            if imdb_id:
-                person_result = await session.exec(select(Person).where(Person.imdb_id == imdb_id))
-                person = person_result.first()
-            elif tmdb_id:
-                person_result = await session.exec(select(Person).where(Person.tmdb_id == tmdb_id))
-                person = person_result.first()
-
-            if not person:
-                person_result = await session.exec(select(Person).where(Person.name == person_name))
-                person = person_result.first()
-
-            if not person:
-                person = Person(
-                    name=person_name,
-                    imdb_id=imdb_id,
-                    tmdb_id=tmdb_id,
-                    profile_url=cast_data.get("profile_path"),
-                )
-                session.add(person)
-                await session.flush()
-            else:
-                # Update person info if we have better data
-                if imdb_id and not person.imdb_id:
-                    person.imdb_id = imdb_id
-                if tmdb_id and not person.tmdb_id:
-                    person.tmdb_id = tmdb_id
-                if cast_data.get("profile_path") and not person.profile_url:
-                    person.profile_url = cast_data["profile_path"]
-
-            # Create cast link
-            media_cast = MediaCast(
-                media_id=media.id,
-                person_id=person.id,
-                character_name=cast_data.get("character"),
-                display_order=cast_data.get("order", idx),
-            )
-            session.add(media_cast)
+        await batch_replace_media_cast(session, media.id, cast_list)
 
     # Update crew
     if crew_list := fetched_data.get("crew"):
-        # Clear existing crew
-        await session.exec(sa_delete(MediaCrew).where(MediaCrew.media_id == media.id))
-
-        for crew_data in crew_list[:20]:  # Limit to 20 crew members
-            person_name = crew_data.get("name")
-            if not person_name:
-                continue
-
-            # Get or create person
-            imdb_id = crew_data.get("imdb_id")
-            tmdb_id = crew_data.get("tmdb_id")
-            # Ensure tmdb_id is an integer if present
-            if tmdb_id is not None:
-                tmdb_id = int(tmdb_id) if not isinstance(tmdb_id, int) else tmdb_id
-
-            person = None
-            if imdb_id:
-                person_result = await session.exec(select(Person).where(Person.imdb_id == imdb_id))
-                person = person_result.first()
-            elif tmdb_id:
-                person_result = await session.exec(select(Person).where(Person.tmdb_id == tmdb_id))
-                person = person_result.first()
-
-            if not person:
-                person_result = await session.exec(select(Person).where(Person.name == person_name))
-                person = person_result.first()
-
-            if not person:
-                person = Person(
-                    name=person_name,
-                    imdb_id=imdb_id,
-                    tmdb_id=tmdb_id,
-                    profile_url=crew_data.get("profile_path"),
-                )
-                session.add(person)
-                await session.flush()
-
-            # Create crew link
-            media_crew = MediaCrew(
-                media_id=media.id,
-                person_id=person.id,
-                job=crew_data.get("job"),
-                department=crew_data.get("department"),
-            )
-            session.add(media_crew)
+        await batch_replace_media_crew(session, media.id, crew_list)
 
     # Update trailers/videos
     if videos := fetched_data.get("videos"):
@@ -1093,7 +1018,7 @@ async def update_single_imdb_metadata(
                     seasons_episodes[season_num] = []
                 seasons_episodes[season_num].append(ep)
 
-            # Create/update seasons
+            # Create/update seasons (single flush for all new seasons)
             for season_num in seasons_episodes.keys():
                 existing_season = await session.exec(
                     select(Season).where(
@@ -1103,17 +1028,20 @@ async def update_single_imdb_metadata(
                 )
                 season = existing_season.first()
                 if not season:
-                    season = Season(
-                        series_id=series_id,
-                        season_number=season_num,
-                        episode_count=len(seasons_episodes[season_num]),
+                    session.add(
+                        Season(
+                            series_id=series_id,
+                            season_number=season_num,
+                            episode_count=len(seasons_episodes[season_num]),
+                        )
                     )
-                    session.add(season)
-                    await session.flush()
+            await session.flush()
 
             # Get all seasons for this series
             seasons_result = await session.exec(select(Season).where(Season.series_id == series_id))
             seasons_map = {s.season_number: s.id for s in seasons_result.all()}
+
+            pending_episode_thumbnails: list[tuple[Episode, str]] = []
 
             # Create/update episodes
             for season_num, eps in seasons_episodes.items():
@@ -1149,6 +1077,8 @@ async def update_single_imdb_metadata(
                         elif isinstance(released, (date, datetime)):
                             air_date = released if isinstance(released, date) else released.date()
 
+                    thumbnail_url = ep.get("thumbnail")
+
                     if episode:
                         # Update existing episode
                         episode.title = ep.get("title") or episode.title
@@ -1160,8 +1090,15 @@ async def update_single_imdb_metadata(
                         )
                         if episode_runtime_minutes is not None:
                             episode.runtime_minutes = episode_runtime_minutes
+                        if thumbnail_url and episode.id:
+                            await _upsert_episode_primary_still(
+                                session,
+                                episode_id=episode.id,
+                                thumbnail_url=thumbnail_url,
+                                provider_id=provider.id,
+                            )
                     else:
-                        # Create new episode
+                        # Create new episode (thumbnails after batch flush)
                         episode = Episode(
                             season_id=season_id,
                             episode_number=episode_num,
@@ -1173,31 +1110,18 @@ async def update_single_imdb_metadata(
                             tmdb_id=ep.get("tmdb_id"),
                         )
                         session.add(episode)
-                        await session.flush()
+                        if thumbnail_url:
+                            pending_episode_thumbnails.append((episode, thumbnail_url))
 
-                    # Handle episode thumbnail
-                    thumbnail_url = ep.get("thumbnail")
-                    if thumbnail_url and episode.id:
-                        # Check if image exists
-                        existing_img = await session.exec(
-                            select(EpisodeImage).where(
-                                EpisodeImage.episode_id == episode.id,
-                                EpisodeImage.is_primary.is_(True),
-                            )
-                        )
-                        img = existing_img.first()
-                        if img:
-                            img.url = thumbnail_url
-                        else:
-                            session.add(
-                                EpisodeImage(
-                                    episode_id=episode.id,
-                                    provider_id=provider.id,
-                                    image_type="still",
-                                    url=thumbnail_url,
-                                    is_primary=True,
-                                )
-                            )
+            await session.flush()
+
+            for episode_obj, thumbnail_url in pending_episode_thumbnails:
+                await _upsert_episode_primary_still(
+                    session,
+                    episode_id=episode_obj.id,
+                    thumbnail_url=thumbnail_url,
+                    provider_id=provider.id,
+                )
 
             logger.info(f"Updated {len(episodes_data)} episodes for {meta_id}")
 

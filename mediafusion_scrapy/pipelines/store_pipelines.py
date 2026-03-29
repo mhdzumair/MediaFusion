@@ -176,6 +176,7 @@ class TVStorePipeline(QueueBasedPipeline):
         tv_metadata = TVMetaData.model_validate(item)
         async with get_async_session_context() as session:
             await crud.save_tv_channel_metadata(session, tv_metadata)
+            await session.commit()
         return item
 
 
@@ -464,6 +465,7 @@ class LiveEventStorePipeline(QueueBasedPipeline):
 
         async with get_async_session_context() as session:
             await crud.save_events_data(session, item)
+            await session.commit()
         if "scraped_info_hash_key" in item:
             await self.redis.sadd(item["scraped_info_hash_key"], item["info_hash"])
         return item
