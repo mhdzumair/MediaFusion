@@ -55,7 +55,7 @@ import {
   type ConnectionTestResult,
   type IndexerHealth,
 } from '@/lib/api/indexers'
-import type { ProfileConfig } from './types'
+import type { IndexerConfig, ProfileConfig } from './types'
 
 // Helper component to display indexer health status
 function IndexerHealthList({ indexers, title }: { indexers: IndexerHealth[]; title: string }) {
@@ -204,12 +204,19 @@ function uiToProfileConfig(
 ): ProfileIndexerConfig {
   const config: ProfileIndexerConfig = {}
 
-  // Only include if enabled or has custom settings
+  // Always persist pr/jk when serializing from this UI. Omitting them means "inherit
+  // defaults" to the backend merge + IndexerSettings sync, which made disabling
+  // impossible (stale merged keys; UI re-enabled when global indexers exist).
   if (prowlarr.enabled || prowlarr.url || prowlarr.api_key) {
     config.pr = {
       en: prowlarr.enabled,
       u: prowlarr.url ?? undefined,
       ak: prowlarr.api_key ?? undefined,
+      ug: prowlarr.use_global,
+    }
+  } else {
+    config.pr = {
+      en: false,
       ug: prowlarr.use_global,
     }
   }
@@ -219,6 +226,11 @@ function uiToProfileConfig(
       en: jackett.enabled,
       u: jackett.url ?? undefined,
       ak: jackett.api_key ?? undefined,
+      ug: jackett.use_global,
+    }
+  } else {
+    config.jk = {
+      en: false,
       ug: jackett.use_global,
     }
   }
@@ -254,6 +266,7 @@ export function IndexerSettings({ config, onChange }: IndexerSettingsProps) {
 
   // Parse indexer config from profile config
   const profileIndexerConfig = config.ic as ProfileIndexerConfig | undefined
+  const icKeys = profileIndexerConfig ?? {}
   const uiConfig = profileConfigToUI(profileIndexerConfig)
 
   // Local state for UI (derived from config)
@@ -283,10 +296,12 @@ export function IndexerSettings({ config, onChange }: IndexerSettingsProps) {
     setPrevGlobalStatus(globalStatus)
     const uiCfg = profileConfigToUI(config.ic as ProfileIndexerConfig | undefined)
 
-    if (globalStatus?.prowlarr_available && !profileIndexerConfig?.pr) {
+    // Only opt into global indexers when the profile has no explicit pr/jk key yet
+    // (missing key means "not configured"). Explicit { en: false } must stay off.
+    if (globalStatus?.prowlarr_available && !('pr' in icKeys)) {
       uiCfg.prowlarr = { enabled: true, url: null, api_key: null, use_global: true }
     }
-    if (globalStatus?.jackett_available && !profileIndexerConfig?.jk) {
+    if (globalStatus?.jackett_available && !('jk' in icKeys)) {
       uiCfg.jackett = { enabled: true, url: null, api_key: null, use_global: true }
     }
 
@@ -301,6 +316,7 @@ export function IndexerSettings({ config, onChange }: IndexerSettingsProps) {
     newJackett: IndexerInstanceConfig,
     newTorznab: TorznabEndpoint[],
   ) => {
+    const existingIc = (config.ic ?? {}) as IndexerConfig
     const indexerConfig = uiToProfileConfig(newProwlarr, newJackett, newTorznab)
     const nextConfig: ProfileConfig = { ...config }
     const hasOtherIndexerConfig = !!(indexerConfig.pr || indexerConfig.jk)
@@ -310,11 +326,14 @@ export function IndexerSettings({ config, onChange }: IndexerSettingsProps) {
       indexerConfig.tz = []
     }
 
+    // Preserve ic.nz (and any other keys) from Usenet settings — same pattern as UsenetSettings.
+    const mergedIc: IndexerConfig = { ...existingIc, ...indexerConfig }
+
     // Send null (not undefined/omission) so backend deep-merge actually removes stale ic fields.
     if (Object.keys(indexerConfig).length === 0) {
       nextConfig.ic = null
     } else {
-      nextConfig.ic = indexerConfig
+      nextConfig.ic = mergedIc
     }
 
     onChange(nextConfig)
