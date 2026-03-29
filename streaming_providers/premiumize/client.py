@@ -24,7 +24,17 @@ class Premiumize(DebridClient):
         super().__init__(token)
 
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
-        pass
+        oauth_error = error_data.get("error")
+        if oauth_error == "invalid_grant":
+            raise ProviderException(
+                "That Premiumize login link expired or was already used. Open Configure and connect Premiumize again.",
+                "api_error.mp4",
+            )
+        if oauth_error == "invalid_client":
+            raise ProviderException(
+                "Premiumize OAuth client credentials are invalid. Check Premiumize OAuth settings on the server.",
+                "api_error.mp4",
+            )
 
     async def _make_request(self, method: str, url: str, params: dict | None = None, **kwargs) -> dict | list:
         params = params or {}
