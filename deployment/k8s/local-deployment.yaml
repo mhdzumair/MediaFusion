@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:5.4.6
+        image: mhdzumair/mediafusion:5.4.7
         ports:
         - containerPort: 8000
         resources:
@@ -221,7 +221,7 @@ spec:
     spec:
       containers:
       - name: taskiq-worker-default
-        image: mhdzumair/mediafusion:5.4.6
+        image: mhdzumair/mediafusion:5.4.7
         command: ["taskiq", "worker", "api.taskiq_worker:broker_default", "--workers", "1", "--max-async-tasks", "8", "--ack-type", "when_executed"]
         env:
           - name: HOST_URL
@@ -283,7 +283,7 @@ spec:
     spec:
       containers:
       - name: taskiq-worker-scrapy
-        image: mhdzumair/mediafusion:5.4.6
+        image: mhdzumair/mediafusion:5.4.7
         command: ["taskiq", "worker", "api.taskiq_worker:broker_scrapy", "--workers", "1", "--max-async-tasks", "1", "--ack-type", "when_executed"]
         env:
           - name: HOST_URL
@@ -345,7 +345,7 @@ spec:
     spec:
       containers:
       - name: taskiq-worker-import
-        image: mhdzumair/mediafusion:5.4.6
+        image: mhdzumair/mediafusion:5.4.7
         command: ["taskiq", "worker", "api.taskiq_worker:broker_import", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
         env:
           - name: HOST_URL
@@ -407,7 +407,7 @@ spec:
     spec:
       containers:
       - name: taskiq-worker-priority
-        image: mhdzumair/mediafusion:5.4.6
+        image: mhdzumair/mediafusion:5.4.7
         command: ["taskiq", "worker", "api.taskiq_worker:broker_priority", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
         env:
           - name: HOST_URL
