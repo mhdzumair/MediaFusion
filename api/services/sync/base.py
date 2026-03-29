@@ -23,6 +23,25 @@ logger = logging.getLogger(__name__)
 ConfigT = TypeVar("ConfigT")
 
 
+def _coerce_external_numeric_id(value: object) -> int | None:
+    """Parse TMDB/TVDB/MAL-style ids that may be int or messy strings (e.g. '/83867', 'tv/123')."""
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    s = str(value).strip()
+    if not s:
+        return None
+    s = s.strip("/")
+    if "/" in s:
+        s = s.rsplit("/", 1)[-1]
+    try:
+        n = int(s, 10)
+    except ValueError:
+        return None
+    return n if n > 0 else None
+
+
 @dataclass
 class WatchedItem:
     """Represents a watched item from external platform."""
@@ -654,8 +673,8 @@ class BaseSyncService(ABC, Generic[ConfigT]):
 
         return WatchedItem(
             imdb_id=ext_ids.get("imdb"),
-            tmdb_id=int(ext_ids["tmdb"]) if ext_ids.get("tmdb") else None,
-            tvdb_id=int(ext_ids["tvdb"]) if ext_ids.get("tvdb") else None,
+            tmdb_id=_coerce_external_numeric_id(ext_ids.get("tmdb")),
+            tvdb_id=_coerce_external_numeric_id(ext_ids.get("tvdb")),
             title=entry.title,
             media_type=entry.media_type,
             season=entry.season,

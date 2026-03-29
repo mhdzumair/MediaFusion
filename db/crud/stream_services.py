@@ -9,6 +9,7 @@ They use:
 """
 
 import asyncio
+import gzip
 import importlib
 import json
 import logging
@@ -111,30 +112,67 @@ _ZLIB_FLG_BYTES = frozenset((0x01, 0x5E, 0x9C, 0xDA))
 
 
 def _decode_stream_cache_blob(blob: bytes | memoryview | str | None) -> dict | None:
-    """Parse stream cache payload from Redis (compressed or legacy JSON string/bytes)."""
+    """Parse stream cache payload from Redis (compressed or legacy JSON string/bytes).
+
+    Never raises: returns None if the blob is missing, empty, or not decodable JSON.
+    Handles: MF magic+zlib, raw zlib-wrapped JSON, gzip, and plain UTF-8 JSON bytes.
+    """
     if blob is None:
         return None
     if isinstance(blob, str):
-        return json.loads(blob)
+        try:
+            return json.loads(blob)
+        except json.JSONDecodeError:
+            return None
     if isinstance(blob, memoryview):
         blob = bytes(blob)
     if not blob:
         return None
 
-    def _loads_json_bytes(raw: bytes) -> dict:
-        return json.loads(raw.decode("utf-8"))
+    def _loads_utf8_json(raw: bytes) -> dict | None:
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
 
     if blob.startswith(_STREAM_CACHE_MAGIC):
-        return _loads_json_bytes(zlib.decompress(blob[len(_STREAM_CACHE_MAGIC) :]))
+        try:
+            raw = zlib.decompress(blob[len(_STREAM_CACHE_MAGIC) :])
+        except zlib.error:
+            return None
+        return _loads_utf8_json(raw)
 
-    # Zlib-compressed JSON without magic (legacy or keys written by another release).
     if len(blob) >= 2 and blob[0] == 0x78 and blob[1] in _ZLIB_FLG_BYTES:
         try:
-            return _loads_json_bytes(zlib.decompress(blob))
-        except (zlib.error, UnicodeDecodeError, json.JSONDecodeError):
-            pass
+            raw = zlib.decompress(blob)
+        except zlib.error:
+            raw = None
+        if raw is not None:
+            parsed = _loads_utf8_json(raw)
+            if parsed is not None:
+                return parsed
 
-    return _loads_json_bytes(blob)
+    parsed = _loads_utf8_json(blob)
+    if parsed is not None:
+        return parsed
+
+    try:
+        raw = zlib.decompress(blob)
+    except zlib.error:
+        raw = None
+    if raw is not None:
+        parsed = _loads_utf8_json(raw)
+        if parsed is not None:
+            return parsed
+
+    try:
+        raw = gzip.decompress(blob)
+    except (OSError, EOFError):
+        raw = None
+    if raw is not None:
+        return _loads_utf8_json(raw)
+
+    return None
 
 
 async def _store_stream_cache(cache_key: str, data: dict) -> None:
@@ -912,13 +950,19 @@ async def _get_cached_movie_streams(media_id: int, visibility_filter, user_id: i
     if settings.stream_raw_redis_cache_enabled:
         cached = await REDIS_ASYNC_CLIENT.get(cache_key)
         if cached:
+            parsed = _decode_stream_cache_blob(cached)
+            if parsed is not None:
+                logger.debug(f"Stream cache HIT for movie media_id={media_id}")
+                return parsed
+            logger.warning(
+                "Stream cache unreadable for movie media_id=%s; evicting key %s",
+                media_id,
+                cache_key,
+            )
             try:
-                parsed = _decode_stream_cache_blob(cached)
-                if parsed is not None:
-                    logger.debug(f"Stream cache HIT for movie media_id={media_id}")
-                    return parsed
+                await REDIS_ASYNC_CLIENT.delete(cache_key)
             except Exception as exc:
-                logger.warning("Stream cache corrupt for movie media_id=%s: %s", media_id, exc)
+                logger.debug("Stream cache evict failed for %s: %s", cache_key, exc)
 
     logger.debug(f"Stream cache MISS for movie media_id={media_id}")
     t0 = time.monotonic()
@@ -1139,19 +1183,21 @@ async def _get_cached_series_streams(
     if settings.stream_raw_redis_cache_enabled:
         cached = await REDIS_ASYNC_CLIENT.get(cache_key)
         if cached:
+            parsed = _decode_stream_cache_blob(cached)
+            if parsed is not None:
+                logger.debug(f"Stream cache HIT for series media_id={media_id} S{season}E{episode}")
+                return parsed
+            logger.warning(
+                "Stream cache unreadable for series media_id=%s S%sE%s; evicting key %s",
+                media_id,
+                season,
+                episode,
+                cache_key,
+            )
             try:
-                parsed = _decode_stream_cache_blob(cached)
-                if parsed is not None:
-                    logger.debug(f"Stream cache HIT for series media_id={media_id} S{season}E{episode}")
-                    return parsed
+                await REDIS_ASYNC_CLIENT.delete(cache_key)
             except Exception as exc:
-                logger.warning(
-                    "Stream cache corrupt for series media_id=%s S%sE%s: %s",
-                    media_id,
-                    season,
-                    episode,
-                    exc,
-                )
+                logger.debug("Stream cache evict failed for %s: %s", cache_key, exc)
 
     logger.debug(f"Stream cache MISS for series media_id={media_id} S{season}E{episode}")
     t0 = time.monotonic()
