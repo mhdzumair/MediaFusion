@@ -271,7 +271,7 @@ async def _process_xtream_import(
     from db.enums import IPTVSourceType
     from db.models import IPTVSource
     from utils.xtream_client import XtreamClient
-    from utils.profile_crypto import ProfileCrypto
+    from utils.profile_crypto import profile_crypto
     from api.routers.content.m3u_import import (
         _resolve_entry_matched_media_id,
         _import_tv_entry,
@@ -460,14 +460,11 @@ async def _process_xtream_import(
         # Save IPTV source if requested
         source_id = None
         if save_source:
-            crypto = ProfileCrypto()
-            encrypted_creds = crypto.encrypt(
-                json.dumps(
-                    {
-                        "username": username,
-                        "password": password,
-                    }
-                )
+            encrypted_creds = profile_crypto.encrypt_secrets(
+                {
+                    "username": username,
+                    "password": password,
+                }
             )
 
             iptv_source = IPTVSource(

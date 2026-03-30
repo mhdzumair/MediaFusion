@@ -13,6 +13,7 @@ from scrapers import (  # noqa: F401
     dmm_hashlist,
     feed_scraper,
     import_tasks,
+    non_torrent_background_scraper,
     rss_scraper,
     scraper_tasks,
     trackers,
