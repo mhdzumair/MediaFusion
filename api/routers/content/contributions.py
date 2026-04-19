@@ -544,14 +544,64 @@ async def _apply_contribution_review(
     review_notes: str | None,
     logger: logging.Logger,
 ) -> None:
-    """Apply review decision and optional import processing to a contribution."""
-    contribution.status = review_status
-    contribution.reviewed_by = str(reviewer.id)
-    contribution.reviewed_at = datetime.now(pytz.UTC)
-    contribution.review_notes = review_notes
+    """Apply review decision and optional import processing to a contribution.
+
+    Raises:
+        AdultContentNotAllowedError: when the import processor detects adult content.
+            The contribution is left untouched so the caller can surface a 4xx error
+            or skip it in bulk review without persisting a bogus approval.
+    """
+    from api.routers.content.torrent_import import AdultContentNotAllowedError
+
+    now = datetime.now(pytz.UTC)
+    reviewer_id = str(reviewer.id)
 
     if review_status != ContributionStatus.APPROVED:
+        contribution.status = review_status
+        contribution.reviewed_by = reviewer_id
+        contribution.reviewed_at = now
+        contribution.review_notes = review_notes
         return
+
+    # Approval path: run the import processor before mutating the contribution so that
+    # a hard failure (e.g. adult-content policy) leaves it untouched and can propagate.
+    final_review_notes = review_notes
+    contribution_data_update: dict[str, Any] | None = None
+
+    if contribution.contribution_type in PROCESSABLE_IMPORT_TYPES:
+        process_fn = get_import_processor(contribution.contribution_type)
+        if process_fn is None:
+            raise ValueError(f"Unsupported contribution type: {contribution.contribution_type}")
+
+        # Anonymous contributions have no contributor user_id by design.
+        contributor = await session.get(User, contribution.user_id) if contribution.user_id is not None else None
+        contribution_data_update = dict(contribution.data or {})
+        contribution_data_update["is_public"] = True
+
+        try:
+            import_result = await process_fn(session, contribution_data_update, contributor)
+        except AdultContentNotAllowedError:
+            # Do not mutate contribution state — propagate so the caller can return 4xx
+            # or skip this item in a bulk review.
+            raise
+        except Exception as e:
+            logger.exception(f"Failed to process contribution import on approval: {e}")
+            final_review_notes = _append_review_note(review_notes, f"Import processing failed: {str(e)}")
+        else:
+            if import_result.get("status") == "success":
+                final_review_notes = _append_review_note(
+                    review_notes,
+                    f"Import successful: stream_id={import_result.get('stream_id')}",
+                )
+            elif import_result.get("status") == "exists":
+                final_review_notes = _append_review_note(review_notes, "Content already exists in database")
+
+    contribution.status = ContributionStatus.APPROVED
+    contribution.reviewed_by = reviewer_id
+    contribution.reviewed_at = now
+    contribution.review_notes = final_review_notes
+    if contribution_data_update is not None:
+        contribution.data = contribution_data_update
 
     await award_import_approval_points(
         session,
@@ -559,33 +609,6 @@ async def _apply_contribution_review(
         contribution.contribution_type,
         logger,
     )
-
-    if contribution.contribution_type not in PROCESSABLE_IMPORT_TYPES:
-        return
-
-    try:
-        process_fn = get_import_processor(contribution.contribution_type)
-        if process_fn is None:
-            raise ValueError(f"Unsupported contribution type: {contribution.contribution_type}")
-
-        # Anonymous contributions have no contributor user_id by design.
-        contributor = await session.get(User, contribution.user_id) if contribution.user_id is not None else None
-        contribution_data = dict(contribution.data or {})
-        contribution_data["is_public"] = True
-        contribution.data = contribution_data
-        import_result = await process_fn(session, contribution_data, contributor)
-
-        if import_result.get("status") == "success":
-            contribution.review_notes = _append_review_note(
-                review_notes,
-                f"Import successful: stream_id={import_result.get('stream_id')}",
-            )
-        elif import_result.get("status") == "exists":
-            contribution.review_notes = _append_review_note(review_notes, "Content already exists in database")
-
-    except Exception as e:
-        logger.exception(f"Failed to process contribution import on approval: {e}")
-        contribution.review_notes = _append_review_note(review_notes, f"Import processing failed: {str(e)}")
 
 
 # ============================================
@@ -1145,14 +1168,22 @@ async def review_contribution(
             detail=f"Contribution already reviewed with status: {contribution.status}",
         )
 
-    await _apply_contribution_review(
-        session,
-        contribution,
-        review.status,
-        user,
-        review.review_notes,
-        logger,
-    )
+    from api.routers.content.torrent_import import AdultContentNotAllowedError
+
+    try:
+        await _apply_contribution_review(
+            session,
+            contribution,
+            review.status,
+            user,
+            review.review_notes,
+            logger,
+        )
+    except AdultContentNotAllowedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
 
     session.add(contribution)
     await session.commit()
@@ -1258,6 +1289,8 @@ async def bulk_review_contributions(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Bulk review pending contributions, optionally filtered by type or IDs."""
+    from api.routers.content.torrent_import import AdultContentNotAllowedError
+
     logger = logging.getLogger(__name__)
     review_status = ContributionStatus.APPROVED if request.action == "approve" else ContributionStatus.REJECTED
 
@@ -1279,15 +1312,29 @@ async def bulk_review_contributions(
             skipped += 1
             continue
 
-        await _apply_contribution_review(
-            session,
-            contribution,
-            review_status,
-            user,
-            request.review_notes,
-            logger,
-        )
-        session.add(contribution)
+        # Run each contribution inside a savepoint so that a hard failure
+        # (e.g. adult content detected mid-import) rolls back any partial
+        # rows added by the processor without aborting the rest of the batch.
+        try:
+            async with session.begin_nested():
+                await _apply_contribution_review(
+                    session,
+                    contribution,
+                    review_status,
+                    user,
+                    request.review_notes,
+                    logger,
+                )
+                session.add(contribution)
+        except AdultContentNotAllowedError as exc:
+            logger.warning(
+                "Skipping adult-content contribution %s during bulk review: %s",
+                contribution.id,
+                exc,
+            )
+            skipped += 1
+            continue
+
         if review_status == ContributionStatus.APPROVED:
             approved += 1
         else:

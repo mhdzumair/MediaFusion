@@ -28,6 +28,9 @@ def _log_background_submission_result(task: asyncio.Task) -> None:
     """Log submit_cached_hashes failures for fire-and-forget sync tasks."""
     try:
         task.result()
+    except asyncio.CancelledError:
+        # Task cancellation (e.g. event loop shutdown) is not an error worth logging.
+        return
     except Exception as e:
         logging.error("Error submitting cache status to MediaFusion: %s", e)
 

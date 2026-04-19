@@ -255,11 +255,11 @@ export const streamSuggestionsApi = {
     action: 'approve' | 'reject',
     reviewNotes?: string,
   ): Promise<{ approved: number; rejected: number; skipped: number }> => {
-    return apiClient.post('/stream-suggestions/bulk-review', {
-      suggestion_ids: suggestionIds,
-      action,
-      review_notes: reviewNotes,
-    })
+    const params = new URLSearchParams()
+    params.set('action', action)
+    if (reviewNotes) params.set('review_notes', reviewNotes)
+
+    return apiClient.post(`/stream-suggestions/bulk-review?${params.toString()}`, suggestionIds)
   },
 
   // Delete a pending suggestion

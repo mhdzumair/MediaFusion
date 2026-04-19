@@ -15,9 +15,8 @@ from datetime import datetime, timezone
 from typing import Literal
 from xml.etree import ElementTree as ET
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import Response
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.config import settings
 from db.crud.torznab import (
@@ -26,8 +25,9 @@ from db.crud.torznab import (
     search_torrents_by_title,
     search_torrents_by_tmdb,
 )
-from db.database import get_read_session
+from db.database import get_async_session_context, get_read_session_context
 from db.enums import MediaType
+from db.retry_utils import run_db_read_with_primary_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -328,7 +328,6 @@ async def torznab_api(
     cat: str | None = Query(None, description="Category IDs (comma-separated)"),
     limit: int = Query(50, ge=1, le=100, description="Result limit"),
     offset: int = Query(0, ge=0, description="Result offset"),
-    session: AsyncSession = Depends(get_read_session),
 ):
     """
     Torznab API endpoint.
@@ -362,15 +361,58 @@ async def torznab_api(
     # Perform search based on available parameters
     results = []
 
+    async def _search(session_factory, search_call):
+        async with session_factory() as session:
+            return await search_call(session)
+
     if imdbid:
         # Normalize IMDb ID (add tt prefix if missing)
         if not imdbid.startswith("tt"):
             imdbid = f"tt{imdbid}"
-        results = await search_torrents_by_imdb(session, imdbid, media_type, season, ep, limit)
+
+        async def _do(session):
+            return await search_torrents_by_imdb(session, imdbid, media_type, season, ep, limit)
+
+        results = await run_db_read_with_primary_fallback(
+            lambda: _search(get_read_session_context, _do),
+            lambda: _search(get_async_session_context, _do),
+            operation_name=f"torznab search imdb:{imdbid}",
+            on_fallback=lambda exc: logger.warning(
+                "Read replica conflict for torznab imdb search %s, retrying on primary: %s",
+                imdbid,
+                exc,
+            ),
+        )
     elif tmdbid:
-        results = await search_torrents_by_tmdb(session, tmdbid, media_type, season, ep, limit)
+
+        async def _do(session):
+            return await search_torrents_by_tmdb(session, tmdbid, media_type, season, ep, limit)
+
+        results = await run_db_read_with_primary_fallback(
+            lambda: _search(get_read_session_context, _do),
+            lambda: _search(get_async_session_context, _do),
+            operation_name=f"torznab search tmdb:{tmdbid}",
+            on_fallback=lambda exc: logger.warning(
+                "Read replica conflict for torznab tmdb search %s, retrying on primary: %s",
+                tmdbid,
+                exc,
+            ),
+        )
     elif q:
-        results = await search_torrents_by_title(session, q, media_type, limit=limit)
+
+        async def _do(session):
+            return await search_torrents_by_title(session, q, media_type, limit=limit)
+
+        results = await run_db_read_with_primary_fallback(
+            lambda: _search(get_read_session_context, _do),
+            lambda: _search(get_async_session_context, _do),
+            operation_name=f"torznab search title:{q}",
+            on_fallback=lambda exc: logger.warning(
+                "Read replica conflict for torznab title search %r, retrying on primary: %s",
+                q,
+                exc,
+            ),
+        )
     else:
         # Some clients (e.g., Prowlarr Generic Torznab validation) issue
         if t == "search":

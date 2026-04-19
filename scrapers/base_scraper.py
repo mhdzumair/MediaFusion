@@ -887,6 +887,13 @@ class BaseScraper(abc.ABC):
             return None, False
 
         download_url = download_url.strip()
+
+        # httpx rejects URLs with embedded control/whitespace characters (e.g. \t, \n, \r).
+        # Skip cleanly instead of letting httpx.InvalidURL bubble up as an unhandled exception.
+        if any(ord(ch) < 0x20 or ch == "\x7f" for ch in download_url):
+            self.logger.debug("Skipping torrent URL with non-printable control characters: %r", download_url)
+            return None, False
+
         if download_url.startswith("magnet:"):
             try:
                 magnet = Magnet.from_string(download_url)

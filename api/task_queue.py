@@ -375,6 +375,9 @@ def _dispatch_or_run(coro):
 def _log_task_error(task: asyncio.Task) -> None:
     try:
         task.result()
+    except asyncio.CancelledError:
+        # Task cancellation (e.g. event loop shutdown) is not an error worth logging.
+        return
     except Exception as exc:
         logger.error("Background enqueue failed: %s", exc)
 

@@ -86,6 +86,18 @@ SPORTS_SERIES_CATEGORIES = {"formula_racing", "motogp_racing"}
 ADULT_CONTENT_METADATA_ERROR_MESSAGE = "Adult content metadata is not allowed in user contributions."
 
 
+class AdultContentNotAllowedError(ValueError):
+    """Raised when an import attempt is blocked by the adult-content policy.
+
+    Subclasses ValueError to stay compatible with callers that still catch
+    ValueError, while enabling callers that want to propagate this specific
+    failure to the client as a 400 response.
+    """
+
+    def __init__(self, message: str = ADULT_CONTENT_METADATA_ERROR_MESSAGE):
+        super().__init__(message)
+
+
 def _resolve_sports_media_type(sports_category: str | None) -> MediaType:
     """Map sports categories to persisted media types."""
     if sports_category in SPORTS_SERIES_CATEGORIES:
@@ -793,7 +805,7 @@ async def process_torrent_import(
         raise ValueError("Missing info_hash in contribution data")
 
     if _contribution_stream_titles_indicate_adult(contribution_data):
-        raise ValueError(ADULT_CONTENT_METADATA_ERROR_MESSAGE)
+        raise AdultContentNotAllowedError()
 
     # Fetch external metadata before opening heavy DB transaction work.
     prefetched_media_payloads: dict[tuple[str, str], dict[str, Any]] = {}
@@ -1085,7 +1097,7 @@ async def process_torrent_import(
                     file_info.get("episode_title") if isinstance(file_info.get("episode_title"), str) else None,
                     file_info.get("title") if isinstance(file_info.get("title"), str) else None,
                 ):
-                    raise ValueError(ADULT_CONTENT_METADATA_ERROR_MESSAGE)
+                    raise AdultContentNotAllowedError()
                 linked_media_ids.add(file_media.id)
 
         # Fall back to primary media if no per-file metadata
