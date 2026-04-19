@@ -1,6 +1,6 @@
 """Statistics and caching models."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import JSON, DateTime
 from sqlmodel import Field, SQLModel
@@ -20,6 +20,6 @@ class DailyStats(SQLModel, table=True):
     top_media: dict | None = Field(default=None, sa_type=JSON)  # Top 10 by playback
     top_streams: dict | None = Field(default=None, sa_type=JSON)  # Top 10 by playback
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         sa_type=DateTime(timezone=True),
     )

@@ -21,7 +21,7 @@ async def validate_provider_credentials(request: Request, user_data: UserData) -
 
         result = await VALIDATE_CREDENTIALS_FUNCTIONS[provider.service](streaming_provider=provider, user_ip=user_ip)
 
-        if result.get("status") == "error":
+        if result is None or result.get("status") == "error":
             return result
 
     return {"status": "success"}
