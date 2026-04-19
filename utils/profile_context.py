@@ -77,17 +77,6 @@ def build_user_data_from_config(
     # Filter out invalid streaming providers (empty service names, missing credentials,
     # or providers that have been disabled by the administrator)
     disabled_providers = set(settings.disabled_providers)
-    alias_map = {
-        "token": "tk",
-        "email": "em",
-        "password": "pw",
-        "url": "u",
-        "qbittorrent_config": "qbc",
-        "sabnzbd_config": "sbc",
-        "nzbget_config": "ngc",
-        "nzbdav_config": "ndc",
-        "easynews_config": "enc",
-    }
     for key in ["streaming_providers", "sps"]:
         if key in full_config and isinstance(full_config[key], list):
             valid_providers = []
@@ -99,10 +88,7 @@ def build_user_data_from_config(
                     continue
                 if service in disabled_providers:
                     continue
-                required = const.STREAMING_SERVICE_REQUIREMENTS.get(
-                    service, const.STREAMING_SERVICE_REQUIREMENTS["default"]
-                )
-                if all(sp.get(f) or sp.get(alias_map.get(f, f)) for f in required):
+                if const.dict_provider_auth_satisfied(sp, service):
                     valid_providers.append(sp)
             full_config[key] = valid_providers
 

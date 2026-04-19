@@ -9,12 +9,15 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from aioseedrcc import Seedr
+from aiohttp import ClientResponseError
+from aioseedrcc import Login, Seedr
 from aioseedrcc.exception import SeedrException
 
+from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import StreamingProvider, TorrentStreamData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
+from utils import crypto
 
 
 class TorrentStatus(Enum):
@@ -24,6 +27,7 @@ class TorrentStatus(Enum):
 
 
 SEEDR_TORRENT_DETAILS_CONCURRENCY = 4
+SEEDR_PASSWORD_TOKEN_TTL_SECONDS = 50 * 60  # Access token lives ~1h; refresh slightly earlier.
 
 
 def _map_seedr_exception(error: SeedrException) -> ProviderException:
@@ -90,20 +94,137 @@ def clean_filename(name: str | None, replace: str = "") -> str:
     return re.sub(r"[^a-zA-Z0-9 .,;:_~\-()]", replace, name)
 
 
+def _seedr_password_cache_key(email: str, password: str) -> str:
+    return f"seedr:pw:{crypto.get_text_hash(email + password, full_hash=True)}"
+
+
+async def _load_cached_password_token(email: str, password: str) -> str | None:
+    encrypted = await REDIS_ASYNC_CLIENT.get(_seedr_password_cache_key(email, password))
+    if not encrypted:
+        return None
+    try:
+        return crypto.decrypt_text(encrypted, password)
+    except Exception:
+        logging.warning("Failed to decrypt cached Seedr password token; re-authenticating")
+        return None
+
+
+async def _store_password_token(email: str, password: str, token: str) -> None:
+    await REDIS_ASYNC_CLIENT.set(
+        _seedr_password_cache_key(email, password),
+        crypto.encrypt_text(token, password),
+        ex=SEEDR_PASSWORD_TOKEN_TTL_SECONDS,
+    )
+
+
+async def _invalidate_cached_password_token(email: str, password: str) -> None:
+    await REDIS_ASYNC_CLIENT.delete(_seedr_password_cache_key(email, password))
+
+
+def _map_login_http_error(error: ClientResponseError) -> ProviderException:
+    if error.status in (401, 403):
+        return ProviderException("Invalid Seedr credentials", "invalid_credentials.mp4")
+    return ProviderException("Seedr service error. Please try again.", "debrid_service_down_error.mp4")
+
+
+async def _login_with_password(email: str, password: str) -> str:
+    """Exchange email/password for a Seedr access token."""
+    try:
+        async with Login(email, password) as login:
+            response = await login.authorize()
+    except ClientResponseError as error:
+        logging.warning("Seedr password login HTTP %s: %s", error.status, error.message)
+        raise _map_login_http_error(error) from error
+    except (asyncio.TimeoutError, TimeoutError) as error:
+        logging.warning("Seedr password login timed out: %s", error)
+        raise ProviderException("Seedr request timed out", "debrid_service_down_error.mp4") from error
+    except OSError as error:
+        logging.warning("Seedr password login network failure: %s", error)
+        raise ProviderException("Seedr request failed. Please try again.", "debrid_service_down_error.mp4") from error
+
+    if not login.token:
+        error_code = str(response.get("error", "")).lower()
+        if error_code in {"invalid_grant", "invalid_client", "unauthorized"}:
+            raise ProviderException("Invalid Seedr credentials", "invalid_credentials.mp4")
+        raise ProviderException("Seedr authorization failed", "api_error.mp4")
+    return login.token
+
+
+async def _resolve_seedr_token(streaming_provider: StreamingProvider) -> tuple[str, bool]:
+    """Return (token, used_password_login).
+
+    If a static ``token`` is set it takes priority. Otherwise we use the cached
+    password-login token, or perform a fresh login when no cached entry exists.
+    """
+    if streaming_provider.token:
+        return streaming_provider.token, False
+
+    if not (streaming_provider.email and streaming_provider.password):
+        raise ProviderException(
+            "Seedr credentials missing. Provide an API token or email/password.",
+            "invalid_token.mp4",
+        )
+
+    cached = await _load_cached_password_token(streaming_provider.email, streaming_provider.password)
+    if cached:
+        return cached, True
+
+    token = await _login_with_password(streaming_provider.email, streaming_provider.password)
+    await _store_password_token(streaming_provider.email, streaming_provider.password, token)
+    return token, True
+
+
+async def _verify_seedr_token(seedr: Seedr) -> None:
+    """Raise ProviderException if the Seedr token is rejected."""
+    response = await seedr.test_token()
+    if "error" in response:
+        raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
+
+
 @asynccontextmanager
 async def get_seedr_client(streaming_provider: StreamingProvider) -> AsyncGenerator[Seedr, Any]:
-    """Context manager that provides a Seedr client instance."""
+    """Context manager that provides a Seedr client instance.
+
+    Accepts either a pre-issued ``token`` (OAuth device flow) or ``email`` +
+    ``password``. Password-login tokens are cached in Redis. If the cached token
+    is rejected on the initial ``test_token`` call, we drop the cache, perform a
+    fresh login, and try once more before yielding to the caller.
+    """
+    token, used_password_login = await _resolve_seedr_token(streaming_provider)
+
     try:
-        async with Seedr(token=streaming_provider.token) as seedr:
-            response = await seedr.test_token()
-            if "error" in response:
-                raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
+        async with Seedr(token=token) as seedr:
+            try:
+                await _verify_seedr_token(seedr)
+            except (
+                ProviderException,
+                SeedrException,
+                SyntaxError,
+                BinasciiError,
+                NameError,
+                TypeError,
+                ValueError,
+            ) as error:
+                if not used_password_login:
+                    raise
+                # Cached/returned token is stale — relogin once.
+                logging.warning("Cached Seedr password token rejected; re-authenticating: %s", error)
+                await _invalidate_cached_password_token(streaming_provider.email, streaming_provider.password)
+                token = await _login_with_password(streaming_provider.email, streaming_provider.password)
+                await _store_password_token(streaming_provider.email, streaming_provider.password, token)
+
+                # Open a new Seedr client with the refreshed token.
+                async with Seedr(token=token) as refreshed_seedr:
+                    await _verify_seedr_token(refreshed_seedr)
+                    yield refreshed_seedr
+                    return
+
             yield seedr
     except (SyntaxError, BinasciiError, NameError, TypeError, ValueError):
         # aioseedrcc decodes token via eval(); garbage or wrong encoding raises NameError etc.
         raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
-    except ProviderException as error:
-        raise error
+    except ProviderException:
+        raise
     except SeedrException as error:
         mapped_error = _map_seedr_exception(error)
         if mapped_error.video_file_name == "invalid_token.mp4":

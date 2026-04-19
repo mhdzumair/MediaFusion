@@ -208,12 +208,10 @@ class StreamingProvider(BaseModel):
     def validate_token_or_username_password(self) -> "StreamingProvider":
         if self.service in settings.disabled_providers:
             raise ValueError(f"The streaming provider '{self.service}' has been disabled by the administrator")
-        required_fields = const.STREAMING_SERVICE_REQUIREMENTS.get(
-            self.service, const.STREAMING_SERVICE_REQUIREMENTS["default"]
-        )
-        for field in required_fields:
-            if getattr(self, field, None) is None:
-                raise ValueError(f"{field} is required")
+        has_field = lambda field: getattr(self, field, None) is not None  # noqa: E731
+        if not const.provider_auth_satisfied(self.service, has_field):
+            missing = const.provider_first_missing_field(self.service, has_field)
+            raise ValueError(f"{missing} is required" if missing else "provider credentials are required")
         return self
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)

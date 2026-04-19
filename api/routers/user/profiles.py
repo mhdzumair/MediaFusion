@@ -130,24 +130,7 @@ class ResetProfileUuidResponse(BaseModel):
 
 def _provider_has_credentials(sp: dict, service: str) -> bool:
     """Check whether a raw provider dict has the required credentials for its service."""
-    required_fields = const.STREAMING_SERVICE_REQUIREMENTS.get(service, const.STREAMING_SERVICE_REQUIREMENTS["default"])
-    for field in required_fields:
-        # Check both full name and short alias
-        alias_map = {
-            "token": "tk",
-            "email": "em",
-            "password": "pw",
-            "url": "url",
-            "qbittorrent_config": "qbc",
-            "sabnzbd_config": "sbc",
-            "nzbget_config": "ngc",
-            "nzbdav_config": "ndc",
-            "easynews_config": "enc",
-        }
-        alias = alias_map.get(field, field)
-        if not (sp.get(field) or sp.get(alias)):
-            return False
-    return True
+    return const.dict_provider_auth_satisfied(sp, service)
 
 
 def get_streaming_providers_summary(config: dict) -> StreamingProvidersSummary:
@@ -448,19 +431,6 @@ def _validate_provider_configs(config: dict) -> None:
     """
     disabled = set(settings.disabled_providers)
 
-    # Human-readable names for error messages
-    field_labels = {
-        "token": "API token",
-        "email": "email",
-        "password": "password",
-        "url": "URL",
-        "qbittorrent_config": "qBittorrent configuration",
-        "sabnzbd_config": "SABnzbd configuration",
-        "nzbget_config": "NZBGet configuration",
-        "nzbdav_config": "NzbDAV configuration",
-        "easynews_config": "Easynews configuration",
-    }
-
     providers_raw = config.get("streaming_providers") or config.get("sps") or []
     if isinstance(providers_raw, list) and len(providers_raw) > settings.max_streaming_providers_per_profile:
         raise HTTPException(
@@ -482,18 +452,23 @@ def _validate_provider_configs(config: dict) -> None:
         if not enabled:
             continue
 
-        required_fields = const.STREAMING_SERVICE_REQUIREMENTS.get(
-            service, const.STREAMING_SERVICE_REQUIREMENTS["default"]
-        )
-        for field in required_fields:
-            if not _provider_has_credentials(sp, service):
-                label = field_labels.get(field, field)
-                provider_name = sp.get("n") or sp.get("name") or service
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Provider '{provider_name}' is missing required {label}. "
-                    f"Please complete the configuration or remove the provider.",
-                )
+        if _provider_has_credentials(sp, service):
+            continue
+
+        missing_field = const.dict_provider_first_missing_field(sp, service)
+        provider_name = sp.get("n") or sp.get("name") or service
+        if missing_field:
+            label = const.STREAMING_PROVIDER_FIELD_LABELS.get(missing_field, missing_field)
+            detail = (
+                f"Provider '{provider_name}' is missing required {label}. "
+                f"Please complete the configuration or remove the provider."
+            )
+        else:
+            detail = (
+                f"Provider '{provider_name}' is missing required credentials. "
+                f"Please complete the configuration or remove the provider."
+            )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
 def _validate_external_services(config: dict) -> None:

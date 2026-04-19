@@ -170,19 +170,94 @@ TORRENT_SORTING_PRIORITY = [
 ]
 TORRENT_SORTING_PRIORITY_OPTIONS = TORRENT_SORTING_PRIORITY
 
-STREAMING_SERVICE_REQUIREMENTS = {
-    "pikpak": ["email", "password"],
-    "qbittorrent": ["qbittorrent_config"],
-    "stremthru": ["url", "token"],
-    "p2p": [],
+# Each service maps to a list of auth option groups (outer list = OR, inner list = AND).
+# A provider is valid if ANY option's fields are all present.
+STREAMING_SERVICE_REQUIREMENTS: dict[str, list[list[str]]] = {
+    "pikpak": [["email", "password"]],
+    "qbittorrent": [["qbittorrent_config"]],
+    "stremthru": [["url", "token"]],
+    "seedr": [["token"], ["email", "password"]],
+    "p2p": [[]],
     # Usenet providers
-    "sabnzbd": ["sabnzbd_config"],
-    "nzbget": ["nzbget_config"],
-    "nzbdav": ["nzbdav_config"],
-    "easynews": ["easynews_config"],
-    "stremio_nntp": [],
-    "default": ["token"],
+    "sabnzbd": [["sabnzbd_config"]],
+    "nzbget": [["nzbget_config"]],
+    "nzbdav": [["nzbdav_config"]],
+    "easynews": [["easynews_config"]],
+    "stremio_nntp": [[]],
+    "default": [["token"]],
 }
+
+# Maps a full provider field name to its short alias used in serialized config dicts.
+STREAMING_PROVIDER_FIELD_ALIASES: dict[str, str] = {
+    "token": "tk",
+    "email": "em",
+    "password": "pw",
+    "url": "u",
+    "qbittorrent_config": "qbc",
+    "sabnzbd_config": "sbc",
+    "nzbget_config": "ngc",
+    "nzbdav_config": "ndc",
+    "easynews_config": "enc",
+}
+
+# Human-readable labels for each auth field, used in validation error messages.
+STREAMING_PROVIDER_FIELD_LABELS: dict[str, str] = {
+    "token": "API token",
+    "email": "email",
+    "password": "password",
+    "url": "URL",
+    "qbittorrent_config": "qBittorrent configuration",
+    "sabnzbd_config": "SABnzbd configuration",
+    "nzbget_config": "NZBGet configuration",
+    "nzbdav_config": "NzbDAV configuration",
+    "easynews_config": "Easynews configuration",
+}
+
+
+def get_service_auth_options(service: str) -> list[list[str]]:
+    """Return the auth option groups for a service (OR of AND groups)."""
+    return STREAMING_SERVICE_REQUIREMENTS.get(service, STREAMING_SERVICE_REQUIREMENTS["default"])
+
+
+def provider_auth_satisfied(service: str, has_field) -> bool:
+    """True if at least one auth option has all its fields satisfied by ``has_field``."""
+    options = get_service_auth_options(service)
+    return any(all(has_field(f) for f in option) for option in options)
+
+
+def provider_first_missing_field(service: str, has_field) -> str | None:
+    """Return the first missing field from the auth option that is closest to complete.
+
+    Returns ``None`` when the provider already satisfies an auth option or when no
+    fields are required at all.
+    """
+    options = get_service_auth_options(service)
+    if any(not option for option in options):
+        return None
+    best_missing: list[str] | None = None
+    for option in options:
+        missing = [f for f in option if not has_field(f)]
+        if not missing:
+            return None
+        if best_missing is None or len(missing) < len(best_missing):
+            best_missing = missing
+    return best_missing[0] if best_missing else None
+
+
+def _dict_provider_has_field(sp: dict, field: str) -> bool:
+    alias = STREAMING_PROVIDER_FIELD_ALIASES.get(field, field)
+    return bool(sp.get(field) or sp.get(alias))
+
+
+def dict_provider_auth_satisfied(sp: dict, service: str) -> bool:
+    """Check credential presence on a raw provider dict (handles short/long keys)."""
+    return provider_auth_satisfied(service, lambda f: _dict_provider_has_field(sp, f))
+
+
+def dict_provider_first_missing_field(sp: dict, service: str) -> str | None:
+    """First missing field on a raw provider dict, for error messages."""
+    return provider_first_missing_field(service, lambda f: _dict_provider_has_field(sp, f))
+
 
 DELETE_ALL_WATCHLIST_META = {
     "_id": "dl{}",

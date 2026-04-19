@@ -710,6 +710,16 @@ function SingleProviderEditor({
             </Alert>
           )}
 
+          {selectedProvider?.value === 'seedr' && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Pick one authentication method: authorize via OAuth, paste an API token, or enter your Seedr email and
+                password. OAuth is recommended for long-lived access.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Token Input */}
           {selectedProvider?.needsToken && (
             <div className="space-y-2">
