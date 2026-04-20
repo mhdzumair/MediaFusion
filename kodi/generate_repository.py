@@ -20,6 +20,8 @@ def generate_addons_xml():
     addon_xmls = []
     errors = []
     # Get all addon.xml files from the zips directory
+    if not DIST_DIR.exists():
+        raise FileNotFoundError(f"Directory not found: {DIST_DIR}")
     for addon_dir in DIST_DIR.iterdir():
         if addon_dir.is_dir():
             addon_xml_path = addon_dir / "addon.xml"
@@ -42,11 +44,16 @@ def generate_addons_xml():
 
     # Create addons.xml
     xml_root = ET.Element("addons")
+    repository_addons = []
     for addon in addon_xmls:
-        if addon.get("id").startswith("repository."):
-            # append repository twice
-            xml_root.insert(0, addon)
-        xml_root.append(addon)
+        addon_id = addon.get("id") or ""
+        if addon_id.startswith("repository."):
+            repository_addons.append(addon)
+        else:
+            xml_root.append(addon)
+    # Prepend repository addons for proper ordering
+    for repo_addon in reversed(repository_addons):
+        xml_root.insert(0, repo_addon)
 
     # Use proper XML declaration with encoding
     xml_str = ET.tostring(xml_root, encoding="utf-8", xml_declaration=True)
@@ -58,7 +65,7 @@ def generate_addons_xml():
 
     # Generate MD5
     md5_path = DIST_DIR / "addons.xml.md5"
-    with open(md5_path, "w") as f:
+    with open(md5_path, "w", encoding="utf-8") as f:
         f.write(generate_md5(addons_xml_path))
 
 
