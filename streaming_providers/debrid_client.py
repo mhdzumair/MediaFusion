@@ -82,7 +82,11 @@ class DebridClient(AsyncContextDecorator):
 
         except ProviderException as error:
             raise error
-        except aiohttp.ClientConnectorError as error:
+        except (
+            aiohttp.ClientConnectorError,
+            aiohttp.ClientPayloadError,
+            aiohttp.ServerDisconnectedError,
+        ) as error:
             if retry_count < 1:  # Try one more time
                 return await self._make_request(
                     method,
@@ -185,6 +189,13 @@ class DebridClient(AsyncContextDecorator):
         if isinstance(error, (aiohttp.ClientConnectorError, aiohttp.ClientConnectionError)):
             raise ProviderException(
                 "Failed to connect to Debrid service.", "debrid_service_down_error.mp4", retryable=True
+            )
+
+        if isinstance(error, (aiohttp.ClientPayloadError, aiohttp.ServerDisconnectedError)):
+            raise ProviderException(
+                "Debrid service closed the connection unexpectedly.",
+                "debrid_service_down_error.mp4",
+                retryable=True,
             )
 
         if any(
