@@ -146,10 +146,51 @@ export function StreamCard({
       try {
         // Submit each modified field as a suggestion
         for (const editedFile of editedFiles) {
-          if (!editedFile.isModified) continue
-
           const originalFile = annotationFiles.find((f) => f.file_id === editedFile.file_id)
           if (!originalFile) continue
+
+          // Excluded file: submit suggestions to clear its annotation data
+          if (!editedFile.included) {
+            if (originalFile.season_number !== null) {
+              await createSuggestion.mutateAsync({
+                streamId: stream.id,
+                data: {
+                  suggestion_type: 'field_correction',
+                  field_name: `episode_link:${editedFile.file_id}:season_number`,
+                  current_value: String(originalFile.season_number),
+                  suggested_value: '',
+                  reason: `Remove episode link for file: ${editedFile.file_name}`,
+                },
+              })
+            }
+            if (originalFile.episode_number !== null) {
+              await createSuggestion.mutateAsync({
+                streamId: stream.id,
+                data: {
+                  suggestion_type: 'field_correction',
+                  field_name: `episode_link:${editedFile.file_id}:episode_number`,
+                  current_value: String(originalFile.episode_number),
+                  suggested_value: '',
+                  reason: `Remove episode link for file: ${editedFile.file_name}`,
+                },
+              })
+            }
+            if (originalFile.episode_end !== null) {
+              await createSuggestion.mutateAsync({
+                streamId: stream.id,
+                data: {
+                  suggestion_type: 'field_correction',
+                  field_name: `episode_link:${editedFile.file_id}:episode_end`,
+                  current_value: String(originalFile.episode_end),
+                  suggested_value: '',
+                  reason: `Remove episode link for file: ${editedFile.file_name}`,
+                },
+              })
+            }
+            continue
+          }
+
+          if (!editedFile.isModified) continue
 
           // Check which fields changed and submit suggestions
           if (editedFile.season_number !== originalFile.season_number) {

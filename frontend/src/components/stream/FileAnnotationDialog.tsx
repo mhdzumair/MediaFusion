@@ -458,6 +458,14 @@ export function FileAnnotationDialog({
   const isEpisodeModified = useCallback(
     (file: EditedFileLink) => {
       const original = initialFiles.find((o) => o.file_id === file.file_id)
+      if (!file.included) {
+        // Excluding a file that had annotation data counts as a modification
+        return (
+          (original?.season_number ?? null) !== null ||
+          (original?.episode_number ?? null) !== null ||
+          (original?.episode_end ?? null) !== null
+        )
+      }
       return (
         file.season_number !== (original?.season_number ?? null) ||
         file.episode_number !== (original?.episode_number ?? null) ||
@@ -598,8 +606,8 @@ export function FileAnnotationDialog({
   const handleSaveChanges = useCallback(async () => {
     try {
       setSaveError(null)
-      // Only save modified and included files
-      const modifiedFiles = editedFiles.filter((f) => f.included && isFileModified(f))
+      // Save all modified files, including excluded ones (exclusion = remove annotation)
+      const modifiedFiles = editedFiles.filter((f) => isFileModified(f))
       if (annotationMode === 'media') {
         if (!onSaveMediaLinks) {
           throw new Error('Media link save handler is not configured')
@@ -627,7 +635,7 @@ export function FileAnnotationDialog({
     void handleSaveChanges()
   }, [handleSaveChanges])
 
-  const modifiedCount = editedFiles.filter((f) => f.included && isFileModified(f)).length
+  const modifiedCount = editedFiles.filter((f) => isFileModified(f)).length
   const includedCount = editedFiles.filter((f) => f.included).length
 
   return (
