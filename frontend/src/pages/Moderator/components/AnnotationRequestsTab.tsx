@@ -127,7 +127,6 @@ export function AnnotationRequestsTab() {
         updates,
       })
 
-      refetch()
       setAnnotationDialogOpen(false)
       setSelectedStream(null)
     } catch (error) {
@@ -212,7 +211,6 @@ export function AnnotationRequestsTab() {
         streamId,
         mediaId,
       })
-      refetch()
     } catch (error) {
       console.error('Failed to dismiss annotation request:', error)
     }
@@ -306,23 +304,23 @@ export function AnnotationRequestsTab() {
                       {stream.stream_name}
                     </p>
 
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Tv className="h-3.5 w-3.5" />
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0">
+                      <Tv className="h-3.5 w-3.5 flex-shrink-0" />
                       <span className="truncate" title={stream.media_title}>
                         {stream.media_title}
                         {stream.media_year && ` (${stream.media_year})`}
                       </span>
                       {stream.media_external_id && (
-                        <span className="font-mono text-xs truncate" title={stream.media_external_id}>
+                        <span className="font-mono text-xs truncate flex-shrink-0" title={stream.media_external_id}>
                           {stream.media_external_id}
                         </span>
                       )}
                     </div>
 
                     {stream.info_hash && (
-                      <div className="flex items-start gap-2 text-xs text-muted-foreground">
-                        <Hash className="h-3 w-3" />
-                        <span className="font-mono break-all">{stream.info_hash}</span>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
+                        <Hash className="h-3 w-3 flex-shrink-0" />
+                        <span className="font-mono truncate">{stream.info_hash}</span>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -350,60 +348,60 @@ export function AnnotationRequestsTab() {
                         </>
                       )}
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <Button variant="outline" size="sm" className="rounded-lg" asChild>
-                      <Link
-                        to={`/dashboard/content/${getMediaRouteType(stream.media_type)}/${stream.media_id}`}
-                        target="_blank"
+                    <div className="flex items-center gap-2 flex-wrap pt-1">
+                      <Button variant="outline" size="sm" className="rounded-lg" asChild>
+                        <Link
+                          to={`/dashboard/content/${getMediaRouteType(stream.media_type)}/${stream.media_id}`}
+                          target="_blank"
+                        >
+                          <ExternalLink className="h-4 w-4 mr-1" />
+                          Library
+                        </Link>
+                      </Button>
+                      <StreamRelinkButton
+                        streamId={stream.stream_id}
+                        streamName={stream.stream_name}
+                        currentMediaId={stream.media_id}
+                        currentMediaTitle={
+                          stream.media_year ? `${stream.media_title} (${stream.media_year})` : stream.media_title
+                        }
+                        className="rounded-lg"
+                        onSuccess={() => refetch()}
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="rounded-lg border-red-500/40 text-red-500 hover:text-red-400"
+                        onClick={() => handleDismissRequest(stream.stream_id, stream.media_id)}
+                        disabled={dismissAnnotationRequest.isPending || isLoadingFiles}
                       >
-                        <ExternalLink className="h-4 w-4 mr-1" />
-                        Library
-                      </Link>
-                    </Button>
-                    <StreamRelinkButton
-                      streamId={stream.stream_id}
-                      streamName={stream.stream_name}
-                      currentMediaId={stream.media_id}
-                      currentMediaTitle={
-                        stream.media_year ? `${stream.media_title} (${stream.media_year})` : stream.media_title
-                      }
-                      className="rounded-lg"
-                      onSuccess={() => refetch()}
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="rounded-lg border-red-500/40 text-red-500 hover:text-red-400"
-                      onClick={() => handleDismissRequest(stream.stream_id, stream.media_id)}
-                      disabled={dismissAnnotationRequest.isPending || isLoadingFiles}
-                    >
-                      Discard
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="rounded-lg bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500"
-                      onClick={() =>
-                        handleOpenAnnotation({
-                          stream_id: stream.stream_id,
-                          stream_name: stream.stream_name,
-                          media_id: stream.media_id,
-                          media_title: stream.media_title,
-                          media_year: stream.media_year,
-                          media_type: stream.media_type,
-                          media_external_id: stream.media_external_id,
-                        })
-                      }
-                      disabled={isLoadingFiles}
-                    >
-                      {isLoadingFiles ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <FileVideo className="h-4 w-4 mr-1" />
-                      )}
-                      Annotate
-                    </Button>
+                        Discard
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="rounded-lg bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500"
+                        onClick={() =>
+                          handleOpenAnnotation({
+                            stream_id: stream.stream_id,
+                            stream_name: stream.stream_name,
+                            media_id: stream.media_id,
+                            media_title: stream.media_title,
+                            media_year: stream.media_year,
+                            media_type: stream.media_type,
+                            media_external_id: stream.media_external_id,
+                          })
+                        }
+                        disabled={isLoadingFiles}
+                      >
+                        {isLoadingFiles ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <FileVideo className="h-4 w-4 mr-1" />
+                        )}
+                        Annotate
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </CardContent>
