@@ -24,7 +24,7 @@ from db.crud import (
 from db.database import get_async_session, get_background_session
 from db.enums import MediaType, UserRole
 from db.models import AnnotationRequestDismissal, Stream, StreamMediaLink, User
-from utils.annotation_autofix import auto_map_episode_links_from_filename
+from utils.annotation_autofix import EXTRA_FILE_SQL_PATTERN, auto_map_episode_links_from_filename
 
 router = APIRouter(prefix="/api/v1/stream-links", tags=["Stream Linking"])
 
@@ -815,9 +815,10 @@ async def get_streams_needing_annotation(
 
     # Build the search condition
     search_condition = ""
-    params = {
+    params: dict = {
         "limit": per_page,
         "offset": (page - 1) * per_page,
+        "extra_file_re": EXTRA_FILE_SQL_PATTERN,
     }
 
     if search:
@@ -833,6 +834,9 @@ async def get_streams_needing_annotation(
     # Lightweight stream list query.
     # We intentionally avoid precomputing per-file counts for all streams here;
     # file-level details are fetched only when moderator clicks "Annotate".
+    #
+    # Both CTEs exclude bonus/extra files (creditless OP/ED, movie compilations, etc.)
+    # so that streams where only extras lack episode numbers are not flagged.
     data_sql = text(f"""
         WITH unlinked_streams AS (
             SELECT DISTINCT sf.stream_id
@@ -842,6 +846,8 @@ async def get_streams_needing_annotation(
             WHERE s.is_active = true
               AND s.is_blocked = false
               AND fml_any.id IS NULL
+              AND NOT (sf.filename ~* :extra_file_re)
+              AND sf.filename NOT ILIKE '%sample%'
         ),
         null_episode_pairs AS (
             SELECT DISTINCT sf.stream_id, fml_series.media_id
@@ -856,6 +862,8 @@ async def get_streams_needing_annotation(
               AND s.is_blocked = false
               AND m.type = 'SERIES'
               AND fml_series.episode_number IS NULL
+              AND NOT (sf.filename ~* :extra_file_re)
+              AND sf.filename NOT ILIKE '%sample%'
         ),
         unmapped_pairs AS (
             SELECT DISTINCT us.stream_id, sml.media_id
