@@ -5,6 +5,8 @@ Supports linking single streams to multiple media entries (e.g., multi-movie tor
 
 from datetime import UTC, datetime
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlmodel import select
@@ -19,7 +21,7 @@ from db.crud import (
     link_stream_to_media,
     unlink_stream_from_media,
 )
-from db.database import get_async_session
+from db.database import get_async_session, get_background_session
 from db.enums import MediaType, UserRole
 from db.models import AnnotationRequestDismissal, Stream, StreamMediaLink, User
 from utils.annotation_autofix import auto_map_episode_links_from_filename
@@ -773,6 +775,22 @@ async def dismiss_annotation_request(
     )
 
 
+async def _heal_annotation_pairs_background(pairs: list[tuple[int, int]]) -> None:
+    """Auto-heal annotation queue entries in the background using filename patterns."""
+    async with get_background_session() as session:
+        changed_any = False
+        for stream_id, media_id in pairs:
+            try:
+                _, change_count, _ = await auto_map_episode_links_from_filename(
+                    session, stream_id, media_id, apply_changes=True
+                )
+                changed_any = changed_any or change_count > 0
+            except Exception:
+                pass
+        if changed_any:
+            await session.commit()
+
+
 @router.get("/needs-annotation", response_model=StreamsNeedingAnnotationResponse)
 async def get_streams_needing_annotation(
     page: int = Query(1, ge=1),
@@ -897,54 +915,10 @@ async def get_streams_needing_annotation(
     result = await session.exec(data_sql, params=params)
     rows = result.all()
 
-    # Self-heal queue entries when season/episode can be inferred from filename.
-    # This prevents obvious cases (e.g., 1x01, S01E01) from requiring manual annotation.
+    # Kick off background auto-healing for this page's entries.
+    # Entries that can be resolved from filename patterns will be gone on the next fetch.
     if rows:
-        healed_any = False
-        changed_any = False
-        visible_pairs: set[tuple[int, int]] = set()
-        for row in rows:
-            try:
-                pair_resolved, change_count, relevant_video_files = await auto_map_episode_links_from_filename(
-                    session,
-                    row.stream_id,
-                    row.media_id,
-                    apply_changes=True,
-                )
-                if relevant_video_files > 0 and not pair_resolved:
-                    visible_pairs.add((row.stream_id, row.media_id))
-                healed_any = healed_any or pair_resolved or relevant_video_files == 0
-                changed_any = changed_any or change_count > 0
-            except Exception:
-                # Keep queue behavior safe even if parser-based auto-linking fails.
-                visible_pairs.add((row.stream_id, row.media_id))
-
-        if changed_any:
-            await session.commit()
-
-        if healed_any:
-            result = await session.exec(data_sql, params=params)
-            rows = result.all()
-
-            filtered_rows = []
-            for row in rows:
-                if (row.stream_id, row.media_id) in visible_pairs:
-                    filtered_rows.append(row)
-                    continue
-
-                try:
-                    pair_resolved, _, relevant_video_files = await auto_map_episode_links_from_filename(
-                        session,
-                        row.stream_id,
-                        row.media_id,
-                        apply_changes=False,
-                    )
-                    if relevant_video_files > 0 and not pair_resolved:
-                        filtered_rows.append(row)
-                except Exception:
-                    filtered_rows.append(row)
-
-            rows = filtered_rows
+        asyncio.create_task(_heal_annotation_pairs_background([(row.stream_id, row.media_id) for row in rows]))
 
     if not rows:
         return StreamsNeedingAnnotationResponse(
