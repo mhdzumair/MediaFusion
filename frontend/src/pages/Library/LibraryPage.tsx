@@ -3,9 +3,10 @@ import { useSearchParams, Link } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Compass, Bookmark, History, Library, Cloud, Settings2, Loader2 } from 'lucide-react'
-import { BrowseTab, MyLibraryTab, HistoryTab, WatchlistTab } from './tabs'
+import { Compass, Bookmark, History, Library, Cloud, Settings2, Loader2, ShieldAlert } from 'lucide-react'
+import { BrowseTab, MyLibraryTab, HistoryTab, WatchlistTab, BlockedLibraryTab } from './tabs'
 import { useProfiles } from '@/hooks/useProfiles'
+import { useRole } from '@/hooks/useRole'
 
 // Storage key for persisting library tab
 const LIBRARY_TAB_KEY = 'library_active_tab'
@@ -13,7 +14,11 @@ const LIBRARY_TAB_KEY = 'library_active_tab'
 export function LibraryPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: profiles, isLoading: profilesLoading } = useProfiles()
+  const { isAdmin } = useRole()
   const hasDebridProfile = profiles?.some((p) => p.streaming_providers?.has_debrid) ?? false
+
+  // Blocked-content view: ?blocked=true (admin only)
+  const isBlockedView = searchParams.get('blocked') === 'true' && isAdmin
 
   // Get initial tab from URL or session storage
   const urlTab = searchParams.get('tab')
@@ -44,6 +49,36 @@ export function LibraryPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  // Admin blocked-content view — no debrid requirement
+  if (isBlockedView) {
+    return (
+      <div className="space-y-6 p-6 max-w-screen-xl mx-auto">
+        <div className="space-y-2 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-md bg-destructive/10 border border-destructive/20">
+                <ShieldAlert className="h-5 w-5 text-destructive" />
+              </div>
+              <div>
+                <h1 className="font-display text-3xl font-semibold tracking-tight">Blocked Content</h1>
+                <p className="text-muted-foreground text-sm">Admin view</p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-xl"
+              onClick={() => setSearchParams({}, { replace: true })}
+            >
+              ← Back to Library
+            </Button>
+          </div>
+        </div>
+        <BlockedLibraryTab />
       </div>
     )
   }
@@ -79,13 +114,30 @@ export function LibraryPage() {
     <div className="space-y-6 p-6 max-w-screen-xl mx-auto">
       {/* Header */}
       <div className="space-y-2 animate-fade-in">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-md bg-primary/10 border border-primary/20">
-            <Library className="h-5 w-5 text-primary" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-md bg-primary/10 border border-primary/20">
+              <Library className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="font-display text-3xl font-semibold tracking-tight">Library</h1>
+              <p className="text-muted-foreground text-sm">Browse, discover and manage your content collection</p>
+            </div>
           </div>
-          <h1 className="font-display text-3xl font-semibold tracking-tight">Library</h1>
+
+          {/* Admin shortcut to blocked content */}
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-xl gap-2 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => setSearchParams({ blocked: 'true' }, { replace: true })}
+            >
+              <ShieldAlert className="h-4 w-4" />
+              Blocked
+            </Button>
+          )}
         </div>
-        <p className="text-muted-foreground">Browse, discover and manage your content collection</p>
       </div>
 
       {/* Tabs */}

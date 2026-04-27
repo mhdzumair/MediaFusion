@@ -88,6 +88,33 @@ export interface BlockMediaResponse {
   message: string
 }
 
+export interface BlockedMediaItem {
+  id: number
+  title: string
+  type: 'movie' | 'series' | 'tv'
+  year?: number
+  poster?: string
+  external_ids: Record<string, string | number>
+  blocked_at?: string
+  blocked_by?: string
+  block_reason?: string
+}
+
+export interface BlockedMediaListResponse {
+  items: BlockedMediaItem[]
+  total: number
+  page: number
+  page_size: number
+  has_more: boolean
+}
+
+export interface BlockedMediaParams {
+  type?: 'movie' | 'series' | 'tv'
+  search?: string
+  page?: number
+  page_size?: number
+}
+
 export interface MetadataListParams {
   page?: number
   per_page?: number
@@ -372,6 +399,36 @@ function buildQueryString<T extends object>(params: T): string {
 // We need to bypass the standard client's base URL handling
 const ADMIN_BASE = '/api/v1/admin'
 
+async function adminGet<T>(endpoint: string, params?: Record<string, string | number | undefined>): Promise<T> {
+  const token = apiClient.getAccessToken()
+  const apiKey = apiClient.getApiKey()
+  const headers: HeadersInit = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  if (apiKey) {
+    headers['X-API-Key'] = apiKey
+  }
+
+  const searchParams = new URLSearchParams()
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) {
+        searchParams.set(key, String(value))
+      }
+    }
+  }
+  const query = searchParams.toString()
+  const response = await fetch(`${ADMIN_BASE}${endpoint}${query ? `?${query}` : ''}`, { headers })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: `HTTP error ${response.status}` }))
+    throw new Error(error.detail || 'An error occurred')
+  }
+
+  return response.json()
+}
+
 async function adminPost<T>(endpoint: string, data?: unknown): Promise<T> {
   const token = apiClient.getAccessToken()
   const apiKey = apiClient.getApiKey()
@@ -490,6 +547,18 @@ export const adminApi = {
   // ============================================
   // Content Moderation
   // ============================================
+
+  /**
+   * List all blocked media items (Moderator/Admin only).
+   */
+  getBlockedMedia: async (params: BlockedMediaParams = {}): Promise<BlockedMediaListResponse> => {
+    return adminGet<BlockedMediaListResponse>('/media/blocked', {
+      type: params.type,
+      search: params.search,
+      page: params.page,
+      page_size: params.page_size,
+    })
+  },
 
   /**
    * Block media content (Moderator/Admin only).

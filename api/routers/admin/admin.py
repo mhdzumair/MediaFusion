@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.orm import selectinload
@@ -1032,6 +1032,112 @@ async def unblock_media(
         blocked_by=None,
         block_reason=None,
         message=f"Media '{media.title}' has been unblocked",
+    )
+
+
+class BlockedMediaItem(BaseModel):
+    id: int
+    title: str
+    type: str
+    year: int | None = None
+    poster: str | None = None
+    external_ids: dict
+    blocked_at: datetime | None = None
+    blocked_by: str | None = None
+    block_reason: str | None = None
+
+
+class BlockedMediaListResponse(BaseModel):
+    items: list[BlockedMediaItem]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
+
+
+@router.get("/media/blocked", response_model=BlockedMediaListResponse)
+async def list_blocked_media(
+    type: MediaType | None = Query(None, description="Filter by media type (movie, series, tv)"),
+    search: str | None = Query(None, description="Search by title"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    _admin: User = Depends(require_role(UserRole.ADMIN)),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """
+    List all blocked media items (Admin only).
+
+    Returns paginated blocked content with block details.
+    """
+    from sqlalchemy.orm import selectinload as sa_selectinload
+
+    base_query = (
+        select(Media)
+        .where(Media.is_blocked == True)
+        .options(
+            sa_selectinload(Media.images),
+        )
+    )
+    count_query = select(func.count(Media.id)).where(Media.is_blocked == True)
+
+    if type:
+        base_query = base_query.where(Media.type == type)
+        count_query = count_query.where(Media.type == type)
+
+    if search:
+        pattern = f"%{search}%"
+        base_query = base_query.where(Media.title.ilike(pattern))
+        count_query = count_query.where(Media.title.ilike(pattern))
+
+    base_query = base_query.order_by(Media.blocked_at.desc()).offset((page - 1) * page_size).limit(page_size)
+
+    result = await session.exec(base_query)
+    media_items = result.all()
+
+    count_result = await session.exec(count_query)
+    total = count_result.one()
+
+    # Batch fetch external IDs and blocked-by usernames.
+    media_ids = [m.id for m in media_items]
+    blocker_ids = [m.blocked_by_user_id for m in media_items if m.blocked_by_user_id]
+
+    from db.crud import get_all_external_ids_batch
+
+    all_external_ids: dict[int, dict] = {}
+    if media_ids:
+        all_external_ids = await get_all_external_ids_batch(session, media_ids)
+
+    blocker_map: dict[int, str] = {}
+    if blocker_ids:
+        blocker_result = await session.exec(select(User.id, User.username).where(User.id.in_(blocker_ids)))
+        blocker_map = {uid: uname for uid, uname in blocker_result.all()}
+
+    items = []
+    for m in media_items:
+        poster = next(
+            (img.url for img in (m.images or []) if img.is_primary and img.image_type == "poster"),
+            None,
+        )
+        items.append(
+            BlockedMediaItem(
+                id=m.id,
+                title=m.title,
+                type=m.type.value,
+                year=m.year,
+                poster=poster,
+                external_ids=all_external_ids.get(m.id, {}),
+                blocked_at=m.blocked_at,
+                blocked_by=blocker_map.get(m.blocked_by_user_id) if m.blocked_by_user_id else None,
+                block_reason=m.block_reason,
+            )
+        )
+
+    return BlockedMediaListResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=((page - 1) * page_size + len(items)) < total,
     )
 
 
