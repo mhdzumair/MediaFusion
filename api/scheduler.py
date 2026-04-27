@@ -18,6 +18,7 @@ from scrapers.rss_scraper import run_rss_feed_scraper
 from scrapers.scraper_tasks import cleanup_expired_scraper_task
 from scrapers.trackers import update_torrent_seeders
 from scrapers.tv import validate_tv_streams_in_db
+from api.services.sync.tasks import run_all_integration_syncs
 from streaming_providers.cache_helpers import cleanup_expired_cache
 from utils.telegram_bot import telegram_notifier
 
@@ -538,4 +539,14 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             telegram_notifier.send_pending_moderation_reminder,
             CronTrigger.from_crontab(settings.pending_moderation_reminder_crontab),
             name="pending_moderation_reminder",
+        )
+
+    if not settings.disable_integration_sync_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.integration_sync_crontab),
+            name="integration_sync",
+            kwargs={
+                "actor_send_method": run_all_integration_syncs.async_send,
+            },
         )

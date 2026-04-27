@@ -21,18 +21,16 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_auth
 from api.services.sync import (
-    SimklSyncService,
-    TraktSyncService,
     exchange_simkl_code,
     exchange_trakt_code,
     get_simkl_auth_url,
     get_trakt_auth_url,
 )
+from api.services.sync.tasks import build_sync_service
 from db.config import settings
 from db.database import get_async_session, get_async_session_context, get_read_session, get_read_session_context
 from db.enums import IntegrationType, SyncDirection
 from db.models import ProfileIntegration, User, UserProfile
-from db.schemas.config import SimklConfig, TraktConfig
 from utils.profile_crypto import profile_crypto
 
 logger = logging.getLogger(__name__)
@@ -489,44 +487,20 @@ async def trigger_sync(
         integration.last_sync_stats = None
         session.add(integration)
         await session.commit()
+        integration_id = integration.id
         credentials = decrypt_credentials(integration.encrypted_credentials)
         sync_dir = direction or integration.sync_direction
-        integration_is_enabled = integration.is_enabled
-        integration_scrobble_enabled = integration.scrobble_enabled
-        integration_settings = integration.settings or {}
 
     result = None
     error_msg = None
 
     # Run sync inline and wait for completion (manual user action).
     try:
-        if platform == IntegrationType.TRAKT:
-            from db.schemas.config import TraktConfig
+        async with get_async_session_context() as read_session:
+            current_integration = await read_session.get(ProfileIntegration, integration_id)
 
-            config = TraktConfig(
-                access_token=credentials.get("access_token", ""),
-                refresh_token=credentials.get("refresh_token"),
-                expires_at=credentials.get("expires_at"),
-                client_id=credentials.get("client_id"),
-                client_secret=credentials.get("client_secret"),
-                sync_enabled=integration_is_enabled,
-                scrobble_enabled=integration_scrobble_enabled,
-                min_watch_percent=integration_settings.get("min_watch_percent", 80),
-            )
-            service = TraktSyncService(config, profile_id)
-        elif platform == IntegrationType.SIMKL:
-            from db.schemas.config import SimklConfig
-
-            config = SimklConfig(
-                access_token=credentials.get("access_token", ""),
-                refresh_token=credentials.get("refresh_token"),
-                expires_at=credentials.get("expires_at"),
-                client_id=credentials.get("client_id"),
-                client_secret=credentials.get("client_secret"),
-                sync_enabled=integration_is_enabled,
-            )
-            service = SimklSyncService(config, profile_id)
-        else:
+        service = build_sync_service(current_integration, credentials)
+        if service is None:
             logger.error(f"Sync not implemented for {platform}")
             return SyncTriggerResponse(
                 message=f"Sync failed for {platform}: not implemented",
@@ -633,31 +607,12 @@ async def trigger_sync_all(
                     sync_direction = SyncDirection.PLATFORM_TO_MF
                 elif integration.sync_direction == "two_way":
                     sync_direction = SyncDirection.BIDIRECTIONAL
+                service = build_sync_service(integration, credentials)
 
-                if integration.platform == IntegrationType.TRAKT:
-                    config = TraktConfig(
-                        access_token=credentials.get("access_token", ""),
-                        refresh_token=credentials.get("refresh_token"),
-                        expires_at=credentials.get("expires_at"),
-                        client_id=credentials.get("client_id"),
-                        client_secret=credentials.get("client_secret"),
-                        sync_enabled=integration.is_enabled,
-                        scrobble_enabled=integration.scrobble_enabled,
-                        min_watch_percent=(integration.settings or {}).get("min_watch_percent", 80),
-                    )
-                    service = TraktSyncService(config, profile_id)
-                elif integration.platform == IntegrationType.SIMKL:
-                    config = SimklConfig(
-                        access_token=credentials.get("access_token", ""),
-                        refresh_token=credentials.get("refresh_token"),
-                        expires_at=credentials.get("expires_at"),
-                        client_id=credentials.get("client_id"),
-                        client_secret=credentials.get("client_secret"),
-                        sync_enabled=integration.is_enabled,
-                    )
-                    service = SimklSyncService(config, profile_id)
-                else:
-                    continue
+            if service is None:
+                logger.error(f"Sync not implemented for {platform_name}")
+                failed_count += 1
+                continue
 
             result = await service.sync(sync_direction)
             logger.info(f"Sync completed for {platform_name}: {result.to_dict()}")

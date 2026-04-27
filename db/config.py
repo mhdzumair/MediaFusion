@@ -543,6 +543,8 @@ class Settings(BaseSettings):
     cleanup_expired_cache_task_crontab: str = "0 0 * * *"
     pending_moderation_reminder_crontab: str = "0 */6 * * *"
     disable_pending_moderation_reminder_scheduler: bool = False
+    integration_sync_crontab: str = "0 */6 * * *"
+    disable_integration_sync_scheduler: bool = False
 
     @model_validator(mode="before")
     @classmethod
