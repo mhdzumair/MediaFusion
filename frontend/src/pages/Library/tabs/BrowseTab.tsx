@@ -1,6 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useMutation } from '@tanstack/react-query'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Film, Loader2 } from 'lucide-react'
 import {
   ContentCard,
@@ -19,6 +31,9 @@ import {
   type SortOption,
   type SortDirection,
 } from '@/hooks'
+import { adminApi } from '@/lib/api/admin'
+import { useRole } from '@/hooks/useRole'
+import { useToast } from '@/hooks/use-toast'
 
 // Storage key for persisting browse state
 const BROWSE_STATE_KEY = 'browse_tab_state'
@@ -58,6 +73,24 @@ const saveState = (state: BrowseState) => {
 
 export function BrowseTab() {
   const [searchParams, setSearchParams] = useSearchParams()
+
+  const { isAdmin } = useRole()
+  const { toast } = useToast()
+  const [blockTarget, setBlockTarget] = useState<ContentCardData | null>(null)
+  const [blockReason, setBlockReason] = useState('')
+
+  const blockMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
+      adminApi.blockMedia(id, { reason: reason || undefined }),
+    onSuccess: (data) => {
+      toast({ title: 'Content blocked', description: data.message })
+      setBlockTarget(null)
+      setBlockReason('')
+    },
+    onError: (error: Error) => {
+      toast({ variant: 'destructive', title: 'Block failed', description: error.message })
+    },
+  })
 
   // Get initial state from URL params or session storage
   const storedState = getStoredState()
@@ -437,6 +470,7 @@ export function BrowseTab() {
                     item={item}
                     variant="grid"
                     showEdit
+                    onBlock={isAdmin ? setBlockTarget : undefined}
                     onNavigate={handleCardClick}
                     isSelected={isSelected}
                     cardRef={isSelected ? selectedCardRef : undefined}
@@ -454,6 +488,7 @@ export function BrowseTab() {
                     item={item}
                     variant="list"
                     showEdit
+                    onBlock={isAdmin ? setBlockTarget : undefined}
                     onNavigate={handleCardClick}
                     isSelected={isSelected}
                     cardRef={isSelected ? selectedCardRef : undefined}
@@ -477,6 +512,59 @@ export function BrowseTab() {
           </div>
         </>
       )}
+
+      {/* Admin block dialog */}
+      <Dialog
+        open={!!blockTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setBlockTarget(null)
+            setBlockReason('')
+          }
+        }}
+      >
+        <DialogContent onOpenAutoFocus={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>Block "{blockTarget?.title}"?</DialogTitle>
+            <DialogDescription>
+              This content will be hidden from all regular users. You can unblock it later from the Blocked Content
+              view.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="browse-block-reason">Reason (optional)</Label>
+            <Input
+              id="browse-block-reason"
+              placeholder="e.g. Copyright violation, inappropriate content..."
+              value={blockReason}
+              onChange={(e) => setBlockReason(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && blockTarget) {
+                  blockMutation.mutate({ id: blockTarget.id, reason: blockReason })
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBlockTarget(null)
+                setBlockReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={blockMutation.isPending}
+              onClick={() => blockTarget && blockMutation.mutate({ id: blockTarget.id, reason: blockReason })}
+            >
+              {blockMutation.isPending ? 'Blocking...' : 'Block Content'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

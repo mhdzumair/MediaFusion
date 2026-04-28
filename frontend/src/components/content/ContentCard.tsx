@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreVertical, Trash2, ExternalLink, Edit, Play, Heart, Loader2 } from 'lucide-react'
+import { MoreVertical, Trash2, ExternalLink, Edit, Play, Heart, Loader2, Ban } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useContentLikes, useLikeContent, useUnlikeContent } from '@/hooks'
 import { useRpdb } from '@/contexts/RpdbContext'
@@ -45,6 +45,7 @@ export interface ContentCardProps {
   showType?: boolean
   showEdit?: boolean
   onRemove?: (item: ContentCardData) => void
+  onBlock?: (item: ContentCardData) => void
   onPlay?: (item: ContentCardData) => void
   onNavigate?: (item: ContentCardData) => void
   className?: string
@@ -118,6 +119,7 @@ function GridCard({
   showType = false,
   showEdit = true,
   onRemove,
+  onBlock,
   onPlay,
   onNavigate,
   className,
@@ -222,6 +224,22 @@ function GridCard({
                       </DropdownMenuItem>
                     </>
                   )}
+                  {onBlock && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          onBlock(item)
+                        }}
+                      >
+                        <Ban className="mr-2 h-4 w-4" />
+                        Block Content
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -273,6 +291,7 @@ function ListCard({
   showType = false,
   showEdit = true,
   onRemove,
+  onBlock,
   onPlay,
   onNavigate,
   className,
@@ -391,6 +410,15 @@ function ListCard({
                 <DropdownMenuItem className="text-destructive" onClick={() => onRemove(item)}>
                   <Trash2 className="mr-2 h-4 w-4" />
                   Remove
+                </DropdownMenuItem>
+              </>
+            )}
+            {onBlock && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="text-destructive" onClick={() => onBlock(item)}>
+                  <Ban className="mr-2 h-4 w-4" />
+                  Block Content
                 </DropdownMenuItem>
               </>
             )}
