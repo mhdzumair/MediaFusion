@@ -67,7 +67,9 @@
 ### Stremio Add-on Installation
 
 1. **Stremio**: Install Stremio from [here](https://www.stremio.com/downloads)
-2. **MediaFusion Community Instance**: Navigate to [MediaFusion ElfHosted](https://mediafusion.elfhosted.com/) and click on the 'Configure Add-on' button
+2. **MediaFusion Community Instance**: Navigate to [MediaFusion ElfHosted](https://mediafusion.elfhosted.com/?utm_source=github&utm_medium=readme&utm_campaign=mediafusion-readme) and click on the 'Configure Add-on' button
+
+> Prefer a private instance? A managed MediaFusion instance is available via [ElfHosted](https://store.elfhosted.com/product/mediafusion/?utm_source=github&utm_medium=readme&utm_campaign=mediafusion-readme), bundled with 4K MediaFlow Proxy to keep your debrid account safe from multi-device bans (7-day trial).
 
 ### Kodi Add-on Installation
 
@@ -144,7 +146,7 @@ For detailed installation and usage instructions, see the [Browser Extension REA
 
 ### Setting Up MediaFusion in Stremio
 
-1. Visit [MediaFusion ElfHosted](https://mediafusion.elfhosted.com/configure)
+1. Visit [MediaFusion ElfHosted](https://mediafusion.elfhosted.com/configure?utm_source=github&utm_medium=readme&utm_campaign=mediafusion-readme)
 2. Configure your desired options
 3. Install the addon using one of these methods:
    - **For Desktop/Mobile Stremio App Users**:
@@ -164,7 +166,7 @@ For detailed installation and usage instructions, see the [Browser Extension REA
 2. Select "Configure/Reconfigure Secret String"
 3. Access the configuration page through one of these methods:
    - Scan the QR code
-   - Visit https://mediafusion.elfhosted.com/configure
+   - Visit the [MediaFusion ElfHosted configuration page](https://mediafusion.elfhosted.com/configure?utm_source=github&utm_medium=readme&utm_campaign=mediafusion-readme)
    - Open the configuration page directly from Kodi
 
 ### Configure Addon Options
