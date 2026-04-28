@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import delete as sa_delete
+from sqlalchemy import delete as sa_delete, update as sa_update
 from sqlalchemy.orm import selectinload
 from sqlmodel import func, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -972,10 +972,16 @@ async def block_media(
     media.blocked_by_user_id = admin.id
     media.block_reason = request.reason
 
+    # Block all streams linked to this media via StreamMediaLink.
+    stream_ids_subquery = (
+        select(StreamMediaLink.stream_id).where(StreamMediaLink.media_id == media_id).scalar_subquery()
+    )
+    await session.exec(sa_update(Stream).where(Stream.id.in_(stream_ids_subquery)).values(is_blocked=True))
+
     await session.commit()
     await session.refresh(media)
 
-    logger.info(f"User {admin.username} blocked media {media_id}: {request.reason}")
+    logger.info(f"User {admin.username} blocked media {media_id} and its streams: {request.reason}")
 
     return BlockMediaResponse(
         media_id=media.id,
@@ -1020,10 +1026,18 @@ async def unblock_media(
     media.blocked_by_user_id = None
     media.block_reason = None
 
+    # Unblock all streams linked to this media via StreamMediaLink.
+    stream_ids_subquery = (
+        select(StreamMediaLink.stream_id).where(StreamMediaLink.media_id == media_id).scalar_subquery()
+    )
+    await session.exec(sa_update(Stream).where(Stream.id.in_(stream_ids_subquery)).values(is_blocked=False))
+
     await session.commit()
     await session.refresh(media)
 
-    logger.info(f"User {admin.username} unblocked media {media_id} (was blocked for: {previous_reason})")
+    logger.info(
+        f"User {admin.username} unblocked media {media_id} and its streams (was blocked for: {previous_reason})"
+    )
 
     return BlockMediaResponse(
         media_id=media.id,
