@@ -578,7 +578,8 @@ async def telegram_webhook(request: Request):
                     "`/help` - This help message\n"
                     "`/login` - Link your Telegram account\n"
                     "`/status` - Check account status\n"
-                    "`/cancel` - Cancel current operation\n\n"
+                    "`/cancel` - Cancel current operation\n"
+                    "`/scrape @channel` - Scrape a public Telegram channel\n\n"
                     "🔹 *Contribute Content:*\n"
                     f"Just send me any of these:\n\n{types_sections}\n\n"
                     "🔹 *Contribution Flow:*\n"
@@ -604,6 +605,12 @@ async def telegram_webhook(request: Request):
             if text.startswith("/cancel"):
                 cancel_result = await telegram_content_bot.handle_cancel_command(user_id, chat_id)
                 await telegram_content_bot.send_reply(chat_id, cancel_result["message"])
+                return {"ok": True}
+
+            if text.startswith("/scrape"):
+                scrape_result = await telegram_content_bot.handle_scrape_command(user_id, chat_id, text)
+                if scrape_result.get("message"):
+                    await telegram_content_bot.send_reply(chat_id, scrape_result["message"])
                 return {"ok": True}
 
             # ============================================
@@ -691,14 +698,33 @@ async def telegram_webhook(request: Request):
                         return {"ok": True}
 
                 else:
-                    # Active conversation in progress - user must use buttons or cancel
-                    await telegram_content_bot.send_reply(
-                        chat_id,
-                        "⚠️ *Operation in Progress*\n\n"
-                        "You have an active contribution flow. Use the buttons in the message above "
-                        "to continue, or /cancel to cancel and start over.",
-                        reply_to_message_id=message_id,
-                    )
+                    # Check if it's a video forward that can be queued into the batch
+                    video_type_check, video_raw_check = telegram_content_bot.detect_content_type(message)
+                    if video_type_check and video_type_check == ContentType.VIDEO:
+                        is_linked, _ = await telegram_content_bot.check_user_linked(user_id)
+                        if not is_linked:
+                            await telegram_content_bot.send_reply(
+                                chat_id,
+                                "🔐 *Account Required*\n\nSend `/login` to link your account first.",
+                                reply_to_message_id=message_id,
+                            )
+                            return {"ok": True}
+                        batch_result = await telegram_content_bot.append_to_batch(
+                            user_id, chat_id, video_raw_check, message_id
+                        )
+                        if batch_result.get("message"):
+                            await telegram_content_bot.send_reply(
+                                chat_id, batch_result["message"], reply_to_message_id=message_id
+                            )
+                    else:
+                        # Active conversation in progress - user must use buttons or cancel
+                        await telegram_content_bot.send_reply(
+                            chat_id,
+                            "⚠️ *Operation in Progress*\n\n"
+                            "You have an active contribution flow. Use the buttons in the message above "
+                            "to continue, or /cancel to cancel and start over.",
+                            reply_to_message_id=message_id,
+                        )
                     return {"ok": True}
 
             # ============================================
@@ -718,8 +744,25 @@ async def telegram_webhook(request: Request):
                 )
                 return {"ok": True}
 
+            if content_type and content_type == ContentType.VIDEO:
+                # All video forwards go through the batch system
+                is_linked, _ = await telegram_content_bot.check_user_linked(user_id)
+                if not is_linked:
+                    await telegram_content_bot.send_reply(
+                        chat_id,
+                        "🔐 *Account Required*\n\nTo contribute content, you need to link your MediaFusion account.\n\nSend `/login` to get started.",
+                        reply_to_message_id=message_id,
+                    )
+                    return {"ok": True}
+                batch_result = await telegram_content_bot.append_to_batch(user_id, chat_id, raw_input, message_id)
+                if batch_result.get("message"):
+                    await telegram_content_bot.send_reply(
+                        chat_id, batch_result["message"], reply_to_message_id=message_id
+                    )
+                return {"ok": True}
+
             if content_type:
-                # Start the contribution wizard flow
+                # Start the contribution wizard flow (non-video content types)
                 result = await telegram_content_bot.start_contribution_flow(
                     user_id=user_id,
                     chat_id=chat_id,

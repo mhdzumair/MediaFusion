@@ -5,6 +5,7 @@ import os
 import random
 import re
 import secrets
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -52,7 +53,7 @@ from utils.sports_parser import (
     parse_sports_title,
 )
 from utils.runtime_const import SPORTS_ARTIFACTS
-from db.redis_database import REDIS_SYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT, REDIS_SYNC_CLIENT
 from api.routers.content.torrent_import import fetch_and_create_media_from_external
 from scrapers.imdb_data import get_imdb_title_data, search_multiple_imdb
 from scrapers.scraper_tasks import meta_fetcher
@@ -138,6 +139,19 @@ class ConversationStep(str, Enum):
     IMPORTING = "importing"
 
 
+class BatchItemStatus(str, Enum):
+    """Status of a single item within a batch contribution."""
+
+    PENDING_ANALYSIS = "pending_analysis"
+    AUTO_MATCHED = "auto_matched"
+    NEEDS_REVIEW = "needs_review"
+    NO_MATCH = "no_match"
+    IMPORTING = "importing"
+    IMPORTED = "imported"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
 class ContentType(str, Enum):
     """Types of content that can be contributed."""
 
@@ -171,6 +185,7 @@ class ConversationState:
     original_message_id: int | None = None  # original content message ID
     custom_poster_url: str | None = None  # user-provided poster URL
     anonymous_display_name: str | None = None  # per-contribution anonymous display name
+    batch_item_id: str | None = None  # non-None when this wizard is reviewing a batch item
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -181,6 +196,53 @@ class ConversationState:
     def is_expired(self, timeout_minutes: int = 30) -> bool:
         """Check if the conversation has timed out."""
         return (datetime.now() - self.updated_at) > timedelta(minutes=timeout_minutes)
+
+
+@dataclass
+class BatchItem:
+    """One forwarded video within a user's batch contribution."""
+
+    item_id: str
+    file_id: str
+    file_unique_id: str | None
+    file_name: str | None
+    mime_type: str | None
+    file_size: int | None
+    chat_id: int
+    original_message_id: int | None
+    status: BatchItemStatus = BatchItemStatus.PENDING_ANALYSIS
+    inferred_media_type: str | None = None  # movie | series (derived from PTT)
+    analysis_result: dict | None = None
+    imdb_candidates: list[dict] | None = None
+    selected_match: dict | None = None
+    metadata_overrides: dict = field(default_factory=dict)
+    analysis_task_id: str | None = None
+    import_task_id: str | None = None
+    error: str | None = None
+    created_at: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
+class BatchState:
+    """Batch of forwarded video items for a single user."""
+
+    batch_id: str
+    user_id: int
+    chat_id: int
+    items: list[BatchItem] = field(default_factory=list)
+    summary_message_id: int | None = None  # bot message ID of the live summary
+    editing_item_id: str | None = None  # item currently being reviewed via wizard
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+
+    def touch(self):
+        self.updated_at = datetime.now()
+
+    def get_item(self, item_id: str) -> "BatchItem | None":
+        for item in self.items:
+            if item.item_id == item_id:
+                return item
+        return None
 
 
 # ============================================
@@ -198,6 +260,8 @@ LANGUAGE_OPTIONS = [lang for lang in const.LANGUAGES_FILTERS if lang]
 CODEC_OPTIONS = ["x265", "HEVC", "x264", "AVC", "AV1", "VP9", "MPEG-4"]
 AUDIO_OPTIONS = ["AAC", "AC3", "DTS", "DTS-HD MA", "TrueHD", "Atmos", "FLAC", "MP3", "EAC3"]
 HDR_OPTIONS = ["HDR10", "HDR10+", "Dolby Vision", "HLG", "SDR", "Unknown"]
+
+_SCRAPE_JOB_TTL = 2 * 60 * 60  # 2h — keeps Redis key alive for duration of the job
 
 
 class TelegramNotifier:
@@ -907,6 +971,7 @@ class TelegramContentBot:
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}" if self.bot_token else None
         self.enabled = bool(self.bot_token)
         self._conversation_ttl_seconds = 30 * 60
+        self._batch_ttl_seconds = 2 * 60 * 60  # 2 hours
         self._bot_identity_cache_ttl_seconds = 3600
         self._cached_bot_id: int | None = None
         self._cached_bot_username: str | None = None
@@ -914,6 +979,9 @@ class TelegramContentBot:
 
     def _conversation_key(self, user_id: int) -> str:
         return f"telegram:conversation:{user_id}"
+
+    def _batch_key(self, user_id: int) -> str:
+        return f"telegram:batch:{user_id}"
 
     def _pending_content_key(self, user_id: int) -> str:
         return f"telegram:pending_content:{user_id}"
@@ -1070,6 +1138,7 @@ class TelegramContentBot:
             "original_message_id": state.original_message_id,
             "custom_poster_url": state.custom_poster_url,
             "anonymous_display_name": state.anonymous_display_name,
+            "batch_item_id": state.batch_item_id,
             "created_at": state.created_at.isoformat(),
             "updated_at": state.updated_at.isoformat(),
         }
@@ -1097,6 +1166,7 @@ class TelegramContentBot:
                 original_message_id=payload.get("original_message_id"),
                 custom_poster_url=payload.get("custom_poster_url"),
                 anonymous_display_name=payload.get("anonymous_display_name"),
+                batch_item_id=payload.get("batch_item_id"),
                 created_at=datetime.fromisoformat(payload.get("created_at"))
                 if payload.get("created_at")
                 else datetime.now(),
@@ -1118,6 +1188,378 @@ class TelegramContentBot:
             )
         except Exception as e:
             logger.debug(f"Failed to persist conversation to Redis for user {state.user_id}: {e}")
+
+    # ============================================
+    # Batch State Management
+    # ============================================
+
+    def _serialize_batch_item(self, item: BatchItem) -> dict:
+        return {
+            "item_id": item.item_id,
+            "file_id": item.file_id,
+            "file_unique_id": item.file_unique_id,
+            "file_name": item.file_name,
+            "mime_type": item.mime_type,
+            "file_size": item.file_size,
+            "chat_id": item.chat_id,
+            "original_message_id": item.original_message_id,
+            "status": item.status.value,
+            "inferred_media_type": item.inferred_media_type,
+            "analysis_result": self._to_json_safe(item.analysis_result),
+            "imdb_candidates": self._to_json_safe(item.imdb_candidates),
+            "selected_match": self._to_json_safe(item.selected_match),
+            "metadata_overrides": self._to_json_safe(item.metadata_overrides),
+            "analysis_task_id": item.analysis_task_id,
+            "import_task_id": item.import_task_id,
+            "error": item.error,
+            "created_at": item.created_at.isoformat(),
+        }
+
+    def _deserialize_batch_item(self, data: dict) -> BatchItem:
+        return BatchItem(
+            item_id=data["item_id"],
+            file_id=data["file_id"],
+            file_unique_id=data.get("file_unique_id"),
+            file_name=data.get("file_name"),
+            mime_type=data.get("mime_type"),
+            file_size=data.get("file_size"),
+            chat_id=int(data["chat_id"]),
+            original_message_id=data.get("original_message_id"),
+            status=BatchItemStatus(data.get("status", BatchItemStatus.PENDING_ANALYSIS.value)),
+            inferred_media_type=data.get("inferred_media_type"),
+            analysis_result=data.get("analysis_result"),
+            imdb_candidates=data.get("imdb_candidates"),
+            selected_match=data.get("selected_match"),
+            metadata_overrides=data.get("metadata_overrides") or {},
+            analysis_task_id=data.get("analysis_task_id"),
+            import_task_id=data.get("import_task_id"),
+            error=data.get("error"),
+            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.now(),
+        )
+
+    def _serialize_batch(self, batch: BatchState) -> str:
+        return json.dumps(
+            {
+                "batch_id": batch.batch_id,
+                "user_id": batch.user_id,
+                "chat_id": batch.chat_id,
+                "items": [self._serialize_batch_item(i) for i in batch.items],
+                "summary_message_id": batch.summary_message_id,
+                "editing_item_id": batch.editing_item_id,
+                "created_at": batch.created_at.isoformat(),
+                "updated_at": batch.updated_at.isoformat(),
+            }
+        )
+
+    def _deserialize_batch(self, data: str | bytes) -> BatchState | None:
+        try:
+            if isinstance(data, bytes):
+                data = data.decode("utf-8")
+            payload = json.loads(data)
+            return BatchState(
+                batch_id=payload["batch_id"],
+                user_id=int(payload["user_id"]),
+                chat_id=int(payload["chat_id"]),
+                items=[self._deserialize_batch_item(i) for i in payload.get("items", [])],
+                summary_message_id=payload.get("summary_message_id"),
+                editing_item_id=payload.get("editing_item_id"),
+                created_at=datetime.fromisoformat(payload["created_at"])
+                if payload.get("created_at")
+                else datetime.now(),
+                updated_at=datetime.fromisoformat(payload["updated_at"])
+                if payload.get("updated_at")
+                else datetime.now(),
+            )
+        except Exception as e:
+            logger.warning(f"Failed to deserialize batch state: {e}")
+            return None
+
+    def get_batch(self, user_id: int) -> BatchState | None:
+        try:
+            raw = REDIS_SYNC_CLIENT.get(self._batch_key(user_id))
+            return self._deserialize_batch(raw) if raw else None
+        except Exception as e:
+            logger.debug(f"Failed to load batch from Redis for user {user_id}: {e}")
+            return None
+
+    async def aget_batch(self, user_id: int) -> BatchState | None:
+        try:
+            raw = await REDIS_ASYNC_CLIENT.get(self._batch_key(user_id))
+            return self._deserialize_batch(raw) if raw else None
+        except Exception as e:
+            logger.debug(f"Failed to async-load batch from Redis for user {user_id}: {e}")
+            return None
+
+    def _set_batch(self, batch: BatchState):
+        try:
+            REDIS_SYNC_CLIENT.setex(
+                self._batch_key(batch.user_id), self._batch_ttl_seconds, self._serialize_batch(batch)
+            )
+        except Exception as e:
+            logger.debug(f"Failed to persist batch to Redis for user {batch.user_id}: {e}")
+
+    async def _aset_batch(self, batch: BatchState):
+        try:
+            await REDIS_ASYNC_CLIENT.setex(
+                self._batch_key(batch.user_id), self._batch_ttl_seconds, self._serialize_batch(batch)
+            )
+        except Exception as e:
+            logger.debug(f"Failed to async-persist batch to Redis for user {batch.user_id}: {e}")
+
+    def clear_batch(self, user_id: int):
+        try:
+            REDIS_SYNC_CLIENT.delete(self._batch_key(user_id))
+        except Exception:
+            pass
+
+    async def _send_message_get_id(self, chat_id: int, text: str, reply_markup: dict | None = None) -> int | None:
+        """Send a message and return the resulting message_id, or None on failure."""
+        if not self.enabled:
+            return None
+        try:
+            payload: dict = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+            if reply_markup:
+                payload["reply_markup"] = reply_markup
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{self.base_url}/sendMessage", json=payload) as response:
+                    data = await response.json()
+                    if data.get("ok"):
+                        return data["result"]["message_id"]
+                    logger.error(f"sendMessage failed: {data.get('description')}")
+        except Exception as e:
+            logger.error(f"Error sending batch summary message: {e}")
+        return None
+
+    def _batch_status_counts(self, batch: BatchState) -> dict[BatchItemStatus, int]:
+        counts: dict[BatchItemStatus, int] = {}
+        for item in batch.items:
+            counts[item.status] = counts.get(item.status, 0) + 1
+        return counts
+
+    def _build_batch_summary_text(self, batch: BatchState) -> str:
+        c = self._batch_status_counts(batch)
+        S = BatchItemStatus
+        total = len(batch.items)
+        lines = [f"📦 *Batch — {total} item{'s' if total != 1 else ''}*\n"]
+        for status, emoji, label in (
+            (S.PENDING_ANALYSIS, "⏳", "analyzing"),
+            (S.AUTO_MATCHED, "✅", "auto-matched"),
+            (S.NEEDS_REVIEW, "⚠️", "need review"),
+            (S.NO_MATCH, "❌", "no match"),
+            (S.IMPORTING, "📥", "importing"),
+            (S.IMPORTED, "🎬", "imported"),
+            (S.FAILED, "💔", "failed"),
+            (S.SKIPPED, "⏭", "skipped"),
+        ):
+            n = c.get(status, 0)
+            if n:
+                lines.append(f"{emoji} {n} {label}")
+        return "\n".join(lines)
+
+    def _build_batch_keyboard(self, batch: BatchState) -> list[list[dict]]:
+        c = self._batch_status_counts(batch)
+        S = BatchItemStatus
+        uid = batch.user_id
+        auto_matched = c.get(S.AUTO_MATCHED, 0)
+        needs_review = c.get(S.NEEDS_REVIEW, 0)
+        no_match = c.get(S.NO_MATCH, 0)
+        still_active = auto_matched + needs_review + no_match + c.get(S.PENDING_ANALYSIS, 0) + c.get(S.IMPORTING, 0)
+
+        rows: list[list[dict]] = []
+        if auto_matched:
+            rows.append([{"text": f"✅ Import {auto_matched} auto-matched", "callback_data": f"batch:import:{uid}"}])
+        if needs_review:
+            rows.append([{"text": f"⚠️ Review {needs_review} ambiguous", "callback_data": f"batch:review:{uid}"}])
+        if no_match:
+            rows.append([{"text": f"❌ Skip {no_match} unmatched", "callback_data": f"batch:skip_unmatched:{uid}"}])
+        if still_active:
+            rows.append([{"text": "🗑 Cancel batch", "callback_data": f"batch:cancel:{uid}"}])
+        return rows
+
+    async def render_batch_summary(self, batch: BatchState) -> None:
+        """Edit (or send) the live batch summary message in the user's chat."""
+        text = self._build_batch_summary_text(batch)
+        keyboard = self._build_batch_keyboard(batch)
+        reply_markup = {"inline_keyboard": keyboard} if keyboard else None
+
+        if batch.summary_message_id:
+            await self.edit_message(batch.chat_id, batch.summary_message_id, text, reply_markup)
+        else:
+            msg_id = await self._send_message_get_id(batch.chat_id, text, reply_markup)
+            if msg_id:
+                batch.summary_message_id = msg_id
+                await self._aset_batch(batch)
+
+    async def append_to_batch(
+        self,
+        user_id: int,
+        chat_id: int,
+        file_info: dict,
+        original_message_id: int | None,
+    ) -> dict:
+        """Accept a forwarded video into the user's batch and trigger background analysis."""
+        from utils.telegram_tasks import analyze_telegram_item
+
+        batch = self.get_batch(user_id)
+        if batch is None:
+            batch = BatchState(
+                batch_id=str(uuid.uuid4()),
+                user_id=user_id,
+                chat_id=chat_id,
+            )
+
+        item = BatchItem(
+            item_id=str(uuid.uuid4()),
+            file_id=file_info.get("file_id", ""),
+            file_unique_id=file_info.get("file_unique_id"),
+            file_name=file_info.get("file_name"),
+            mime_type=file_info.get("mime_type"),
+            file_size=file_info.get("file_size"),
+            chat_id=chat_id,
+            original_message_id=original_message_id,
+        )
+        batch.items.append(item)
+        batch.touch()
+        self._set_batch(batch)
+
+        await self.render_batch_summary(batch)
+
+        try:
+            kiq_result = await analyze_telegram_item.async_send(user_id, item.item_id)
+            item.analysis_task_id = str(kiq_result.task_id) if kiq_result else None
+            self._set_batch(batch)
+        except Exception as e:
+            logger.warning(f"Failed to enqueue analyze_telegram_item for {item.item_id}: {e}")
+
+        n = len(batch.items)
+        return {"success": True, "message": f"📥 Added to batch ({n} item{'s' if n != 1 else ''})"}
+
+    async def handle_batch_import(self, user_id: int, chat_id: int, message_id: int) -> None:
+        """Enqueue import for all AUTO_MATCHED items in the batch."""
+        from utils.telegram_tasks import import_telegram_item
+
+        batch = self.get_batch(user_id)
+        if not batch:
+            await self.edit_message(chat_id, message_id, "⚠️ Batch not found or expired.")
+            return
+
+        to_import = [i for i in batch.items if i.status == BatchItemStatus.AUTO_MATCHED]
+        for item in to_import:
+            item.status = BatchItemStatus.IMPORTING
+        # Persist before enqueuing so actors see IMPORTING status
+        batch.touch()
+        self._set_batch(batch)
+
+        for item in to_import:
+            try:
+                kiq_result = await import_telegram_item.async_send(user_id, item.item_id)
+                item.import_task_id = str(kiq_result.task_id) if kiq_result else None
+            except Exception as e:
+                logger.warning(f"Failed to enqueue import for item {item.item_id}: {e}")
+        self._set_batch(batch)
+        await self.render_batch_summary(batch)
+
+    async def show_batch_review_list(self, user_id: int, chat_id: int, message_id: int) -> None:
+        """Show paginated list of NEEDS_REVIEW items for per-item edit."""
+        batch = self.get_batch(user_id)
+        if not batch:
+            await self.edit_message(chat_id, message_id, "⚠️ Batch not found or expired.")
+            return
+
+        review_items = [i for i in batch.items if i.status in (BatchItemStatus.NEEDS_REVIEW, BatchItemStatus.NO_MATCH)]
+        if not review_items:
+            await self.edit_message(chat_id, message_id, "✅ No items need review.")
+            return
+
+        text = "📝 *Items needing review:*\n\nTap an item to resolve it:"
+        keyboard = []
+        for item in review_items[:10]:  # show up to 10 at a time
+            name = (item.file_name or "Unknown")[:40]
+            status_emoji = "⚠️" if item.status == BatchItemStatus.NEEDS_REVIEW else "❌"
+            keyboard.append(
+                [
+                    {
+                        "text": f"{status_emoji} {name}",
+                        "callback_data": f"batch:item:{user_id}:{item.item_id}",
+                    }
+                ]
+            )
+        keyboard.append([{"text": "← Back to batch", "callback_data": f"batch:summary:{user_id}"}])
+        await self.edit_message(chat_id, message_id, text, {"inline_keyboard": keyboard})
+
+    async def start_batch_item_wizard(self, user_id: int, chat_id: int, message_id: int, item_id: str) -> None:
+        """Open the existing wizard for a single batch item."""
+        batch = self.get_batch(user_id)
+        if not batch:
+            await self.edit_message(chat_id, message_id, "⚠️ Batch not found or expired.")
+            return
+
+        item = batch.get_item(item_id)
+        if not item:
+            await self.edit_message(chat_id, message_id, "⚠️ Item not found.")
+            return
+
+        batch.editing_item_id = item_id
+        batch.touch()
+        self._set_batch(batch)
+
+        raw_input = {
+            "file_id": item.file_id,
+            "file_unique_id": item.file_unique_id,
+            "file_name": item.file_name,
+            "file_size": item.file_size,
+            "mime_type": item.mime_type,
+        }
+        state = ConversationState(
+            user_id=user_id,
+            chat_id=chat_id,
+            content_type=ContentType.VIDEO,
+            raw_input=raw_input,
+            media_type=item.inferred_media_type,
+            analysis_result=item.analysis_result,
+            matches=item.imdb_candidates,
+            metadata_overrides=item.metadata_overrides or {},
+            message_id=message_id,
+            original_message_id=item.original_message_id,
+            batch_item_id=item_id,
+            step=ConversationStep.AWAITING_MEDIA_TYPE,
+        )
+        self._persist_conversation(state)
+
+        if item.analysis_result and item.imdb_candidates is not None and item.inferred_media_type:
+            state.step = ConversationStep.AWAITING_MATCH
+            self._persist_conversation(state)
+            await self.show_matches(state, chat_id, message_id)
+        else:
+            keyboard = self._build_media_type_keyboard(user_id)
+            keyboard.insert(0, [{"text": "← Back to batch", "callback_data": f"batch:summary:{user_id}"}])
+            preview = self._get_content_preview(ContentType.VIDEO, raw_input)
+            await self.edit_message(
+                chat_id,
+                message_id,
+                f"🎬 *Video File Detected*\n\n{preview}\n\nSelect the content type:",
+                {"inline_keyboard": keyboard},
+            )
+
+    async def finish_batch_item_review(
+        self, user_id: int, item_id: str, success: bool, error: str | None = None
+    ) -> None:
+        """Called when a per-item wizard completes (confirm or cancel)."""
+        batch = self.get_batch(user_id)
+        if not batch:
+            return
+        item = batch.get_item(item_id)
+        if item:
+            if success:
+                item.status = BatchItemStatus.IMPORTED
+            else:
+                # Revert to NEEDS_REVIEW so user can retry
+                item.status = BatchItemStatus.NEEDS_REVIEW
+            item.error = error
+        batch.editing_item_id = None
+        batch.touch()
+        self._set_batch(batch)
+        await self.render_batch_summary(batch)
 
     # ============================================
     # Content Type Detection
@@ -1383,7 +1825,7 @@ class TelegramContentBot:
             Dict with result
         """
         # Check if user is linked
-        is_linked, mf_user_id = await self.check_user_linked(user_id)
+        is_linked, _ = await self.check_user_linked(user_id)
         if not is_linked:
             return {
                 "success": False,
@@ -2214,7 +2656,7 @@ class TelegramContentBot:
         except Exception as e:
             return {"success": False, "error": f"NZB analysis failed: {str(e)}"}
 
-    async def _analyze_acestream(self, content_id: str, media_type: str) -> dict:
+    async def _analyze_acestream(self, content_id: str, _media_type: str) -> dict:
         """Analyze an AceStream content ID."""
         # AceStream doesn't provide much metadata, so we just validate the ID
         if not content_id or len(content_id) != 40:
@@ -2343,6 +2785,8 @@ class TelegramContentBot:
         # Add search by title, manual entry, and cancel
         keyboard.append([{"text": "🔍 Search by title", "callback_data": f"search_title:{state.user_id}"}])
         keyboard.append([{"text": "📝 Enter external ID manually", "callback_data": f"manual:{state.user_id}"}])
+        if state.batch_item_id:
+            keyboard.append([{"text": "← Back to batch", "callback_data": f"batch:summary:{state.user_id}"}])
         keyboard.append([{"text": "❌ Cancel", "callback_data": f"cancel:{state.user_id}"}])
 
         if matches:
@@ -2704,7 +3148,7 @@ class TelegramContentBot:
         await self.edit_message(chat_id, message_id, message, keyboard)
         return {"success": True}
 
-    async def process_title_search(self, user_id: int, chat_id: int, text: str) -> dict:
+    async def process_title_search(self, user_id: int, _chat_id: int, text: str) -> dict:
         """Process a title search query typed by the user.
 
         Searches metadata providers and shows results as selectable buttons.
@@ -2958,6 +3402,8 @@ class TelegramContentBot:
                 ],
             ]
         )
+        if state.batch_item_id:
+            keyboard.append([{"text": "← Back to batch", "callback_data": f"batch:summary:{state.user_id}"}])
 
         if message_id:
             await self.edit_message(chat_id, message_id, message, {"inline_keyboard": keyboard})
@@ -3361,7 +3807,7 @@ class TelegramContentBot:
 
         try:
             # Get MediaFusion user ID
-            is_linked, mf_user_id = await self.check_user_linked(state.user_id)
+            _, mf_user_id = await self.check_user_linked(state.user_id)
             if not mf_user_id:
                 return {"success": False, "message": "❌ Account not linked. Please run /login first."}
 
@@ -3424,7 +3870,10 @@ class TelegramContentBot:
                     success_message += "\n\n⏳ _Pending review_"
 
                 await self.edit_message(chat_id, message_id, success_message)
+                batch_item_id = state.batch_item_id
                 self.clear_conversation(user_id)
+                if batch_item_id:
+                    await self.finish_batch_item_review(user_id, batch_item_id, success=True)
                 return {"success": True, "message": "Import successful"}
             else:
                 error = result.get("error", "Unknown error") if result else "Import failed"
@@ -4377,8 +4826,14 @@ class TelegramContentBot:
         Returns:
             Dict with result
         """
+        state = self.get_conversation(user_id)
+        batch_item_id = state.batch_item_id if state else None
         self.clear_conversation(user_id)
-        await self.edit_message(chat_id, message_id, "❌ *Cancelled*\n\nOperation cancelled.")
+        if batch_item_id:
+            await self.finish_batch_item_review(user_id, batch_item_id, success=False)
+            await self.edit_message(chat_id, message_id, "↩️ *Returned to batch.*")
+        else:
+            await self.edit_message(chat_id, message_id, "❌ *Cancelled*\n\nOperation cancelled.")
         return {"success": True}
 
     async def handle_back(self, user_id: int, chat_id: int, message_id: int) -> dict:
@@ -4449,6 +4904,7 @@ class TelegramContentBot:
             {"command": "login", "description": "Link your Telegram account to MediaFusion"},
             {"command": "status", "description": "Check your account status"},
             {"command": "cancel", "description": "Cancel current operation"},
+            {"command": "scrape", "description": "Scrape a public Telegram channel (@channel or t.me link)"},
         ]
 
         try:
@@ -4468,7 +4924,7 @@ class TelegramContentBot:
             logger.error(f"Error registering bot commands: {e}")
             return False
 
-    async def handle_status_command(self, telegram_user_id: int, chat_id: int) -> dict:
+    async def handle_status_command(self, telegram_user_id: int, _chat_id: int) -> dict:
         """Handle /status command.
 
         Args:
@@ -4512,7 +4968,7 @@ class TelegramContentBot:
 
         return {"success": True, "message": message}
 
-    async def handle_cancel_command(self, user_id: int, chat_id: int) -> dict:
+    async def handle_cancel_command(self, user_id: int, _chat_id: int) -> dict:
         """Handle /cancel command.
 
         Args:
@@ -4524,13 +4980,95 @@ class TelegramContentBot:
         """
         state = self.get_conversation(user_id)
         if state:
+            batch_item_id = state.batch_item_id
             self.clear_conversation(user_id)
+            if batch_item_id:
+                # Cancelled while reviewing a batch item — return to batch summary
+                await self.finish_batch_item_review(user_id, batch_item_id, success=False)
+                return {"success": True, "message": "↩️ *Returned to batch.*"}
             return {
                 "success": True,
                 "message": "❌ *Operation Cancelled*\n\nYour current operation has been cancelled.",
             }
-        else:
-            return {"success": True, "message": "ℹ️ *No Active Operation*\n\nThere's nothing to cancel."}
+
+        batch = self.get_batch(user_id)
+        if batch:
+            self.clear_batch(user_id)
+            return {"success": True, "message": "❌ *Batch Cancelled*\n\nAll pending imports have been cancelled."}
+
+        return {"success": True, "message": "ℹ️ *No Active Operation*\n\nThere's nothing to cancel."}
+
+    def _scrape_job_key(self, user_id: int) -> str:
+        return f"telegram:scrape_job:{user_id}"
+
+    async def handle_scrape_command(self, user_id: int, chat_id: int, text: str) -> dict:
+        """Handle /scrape <channel> command.
+
+        Validates the channel identifier, guards against concurrent jobs, sends an
+        initial progress message, then enqueues scrape_telegram_channel_for_user.
+        """
+        from scrapers.non_torrent_background_scraper import _normalize_telegram_channel_identifier
+
+        parts = text.strip().split(None, 1)
+        raw_channel = parts[1].strip() if len(parts) > 1 else ""
+        channel = _normalize_telegram_channel_identifier(raw_channel)
+
+        if not channel:
+            return {
+                "success": False,
+                "message": (
+                    "⚠️ *Invalid Channel*\n\n"
+                    "Please provide a public channel username or link.\n\n"
+                    "*Examples:*\n"
+                    "`/scrape @channelname`\n"
+                    "`/scrape https://t.me/channelname`"
+                ),
+            }
+
+        is_linked, _ = await self.check_user_linked(user_id)
+        if not is_linked:
+            return {
+                "success": False,
+                "requires_login": True,
+                "message": (
+                    "🔐 *Account Required*\n\nLink your MediaFusion account first.\n\nSend `/login` to get started."
+                ),
+            }
+
+        job_key = self._scrape_job_key(user_id)
+        if await REDIS_ASYNC_CLIENT.exists(job_key):
+            return {
+                "success": False,
+                "message": (
+                    "⏳ *Scrape In Progress*\n\n"
+                    "You already have an active scraping job. "
+                    "Wait for it to finish or send `/cancel` to abort it."
+                ),
+            }
+
+        progress_message_id = await self._send_message_get_id(
+            chat_id,
+            f"🔍 *Starting Scrape*\n\nChannel: `{channel}`\n\n⏳ Initializing...",
+        )
+        if not progress_message_id:
+            return {
+                "success": False,
+                "message": "❌ Failed to send progress message. Please try again.",
+            }
+
+        from utils.telegram_tasks import scrape_telegram_channel_for_user
+
+        task = await scrape_telegram_channel_for_user.async_send(
+            user_id=user_id,
+            chat_id=chat_id,
+            progress_message_id=progress_message_id,
+            channel=channel,
+            notification_chat_id=settings.telegram_chat_id,
+        )
+        task_id = getattr(task, "task_id", None) or str(uuid.uuid4())
+        await REDIS_ASYNC_CLIENT.set(job_key, task_id, ex=_SCRAPE_JOB_TTL)
+
+        return {"success": True, "message": None}
 
     async def get_file_info(self, file_id: str) -> dict | None:
         """Get file information from Telegram Bot API.
@@ -5866,6 +6404,72 @@ class TelegramContentBot:
                         await self.show_metadata_review(state, chat_id, message_id)
                     result["success"] = True
                     result["action"] = "poster_cleared"
+
+            # ============================================
+            # BATCH CALLBACKS
+            # ============================================
+
+            elif action == "batch":
+                # batch:{sub_action}:{user_id}[:{item_id}]
+                if len(parts) >= 3:
+                    sub_action = parts[1]
+                    target_user_id = int(parts[2])
+
+                    if target_user_id != user_id:
+                        await self.answer_callback_query(callback_query_id, "❌ Unauthorized", show_alert=True)
+                        return result
+
+                    await self.answer_callback_query(callback_query_id)
+
+                    if sub_action == "import":
+                        await self.handle_batch_import(user_id, chat_id, message_id)
+                        result["success"] = True
+                        result["action"] = "batch_import"
+
+                    elif sub_action == "review":
+                        await self.show_batch_review_list(user_id, chat_id, message_id)
+                        result["success"] = True
+                        result["action"] = "batch_review"
+
+                    elif sub_action == "item":
+                        if len(parts) >= 4:
+                            item_id = parts[3]
+                            await self.start_batch_item_wizard(user_id, chat_id, message_id, item_id)
+                            result["success"] = True
+                            result["action"] = "batch_item_review"
+
+                    elif sub_action == "summary":
+                        batch = self.get_batch(user_id)
+                        if batch:
+                            batch.editing_item_id = None
+                            self._set_batch(batch)
+                            await self.render_batch_summary(batch)
+                            result["success"] = True
+                            result["action"] = "batch_summary"
+
+                    elif sub_action == "skip_unmatched":
+                        batch = self.get_batch(user_id)
+                        if batch:
+                            for bi in batch.items:
+                                if bi.status == BatchItemStatus.NO_MATCH:
+                                    bi.status = BatchItemStatus.SKIPPED
+                            batch.touch()
+                            self._set_batch(batch)
+                            await self.render_batch_summary(batch)
+                            result["success"] = True
+                            result["action"] = "batch_skip_unmatched"
+
+                    elif sub_action == "cancel":
+                        state = self.get_conversation(user_id)
+                        if state and state.batch_item_id:
+                            batch_item_id = state.batch_item_id
+                            self.clear_conversation(user_id)
+                            await self.finish_batch_item_review(user_id, batch_item_id, success=False)
+                        else:
+                            self.clear_batch(user_id)
+                            await self.edit_message(chat_id, message_id, "🗑 *Batch cancelled.*")
+                        result["success"] = True
+                        result["action"] = "batch_cancelled"
 
             # ============================================
             # LEGACY CALLBACKS (backward compatibility)
