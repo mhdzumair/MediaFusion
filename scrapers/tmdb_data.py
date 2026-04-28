@@ -29,7 +29,7 @@ async def get_tmdb_data(
     endpoint = f"{'movie' if media_type == 'movie' else 'tv'}/{tmdb_id}"
     params = {
         "api_key": settings.tmdb_api_key,
-        "append_to_response": "credits,content_ratings,alternative_titles,external_ids,videos,keywords",
+        "append_to_response": "credits,content_ratings,release_dates,alternative_titles,external_ids,videos,keywords",
     }
 
     for attempt in range(max_retries):
@@ -244,6 +244,29 @@ def format_tmdb_response(data: dict[str, Any], media_type: str, episodes: list) 
                 }
             )
 
+    # Parse certifications: movies use release_dates, TV uses content_ratings
+    if is_movie:
+        certs = set()
+        for country_entry in data.get("release_dates", {}).get("results", []):
+            for rd in country_entry.get("release_dates", []):
+                cert = rd.get("certification", "").strip()
+                if cert:
+                    certs.add(cert)
+        parent_guide_certificates = list(certs)
+    else:
+        parent_guide_certificates = list(
+            {result["rating"] for result in data.get("content_ratings", {}).get("results", []) if result.get("rating")}
+        )
+
+    # Derive nudity status from adult flag and certifications
+    is_adult = data.get("adult", False)
+    adult_cert_keywords = {"nc-17", "x", "xxx", "ao", "r18", "18+", "nr-18", "x18", "adults only"}
+    has_adult_cert = any(c.lower() in adult_cert_keywords for c in parent_guide_certificates)
+    if is_adult or has_adult_cert:
+        nudity_status = "Severe"
+    else:
+        nudity_status = "Unknown"
+
     formatted = {
         "tmdb_id": str(data["id"]),
         "imdb_id": data.get("external_ids", {}).get("imdb_id"),  # None if not available
@@ -279,13 +302,11 @@ def format_tmdb_response(data: dict[str, Any], media_type: str, episodes: list) 
         "videos": videos,
         "imdb_rating": None,
         "type": "movie" if is_movie else "series",
-        "adult": data.get("adult", False),
+        "adult": is_adult,
         "status": data.get("status"),
         "homepage": data.get("homepage"),
-        "parent_guide_nudity_status": "Unknown",
-        "parent_guide_certificates": list(
-            {result["rating"] for result in data.get("content_ratings", {}).get("results", [])}
-        ),
+        "parent_guide_nudity_status": nudity_status,
+        "parent_guide_certificates": parent_guide_certificates,
         # External IDs - only metadata providers (not social media)
         "external_ids": {
             "imdb": data.get("external_ids", {}).get("imdb_id"),
