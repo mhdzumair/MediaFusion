@@ -45,7 +45,7 @@ dependencies = [
     "tenacity",
     "ratelimit",
     "qrcode",
-    "aioseedrcc",
+    "seedrcc>=2.0.0",
     "pytz",
     "aiohttp-socks",
     "socksio",
