@@ -142,7 +142,7 @@ export function LibraryPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="flex w-full max-w-2xl overflow-x-auto animate-fade-in animate-delay-100">
+        <TabsList className="flex w-full max-w-2xl overflow-x-auto overflow-y-hidden animate-fade-in animate-delay-100">
           <TabsTrigger
             value="browse"
             className="flex-1 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
