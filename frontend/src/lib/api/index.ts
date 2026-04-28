@@ -1,4 +1,12 @@
 export { apiClient, onAuthStateChange, ApiRequestError } from './client'
+export {
+  discoverApi,
+  discoverDbKey,
+  type DiscoverItem,
+  type DiscoverPage,
+  type DiscoverDbEntry,
+  type WatchProvider,
+} from './discover'
 export { authApi } from './auth'
 export {
   instanceApi,

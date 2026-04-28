@@ -15,6 +15,7 @@ from scrapers.non_torrent_background_scraper import (
     run_youtube_background_scraper,
 )
 from scrapers.rss_scraper import run_rss_feed_scraper
+from scrapers.discover_prewarm import run_discover_prewarm
 from scrapers.scraper_tasks import cleanup_expired_scraper_task
 from scrapers.trackers import update_torrent_seeders
 from scrapers.tv import validate_tv_streams_in_db
@@ -548,5 +549,15 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             name="integration_sync",
             kwargs={
                 "actor_send_method": run_all_integration_syncs.async_send,
+            },
+        )
+
+    if settings.discover_enabled and settings.tmdb_api_key:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab("0 4 * * *"),  # daily at 04:00 UTC
+            name="discover_prewarm",
+            kwargs={
+                "actor_send_method": run_discover_prewarm.async_send,
             },
         )

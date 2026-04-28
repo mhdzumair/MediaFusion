@@ -329,10 +329,10 @@ export function PlayerDialog({
         )}
 
         {/* Bottom Info Bar */}
-        <div className="p-4 bg-black/90 border-t border-white/10">
-          <div className="flex items-center justify-between gap-4">
+        <div className="p-3 sm:p-4 bg-black/90 border-t border-white/10">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
             {/* Stream Info */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
               {stream.quality && (
                 <Badge variant="secondary" className="bg-primary/20 text-primary text-xs">
                   {stream.quality}
@@ -370,32 +370,37 @@ export function PlayerDialog({
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-white/70 hover:text-white hover:bg-white/10"
+                className="text-white/70 hover:text-white hover:bg-white/10 px-2 sm:px-3"
                 onClick={handleCopy}
               >
                 {copied ? (
                   <>
-                    <Check className="mr-2 h-4 w-4 text-emerald-500" />
-                    Copied
+                    <Check className="h-4 w-4 text-emerald-500 sm:mr-2" />
+                    <span className="hidden sm:inline">Copied</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="mr-2 h-4 w-4" />
-                    Copy URL
+                    <Copy className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Copy URL</span>
                   </>
                 )}
               </Button>
 
               <ExternalPlayerMenu streamUrl={actionableExternalStreamUrl} />
 
-              <Button variant="ghost" size="sm" className="text-white/70 hover:text-white hover:bg-white/10" asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-white/70 hover:text-white hover:bg-white/10 px-2 sm:px-3"
+                asChild
+              >
                 <a href={actionableExternalStreamUrl} download target="_blank" rel="noopener noreferrer">
-                  <Download className="mr-2 h-4 w-4" />
-                  Download
+                  <Download className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Download</span>
                 </a>
               </Button>
             </div>

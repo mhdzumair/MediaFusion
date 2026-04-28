@@ -39,6 +39,7 @@ import {
   Trash2,
   Hash,
   Layers,
+  X,
 } from 'lucide-react'
 import {
   useCatalogItem,
@@ -912,6 +913,9 @@ export function ContentDetailPage() {
   // Read initial season/episode from URL query params (for deep linking from history)
   const initialSeason = searchParams.get('season') ? parseInt(searchParams.get('season')!, 10) : undefined
   const initialEpisode = searchParams.get('episode') ? parseInt(searchParams.get('episode')!, 10) : undefined
+
+  // When navigated from Discover, scraping was just triggered — show a banner until streams arrive
+  const [scrapingBanner, setScrapingBanner] = useState(() => searchParams.get('scraping') === '1')
 
   // For series: season and episode selection
   const [selectedSeason, setSelectedSeason] = useState<number | undefined>(initialSeason)
@@ -1866,6 +1870,26 @@ export function ContentDetailPage() {
             </div>
           </CardHeader>
           <CardContent className="px-3 sm:px-6">
+            {/* Banner shown when navigated from Discover (scraping just triggered) */}
+            {scrapingBanner && !streamsLoading && !streamsData?.streams.length && (
+              <div className="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 mb-4 text-sm">
+                <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                <div className="flex-1">
+                  <p className="font-medium">Searching for streams…</p>
+                  <p className="text-muted-foreground text-xs">
+                    This was just added. Streams are being fetched in the background — check back in a moment.
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={() => setScrapingBanner(false)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
             {streamsLoading ? (
               <div className="space-y-3">
                 {[...Array(5)].map((_, i) => (

@@ -531,3 +531,79 @@ async def get_multiple_kitsu_by_ids(
         "included": all_included,
         "meta": {"count": len(all_data)},
     }
+
+
+# ---------------------------------------------------------------------------
+# Discovery helpers — used by the Discover feature
+# ---------------------------------------------------------------------------
+
+
+def _normalize_kitsu_discover(data: dict[str, Any]) -> dict[str, Any]:
+    """Convert a Kitsu anime node to the common DiscoverItem shape."""
+    anime = _normalize_kitsu_data(data)
+    titles = anime.get("titles", {})
+    title = anime.get("canonicalTitle") or titles.get("en") or titles.get("en_us") or "Unknown"
+    poster_image = anime.get("posterImage") or {}
+    poster = poster_image.get("large") or poster_image.get("medium")
+    cover_image = anime.get("coverImage") or {}
+    backdrop = cover_image.get("large") or cover_image.get("original")
+
+    start_date = anime.get("startDate")
+    year = None
+    if start_date:
+        try:
+            year = str(int(start_date[:4]))
+        except (ValueError, TypeError):
+            pass
+
+    subtype = (anime.get("subtype") or "").lower()
+    media_type = "movie" if subtype == "movie" else "series"
+
+    raw_rating = anime.get("averageRating")
+    try:
+        vote_average = round(float(raw_rating) / 10, 1) if raw_rating else 0.0
+    except (ValueError, TypeError):
+        vote_average = 0.0
+
+    return {
+        "provider": "kitsu",
+        "external_id": str(anime.get("id")),
+        "media_type": media_type,
+        "title": title,
+        "year": year,
+        "release_date": start_date,
+        "poster": poster,
+        "backdrop": backdrop,
+        "overview": anime.get("synopsis") or "",
+        "popularity": anime.get("userCount") or 0,
+        "vote_average": vote_average,
+        "genre_ids": [],
+        "genres": [],
+    }
+
+
+async def kitsu_trending(
+    page: int = 1,
+    per_page: int = 20,
+) -> dict[str, Any]:
+    """Return trending anime from Kitsu sorted by user count."""
+    offset = (page - 1) * per_page
+    params = {
+        "sort": "-userCount",
+        "page[limit]": per_page,
+        "page[offset]": offset,
+    }
+    response = await _kitsu_request("anime", params=params)
+    if not response:
+        return {"items": [], "page": page, "total_pages": 0, "total_results": 0}
+
+    data = response.get("data", [])
+    items = [_normalize_kitsu_discover(d) for d in data]
+    total = (response.get("meta") or {}).get("count", len(items))
+    total_pages = max(1, -(-total // per_page))  # ceiling division
+    return {
+        "items": items,
+        "page": page,
+        "total_pages": total_pages,
+        "total_results": total,
+    }

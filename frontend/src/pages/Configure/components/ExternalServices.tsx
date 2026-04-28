@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Eye, EyeOff, ExternalLink, Info, X } from 'lucide-react'
+import { Eye, EyeOff, ExternalLink, Info, Loader2, X } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,16 +8,42 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { discoverApi } from '@/lib/api/discover'
 import type { ConfigSectionProps } from './types'
 
 export function ExternalServices({ config, onChange }: ConfigSectionProps) {
   const [showMediaFlowPassword, setShowMediaFlowPassword] = useState(false)
   const [showRpdbKey, setShowRpdbKey] = useState(false)
   const [showMdblistKey, setShowMdblistKey] = useState(false)
+  const [showTmdbKey, setShowTmdbKey] = useState(false)
+  const [tmdbVerifying, setTmdbVerifying] = useState(false)
+  const [tmdbVerified, setTmdbVerified] = useState<boolean | null>(null)
+  const [tmdbError, setTmdbError] = useState<string | null>(null)
+  const [showTvdbKey, setShowTvdbKey] = useState(false)
 
   const mfc = config.mfc
   const rpc = config.rpc
   const mdb = config.mdb
+  const tmdb = config.tmdb
+  const tvdb = config.tvdb
+
+  const verifyTmdbKey = async () => {
+    const key = tmdb?.ak?.trim()
+    if (!key) return
+    setTmdbVerifying(true)
+    setTmdbVerified(null)
+    setTmdbError(null)
+    try {
+      const result = await discoverApi.verifyTmdbKey(key)
+      setTmdbVerified(result.valid)
+      if (!result.valid) setTmdbError(result.error || 'Invalid API key')
+    } catch {
+      setTmdbVerified(false)
+      setTmdbError('Could not reach TMDB')
+    } finally {
+      setTmdbVerifying(false)
+    }
+  }
 
   const isValidUrl = (value: string | undefined) => {
     if (!value?.trim()) return false
@@ -390,6 +416,155 @@ export function ExternalServices({ config, onChange }: ConfigSectionProps) {
                     </div>
                   )}
                 </>
+              )}
+            </AccordionContent>
+          </AccordionItem>
+          {/* TMDB API Key (for Discover feature) */}
+          <AccordionItem value="tmdb">
+            <AccordionTrigger>
+              <div className="flex items-center gap-2">
+                <span>TMDB API Key (Discover)</span>
+                {tmdb?.ak && (
+                  <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-500">
+                    Configured
+                  </Badge>
+                )}
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="space-y-4 pt-4">
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  A personal TMDB v3 API key enables trending, new releases, and per-streaming-service feeds. Each user
+                  supplies their own key so shared deployments aren&apos;t affected by rate limits.{' '}
+                  <a
+                    href="https://www.themoviedb.org/settings/api"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline inline-flex items-center gap-1"
+                  >
+                    Get a free key <ExternalLink className="h-3 w-3" />
+                  </a>
+                </AlertDescription>
+              </Alert>
+
+              <div className="flex items-center justify-between">
+                <Label htmlFor="tmdb-toggle">Use TMDB API Key</Label>
+                <Switch
+                  id="tmdb-toggle"
+                  checked={!!tmdb}
+                  onCheckedChange={(enabled) => {
+                    onChange({ ...config, tmdb: enabled ? { ak: '' } : null })
+                    setTmdbVerified(null)
+                    setTmdbError(null)
+                  }}
+                />
+              </div>
+
+              {tmdb && (
+                <div className="space-y-2">
+                  <Label>API Key</Label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        type={showTmdbKey ? 'text' : 'password'}
+                        value={tmdb.ak || ''}
+                        onChange={(e) => {
+                          onChange({ ...config, tmdb: { ak: e.target.value } })
+                          setTmdbVerified(null)
+                          setTmdbError(null)
+                        }}
+                        placeholder="Enter TMDB v3 API key"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() => setShowTmdbKey(!showTmdbKey)}
+                      >
+                        {showTmdbKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={verifyTmdbKey}
+                      disabled={tmdbVerifying || !tmdb.ak?.trim()}
+                    >
+                      {tmdbVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verify'}
+                    </Button>
+                  </div>
+                  {tmdbVerified === true && <p className="text-sm text-emerald-500">✓ API key is valid</p>}
+                  {tmdbVerified === false && (
+                    <p className="text-sm text-destructive">{tmdbError || 'Invalid API key'}</p>
+                  )}
+                </div>
+              )}
+            </AccordionContent>
+          </AccordionItem>
+
+          {/* TVDB API Key */}
+          <AccordionItem value="tvdb">
+            <AccordionTrigger>
+              <div className="flex items-center gap-2">
+                <span>TVDB API Key</span>
+                {tvdb?.ak && (
+                  <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-500">
+                    Configured
+                  </Badge>
+                )}
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="space-y-4 pt-4">
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  A TVDB API key enables richer metadata for TV shows (episode info, artwork, alternate titles). Get a
+                  free key from{' '}
+                  <a
+                    href="https://thetvdb.com/api-information"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline inline-flex items-center gap-1"
+                  >
+                    thetvdb.com <ExternalLink className="h-3 w-3" />
+                  </a>
+                </AlertDescription>
+              </Alert>
+
+              <div className="flex items-center justify-between">
+                <Label htmlFor="tvdb-toggle">Use TVDB API Key</Label>
+                <Switch
+                  id="tvdb-toggle"
+                  checked={!!tvdb}
+                  onCheckedChange={(enabled) => {
+                    onChange({ ...config, tvdb: enabled ? { ak: '' } : null })
+                  }}
+                />
+              </div>
+
+              {tvdb && (
+                <div className="space-y-2">
+                  <Label>API Key</Label>
+                  <div className="relative">
+                    <Input
+                      type={showTvdbKey ? 'text' : 'password'}
+                      value={tvdb.ak || ''}
+                      onChange={(e) => onChange({ ...config, tvdb: { ak: e.target.value } })}
+                      placeholder="Enter TVDB API key"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full px-3"
+                      onClick={() => setShowTvdbKey(!showTvdbKey)}
+                    >
+                      {showTvdbKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
               )}
             </AccordionContent>
           </AccordionItem>

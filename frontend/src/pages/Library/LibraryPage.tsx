@@ -3,8 +3,8 @@ import { useSearchParams, Link } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Compass, Bookmark, History, Library, Cloud, Settings2, Loader2, ShieldAlert } from 'lucide-react'
-import { BrowseTab, MyLibraryTab, HistoryTab, WatchlistTab, BlockedLibraryTab } from './tabs'
+import { Compass, Bookmark, History, Library, Cloud, Settings2, Loader2, ShieldAlert, Sparkles } from 'lucide-react'
+import { BrowseTab, DiscoverTab, MyLibraryTab, HistoryTab, WatchlistTab, BlockedLibraryTab } from './tabs'
 import { useProfiles } from '@/hooks/useProfiles'
 import { useRole } from '@/hooks/useRole'
 
@@ -142,39 +142,50 @@ export function LibraryPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="grid w-full max-w-lg grid-cols-4 animate-fade-in animate-delay-100">
+        <TabsList className="flex w-full max-w-2xl overflow-x-auto animate-fade-in animate-delay-100">
           <TabsTrigger
             value="browse"
-            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            className="flex-1 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
           >
-            <Compass className="mr-2 h-4 w-4" />
-            Browse
+            <Compass className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Browse</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="discover"
+            className="flex-1 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+          >
+            <Sparkles className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Discover</span>
           </TabsTrigger>
           <TabsTrigger
             value="library"
-            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            className="flex-1 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
           >
-            <Bookmark className="mr-2 h-4 w-4" />
-            My Library
+            <Bookmark className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">My Library</span>
           </TabsTrigger>
           <TabsTrigger
             value="watchlist"
-            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            className="flex-1 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
           >
-            <Cloud className="mr-2 h-4 w-4" />
-            Watchlist
+            <Cloud className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Watchlist</span>
           </TabsTrigger>
           <TabsTrigger
             value="history"
-            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            className="flex-1 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
           >
-            <History className="mr-2 h-4 w-4" />
-            History
+            <History className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">History</span>
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="browse" className="space-y-6 mt-0 animate-fade-in">
           <BrowseTab />
+        </TabsContent>
+
+        <TabsContent value="discover" className="space-y-6 mt-0 animate-fade-in">
+          <DiscoverTab />
         </TabsContent>
 
         <TabsContent value="library" className="space-y-6 mt-0 animate-fade-in">

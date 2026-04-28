@@ -1,4 +1,5 @@
 export { BrowseTab } from './BrowseTab'
+export { DiscoverTab } from './DiscoverTab'
 export { MyLibraryTab } from './MyLibraryTab'
 export { HistoryTab } from './HistoryTab'
 export { WatchlistTab } from './WatchlistTab'

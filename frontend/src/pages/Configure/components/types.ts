@@ -104,6 +104,14 @@ export interface RPDBConfig {
   ak: string // api_key
 }
 
+export interface TMDBUserConfig {
+  ak: string // api_key
+}
+
+export interface TVDBUserConfig {
+  ak: string // api_key
+}
+
 export interface MDBListItem {
   i: number // id
   t: string // title
@@ -197,6 +205,10 @@ export interface ProfileConfig {
   snfm?: 'disabled' | 'include' | 'exclude' // stream_name_filter_mode
   snfp?: string[] // stream_name_filter_patterns
   snfr?: boolean // stream_name_filter_use_regex
+  // Discover feature
+  tmdb?: TMDBUserConfig | null // tmdb_config (per-user TMDB API key for Discover)
+  tvdb?: TVDBUserConfig | null // tvdb_config (per-user TVDB API key)
+  ed?: boolean // enable_discover
 }
 
 // Telegram configuration types

@@ -111,6 +111,9 @@ async def _anilist_request(
         **UA_HEADER,
         "Content-Type": "application/json",
         "Accept": "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Origin": "https://anilist.co",
+        "Referer": "https://anilist.co/",
     }
 
     for attempt in range(max_retries):
@@ -574,3 +577,126 @@ async def get_mal_by_title(
         return _format_anilist_response(best_match)
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Discovery helpers (Trending / Seasonal) — used by the Discover feature
+# ---------------------------------------------------------------------------
+
+_DISCOVER_QUERY = (
+    """
+query ($sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $page: Int, $perPage: Int) {
+  Page(page: $page, perPage: $perPage) {
+    pageInfo { total currentPage lastPage hasNextPage }
+    media(type: ANIME, sort: $sort, season: $season, seasonYear: $seasonYear, isAdult: false) {
+      %s
+    }
+  }
+}
+"""
+    % _MEDIA_FIELDS
+)
+
+
+def _normalize_anilist_discover(item: dict[str, Any]) -> dict[str, Any]:
+    """Convert a raw AniList media node to the common DiscoverItem shape."""
+    title_obj = item.get("title") or {}
+    title = title_obj.get("english") or title_obj.get("romaji") or "Unknown"
+    cover = item.get("coverImage") or {}
+    poster = cover.get("extraLarge") or cover.get("large")
+    banner = item.get("bannerImage")
+    start_date = item.get("startDate")
+    release_date = _format_date(start_date)
+    year = (start_date or {}).get("year")
+
+    al_format = item.get("format") or ""
+    media_type = "movie" if al_format in _MOVIE_FORMATS else "series"
+
+    mal_id = item.get("idMal")
+    provider = "mal" if mal_id else "anilist"
+    external_id = str(mal_id) if mal_id else str(item.get("id"))
+
+    avg_score = item.get("averageScore")
+    vote_average = round(avg_score / 10, 1) if avg_score else 0.0
+
+    return {
+        "provider": provider,
+        "external_id": external_id,
+        "media_type": media_type,
+        "title": title,
+        "year": str(year) if year else None,
+        "release_date": release_date,
+        "poster": poster,
+        "backdrop": banner,
+        "overview": item.get("description") or "",
+        "popularity": item.get("popularity", 0),
+        "vote_average": vote_average,
+        "genre_ids": [],
+        "genres": item.get("genres") or [],
+    }
+
+
+async def anilist_trending(
+    page: int = 1,
+    per_page: int = 20,
+) -> dict[str, Any]:
+    """Return currently trending anime from AniList."""
+    data = await _anilist_request(
+        _DISCOVER_QUERY,
+        {"sort": ["TRENDING_DESC"], "page": page, "perPage": per_page},
+    )
+    if not data:
+        return {"items": [], "page": page, "total_pages": 0, "total_results": 0}
+
+    page_info = data.get("Page", {}).get("pageInfo", {})
+    media_list = data.get("Page", {}).get("media", [])
+    items = [_normalize_anilist_discover(m) for m in media_list]
+    return {
+        "items": items,
+        "page": page_info.get("currentPage", page),
+        "total_pages": page_info.get("lastPage", 1),
+        "total_results": page_info.get("total", len(items)),
+    }
+
+
+_SEASON_MAP = {
+    "winter": "WINTER",
+    "spring": "SPRING",
+    "summer": "SUMMER",
+    "fall": "FALL",
+}
+
+
+async def anilist_seasonal(
+    season: str,
+    year: int,
+    page: int = 1,
+    per_page: int = 20,
+) -> dict[str, Any]:
+    """Return anime airing in a specific season/year from AniList."""
+    al_season = _SEASON_MAP.get(season.lower())
+    if not al_season:
+        return {"items": [], "page": page, "total_pages": 0, "total_results": 0}
+
+    data = await _anilist_request(
+        _DISCOVER_QUERY,
+        {
+            "sort": ["POPULARITY_DESC"],
+            "season": al_season,
+            "seasonYear": year,
+            "page": page,
+            "perPage": per_page,
+        },
+    )
+    if not data:
+        return {"items": [], "page": page, "total_pages": 0, "total_results": 0}
+
+    page_info = data.get("Page", {}).get("pageInfo", {})
+    media_list = data.get("Page", {}).get("media", [])
+    items = [_normalize_anilist_discover(m) for m in media_list]
+    return {
+        "items": items,
+        "page": page_info.get("currentPage", page),
+        "total_pages": page_info.get("lastPage", 1),
+        "total_results": page_info.get("total", len(items)),
+    }

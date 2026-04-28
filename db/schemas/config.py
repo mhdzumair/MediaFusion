@@ -95,6 +95,22 @@ class RPDBConfig(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
 
+class TMDBUserConfig(BaseModel):
+    """Per-user TMDB API key for Discover feature."""
+
+    api_key: str = Field(alias="ak")
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+
+class TVDBUserConfig(BaseModel):
+    """Per-user TVDB API key."""
+
+    api_key: str = Field(alias="ak")
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+
 # ============================================
 # Usenet Provider Configurations
 # ============================================
@@ -592,6 +608,12 @@ class UserData(BaseModel):
     indexer_config: IndexerConfig | None = Field(default=None, alias="ic")
     # Telegram channel configuration for user-level Telegram scraping
     telegram_config: TelegramConfig | None = Field(default=None, alias="tgc")
+    # Per-user TMDB API key for the Discover feature
+    tmdb_config: TMDBUserConfig | None = Field(default=None, alias="tmdb")
+    # Per-user TVDB API key
+    tvdb_config: TVDBUserConfig | None = Field(default=None, alias="tvdb")
+    # Enable the Discover tab (requires tmdb_config.api_key or server-side fallback)
+    enable_discover: bool = Field(default=False, alias="ed")
 
     # Usenet settings
     enable_usenet_streams: bool = Field(default=True, alias="eus")

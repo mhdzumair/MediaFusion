@@ -637,74 +637,78 @@ export function ContributionsPage() {
                     return (
                       <div
                         key={suggestion.id}
-                        className="flex items-start gap-4 p-4 rounded-md border border-border/50 hover:border-primary/30 transition-colors"
+                        className="flex items-start gap-3 p-4 rounded-md border border-border/50 hover:border-primary/30 transition-colors"
                       >
                         {/* Type Icon */}
-                        <div className="p-2 rounded-lg bg-blue-500/10 flex-shrink-0">
+                        <div className="p-2 rounded-lg bg-blue-500/10 flex-shrink-0 mt-0.5">
                           <Film className="h-5 w-5 text-blue-500" />
                         </div>
 
-                        {/* Info */}
-                        <div className="flex-1 min-w-0 space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-medium">{formatSuggestionType(suggestion.suggestion_type)}</p>
-                            {suggestion.field_name && (
-                              <Badge variant="outline" className="text-xs">
-                                {formatFieldName(suggestion.field_name)}
-                              </Badge>
-                            )}
-                          </div>
+                        {/* Info + Status */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-medium">{formatSuggestionType(suggestion.suggestion_type)}</p>
+                                {suggestion.field_name && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {formatFieldName(suggestion.field_name)}
+                                  </Badge>
+                                )}
+                              </div>
 
-                          {suggestion.stream_name && (
-                            <p className="text-sm text-muted-foreground truncate" title={suggestion.stream_name}>
-                              Stream: {suggestion.stream_name}
-                            </p>
-                          )}
+                              {suggestion.stream_name && (
+                                <p className="text-sm text-muted-foreground truncate" title={suggestion.stream_name}>
+                                  Stream: {suggestion.stream_name}
+                                </p>
+                              )}
 
-                          {/* Show value changes */}
-                          {suggestion.field_name && (suggestion.current_value || suggestion.suggested_value) && (
-                            <div className="flex items-center gap-2 text-sm">
-                              <span
-                                className="text-red-400 line-through truncate max-w-[150px]"
-                                title={suggestion.current_value || ''}
-                              >
-                                {suggestion.current_value || '(empty)'}
-                              </span>
-                              <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                              <span
-                                className="text-emerald-400 truncate max-w-[150px]"
-                                title={suggestion.suggested_value || ''}
-                              >
-                                {suggestion.suggested_value || '(empty)'}
-                              </span>
+                              {/* Show value changes */}
+                              {suggestion.field_name && (suggestion.current_value || suggestion.suggested_value) && (
+                                <div className="flex items-center gap-2 text-sm">
+                                  <span
+                                    className="text-red-400 line-through truncate max-w-[120px]"
+                                    title={suggestion.current_value || ''}
+                                  >
+                                    {suggestion.current_value || '(empty)'}
+                                  </span>
+                                  <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                  <span
+                                    className="text-emerald-400 truncate max-w-[120px]"
+                                    title={suggestion.suggested_value || ''}
+                                  >
+                                    {suggestion.suggested_value || '(empty)'}
+                                  </span>
+                                </div>
+                              )}
+
+                              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                                <span>{new Date(suggestion.created_at).toLocaleDateString()}</span>
+                                {suggestion.was_auto_approved && (
+                                  <>
+                                    <span>•</span>
+                                    <Badge variant="outline" className="text-xs h-5 px-1.5">
+                                      <Zap className="h-3 w-3 mr-1" />
+                                      Auto
+                                    </Badge>
+                                  </>
+                                )}
+                                {suggestion.reviewed_at && (
+                                  <>
+                                    <span>•</span>
+                                    <span>Reviewed {new Date(suggestion.reviewed_at).toLocaleDateString()}</span>
+                                  </>
+                                )}
+                              </div>
                             </div>
-                          )}
 
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>{new Date(suggestion.created_at).toLocaleDateString()}</span>
-                            {suggestion.was_auto_approved && (
-                              <>
-                                <span>•</span>
-                                <Badge variant="outline" className="text-xs h-5 px-1.5">
-                                  <Zap className="h-3 w-3 mr-1" />
-                                  Auto
-                                </Badge>
-                              </>
-                            )}
-                            {suggestion.reviewed_at && (
-                              <>
-                                <span>•</span>
-                                <span>Reviewed {new Date(suggestion.reviewed_at).toLocaleDateString()}</span>
-                              </>
-                            )}
+                            {/* Status */}
+                            <Badge variant="secondary" className={`${status?.color} bg-opacity-10 flex-shrink-0`}>
+                              <StatusIcon className="mr-1 h-3 w-3" />
+                              {status?.label}
+                            </Badge>
                           </div>
                         </div>
-
-                        {/* Status */}
-                        <Badge variant="secondary" className={`${status?.color} bg-opacity-10 flex-shrink-0`}>
-                          <StatusIcon className="mr-1 h-3 w-3" />
-                          {status?.label}
-                        </Badge>
 
                         {/* Actions */}
                         <DropdownMenu>
@@ -809,39 +813,41 @@ export function ContributionsPage() {
                     return (
                       <div
                         key={item.id}
-                        className="flex items-center gap-4 p-4 rounded-md border border-border/50 hover:border-primary/30 transition-colors"
+                        className="flex items-start gap-3 p-4 rounded-md border border-border/50 hover:border-primary/30 transition-colors"
                       >
                         {/* Type Icon */}
-                        <div className="p-2 rounded-md bg-primary/10 flex-shrink-0">
+                        <div className="p-2 rounded-md bg-primary/10 flex-shrink-0 mt-0.5">
                           <TypeIcon className="h-5 w-5 text-primary" />
                         </div>
 
-                        {/* Info */}
+                        {/* Info + Status */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium truncate">{type?.label}</p>
-                            {item.target_id && (
-                              <Badge variant="outline" className="text-xs font-mono">
-                                {item.target_id}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <span>{new Date(item.created_at).toLocaleDateString()}</span>
-                            {item.reviewed_at && (
-                              <>
-                                <span>•</span>
-                                <span>Reviewed {new Date(item.reviewed_at).toLocaleDateString()}</span>
-                              </>
-                            )}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-medium">{type?.label}</p>
+                                {item.target_id && (
+                                  <Badge variant="outline" className="text-xs font-mono">
+                                    {item.target_id}
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground mt-0.5">
+                                <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                                {item.reviewed_at && (
+                                  <>
+                                    <span>•</span>
+                                    <span>Reviewed {new Date(item.reviewed_at).toLocaleDateString()}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <Badge variant="secondary" className={`${status?.color} bg-opacity-10 flex-shrink-0`}>
+                              <StatusIcon className="mr-1 h-3 w-3" />
+                              {status?.label}
+                            </Badge>
                           </div>
                         </div>
-
-                        {/* Status */}
-                        <Badge variant="secondary" className={`${status?.color} bg-opacity-10`}>
-                          <StatusIcon className="mr-1 h-3 w-3" />
-                          {status?.label}
-                        </Badge>
 
                         {/* Actions */}
                         <DropdownMenu>

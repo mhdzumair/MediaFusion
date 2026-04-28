@@ -187,6 +187,10 @@ class Settings(BaseSettings):
     scrapling_cloudflare_cache_duration: int = 3600
     scrapling_cloudflare_max_attempts: int = 3
 
+    # Discover feature flags
+    discover_enabled: bool = True
+    discover_allow_server_key: bool = False  # When True, use server tmdb_api_key for users without their own
+
     # External Service API Keys
     tmdb_api_key: str | None = None
     tvdb_api_key: str | None = None
