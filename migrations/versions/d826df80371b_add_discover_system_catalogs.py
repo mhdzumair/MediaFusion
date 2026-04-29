@@ -1,28 +1,30 @@
-"""Add system catalogs for Discover feature pre-warm
+"""add_discover_system_catalogs
 
-Revision ID: a1b2c3d4e5f7
-Revises: fc2804ba1ac9
-Create Date: 2026-04-28 00:00:00.000000
+Revision ID: d826df80371b
+Revises: 12bf74e53c8d
+Create Date: 2026-04-29 09:20:23.148329
+
 """
 
 from typing import Sequence, Union
 
-import sqlalchemy as sa
 from alembic import op
+import sqlalchemy as sa
 
-revision: str = "a1b2c3d4e5f7"
-down_revision: Union[str, None] = "fc2804ba1ac9"
+
+# revision identifiers, used by Alembic.
+revision: str = "d826df80371b"
+down_revision: Union[str, None] = "12bf74e53c8d"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
     conn = op.get_bind()
-    for row in [
-        ("discover_pinned_movies", "Discover: Trending Movies", "movie", True, 9900),
-        ("discover_pinned_series", "Discover: Trending Series", "series", True, 9901),
+    for name, display_name, display_order in [
+        ("discover_pinned_movies", "Discover: Trending Movies", 9900),
+        ("discover_pinned_series", "Discover: Trending Series", 9901),
     ]:
-        name, display_name, media_type, is_system, display_order = row
         existing = conn.execute(
             sa.text("SELECT id FROM catalog WHERE name = :name"),
             {"name": name},
@@ -30,14 +32,13 @@ def upgrade() -> None:
         if not existing:
             conn.execute(
                 sa.text(
-                    "INSERT INTO catalog (name, display_name, media_type, is_system, display_order) "
-                    "VALUES (:name, :display_name, :media_type, :is_system, :display_order)"
+                    "INSERT INTO catalog (name, display_name, is_system, display_order) "
+                    "VALUES (:name, :display_name, :is_system, :display_order)"
                 ),
                 {
                     "name": name,
                     "display_name": display_name,
-                    "media_type": media_type,
-                    "is_system": is_system,
+                    "is_system": True,
                     "display_order": display_order,
                 },
             )
