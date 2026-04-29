@@ -8,9 +8,16 @@ catalogs so the most-visited Discover rows resolve immediately from the DB.
 
 import logging
 
+from sqlmodel import select
+
 from api.task_queue import actor
 from db.config import settings
 from db.database import get_background_session
+from db.enums import MediaType
+from db.models import Media
+from db.models.links import MediaCatalogLink
+from db.models.providers import MediaExternalID
+from db.models.reference import Catalog
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +60,6 @@ async def run_discover_prewarm(**kwargs):
             continue
 
         async with get_background_session() as session:
-            from sqlmodel import select
-
-            from db.models import MediaCatalogLink
-            from db.models.providers import MediaExternalID
-            from db.models.reference import Catalog
-
             catalog_result = await session.exec(select(Catalog).where(Catalog.name == catalog_name))
             catalog = catalog_result.first()
             if not catalog:
@@ -67,38 +68,59 @@ async def run_discover_prewarm(**kwargs):
 
             for item in items:
                 tmdb_id = item["external_id"]
+                media_id: int | None = None
                 try:
-                    # Skip if already in DB with tmdb external ID
-                    existing = await session.exec(
-                        select(MediaExternalID).where(
-                            MediaExternalID.provider == "tmdb",
-                            MediaExternalID.external_id == tmdb_id,
+                    # 1. Check by TMDB external ID
+                    ext_row = (
+                        await session.exec(
+                            select(MediaExternalID).where(
+                                MediaExternalID.provider == "tmdb",
+                                MediaExternalID.external_id == tmdb_id,
+                            )
                         )
-                    )
-                    ext_row = existing.first()
+                    ).first()
                     if ext_row:
                         media_id = ext_row.media_id
                     else:
-                        # Fetch full metadata and materialize
                         data = await meta_fetcher.get_metadata_from_provider("tmdb", tmdb_id, media_type)
                         if not data:
                             continue
-                        media_id = await _create_media_from_data(session, data, media_type)
+
+                        # 2. Also check IMDB ID — title may already exist imported via IMDB
+                        imdb_id = data.get("imdb_id")
+                        if imdb_id:
+                            imdb_row = (
+                                await session.exec(
+                                    select(MediaExternalID).where(
+                                        MediaExternalID.provider == "imdb",
+                                        MediaExternalID.external_id == str(imdb_id),
+                                    )
+                                )
+                            ).first()
+                            if imdb_row:
+                                media_id = imdb_row.media_id
+
+                        # 3. Not found by any external ID — create a new Media row
                         if not media_id:
-                            continue
+                            media_id = await _create_media_from_data(session, data, media_type)
+                            if not media_id:
+                                continue
 
                     # Link to system catalog (idempotent)
-                    existing_link = await session.exec(
-                        select(MediaCatalogLink).where(
-                            MediaCatalogLink.media_id == media_id,
-                            MediaCatalogLink.catalog_id == catalog.id,
+                    existing_link = (
+                        await session.exec(
+                            select(MediaCatalogLink).where(
+                                MediaCatalogLink.media_id == media_id,
+                                MediaCatalogLink.catalog_id == catalog.id,
+                            )
                         )
-                    )
-                    if not existing_link.first():
+                    ).first()
+                    if not existing_link:
                         session.add(MediaCatalogLink(media_id=media_id, catalog_id=catalog.id))
 
                 except Exception as e:
                     logger.warning(f"Discover pre-warm: failed to import tmdb:{tmdb_id}: {e}")
+                    await session.rollback()
                     continue
 
             try:
@@ -111,18 +133,12 @@ async def run_discover_prewarm(**kwargs):
 
 
 async def _create_media_from_data(session, data: dict, media_type: str) -> int | None:
-    """Create a Media row from fetched metadata, return its id."""
-
-    from db.enums import MediaType
-    from db.models import Media
-    from db.models.providers import MediaExternalID
-
+    """Create a new Media row from fetched metadata. Returns the new media_id."""
     mt = MediaType.MOVIE if media_type == "movie" else MediaType.SERIES
-    title = data.get("title", "Unknown")
 
     media = Media(
         type=mt,
-        title=title,
+        title=data.get("title", "Unknown"),
         year=data.get("year"),
         description=data.get("description"),
         is_user_created=False,
@@ -133,16 +149,13 @@ async def _create_media_from_data(session, data: dict, media_type: str) -> int |
 
     for provider, field in [("imdb", "imdb_id"), ("tmdb", "tmdb_id"), ("tvdb", "tvdb_id")]:
         val = data.get(field)
-        if val:
-            ext = MediaExternalID(
-                media_id=media.id,
-                provider=provider,
-                external_id=str(val),
-            )
-            try:
-                session.add(ext)
-                await session.flush()
-            except Exception:
-                pass
+        if not val:
+            continue
+        # Use savepoint so a duplicate key on one provider doesn't abort the whole transaction
+        try:
+            async with session.begin_nested():
+                session.add(MediaExternalID(media_id=media.id, provider=provider, external_id=str(val)))
+        except Exception:
+            pass
 
     return media.id

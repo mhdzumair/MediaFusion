@@ -543,14 +543,9 @@ export function DiscoverTab() {
   const netflixMovies = useDiscoverProviderFeed('movie', 8, region, tmdbEnabled && showMovies && !isSearching, lang)
   const netflixSeries = useDiscoverProviderFeed('tv', 8, region, tmdbEnabled && showSeries && !isSearching, lang)
   const primeMovies = useDiscoverProviderFeed('movie', 9, region, tmdbEnabled && showMovies && !isSearching, lang)
-  const animeTrending = useDiscoverAnime(
-    'trending',
-    undefined,
-    undefined,
-    'anilist',
-    tmdbEnabled && showSeries && !isSearching,
-  )
-  const animeSeasonal = useDiscoverAnime('seasonal', season, year, 'anilist', tmdbEnabled && showSeries && !isSearching)
+  // Anime (AniList/Kitsu) needs no external API key — available to all authenticated users
+  const animeTrending = useDiscoverAnime('trending', undefined, undefined, 'anilist', showSeries && !isSearching)
+  const animeSeasonal = useDiscoverAnime('seasonal', season, year, 'anilist', showSeries && !isSearching)
 
   // TVDB rows — only when user has their own TVDB key configured
   const tvdbSeries = useDiscoverTvdb('tv', hasTvdbKey && showSeries && !isSearching)
@@ -715,14 +710,20 @@ export function DiscoverTab() {
                   <DiscoverRow title="Popular Series" query={popularSeries} {...rowProps} />
                   <DiscoverRow title="Top Rated Series" query={topSeries} {...rowProps} />
                   <DiscoverRow title="New on Netflix (Series)" query={netflixSeries} {...rowProps} />
-                  <DiscoverRow title="Trending Anime" query={animeTrending} {...rowProps} />
-                  <DiscoverRow
-                    title={`This Season — ${season.charAt(0).toUpperCase() + season.slice(1)} ${year}`}
-                    query={animeSeasonal}
-                    {...rowProps}
-                  />
                 </>
               )}
+            </>
+          )}
+
+          {/* Anime rows — no external API key required */}
+          {showSeries && !isSearching && (
+            <>
+              <DiscoverRow title="Trending Anime" query={animeTrending} {...rowProps} />
+              <DiscoverRow
+                title={`This Season — ${season.charAt(0).toUpperCase() + season.slice(1)} ${year}`}
+                query={animeSeasonal}
+                {...rowProps}
+              />
             </>
           )}
 

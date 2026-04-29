@@ -25,7 +25,10 @@ def _normalize_mdblist_item(
         return None
 
     release_year = item.get("release_year")
-    poster = f"{settings.poster_host_url}/poster/{catalog_type}/{imdb_id}.jpg"
+    # Poster is intentionally None — the frontend Poster component resolves it
+    # via RPDB (using the imdb_id) or falls back to the MediaFusion endpoint
+    # only after the item has been imported into the DB.
+    poster = None
 
     genres_raw = item.get("genre") or []
     genres = [g for g in genres_raw if g] if isinstance(genres_raw, list) else []

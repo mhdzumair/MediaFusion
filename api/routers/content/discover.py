@@ -45,7 +45,12 @@ async def _get_user_data(session: AsyncSession, user: User) -> UserData:
     if not profile:
         raise HTTPException(status_code=400, detail="No profile configured")
     config = get_full_profile_config(profile)
-    return UserData.model_validate(config)
+    try:
+        return UserData.model_validate(config)
+    except Exception:
+        from api.routers.content.scraping import _sanitize_user_data_config
+
+        return UserData.model_validate(_sanitize_user_data_config(config))
 
 
 def _require_tmdb_key(user_data: UserData) -> str:
@@ -69,27 +74,60 @@ def _require_tmdb_key(user_data: UserData) -> str:
 async def _build_db_index(session: AsyncSession, items: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Build a map of "<provider>:<external_id>" -> {"id": media_id, "imdb_id": str | None}
-    for items already in DB. Uses two batch queries to avoid N+1.
+    for items already in DB.
+
+    Phase 1: exact (provider, external_id) match.
+    Phase 2: for items with an imdb_id field (e.g. TVDB items), retry unmatched ones
+             via (imdb, imdb_id) so media imported via IMDB is still recognised.
     """
     if not items:
         return {}
 
-    pairs: list[tuple[str, str]] = [(i["provider"], i["external_id"]) for i in items]
     from sqlalchemy import tuple_ as sa_tuple
 
+    # Phase 1 — exact provider:external_id match
+    pairs: list[tuple[str, str]] = [(i["provider"], i["external_id"]) for i in items]
     stmt = select(MediaExternalID).where(sa_tuple(MediaExternalID.provider, MediaExternalID.external_id).in_(pairs))
-    result = await session.exec(stmt)
-    rows = result.all()
+    rows = (await session.exec(stmt)).all()
     media_id_map: dict[str, int] = {f"{row.provider}:{row.external_id}": row.media_id for row in rows}
 
+    # Phase 2 — fallback via imdb_id for unmatched items that carry one (e.g. TVDB)
+    unmatched_with_imdb: dict[str, str] = {}  # discover_key -> imdb_id
+    for item in items:
+        discover_key = f"{item['provider']}:{item['external_id']}"
+        if discover_key not in media_id_map:
+            imdb_id = item.get("imdb_id")
+            if imdb_id and imdb_id.startswith("tt"):
+                unmatched_with_imdb[discover_key] = imdb_id
+
+    if unmatched_with_imdb:
+        imdb_ids = list(set(unmatched_with_imdb.values()))
+        imdb_rows = (
+            await session.exec(
+                select(MediaExternalID).where(
+                    MediaExternalID.provider == "imdb",
+                    MediaExternalID.external_id.in_(imdb_ids),
+                )
+            )
+        ).all()
+        imdb_to_media: dict[str, int] = {row.external_id: row.media_id for row in imdb_rows}
+        for discover_key, imdb_id in unmatched_with_imdb.items():
+            if imdb_id in imdb_to_media:
+                media_id_map[discover_key] = imdb_to_media[imdb_id]
+
+    # Fetch IMDB IDs for all matched media (used by frontend for RPDB poster)
     found_media_ids = list(set(media_id_map.values()))
-    imdb_stmt = select(MediaExternalID).where(
-        MediaExternalID.provider == "imdb",
-        MediaExternalID.media_id.in_(found_media_ids),
-    )
-    imdb_result = await session.exec(imdb_stmt)
-    imdb_rows = imdb_result.all()
-    imdb_by_media: dict[int, str] = {row.media_id: row.external_id for row in imdb_rows}
+    imdb_by_media: dict[int, str] = {}
+    if found_media_ids:
+        imdb_ext_rows = (
+            await session.exec(
+                select(MediaExternalID).where(
+                    MediaExternalID.provider == "imdb",
+                    MediaExternalID.media_id.in_(found_media_ids),
+                )
+            )
+        ).all()
+        imdb_by_media = {row.media_id: row.external_id for row in imdb_ext_rows}
 
     return {key: {"id": media_id, "imdb_id": imdb_by_media.get(media_id)} for key, media_id in media_id_map.items()}
 

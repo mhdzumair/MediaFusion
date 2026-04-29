@@ -94,6 +94,7 @@ def _extract_genres(item: dict[str, Any]) -> list[str]:
 def _normalize_tvdb_series(item: dict[str, Any]) -> dict[str, Any]:
     year_str = item.get("firstAired") or item.get("year") or ""
     year_str = str(year_str)[:4] if year_str else None
+    remote_ids = _extract_remote_ids(item)
     return {
         "provider": "tvdb",
         "external_id": str(item["id"]),
@@ -108,12 +109,14 @@ def _normalize_tvdb_series(item: dict[str, Any]) -> dict[str, Any]:
         "vote_average": 0.0,
         "genre_ids": [],
         "genres": _extract_genres(item),
+        "imdb_id": remote_ids.get("imdb"),
     }
 
 
 def _normalize_tvdb_movie(item: dict[str, Any]) -> dict[str, Any]:
     year_val = item.get("year") or item.get("releaseYear")
     year_str = str(year_val)[:4] if year_val else None
+    remote_ids = _extract_remote_ids(item)
     return {
         "provider": "tvdb",
         "external_id": str(item["id"]),
@@ -128,6 +131,7 @@ def _normalize_tvdb_movie(item: dict[str, Any]) -> dict[str, Any]:
         "vote_average": 0.0,
         "genre_ids": [],
         "genres": _extract_genres(item),
+        "imdb_id": remote_ids.get("imdb"),
     }
 
 

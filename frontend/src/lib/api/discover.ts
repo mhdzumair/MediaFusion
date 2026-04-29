@@ -22,6 +22,7 @@ export interface DiscoverItem {
   vote_average?: number
   genre_ids?: number[]
   genres?: string[]
+  imdb_id?: string | null
 }
 
 export interface DiscoverDbEntry {
