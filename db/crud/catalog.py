@@ -19,6 +19,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db import public_schemas, schemas
+from scrapers.mdblist import initialize_mdblist_scraper
 from db.crud.catalog_sort import effective_release_date
 from db.crud.media import get_canonical_external_ids_batch
 from db.enums import MediaType
@@ -299,9 +300,6 @@ async def get_mdblist_meta_list(
     Returns:
         List of Meta objects for Stremio
     """
-
-    # Lazy import to avoid circular dependencies
-    from scrapers.mdblist import initialize_mdblist_scraper
 
     if not user_data.mdblist_config:
         return []

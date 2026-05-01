@@ -16,10 +16,16 @@ in api/routers/user/integrations.py.
 import logging
 from datetime import datetime, timezone
 
+from sqlmodel import select
+
+from api.services.sync.simkl import SimklSyncService
+from api.services.sync.trakt import TraktSyncService
 from api.task_queue import actor
 from db.database import get_async_session_context
 from db.enums import IntegrationType, SyncDirection
 from db.models import ProfileIntegration
+from db.schemas.config import SimklConfig, TraktConfig
+from utils.profile_crypto import profile_crypto
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +37,6 @@ def build_sync_service(integration: ProfileIntegration, credentials: dict):
     Returns None when the platform has no sync implementation.
     Callers must supply decrypted credentials (to avoid repeated DB crypto calls).
     """
-    from api.services.sync.simkl import SimklSyncService
-    from api.services.sync.trakt import TraktSyncService
-    from db.schemas.config import SimklConfig, TraktConfig
-
     settings_dict = integration.settings or {}
 
     if integration.platform == IntegrationType.TRAKT:
@@ -80,8 +82,6 @@ async def run_all_integration_syncs() -> None:
     Fan-out actor: enqueues sync_one_integration for every enabled ProfileIntegration.
     Triggered by APScheduler on settings.integration_sync_crontab.
     """
-    from sqlmodel import select
-
     async with get_async_session_context() as session:
         query = select(ProfileIntegration.id).where(
             ProfileIntegration.is_enabled == True,
@@ -104,8 +104,6 @@ async def sync_one_integration(integration_id: int) -> None:
     Execute BaseSyncService.sync() for a single ProfileIntegration row.
     Updates last_sync_at / last_sync_status / last_sync_stats / last_sync_error.
     """
-    from utils.profile_crypto import profile_crypto
-
     # Load integration, capture all fields, and mark in_progress.
     async with get_async_session_context() as session:
         integration = await session.get(ProfileIntegration, integration_id)

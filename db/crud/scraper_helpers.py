@@ -9,6 +9,7 @@ import hashlib
 import logging
 import re
 from collections import Counter
+import humanize
 from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any
@@ -47,6 +48,7 @@ from db.enums import MediaType, TorrentType
 from db.models import (
     AkaTitle,
     AudioChannel,
+    MediaExternalID,
     AudioFormat,
     Catalog,
     Episode,
@@ -137,8 +139,6 @@ async def fetch_last_run(spider_id: str, spider_name: str) -> dict:
     Returns:
         Dict with spider info and last run details
     """
-    import humanize
-
     task_key = f"background_tasks:run_spider:{spider_id}"
     last_run_timestamp = await REDIS_ASYNC_CLIENT.get(task_key)
 
@@ -815,8 +815,7 @@ async def update_single_imdb_metadata(
     - Genres, keywords
     - Ratings
     """
-    # Lazy import to avoid circular dependency
-    from scrapers.scraper_tasks import meta_fetcher
+    from scrapers.scraper_tasks import meta_fetcher  # noqa: PLC0415
 
     # Fetch fresh data before any DB work so no session stays open during network I/O.
     try:
@@ -1186,9 +1185,6 @@ async def _batch_resolve_external_ids(
     """Batch resolve external IDs to Media objects."""
     if not external_ids:
         return {}
-
-    from db.crud.media import parse_external_id
-    from db.models import MediaExternalID
 
     # Parse all external IDs to get provider/external_id pairs
     provider_map: dict[tuple, list[str]] = {}  # (provider, ext_id) -> [original_external_ids]
@@ -1664,7 +1660,7 @@ async def store_new_torrent_streams(
 
     # Invalidate stream cache for all affected media (after commit when deferred)
     if media_ids_to_update:
-        from db.crud.stream_services import invalidate_media_stream_cache
+        from db.crud.stream_services import invalidate_media_stream_cache  # noqa: PLC0415
 
         if deferred_cache_invalidation is not None:
             deferred_cache_invalidation.update(media_ids_to_update)
@@ -1932,7 +1928,7 @@ async def store_new_usenet_streams(
 
     # Invalidate stream cache for all affected media
     if media_ids_to_update:
-        from db.crud.stream_services import invalidate_media_stream_cache
+        from db.crud.stream_services import invalidate_media_stream_cache  # noqa: PLC0415
 
         for media_id in media_ids_to_update:
             await invalidate_media_stream_cache(media_id)

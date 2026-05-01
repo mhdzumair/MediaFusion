@@ -29,6 +29,8 @@ from api.schemas.metadata_management import (
 from db.crud import add_external_id, get_all_external_ids_dict, get_canonical_external_id
 from db.enums import MediaType, NudityStatus
 from db.models import Media, MediaCast, MediaExternalID, MediaRating
+from scrapers.imdb_data import get_imdb_title_data, search_multiple_imdb
+from scrapers.tmdb_data import get_tmdb_data, search_multiple_tmdb
 
 logger = logging.getLogger(__name__)
 
@@ -142,12 +144,8 @@ async def fetch_external_metadata(
 
     try:
         if request.provider == "imdb":
-            from scrapers.imdb_data import get_imdb_title_data
-
             data = await get_imdb_title_data(request.external_id, media_type)
         else:  # tmdb
-            from scrapers.tmdb_data import get_tmdb_data
-
             data = await get_tmdb_data(request.external_id, media_type, load_episodes=False)
 
         if not data:
@@ -197,12 +195,8 @@ async def apply_external_metadata(
 
     try:
         if request.provider == "imdb":
-            from scrapers.imdb_data import get_imdb_title_data
-
             data = await get_imdb_title_data(request.external_id, media_type)
         else:  # tmdb
-            from scrapers.tmdb_data import get_tmdb_data
-
             data = await get_tmdb_data(request.external_id, media_type, load_episodes=False)
 
         if not data:
@@ -331,8 +325,6 @@ async def migrate_metadata_id(
 async def search_external_metadata(request: SearchExternalRequest) -> SearchExternalResponse:
     try:
         if request.provider == "imdb":
-            from scrapers.imdb_data import search_multiple_imdb
-
             results = await search_multiple_imdb(
                 title=request.title,
                 year=request.year,
@@ -340,8 +332,6 @@ async def search_external_metadata(request: SearchExternalRequest) -> SearchExte
                 limit=10,
             )
         else:  # tmdb
-            from scrapers.tmdb_data import search_multiple_tmdb
-
             results = await search_multiple_tmdb(
                 title=request.title,
                 year=request.year,

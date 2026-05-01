@@ -26,7 +26,15 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 
+from sqlmodel import select
+
+from api.services.sync.base import WatchedItem
+from api.services.sync.trakt import TraktSyncService
+from db.database import get_async_session_context
 from db.enums import IntegrationType
+from db.models import ProfileIntegration
+from db.schemas.config import TraktConfig
+from utils.profile_crypto import profile_crypto
 
 logger = logging.getLogger(__name__)
 
@@ -166,11 +174,6 @@ class IntegrationManager:
 
         Looks up integrations from the database.
         """
-        from db.database import get_async_session_context
-        from db.models import ProfileIntegration
-        from sqlmodel import select
-        from utils.profile_crypto import profile_crypto
-
         try:
             async with get_async_session_context() as session:
                 # Get all enabled integrations with scrobbling for this profile
@@ -210,10 +213,6 @@ class IntegrationManager:
     ) -> bool:
         """Scrobble to Trakt."""
         try:
-            from api.services.sync.base import WatchedItem
-            from api.services.sync.trakt import TraktSyncService
-            from db.schemas.config import TraktConfig
-
             config = TraktConfig(
                 access_token=credentials.get("access_token", ""),
                 refresh_token=credentials.get("refresh_token"),
@@ -257,10 +256,6 @@ class IntegrationManager:
     @staticmethod
     async def get_enabled_platforms(profile_id: int) -> list[IntegrationType]:
         """Get list of enabled integration platforms for a profile."""
-        from db.database import get_async_session_context
-        from db.models import ProfileIntegration
-        from sqlmodel import select
-
         try:
             async with get_async_session_context() as session:
                 query = select(ProfileIntegration.platform).where(
@@ -279,10 +274,6 @@ class IntegrationManager:
         platform: IntegrationType,
     ) -> bool:
         """Check if a specific platform is connected for a profile."""
-        from db.database import get_async_session_context
-        from db.models import ProfileIntegration
-        from sqlmodel import select
-
         try:
             async with get_async_session_context() as session:
                 query = select(ProfileIntegration).where(

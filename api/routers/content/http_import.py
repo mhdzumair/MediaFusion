@@ -3,6 +3,7 @@ HTTP Import API endpoints for importing direct HTTP URLs as streams.
 Supports MediaFlow extractor URLs, custom headers, and DRM-protected MPD streams.
 """
 
+import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -427,8 +428,6 @@ async def import_http_stream(
     Set is_anonymous=True to contribute anonymously.
     If not provided, uses your account's default contribution preference.
     """
-    import json
-
     # Resolve anonymity: explicit param > user preference
     resolved_is_anonymous = is_anonymous if is_anonymous is not None else user.contribute_anonymously
     normalized_anonymous_display_name = normalize_anonymous_display_name(anonymous_display_name)

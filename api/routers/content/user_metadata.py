@@ -44,6 +44,7 @@ from db.models.cast_crew import MediaCast, MediaCrew, Person
 from db.models.reference import AkaTitle, ParentalCertificate
 from db.models.streams import FileMediaLink
 from db.models.providers import EpisodeImage
+from scrapers.scraper_tasks import meta_fetcher
 
 logger = logging.getLogger(__name__)
 
@@ -1647,8 +1648,6 @@ async def preview_import_from_external(
     Preview metadata from an external provider before importing.
     Returns the fetched metadata without creating any records.
     """
-    from scrapers.scraper_tasks import meta_fetcher
-
     # Validate external ID format based on provider
     external_id = request.external_id.strip()
     if request.provider == "imdb":
@@ -1718,8 +1717,6 @@ async def import_from_external(
     instead of creating a duplicate. Otherwise, fetches metadata from the provider
     and creates a new entry.
     """
-    from scrapers.scraper_tasks import meta_fetcher
-
     # Validate external ID format based on provider
     external_id = request.external_id.strip()
     if request.provider == "imdb":

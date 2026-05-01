@@ -5,6 +5,7 @@ Scheduler Management API endpoints for admin control over scheduled jobs.
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime
 from multiprocessing import Process
 
@@ -19,6 +20,25 @@ from db.config import settings
 from db.enums import UserRole
 from db.models import User
 from db.redis_database import REDIS_ASYNC_CLIENT
+from mediafusion_scrapy.task import run_spider, run_spider_in_process
+from scrapers.background_scraper import BackgroundSearchWorker, run_background_search
+from scrapers.dmm_hashlist import run_dmm_hashlist_scraper
+from scrapers.feed_scraper import (
+    JackettFeedScraper,
+    ProwlarrFeedScraper,
+    run_jackett_feed_scraper,
+    run_prowlarr_feed_scraper,
+)
+from scrapers.non_torrent_background_scraper import (
+    run_acestream_background_scraper,
+    run_telegram_background_scraper,
+    run_youtube_background_scraper,
+)
+from scrapers.rss_scraper import RssScraper, run_rss_feed_scraper
+from scrapers.scraper_tasks import cleanup_expired_scraper_task
+from scrapers.trackers import update_torrent_seeders
+from scrapers.tv import validate_tv_streams_in_db
+from streaming_providers.cache_helpers import cleanup_expired_cache
 from utils import const
 
 logger = logging.getLogger(__name__)
@@ -605,19 +625,15 @@ async def run_scheduler_job(
             detail=f"Job '{job_id}' is already running",
         )
 
-    # Import task functions based on category.
+    # Dispatch task functions based on job_id/category.
     try:
         if job_id == "dmm_hashlist_scraper":
-            from scrapers.dmm_hashlist import run_dmm_hashlist_scraper
-
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
             await run_dmm_hashlist_scraper.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
         elif job_meta["category"] == "scraper":
-            from mediafusion_scrapy.task import run_spider
-
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
             await run_spider.async_send(
                 spider_name=job_id,
@@ -625,88 +641,66 @@ async def run_scheduler_job(
                 force_run=force_run,
             )
         elif job_id == "prowlarr_feed_scraper":
-            from scrapers.feed_scraper import run_prowlarr_feed_scraper
-
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
             await run_prowlarr_feed_scraper.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
         elif job_id == "jackett_feed_scraper":
-            from scrapers.feed_scraper import run_jackett_feed_scraper
-
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
             await run_jackett_feed_scraper.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
         elif job_id == "rss_feed_scraper":
-            from scrapers.rss_scraper import run_rss_feed_scraper
-
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
             await run_rss_feed_scraper.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
         elif job_id == "youtube_background_scraper":
-            from scrapers.non_torrent_background_scraper import run_youtube_background_scraper
-
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
             await run_youtube_background_scraper.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
         elif job_id == "acestream_background_scraper":
-            from scrapers.non_torrent_background_scraper import run_acestream_background_scraper
-
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
             await run_acestream_background_scraper.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
         elif job_id == "telegram_background_scraper":
-            from scrapers.non_torrent_background_scraper import run_telegram_background_scraper
-
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
             await run_telegram_background_scraper.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
         elif job_id == "validate_tv_streams_in_db":
-            from scrapers.tv import validate_tv_streams_in_db
-
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
             await validate_tv_streams_in_db.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
         elif job_id == "update_seeders":
-            from scrapers.trackers import update_torrent_seeders
-
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
             await update_torrent_seeders.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
         elif job_id == "cleanup_expired_scraper_task":
-            from scrapers.scraper_tasks import cleanup_expired_scraper_task
-
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
             await cleanup_expired_scraper_task.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
         elif job_id == "cleanup_expired_cache_task":
-            from streaming_providers.cache_helpers import cleanup_expired_cache
-
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
             await cleanup_expired_cache.async_send(
                 crontab_expression=crontab,
                 force_run=force_run,
             )
         elif job_id == "background_search":
-            from scrapers.background_scraper import run_background_search
-
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
             await run_background_search.async_send(
                 crontab_expression=crontab,
@@ -758,8 +752,6 @@ async def run_scheduler_job_inline(
 
     Use this only for testing purposes. For production, use the regular /run endpoint.
     """
-    import time
-
     if job_id not in SCHEDULER_JOBS:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -787,12 +779,9 @@ async def run_scheduler_job_inline(
         crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
 
         if job_id == "dmm_hashlist_scraper":
-            from scrapers.dmm_hashlist import run_dmm_hashlist_scraper
-
             result = await run_dmm_hashlist_scraper.fn(crontab_expression=crontab)
             result_data = {"status": "completed", "result": result}
         elif job_meta["category"] == "scraper":
-            from mediafusion_scrapy.task import run_spider_in_process
 
             def _run():
                 p = Process(target=run_spider_in_process, args=(job_id,), kwargs={"crontab_expression": crontab})
@@ -808,8 +797,6 @@ async def run_scheduler_job_inline(
             }
 
         elif job_id == "prowlarr_feed_scraper":
-            from scrapers.feed_scraper import ProwlarrFeedScraper
-
             if not settings.is_scrap_from_prowlarr:
                 result_data = {
                     "status": "skipped",
@@ -821,8 +808,6 @@ async def run_scheduler_job_inline(
                 result_data = {"status": "completed"}
 
         elif job_id == "jackett_feed_scraper":
-            from scrapers.feed_scraper import JackettFeedScraper
-
             if not settings.is_scrap_from_jackett:
                 result_data = {
                     "status": "skipped",
@@ -834,8 +819,6 @@ async def run_scheduler_job_inline(
                 result_data = {"status": "completed"}
 
         elif job_id == "rss_feed_scraper":
-            from scrapers.rss_scraper import RssScraper
-
             scraper = RssScraper()
             result = await scraper.process_all_feeds()
             total_processed = sum(r.get("processed", 0) for r in result.get("results", {}).values())
@@ -847,8 +830,6 @@ async def run_scheduler_job_inline(
                 "feeds_count": len(result.get("results", {})),
             }
         elif job_id == "youtube_background_scraper":
-            from scrapers.non_torrent_background_scraper import run_youtube_background_scraper
-
             if not settings.is_scrap_from_youtube_background:
                 result_data = {
                     "status": "skipped",
@@ -859,8 +840,6 @@ async def run_scheduler_job_inline(
                 result_data = {"status": "completed"}
 
         elif job_id == "acestream_background_scraper":
-            from scrapers.non_torrent_background_scraper import run_acestream_background_scraper
-
             if not settings.is_scrap_from_acestream_background:
                 result_data = {
                     "status": "skipped",
@@ -871,8 +850,6 @@ async def run_scheduler_job_inline(
                 result_data = {"status": "completed"}
 
         elif job_id == "telegram_background_scraper":
-            from scrapers.non_torrent_background_scraper import run_telegram_background_scraper
-
             if not settings.is_scrap_from_telegram_background:
                 result_data = {
                     "status": "skipped",
@@ -883,33 +860,23 @@ async def run_scheduler_job_inline(
                 result_data = {"status": "completed"}
 
         elif job_id == "validate_tv_streams_in_db":
-            from scrapers.tv import validate_tv_streams_in_db
-
             # Call the underlying async function directly
             await validate_tv_streams_in_db.fn(crontab_expression=crontab)
             result_data = {"status": "completed"}
 
         elif job_id == "update_seeders":
-            from scrapers.trackers import update_torrent_seeders
-
             await update_torrent_seeders.fn(crontab_expression=crontab)
             result_data = {"status": "completed"}
 
         elif job_id == "cleanup_expired_scraper_task":
-            from scrapers.scraper_tasks import cleanup_expired_scraper_task
-
             await cleanup_expired_scraper_task.fn(crontab_expression=crontab)
             result_data = {"status": "completed"}
 
         elif job_id == "cleanup_expired_cache_task":
-            from streaming_providers.cache_helpers import cleanup_expired_cache
-
             await cleanup_expired_cache.fn(crontab_expression=crontab)
             result_data = {"status": "completed"}
 
         elif job_id == "background_search":
-            from scrapers.background_scraper import BackgroundSearchWorker
-
             # Don't call database.init() - FastAPI already has it initialized
             worker = BackgroundSearchWorker()
             await worker.manager.cleanup_stale_processing()

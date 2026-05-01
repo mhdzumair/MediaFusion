@@ -513,23 +513,23 @@ def get_import_processor(contribution_type: str):
     Imports are local to avoid circular imports with dedicated import routers.
     """
     if contribution_type == "torrent":
-        from api.routers.content.torrent_import import process_torrent_import
+        from api.routers.content.torrent_import import process_torrent_import  # noqa: PLC0415
 
         return process_torrent_import
     if contribution_type == "nzb":
-        from api.routers.content.nzb_import import process_nzb_import
+        from api.routers.content.nzb_import import process_nzb_import  # noqa: PLC0415
 
         return process_nzb_import
     if contribution_type == "youtube":
-        from api.routers.content.youtube_import import process_youtube_import
+        from api.routers.content.youtube_import import process_youtube_import  # noqa: PLC0415
 
         return process_youtube_import
     if contribution_type == "http":
-        from api.routers.content.http_import import process_http_import
+        from api.routers.content.http_import import process_http_import  # noqa: PLC0415
 
         return process_http_import
     if contribution_type == "acestream":
-        from api.routers.content.acestream_import import process_acestream_import
+        from api.routers.content.acestream_import import process_acestream_import  # noqa: PLC0415
 
         return process_acestream_import
     if contribution_type == "telegram":
@@ -552,7 +552,7 @@ async def _apply_contribution_review(
             The contribution is left untouched so the caller can surface a 4xx error
             or skip it in bulk review without persisting a bogus approval.
     """
-    from api.routers.content.torrent_import import AdultContentNotAllowedError
+    from api.routers.content.torrent_import import AdultContentNotAllowedError  # noqa: PLC0415
 
     now = datetime.now(pytz.UTC)
     reviewer_id = str(reviewer.id)
@@ -1184,7 +1184,7 @@ async def review_contribution(
             detail=f"Contribution already reviewed with status: {contribution.status}",
         )
 
-    from api.routers.content.torrent_import import AdultContentNotAllowedError
+    from api.routers.content.torrent_import import AdultContentNotAllowedError  # noqa: PLC0415
 
     try:
         await _apply_contribution_review(
@@ -1305,7 +1305,7 @@ async def bulk_review_contributions(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Bulk review pending contributions, optionally filtered by type or IDs."""
-    from api.routers.content.torrent_import import AdultContentNotAllowedError
+    from api.routers.content.torrent_import import AdultContentNotAllowedError  # noqa: PLC0415
 
     logger = logging.getLogger(__name__)
     review_status = ContributionStatus.APPROVED if request.action == "approve" else ContributionStatus.REJECTED

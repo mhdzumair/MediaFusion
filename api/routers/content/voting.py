@@ -3,16 +3,19 @@ Voting API endpoints for stream quality voting and content ratings.
 Updated to use new unified stream architecture and integer PKs.
 """
 
+import uuid
 from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import optional_auth, require_auth
 from db.crud import (
+    get_mediafusion_rating,
     get_stream_vote_count,
     get_user_stream_vote,
     remove_stream_vote,
@@ -342,8 +345,6 @@ async def get_content_ratings(
     """
     Get rating summary for a movie/series.
     """
-    from db.crud import get_mediafusion_rating
-
     # Get aggregate rating
     rating_stats = await get_mediafusion_rating(session, media_id)
 
@@ -381,8 +382,6 @@ async def get_bulk_content_ratings(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Maximum 100 items per request",
         )
-
-    from db.crud import get_mediafusion_rating
 
     summaries = {}
     for media_id in media_ids:
@@ -424,8 +423,6 @@ async def like_content(
     Like a movie/series. Toggle - if already liked, this will be a no-op.
     Uses media_id (integer).
     """
-    import uuid
-
     # Verify media exists
     media_query = select(Media.id).where(Media.id == media_id)
     media_result = await session.exec(media_query)
@@ -509,8 +506,6 @@ async def get_content_likes(
     """
     Get likes summary for a movie/series.
     """
-    from sqlalchemy import func
-
     # Get total likes count
     count_query = select(func.count(MetadataVote.id)).where(
         MetadataVote.media_id == media_id,

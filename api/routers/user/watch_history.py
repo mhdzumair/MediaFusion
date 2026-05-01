@@ -4,6 +4,8 @@ Watch History API endpoints for tracking user viewing progress.
 
 from datetime import datetime
 
+import logging
+
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -11,10 +13,11 @@ from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_auth
-from db.crud.media import get_all_external_ids_batch
+from api.services.sync.manager import IntegrationManager
+from db.crud.media import get_all_external_ids_batch, get_all_external_ids_dict
 from db.database import get_async_session, get_read_session
 from db.enums import WatchAction
-from db.models import User, UserProfile, WatchHistory
+from db.models import Media, User, UserProfile, WatchHistory
 from db.models import Episode, EpisodeImage, Season, SeriesMetadata
 
 router = APIRouter(prefix="/api/v1/watch-history", tags=["Watch History"])
@@ -429,9 +432,6 @@ async def create_watch_history(
     Uses media_id (internal ID) directly.
     If an entry exists for the same media (and episode for series), it will be updated.
     """
-    from db.crud.media import get_all_external_ids_dict
-    from db.models import Media
-
     # Verify profile ownership
     await verify_profile_ownership(session, user, data.profile_id)
 
@@ -531,8 +531,6 @@ async def update_watch_progress(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Update watch progress for an existing entry."""
-    from db.crud.media import get_all_external_ids_dict
-
     # Get watch entry
     query = select(WatchHistory).where(
         WatchHistory.id == history_id,
@@ -646,10 +644,6 @@ async def track_stream_action(
     Uses the user's default profile.
     For 'watch' action, also scrobbles to external platforms (Trakt, Simkl).
     """
-    from api.services.sync.manager import IntegrationManager
-    from db.crud.media import get_all_external_ids_dict
-    from db.models import Media
-
     # Verify media exists
     media = await session.get(Media, data.media_id)
     if not media:
@@ -741,8 +735,6 @@ async def track_stream_action(
             )
         except Exception as e:
             # Don't fail the request if scrobbling fails
-            import logging
-
             logging.warning(f"Failed to scrobble to external platforms: {e}")
 
     # Build stream info if available

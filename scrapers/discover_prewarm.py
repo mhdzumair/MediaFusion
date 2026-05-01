@@ -18,6 +18,8 @@ from db.models import Media
 from db.models.links import MediaCatalogLink
 from db.models.providers import MediaExternalID
 from db.models.reference import Catalog
+from scrapers.scraper_tasks import meta_fetcher
+from scrapers.tmdb_discover import tmdb_trending
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +35,6 @@ async def run_discover_prewarm(**kwargs):
     if not settings.tmdb_api_key:
         logger.debug("Discover pre-warm skipped: no server-side TMDB API key configured")
         return
-
-    from scrapers.scraper_tasks import meta_fetcher
-    from scrapers.tmdb_discover import tmdb_trending
 
     catalog_names = {
         "movie": "discover_pinned_movies",

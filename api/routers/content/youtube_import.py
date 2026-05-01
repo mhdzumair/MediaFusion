@@ -30,6 +30,7 @@ from db.models.streams import (
     StreamLanguageLink,
     YouTubeStream,
 )
+from scrapers.scraper_tasks import meta_fetcher
 from utils.notification_registry import send_pending_contribution_notification
 from utils.youtube import analyze_youtube_video
 
@@ -298,8 +299,6 @@ async def analyze_youtube_url_endpoint(
     Uses yt-dlp to fetch real video information.
     Also searches for matching content in IMDb/TMDB.
     """
-    from scrapers.scraper_tasks import meta_fetcher
-
     video_id = extract_youtube_video_id(data.youtube_url)
 
     if not video_id:

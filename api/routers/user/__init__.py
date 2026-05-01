@@ -18,18 +18,18 @@ def get_router() -> APIRouter:
         return _router
 
     # Import directly from module files to avoid circular imports
-    from api.routers.user.auth import router as auth_router
-    from api.routers.user.downloads import router as downloads_router
-    from api.routers.user.indexers import router as indexers_router
-    from api.routers.user.integrations import router as integrations_router
-    from api.routers.user.profiles import router as profiles_router
-    from api.routers.user.telegram import router as telegram_router
-    from api.routers.user.telegram_auth import router as telegram_auth_router
-    from api.routers.user.user import router as user_router
-    from api.routers.user.user_catalogs import router as user_catalogs_router
-    from api.routers.user.user_library import router as user_library_router
-    from api.routers.user.watch_history import router as watch_history_router
-    from api.routers.user.watchlist import router as watchlist_router
+    from api.routers.user.auth import router as auth_router  # noqa: PLC0415
+    from api.routers.user.downloads import router as downloads_router  # noqa: PLC0415
+    from api.routers.user.indexers import router as indexers_router  # noqa: PLC0415
+    from api.routers.user.integrations import router as integrations_router  # noqa: PLC0415
+    from api.routers.user.profiles import router as profiles_router  # noqa: PLC0415
+    from api.routers.user.telegram import router as telegram_router  # noqa: PLC0415
+    from api.routers.user.telegram_auth import router as telegram_auth_router  # noqa: PLC0415
+    from api.routers.user.user import router as user_router  # noqa: PLC0415
+    from api.routers.user.user_catalogs import router as user_catalogs_router  # noqa: PLC0415
+    from api.routers.user.user_library import router as user_library_router  # noqa: PLC0415
+    from api.routers.user.watch_history import router as watch_history_router  # noqa: PLC0415
+    from api.routers.user.watchlist import router as watchlist_router  # noqa: PLC0415
 
     combined = APIRouter()
     combined.include_router(auth_router)

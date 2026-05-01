@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 import httpx
+from thefuzz import fuzz
 
 from db.config import settings
 from utils.const import UA_HEADER
@@ -420,8 +421,6 @@ async def get_kitsu_by_title(
     Returns:
         Best matching metadata dict
     """
-    from thefuzz import fuzz
-
     subtype = "movie" if media_type == "movie" else "TV"
     results = await search_kitsu(title, subtype=subtype, limit=10)
 

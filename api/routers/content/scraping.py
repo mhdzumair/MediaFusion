@@ -13,6 +13,7 @@ import pytz
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import update as sa_update
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -696,8 +697,6 @@ async def trigger_scrape(
     For series, season and episode must be provided.
     Force option is only available for moderators and admins.
     """
-    from sqlalchemy.orm import selectinload
-
     is_moderator = user.role in (UserRole.MODERATOR, UserRole.ADMIN)
 
     # Validate force permission

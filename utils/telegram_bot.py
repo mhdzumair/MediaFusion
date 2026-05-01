@@ -56,6 +56,7 @@ from utils.runtime_const import SPORTS_ARTIFACTS
 from db.redis_database import REDIS_ASYNC_CLIENT, REDIS_SYNC_CLIENT
 from api.routers.content.torrent_import import fetch_and_create_media_from_external
 from scrapers.imdb_data import get_imdb_title_data, search_multiple_imdb
+from scrapers.non_torrent_background_scraper import _normalize_telegram_channel_identifier
 from scrapers.scraper_tasks import meta_fetcher
 from utils.notification_registry import (
     register_file_annotation_handler,
@@ -1398,7 +1399,7 @@ class TelegramContentBot:
         original_message_id: int | None,
     ) -> dict:
         """Accept a forwarded video into the user's batch and trigger background analysis."""
-        from utils.telegram_tasks import analyze_telegram_item
+        from utils.telegram_tasks import analyze_telegram_item  # noqa: PLC0415
 
         batch = self.get_batch(user_id)
         if batch is None:
@@ -1436,7 +1437,7 @@ class TelegramContentBot:
 
     async def handle_batch_import(self, user_id: int, chat_id: int, message_id: int) -> None:
         """Enqueue import for all AUTO_MATCHED items in the batch."""
-        from utils.telegram_tasks import import_telegram_item
+        from utils.telegram_tasks import import_telegram_item  # noqa: PLC0415
 
         batch = self.get_batch(user_id)
         if not batch:
@@ -5007,8 +5008,6 @@ class TelegramContentBot:
         Validates the channel identifier, guards against concurrent jobs, sends an
         initial progress message, then enqueues scrape_telegram_channel_for_user.
         """
-        from scrapers.non_torrent_background_scraper import _normalize_telegram_channel_identifier
-
         parts = text.strip().split(None, 1)
         raw_channel = parts[1].strip() if len(parts) > 1 else ""
         channel = _normalize_telegram_channel_identifier(raw_channel)
@@ -5056,7 +5055,7 @@ class TelegramContentBot:
                 "message": "❌ Failed to send progress message. Please try again.",
             }
 
-        from utils.telegram_tasks import scrape_telegram_channel_for_user
+        from utils.telegram_tasks import scrape_telegram_channel_for_user  # noqa: PLC0415
 
         task = await scrape_telegram_channel_for_user.async_send(
             user_id=user_id,

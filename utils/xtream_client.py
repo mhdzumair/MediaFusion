@@ -6,6 +6,7 @@ Supports authentication, fetching categories, and retrieving streams for Live TV
 """
 
 import logging
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 
@@ -477,8 +478,6 @@ class XtreamClient:
         Returns:
             Dict with server_url, username, password or None if invalid
         """
-        from urllib.parse import parse_qs, urlparse
-
         try:
             parsed = urlparse(url)
 

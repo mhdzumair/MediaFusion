@@ -17,8 +17,8 @@ def get_router() -> APIRouter:
     if _router is not None:
         return _router
 
-    from api.routers.rss.rss_feeds import router as rss_feeds_router
-    from api.routers.rss.user_rss import router as user_rss_router
+    from api.routers.rss.rss_feeds import router as rss_feeds_router  # noqa: PLC0415
+    from api.routers.rss.user_rss import router as user_rss_router  # noqa: PLC0415
 
     combined = APIRouter()
     combined.include_router(rss_feeds_router)

@@ -2,7 +2,10 @@
 Authentication API endpoints for user registration, login, and token management.
 """
 
+import base64
 import hashlib
+import hmac
+import json
 import logging
 import secrets
 import time
@@ -170,10 +173,6 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def create_token(data: dict, expires_delta: timedelta) -> str:
     """Create a simple token (base64 encoded JSON with signature)."""
-    import base64
-    import hmac
-    import json
-
     expire = datetime.now(pytz.UTC) + expires_delta
     to_encode = {**data, "exp": expire.timestamp()}
     payload = base64.urlsafe_b64encode(json.dumps(to_encode).encode()).decode()
@@ -183,10 +182,6 @@ def create_token(data: dict, expires_delta: timedelta) -> str:
 
 def decode_token(token: str) -> dict | None:
     """Decode and verify token."""
-    import base64
-    import hmac
-    import json
-
     try:
         payload, signature = token.rsplit(".", 1)
         expected_signature = hmac.new(JWT_SECRET_KEY.encode(), payload.encode(), hashlib.sha256).hexdigest()

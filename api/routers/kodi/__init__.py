@@ -17,7 +17,7 @@ def get_router() -> APIRouter:
     if _router is not None:
         return _router
 
-    from .setup import router as setup_router
+    from .setup import router as setup_router  # noqa: PLC0415
 
     combined = APIRouter()
     combined.include_router(setup_router)

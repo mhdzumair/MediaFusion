@@ -7,6 +7,8 @@ import logging
 import re
 from datetime import datetime
 
+from apscheduler.triggers.cron import CronTrigger
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -14,6 +16,7 @@ from api.rbac import is_admin
 from api.routers.user.auth import require_auth
 from db import crud
 from db.config import settings
+from scrapers.rss_scraper import RssScraper, run_rss_feed_scraper
 from db.database import get_async_session, get_read_session, get_read_session_context
 from db.models import RSSFeed, User
 from db.schemas import (
@@ -238,8 +241,6 @@ async def test_rss_feed(
     session: AsyncSession = Depends(get_read_session),
 ) -> UserRSSFeedTestResponse:
     """Test an existing RSS feed and detect its structure."""
-    from scrapers.rss_scraper import RssScraper
-
     # Admin can test any feed
     user_id = None if is_admin(user) else user.id
 
@@ -284,8 +285,6 @@ async def test_rss_feed_url(
     user: User = Depends(require_auth),
 ) -> UserRSSFeedTestResponse:
     """Test an RSS feed URL before creating a feed."""
-    from scrapers.rss_scraper import RssScraper
-
     try:
         scraper = RssScraper()
         items = await scraper.fetch_feed(request.url, "Test Feed")
@@ -368,8 +367,6 @@ async def scrape_single_feed(
     user: User = Depends(require_auth),
 ):
     """Trigger scraping for a single feed. Users can only scrape their own feeds."""
-    from scrapers.rss_scraper import RssScraper
-
     # Admin can scrape any feed
     user_id = None if is_admin(user) else user.id
 
@@ -410,8 +407,6 @@ async def run_all_scrapers(
         )
 
     try:
-        from scrapers.rss_scraper import run_rss_feed_scraper
-
         await run_rss_feed_scraper.async_send()
         return {"status": "success", "message": "RSS feed scraper started"}
     except Exception as e:
@@ -449,8 +444,6 @@ async def get_scheduler_status(
 ) -> RSSSchedulerStatus:
     """Get RSS scheduler status including next run time."""
     try:
-        from apscheduler.triggers.cron import CronTrigger
-
         crontab = settings.rss_feed_scraper_crontab
         enabled = not settings.disable_rss_feed_scraper
 

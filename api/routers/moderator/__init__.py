@@ -11,7 +11,7 @@ def get_router() -> APIRouter:
     if _router is not None:
         return _router
 
-    from api.routers.moderator.metadata import router as metadata_router
+    from api.routers.moderator.metadata import router as metadata_router  # noqa: PLC0415
 
     combined = APIRouter()
     combined.include_router(metadata_router)

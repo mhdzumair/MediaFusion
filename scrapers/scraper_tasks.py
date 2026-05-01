@@ -41,8 +41,18 @@ from scrapers.tvdb_data import (
 )
 from scrapers.torznab import TorznabScraper
 from scrapers.torbox_search import TorBoxSearchScraper
+from scrapers.easynews import scrape_easynews_streams
+from scrapers.newznab import scrape_usenet_streams
 from scrapers.zilean import ZileanScraper
 from scrapers.telegram import TelegramScraper
+from db.redis_database import REDIS_ASYNC_CLIENT
+from db.crud.media import (
+    get_all_external_ids_batch,
+    get_media_images,
+    search_media,
+)
+from db.database import get_read_session_context
+from db.enums import MediaType as DBMediaType
 from utils import runtime_const
 
 logger = logging.getLogger(__name__)
@@ -523,9 +533,6 @@ async def run_usenet_scrapers(
     Returns:
         List of UsenetStreamData objects
     """
-    from scrapers.easynews import scrape_easynews_streams
-    from scrapers.newznab import scrape_usenet_streams
-
     all_streams = []
     tasks = []
 
@@ -712,8 +719,6 @@ class MetadataCache:
         return f"meta_cache:{digest}"
 
     async def get(self, **kwargs) -> dict[str, Any] | None:
-        from db.redis_database import REDIS_ASYNC_CLIENT
-
         key = self._generate_key(**kwargs)
         try:
             raw = await REDIS_ASYNC_CLIENT.get(key)
@@ -724,8 +729,6 @@ class MetadataCache:
         return None
 
     async def set(self, data: dict[str, Any], **kwargs) -> None:
-        from db.redis_database import REDIS_ASYNC_CLIENT
-
         if not data:
             return
         key = self._generate_key(**kwargs)
@@ -1153,14 +1156,6 @@ class MetadataFetcher:
 
         async def get_db_candidates() -> list[dict[str, Any]]:
             try:
-                from db.crud.media import (
-                    get_all_external_ids_batch,
-                    get_media_images,
-                    search_media,
-                )
-                from db.database import get_read_session_context
-                from db.enums import MediaType as DBMediaType
-
                 db_media_type = None
                 if media_type == "movie":
                     db_media_type = DBMediaType.MOVIE

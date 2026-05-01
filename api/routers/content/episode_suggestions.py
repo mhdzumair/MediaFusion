@@ -17,7 +17,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from api.routers.user.auth import require_auth, require_role
 from db.database import get_async_session
 from db.enums import UserRole
-from db.models import ContributionSettings, Episode, EpisodeSuggestion, Season, User
+from db.models import ContributionSettings, Episode, EpisodeSuggestion, Media, Season, SeriesMetadata, User
 from utils.notification_registry import send_pending_episode_suggestion_notification
 
 logger = logging.getLogger(__name__)
@@ -144,8 +144,6 @@ async def get_contribution_settings(session: AsyncSession) -> ContributionSettin
 
 async def get_episode_info(session: AsyncSession, episode_id: int) -> dict | None:
     """Get episode info including season number and series title"""
-    from db.models import Media, SeriesMetadata
-
     query = (
         select(
             Episode.id,

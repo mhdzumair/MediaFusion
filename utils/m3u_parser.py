@@ -11,6 +11,9 @@ from enum import Enum
 from typing import Any
 from urllib.parse import urlparse
 
+from ipytv import playlist
+from ipytv.channel import IPTVAttr
+
 logger = logging.getLogger(__name__)
 
 
@@ -280,8 +283,6 @@ def parse_m3u_entry(channel, index: int) -> dict[str, Any]:
     Returns:
         Dictionary with parsed channel data
     """
-    from ipytv.channel import IPTVAttr
-
     name = re.sub(r"\s+", " ", channel.name).strip()
     url = channel.url
 
@@ -333,8 +334,6 @@ async def parse_m3u_playlist_for_preview(
     Returns:
         Tuple of (preview entries, type summary, total count)
     """
-    from ipytv import playlist
-
     if playlist_content:
         iptv_playlist = playlist.loads(playlist_content)
     elif playlist_url:

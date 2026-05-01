@@ -23,6 +23,7 @@ from thefuzz import fuzz
 
 from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
 from api.routers.content.contributions import award_import_approval_points
+from api.routers.content.torrent_import import _normalize_sports_import_metadata, process_torrent_import
 from api.routers.user.auth import require_auth
 from db.database import get_async_session_context, get_read_session
 from db.enums import ContributionStatus, MediaType, UserRole
@@ -1307,8 +1308,6 @@ async def import_torrents(
                 prepared_items.append(prep_result.prepared_item)
 
     if prepared_items:
-        from api.routers.content.torrent_import import _normalize_sports_import_metadata, process_torrent_import
-
         async with get_async_session_context() as write_session:
             for batch in iter_chunks(prepared_items, IMPORT_DB_BATCH_SIZE):
                 batch_hashes = [item.info_hash for item in batch]
@@ -1480,8 +1479,6 @@ async def advanced_import_torrents(
     enabling movie collections and multi-series packs where each file
     is linked to a different media entry.
     """
-    from api.routers.content.torrent_import import _normalize_sports_import_metadata, process_torrent_import
-
     # Validate provider supports import
     if provider not in IMPORT_SUPPORTED_PROVIDERS:
         raise HTTPException(

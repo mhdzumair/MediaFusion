@@ -20,7 +20,7 @@ from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.sql.functions import coalesce
-from sqlmodel import func, select
+from sqlmodel import delete, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.crud.media import (
@@ -1476,8 +1476,6 @@ async def update_telegram_stream_file_id(
     Returns:
         True if a record was updated, False otherwise
     """
-    from sqlalchemy import update as sa_update
-
     document_id = extract_document_id_from_file_id(new_file_id)
     stmt = (
         sa_update(TelegramStream)
@@ -1850,8 +1848,6 @@ async def get_telegram_user_forward(
     Returns:
         TelegramUserForward record or None if not found
     """
-    from db.models.streams import TelegramUserForward
-
     query = select(TelegramUserForward).where(
         TelegramUserForward.telegram_stream_id == telegram_stream_id,
         TelegramUserForward.user_id == user_id,
@@ -1882,8 +1878,6 @@ async def create_telegram_user_forward(
     Returns:
         Created TelegramUserForward record
     """
-    from db.models.streams import TelegramUserForward
-
     forward = TelegramUserForward(
         telegram_stream_id=telegram_stream_id,
         user_id=user_id,
@@ -1927,9 +1921,6 @@ async def delete_telegram_user_forwards_for_stream(
     Returns:
         Number of records deleted
     """
-    from db.models.streams import TelegramUserForward
-    from sqlmodel import delete
-
     stmt = delete(TelegramUserForward).where(TelegramUserForward.telegram_stream_id == telegram_stream_id)
     result = await session.exec(stmt)
     await session.commit()
@@ -1951,9 +1942,6 @@ async def delete_telegram_user_forwards_for_user(
     Returns:
         Number of records deleted
     """
-    from db.models.streams import TelegramUserForward
-    from sqlmodel import delete
-
     stmt = delete(TelegramUserForward).where(TelegramUserForward.user_id == user_id)
     result = await session.exec(stmt)
     await session.commit()

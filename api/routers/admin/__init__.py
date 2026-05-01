@@ -17,20 +17,20 @@ def get_router() -> APIRouter:
     if _router is not None:
         return _router
 
-    from api.routers.admin.admin import router as admin_router
-    from api.routers.admin.cache import router as cache_router
-    from api.routers.admin.contribution_settings import (
+    from api.routers.admin.admin import router as admin_router  # noqa: PLC0415
+    from api.routers.admin.cache import router as cache_router  # noqa: PLC0415
+    from api.routers.admin.contribution_settings import (  # noqa: PLC0415
         router as contribution_settings_router,
     )
-    from api.routers.admin.database_admin import router as database_admin_router
-    from api.routers.admin.exceptions import router as exceptions_router
-    from api.routers.admin.metrics import router as metrics_router
-    from api.routers.admin.request_metrics import router as request_metrics_router
-    from api.routers.admin.scheduler_management import router as scheduler_router
-    from api.routers.admin.scrapers import router as scrapers_router
-    from api.routers.admin.source_health import router as source_health_router
-    from api.routers.admin.task_management import router as task_management_router
-    from api.routers.admin.telegram_admin import router as telegram_admin_router
+    from api.routers.admin.database_admin import router as database_admin_router  # noqa: PLC0415
+    from api.routers.admin.exceptions import router as exceptions_router  # noqa: PLC0415
+    from api.routers.admin.metrics import router as metrics_router  # noqa: PLC0415
+    from api.routers.admin.request_metrics import router as request_metrics_router  # noqa: PLC0415
+    from api.routers.admin.scheduler_management import router as scheduler_router  # noqa: PLC0415
+    from api.routers.admin.scrapers import router as scrapers_router  # noqa: PLC0415
+    from api.routers.admin.source_health import router as source_health_router  # noqa: PLC0415
+    from api.routers.admin.task_management import router as task_management_router  # noqa: PLC0415
+    from api.routers.admin.telegram_admin import router as telegram_admin_router  # noqa: PLC0415
 
     combined = APIRouter()
     combined.include_router(admin_router)

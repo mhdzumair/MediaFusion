@@ -11,7 +11,7 @@ from db import crud
 from db.config import settings
 from db.database import get_async_session, get_read_session
 from db.schemas import RSSFeedBulkImport, RSSFeedCreate, RSSFeedSchema, RSSFeedUpdate
-from scrapers.rss_scraper import run_rss_feed_scraper
+from scrapers.rss_scraper import RssScraper, run_rss_feed_scraper
 from utils import const
 from utils.runtime_const import TEMPLATES
 from utils.validation_helper import api_password_dependency
@@ -193,8 +193,6 @@ async def run_rss_feed_scraper_endpoint(_: str = Depends(api_password_dependency
 @router.post("/feeds/test-feed", response_model=dict)
 async def test_rss_feed(request_data: TestFeedRequest, _: str = Depends(api_password_dependency)):
     """Test an RSS feed and detect its structure"""
-    from scrapers.rss_scraper import RssScraper
-
     try:
         scraper = RssScraper()
         items = await scraper.fetch_feed(request_data.url, "Test Feed")

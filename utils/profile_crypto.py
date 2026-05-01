@@ -6,6 +6,7 @@ Secrets (tokens, passwords, API keys) are stored encrypted, while
 non-sensitive config is stored as plain JSON.
 """
 
+import copy
 import json
 import logging
 from base64 import urlsafe_b64decode, urlsafe_b64encode
@@ -170,8 +171,6 @@ class ProfileCrypto:
             - clean_config: Config with sensitive fields removed
             - secrets_dict: Only the sensitive fields
         """
-        import copy
-
         clean_config = copy.deepcopy(config)
         secrets = {}
 
@@ -340,8 +339,6 @@ class ProfileCrypto:
         Returns:
             Complete config with secrets restored
         """
-        import copy
-
         full_config = copy.deepcopy(config)
 
         def merge_provider_secrets(provider: dict, provider_secrets: dict, qb_key: str = "qbittorrent_config"):
@@ -526,8 +523,6 @@ class ProfileCrypto:
         Returns:
             Config with masked sensitive values
         """
-        import copy
-
         masked = copy.deepcopy(config)
 
         def mask_value(value: str) -> str:

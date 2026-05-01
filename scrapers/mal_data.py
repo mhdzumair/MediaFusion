@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 import httpx
+from thefuzz import fuzz
 
 from db.config import settings
 from utils.const import UA_HEADER
@@ -537,8 +538,6 @@ async def get_mal_by_title(
     Returns:
         Best matching metadata dict
     """
-    from thefuzz import fuzz
-
     results = await search_mal(title, media_type, limit=10)
 
     if not results:

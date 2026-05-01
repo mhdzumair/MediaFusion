@@ -7,10 +7,11 @@ Includes priority-based conflict resolution and waterfall fallback for multi-pro
 
 import json
 import logging
+import re
+import traceback
 from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any
-import traceback
 
 import pytz
 from sqlalchemy import func
@@ -1337,8 +1338,6 @@ async def apply_multi_provider_metadata(
             if isinstance(runtime, int):
                 media.runtime_minutes = runtime
             elif isinstance(runtime, str):
-                import re
-
                 match = re.search(r"(\d+)", runtime)
                 if match:
                     media.runtime_minutes = int(match.group(1))

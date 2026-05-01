@@ -82,22 +82,21 @@ def _register_routers(app: FastAPI) -> None:
     Args:
         app: FastAPI application instance.
     """
-    # Import routers here to avoid circular imports
-    # Organized router packages - use get_router() to avoid circular imports
-    from api.routers.admin import get_router as get_admin_router
-    from api.routers.content import get_router as get_content_router
-    from api.routers.instance import get_router as get_instance_router
-    from api.routers.moderator import get_router as get_moderator_router
-    from api.routers.rss import get_router as get_rss_router
-    from api.routers.streaming import (
+    # Deferred to avoid circular imports at module load time
+    from api.routers.admin import get_router as get_admin_router  # noqa: PLC0415
+    from api.routers.content import get_router as get_content_router  # noqa: PLC0415
+    from api.routers.instance import get_router as get_instance_router  # noqa: PLC0415
+    from api.routers.moderator import get_router as get_moderator_router  # noqa: PLC0415
+    from api.routers.rss import get_router as get_rss_router  # noqa: PLC0415
+    from api.routers.streaming import (  # noqa: PLC0415
         get_provider_router as get_streaming_provider_router,
     )
-    from api.routers.streaming import get_router as get_streaming_router
-    from api.routers.stremio import get_router as get_stremio_router
-    from api.routers.torznab import get_router as get_torznab_router
-    from api.routers.user import get_router as get_user_router
+    from api.routers.streaming import get_router as get_streaming_router  # noqa: PLC0415
+    from api.routers.stremio import get_router as get_stremio_router  # noqa: PLC0415
+    from api.routers.torznab import get_router as get_torznab_router  # noqa: PLC0415
+    from api.routers.user import get_router as get_user_router  # noqa: PLC0415
 
-    from api.routers.kodi import get_router as get_kodi_router
+    from api.routers.kodi import get_router as get_kodi_router  # noqa: PLC0415
 
     # Register Stremio addon routes (home, manifest, catalog, meta, stream, etc.)
     app.include_router(get_stremio_router())

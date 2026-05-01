@@ -6,6 +6,7 @@ extracting metadata, and generating unique identifiers for NZB content.
 
 import hashlib
 import logging
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -302,8 +303,6 @@ def _extract_filename_from_subject(subject: str) -> str:
         return clean.strip()
 
     # Try to find filename with extension
-    import re
-
     # Match common video/archive extensions
     match = re.search(r"[\w\-\.\s]+\.(mkv|mp4|avi|rar|zip|nfo|srt|sub)", subject, re.IGNORECASE)
     if match:
@@ -323,8 +322,6 @@ def _clean_filename_for_title(filename: str) -> str:
     Returns:
         Cleaned title string
     """
-    import re
-
     # Remove file extension
     name = re.sub(r"\.[a-zA-Z0-9]{2,4}$", "", filename)
 

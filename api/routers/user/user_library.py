@@ -15,9 +15,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from api.dependencies import get_profile_context
 from api.routers.user.auth import require_auth
 from db.config import settings
-from db.crud.media import get_all_external_ids_batch, get_media_by_external_id
+from db.crud.media import get_all_external_ids_batch, get_all_external_ids_dict, get_media_by_external_id
 from db.database import get_async_session
-from db.models import MediaImage, User, UserLibraryItem
+from db.models import Media, MediaImage, User, UserLibraryItem
 from utils.profile_context import ProfileContext
 
 router = APIRouter(prefix="/api/v1/library", tags=["User Library"])
@@ -124,8 +124,6 @@ async def _get_library_item_with_media(
     """Convert UserLibraryItem to LibraryItemResponse with Media lookup."""
     # Use pre-fetched external IDs or fetch them
     if ext_ids_dict is None:
-        from db.crud.media import get_all_external_ids_dict
-
         ext_ids_dict = await get_all_external_ids_dict(session, item.media_id)
 
     imdb_id = ext_ids_dict.get("imdb")
@@ -294,9 +292,6 @@ async def add_to_library(
     Add an item to user's library.
     Uses media_id (internal ID) directly.
     """
-    from db.crud.media import get_all_external_ids_dict
-    from db.models import Media
-
     # Verify media exists
     media_query = select(Media).where(Media.id == request.media_id)
     media_result = await session.exec(media_query)
@@ -363,8 +358,6 @@ async def get_library_item(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Get a specific library item."""
-    from db.crud.media import get_all_external_ids_dict
-
     query = select(UserLibraryItem).where(
         UserLibraryItem.id == item_id,
         UserLibraryItem.user_id == current_user.id,

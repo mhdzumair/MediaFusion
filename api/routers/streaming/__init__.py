@@ -17,8 +17,8 @@ def get_router() -> APIRouter:
     - Provider auth: /streaming_provider/{provider}/... (needs prefix)
     """
     # Import sub-routers lazily to avoid circular imports
-    from api.routers.streaming.cache import router as cache_router
-    from api.routers.streaming.playback import router as playback_router
+    from api.routers.streaming.cache import router as cache_router  # noqa: PLC0415
+    from api.routers.streaming.playback import router as playback_router  # noqa: PLC0415
 
     # Main router for playback (no prefix - these are at root level)
     _router = APIRouter()
@@ -34,10 +34,10 @@ def get_provider_router() -> APIRouter:
     These routes are under /streaming_provider/{provider}/...
     Includes OAuth/device code authorization for supported providers.
     """
-    from streaming_providers.debridlink.api import router as debridlink_router
-    from streaming_providers.premiumize.api import router as premiumize_router
-    from streaming_providers.realdebrid.api import router as realdebrid_router
-    from streaming_providers.seedr.api import router as seedr_router
+    from streaming_providers.debridlink.api import router as debridlink_router  # noqa: PLC0415
+    from streaming_providers.premiumize.api import router as premiumize_router  # noqa: PLC0415
+    from streaming_providers.realdebrid.api import router as realdebrid_router  # noqa: PLC0415
+    from streaming_providers.seedr.api import router as seedr_router  # noqa: PLC0415
 
     _router = APIRouter()
     _router.include_router(seedr_router, prefix="/seedr", tags=["seedr"])

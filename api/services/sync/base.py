@@ -11,11 +11,14 @@ from datetime import datetime
 from typing import Generic, TypeVar
 
 import pytz
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from db.crud.media import get_all_external_ids_dict, get_media_by_external_id
 from db.database import get_async_session_context
-from db.enums import HistorySource, IntegrationType, SyncDirection, WatchAction
-from db.models import ProfileIntegration, WatchHistory
+from db.enums import HistorySource, IntegrationType, MediaType, SyncDirection, WatchAction
+from db.models import Media, MediaExternalID, ProfileIntegration, UserProfile, WatchHistory
+from scrapers.scraper_tasks import meta_fetcher
 
 logger = logging.getLogger(__name__)
 
@@ -404,8 +407,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
 
         try:
             # Get local watch history
-            from sqlmodel import select
-
             items_to_push: list[WatchedItem] = []
             async with get_async_session_context() as session:
                 query = select(WatchHistory).where(
@@ -454,8 +455,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
         session: AsyncSession,
     ) -> ProfileIntegration | None:
         """Get the integration record for this profile/platform (read-only)."""
-        from sqlmodel import select
-
         query = select(ProfileIntegration).where(
             ProfileIntegration.profile_id == self.profile_id,
             ProfileIntegration.platform == self.platform,
@@ -469,8 +468,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
         item: WatchedItem,
     ) -> int | None:
         """Resolve external IDs to internal media ID."""
-        from db.crud.media import get_media_by_external_id
-
         # Try each external ID
         # Try IMDb ID (format: tt1234567)
         if item.imdb_id:
@@ -500,11 +497,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
 
         Fetches metadata from TMDb/IMDb and creates the media record.
         """
-        from scrapers.scraper_tasks import meta_fetcher
-        from db.models import Media, MediaExternalID
-        from db.enums import MediaType
-        from db.crud.media import get_media_by_external_id
-
         try:
             provider = None
             provider_id = None
@@ -600,8 +592,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
         item: WatchedItem,
     ) -> bool:
         """Check if watch entry already exists."""
-        from sqlmodel import select
-
         query = select(WatchHistory).where(
             WatchHistory.profile_id == self.profile_id,
             WatchHistory.media_id == media_id,
@@ -625,8 +615,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
     ) -> WatchHistory:
         """Create watch history entry from imported item."""
         # Get user_id from profile
-        from db.models import UserProfile
-
         profile = await session.get(UserProfile, self.profile_id)
         if not profile:
             raise ValueError(f"Profile {self.profile_id} not found")
@@ -666,8 +654,6 @@ class BaseSyncService(ABC, Generic[ConfigT]):
         entry: WatchHistory,
     ) -> WatchedItem | None:
         """Convert WatchHistory to WatchedItem for export."""
-        from db.crud.media import get_all_external_ids_dict
-
         # Get external IDs
         ext_ids = await get_all_external_ids_dict(session, entry.media_id)
 

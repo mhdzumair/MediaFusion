@@ -8,6 +8,7 @@ import csv
 import io
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Any, Literal
 
@@ -24,6 +25,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_role
@@ -1249,8 +1251,6 @@ async def vacuum_tables(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Run VACUUM on specified tables."""
-    import time
-
     try:
         start_time = time.time()
 
@@ -1301,8 +1301,6 @@ async def analyze_tables(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Run ANALYZE on specified tables."""
-    import time
-
     try:
         start_time = time.time()
 
@@ -1350,8 +1348,6 @@ async def reindex_tables(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Run REINDEX on specified tables."""
-    import time
-
     try:
         start_time = time.time()
 
@@ -1406,10 +1402,6 @@ async def bulk_delete(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Bulk delete records from a table."""
-    import time
-
-    from sqlalchemy.exc import IntegrityError
-
     try:
         start_time = time.time()
 
@@ -1597,8 +1589,6 @@ async def bulk_update(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Bulk update records in a table."""
-    import time
-
     try:
         start_time = time.time()
 
@@ -1939,8 +1929,6 @@ async def execute_import(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Execute data import."""
-    import time
-
     try:
         start_time = time.time()
 

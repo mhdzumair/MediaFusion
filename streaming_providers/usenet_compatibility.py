@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 
 from db.config import settings
 from db.schemas import StreamingProvider, UserData
+from scrapers.public_usenet_indexer_registry import ALL_PUBLIC_USENET_INDEXERS, BINSEARCH_BASE
 
 # Providers that are bound to a specific Usenet source family.
 # These providers should not be offered streams scraped from unrelated sources.
@@ -60,8 +61,6 @@ def _matches_host_markers(hostname: str | None, markers: set[str]) -> bool:
 @lru_cache(maxsize=1)
 def _public_usenet_nzb_hosts() -> frozenset[str]:
     """Hostnames for NZB URLs served by built-in public Usenet indexers (Binsearch, NZBIndex, …)."""
-    from scrapers.public_usenet_indexer_registry import ALL_PUBLIC_USENET_INDEXERS, BINSEARCH_BASE
-
     hosts: set[str] = set()
     for raw in [BINSEARCH_BASE, *[d.site_origin for d in ALL_PUBLIC_USENET_INDEXERS if d.site_origin]]:
         if not raw:
@@ -83,8 +82,6 @@ def _stream_matches_public_usenet_indexer(
 ) -> bool:
     if not settings.is_scrap_from_public_usenet_indexers:
         return False
-
-    from scrapers.public_usenet_indexer_registry import ALL_PUBLIC_USENET_INDEXERS
 
     for definition in ALL_PUBLIC_USENET_INDEXERS:
         if definition.key in stream_source_candidates:

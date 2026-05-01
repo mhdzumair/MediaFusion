@@ -9,6 +9,8 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import text
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -23,7 +25,15 @@ from db.crud import (
 )
 from db.database import get_async_session, get_background_session
 from db.enums import MediaType, UserRole
-from db.models import AnnotationRequestDismissal, Stream, StreamMediaLink, User
+from db.models import (
+    AnnotationRequestDismissal,
+    FileMediaLink,
+    Stream,
+    StreamFile,
+    StreamMediaLink,
+    TorrentStream,
+    User,
+)
 from utils.annotation_autofix import EXTRA_FILE_SQL_PATTERN, auto_map_episode_links_from_filename
 
 router = APIRouter(prefix="/api/v1/stream-links", tags=["Stream Linking"])
@@ -433,8 +443,6 @@ async def update_file_links(
     Used to correct season/episode numbers for series files.
     Requires MODERATOR or ADMIN role.
     """
-    from db.models import FileMediaLink, StreamFile, TorrentStream
-
     updated = 0
     failed = 0
     errors = []
@@ -530,10 +538,6 @@ async def get_stream_file_links(
     Get all file links for a stream and media combination.
     Returns detailed file information with season/episode mappings.
     """
-    from sqlalchemy.orm import selectinload
-
-    from db.models import StreamFile
-
     # Load files from Stream relationship (TorrentStream has no direct files relation).
     stream_query = (
         select(Stream)
@@ -610,10 +614,6 @@ async def get_stream_files_for_annotation(
     This endpoint is used by the file annotation dialog to load files
     without requiring the media_id upfront.
     """
-    from sqlalchemy.orm import selectinload
-
-    from db.models import StreamFile
-
     # Try to parse stream_id as integer
     try:
         sid = int(stream_id)
@@ -808,8 +808,6 @@ async def get_streams_needing_annotation(
 
     Requires MODERATOR or ADMIN role.
     """
-    from sqlalchemy import text
-
     # Use raw SQL for efficiency - this is a complex aggregation query
     # that performs much better as raw SQL with proper window functions
 

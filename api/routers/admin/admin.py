@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
+import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete, update as sa_update
@@ -17,6 +18,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_role
 from db.crud import (
+    get_all_external_ids_batch,
     get_all_external_ids_dict,
 )
 from db.database import get_async_session
@@ -951,8 +953,6 @@ async def block_media(
 
     Blocked content will be hidden from regular users but still visible to admins/moderators.
     """
-    import pytz
-
     media = await session.get(Media, media_id)
     if not media:
         raise HTTPException(
@@ -1083,13 +1083,11 @@ async def list_blocked_media(
 
     Returns paginated blocked content with block details.
     """
-    from sqlalchemy.orm import selectinload as sa_selectinload
-
     base_query = (
         select(Media)
         .where(Media.is_blocked == True)
         .options(
-            sa_selectinload(Media.images),
+            selectinload(Media.images),
         )
     )
     count_query = select(func.count(Media.id)).where(Media.is_blocked == True)
@@ -1114,8 +1112,6 @@ async def list_blocked_media(
     # Batch fetch external IDs and blocked-by usernames.
     media_ids = [m.id for m in media_items]
     blocker_ids = [m.blocked_by_user_id for m in media_items if m.blocked_by_user_id]
-
-    from db.crud import get_all_external_ids_batch
 
     all_external_ids: dict[int, dict] = {}
     if media_ids:

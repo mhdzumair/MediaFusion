@@ -6,14 +6,14 @@ Provides browsing, searching, and stream fetching capabilities.
 import logging
 import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import date as date_type, datetime
 from os.path import basename
 from typing import Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import asc, desc, func, union
+from sqlalchemy import asc, desc, func, or_, union
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -666,8 +666,6 @@ async def browse_catalog(
     - working_only: Filter to only show channels with active (working) streams
     - my_channels: Filter to only show channels you imported
     """
-    from datetime import date as date_type
-
     media_type = MediaType(catalog_type)
     is_moderator_or_admin = current_user.role in (UserRole.MODERATOR, UserRole.ADMIN)
     offset = (page - 1) * page_size
@@ -705,8 +703,6 @@ async def browse_catalog(
         # 1. Has release_date <= today, OR
         # 2. Has status = 'released', OR
         # 3. Has no release_date but has year <= current year (for older entries)
-        from sqlalchemy import or_
-
         release_filter = or_(
             Media.release_date <= today,
             Media.status == "released",
@@ -741,8 +737,6 @@ async def browse_catalog(
 
         # Filter for user's own imported channels
         if my_channels and profile_ctx.user_id:
-            from sqlalchemy import or_
-
             # User-created media OR media with streams uploaded by user
             user_stream_exists = (
                 select(StreamMediaLink.media_id)
@@ -966,8 +960,6 @@ async def _fetch_media_images(
 
     For series, if no poster is found, falls back to episode still image.
     """
-    from db.models import Episode, EpisodeImage, Season
-
     poster_query = select(MediaImage).where(
         MediaImage.media_id == media_id,
         MediaImage.image_type == "poster",

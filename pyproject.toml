@@ -90,9 +90,10 @@ line-length = 120
 
 [tool.ruff.lint]
 select = [
-    "E",      # pycodestyle errors
-    "W",      # pycodestyle warnings
-    "F",      # Pyflakes
+    "E",        # pycodestyle errors
+    "W",        # pycodestyle warnings
+    "F",        # Pyflakes
+    "PLC0415",  # import not at top-level of file
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)
@@ -104,6 +105,8 @@ ignore = [
 "migrations/**/*.py" = ["E712"]
 # Kodi plugin has different conventions
 "kodi/**/lib/*.py" = ["F841"]
+# Standalone scripts use conditional/deferred imports for startup performance
+"scripts/**/*.py" = ["PLC0415"]
 
 [tool.ruff.format]
 quote-style = "double"

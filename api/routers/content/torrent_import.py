@@ -67,6 +67,7 @@ from db.models.streams import (
     StreamType,
     TorrentStream,
 )
+from scrapers.scraper_tasks import meta_fetcher
 from utils import torrent
 from utils.notification_registry import send_pending_contribution_notification
 from utils.parser import convert_bytes_to_readable
@@ -707,8 +708,6 @@ async def fetch_external_metadata_payload(
     fallback_title: str | None = None,
 ) -> dict[str, Any]:
     """Fetch metadata from external providers without holding a DB session."""
-    from scrapers.scraper_tasks import meta_fetcher
-
     provider = None
     provider_id = external_id
 
@@ -1259,8 +1258,6 @@ async def analyze_magnet(
     Analyze a magnet link and return torrent metadata.
     Also searches for matching content in IMDb/TMDB.
     """
-    from scrapers.scraper_tasks import meta_fetcher
-
     if not settings.enable_fetching_torrent_metadata_from_p2p:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1350,8 +1347,6 @@ async def analyze_torrent_file(
     Analyze a torrent file and return metadata.
     Also searches for matching content in IMDb/TMDB.
     """
-    from scrapers.scraper_tasks import meta_fetcher
-
     if not torrent_file.filename or not torrent_file.filename.endswith(".torrent"):
         return TorrentAnalyzeResponse(
             status="error",

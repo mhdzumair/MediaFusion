@@ -15,10 +15,10 @@ from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_auth
-from db.crud.media import get_all_external_ids_batch
+from db.crud.media import get_all_external_ids_batch, get_all_external_ids_dict
 from db.database import get_async_session, get_read_session
 from db.enums import WatchAction
-from db.models import User, UserProfile, WatchHistory
+from db.models import Media, User, UserProfile, WatchHistory
 
 router = APIRouter(prefix="/api/v1/downloads", tags=["Downloads"])
 
@@ -272,9 +272,6 @@ async def log_download(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Log a new download. Uses media_id (internal ID) directly."""
-    from db.crud.media import get_all_external_ids_dict
-    from db.models import Media
-
     # Verify profile ownership
     await verify_profile_ownership(session, user, data.profile_id)
 

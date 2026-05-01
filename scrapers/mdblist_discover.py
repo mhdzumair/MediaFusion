@@ -4,6 +4,7 @@ and return them in the common DiscoverItem shape.
 """
 
 import logging
+import math
 from typing import Any, Literal
 
 import httpx
@@ -92,8 +93,6 @@ async def mdblist_list_items(
         items = [n for raw in raw_items if (n := _normalize_mdblist_item(raw, catalog_type))]
 
         if total:
-            import math
-
             total_pages = max(1, math.ceil(total / page_size))
         else:
             # No total returned — infer: if full page arrived there may be more

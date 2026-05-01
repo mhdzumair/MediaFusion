@@ -17,32 +17,32 @@ def get_router() -> APIRouter:
     if _router is not None:
         return _router
 
-    from api.routers.content.catalog import router as catalog_router
-    from api.routers.content.contributions import router as contributions_router
-    from api.routers.content.episode_suggestions import (
+    from api.routers.content.catalog import router as catalog_router  # noqa: PLC0415
+    from api.routers.content.contributions import router as contributions_router  # noqa: PLC0415
+    from api.routers.content.episode_suggestions import (  # noqa: PLC0415
         router as episode_suggestions_router,
     )
-    from api.routers.content.iptv_sources import router as iptv_sources_router
-    from api.routers.content.m3u_import import router as m3u_import_router
-    from api.routers.content.metadata import router as metadata_router
-    from api.routers.content.nzb_import import router as nzb_import_router
-    from api.routers.content.reference import router as reference_router
-    from api.routers.content.discover import router as discover_router
-    from api.routers.content.scraping import router as scraping_router
-    from api.routers.content.streams import router as streams_router
-    from api.routers.content.stream_linking import router as stream_linking_router
-    from api.routers.content.stream_suggestions import (
+    from api.routers.content.iptv_sources import router as iptv_sources_router  # noqa: PLC0415
+    from api.routers.content.m3u_import import router as m3u_import_router  # noqa: PLC0415
+    from api.routers.content.metadata import router as metadata_router  # noqa: PLC0415
+    from api.routers.content.nzb_import import router as nzb_import_router  # noqa: PLC0415
+    from api.routers.content.reference import router as reference_router  # noqa: PLC0415
+    from api.routers.content.discover import router as discover_router  # noqa: PLC0415
+    from api.routers.content.scraping import router as scraping_router  # noqa: PLC0415
+    from api.routers.content.streams import router as streams_router  # noqa: PLC0415
+    from api.routers.content.stream_linking import router as stream_linking_router  # noqa: PLC0415
+    from api.routers.content.stream_suggestions import (  # noqa: PLC0415
         router as stream_suggestions_router,
     )
-    from api.routers.content.suggestions import router as suggestions_router
-    from api.routers.content.torrent_import import router as torrent_import_router
-    from api.routers.content.user_metadata import router as user_metadata_router
-    from api.routers.content.voting import router as voting_router
-    from api.routers.content.xtream_import import router as xtream_import_router
-    from api.routers.content.acestream_import import router as acestream_import_router
-    from api.routers.content.http_import import router as http_import_router
-    from api.routers.content.image_upload import router as image_upload_router
-    from api.routers.content.youtube_import import router as youtube_import_router
+    from api.routers.content.suggestions import router as suggestions_router  # noqa: PLC0415
+    from api.routers.content.torrent_import import router as torrent_import_router  # noqa: PLC0415
+    from api.routers.content.user_metadata import router as user_metadata_router  # noqa: PLC0415
+    from api.routers.content.voting import router as voting_router  # noqa: PLC0415
+    from api.routers.content.xtream_import import router as xtream_import_router  # noqa: PLC0415
+    from api.routers.content.acestream_import import router as acestream_import_router  # noqa: PLC0415
+    from api.routers.content.http_import import router as http_import_router  # noqa: PLC0415
+    from api.routers.content.image_upload import router as image_upload_router  # noqa: PLC0415
+    from api.routers.content.youtube_import import router as youtube_import_router  # noqa: PLC0415
 
     combined = APIRouter()
     combined.include_router(catalog_router)

@@ -61,6 +61,7 @@ from db.schemas import (
 )
 from db.schemas.media import HTTPStreamData, TelegramStreamData, UsenetStreamData
 from utils.network import encode_mediaflow_acestream_url
+from utils.parser import parse_stream_data
 from utils.usenet_url_resolver import apply_user_scoped_nzb_urls
 from utils.youtube import format_geo_restriction_label
 
@@ -1522,9 +1523,6 @@ async def get_movie_streams(
     per-user filtering/sorting/debrid-cache-checking on top.
     Parallelizes parse_stream_data calls across stream types.
     """
-    # Lazy import to avoid circular dependency
-    from utils.parser import parse_stream_data
-
     live_search_id = _parse_live_search_id(video_id)
     live_search_enabled = user_data.live_search_streams and live_search_id is not None
 
@@ -1777,9 +1775,6 @@ async def get_series_streams(
     per-user filtering/sorting/debrid-cache-checking on top.
     Parallelizes parse_stream_data calls across stream types.
     """
-    # Lazy import to avoid circular dependency
-    from utils.parser import parse_stream_data
-
     live_search_id = _parse_live_search_id(video_id)
     live_search_enabled = user_data.live_search_streams and live_search_id is not None
 

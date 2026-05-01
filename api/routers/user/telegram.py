@@ -18,7 +18,7 @@ from db.database import get_async_session_context
 from db.models import User
 from db.schemas.config import TelegramChannelConfig, TelegramConfig
 from utils.profile_context import ProfileDataProvider
-from utils.telegram_bot import ContentType, telegram_content_bot
+from utils.telegram_bot import ContentType, ConversationStep, telegram_content_bot
 
 logger = logging.getLogger(__name__)
 
@@ -618,8 +618,6 @@ async def telegram_webhook(request: Request):
             # ============================================
             # When a contribution flow is in progress, either process the message in context
             # or prompt the user to complete/cancel. Never treat new messages as new content.
-
-            from utils.telegram_bot import ConversationStep
 
             state = telegram_content_bot.get_conversation(user_id)
             if state and text and not text.startswith("/"):

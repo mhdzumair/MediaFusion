@@ -9,13 +9,19 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-import select
 from urllib.parse import urlparse
 
 import pytz
+from sqlmodel import select
 
 from api.task_queue import actor
+from db import database
+from db.enums import IPTVSourceType
+from db.models import IPTVSource
 from db.redis_database import REDIS_ASYNC_CLIENT
+from utils.m3u_parser import parse_m3u_playlist_for_preview
+from utils.profile_crypto import profile_crypto
+from utils.xtream_client import XtreamClient
 
 logger = logging.getLogger(__name__)
 
@@ -106,10 +112,7 @@ async def _process_m3u_import(
     m3u_url: str | None,
 ):
     """Process M3U import in background."""
-    from db import database
-    from db.enums import IPTVSourceType
-    from db.models import IPTVSource
-    from api.routers.content.m3u_import import (
+    from api.routers.content.m3u_import import (  # noqa: PLC0415
         M3UContentType,
         _resolve_entry_matched_media_id,
         _import_tv_entry,
@@ -267,12 +270,7 @@ async def _process_xtream_import(
     series_category_ids: list[str] | None,
 ):
     """Process Xtream import in background."""
-    from db import database
-    from db.enums import IPTVSourceType
-    from db.models import IPTVSource
-    from utils.xtream_client import XtreamClient
-    from utils.profile_crypto import profile_crypto
-    from api.routers.content.m3u_import import (
+    from api.routers.content.m3u_import import (  # noqa: PLC0415
         _resolve_entry_matched_media_id,
         _import_tv_entry,
         _import_movie_entry,
@@ -550,16 +548,13 @@ async def _process_m3u_sync(
     import_series: bool,
 ):
     """Process M3U sync in background."""
-    from db import database
-    from db.models import IPTVSource
-    from api.routers.content.m3u_import import (
+    from api.routers.content.m3u_import import (  # noqa: PLC0415
         M3UContentType,
         _resolve_entry_matched_media_id,
         _import_movie_entry,
         _import_series_entry,
         _import_tv_entry,
     )
-    from utils.m3u_parser import parse_m3u_playlist_for_preview
 
     stats = {"tv": 0, "movie": 0, "series": 0, "failed": 0, "skipped": 0}
 
@@ -639,8 +634,6 @@ async def _process_m3u_sync(
                     stats=stats,
                 )
 
-        from sqlmodel import select
-
         async with database.get_background_session() as session:
             query = select(IPTVSource).where(IPTVSource.id == source_id)
             result = await session.exec(query)
@@ -687,15 +680,11 @@ async def _process_xtream_sync(
     series_category_ids: list[str] | None,
 ):
     """Process Xtream sync in background."""
-    from db import database
-    from db.models import IPTVSource
-    from api.routers.content.m3u_import import (
+    from api.routers.content.m3u_import import (  # noqa: PLC0415
         _resolve_entry_matched_media_id,
         _import_movie_entry,
         _import_tv_entry,
     )
-    from utils.profile_crypto import profile_crypto
-    from utils.xtream_client import XtreamClient
 
     stats = {"tv": 0, "movie": 0, "series": 0, "failed": 0, "skipped": 0}
 

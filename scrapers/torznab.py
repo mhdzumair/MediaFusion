@@ -7,6 +7,7 @@ endpoints without requiring Prowlarr or Jackett as an intermediary.
 
 import asyncio
 import hashlib
+import re
 from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -366,8 +367,6 @@ class TorznabScraper(BaseScraper):
 
         # Extract info_hash from magnet link if not found
         if not info_hash and magnet_link:
-            import re
-
             match = re.search(r"btih:([a-fA-F0-9]{40})", magnet_link)
             if match:
                 info_hash = match.group(1).lower()
@@ -376,8 +375,6 @@ class TorznabScraper(BaseScraper):
         if not info_hash:
             link_elem = item.find("link")
             if link_elem is not None and link_elem.text and "magnet:" in link_elem.text:
-                import re
-
                 match = re.search(r"btih:([a-fA-F0-9]{40})", link_elem.text, re.IGNORECASE)
                 if match:
                     info_hash = match.group(1).lower()

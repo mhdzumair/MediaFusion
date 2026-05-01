@@ -5,20 +5,26 @@ without requiring streams to already exist in MediaFusion.
 
 import logging
 from typing import Any, Literal
+from urllib.parse import urljoin
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import tuple_ as sa_tuple
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from api.routers.content.scraping import get_full_profile_config
+from api.routers.content.scraping import get_full_profile_config, _sanitize_user_data_config
 from api.routers.user.auth import require_auth
 from db.config import settings
 from db.database import get_read_session
 from db.models import User, UserProfile
 from db.models.providers import MediaExternalID
 from db.schemas.config import UserData
+from scrapers.kitsu_data import kitsu_trending
+from scrapers.mal_data import anilist_seasonal, anilist_trending
 from scrapers.mdblist_discover import mdblist_list_items
 from scrapers.tmdb_discover import (
+    TMDB_BASE_URL,
     resolve_tmdb_key,
     tmdb_discover,
     tmdb_list,
@@ -27,6 +33,7 @@ from scrapers.tmdb_discover import (
     tmdb_watch_provider_list,
 )
 from scrapers.tvdb_discover import resolve_tvdb_key, tvdb_filter
+from utils.const import UA_HEADER
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +55,6 @@ async def _get_user_data(session: AsyncSession, user: User) -> UserData:
     try:
         return UserData.model_validate(config)
     except Exception:
-        from api.routers.content.scraping import _sanitize_user_data_config
-
         return UserData.model_validate(_sanitize_user_data_config(config))
 
 
@@ -82,8 +87,6 @@ async def _build_db_index(session: AsyncSession, items: list[dict[str, Any]]) ->
     """
     if not items:
         return {}
-
-    from sqlalchemy import tuple_ as sa_tuple
 
     # Phase 1 — exact provider:external_id match
     pairs: list[tuple[str, str]] = [(i["provider"], i["external_id"]) for i in items]
@@ -231,8 +234,6 @@ async def discover_anime(
         raise HTTPException(status_code=404, detail="Discover feature is disabled")
 
     if source == "anilist":
-        from scrapers.mal_data import anilist_seasonal, anilist_trending
-
         if kind == "seasonal":
             if not season or not year:
                 raise HTTPException(status_code=422, detail="season and year are required for kind=seasonal")
@@ -240,8 +241,6 @@ async def discover_anime(
         else:
             raw = await anilist_trending(page=page)
     else:
-        from scrapers.kitsu_data import kitsu_trending
-
         raw = await kitsu_trending(page=page)
 
     db_index = await _build_db_index(session, raw["items"])
@@ -318,12 +317,6 @@ async def verify_tmdb_key(
     current_user: User = Depends(require_auth),
 ):
     """Validate a TMDB API key by making a lightweight test request."""
-    import httpx
-    from urllib.parse import urljoin
-
-    from scrapers.tmdb_discover import TMDB_BASE_URL
-    from utils.const import UA_HEADER
-
     try:
         async with httpx.AsyncClient(proxy=settings.requests_proxy_url, timeout=8) as client:
             resp = await client.get(

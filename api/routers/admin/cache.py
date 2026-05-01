@@ -9,6 +9,7 @@ import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from api.routers.user.auth import require_role
@@ -712,8 +713,6 @@ async def get_cache_image(
     Get a cached image as raw bytes for display.
     Requires admin role.
     """
-    from fastapi.responses import Response
-
     if not REDIS_ASYNC_CLIENT:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
