@@ -27,7 +27,7 @@ from db.crud.scraper_helpers import (
     update_meta_stream,
     update_metadata,
 )
-from db.crud.stream_services import invalidate_media_stream_cache
+from db.crud.stream_cache import invalidate_media_stream_cache
 from db.database import get_async_session, get_async_session_context
 from db.enums import UserRole
 from db.models import FileMediaLink, Media, MediaExternalID, StreamFile, StreamMediaLink, User

@@ -90,6 +90,7 @@ from db.models import (
     TVMetadata,
     WatchHistory,
 )
+from db.crud.stream_cache import invalidate_media_stream_cache
 from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.url_safety import sanitize_nzb_url
 
@@ -1660,8 +1661,6 @@ async def store_new_torrent_streams(
 
     # Invalidate stream cache for all affected media (after commit when deferred)
     if media_ids_to_update:
-        from db.crud.stream_services import invalidate_media_stream_cache  # noqa: PLC0415
-
         if deferred_cache_invalidation is not None:
             deferred_cache_invalidation.update(media_ids_to_update)
         else:
@@ -1928,8 +1927,6 @@ async def store_new_usenet_streams(
 
     # Invalidate stream cache for all affected media
     if media_ids_to_update:
-        from db.crud.stream_services import invalidate_media_stream_cache  # noqa: PLC0415
-
         for media_id in media_ids_to_update:
             await invalidate_media_stream_cache(media_id)
 

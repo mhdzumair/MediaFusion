@@ -207,14 +207,6 @@ from db.crud.stream_community import (
     vote_type_to_int,
 )
 
-# Stream service operations (Stremio API)
-from db.crud.stream_services import (
-    get_event_streams,
-    get_movie_streams,
-    get_series_streams,
-    get_tv_streams_formatted,
-)
-
 # Stream operations
 from db.crud.streams import (
     # Stream files (NEW in v5 - replaces TorrentFile)
@@ -603,11 +595,6 @@ __all__ = [
     "delete_telegram_user_forwards_for_stream",
     "delete_telegram_user_forwards_for_user",
     "get_telegram_user_forward",
-    # Stream services (Stremio API)
-    "get_movie_streams",
-    "get_series_streams",
-    "get_tv_streams_formatted",
-    "get_event_streams",
     # Catalog operations (Stremio API)
     "get_catalog_meta_list",
     "get_mdblist_meta_list",

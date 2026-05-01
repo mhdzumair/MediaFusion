@@ -23,7 +23,7 @@ from torf._errors import URLError as TorfURLError
 
 from db import crud
 from db.config import settings
-from db.crud.stream_services import invalidate_media_stream_cache
+from db.crud.stream_cache import invalidate_media_stream_cache
 from db.database import get_background_session
 from db.enums import TorrentType
 from db.redis_database import REDIS_ASYNC_CLIENT

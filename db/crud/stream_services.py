@@ -59,6 +59,7 @@ from db.schemas import (
     UserData,
     YouTubeStreamData,
 )
+from db.crud.stream_cache import STREAM_CACHE_PREFIX
 from db.schemas.media import HTTPStreamData, TelegramStreamData, UsenetStreamData
 from utils.network import encode_mediaflow_acestream_url
 from utils.parser import parse_stream_data
@@ -87,7 +88,6 @@ TORRENT_CAPABLE_PROVIDERS = {
 }
 
 # Redis cache for raw stream payloads (see settings.stream_raw_redis_cache_*)
-STREAM_CACHE_PREFIX = "stream_data:"
 _STREAM_CACHE_MAGIC = b"\x01MFsc1"  # zlib-compressed JSON blob prefix
 LIVE_TORRENT_FALLBACK_CACHE_TTL = 180  # 3 minutes
 LIVE_TORRENT_FALLBACK_CACHE_PREFIX = "live_torrent_fallback:"
@@ -758,36 +758,6 @@ def _combine_streams_by_type(
 
     # Apply total stream cap
     return combined[: user_data.max_streams]
-
-
-async def invalidate_media_stream_cache(media_id: int) -> None:
-    """Delete all cached stream data for a media.
-
-    Called when streams are added to or removed from a media entry.
-    Clears both movie and series cache keys for the given media_id.
-    """
-    try:
-        # Delete legacy movie cache key (backward compatibility)
-        legacy_movie_key = f"{STREAM_CACHE_PREFIX}movie:{media_id}"
-        await REDIS_ASYNC_CLIENT.delete(legacy_movie_key)
-
-        # Delete visibility-scoped movie cache keys
-        movie_pattern = f"{STREAM_CACHE_PREFIX}movie:{media_id}:*"
-        movie_keys = []
-        async for key in REDIS_ASYNC_CLIENT.scan_iter(match=movie_pattern, count=100):
-            movie_keys.append(key)
-        if movie_keys:
-            await REDIS_ASYNC_CLIENT.delete(*movie_keys)
-
-        # For series, scan and delete all season:episode combos
-        pattern = f"{STREAM_CACHE_PREFIX}series:{media_id}:*"
-        keys = []
-        async for key in REDIS_ASYNC_CLIENT.scan_iter(match=pattern, count=100):
-            keys.append(key)
-        if keys:
-            await REDIS_ASYNC_CLIENT.delete(*keys)
-    except Exception as e:
-        logger.warning(f"Error invalidating stream cache for media_id={media_id}: {e}")
 
 
 async def _fetch_movie_raw_streams_in_session(

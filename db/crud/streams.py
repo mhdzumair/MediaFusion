@@ -31,7 +31,7 @@ from db.crud.media import (
     get_series_metadata,
     increment_stream_count,
 )
-from db.crud.stream_services import invalidate_media_stream_cache
+from db.crud.stream_cache import invalidate_media_stream_cache
 from db.enums import MediaType, TorrentType
 from db.models import (
     AceStreamStream,

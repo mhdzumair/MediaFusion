@@ -12,8 +12,14 @@ from fastapi import (
     Response,
 )
 
-from db import crud, schemas
+from db import schemas
 from db.config import settings
+from db.crud.stream_services import (
+    get_event_streams,
+    get_movie_streams,
+    get_series_streams,
+    get_tv_streams_formatted,
+)
 from utils import const, wrappers
 from utils.network import (
     get_request_namespace,
@@ -86,7 +92,7 @@ async def get_streams(
             else:
                 raise HTTPException(status_code=404, detail="Meta ID not found.")
         else:
-            fetched_streams = await crud.get_movie_streams(
+            fetched_streams = await get_movie_streams(
                 video_id,
                 user_data,
                 secret_str,
@@ -96,7 +102,7 @@ async def get_streams(
             )
             fetched_streams.extend(user_feeds)
     elif catalog_type == "series":
-        fetched_streams = await crud.get_series_streams(
+        fetched_streams = await get_series_streams(
             video_id,
             season,
             episode,
@@ -108,11 +114,11 @@ async def get_streams(
         )
         fetched_streams.extend(user_feeds)
     elif catalog_type == "events":
-        fetched_streams = await crud.get_event_streams(video_id, user_data)
+        fetched_streams = await get_event_streams(video_id, user_data)
         response.headers.update(const.NO_CACHE_HEADERS)
     else:
         response.headers.update(const.NO_CACHE_HEADERS)
-        fetched_streams = await crud.get_tv_streams_formatted(video_id, get_request_namespace(request), user_data)
+        fetched_streams = await get_tv_streams_formatted(video_id, get_request_namespace(request), user_data)
 
     return {"streams": fetched_streams}
 
@@ -166,7 +172,7 @@ async def get_kodi_streams(
     if catalog_type == "movie":
         if video_id.startswith("dl"):
             raise HTTPException(status_code=404, detail="Meta ID not found.")
-        fetched_streams = await crud.get_movie_streams(
+        fetched_streams = await get_movie_streams(
             video_id,
             user_data,
             secret_str,
@@ -177,7 +183,7 @@ async def get_kodi_streams(
             disable_stream_cap=True,
         )
     else:
-        fetched_streams = await crud.get_series_streams(
+        fetched_streams = await get_series_streams(
             video_id,
             season,
             episode,

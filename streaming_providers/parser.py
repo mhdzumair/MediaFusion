@@ -10,7 +10,8 @@ from typing import Any, TypedDict
 import dateparser
 import PTT
 
-from db import crud
+from db.crud.scraper_helpers import get_series_data_by_id
+from db.crud.streams import get_torrent_by_info_hash, update_stream_files, update_torrent_stream
 from db.database import get_async_session_context, get_read_session_context
 from db.retry_utils import run_db_operation_with_retry
 from db.schemas import StreamFileData, TorrentStreamData
@@ -247,7 +248,7 @@ class TorrentFileProcessor:
         if parsed_data.get("date"):
             if not self._metadata:
                 async with get_read_session_context() as session:
-                    self._metadata = await crud.get_series_data_by_id(session, meta_id, load_relations=True)
+                    self._metadata = await get_series_data_by_id(session, meta_id, load_relations=True)
 
             metadata_seasons = self._get_metadata_seasons(self._metadata)
             if metadata_seasons:
@@ -428,12 +429,12 @@ async def _save_torrent_stream(torrent_stream: TorrentStreamData) -> None:
 
     async def _persist() -> None:
         async with get_async_session_context() as session:
-            torrent = await crud.get_torrent_by_info_hash(session, info_hash)
+            torrent = await get_torrent_by_info_hash(session, info_hash)
             if not torrent:
                 return
-            await crud.update_torrent_stream(session, info_hash, updates, torrent=torrent)
+            await update_torrent_stream(session, info_hash, updates, torrent=torrent)
             if torrent_stream.files:
-                await crud.update_stream_files(session, info_hash, torrent_stream.files, torrent=torrent)
+                await update_stream_files(session, info_hash, torrent_stream.files, torrent=torrent)
             await session.commit()
 
     await run_db_operation_with_retry(
@@ -821,7 +822,7 @@ class UsenetFileProcessor:
         if parsed_data.get("date"):
             if not self._metadata:
                 async with get_read_session_context() as session:
-                    self._metadata = await crud.get_series_data_by_id(session, meta_id, load_relations=True)
+                    self._metadata = await get_series_data_by_id(session, meta_id, load_relations=True)
 
             metadata_seasons = self._get_metadata_seasons(self._metadata)
             if metadata_seasons:

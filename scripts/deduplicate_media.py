@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from db.crud.media import invalidate_meta_cache
 from db.crud.scraper_helpers import delete_metadata, migrate_media_links, update_meta_stream
-from db.crud.stream_services import invalidate_media_stream_cache
+from db.crud.stream_cache import invalidate_media_stream_cache
 from db.database import get_async_session_context
 from db.enums import MediaType
 from db.models import FileMediaLink, Media, MediaExternalID, StreamMediaLink
