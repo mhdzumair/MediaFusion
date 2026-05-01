@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import logging
@@ -1425,12 +1426,7 @@ class TelegramContentBot:
 
         await self.render_batch_summary(batch)
 
-        try:
-            kiq_result = await analyze_telegram_item.async_send(user_id, item.item_id)
-            item.analysis_task_id = str(kiq_result.task_id) if kiq_result else None
-            self._set_batch(batch)
-        except Exception as e:
-            logger.warning(f"Failed to enqueue analyze_telegram_item for {item.item_id}: {e}")
+        asyncio.create_task(analyze_telegram_item(user_id, item.item_id))
 
         n = len(batch.items)
         return {"success": True, "message": f"📥 Added to batch ({n} item{'s' if n != 1 else ''})"}
@@ -1447,16 +1443,12 @@ class TelegramContentBot:
         to_import = [i for i in batch.items if i.status == BatchItemStatus.AUTO_MATCHED]
         for item in to_import:
             item.status = BatchItemStatus.IMPORTING
-        # Persist before enqueuing so actors see IMPORTING status
+        # Persist before launching tasks so they see IMPORTING status
         batch.touch()
         self._set_batch(batch)
 
         for item in to_import:
-            try:
-                kiq_result = await import_telegram_item.async_send(user_id, item.item_id)
-                item.import_task_id = str(kiq_result.task_id) if kiq_result else None
-            except Exception as e:
-                logger.warning(f"Failed to enqueue import for item {item.item_id}: {e}")
+            asyncio.create_task(import_telegram_item(user_id, item.item_id))
         self._set_batch(batch)
         await self.render_batch_summary(batch)
 
@@ -5057,15 +5049,16 @@ class TelegramContentBot:
 
         from utils.telegram_tasks import scrape_telegram_channel_for_user  # noqa: PLC0415
 
-        task = await scrape_telegram_channel_for_user.async_send(
-            user_id=user_id,
-            chat_id=chat_id,
-            progress_message_id=progress_message_id,
-            channel=channel,
-            notification_chat_id=settings.telegram_chat_id,
+        asyncio.create_task(
+            scrape_telegram_channel_for_user(
+                user_id=user_id,
+                chat_id=chat_id,
+                progress_message_id=progress_message_id,
+                channel=channel,
+                notification_chat_id=settings.telegram_chat_id,
+            )
         )
-        task_id = getattr(task, "task_id", None) or str(uuid.uuid4())
-        await REDIS_ASYNC_CLIENT.set(job_key, task_id, ex=_SCRAPE_JOB_TTL)
+        await REDIS_ASYNC_CLIENT.set(job_key, str(uuid.uuid4()), ex=_SCRAPE_JOB_TTL)
 
         return {"success": True, "message": None}
 

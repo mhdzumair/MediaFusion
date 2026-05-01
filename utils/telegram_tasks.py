@@ -3,7 +3,6 @@ import logging
 import PTT
 from sqlalchemy.exc import IntegrityError
 
-from api.task_queue import actor
 from db import crud
 from db.database import get_background_session
 from db.redis_database import REDIS_ASYNC_CLIENT
@@ -34,9 +33,8 @@ def _infer_media_type(file_name: str | None) -> str:
     return "movie"
 
 
-@actor(queue_name="telegram_contrib")
 async def analyze_telegram_item(user_id: int, item_id: str) -> None:
-    """Background analysis of a single batch item: PTT parse + IMDb search."""
+    """On-demand analysis of a single batch item: PTT parse + IMDb search."""
     from utils.telegram_bot import BatchItemStatus, telegram_content_bot  # noqa: PLC0415
 
     batch = await telegram_content_bot.aget_batch(user_id)
@@ -91,9 +89,8 @@ async def analyze_telegram_item(user_id: int, item_id: str) -> None:
     await telegram_content_bot.render_batch_summary(batch)
 
 
-@actor(queue_name="telegram_contrib")
 async def import_telegram_item(user_id: int, item_id: str) -> None:
-    """Background import of a single AUTO_MATCHED batch item."""
+    """On-demand import of a single AUTO_MATCHED batch item."""
     from utils.telegram_bot import (  # noqa: PLC0415
         BatchItemStatus,
         ContentType,
@@ -159,7 +156,6 @@ async def import_telegram_item(user_id: int, item_id: str) -> None:
     await telegram_content_bot.render_batch_summary(batch)
 
 
-@actor(queue_name="telegram_contrib", time_limit=30 * 60 * 1000)
 async def scrape_telegram_channel_for_user(
     user_id: int,
     chat_id: int,
