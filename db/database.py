@@ -189,6 +189,18 @@ def _create_read_engine() -> AsyncEngine:
             pool_pre_ping=True,
             pool_recycle=300,
             pool_timeout=30,
+            connect_args={
+                # Disable asyncpg prepared-statement cache on the read replica.
+                # When hot-standby WAL replay cancels a statement mid-execute the
+                # cached prepared-statement state desynchronises and the next query
+                # on that connection raises "cannot switch to state 12".  Plain
+                # extended-query protocol (no cache) recovers cleanly from cancels.
+                "statement_cache_size": 0,
+                "prepared_statement_cache_size": 0,
+                # Bound long-running replica reads so they fail fast instead of
+                # being silently killed by max_standby_streaming_delay.
+                "command_timeout": 30,
+            },
         )
         _install_asyncpg_guards(engine)
         return engine

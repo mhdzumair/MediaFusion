@@ -19,7 +19,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from api.routers.content.anonymous_utils import resolve_uploader_identity
 from api.routers.user.auth import require_auth, require_role
 from db.crud.media import get_media_by_external_id
-from db.database import get_async_session, get_read_session
+from db.database import get_async_session, get_async_session_context, get_read_session, get_read_session_context
+from db.retry_utils import run_db_read_with_primary_fallback
 from db.enums import ContributionStatus, UserRole
 from db.models import (
     AceStreamStream,
@@ -627,7 +628,6 @@ async def list_contributions(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     user: User = Depends(require_auth),
-    session: AsyncSession = Depends(get_read_session),
 ):
     """
     List user's contributions with pagination.
@@ -717,34 +717,50 @@ async def list_contributions(
             query = query.where(reviewer_condition)
             count_query = count_query.where(reviewer_condition)
 
-    # Get total count
-    total_result = await session.exec(count_query)
-    total = total_result.one()
-
-    # Get paginated results
     offset = (page - 1) * page_size
-    query = query.order_by(col(Contribution.created_at).desc()).offset(offset).limit(page_size)
-    result = await session.exec(query)
-    items = result.all()
+    paginated_query = query.order_by(col(Contribution.created_at).desc()).offset(offset).limit(page_size)
 
-    username_map = await get_username_map(session, {item.user_id for item in items if item.user_id is not None})
-    reviewer_name_map = await get_reviewer_name_map(session, {item.reviewed_by for item in items if item.reviewed_by})
-    media_ids = await asyncio.gather(*(resolve_contribution_media_id(session, item) for item in items))
+    async def _execute(session: AsyncSession) -> ContributionListResponse:
+        total_result = await session.exec(count_query)
+        total = total_result.one()
 
-    return ContributionListResponse(
-        items=[
-            contribution_to_response(
-                item,
-                username_map.get(item.user_id),
-                media_ids[idx],
-                reviewer_name_map.get(item.reviewed_by) if item.reviewed_by else None,
-            )
-            for idx, item in enumerate(items)
-        ],
-        total=total,
-        page=page,
-        page_size=page_size,
-        has_more=(offset + len(items)) < total,
+        result = await session.exec(paginated_query)
+        items = result.all()
+
+        username_map = await get_username_map(session, {item.user_id for item in items if item.user_id is not None})
+        reviewer_name_map = await get_reviewer_name_map(
+            session, {item.reviewed_by for item in items if item.reviewed_by}
+        )
+        resolved_media_ids = await asyncio.gather(*(resolve_contribution_media_id(session, item) for item in items))
+
+        return ContributionListResponse(
+            items=[
+                contribution_to_response(
+                    item,
+                    username_map.get(item.user_id),
+                    resolved_media_ids[idx],
+                    reviewer_name_map.get(item.reviewed_by) if item.reviewed_by else None,
+                )
+                for idx, item in enumerate(items)
+            ],
+            total=total,
+            page=page,
+            page_size=page_size,
+            has_more=(offset + len(items)) < total,
+        )
+
+    async def _read():
+        async with get_read_session_context() as session:
+            return await _execute(session)
+
+    async def _primary():
+        async with get_async_session_context() as session:
+            return await _execute(session)
+
+    return await run_db_read_with_primary_fallback(
+        _read,
+        _primary,
+        operation_name="list_contributions",
     )
 
 

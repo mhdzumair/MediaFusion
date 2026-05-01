@@ -24,7 +24,8 @@ from db import crud
 from db.config import settings
 from db.crud.catalog_sort import effective_release_date
 from db.crud.stream_community import empty_stream_signals_dict, fetch_stream_community_signals_batch
-from db.database import get_read_session
+from db.database import get_async_session_context, get_read_session, get_read_session_context
+from db.retry_utils import run_db_read_with_primary_fallback
 from db.enums import MediaType, UserRole
 from db.models import (
     Catalog,
@@ -1891,7 +1892,21 @@ async def get_catalog_item_streams(
     )
 
     # Format streams for API response
-    signals_by_stream = await fetch_stream_community_signals_batch(session, [s.id for s in streams])
+    _signal_stream_ids = [s.id for s in streams]
+
+    async def _read_signals():
+        async with get_read_session_context() as _s:
+            return await fetch_stream_community_signals_batch(_s, _signal_stream_ids)
+
+    async def _primary_signals():
+        async with get_async_session_context() as _s:
+            return await fetch_stream_community_signals_batch(_s, _signal_stream_ids)
+
+    signals_by_stream = await run_db_read_with_primary_fallback(
+        _read_signals,
+        _primary_signals,
+        operation_name="catalog item stream signals",
+    )
     formatted_streams = []
     for stream in streams:
         # Get type-specific data

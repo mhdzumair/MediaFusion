@@ -156,7 +156,7 @@ class RedisWrapper:
         self.client = client
         self.is_async = isinstance(client, redis.asyncio.Redis)
 
-    async def _execute_with_retry_async(self, operation, *args, **kwargs):
+    async def _execute_with_retry_async(self, operation, operation_name: str, *args, **kwargs):
         """Execute async Redis operation with retry logic."""
         last_exception = None
 
@@ -172,14 +172,22 @@ class RedisWrapper:
                 if attempt < settings.redis_retry_attempts - 1:
                     await asyncio.sleep(settings.redis_retry_delay * (2**attempt))
                     logger.warning(
-                        f"Redis operation failed (attempt {attempt + 1}/{settings.redis_retry_attempts}): {e}"
+                        "Redis %s failed (attempt %d/%d): %s",
+                        operation_name,
+                        attempt + 1,
+                        settings.redis_retry_attempts,
+                        e,
                     )
                 else:
-                    logger.error(f"Redis operation failed after all retries: {e}")
+                    logger.error(
+                        "Redis %s failed after all retries: %s",
+                        operation_name,
+                        e,
+                    )
 
         raise last_exception
 
-    def _execute_with_retry_sync(self, operation, *args, **kwargs):
+    def _execute_with_retry_sync(self, operation, operation_name: str, *args, **kwargs):
         """Execute sync Redis operation with retry logic."""
         last_exception = None
 
@@ -195,10 +203,18 @@ class RedisWrapper:
                 if attempt < settings.redis_retry_attempts - 1:
                     time.sleep(settings.redis_retry_delay * (2**attempt))
                     logger.warning(
-                        f"Redis operation failed (attempt {attempt + 1}/{settings.redis_retry_attempts}): {e}"
+                        "Redis %s failed (attempt %d/%d): %s",
+                        operation_name,
+                        attempt + 1,
+                        settings.redis_retry_attempts,
+                        e,
                     )
                 else:
-                    logger.error(f"Redis operation failed after all retries: {e}")
+                    logger.error(
+                        "Redis %s failed after all retries: %s",
+                        operation_name,
+                        e,
+                    )
 
         raise last_exception
 
@@ -210,7 +226,7 @@ class RedisWrapper:
             async def async_method(*args, **kwargs):
                 try:
                     operation = getattr(self.client, method_name)
-                    result = await self._execute_with_retry_async(operation, *args, **kwargs)
+                    result = await self._execute_with_retry_async(operation, method_name, *args, **kwargs)
                     return result if result is not None else default_return
                 except Exception:
                     return default_return
@@ -222,7 +238,7 @@ class RedisWrapper:
             def sync_method(*args, **kwargs):
                 try:
                     operation = getattr(self.client, method_name)
-                    result = self._execute_with_retry_sync(operation, *args, **kwargs)
+                    result = self._execute_with_retry_sync(operation, method_name, *args, **kwargs)
                     return result if result is not None else default_return
                 except Exception:
                     return default_return
@@ -634,6 +650,12 @@ class EventLoopAwareRedisClient:
                     connection_pool=redis.asyncio.ConnectionPool.from_url(settings.redis_url, **pool_settings)
                 )
             )
+            logger.info(
+                "Created async Redis pool for loop_id=%s (max_connections=%s, total_pools=%s)",
+                loop_id,
+                settings.redis_max_connections,
+                len(self._clients),
+            )
         return self._clients[loop_id]
 
     def __getattr__(self, name: str):
@@ -648,12 +670,32 @@ class EventLoopAwareRedisClient:
 # Create event-loop-aware async client
 REDIS_ASYNC_CLIENT = EventLoopAwareRedisClient()
 
+# Separate per-loop cache for background-task clients (Dramatiq workers run on
+# their own event loops).  Reusing the same pool per loop avoids creating a new
+# ConnectionPool(max_connections=100) for every Dramatiq message dispatch, which
+# was leaking up to 100 idle connections per task invocation and exhausting the
+# Redis server's maxclients limit.
+_background_task_clients: dict[int, RedisWrapper] = {}
+
 
 def get_redis_async_client() -> RedisWrapper:
     """
-    Get a fresh async Redis client for the current event loop.
-    Use this in background tasks (e.g., Dramatiq) to avoid event loop conflicts.
+    Get a cached async Redis client for the current event loop.
+
+    Safe to call from background tasks (e.g. Dramatiq) and from the main app.
+    Returns the same RedisWrapper instance for a given event loop so connection
+    pools are shared and not recreated on every call.
     """
-    return RedisWrapper(
-        redis.asyncio.Redis(connection_pool=redis.asyncio.ConnectionPool.from_url(settings.redis_url, **pool_settings))
-    )
+    try:
+        loop = asyncio.get_running_loop()
+        loop_id = id(loop)
+    except RuntimeError:
+        loop_id = 0
+
+    if loop_id not in _background_task_clients:
+        _background_task_clients[loop_id] = RedisWrapper(
+            redis.asyncio.Redis(
+                connection_pool=redis.asyncio.ConnectionPool.from_url(settings.redis_url, **pool_settings)
+            )
+        )
+    return _background_task_clients[loop_id]

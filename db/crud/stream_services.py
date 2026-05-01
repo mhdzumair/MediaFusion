@@ -46,7 +46,7 @@ from db.models import (
     UsenetStream,
     YouTubeStream,
 )
-from db.retry_utils import run_db_operation_with_retry
+from db.retry_utils import run_db_operation_with_retry, run_db_read_with_primary_fallback
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import (
     MetadataData,
@@ -972,10 +972,14 @@ async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
 
 
 async def _fetch_movie_raw_streams_batch(media_ids: list[int], visibility_filter) -> dict[int, dict]:
-    """Load several movies in one read session (one pool checkout) to avoid fan-out under load."""
+    """Load several movies using a fresh read session per movie.
+
+    A fresh session per iteration ensures a connection left in a bad state by a
+    replica WAL-replay cancel on one movie does not poison subsequent fetches.
+    """
     out: dict[int, dict] = {}
-    async with get_read_session_context() as session:
-        for media_id in media_ids:
+    for media_id in media_ids:
+        async with get_read_session_context() as session:
             out[media_id] = await _fetch_movie_raw_streams_in_session(session, media_id, visibility_filter)
     return out
 
@@ -1020,13 +1024,23 @@ async def _get_cached_movie_streams_bulk(
         logger.debug("Stream cache MISS for movie media_ids=%s", ids_to_fetch)
         t0 = time.monotonic()
 
-        async def _run_batch():
+        async def _run_movie_batch_read():
             return await _fetch_movie_raw_streams_batch(ids_to_fetch, visibility_filter)
 
-        batch = await run_db_operation_with_retry(
-            operation=_run_batch,
+        async def _run_movie_batch_primary():
+            out_primary: dict[int, dict] = {}
+            for mid in ids_to_fetch:
+                async with get_async_session_context() as s:
+                    out_primary[mid] = await _fetch_movie_raw_streams_in_session(s, mid, visibility_filter)
+            return out_primary
+
+        batch = await run_db_read_with_primary_fallback(
+            _run_movie_batch_read,
+            _run_movie_batch_primary,
             operation_name=batch_op_name,
-            on_retry=_log_db_retry_attempt(batch_op_name),
+            on_fallback=lambda exc: logger.warning(
+                "Falling back to primary for %s after replica error: %s", batch_op_name, exc
+            ),
         )
         elapsed = time.monotonic() - t0
         logger.info("DB batch fetch for movie media_ids=%s took %.3fs", ids_to_fetch, elapsed)
@@ -1253,10 +1267,15 @@ async def _fetch_series_raw_streams_batch(
     episode: int,
     visibility_filter,
 ) -> dict[int, dict]:
-    """Load several series episodes (same S/E) in one read session (one pool checkout)."""
+    """Load several series episodes (same S/E) using a fresh read session per media_id.
+
+    A fresh session per iteration prevents a connection poisoned by a replica
+    WAL-replay cancel (or mid-selectin cancellation) from contaminating the
+    remaining media_ids in the batch.
+    """
     out: dict[int, dict] = {}
-    async with get_read_session_context() as session:
-        for media_id in media_ids:
+    for media_id in media_ids:
+        async with get_read_session_context() as session:
             out[media_id] = await _fetch_series_raw_streams_in_session(
                 session, media_id, season, episode, visibility_filter
             )
@@ -1312,13 +1331,25 @@ async def _get_cached_series_streams_bulk(
         logger.debug("Stream cache MISS for series media_ids=%s S%sE%s", ids_to_fetch, season, episode)
         t0 = time.monotonic()
 
-        async def _run_batch():
+        async def _run_series_batch_read():
             return await _fetch_series_raw_streams_batch(ids_to_fetch, season, episode, visibility_filter)
 
-        batch = await run_db_operation_with_retry(
-            operation=_run_batch,
+        async def _run_series_batch_primary():
+            out_primary: dict[int, dict] = {}
+            for mid in ids_to_fetch:
+                async with get_async_session_context() as s:
+                    out_primary[mid] = await _fetch_series_raw_streams_in_session(
+                        s, mid, season, episode, visibility_filter
+                    )
+            return out_primary
+
+        batch = await run_db_read_with_primary_fallback(
+            _run_series_batch_read,
+            _run_series_batch_primary,
             operation_name=batch_op_name,
-            on_retry=_log_db_retry_attempt(batch_op_name),
+            on_fallback=lambda exc: logger.warning(
+                "Falling back to primary for %s after replica error: %s", batch_op_name, exc
+            ),
         )
         elapsed = time.monotonic() - t0
         logger.info("DB batch fetch for series media_ids=%s S%sE%s took %.3fs", ids_to_fetch, season, episode, elapsed)

@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import traceback
 import time
 from collections.abc import Callable
 from threading import Lock
@@ -15,7 +16,7 @@ from sqlalchemy.exc import DBAPIError, StatementError
 
 from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
-from db.retry_utils import is_retryable_db_error
+from db.retry_utils import is_retryable_db_error, is_sqlalchemy_pool_exhaustion_error
 from db.schemas import UserData
 from utils import const
 from utils.crypto import UserFacingSecretError, crypto_utils
@@ -355,6 +356,19 @@ class TransientDatabaseRetryMiddleware(BaseHTTPMiddleware):
             try:
                 return await call_next(request)
             except (DBAPIError, StatementError) as exc:
+                if is_sqlalchemy_pool_exhaustion_error(exc):
+                    # Pool exhaustion is a capacity problem — retrying immediately
+                    # just queues another waiter, making it worse.  Let it bubble up
+                    # to TimingMiddleware which returns a 503.
+                    self._log.warning(
+                        "Pool exhaustion on %s %s (attempt %s/%s): %s",
+                        request.method,
+                        request.url.path,
+                        attempt + 1,
+                        self._MAX_ATTEMPTS,
+                        exc,
+                    )
+                    raise
                 if attempt >= self._MAX_ATTEMPTS - 1 or not is_retryable_db_error(exc):
                     raise
                 self._log.warning(
@@ -367,7 +381,34 @@ class TransientDatabaseRetryMiddleware(BaseHTTPMiddleware):
                 )
 
 
+def _format_exception_chain(exc: BaseException) -> str:
+    """Return the full exception chain as a single string.
+
+    Standard logging.exception() covers direct __cause__/__context__ chains but
+    ExceptionGroup members (raised by Starlette's anyio TaskGroup) are not walked
+    by default formatters, so individual sub-exceptions collapse into a single
+    "unhandled errors in a TaskGroup (N sub-exception)" line.  This helper walks
+    the full tree and concatenates all formatted tracebacks so every sub-exception
+    is visible in the log output.
+    """
+    parts: list[str] = []
+    seen: set[int] = set()
+
+    def _walk(e: BaseException, prefix: str = "") -> None:
+        if id(e) in seen:
+            return
+        seen.add(id(e))
+        parts.append(f"{prefix}{''.join(traceback.format_exception(type(e), e, e.__traceback__))}")
+        for sub in getattr(e, "exceptions", None) or []:
+            _walk(sub, prefix="  [sub-exception] ")
+
+    _walk(exc)
+    return "\n".join(parts)
+
+
 class TimingMiddleware(BaseHTTPMiddleware):
+    _log = logging.getLogger(__name__)
+
     async def dispatch(self, request: Request, call_next):
         start_time = time.time()
         is_api_path = request.url.path.startswith("/api/v1/")
@@ -377,7 +418,13 @@ class TimingMiddleware(BaseHTTPMiddleware):
             if str(exc) == "No response returned." and await request.is_disconnected():
                 response = Response(status_code=204)
             else:
-                logging.exception(f"Internal Server Error: {exc}")
+                self._log.error(
+                    "Internal Server Error on %s %s: %s\n%s",
+                    request.method,
+                    request.url.path,
+                    exc,
+                    _format_exception_chain(exc),
+                )
                 if is_api_path:
                     response = JSONResponse(
                         content={
@@ -394,22 +441,50 @@ class TimingMiddleware(BaseHTTPMiddleware):
                         headers=const.NO_CACHE_HEADERS,
                     )
         except Exception as e:
-            logging.exception(f"Internal Server Error: {e}")
-            if is_api_path:
+            if is_sqlalchemy_pool_exhaustion_error(e):
+                # DB connection pool is saturated — capacity issue, not a bug.
+                # Log at WARNING with full request context so the endpoint causing
+                # the most pressure is visible in aggregated logs.
+                self._log.warning(
+                    "DB pool exhausted on %s %s (pool_size=%s overflow=%s timeout=30s): %s",
+                    request.method,
+                    request.url.path,
+                    settings.db_max_connections,
+                    settings.gunicorn_workers,
+                    e,
+                )
                 response = JSONResponse(
                     content={
                         "error": True,
-                        "detail": "Internal Server Error. Check the server log & Create GitHub Issue",
-                        "status_code": 500,
+                        "detail": "Server is under high load, please retry in a moment.",
+                        "status_code": 503,
                     },
-                    headers=const.NO_CACHE_HEADERS,
+                    status_code=503,
+                    headers={**const.NO_CACHE_HEADERS, "Retry-After": "5"},
                 )
             else:
-                response = Response(
-                    content="Internal Server Error. Check the server log & Create GitHub Issue",
-                    status_code=500,
-                    headers=const.NO_CACHE_HEADERS,
+                self._log.error(
+                    "Internal Server Error on %s %s: %s\n%s",
+                    request.method,
+                    request.url.path,
+                    e,
+                    _format_exception_chain(e),
                 )
+                if is_api_path:
+                    response = JSONResponse(
+                        content={
+                            "error": True,
+                            "detail": "Internal Server Error. Check the server log & Create GitHub Issue",
+                            "status_code": 500,
+                        },
+                        headers=const.NO_CACHE_HEADERS,
+                    )
+                else:
+                    response = Response(
+                        content="Internal Server Error. Check the server log & Create GitHub Issue",
+                        status_code=500,
+                        headers=const.NO_CACHE_HEADERS,
+                    )
         process_time = time.time() - start_time
         response.headers["X-Process-Time"] = f"{process_time:.4f} seconds"
 
