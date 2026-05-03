@@ -11,10 +11,11 @@ They use:
 import asyncio
 import gzip
 import importlib
-import json
 import logging
 import time
 import zlib
+
+import orjson
 from collections.abc import Awaitable
 from typing import Any, cast
 
@@ -92,14 +93,20 @@ _STREAM_CACHE_MAGIC = b"\x01MFsc1"  # zlib-compressed JSON blob prefix
 LIVE_TORRENT_FALLBACK_CACHE_TTL = 180  # 3 minutes
 LIVE_TORRENT_FALLBACK_CACHE_PREFIX = "live_torrent_fallback:"
 
+# Thundering-herd guard for live search: only one request per content item scrapes at a time.
+# TTL should exceed the longest expected scraper run (scrapers have their own timeouts).
+_LIVE_SEARCH_LOCK_PREFIX = "live_search_lock:"
+_LIVE_SEARCH_LOCK_TTL = 300  # 5 minutes — acts as both concurrency guard and cooldown
+
 logger = logging.getLogger(__name__)
 
 
 def _encode_stream_cache_blob(data: dict) -> bytes | None:
     """Serialize stream cache payload for Redis. Returns None if over max_stored_bytes."""
-    raw = json.dumps(data, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+    raw = orjson.dumps(data, option=orjson.OPT_NON_STR_KEYS, default=str)
     if settings.stream_raw_redis_cache_zlib_compress:
-        body = _STREAM_CACHE_MAGIC + zlib.compress(raw, 6)
+        # Level 1: fastest compression; cache blobs are short-lived so ratio matters less than CPU cost
+        body = _STREAM_CACHE_MAGIC + zlib.compress(raw, 1)
     else:
         body = raw
     max_b = settings.stream_raw_redis_cache_max_stored_bytes
@@ -122,8 +129,8 @@ def _decode_stream_cache_blob(blob: bytes | memoryview | str | None) -> dict | N
         return None
     if isinstance(blob, str):
         try:
-            return json.loads(blob)
-        except json.JSONDecodeError:
+            return orjson.loads(blob)
+        except Exception:
             return None
     if isinstance(blob, memoryview):
         blob = bytes(blob)
@@ -132,8 +139,8 @@ def _decode_stream_cache_blob(blob: bytes | memoryview | str | None) -> dict | N
 
     def _loads_utf8_json(raw: bytes) -> dict | None:
         try:
-            return json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+            return orjson.loads(raw)
+        except Exception:
             return None
 
     if blob.startswith(_STREAM_CACHE_MAGIC):
@@ -191,6 +198,27 @@ async def _store_stream_cache(cache_key: str, data: dict) -> None:
         )
     except Exception as exc:
         logger.warning("Stream cache SET failed for %s: %s", cache_key, exc)
+
+
+async def _store_stream_cache_bulk(pairs: list[tuple[str, dict]]) -> None:
+    """Store multiple stream cache entries in a single Redis pipeline."""
+    if not settings.stream_raw_redis_cache_enabled or not pairs:
+        return
+    ttl = settings.stream_raw_redis_cache_ttl_seconds
+    try:
+        pipe = REDIS_ASYNC_CLIENT.pipeline(transaction=False)
+        stored = 0
+        for cache_key, data in pairs:
+            blob = _encode_stream_cache_blob(data)
+            if blob is None:
+                logger.debug("Stream cache skip SET (oversize): %s", cache_key)
+                continue
+            pipe.set(cache_key, blob, ex=ttl)
+            stored += 1
+        if stored:
+            await pipe.execute()
+    except Exception as exc:
+        logger.warning("Stream cache pipeline SET failed: %s", exc)
 
 
 _scraper_tasks_module = None
@@ -401,10 +429,48 @@ async def _run_live_search_scrapers(
     season: int | None = None,
     episode: int | None = None,
 ) -> tuple[list[TorrentStreamData], list[UsenetStreamData]]:
-    """Run enabled live scrapers and return in-memory stream results."""
+    """Run enabled live scrapers and return in-memory stream results.
+
+    Thundering-herd guard: for popular content, multiple users may request the
+    same stream page simultaneously.  Only the request that wins the Redis lock
+    runs the scrapers; the others skip immediately and get whatever is already in
+    the DB cache (which the winner will refresh in the background).
+    """
+    # Build a lock key scoped to this exact content item + episode
+    ep_suffix = f":{season}:{episode}" if season is not None else ""
+    lock_key = f"{_LIVE_SEARCH_LOCK_PREFIX}{metadata.external_id}{ep_suffix}"
+
+    # Non-blocking SETNX: if another request is already scraping this content, or if scrapers
+    # ran recently, skip.  The key is NOT deleted after scraping — it acts as both a concurrency
+    # guard and a freshness TTL so we don't re-run expensive scrapers on every warm request.
+    acquired = await REDIS_ASYNC_CLIENT.set(lock_key, "1", ex=_LIVE_SEARCH_LOCK_TTL, nx=True)
+    if not acquired:
+        logger.info(
+            "Live search skipped for %s (scrapers ran recently or are running now)",
+            metadata.external_id,
+        )
+        return [], []
+
+    try:
+        return await _do_run_live_search_scrapers(user_data, metadata, catalog_type, season, episode)
+    except Exception:
+        # On failure: delete the lock so a retry is possible immediately.
+        try:
+            await REDIS_ASYNC_CLIENT.delete(lock_key)
+        except Exception:
+            pass
+        raise
+
+
+async def _do_run_live_search_scrapers(
+    user_data: UserData,
+    metadata: MetadataData,
+    catalog_type: str,
+    season: int | None = None,
+    episode: int | None = None,
+) -> tuple[list[TorrentStreamData], list[UsenetStreamData]]:
+    """Inner live-scraper fanout — run torrent and usenet scrapers in parallel."""
     scraper_tasks = _get_scraper_tasks_module()
-    torrent_streams: list[TorrentStreamData] = []
-    usenet_streams: list[UsenetStreamData] = []
     active_providers = user_data.get_active_providers()
     has_torrent_provider = (
         True if not active_providers else any(sp.service in TORRENT_CAPABLE_PROVIDERS for sp in active_providers)
@@ -412,10 +478,17 @@ async def _run_live_search_scrapers(
     has_usenet_provider = any(sp.service in USENET_CAPABLE_PROVIDERS for sp in active_providers)
     has_newznab_indexers = bool(user_data.indexer_config and user_data.indexer_config.newznab_indexers)
     has_public_usenet = settings.is_scrap_from_public_usenet_indexers
+    run_usenet = user_data.enable_usenet_streams and (has_usenet_provider or has_newznab_indexers or has_public_usenet)
 
-    if has_torrent_provider:
+    async def _torrent_scrape() -> list[TorrentStreamData]:
+        if not has_torrent_provider:
+            logger.info(
+                "Skipping live torrent scraping for %s: no torrent-capable provider configured",
+                metadata.external_id,
+            )
+            return []
         try:
-            torrent_streams = list(
+            return list(
                 await scraper_tasks.run_scrapers(
                     user_data=user_data,
                     metadata=metadata,
@@ -426,15 +499,13 @@ async def _run_live_search_scrapers(
             )
         except Exception as exc:
             logger.warning("Live torrent scraping failed for %s: %s", metadata.external_id, exc)
-    else:
-        logger.info(
-            "Skipping live torrent scraping for %s: no torrent-capable provider configured",
-            metadata.external_id,
-        )
+            return []
 
-    if user_data.enable_usenet_streams and (has_usenet_provider or has_newznab_indexers or has_public_usenet):
+    async def _usenet_scrape() -> list[UsenetStreamData]:
+        if not run_usenet:
+            return []
         try:
-            usenet_streams = await scraper_tasks.run_usenet_scrapers(
+            return await scraper_tasks.run_usenet_scrapers(
                 user_data=user_data,
                 metadata=metadata,
                 catalog_type=catalog_type,
@@ -443,7 +514,10 @@ async def _run_live_search_scrapers(
             )
         except Exception as exc:
             logger.warning("Live usenet scraping failed for %s: %s", metadata.external_id, exc)
+            return []
 
+    # Run torrent and usenet scrapers in parallel — they are fully independent
+    torrent_streams, usenet_streams = await asyncio.gather(_torrent_scrape(), _usenet_scrape())
     return torrent_streams, usenet_streams
 
 
@@ -523,7 +597,7 @@ async def cache_live_torrent_fallback_streams(streams: list[TorrentStreamData]) 
             for stream in streams:
                 # Exclude binary payloads to keep cache compact and JSON-safe.
                 stream_payload = stream.model_dump(mode="json", exclude={"torrent_file"})
-                payload = json.dumps(stream_payload).encode("utf-8")
+                payload = orjson.dumps(stream_payload)
                 key = _get_live_torrent_fallback_cache_key(stream.info_hash)
                 pipeline.set(key, payload, ex=LIVE_TORRENT_FALLBACK_CACHE_TTL)
             await pipeline.execute()
@@ -531,7 +605,7 @@ async def cache_live_torrent_fallback_streams(streams: list[TorrentStreamData]) 
 
         for stream in streams:
             stream_payload = stream.model_dump(mode="json", exclude={"torrent_file"})
-            payload = json.dumps(stream_payload).encode("utf-8")
+            payload = orjson.dumps(stream_payload)
             key = _get_live_torrent_fallback_cache_key(stream.info_hash)
             await REDIS_ASYNC_CLIENT.set(key, payload, ex=LIVE_TORRENT_FALLBACK_CACHE_TTL)
     except Exception as exc:
@@ -546,7 +620,7 @@ async def get_cached_live_torrent_fallback_stream(info_hash: str) -> TorrentStre
         if not payload:
             return None
 
-        stream_payload = json.loads(payload.decode("utf-8"))
+        stream_payload = orjson.loads(payload)
         return TorrentStreamData.model_validate(stream_payload)
     except Exception as exc:
         logger.warning("Failed to read live torrent fallback stream for %s: %s", info_hash, exc)
@@ -564,7 +638,7 @@ def _dedupe_raw_streams(
     for stream in streams:
         dedupe_key = key_builder(stream)
         if dedupe_key is None:
-            dedupe_key = f"json:{json.dumps(stream, sort_keys=True, default=str)}"
+            dedupe_key = f"json:{orjson.dumps(stream, option=orjson.OPT_SORT_KEYS, default=str).decode()}"
         if dedupe_key in seen_keys:
             continue
         seen_keys.add(dedupe_key)
@@ -585,8 +659,8 @@ def _merge_raw_stream_payloads(payloads: list[dict[str, list[dict[str, Any]]]]) 
     }
 
     for payload in payloads:
-        for stream_type in merged:
-            merged[stream_type].extend(payload.get(stream_type, []))
+        for stream_type, streams in merged.items():
+            streams.extend(payload.get(stream_type, []))
 
     def _norm(value: Any) -> str | None:
         if value is None:
@@ -943,16 +1017,19 @@ async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
 
 
 async def _fetch_movie_raw_streams_batch(media_ids: list[int], visibility_filter) -> dict[int, dict]:
-    """Load several movies using a fresh read session per movie.
+    """Load several movies in parallel, each in its own read session.
 
-    A fresh session per iteration ensures a connection left in a bad state by a
-    replica WAL-replay cancel on one movie does not poison subsequent fetches.
+    A fresh session per media_id prevents a connection poisoned by a replica
+    WAL-replay cancel on one movie from contaminating the others.
+    Parallel execution cuts latency from O(N * query_time) to O(query_time).
     """
-    out: dict[int, dict] = {}
-    for media_id in media_ids:
+
+    async def _fetch_one(mid: int) -> tuple[int, dict]:
         async with get_read_session_context() as session:
-            out[media_id] = await _fetch_movie_raw_streams_in_session(session, media_id, visibility_filter)
-    return out
+            return mid, await _fetch_movie_raw_streams_in_session(session, mid, visibility_filter)
+
+    results = await asyncio.gather(*(_fetch_one(mid) for mid in media_ids))
+    return dict(results)
 
 
 async def _get_cached_movie_streams_bulk(
@@ -964,14 +1041,23 @@ async def _get_cached_movie_streams_bulk(
     n = len(media_ids)
     if n == 0:
         return []
+    # Use "public" scope for all non-user-specific stream data so concurrent users
+    # share the same cache entry (streams are the same regardless of who's watching).
     visibility_scope = f"user:{user_id}" if user_id else "public"
     cache_keys = [f"{STREAM_CACHE_PREFIX}movie:{mid}:{visibility_scope}" for mid in media_ids]
     out: list[dict | None] = [None] * n
     miss_indices: list[int] = []
 
-    for i, cache_key in enumerate(cache_keys):
-        if settings.stream_raw_redis_cache_enabled:
-            cached = await REDIS_ASYNC_CLIENT.get(cache_key)
+    # Single MGET round-trip instead of N sequential GETs
+    if settings.stream_raw_redis_cache_enabled:
+        try:
+            cached_blobs = await REDIS_ASYNC_CLIENT.mget(*cache_keys)
+        except Exception as exc:
+            logger.warning("Stream cache MGET failed: %s", exc)
+            cached_blobs = [None] * n
+
+        stale_keys_to_evict: list[str] = []
+        for i, (cached, cache_key) in enumerate(zip(cached_blobs, cache_keys)):
             if cached:
                 parsed = _decode_stream_cache_blob(cached)
                 if parsed is not None:
@@ -983,11 +1069,16 @@ async def _get_cached_movie_streams_bulk(
                     media_ids[i],
                     cache_key,
                 )
-                try:
-                    await REDIS_ASYNC_CLIENT.delete(cache_key)
-                except Exception as exc:
-                    logger.debug("Stream cache evict failed for %s: %s", cache_key, exc)
-        miss_indices.append(i)
+                stale_keys_to_evict.append(cache_key)
+            miss_indices.append(i)
+
+        if stale_keys_to_evict:
+            try:
+                await REDIS_ASYNC_CLIENT.delete(*stale_keys_to_evict)
+            except Exception as exc:
+                logger.debug("Stream cache evict failed: %s", exc)
+    else:
+        miss_indices = list(range(n))
 
     if miss_indices:
         ids_to_fetch = [media_ids[i] for i in miss_indices]
@@ -999,11 +1090,12 @@ async def _get_cached_movie_streams_bulk(
             return await _fetch_movie_raw_streams_batch(ids_to_fetch, visibility_filter)
 
         async def _run_movie_batch_primary():
-            out_primary: dict[int, dict] = {}
-            for mid in ids_to_fetch:
+            async def _fetch_one_primary(mid: int) -> tuple[int, dict]:
                 async with get_async_session_context() as s:
-                    out_primary[mid] = await _fetch_movie_raw_streams_in_session(s, mid, visibility_filter)
-            return out_primary
+                    return mid, await _fetch_movie_raw_streams_in_session(s, mid, visibility_filter)
+
+            results = await asyncio.gather(*(_fetch_one_primary(mid) for mid in ids_to_fetch))
+            return dict(results)
 
         batch = await run_db_read_with_primary_fallback(
             _run_movie_batch_read,
@@ -1015,11 +1107,11 @@ async def _get_cached_movie_streams_bulk(
         )
         elapsed = time.monotonic() - t0
         logger.info("DB batch fetch for movie media_ids=%s took %.3fs", ids_to_fetch, elapsed)
+
+        # Store all misses in a single pipeline instead of N serial SETs
+        await _store_stream_cache_bulk([(cache_keys[idx], batch[media_ids[idx]]) for idx in miss_indices])
         for idx in miss_indices:
-            mid = media_ids[idx]
-            data = batch[mid]
-            out[idx] = data
-            await _store_stream_cache(cache_keys[idx], data)
+            out[idx] = batch[media_ids[idx]]
 
     if any(x is None for x in out):
         raise RuntimeError("incomplete movie stream cache bulk fetch")
@@ -1238,19 +1330,19 @@ async def _fetch_series_raw_streams_batch(
     episode: int,
     visibility_filter,
 ) -> dict[int, dict]:
-    """Load several series episodes (same S/E) using a fresh read session per media_id.
+    """Load several series episodes in parallel, each in its own read session.
 
-    A fresh session per iteration prevents a connection poisoned by a replica
-    WAL-replay cancel (or mid-selectin cancellation) from contaminating the
-    remaining media_ids in the batch.
+    A fresh session per media_id prevents a connection poisoned by a replica
+    WAL-replay cancel from contaminating the others.
+    Parallel execution cuts latency from O(N * query_time) to O(query_time).
     """
-    out: dict[int, dict] = {}
-    for media_id in media_ids:
+
+    async def _fetch_one(mid: int) -> tuple[int, dict]:
         async with get_read_session_context() as session:
-            out[media_id] = await _fetch_series_raw_streams_in_session(
-                session, media_id, season, episode, visibility_filter
-            )
-    return out
+            return mid, await _fetch_series_raw_streams_in_session(session, mid, season, episode, visibility_filter)
+
+    results = await asyncio.gather(*(_fetch_one(mid) for mid in media_ids))
+    return dict(results)
 
 
 async def _get_cached_series_streams_bulk(
@@ -1269,9 +1361,16 @@ async def _get_cached_series_streams_bulk(
     out: list[dict | None] = [None] * n
     miss_indices: list[int] = []
 
-    for i, cache_key in enumerate(cache_keys):
-        if settings.stream_raw_redis_cache_enabled:
-            cached = await REDIS_ASYNC_CLIENT.get(cache_key)
+    # Single MGET round-trip instead of N sequential GETs
+    if settings.stream_raw_redis_cache_enabled:
+        try:
+            cached_blobs = await REDIS_ASYNC_CLIENT.mget(*cache_keys)
+        except Exception as exc:
+            logger.warning("Stream cache MGET failed: %s", exc)
+            cached_blobs = [None] * n
+
+        stale_keys_to_evict: list[str] = []
+        for i, (cached, cache_key) in enumerate(zip(cached_blobs, cache_keys)):
             if cached:
                 parsed = _decode_stream_cache_blob(cached)
                 if parsed is not None:
@@ -1290,11 +1389,16 @@ async def _get_cached_series_streams_bulk(
                     episode,
                     cache_key,
                 )
-                try:
-                    await REDIS_ASYNC_CLIENT.delete(cache_key)
-                except Exception as exc:
-                    logger.debug("Stream cache evict failed for %s: %s", cache_key, exc)
-        miss_indices.append(i)
+                stale_keys_to_evict.append(cache_key)
+            miss_indices.append(i)
+
+        if stale_keys_to_evict:
+            try:
+                await REDIS_ASYNC_CLIENT.delete(*stale_keys_to_evict)
+            except Exception as exc:
+                logger.debug("Stream cache evict failed: %s", exc)
+    else:
+        miss_indices = list(range(n))
 
     if miss_indices:
         ids_to_fetch = [media_ids[i] for i in miss_indices]
@@ -1306,13 +1410,12 @@ async def _get_cached_series_streams_bulk(
             return await _fetch_series_raw_streams_batch(ids_to_fetch, season, episode, visibility_filter)
 
         async def _run_series_batch_primary():
-            out_primary: dict[int, dict] = {}
-            for mid in ids_to_fetch:
+            async def _fetch_one_primary(mid: int) -> tuple[int, dict]:
                 async with get_async_session_context() as s:
-                    out_primary[mid] = await _fetch_series_raw_streams_in_session(
-                        s, mid, season, episode, visibility_filter
-                    )
-            return out_primary
+                    return mid, await _fetch_series_raw_streams_in_session(s, mid, season, episode, visibility_filter)
+
+            results = await asyncio.gather(*(_fetch_one_primary(mid) for mid in ids_to_fetch))
+            return dict(results)
 
         batch = await run_db_read_with_primary_fallback(
             _run_series_batch_read,
@@ -1324,11 +1427,11 @@ async def _get_cached_series_streams_bulk(
         )
         elapsed = time.monotonic() - t0
         logger.info("DB batch fetch for series media_ids=%s S%sE%s took %.3fs", ids_to_fetch, season, episode, elapsed)
+
+        # Store all misses in a single pipeline instead of N serial SETs
+        await _store_stream_cache_bulk([(cache_keys[idx], batch[media_ids[idx]]) for idx in miss_indices])
         for idx in miss_indices:
-            mid = media_ids[idx]
-            data = batch[mid]
-            out[idx] = data
-            await _store_stream_cache(cache_keys[idx], data)
+            out[idx] = batch[media_ids[idx]]
 
     if any(x is None for x in out):
         raise RuntimeError("incomplete series stream cache bulk fetch")
