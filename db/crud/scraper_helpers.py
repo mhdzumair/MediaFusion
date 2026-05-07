@@ -394,8 +394,10 @@ async def get_or_create_metadata(
 
     # Determine end_date from end_year if not provided directly
     end_date = _normalize_date_value(metadata_data.get("end_date"))
-    if not end_date and (end_year := metadata_data.get("end_year")):
-        end_date = date(end_year, 12, 31)
+    if not end_date:
+        end_year = _normalize_year_value(metadata_data.get("end_year"))
+        if end_year is not None:
+            end_date = date(end_year, 12, 31)
 
     runtime_minutes = _normalize_runtime_minutes(metadata_data.get("runtime_minutes") or metadata_data.get("runtime"))
 
@@ -941,8 +943,8 @@ async def update_single_imdb_metadata(
 
     # Update end_date for series
     if media_type == "series":
-        end_year = fetched_data.get("end_year")
-        if end_year:
+        end_year = _normalize_year_value(fetched_data.get("end_year"))
+        if end_year is not None:
             media.end_date = date(end_year, 12, 31)
 
         # Update series metadata
