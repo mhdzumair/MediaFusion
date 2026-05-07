@@ -1796,7 +1796,8 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                 continue
 
             # If we need IMDB support, check if it's available
-            if requires_imdb and "imdbid" not in search_caps[indexer_search_type]:
+            # Prowlarr returns camelCase 'imdbId', so compare case-insensitively
+            if requires_imdb and not any(cap.lower() == "imdbid" for cap in search_caps[indexer_search_type]):
                 continue
 
             # Check if indexer supports any of the required categories
