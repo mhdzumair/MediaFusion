@@ -1325,7 +1325,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "complete",
-        rei(r"(?<!A.?|The.?)\bComplete\b"),
+        rei(r"(?<!A )(?<!The )\bComplete\b"),
         arc(tr_boolean),
         Opts::defaults().with_remove(true),
     );
