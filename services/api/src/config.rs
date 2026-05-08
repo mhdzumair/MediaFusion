@@ -78,6 +78,10 @@ pub struct AppConfig {
     pub telegram_scrape_message_limit: i32,
     /// Minimum video file size in bytes to consider (default 50 MB).
     pub min_scraping_video_size: u64,
+
+    // ── IPTV import ─────────────────────────────────────────────────────────
+    pub enable_iptv_import: bool,
+    pub allow_public_iptv_sharing: bool,
 }
 
 impl AppConfig {
@@ -217,6 +221,14 @@ impl AppConfig {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(50 * 1024 * 1024),
+            enable_iptv_import: std::env::var("ENABLE_IPTV_IMPORT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(true),
+            allow_public_iptv_sharing: std::env::var("ALLOW_PUBLIC_IPTV_SHARING")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(false),
         }
     }
 }

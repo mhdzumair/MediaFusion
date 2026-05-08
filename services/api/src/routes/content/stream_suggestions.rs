@@ -486,27 +486,36 @@ pub async fn list_my_stream_suggestions(
 
     let mut count_sql = String::from("SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1");
     let mut fetch_sql = String::from("SELECT id FROM stream_suggestion WHERE user_id = $1");
+    let mut extra_binds: Vec<String> = Vec::new();
+    let mut next_idx = 2i32;
 
     if let Some(ref s) = params.status {
-        let esc = s.replace('\'', "''");
-        count_sql.push_str(&format!(" AND status = '{esc}'"));
-        fetch_sql.push_str(&format!(" AND status = '{esc}'"));
+        count_sql.push_str(&format!(" AND status = ${next_idx}"));
+        fetch_sql.push_str(&format!(" AND status = ${next_idx}"));
+        extra_binds.push(s.clone());
+        next_idx += 1;
     }
     if let Some(ref st) = params.suggestion_type {
-        let esc = st.replace('\'', "''");
-        count_sql.push_str(&format!(" AND suggestion_type = '{esc}'"));
-        fetch_sql.push_str(&format!(" AND suggestion_type = '{esc}'"));
+        count_sql.push_str(&format!(" AND suggestion_type = ${next_idx}"));
+        fetch_sql.push_str(&format!(" AND suggestion_type = ${next_idx}"));
+        extra_binds.push(st.clone());
+        next_idx += 1;
     }
 
-    fetch_sql.push_str(" ORDER BY created_at DESC LIMIT $2 OFFSET $3");
+    fetch_sql.push_str(&format!(" ORDER BY created_at DESC LIMIT ${next_idx} OFFSET ${}", next_idx + 1));
 
-    let total: i64 = sqlx::query_scalar(&count_sql)
-        .bind(user_id)
-        .fetch_one(&state.pool_ro).await.unwrap_or(0);
+    let mut cq = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id);
+    for v in &extra_binds {
+        cq = cq.bind(v.clone());
+    }
+    let total: i64 = cq.fetch_one(&state.pool_ro).await.unwrap_or(0);
 
-    let ids: Vec<(String,)> = sqlx::query_as::<_, (String,)>(&fetch_sql)
-        .bind(user_id).bind(page_size).bind(offset)
-        .fetch_all(&state.pool_ro).await.unwrap_or_default();
+    let mut fq = sqlx::query_as::<_, (String,)>(&fetch_sql).bind(user_id);
+    for v in &extra_binds {
+        fq = fq.bind(v.clone());
+    }
+    fq = fq.bind(page_size).bind(offset);
+    let ids: Vec<(String,)> = fq.fetch_all(&state.pool_ro).await.unwrap_or_default();
 
     let mut suggestions = Vec::new();
     for (id,) in &ids {
@@ -608,21 +617,30 @@ pub async fn list_pending_stream_suggestions(
 
     let mut count_sql = String::from("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'pending'");
     let mut fetch_sql = String::from("SELECT id FROM stream_suggestion WHERE status = 'pending'");
+    let mut extra_binds: Vec<String> = Vec::new();
+    let mut next_idx = 1i32;
 
     if let Some(ref st) = params.suggestion_type {
-        let esc = st.replace('\'', "''");
-        count_sql.push_str(&format!(" AND suggestion_type = '{esc}'"));
-        fetch_sql.push_str(&format!(" AND suggestion_type = '{esc}'"));
+        count_sql.push_str(&format!(" AND suggestion_type = ${next_idx}"));
+        fetch_sql.push_str(&format!(" AND suggestion_type = ${next_idx}"));
+        extra_binds.push(st.clone());
+        next_idx += 1;
     }
 
-    fetch_sql.push_str(" ORDER BY created_at ASC LIMIT $1 OFFSET $2");
+    fetch_sql.push_str(&format!(" ORDER BY created_at ASC LIMIT ${next_idx} OFFSET ${}", next_idx + 1));
 
-    let total: i64 = sqlx::query_scalar(&count_sql)
-        .fetch_one(&state.pool_ro).await.unwrap_or(0);
+    let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
+    for v in &extra_binds {
+        cq = cq.bind(v.clone());
+    }
+    let total: i64 = cq.fetch_one(&state.pool_ro).await.unwrap_or(0);
 
-    let ids: Vec<(String,)> = sqlx::query_as::<_, (String,)>(&fetch_sql)
-        .bind(page_size).bind(offset)
-        .fetch_all(&state.pool_ro).await.unwrap_or_default();
+    let mut fq = sqlx::query_as::<_, (String,)>(&fetch_sql);
+    for v in &extra_binds {
+        fq = fq.bind(v.clone());
+    }
+    fq = fq.bind(page_size).bind(offset);
+    let ids: Vec<(String,)> = fq.fetch_all(&state.pool_ro).await.unwrap_or_default();
 
     let mut suggestions = Vec::new();
     for (id,) in &ids {

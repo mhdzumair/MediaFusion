@@ -226,14 +226,37 @@ pub struct DeleteEpisodeAdminQuery {
 
 // ─── Helper: build a basic media JSON object from DB row ─────────────────────
 
+#[derive(sqlx::FromRow)]
+struct MediaBasicRow {
+    id: i64,
+    #[sqlx(rename = "type")]
+    media_type: String,
+    title: String,
+    original_title: Option<String>,
+    year: Option<i32>,
+    description: Option<String>,
+    tagline: Option<String>,
+    status: Option<String>,
+    website: Option<String>,
+    is_public: bool,
+    is_user_created: bool,
+    created_by_user_id: Option<i64>,
+    total_streams: i64,
+    created_at: DateTime<Utc>,
+    updated_at: Option<DateTime<Utc>>,
+    runtime_minutes: Option<i32>,
+    release_date: Option<String>,
+    original_language: Option<String>,
+    nudity_status: Option<String>,
+    source: Option<String>,
+}
+
 async fn media_row_to_json(
     pool: &sqlx::PgPool,
     media_id: i64,
     include_seasons: bool,
 ) -> serde_json::Value {
-    // Basic fields
-    let row: Option<(i64, String, String, Option<String>, Option<i32>, Option<String>, Option<String>, Option<String>, Option<String>, bool, bool, Option<i64>, i64, DateTime<Utc>, Option<DateTime<Utc>>, Option<i32>, Option<String>, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as(
+    let row = sqlx::query_as::<_, MediaBasicRow>(
             r#"SELECT id, type, title, original_title, year, description, tagline,
                       status, website, is_public, is_user_created,
                       created_by_user_id, total_streams,
@@ -245,7 +268,8 @@ async fn media_row_to_json(
         .bind(media_id)
         .fetch_optional(pool)
         .await
-        .unwrap_or(None);
+        .ok()
+        .flatten();
 
     let row = match row {
         Some(r) => r,
@@ -345,7 +369,7 @@ async fn media_row_to_json(
     .await
     .unwrap_or(None);
 
-    let media_type_str = row.1.to_lowercase();
+    let media_type_str = row.media_type.to_lowercase();
 
     // Series-specific data
     let mut total_seasons: Option<i64> = None;
@@ -353,13 +377,14 @@ async fn media_row_to_json(
     let mut seasons_json: Option<serde_json::Value> = None;
 
     if media_type_str == "series" && include_seasons {
-        let series_row: Option<(i64, Option<i64>, Option<i64>)> = sqlx::query_as(
+        let series_row = sqlx::query_as::<_, (i64, Option<i64>, Option<i64>)>(
             "SELECT id, total_seasons, total_episodes FROM series_metadata WHERE media_id = $1",
         )
         .bind(media_id)
         .fetch_optional(pool)
         .await
-        .unwrap_or(None);
+        .ok()
+        .flatten();
 
         if let Some((series_id, ts, te)) = series_row {
             total_seasons = ts;
@@ -416,25 +441,25 @@ async fn media_row_to_json(
     }
 
     json!({
-        "id": row.0,
+        "id": row.id,
         "type": media_type_str,
-        "title": row.2,
-        "original_title": row.3,
-        "year": row.4,
-        "description": row.5,
-        "tagline": row.6,
-        "status": row.7,
-        "website": row.8,
-        "is_public": row.9,
-        "is_user_created": row.10,
-        "created_by_user_id": row.11,
-        "total_streams": row.12,
-        "created_at": row.13.to_rfc3339(),
-        "updated_at": row.14.map(|d: DateTime<Utc>| d.to_rfc3339()),
-        "runtime_minutes": row.15,
-        "release_date": row.16,
-        "original_language": row.17,
-        "nudity_status": row.18,
+        "title": row.title,
+        "original_title": row.original_title,
+        "year": row.year,
+        "description": row.description,
+        "tagline": row.tagline,
+        "status": row.status,
+        "website": row.website,
+        "is_public": row.is_public,
+        "is_user_created": row.is_user_created,
+        "created_by_user_id": row.created_by_user_id,
+        "total_streams": row.total_streams,
+        "created_at": row.created_at.to_rfc3339(),
+        "updated_at": row.updated_at.map(|d: DateTime<Utc>| d.to_rfc3339()),
+        "runtime_minutes": row.runtime_minutes,
+        "release_date": row.release_date,
+        "original_language": row.original_language,
+        "nudity_status": row.nudity_status,
         "poster_url": poster_url,
         "background_url": background_url,
         "logo_url": logo_url,
@@ -749,12 +774,12 @@ pub async fn search_all_metadata(
 
     let mut results = Vec::new();
     for id in &ids {
-        let row: Option<(String, Option<i32>, String, bool, Option<i64>)> =
-            sqlx::query_as("SELECT title, year, type::text, is_user_created, created_by_user_id FROM media WHERE id = $1")
+        let row = sqlx::query_as::<_, (String, Option<i32>, String, bool, Option<i64>)>("SELECT title, year, type::text, is_user_created, created_by_user_id FROM media WHERE id = $1")
                 .bind(id)
                 .fetch_optional(&state.pool_ro)
                 .await
-                .unwrap_or(None);
+                .ok()
+                .flatten();
         if let Some((title, year, mtype, is_user, creator_id)) = row {
             let poster: Option<String> = sqlx::query_scalar(
                 "SELECT url FROM media_image WHERE media_id = $1 AND image_type = 'poster' ORDER BY display_order ASC LIMIT 1",
@@ -809,12 +834,12 @@ pub async fn get_user_metadata(
         None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
     };
 
-    let row: Option<(bool, Option<i64>)> =
-        sqlx::query_as("SELECT is_public, created_by_user_id FROM media WHERE id = $1")
+    let row = sqlx::query_as::<_, (bool, Option<i64>)>("SELECT is_public, created_by_user_id FROM media WHERE id = $1")
             .bind(media_id)
             .fetch_optional(&state.pool_ro)
             .await
-            .unwrap_or(None);
+            .ok()
+            .flatten();
 
     match row {
         None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response(),
@@ -1009,12 +1034,12 @@ pub async fn add_season_to_series(
         None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
     };
 
-    let row: Option<(String, Option<i64>)> =
-        sqlx::query_as("SELECT type::text, created_by_user_id FROM media WHERE id = $1")
+    let row = sqlx::query_as::<_, (String, Option<i64>)>("SELECT type::text, created_by_user_id FROM media WHERE id = $1")
             .bind(media_id)
             .fetch_optional(&state.pool)
             .await
-            .unwrap_or(None);
+            .ok()
+            .flatten();
 
     let (mtype, creator_id) = match row {
         None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response(),
@@ -1134,12 +1159,12 @@ pub async fn add_episodes_to_series(
         None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
     };
 
-    let row: Option<(String, Option<i64>)> =
-        sqlx::query_as("SELECT type::text, created_by_user_id FROM media WHERE id = $1")
+    let row = sqlx::query_as::<_, (String, Option<i64>)>("SELECT type::text, created_by_user_id FROM media WHERE id = $1")
             .bind(media_id)
             .fetch_optional(&state.pool)
             .await
-            .unwrap_or(None);
+            .ok()
+            .flatten();
 
     let (mtype, creator_id) = match row {
         None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response(),

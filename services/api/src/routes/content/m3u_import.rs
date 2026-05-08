@@ -219,17 +219,11 @@ pub async fn get_import_job_status(
 }
 
 /// GET /api/v1/import/iptv-settings  (no auth required)
-pub async fn get_iptv_settings(State(state): State<Arc<AppState>>, req: Request) -> Response {
-    let headers = req.headers().clone();
-    let q = req.uri().query().unwrap_or("").to_string();
-    proxy(
-        &state,
-        reqwest::Method::GET,
-        "/api/v1/import/iptv-settings",
-        &q,
-        &headers,
-        vec![],
-        None,
-    )
-    .await
+/// Returns whether IPTV import is enabled and whether public sharing is allowed.
+pub async fn get_iptv_settings_handler(State(state): State<Arc<AppState>>) -> Response {
+    Json(serde_json::json!({
+        "enabled": state.config.enable_iptv_import,
+        "allow_public_sharing": state.config.allow_public_iptv_sharing,
+    }))
+    .into_response()
 }

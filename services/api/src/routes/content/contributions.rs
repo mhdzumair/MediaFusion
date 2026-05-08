@@ -174,8 +174,8 @@ struct ContribRow {
 }
 
 async fn fetch_contrib_row(pool: &sqlx::PgPool, id: &str) -> Option<ContribRow> {
-    let row: Option<(String, Option<i64>, String, Option<String>, serde_json::Value, String, Option<String>, Option<DateTime<Utc>>, Option<String>, bool, Option<String>, Option<DateTime<Utc>>, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>)> =
-        sqlx::query_as(
+    type RowTuple = (String, Option<i64>, String, Option<String>, serde_json::Value, String, Option<String>, Option<DateTime<Utc>>, Option<String>, bool, Option<String>, Option<DateTime<Utc>>, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>);
+    let row = sqlx::query_as::<_, RowTuple>(
             r#"SELECT id, user_id, contribution_type, target_id, data, status,
                       reviewed_by, reviewed_at, review_notes,
                       admin_review_requested, admin_review_requested_by,
@@ -186,7 +186,8 @@ async fn fetch_contrib_row(pool: &sqlx::PgPool, id: &str) -> Option<ContribRow> 
         .bind(id)
         .fetch_optional(pool)
         .await
-        .unwrap_or(None)?;
+        .ok()
+        .flatten()?;
 
     Some(ContribRow {
         id: row.0,
