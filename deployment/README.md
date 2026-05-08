@@ -14,16 +14,16 @@ MediaFusion supports multiple deployment strategies to cater to different infras
 
 ## Local Development 💻
 
-This section covers running MediaFusion locally with **partial Docker** (databases only) and **uvicorn with SSL support** — ideal for active development with hot-reload capabilities.
+This section covers running MediaFusion locally with **partial Docker** (databases only) and the **Rust API server** — ideal for active development.
 
 ### Prerequisites
 
 Ensure the following tools are installed:
 
-- **Python 3.12+**: Required for running the application
+- **Rust 1.88+**: Required for the API server. [Installation guide](https://rustup.rs/)
+- **Python 3.12+**: Required for running background workers and migrations
 - **uv**: Fast Python package installer. [Installation guide](https://docs.astral.sh/uv/getting-started/installation/)
 - **Docker & Docker Compose**: For running databases. [Installation guide](https://docs.docker.com/get-docker/)
-- **mkcert**: For generating self-signed SSL certificates. [Installation guide](https://github.com/FiloSottile/mkcert?tab=readme-ov-file#installation)
 
 ### Step 1: Clone & Setup
 
@@ -32,7 +32,7 @@ Ensure the following tools are installed:
 git clone https://github.com/mhdzumair/MediaFusion
 cd MediaFusion
 
-# Install Python dependencies using uv
+# Install Python dependencies (workers + migrations)
 uv sync
 ```
 
@@ -54,22 +54,7 @@ This starts:
 - **PostgreSQL** on `localhost:5432` (user: `mediafusion`, password: `mediafusion`)
 - **Redis** on `localhost:6379`
 
-### Step 3: Generate SSL Certificates
-
-MediaFusion requires HTTPS for certain features. Generate self-signed certificates:
-
-```bash
-# Install mkcert root CA (one-time setup)
-mkcert -install
-
-# Generate certificates for local development
-mkcert -key-file key.pem -cert-file cert.pem localhost 127.0.0.1 ::1 mediafusion.local
-```
-
-> [!TIP]
-> If using WSL, also run `mkcert -install` in Windows PowerShell to install the root certificate.
-
-### Step 4: Configure Environment Variables
+### Step 3: Configure Environment Variables
 
 Create a `.env` file in the project root:
 
@@ -80,12 +65,12 @@ SECRET_KEY=$(openssl rand -hex 16)
 # Create .env file with essential configuration
 cat > .env << EOF
 # Core Settings
-HOST_URL=https://127.0.0.1:8443
+HOST_URL=http://127.0.0.1:8000
 SECRET_KEY=${SECRET_KEY}
 API_PASSWORD=dev_password
 
 # Database URIs (matching docker-compose-minimal.yml)
-POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@localhost:5432/mediafusion
+POSTGRES_URI=postgresql://mediafusion:mediafusion@localhost:5432/mediafusion
 REDIS_URL=redis://localhost:6379
 
 # Development Settings
@@ -100,59 +85,41 @@ EOF
 > [!TIP]
 > See [Configuration Guide](/docs/env-reference.md) for all available options.
 
-### Step 5: Run Database Migrations
+### Step 4: Run Database Migrations
 
 ```bash
 # Run Alembic migrations for PostgreSQL
 uv run alembic upgrade head
 ```
 
-### Step 6: Start the Development Server
-
-Run uvicorn with SSL support and hot-reload:
+### Step 5: Start the Rust API Server
 
 ```bash
-uv run uvicorn api.main:app \
-    --host 0.0.0.0 \
-    --port 8443 \
-    --ssl-keyfile key.pem \
-    --ssl-certfile cert.pem \
-    --reload
+# Development build with auto-reload via cargo-watch (install once: cargo install cargo-watch)
+cd services/api
+cargo watch -x run
+
+# Or run directly without hot-reload
+cargo run
+
+# Or use the Makefile shortcut from the repo root
+make rust-dev
 ```
 
-The server will be available at **https://127.0.0.1:8443** 🎉
+The server will be available at **http://127.0.0.1:8000** 🎉
 
-### Quick Start Script (Optional)
-
-Create a `dev.sh` script for convenience:
-
-```bash
-#!/bin/bash
-set -e
-
-# Start databases if not running
-cd deployment/docker-compose
-docker compose -f docker-compose-minimal.yml up -d
-cd ../..
-
-# Run the development server
-uv run uvicorn api.main:app \
-    --host 0.0.0.0 \
-    --port 8443 \
-    --ssl-keyfile key.pem \
-    --ssl-certfile cert.pem \
-    --reload
-```
+> [!TIP]
+> For a release build (faster, closer to production): `cargo run --release`
 
 ### Running Background Workers (Optional)
 
-For testing scrapers and background tasks, run Taskiq workers in separate terminals:
+For testing scrapers and background tasks, run Taskiq workers in separate terminals from the **repo root**:
 
 ```bash
-uv run taskiq worker api.taskiq_worker:broker_default --workers 1 --max-async-tasks 8 --ack-type when_executed
-uv run taskiq worker api.taskiq_worker:broker_scrapy --workers 1 --max-async-tasks 1 --ack-type when_executed
-uv run taskiq worker api.taskiq_worker:broker_import --workers 1 --max-async-tasks 4 --ack-type when_executed
-uv run taskiq worker api.taskiq_worker:broker_priority --workers 1 --max-async-tasks 4 --ack-type when_executed
+uv run taskiq worker workers.taskiq_worker:broker_default --workers 1 --max-async-tasks 8 --ack-type when_executed
+uv run taskiq worker workers.taskiq_worker:broker_scrapy --workers 1 --max-async-tasks 1 --ack-type when_executed
+uv run taskiq worker workers.taskiq_worker:broker_import --workers 1 --max-async-tasks 4 --ack-type when_executed
+uv run taskiq worker workers.taskiq_worker:broker_priority --workers 1 --max-async-tasks 4 --ack-type when_executed
 ```
 
 If you want a single worker to consume all queues (including Scrapy), set:
@@ -164,20 +131,21 @@ TASKIQ_SINGLE_WORKER_MODE=true
 Then run only one worker:
 
 ```bash
-uv run taskiq worker api.taskiq_worker:broker_default --workers 1 --max-async-tasks 8 --ack-type when_executed
+uv run taskiq worker workers.taskiq_worker:broker_default --workers 1 --max-async-tasks 8 --ack-type when_executed
 ```
 
 ### Local Development Tips
 
-- **Hot Reload**: The `--reload` flag automatically restarts the server on code changes
-- **Debug Logging**: Set `LOGGING_LEVEL=DEBUG` for verbose output
+- **Hot Reload**: Install `cargo-watch` (`cargo install cargo-watch`) and use `cargo watch -x run` for auto-restart on file changes
+- **Debug Logging**: Set `LOGGING_LEVEL=DEBUG` for verbose Python worker output; the Rust server uses `RUST_LOG=debug`
 - **Disable Schedulers**: Set `DISABLE_ALL_SCHEDULER=true` to prevent background tasks from running
 - **Local Config**: Set `USE_CONFIG_SOURCE=local` to use local scraper configuration files
+- **Rust Logs**: `RUST_LOG=mediafusion_api=debug,tower_http=debug cargo run`
 
 ### Stopping Services
 
 ```bash
-# Stop the uvicorn server: Ctrl+C
+# Stop the Rust server: Ctrl+C
 
 # Stop database containers
 cd deployment/docker-compose
@@ -207,7 +175,8 @@ Before proceeding with any deployment method, make sure you have the required to
 
 - Docker and Docker Compose for container management and orchestration.
 - Kubernetes CLI (kubectl) if you are deploying with Kubernetes.
-- Python 3.12 or higher for local development.
+- Rust 1.88+ for building the API server locally (`rustup update stable`).
+- Python 3.12 or higher for background workers and migrations.
 - uv (recommended) or pip for Python package management.
 
 ## Configuration 📝
