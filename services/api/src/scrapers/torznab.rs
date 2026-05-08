@@ -255,15 +255,13 @@ fn parse_xml(
                     }
                 }
             }
-            Ok(Event::End(e)) => {
-                if e.local_name().as_ref() == b"item" && in_item {
-                    in_item = false;
-                    current_text_field = None;
-                    if let Some(s) = finalize_item(current, source, media_type, season, episode) {
-                        results.push(s);
-                    }
-                    current = XmlItem::new();
+            Ok(Event::End(e)) if e.local_name().as_ref() == b"item" && in_item => {
+                in_item = false;
+                current_text_field = None;
+                if let Some(s) = finalize_item(current, source, media_type, season, episode) {
+                    results.push(s);
                 }
+                current = XmlItem::new();
             }
             Ok(Event::Eof) => break,
             Err(e) => {

@@ -137,10 +137,10 @@ fn parse_caps_xml(
                     "title" => {
                         // Will be captured as text in Text event for the indexer title
                     }
-                    s if ["movie-search", "tv-search", "search"].contains(&s) => {
-                        if attrs.get("available").map(|v| v.as_str()) == Some("yes") {
-                            search_available = true;
-                        }
+                    s if ["movie-search", "tv-search", "search"].contains(&s)
+                        && attrs.get("available").map(|v| v.as_str()) == Some("yes") =>
+                    {
+                        search_available = true;
                     }
                     _ => {}
                 }
