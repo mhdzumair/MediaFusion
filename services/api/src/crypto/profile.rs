@@ -189,7 +189,10 @@ pub fn decrypt_secrets(encrypted: &str, key: &[u8; 32]) -> serde_json::Value {
     use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
     type Dec = cbc::Decryptor<Aes256>;
 
-    let raw = match URL_SAFE_NO_PAD.decode(encrypted) {
+    // Strip base64 padding that Python's urlsafe_b64encode adds (=) so we can
+    // decode both Python-encrypted (padded) and Rust-encrypted (unpadded) values.
+    let stripped = encrypted.trim_end_matches('=');
+    let raw = match URL_SAFE_NO_PAD.decode(stripped) {
         Ok(r) if r.len() >= 17 => r,
         _ => return serde_json::Value::Object(Default::default()),
     };
