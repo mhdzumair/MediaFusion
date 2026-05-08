@@ -393,9 +393,11 @@ async def get_or_create_metadata(
         external_id = None
 
     # Determine end_date from end_year if not provided directly
-    end_date = metadata_data.get("end_date")
-    if not end_date and (end_year := metadata_data.get("end_year")):
-        end_date = date(end_year, 12, 31)
+    end_date = _normalize_date_value(metadata_data.get("end_date"))
+    if not end_date:
+        end_year = _normalize_year_value(metadata_data.get("end_year"))
+        if end_year is not None:
+            end_date = date(end_year, 12, 31)
 
     runtime_minutes = _normalize_runtime_minutes(metadata_data.get("runtime_minutes") or metadata_data.get("runtime"))
 
@@ -558,6 +560,28 @@ def _normalize_year_value(year_value: Any) -> int | None:
         cleaned = year_value.strip()
         if cleaned.isdigit():
             return int(cleaned)
+    return None
+
+
+def _normalize_date_value(date_value: Any) -> date | None:
+    """Normalize mixed date values from scrapers/importers."""
+    if isinstance(date_value, datetime):
+        return date_value.date()
+    if isinstance(date_value, date):
+        return date_value
+    if isinstance(date_value, str):
+        cleaned = date_value.strip()
+        if not cleaned:
+            return None
+        try:
+            return datetime.fromisoformat(cleaned.replace("Z", "+00:00")).date()
+        except ValueError:
+            pass
+        for fmt in ("%Y/%m/%d", "%d-%m-%Y", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(cleaned, fmt).date()
+            except ValueError:
+                continue
     return None
 
 
@@ -919,8 +943,8 @@ async def update_single_imdb_metadata(
 
     # Update end_date for series
     if media_type == "series":
-        end_year = fetched_data.get("end_year")
-        if end_year:
+        end_year = _normalize_year_value(fetched_data.get("end_year"))
+        if end_year is not None:
             media.end_date = date(end_year, 12, 31)
 
         # Update series metadata

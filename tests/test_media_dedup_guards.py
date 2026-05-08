@@ -1,10 +1,15 @@
+from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
 
 from db.crud import scraper_helpers
 from db.crud.catalog import get_catalog_meta_list
-from db.crud.scraper_helpers import _create_external_id_from_metadata, _normalize_year_value
+from db.crud.scraper_helpers import (
+    _create_external_id_from_metadata,
+    _normalize_date_value,
+    _normalize_year_value,
+)
 from db.enums import MediaType
 from db.models.media import Media
 
@@ -23,6 +28,24 @@ def test_normalize_year_value_rejects_invalid_values() -> None:
     assert _normalize_year_value("2015-01-01") is None
     assert _normalize_year_value("abc") is None
     assert _normalize_year_value(None) is None
+
+
+def test_normalize_date_value_accepts_scraper_date_strings() -> None:
+    assert _normalize_date_value("2024-07-19") == date(2024, 7, 19)
+    assert _normalize_date_value("2024-07-19T00:00:00Z") == date(2024, 7, 19)
+
+
+def test_normalize_date_value_accepts_date_objects() -> None:
+    expected = date(2024, 7, 19)
+
+    assert _normalize_date_value(expected) == expected
+    assert _normalize_date_value(datetime(2024, 7, 19, 12, 30)) == expected
+
+
+def test_normalize_date_value_rejects_invalid_values() -> None:
+    assert _normalize_date_value("not-a-date") is None
+    assert _normalize_date_value("") is None
+    assert _normalize_date_value(None) is None
 
 
 @pytest.mark.asyncio
