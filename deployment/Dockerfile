@@ -18,8 +18,6 @@ RUN apt-get update && \
 
 # Cache dependencies by building a dummy project first
 COPY services/api/Cargo.toml services/api/Cargo.lock ./services/api/
-# PTT is a workspace sibling dependency
-COPY PTT/ptt-rs ./PTT/ptt-rs/
 RUN mkdir -p services/api/src && echo "fn main(){}" > services/api/src/main.rs && \
     echo "// placeholder" > services/api/src/lib.rs && \
     cd services/api && cargo build --release --bin mediafusion-api 2>/dev/null || true && \
