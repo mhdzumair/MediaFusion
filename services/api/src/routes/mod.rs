@@ -12,6 +12,7 @@ pub mod encrypt;
 pub mod health;
 pub mod indexers;
 pub mod instance;
+pub mod integrations;
 pub mod kodi_setup;
 pub mod kodi_stream;
 pub mod manifest;
@@ -31,13 +32,15 @@ pub mod usenet;
 pub mod user_catalogs;
 pub mod user_library;
 pub mod user_management;
-pub mod integrations;
 pub mod watch_history;
 pub mod watchlist;
 
 use std::sync::Arc;
 
-use axum::{routing::{delete, get, patch, post, put}, Router};
+use axum::{
+    routing::{delete, get, patch, post, put},
+    Router,
+};
 use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer, trace::TraceLayer};
 
 use crate::metrics_middleware::metrics_middleware;

@@ -4,21 +4,23 @@ use pcre2::bytes::{Regex, RegexBuilder};
 
 // Non-English character ranges (same as NON_ENGLISH_CHARS in parse.py).
 // Regular Rust string — \u{XXXX} are real Unicode chars embedded in the char class.
-const NON_EN: &str =
-    "\u{3040}-\u{30ff}\u{3400}-\u{4dbf}\u{4e00}-\u{9fff}\u{f900}-\u{faff}\
+const NON_EN: &str = "\u{3040}-\u{30ff}\u{3400}-\u{4dbf}\u{4e00}-\u{9fff}\u{f900}-\u{faff}\
      \u{ff66}-\u{ff9f}\u{0400}-\u{04ff}\u{0600}-\u{06ff}\u{0750}-\u{077f}\
      \u{0c80}-\u{0cff}\u{0d00}-\u{0d7f}\u{0e00}-\u{0e7f}";
 
 fn c(p: &str) -> Regex {
     RegexBuilder::new()
-        .ucp(true).utf(true)
+        .ucp(true)
+        .utf(true)
         .build(p)
         .unwrap_or_else(|e| panic!("bad clean regex `{p}`: {e}"))
 }
 
 fn ci(p: &str) -> Regex {
     RegexBuilder::new()
-        .caseless(true).ucp(true).utf(true)
+        .caseless(true)
+        .ucp(true)
+        .utf(true)
         .build(p)
         .unwrap_or_else(|e| panic!("bad clean regex (i) `{p}`: {e}"))
 }
@@ -63,8 +65,7 @@ static REMAINING_NOT_ALLOWED: Lazy<Regex> = Lazy::new(|| {
 
 static REDUNDANT_END: Lazy<Regex> = Lazy::new(|| c(r"[ \-:./\\]+$"));
 
-static PARENS_NO_CONTENT: Lazy<Regex> =
-    Lazy::new(|| c(r"\(\W*\)|\[\W*\]|\{\W*\}"));
+static PARENS_NO_CONTENT: Lazy<Regex> = Lazy::new(|| c(r"\(\W*\)|\[\W*\]|\{\W*\}"));
 
 // \x{300a} = 《  \x{2605} = ★  \x{300b} = 》
 static STAR1_RE: Lazy<Regex> =
@@ -77,13 +78,11 @@ static MP3_RE: Lazy<Regex> = Lazy::new(|| ci(r"\bmp3$"));
 
 static SPACING_RE: Lazy<Regex> = Lazy::new(|| c(r"\s+"));
 
-static SPECIAL_CHAR_SPACING: Lazy<Regex> =
-    Lazy::new(|| c(r"[-+_\{\}\[\]]\W{2,}"));
+static SPECIAL_CHAR_SPACING: Lazy<Regex> = Lazy::new(|| c(r"[-+_\{\}\[\]]\W{2,}"));
 
 static DOT_RE: Lazy<Regex> = Lazy::new(|| c(r"\."));
 
-static EMPTY_BRACKETS_RE: Lazy<Regex> =
-    Lazy::new(|| c(r"\(\s*\)|\[\s*\]|\{\s*\}"));
+static EMPTY_BRACKETS_RE: Lazy<Regex> = Lazy::new(|| c(r"\(\s*\)|\[\s*\]|\{\s*\}"));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -138,7 +137,7 @@ pub fn clean_title(raw: &str) -> String {
         let opens = s.chars().filter(|&c| c == open).count();
         let closes = s.chars().filter(|&c| c == close).count();
         if opens != closes {
-            s = s.replace(open, "").replace(close, "");
+            s = s.replace([open, close], "");
         }
     }
 

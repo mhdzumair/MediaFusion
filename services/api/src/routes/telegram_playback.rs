@@ -11,7 +11,6 @@
 ///   4. Get or create a per-user forward via Bot API sendVideo
 ///   5. Build MediaFlow Telegram streaming URL
 ///   6. 302 redirect to MediaFlow
-
 use std::sync::Arc;
 
 use axum::{
@@ -23,12 +22,7 @@ use axum::{
 use fred::prelude::{Expiration, KeysInterface};
 use serde::Deserialize;
 
-use crate::{
-    crypto,
-    db::telegram as tg_db,
-    models::user_data::UserData,
-    state::AppState,
-};
+use crate::{crypto, db::telegram as tg_db, models::user_data::UserData, state::AppState};
 
 const FORWARD_LOCK_TTL: i64 = 60;
 
@@ -58,7 +52,9 @@ pub async fn handler_by_chat_message(
     Query(q): Query<PlaybackQuery>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    match dispatch_by_chat_message(&state, &p.secret_str, &p.chat_id, p.message_id, q.transcode).await {
+    match dispatch_by_chat_message(&state, &p.secret_str, &p.chat_id, p.message_id, q.transcode)
+        .await
+    {
         Ok(url) => redirect(url),
         Err(e) => error_response(e),
     }
@@ -105,7 +101,13 @@ async fn dispatch_by_stream_id(
 }
 
 async fn resolve_user_data(state: &AppState, secret_str: &str) -> Result<UserData, PlaybackError> {
-    let raw = crypto::resolve_user_data(secret_str, &state.config.secret_key, &state.pool, &state.redis).await;
+    let raw = crypto::resolve_user_data(
+        secret_str,
+        &state.config.secret_key,
+        &state.pool,
+        &state.redis,
+    )
+    .await;
     Ok(serde_json::from_value(raw).unwrap_or_default())
 }
 
@@ -116,23 +118,25 @@ async fn build_mediaflow_url(
     transcode: bool,
 ) -> Result<String, PlaybackError> {
     // 1. Require MediaFlow Proxy with Telegram support
-    let mfc = user_data.mediaflow_config.as_ref()
+    let mfc = user_data
+        .mediaflow_config
+        .as_ref()
         .ok_or(PlaybackError::NoMediaFlow)?;
-    let proxy_url = mfc.proxy_url.as_deref()
-        .ok_or(PlaybackError::NoMediaFlow)?;
-    let api_password = mfc.api_password.as_deref()
+    let proxy_url = mfc.proxy_url.as_deref().ok_or(PlaybackError::NoMediaFlow)?;
+    let api_password = mfc
+        .api_password
+        .as_deref()
         .ok_or(PlaybackError::NoMediaFlow)?;
 
     // 2. Require file_id
-    let file_id = stream.file_id.as_deref()
-        .ok_or(PlaybackError::NoFileId)?;
+    let file_id = stream.file_id.as_deref().ok_or(PlaybackError::NoFileId)?;
 
     // 3. Require auth user
-    let user_id = user_data.user_id
-        .ok_or(PlaybackError::Unauthorized)?;
+    let user_id = user_data.user_id.ok_or(PlaybackError::Unauthorized)?;
 
     // 4. Get or create per-user forward
-    let forward = get_or_create_forward(state, stream.id, file_id, user_id, &stream.stream_name).await?;
+    let forward =
+        get_or_create_forward(state, stream.id, file_id, user_id, &stream.stream_name).await?;
 
     // 5. Build MediaFlow URL
     let endpoint = if let Some(ref fname) = stream.file_name {
@@ -147,12 +151,13 @@ async fn build_mediaflow_url(
     ];
 
     // Prefer document_id; fall back to file_id
-    let document_id = stream.document_id
-        .or_else(|| stream.file_unique_id.as_deref().and_then(|_| {
+    let document_id = stream.document_id.or_else(|| {
+        stream.file_unique_id.as_deref().and({
             // Extract document_id from file_unique_id if available
             // (simplified — Python calls extract_document_id_from_file_id)
             None
-        }));
+        })
+    });
 
     if let Some(doc_id) = document_id {
         params.push(("document_id", doc_id.to_string()));
@@ -167,7 +172,8 @@ async fn build_mediaflow_url(
         params.push(("transcode", "true".to_string()));
     }
 
-    let query: String = params.iter()
+    let query: String = params
+        .iter()
         .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
         .collect::<Vec<_>>()
         .join("&");
@@ -176,7 +182,11 @@ async fn build_mediaflow_url(
         "{}/{}{}",
         proxy_url.trim_end_matches('/'),
         endpoint.trim_start_matches('/'),
-        if query.is_empty() { String::new() } else { format!("?{query}") }
+        if query.is_empty() {
+            String::new()
+        } else {
+            format!("?{query}")
+        }
     );
 
     Ok(base)
@@ -191,12 +201,17 @@ async fn get_or_create_forward(
     stream_name: &Option<String>,
 ) -> Result<tg_db::TelegramUserForwardRow, PlaybackError> {
     // Fast path: existing record
-    if let Some(fwd) = tg_db::get_telegram_user_forward(&state.pool_ro, telegram_stream_id, user_id).await {
+    if let Some(fwd) =
+        tg_db::get_telegram_user_forward(&state.pool_ro, telegram_stream_id, user_id).await
+    {
         return Ok(fwd);
     }
 
     // Require bot token
-    let bot_token = state.config.telegram_bot_token.as_deref()
+    let bot_token = state
+        .config
+        .telegram_bot_token
+        .as_deref()
         .ok_or(PlaybackError::BotNotConfigured)?;
 
     // Get user's Telegram ID
@@ -206,29 +221,47 @@ async fn get_or_create_forward(
 
     // Acquire Redis lock to prevent duplicate sends
     let lock_key = format!("telegram_forward:{telegram_stream_id}:{user_id}");
-    let lock_acquired = state.redis
-        .set::<bool, _, _>(&lock_key, true, Some(Expiration::EX(FORWARD_LOCK_TTL)), None, true)
+    let lock_acquired = state
+        .redis
+        .set::<bool, _, _>(
+            &lock_key,
+            true,
+            Some(Expiration::EX(FORWARD_LOCK_TTL)),
+            None,
+            true,
+        )
         .await
         .unwrap_or(false);
 
     if !lock_acquired {
         // Another request is in flight — wait briefly and try DB again
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-        if let Some(fwd) = tg_db::get_telegram_user_forward(&state.pool_ro, telegram_stream_id, user_id).await {
+        if let Some(fwd) =
+            tg_db::get_telegram_user_forward(&state.pool_ro, telegram_stream_id, user_id).await
+        {
             return Ok(fwd);
         }
         return Err(PlaybackError::LockTimeout);
     }
 
     // Double-check after acquiring lock
-    if let Some(fwd) = tg_db::get_telegram_user_forward(&state.pool_ro, telegram_stream_id, user_id).await {
+    if let Some(fwd) =
+        tg_db::get_telegram_user_forward(&state.pool_ro, telegram_stream_id, user_id).await
+    {
         let _ = state.redis.del::<(), _>(&lock_key).await;
         return Ok(fwd);
     }
 
     // Send video via Bot API
     let caption = stream_name.as_deref().map(|n| format!("🎬 {n}"));
-    let send_result = send_video_to_user(&state.http, bot_token, telegram_user_id, file_id, caption.as_deref()).await;
+    let send_result = send_video_to_user(
+        &state.http,
+        bot_token,
+        telegram_user_id,
+        file_id,
+        caption.as_deref(),
+    )
+    .await;
 
     let _ = state.redis.del::<(), _>(&lock_key).await;
 
@@ -276,7 +309,9 @@ async fn send_video_to_user(
         .await
         .map_err(|_| PlaybackError::BotApiError("sendVideo network error"))?;
 
-    let json: serde_json::Value = resp.json().await
+    let json: serde_json::Value = resp
+        .json()
+        .await
         .map_err(|_| PlaybackError::BotApiError("sendVideo invalid JSON"))?;
 
     if !json["ok"].as_bool().unwrap_or(false) {
@@ -285,9 +320,11 @@ async fn send_video_to_user(
         return Err(PlaybackError::BotSendFailed(desc.to_string()));
     }
 
-    let message_id = json["result"]["message_id"].as_i64()
+    let message_id = json["result"]["message_id"]
+        .as_i64()
         .ok_or(PlaybackError::BotApiError("sendVideo: no message_id"))?;
-    let chat_id = json["result"]["chat"]["id"].as_i64()
+    let chat_id = json["result"]["chat"]["id"]
+        .as_i64()
         .ok_or(PlaybackError::BotApiError("sendVideo: no chat.id"))?;
 
     Ok((chat_id.to_string(), message_id))

@@ -29,7 +29,17 @@ pub async fn scrape(
         let mt = media_type.to_string();
 
         handles.push(tokio::spawn(async move {
-            query_endpoint(&client, &ep, &meta_title, meta_year, imdb_id.as_deref(), &mt, season, episode).await
+            query_endpoint(
+                &client,
+                &ep,
+                &meta_title,
+                meta_year,
+                imdb_id.as_deref(),
+                &mt,
+                season,
+                episode,
+            )
+            .await
         }));
     }
 
@@ -57,23 +67,33 @@ async fn query_endpoint(
     let is_series = media_type == "series";
 
     let cats: Vec<i64> = if ep.categories.is_empty() {
-        if is_series { TV_CATS.to_vec() } else { MOVIE_CATS.to_vec() }
+        if is_series {
+            TV_CATS.to_vec()
+        } else {
+            MOVIE_CATS.to_vec()
+        }
     } else {
         ep.categories.clone()
     };
 
-    let cat_str: String = cats.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",");
+    let cat_str: String = cats
+        .iter()
+        .map(|c| c.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
 
-    let mut params: Vec<(String, String)> = vec![
-        ("cat".into(), cat_str),
-    ];
+    let mut params: Vec<(String, String)> = vec![("cat".into(), cat_str)];
 
     if let Some(id) = imdb_id.filter(|s| !s.is_empty()) {
         params.push(("imdbid".into(), id.to_string()));
         if is_series {
             params.push(("t".into(), "tvsearch".into()));
-            if let Some(s) = season { params.push(("season".into(), s.to_string())); }
-            if let Some(e) = episode { params.push(("ep".into(), e.to_string())); }
+            if let Some(s) = season {
+                params.push(("season".into(), s.to_string()));
+            }
+            if let Some(e) = episode {
+                params.push(("ep".into(), e.to_string()));
+            }
         } else {
             params.push(("t".into(), "movie".into()));
         }
@@ -169,18 +189,16 @@ fn parse_xml(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) => {
-                match e.local_name().as_ref() {
-                    b"item" => {
-                        in_item = true;
-                        current = XmlItem::new();
-                    }
-                    b"title" if in_item => current_text_field = Some("title"),
-                    b"link" if in_item => current_text_field = Some("link"),
-                    b"size" if in_item => current_text_field = Some("size"),
-                    _ => {}
+            Ok(Event::Start(e)) => match e.local_name().as_ref() {
+                b"item" => {
+                    in_item = true;
+                    current = XmlItem::new();
                 }
-            }
+                b"title" if in_item => current_text_field = Some("title"),
+                b"link" if in_item => current_text_field = Some("link"),
+                b"size" if in_item => current_text_field = Some("size"),
+                _ => {}
+            },
             Ok(Event::Empty(e)) if in_item => {
                 // <torznab:attr name="..." value="..."/>  or  <enclosure .../>
                 match e.local_name().as_ref() {
@@ -201,7 +219,9 @@ fn parse_xml(
                         match (name.as_deref(), value) {
                             (Some("infohash"), Some(v)) => {
                                 let h = v.to_lowercase();
-                                if h.len() == 40 { current.info_hash = Some(h); }
+                                if h.len() == 40 {
+                                    current.info_hash = Some(h);
+                                }
                             }
                             (Some("magneturl"), Some(v)) => current.magnet_url = Some(v),
                             (Some("seeders"), Some(v)) => {
@@ -278,15 +298,13 @@ fn finalize_item(
                 .and_then(parser::extract_info_hash)
         })
         .or_else(|| {
-            item.link
-                .as_deref()
-                .and_then(|l| {
-                    if l.starts_with("magnet:") {
-                        parser::extract_info_hash(l)
-                    } else {
-                        None
-                    }
-                })
+            item.link.as_deref().and_then(|l| {
+                if l.starts_with("magnet:") {
+                    parser::extract_info_hash(l)
+                } else {
+                    None
+                }
+            })
         })?;
 
     let size = item.size.or(item.enclosure_length);

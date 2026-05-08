@@ -16,7 +16,6 @@
 ///   POST   /{catalog_id}/subscribe        → subscribe_catalog
 ///   DELETE /{catalog_id}/subscribe        → unsubscribe_catalog
 ///   GET    /{catalog_id}/subscribed       → check_subscription
-
 use std::sync::Arc;
 
 use axum::{
@@ -465,19 +464,18 @@ pub async fn update_user_catalog(
     };
 
     // Fetch catalog
-    let existing: Option<(i32, i32, bool)> = match sqlx::query_as(
-        "SELECT id, user_id, is_public FROM user_catalog WHERE id = $1",
-    )
-    .bind(catalog_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("update_user_catalog fetch: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    let existing: Option<(i32, i32, bool)> =
+        match sqlx::query_as("SELECT id, user_id, is_public FROM user_catalog WHERE id = $1")
+            .bind(catalog_id)
+            .fetch_optional(&state.pool)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("update_user_catalog fetch: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
 
     let (_, catalog_owner, _) = match existing {
         None => {
@@ -586,19 +584,18 @@ pub async fn delete_user_catalog(
         }
     };
 
-    let existing: Option<(i32, i32)> = match sqlx::query_as(
-        "SELECT id, user_id FROM user_catalog WHERE id = $1",
-    )
-    .bind(catalog_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("delete_user_catalog fetch: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    let existing: Option<(i32, i32)> =
+        match sqlx::query_as("SELECT id, user_id FROM user_catalog WHERE id = $1")
+            .bind(catalog_id)
+            .fetch_optional(&state.pool)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("delete_user_catalog fetch: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
 
     match existing {
         None => {
@@ -641,19 +638,18 @@ pub async fn list_catalog_items(
     let user_id = optional_token(&headers, &state.config.secret_key_raw);
 
     // Check catalog exists and access
-    let catalog: Option<(i32, i32, bool)> = match sqlx::query_as(
-        "SELECT id, user_id, is_public FROM user_catalog WHERE id = $1",
-    )
-    .bind(catalog_id)
-    .fetch_optional(&state.pool_ro)
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("list_catalog_items catalog check: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    let catalog: Option<(i32, i32, bool)> =
+        match sqlx::query_as("SELECT id, user_id, is_public FROM user_catalog WHERE id = $1")
+            .bind(catalog_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("list_catalog_items catalog check: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
 
     match catalog {
         None => {
@@ -735,19 +731,18 @@ pub async fn add_catalog_item(
     }
 
     // Check catalog ownership
-    let catalog: Option<(i32, i32)> = match sqlx::query_as(
-        "SELECT id, user_id FROM user_catalog WHERE id = $1",
-    )
-    .bind(catalog_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("add_catalog_item catalog check: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    let catalog: Option<(i32, i32)> =
+        match sqlx::query_as("SELECT id, user_id FROM user_catalog WHERE id = $1")
+            .bind(catalog_id)
+            .fetch_optional(&state.pool)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("add_catalog_item catalog check: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
 
     match catalog {
         None => {
@@ -817,19 +812,18 @@ pub async fn remove_catalog_item(
     };
 
     // Check ownership
-    let owner: Option<i32> = match sqlx::query_scalar(
-        "SELECT user_id FROM user_catalog WHERE id = $1",
-    )
-    .bind(catalog_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("remove_catalog_item ownership check: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    let owner: Option<i32> =
+        match sqlx::query_scalar("SELECT user_id FROM user_catalog WHERE id = $1")
+            .bind(catalog_id)
+            .fetch_optional(&state.pool)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("remove_catalog_item ownership check: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
 
     match owner {
         None => {
@@ -849,13 +843,11 @@ pub async fn remove_catalog_item(
         _ => {}
     }
 
-    let result = sqlx::query(
-        "DELETE FROM user_catalog_item WHERE id = $1 AND catalog_id = $2",
-    )
-    .bind(item_id)
-    .bind(catalog_id)
-    .execute(&state.pool)
-    .await;
+    let result = sqlx::query("DELETE FROM user_catalog_item WHERE id = $1 AND catalog_id = $2")
+        .bind(item_id)
+        .bind(catalog_id)
+        .execute(&state.pool)
+        .await;
 
     match result {
         Ok(r) if r.rows_affected() == 0 => (
@@ -977,19 +969,18 @@ pub async fn subscribe_catalog(
         }
     };
 
-    let catalog: Option<(i32, bool)> = match sqlx::query_as(
-        "SELECT user_id, is_public FROM user_catalog WHERE id = $1",
-    )
-    .bind(catalog_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("subscribe_catalog catalog fetch: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    let catalog: Option<(i32, bool)> =
+        match sqlx::query_as("SELECT user_id, is_public FROM user_catalog WHERE id = $1")
+            .bind(catalog_id)
+            .fetch_optional(&state.pool)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("subscribe_catalog catalog fetch: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
 
     let (owner, is_public) = match catalog {
         None => {
@@ -1072,13 +1063,12 @@ pub async fn unsubscribe_catalog(
         }
     };
 
-    let result = sqlx::query(
-        "DELETE FROM user_catalog_subscription WHERE user_id = $1 AND catalog_id = $2",
-    )
-    .bind(user_id)
-    .bind(catalog_id)
-    .execute(&state.pool)
-    .await;
+    let result =
+        sqlx::query("DELETE FROM user_catalog_subscription WHERE user_id = $1 AND catalog_id = $2")
+            .bind(user_id)
+            .bind(catalog_id)
+            .execute(&state.pool)
+            .await;
 
     match result {
         Ok(r) if r.rows_affected() == 0 => (

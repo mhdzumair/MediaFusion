@@ -10,7 +10,6 @@
 ///   GET  /{media_id}                    → get_media_detail
 ///   GET  /{media_id}/streams            → get_media_streams
 ///   POST /{media_id}/streams/{stream_id}/report → report_stream
-
 use std::sync::Arc;
 
 use axum::{
@@ -129,10 +128,22 @@ pub async fn list_catalog(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
-    proxy(&state, reqwest::Method::GET, "/api/v1/catalog", &q, &headers, vec![]).await
+    proxy(
+        &state,
+        reqwest::Method::GET,
+        "/api/v1/catalog",
+        &q,
+        &headers,
+        vec![],
+    )
+    .await
 }
 
 /// GET /api/v1/catalog/search
@@ -142,10 +153,22 @@ pub async fn search_catalog(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
-    proxy(&state, reqwest::Method::GET, "/api/v1/catalog/search", &q, &headers, vec![]).await
+    proxy(
+        &state,
+        reqwest::Method::GET,
+        "/api/v1/catalog/search",
+        &q,
+        &headers,
+        vec![],
+    )
+    .await
 }
 
 /// GET /api/v1/catalog/{media_id}
@@ -156,7 +179,11 @@ pub async fn get_media_detail(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     proxy(
@@ -178,7 +205,11 @@ pub async fn get_media_streams(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     proxy(
@@ -200,7 +231,11 @@ pub async fn report_stream(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     let body = axum::body::to_bytes(req.into_body(), 1024 * 1024)

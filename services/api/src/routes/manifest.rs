@@ -8,13 +8,7 @@ use hmac::{Hmac, Mac};
 use serde_json::{json, Value};
 use sha2::Sha256;
 
-use crate::{
-    cache,
-    crypto,
-    db::genres,
-    models::user_data::UserData,
-    state::AppState,
-};
+use crate::{cache, crypto, db::genres, models::user_data::UserData, state::AppState};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -63,13 +57,28 @@ const FIGHTING_GENRES: &[&str] = &["WWE", "UFC"];
 fn catalog_meta(id: &str) -> Option<CatalogMeta> {
     macro_rules! c {
         ($t:expr, $n:expr) => {
-            Some(CatalogMeta { catalog_type: $t, name: $n, fixed_genres: None, is_search: false })
+            Some(CatalogMeta {
+                catalog_type: $t,
+                name: $n,
+                fixed_genres: None,
+                is_search: false,
+            })
         };
         ($t:expr, $n:expr, genres: $g:expr) => {
-            Some(CatalogMeta { catalog_type: $t, name: $n, fixed_genres: Some($g), is_search: false })
+            Some(CatalogMeta {
+                catalog_type: $t,
+                name: $n,
+                fixed_genres: Some($g),
+                is_search: false,
+            })
         };
         ($t:expr, $n:expr, search) => {
-            Some(CatalogMeta { catalog_type: $t, name: $n, fixed_genres: Some(&[]), is_search: true })
+            Some(CatalogMeta {
+                catalog_type: $t,
+                name: $n,
+                fixed_genres: Some(&[]),
+                is_search: true,
+            })
         };
     }
 
@@ -228,9 +237,7 @@ fn build_manifest(
                 vec![json!({"name":"skip","isRequired":false})]
             };
             if !genre_opts.is_empty() {
-                extra.push(
-                    json!({"name":"genre","isRequired":false,"options":genre_opts}),
-                );
+                extra.push(json!({"name":"genre","isRequired":false,"options":genre_opts}));
             }
 
             catalogs.push(json!({
@@ -270,15 +277,24 @@ pub async fn user_manifest(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let user_data = serde_json::from_value::<UserData>(
-        crypto::resolve_user_data(&secret_str, &state.config.secret_key, &state.pool, &state.redis).await,
+        crypto::resolve_user_data(
+            &secret_str,
+            &state.config.secret_key,
+            &state.pool,
+            &state.redis,
+        )
+        .await,
     )
     .unwrap_or_default();
     serve_manifest(state, user_data).await
 }
 
 async fn serve_manifest(state: Arc<AppState>, user_data: UserData) -> impl IntoResponse {
-    let cache_key =
-        manifest_cache_key(&state.config.addon_version, &state.config.secret_key_raw, &user_data);
+    let cache_key = manifest_cache_key(
+        &state.config.addon_version,
+        &state.config.secret_key_raw,
+        &user_data,
+    );
     let ttl = state.config.meta_cache_ttl.min(300);
 
     if let Some(cached) = cache::get_json(&state.redis, &cache_key).await {

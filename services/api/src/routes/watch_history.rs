@@ -8,7 +8,6 @@
 ///   DELETE /{id}                 → delete_entry
 ///   DELETE /                     → clear_history
 ///   POST   /track                → track_action
-
 use std::sync::Arc;
 
 use axum::{
@@ -147,13 +146,12 @@ struct WatchRow {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async fn get_external_ids(pool: &sqlx::PgPool, media_id: i64) -> serde_json::Value {
-    let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT source, external_id FROM media_external_id WHERE media_id = $1",
-    )
-    .bind(media_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT source, external_id FROM media_external_id WHERE media_id = $1")
+            .bind(media_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
     let mut map = serde_json::Map::new();
     for (source, id) in rows {
         map.insert(source, serde_json::Value::String(id));
@@ -194,26 +192,55 @@ async fn row_to_response(pool: &sqlx::PgPool, row: &WatchRow) -> serde_json::Val
 }
 
 /// Fetch a watch history row by id, verifying user ownership.
-#[allow(dead_code)]
+#[allow(dead_code, clippy::type_complexity)]
 async fn fetch_watch_row(
     pool: &sqlx::PgPool,
     id: i64,
     user_id: i64,
 ) -> Result<Option<WatchRow>, sqlx::Error> {
-    let row: Option<(i64, i64, i64, i64, String, String, Option<i32>, Option<i32>, Option<i64>, i64, DateTime<Utc>, Option<String>, Option<String>, Option<serde_json::Value>)> =
-        sqlx::query_as(
-            r#"SELECT id, user_id, profile_id, media_id, title, media_type,
+    let row: Option<(
+        i64,
+        i64,
+        i64,
+        i64,
+        String,
+        String,
+        Option<i32>,
+        Option<i32>,
+        Option<i64>,
+        i64,
+        DateTime<Utc>,
+        Option<String>,
+        Option<String>,
+        Option<serde_json::Value>,
+    )> = sqlx::query_as(
+        r#"SELECT id, user_id, profile_id, media_id, title, media_type,
                       season, episode, duration, progress, watched_at,
                       action, source, stream_info
                FROM watch_history
                WHERE id = $1 AND user_id = $2"#,
-        )
-        .bind(id)
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await?;
+    )
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
     Ok(row.map(
-        |(id, user_id, profile_id, media_id, title, media_type, season, episode, duration, progress, watched_at, action, source, stream_info)| {
+        |(
+            id,
+            user_id,
+            profile_id,
+            media_id,
+            title,
+            media_type,
+            season,
+            episode,
+            duration,
+            progress,
+            watched_at,
+            action,
+            source,
+            stream_info,
+        )| {
             WatchRow {
                 id,
                 user_id,
@@ -234,8 +261,24 @@ async fn fetch_watch_row(
     ))
 }
 
+#[allow(clippy::type_complexity)]
 fn map_watch_row(
-    r: (i64, i64, i64, i64, String, String, Option<i32>, Option<i32>, Option<i64>, i64, DateTime<Utc>, Option<String>, Option<String>, Option<serde_json::Value>),
+    r: (
+        i64,
+        i64,
+        i64,
+        i64,
+        String,
+        String,
+        Option<i32>,
+        Option<i32>,
+        Option<i64>,
+        i64,
+        DateTime<Utc>,
+        Option<String>,
+        Option<String>,
+        Option<serde_json::Value>,
+    ),
 ) -> WatchRow {
     WatchRow {
         id: r.0,
@@ -258,6 +301,7 @@ fn map_watch_row(
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 /// GET /api/v1/watch-history
+#[allow(clippy::type_complexity)]
 pub async fn list_watch_history(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -316,7 +360,22 @@ pub async fn list_watch_history(
         }
     };
 
-    let rows: Vec<(i64, i64, i64, i64, String, String, Option<i32>, Option<i32>, Option<i64>, i64, DateTime<Utc>, Option<String>, Option<String>, Option<serde_json::Value>)> = {
+    let rows: Vec<(
+        i64,
+        i64,
+        i64,
+        i64,
+        String,
+        String,
+        Option<i32>,
+        Option<i32>,
+        Option<i64>,
+        i64,
+        DateTime<Utc>,
+        Option<String>,
+        Option<String>,
+        Option<serde_json::Value>,
+    )> = {
         let mut sql = String::from(
             r#"SELECT id, user_id, profile_id, media_id, title, media_type,
                       season, episode, duration, progress, watched_at,
@@ -340,7 +399,26 @@ pub async fn list_watch_history(
             " ORDER BY watched_at DESC LIMIT ${idx} OFFSET ${}",
             idx + 1
         ));
-        let mut q = sqlx::query_as::<_, (i64, i64, i64, i64, String, String, Option<i32>, Option<i32>, Option<i64>, i64, DateTime<Utc>, Option<String>, Option<String>, Option<serde_json::Value>)>(&sql).bind(user_id);
+        let mut q = sqlx::query_as::<
+            _,
+            (
+                i64,
+                i64,
+                i64,
+                i64,
+                String,
+                String,
+                Option<i32>,
+                Option<i32>,
+                Option<i64>,
+                i64,
+                DateTime<Utc>,
+                Option<String>,
+                Option<String>,
+                Option<serde_json::Value>,
+            ),
+        >(&sql)
+        .bind(user_id);
         if let Some(pid) = params.profile_id {
             q = q.bind(pid);
         }
@@ -378,6 +456,7 @@ pub async fn list_watch_history(
 }
 
 /// GET /api/v1/watch-history/continue-watching
+#[allow(clippy::type_complexity)]
 pub async fn continue_watching(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -421,8 +500,28 @@ pub async fn continue_watching(
         )
     };
 
-    let rows: Vec<(i64, i64, i64, i64, String, String, Option<i32>, Option<i32>, Option<i64>, i64, DateTime<Utc>, Option<String>, Option<String>, Option<serde_json::Value>)> = if let Some(pid) = params.profile_id {
-        match sqlx::query_as(&sql).bind(user_id).bind(pid).fetch_all(&state.pool_ro).await {
+    let rows: Vec<(
+        i64,
+        i64,
+        i64,
+        i64,
+        String,
+        String,
+        Option<i32>,
+        Option<i32>,
+        Option<i64>,
+        i64,
+        DateTime<Utc>,
+        Option<String>,
+        Option<String>,
+        Option<serde_json::Value>,
+    )> = if let Some(pid) = params.profile_id {
+        match sqlx::query_as(&sql)
+            .bind(user_id)
+            .bind(pid)
+            .fetch_all(&state.pool_ro)
+            .await
+        {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("continue_watching fetch (with profile): {e}");
@@ -430,7 +529,11 @@ pub async fn continue_watching(
             }
         }
     } else {
-        match sqlx::query_as(&sql).bind(user_id).fetch_all(&state.pool_ro).await {
+        match sqlx::query_as(&sql)
+            .bind(user_id)
+            .fetch_all(&state.pool_ro)
+            .await
+        {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("continue_watching fetch: {e}");
@@ -446,7 +549,7 @@ pub async fn continue_watching(
         if let Some(duration) = watch_row.duration {
             if duration > 0 {
                 let pct = watch_row.progress * 100 / duration;
-                if pct >= 1 && pct < 90 {
+                if (1..90).contains(&pct) {
                     items.push(row_to_response(&state.pool_ro, &watch_row).await);
                     if items.len() >= limit as usize {
                         break;
@@ -460,6 +563,7 @@ pub async fn continue_watching(
 }
 
 /// POST /api/v1/watch-history
+#[allow(clippy::type_complexity)]
 pub async fn create_watch_history(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -502,20 +606,19 @@ pub async fn create_watch_history(
     }
 
     // Check media exists
-    let media_exists: bool = match sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM media WHERE id = $1",
-    )
-    .bind(body.media_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(Some(_)) => true,
-        Ok(None) => false,
-        Err(e) => {
-            tracing::error!("create_watch_history media check: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    let media_exists: bool =
+        match sqlx::query_scalar::<_, i64>("SELECT id FROM media WHERE id = $1")
+            .bind(body.media_id)
+            .fetch_optional(&state.pool)
+            .await
+        {
+            Ok(Some(_)) => true,
+            Ok(None) => false,
+            Err(e) => {
+                tracing::error!("create_watch_history media check: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
 
     if !media_exists {
         return (
@@ -555,7 +658,22 @@ pub async fn create_watch_history(
         .unwrap_or(None)
     };
 
-    let row: (i64, i64, i64, i64, String, String, Option<i32>, Option<i32>, Option<i64>, i64, DateTime<Utc>, Option<String>, Option<String>, Option<serde_json::Value>) = if let Some(eid) = existing_id {
+    let row: (
+        i64,
+        i64,
+        i64,
+        i64,
+        String,
+        String,
+        Option<i32>,
+        Option<i32>,
+        Option<i64>,
+        i64,
+        DateTime<Utc>,
+        Option<String>,
+        Option<String>,
+        Option<serde_json::Value>,
+    ) = if let Some(eid) = existing_id {
         match sqlx::query_as(
             r#"UPDATE watch_history
                SET progress = $1, duration = COALESCE($2, duration), watched_at = NOW(), title = $3
@@ -613,6 +731,7 @@ pub async fn create_watch_history(
 }
 
 /// PATCH /api/v1/watch-history/{id}
+#[allow(clippy::type_complexity)]
 pub async fn update_progress(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -630,28 +749,42 @@ pub async fn update_progress(
         }
     };
 
-    let row: Option<(i64, i64, i64, i64, String, String, Option<i32>, Option<i32>, Option<i64>, i64, DateTime<Utc>, Option<String>, Option<String>, Option<serde_json::Value>)> =
-        match sqlx::query_as(
-            r#"UPDATE watch_history
+    let row: Option<(
+        i64,
+        i64,
+        i64,
+        i64,
+        String,
+        String,
+        Option<i32>,
+        Option<i32>,
+        Option<i64>,
+        i64,
+        DateTime<Utc>,
+        Option<String>,
+        Option<String>,
+        Option<serde_json::Value>,
+    )> = match sqlx::query_as(
+        r#"UPDATE watch_history
                SET progress = $1, duration = COALESCE($2, duration), watched_at = NOW()
                WHERE id = $3 AND user_id = $4
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
                          action, source, stream_info"#,
-        )
-        .bind(body.progress)
-        .bind(body.duration)
-        .bind(id)
-        .bind(user_id)
-        .fetch_optional(&state.pool)
-        .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!("update_progress db error: {e}");
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            }
-        };
+    )
+    .bind(body.progress)
+    .bind(body.duration)
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("update_progress db error: {e}");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
 
     match row {
         Some(r) => {
@@ -683,13 +816,11 @@ pub async fn delete_entry(
         }
     };
 
-    let result = sqlx::query(
-        "DELETE FROM watch_history WHERE id = $1 AND user_id = $2",
-    )
-    .bind(id)
-    .bind(user_id)
-    .execute(&state.pool)
-    .await;
+    let result = sqlx::query("DELETE FROM watch_history WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user_id)
+        .execute(&state.pool)
+        .await;
 
     match result {
         Ok(r) if r.rows_affected() == 0 => (
@@ -748,13 +879,11 @@ pub async fn clear_history(
                 .into_response();
         }
 
-        match sqlx::query(
-            "DELETE FROM watch_history WHERE user_id = $1 AND profile_id = $2",
-        )
-        .bind(user_id)
-        .bind(profile_id)
-        .execute(&state.pool)
-        .await
+        match sqlx::query("DELETE FROM watch_history WHERE user_id = $1 AND profile_id = $2")
+            .bind(user_id)
+            .bind(profile_id)
+            .execute(&state.pool)
+            .await
         {
             Ok(_) => StatusCode::NO_CONTENT.into_response(),
             Err(e) => {
@@ -778,6 +907,7 @@ pub async fn clear_history(
 }
 
 /// POST /api/v1/watch-history/track
+#[allow(clippy::type_complexity)]
 pub async fn track_action(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -795,20 +925,19 @@ pub async fn track_action(
     };
 
     // Check media exists
-    let media_exists: bool = match sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM media WHERE id = $1",
-    )
-    .bind(body.media_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(Some(_)) => true,
-        Ok(None) => false,
-        Err(e) => {
-            tracing::error!("track_action media check: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    let media_exists: bool =
+        match sqlx::query_scalar::<_, i64>("SELECT id FROM media WHERE id = $1")
+            .bind(body.media_id)
+            .fetch_optional(&state.pool)
+            .await
+        {
+            Ok(Some(_)) => true,
+            Ok(None) => false,
+            Err(e) => {
+                tracing::error!("track_action media check: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
 
     if !media_exists {
         return (
@@ -883,7 +1012,22 @@ pub async fn track_action(
         .unwrap_or(None)
     };
 
-    let row: (i64, i64, i64, i64, String, String, Option<i32>, Option<i32>, Option<i64>, i64, DateTime<Utc>, Option<String>, Option<String>, Option<serde_json::Value>) = if let Some(eid) = existing_id {
+    let row: (
+        i64,
+        i64,
+        i64,
+        i64,
+        String,
+        String,
+        Option<i32>,
+        Option<i32>,
+        Option<i64>,
+        i64,
+        DateTime<Utc>,
+        Option<String>,
+        Option<String>,
+        Option<serde_json::Value>,
+    ) = if let Some(eid) = existing_id {
         match sqlx::query_as(
             r#"UPDATE watch_history
                SET action = $1, stream_info = COALESCE($2, stream_info), watched_at = NOW(), title = $3

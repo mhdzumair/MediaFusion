@@ -6,7 +6,6 @@
 ///   POST /api/v1/import/nzb              → import_nzb
 ///   POST /api/v1/import/nzb/url          → import_nzb_url
 ///   GET  /api/v1/import/nzb/{guid}/download → download_nzb
-
 use std::sync::Arc;
 
 use axum::{
@@ -97,14 +96,9 @@ fn parse_nzb(data: &[u8]) -> Result<NzbInfo, String> {
                         .attributes()
                         .filter_map(|a| a.ok())
                         .find(|a| a.key.as_ref() == b"subject")
-                        .map(|a| {
-                            String::from_utf8_lossy(&a.value).into_owned()
-                        })
+                        .map(|a| String::from_utf8_lossy(&a.value).into_owned())
                         .unwrap_or_default();
-                    current_file = Some(NzbFile {
-                        subject,
-                        size: 0,
-                    });
+                    current_file = Some(NzbFile { subject, size: 0 });
                     current_segment_bytes = 0;
                 }
                 b"segment" => {
@@ -113,9 +107,7 @@ fn parse_nzb(data: &[u8]) -> Result<NzbInfo, String> {
                         .attributes()
                         .filter_map(|a| a.ok())
                         .find(|a| a.key.as_ref() == b"bytes")
-                        .and_then(|a| {
-                            String::from_utf8_lossy(&a.value).parse().ok()
-                        })
+                        .and_then(|a| String::from_utf8_lossy(&a.value).parse().ok())
                         .unwrap_or(0);
                     current_segment_bytes += seg_bytes;
                 }
@@ -171,7 +163,8 @@ fn parse_nzb(data: &[u8]) -> Result<NzbInfo, String> {
         hasher.update(b"\n");
     }
     let hash = hasher.finalize();
-    let nzb_guid: String = hash.iter().map(|b| format!("{b:02x}")).collect::<String>()[..40].to_string();
+    let nzb_guid: String =
+        hash.iter().map(|b| format!("{b:02x}")).collect::<String>()[..40].to_string();
 
     let total_size: i64 = files.iter().map(|f| f.size).sum();
 
@@ -200,11 +193,7 @@ fn extract_nzb_title(subject: &str) -> String {
 
 // ─── Media helpers ────────────────────────────────────────────────────────────
 
-async fn search_media(
-    pool: &sqlx::PgPool,
-    title: &str,
-    meta_type: &str,
-) -> Vec<serde_json::Value> {
+async fn search_media(pool: &sqlx::PgPool, title: &str, meta_type: &str) -> Vec<serde_json::Value> {
     let pattern = format!("%{title}%");
     let type_upper = meta_type.to_uppercase();
     let rows: Vec<(i32, String, Option<i32>)> = sqlx::query_as(
@@ -228,13 +217,12 @@ async fn resolve_media_id(
     parsed_title: &str,
     parsed_year: Option<i32>,
 ) -> Option<i64> {
-    let row: Option<(i32,)> = sqlx::query_as(
-        "SELECT media_id FROM media_external_id WHERE external_id = $1 LIMIT 1",
-    )
-    .bind(meta_id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+    let row: Option<(i32,)> =
+        sqlx::query_as("SELECT media_id FROM media_external_id WHERE external_id = $1 LIMIT 1")
+            .bind(meta_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
 
     if let Some((id,)) = row {
         return Some(id as i64);
@@ -335,13 +323,12 @@ async fn insert_usenet_stream(
                 .await
                 .ok();
             txn.commit().await?;
-            let existing: i64 = sqlx::query_scalar(
-                "SELECT stream_id FROM usenet_stream WHERE nzb_guid = $1",
-            )
-            .bind(nzb_guid)
-            .fetch_one(pool)
-            .await
-            .unwrap_or(stream_id);
+            let existing: i64 =
+                sqlx::query_scalar("SELECT stream_id FROM usenet_stream WHERE nzb_guid = $1")
+                    .bind(nzb_guid)
+                    .fetch_one(pool)
+                    .await
+                    .unwrap_or(stream_id);
             return Ok(existing);
         }
     }
@@ -372,7 +359,12 @@ async fn insert_usenet_stream(
     Ok(stream_id)
 }
 
-fn nzb_info_to_response(info: &NzbInfo, already_exists: bool, matches: Vec<serde_json::Value>, parsed: &parser::ParsedTitle) -> serde_json::Value {
+fn nzb_info_to_response(
+    info: &NzbInfo,
+    already_exists: bool,
+    matches: Vec<serde_json::Value>,
+    parsed: &parser::ParsedTitle,
+) -> serde_json::Value {
     let files_json: Vec<serde_json::Value> = info
         .files
         .iter()
@@ -411,7 +403,11 @@ pub async fn analyze_nzb_file(
     mut multipart: Multipart,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let mut file_bytes: Option<Bytes> = None;
@@ -432,7 +428,11 @@ pub async fn analyze_nzb_file(
     let bytes = match file_bytes {
         Some(b) => b,
         None => {
-            return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Missing 'file' field"}))).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Missing 'file' field"})),
+            )
+                .into_response();
         }
     };
 
@@ -451,7 +451,11 @@ pub async fn analyze_nzb_url(
     Json(body): Json<NzbUrlBody>,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let resp = match state
@@ -486,11 +490,7 @@ pub async fn analyze_nzb_url(
     analyze_nzb_bytes(&state, &bytes, &meta_type).await
 }
 
-async fn analyze_nzb_bytes(
-    state: &Arc<AppState>,
-    bytes: &Bytes,
-    meta_type: &str,
-) -> Response {
+async fn analyze_nzb_bytes(state: &Arc<AppState>, bytes: &Bytes, meta_type: &str) -> Response {
     let info = match parse_nzb(bytes.as_ref()) {
         Ok(i) => i,
         Err(e) => {
@@ -498,13 +498,12 @@ async fn analyze_nzb_bytes(
         }
     };
 
-    let already_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM usenet_stream WHERE nzb_guid = $1)",
-    )
-    .bind(&info.nzb_guid)
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(false);
+    let already_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM usenet_stream WHERE nzb_guid = $1)")
+            .bind(&info.nzb_guid)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(false);
 
     let parsed = parser::parse_title(&info.title);
     let search_title = parsed.title.as_deref().unwrap_or(&info.title);
@@ -512,7 +511,12 @@ async fn analyze_nzb_bytes(
 
     (
         StatusCode::OK,
-        Json(nzb_info_to_response(&info, already_exists, matches, &parsed)),
+        Json(nzb_info_to_response(
+            &info,
+            already_exists,
+            matches,
+            &parsed,
+        )),
     )
         .into_response()
 }
@@ -523,7 +527,11 @@ pub async fn import_nzb(
     mut multipart: Multipart,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let mut file_bytes: Option<Bytes> = None;
@@ -565,7 +573,11 @@ pub async fn import_nzb(
     let bytes = match file_bytes {
         Some(b) => b,
         None => {
-            return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Missing 'file' field"}))).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Missing 'file' field"})),
+            )
+                .into_response();
         }
     };
 
@@ -605,7 +617,11 @@ pub async fn import_nzb_url(
     Json(body): Json<ImportNzbUrlBody>,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let resp = match state
@@ -671,13 +687,12 @@ async fn do_nzb_import(
     force_import: bool,
 ) -> Response {
     // Check duplicate
-    let existing_id: Option<i64> = sqlx::query_scalar(
-        "SELECT stream_id FROM usenet_stream WHERE nzb_guid = $1 LIMIT 1",
-    )
-    .bind(&info.nzb_guid)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None);
+    let existing_id: Option<i64> =
+        sqlx::query_scalar("SELECT stream_id FROM usenet_stream WHERE nzb_guid = $1 LIMIT 1")
+            .bind(&info.nzb_guid)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
 
     if let Some(sid) = existing_id {
         if !force_import {
@@ -714,7 +729,11 @@ async fn do_nzb_import(
     };
 
     let source = indexer.unwrap_or("manual");
-    let size = if info.total_size > 0 { Some(info.total_size) } else { None };
+    let size = if info.total_size > 0 {
+        Some(info.total_size)
+    } else {
+        None
+    };
 
     match insert_usenet_stream(
         &state.pool,
@@ -774,7 +793,11 @@ pub async fn download_nzb(
     let mut mac = match Hmac::<Sha256>::new_from_slice(state.config.secret_key_raw.as_bytes()) {
         Ok(m) => m,
         Err(_) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"detail": "Server error"}))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": "Server error"})),
+            )
+                .into_response();
         }
     };
     mac.update(message.as_bytes());
@@ -786,21 +809,28 @@ pub async fn download_nzb(
         .collect();
 
     if expected != params.sig {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Invalid signature"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Invalid signature"})),
+        )
+            .into_response();
     }
 
     // Fetch nzb_url
-    let nzb_url: Option<String> = sqlx::query_scalar(
-        "SELECT nzb_url FROM usenet_stream WHERE nzb_guid = $1 LIMIT 1",
-    )
-    .bind(&guid)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None)
-    .flatten();
+    let nzb_url: Option<String> =
+        sqlx::query_scalar("SELECT nzb_url FROM usenet_stream WHERE nzb_guid = $1 LIMIT 1")
+            .bind(&guid)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None)
+            .flatten();
 
     match nzb_url {
         Some(url) => Redirect::temporary(&url).into_response(),
-        None => (StatusCode::NOT_FOUND, Json(json!({"detail": "NZB not found"}))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "NZB not found"})),
+        )
+            .into_response(),
     }
 }

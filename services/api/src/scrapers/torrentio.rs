@@ -19,7 +19,10 @@ pub async fn scrape(
     let imdb_id = match &meta.imdb_id {
         Some(id) => id.clone(),
         None => {
-            tracing::debug!("torrentio: skipping — no imdb_id for media {}", meta.media_id);
+            tracing::debug!(
+                "torrentio: skipping — no imdb_id for media {}",
+                meta.media_id
+            );
             return vec![];
         }
     };
@@ -62,8 +65,7 @@ pub async fn scrape(
 
 fn is_error_placeholder(url: &str) -> bool {
     let u = url.to_lowercase();
-    u.contains("failed_access")
-        || (u.contains("/videos/") && u.ends_with(".mp4"))
+    u.contains("failed_access") || (u.contains("/videos/") && u.ends_with(".mp4"))
 }
 
 fn parse_stream(stream: &Value) -> Option<ScrapedStream> {
@@ -152,9 +154,7 @@ fn parse_stream(stream: &Value) -> Option<ScrapedStream> {
 
 fn parse_size(desc: &str) -> Option<i64> {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        regex::Regex::new(r"(?i)(\d+(?:\.\d+)?)\s*(GB|MB|TB|KB)").unwrap()
-    });
+    let re = RE.get_or_init(|| regex::Regex::new(r"(?i)(\d+(?:\.\d+)?)\s*(GB|MB|TB|KB)").unwrap());
     let caps = re.captures(desc)?;
     let amount: f64 = caps.get(1)?.as_str().parse().ok()?;
     let unit = caps.get(2)?.as_str().to_uppercase();
@@ -169,9 +169,7 @@ fn parse_size(desc: &str) -> Option<i64> {
 
 fn parse_seeders(desc: &str) -> Option<i32> {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        regex::Regex::new(r"(?i)👤\s*(\d+)|Seeds?[:\s]+(\d+)").unwrap()
-    });
+    let re = RE.get_or_init(|| regex::Regex::new(r"(?i)👤\s*(\d+)|Seeds?[:\s]+(\d+)").unwrap());
     let caps = re.captures(desc)?;
     let n = caps.get(1).or_else(|| caps.get(2))?;
     n.as_str().parse().ok()

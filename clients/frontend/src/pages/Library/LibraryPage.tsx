@@ -29,11 +29,14 @@ export function LibraryPage() {
   // Update URL and storage when tab changes (user clicked a tab)
   const handleTabChange = (tab: string) => {
     setActiveTab(tab)
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev)
-      params.set('tab', tab)
-      return params
-    }, { replace: true })
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev)
+        params.set('tab', tab)
+        return params
+      },
+      { replace: true },
+    )
   }
 
   // Sync with URL tab param changes
@@ -77,11 +80,14 @@ export function LibraryPage() {
               size="sm"
               className="rounded-xl"
               onClick={() =>
-                setSearchParams((prev) => {
-                  const params = new URLSearchParams(prev)
-                  params.delete('blocked')
-                  return params
-                }, { replace: true })
+                setSearchParams(
+                  (prev) => {
+                    const params = new URLSearchParams(prev)
+                    params.delete('blocked')
+                    return params
+                  },
+                  { replace: true },
+                )
               }
             >
               ← Back to Library
@@ -142,11 +148,14 @@ export function LibraryPage() {
               size="sm"
               className="rounded-xl gap-2 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={() =>
-                setSearchParams((prev) => {
-                  const params = new URLSearchParams(prev)
-                  params.set('blocked', 'true')
-                  return params
-                }, { replace: true })
+                setSearchParams(
+                  (prev) => {
+                    const params = new URLSearchParams(prev)
+                    params.set('blocked', 'true')
+                    return params
+                  },
+                  { replace: true },
+                )
               }
             >
               <ShieldAlert className="h-4 w-4" />

@@ -10,7 +10,6 @@
 ///   GET /tvdb-filter       → discover_tvdb_filter
 ///   GET /mdblist           → discover_mdblist
 ///   GET /verify-tmdb-key   → verify_tmdb_key
-
 use std::sync::Arc;
 
 use axum::{
@@ -124,7 +123,11 @@ pub async fn discover_trending(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     proxy_get(&state, "/api/v1/discover/trending", &q, &headers).await
@@ -137,7 +140,11 @@ pub async fn discover_list(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     proxy_get(&state, "/api/v1/discover/list", &q, &headers).await
@@ -150,7 +157,11 @@ pub async fn discover_watch_providers(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     proxy_get(&state, "/api/v1/discover/watch-providers", &q, &headers).await
@@ -163,7 +174,11 @@ pub async fn discover_provider_feed(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     proxy_get(&state, "/api/v1/discover/provider-feed", &q, &headers).await
@@ -176,7 +191,11 @@ pub async fn discover_anime(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     proxy_get(&state, "/api/v1/discover/anime", &q, &headers).await
@@ -189,7 +208,11 @@ pub async fn discover_search(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     proxy_get(&state, "/api/v1/discover/search", &q, &headers).await
@@ -202,7 +225,11 @@ pub async fn discover_tvdb_filter(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     proxy_get(&state, "/api/v1/discover/tvdb-filter", &q, &headers).await
@@ -215,7 +242,11 @@ pub async fn discover_mdblist(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     proxy_get(&state, "/api/v1/discover/mdblist", &q, &headers).await
@@ -228,7 +259,11 @@ pub async fn verify_tmdb_key(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     proxy_get(&state, "/api/v1/discover/verify-tmdb-key", &q, &headers).await

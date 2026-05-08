@@ -40,9 +40,10 @@ pub fn parse_title(raw: &str) -> ParsedTitle {
         episodes: p.episodes,
         is_proper: p.is_proper,
         is_repack: p.is_repack,
-        is_extended: p.edition.as_deref().is_some_and(|e| {
-            e.to_lowercase().contains("extended")
-        }),
+        is_extended: p
+            .edition
+            .as_deref()
+            .is_some_and(|e| e.to_lowercase().contains("extended")),
         is_complete: p.is_complete,
         is_dubbed: p.is_dubbed,
         release_group: p.group,
@@ -63,8 +64,7 @@ pub fn extract_info_hash(s: &str) -> Option<String> {
         }
     }
 
-    let re = INFO_HASH_RE
-        .get_or_init(|| regex::Regex::new(r"[a-fA-F0-9]{40}").unwrap());
+    let re = INFO_HASH_RE.get_or_init(|| regex::Regex::new(r"[a-fA-F0-9]{40}").unwrap());
     re.find(s).map(|m| m.as_str().to_lowercase())
 }
 
@@ -79,9 +79,7 @@ pub fn similarity_ratio(parsed: &str, candidate: &str) -> u32 {
 /// Similarity against a main title plus optional aka titles; returns max.
 pub fn max_similarity_ratio(parsed: &str, main: &str, akas: &[String]) -> u32 {
     let base = jaccard(parsed, main);
-    akas.iter()
-        .map(|a| jaccard(parsed, a))
-        .fold(base, u32::max)
+    akas.iter().map(|a| jaccard(parsed, a)).fold(base, u32::max)
 }
 
 fn normalise(s: &str) -> Vec<String> {
@@ -96,8 +94,12 @@ fn jaccard(a: &str, b: &str) -> u32 {
     let ta: std::collections::HashSet<String> = normalise(a).into_iter().collect();
     let tb: std::collections::HashSet<String> = normalise(b).into_iter().collect();
 
-    if ta.is_empty() && tb.is_empty() { return 100; }
-    if ta.is_empty() || tb.is_empty() { return 0; }
+    if ta.is_empty() && tb.is_empty() {
+        return 100;
+    }
+    if ta.is_empty() || tb.is_empty() {
+        return 0;
+    }
 
     let intersection = ta.intersection(&tb).count();
     let union = ta.union(&tb).count();

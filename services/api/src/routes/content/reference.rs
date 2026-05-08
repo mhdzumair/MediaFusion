@@ -5,7 +5,6 @@
 ///   GET /catalogs             → list_catalogs
 ///   GET /stars                → list_stars
 ///   GET /parental-certificates → list_parental_certificates
-
 use std::sync::Arc;
 
 use axum::{
@@ -68,8 +67,12 @@ pub struct RefQuery {
     pub per_page: i64,
 }
 
-fn default_page() -> i64 { 1 }
-fn default_per_page() -> i64 { 50 }
+fn default_page() -> i64 {
+    1
+}
+fn default_per_page() -> i64 {
+    50
+}
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -80,7 +83,11 @@ pub async fn list_genres(
     Query(params): Query<RefQuery>,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let page = params.page.max(1);
@@ -89,13 +96,11 @@ pub async fn list_genres(
 
     let (total, rows) = if let Some(ref search) = params.search {
         let pattern = format!("%{search}%");
-        let total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM genre WHERE name ILIKE $1",
-        )
-        .bind(&pattern)
-        .fetch_one(&state.pool_ro)
-        .await
-        .unwrap_or(0);
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM genre WHERE name ILIKE $1")
+            .bind(&pattern)
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
 
         let rows: Vec<(i32, String, i64)> = sqlx::query_as(
             r#"SELECT g.id, g.name, COUNT(mgl.media_id) as usage_count
@@ -146,7 +151,11 @@ pub async fn list_genres(
         .map(|(id, name, usage_count)| json!({"id": id, "name": name, "usage_count": usage_count}))
         .collect();
 
-    let pages = if total > 0 { (total + per_page - 1) / per_page } else { 1 };
+    let pages = if total > 0 {
+        (total + per_page - 1) / per_page
+    } else {
+        1
+    };
     Json(json!({
         "items": items,
         "total": total,
@@ -165,7 +174,11 @@ pub async fn list_catalogs(
     Query(params): Query<RefQuery>,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let page = params.page.max(1);
@@ -174,13 +187,11 @@ pub async fn list_catalogs(
 
     let (total, rows) = if let Some(ref search) = params.search {
         let pattern = format!("%{search}%");
-        let total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM catalog WHERE name ILIKE $1",
-        )
-        .bind(&pattern)
-        .fetch_one(&state.pool_ro)
-        .await
-        .unwrap_or(0);
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM catalog WHERE name ILIKE $1")
+            .bind(&pattern)
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
 
         let rows: Vec<(i32, String, i64)> = sqlx::query_as(
             r#"SELECT c.id, c.name, COUNT(mcl.media_id) as usage_count
@@ -227,7 +238,11 @@ pub async fn list_catalogs(
         .map(|(id, name, usage_count)| json!({"id": id, "name": name, "usage_count": usage_count}))
         .collect();
 
-    let pages = if total > 0 { (total + per_page - 1) / per_page } else { 1 };
+    let pages = if total > 0 {
+        (total + per_page - 1) / per_page
+    } else {
+        1
+    };
     Json(json!({
         "items": items,
         "total": total,
@@ -246,7 +261,11 @@ pub async fn list_stars(
     Query(params): Query<RefQuery>,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let page = params.page.max(1);
@@ -255,13 +274,11 @@ pub async fn list_stars(
 
     let (total, rows) = if let Some(ref search) = params.search {
         let pattern = format!("%{search}%");
-        let total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM person WHERE name ILIKE $1",
-        )
-        .bind(&pattern)
-        .fetch_one(&state.pool_ro)
-        .await
-        .unwrap_or(0);
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM person WHERE name ILIKE $1")
+            .bind(&pattern)
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
 
         let rows: Vec<(i32, String, i64)> = sqlx::query_as(
             r#"SELECT p.id, p.name, COUNT(mc.media_id) as usage_count
@@ -308,7 +325,11 @@ pub async fn list_stars(
         .map(|(id, name, usage_count)| json!({"id": id, "name": name, "usage_count": usage_count}))
         .collect();
 
-    let pages = if total > 0 { (total + per_page - 1) / per_page } else { 1 };
+    let pages = if total > 0 {
+        (total + per_page - 1) / per_page
+    } else {
+        1
+    };
     Json(json!({
         "items": items,
         "total": total,
@@ -327,7 +348,11 @@ pub async fn list_parental_certificates(
     Query(params): Query<RefQuery>,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let page = params.page.max(1);
@@ -336,13 +361,12 @@ pub async fn list_parental_certificates(
 
     let (total, rows) = if let Some(ref search) = params.search {
         let pattern = format!("%{search}%");
-        let total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM parental_certificate WHERE name ILIKE $1",
-        )
-        .bind(&pattern)
-        .fetch_one(&state.pool_ro)
-        .await
-        .unwrap_or(0);
+        let total: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM parental_certificate WHERE name ILIKE $1")
+                .bind(&pattern)
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0);
 
         let rows: Vec<(i32, String, i64)> = sqlx::query_as(
             r#"SELECT pc.id, pc.name, COUNT(mpcl.media_id) as usage_count
@@ -389,7 +413,11 @@ pub async fn list_parental_certificates(
         .map(|(id, name, usage_count)| json!({"id": id, "name": name, "usage_count": usage_count}))
         .collect();
 
-    let pages = if total > 0 { (total + per_page - 1) / per_page } else { 1 };
+    let pages = if total > 0 {
+        (total + per_page - 1) / per_page
+    } else {
+        1
+    };
     Json(json!({
         "items": items,
         "total": total,

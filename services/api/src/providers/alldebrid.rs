@@ -113,9 +113,7 @@ async fn ad_post_form(
 
 // ─── File selection helper ─────────────────────────────────────────────────────
 
-static VIDEO_EXTS: &[&str] = &[
-    "mkv", "mp4", "avi", "webm", "mov", "flv", "m4v", "wmv",
-];
+static VIDEO_EXTS: &[&str] = &["mkv", "mp4", "avi", "webm", "mov", "flv", "m4v", "wmv"];
 
 /// Pick the best file index from a list of `(name, size)` pairs.
 ///
@@ -161,17 +159,17 @@ fn select_video_file(
     // 2. Filename match (search all files, not just video, to stay faithful)
     if let Some(name) = filename {
         let name_lower = name.to_lowercase();
-        if let Some(idx) = files.iter().position(|(n, _)| n.to_lowercase().contains(&name_lower)) {
+        if let Some(idx) = files
+            .iter()
+            .position(|(n, _)| n.to_lowercase().contains(&name_lower))
+        {
             return idx;
         }
     }
 
     // 3. Season + episode pattern in name
     if let (Some(s), Some(e)) = (season, episode) {
-        let patterns = [
-            format!("s{:02}e{:02}", s, e),
-            format!("{:01}x{:02}", s, e),
-        ];
+        let patterns = [format!("s{:02}e{:02}", s, e), format!("{:01}x{:02}", s, e)];
         let candidate = video_indices.iter().find(|&&i| {
             let lower = files[i].0.to_lowercase();
             patterns.iter().any(|p| lower.contains(p))
@@ -189,10 +187,7 @@ fn select_video_file(
     }
 
     // 4. Largest video file
-    if let Some(&idx) = video_indices
-        .iter()
-        .max_by_key(|&&i| files[i].1)
-    {
+    if let Some(&idx) = video_indices.iter().max_by_key(|&&i| files[i].1) {
         return idx;
     }
 
@@ -215,7 +210,11 @@ fn flatten_ad_files(node: &Value, out: &mut Vec<(String, i64, String)>) {
         Value::Object(_) => {
             // Leaf: has a link field "l"
             if let Some(link) = node.get("l").and_then(|v| v.as_str()) {
-                let name = node.get("n").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let name = node
+                    .get("n")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let size = node.get("s").and_then(|v| v.as_i64()).unwrap_or(0);
                 out.push((name, size, link.to_string()));
             } else if let Some(entries) = node.get("e") {
@@ -270,12 +269,20 @@ async fn upload_magnet(
     let magnets = body
         .get("data")
         .and_then(|d| d.get("magnets"))
-        .ok_or_else(|| ProviderError::api("Missing data.magnets in upload response", "transfer_error.mp4"))?;
+        .ok_or_else(|| {
+            ProviderError::api(
+                "Missing data.magnets in upload response",
+                "transfer_error.mp4",
+            )
+        })?;
 
     let first = match magnets {
-        Value::Array(arr) => arr
-            .first()
-            .ok_or_else(|| ProviderError::api("Empty magnets array in upload response", "transfer_error.mp4"))?,
+        Value::Array(arr) => arr.first().ok_or_else(|| {
+            ProviderError::api(
+                "Empty magnets array in upload response",
+                "transfer_error.mp4",
+            )
+        })?,
         Value::Object(_) => magnets,
         _ => {
             return Err(ProviderError::api(
@@ -285,10 +292,9 @@ async fn upload_magnet(
         }
     };
 
-    first
-        .get("id")
-        .and_then(|v| v.as_i64())
-        .ok_or_else(|| ProviderError::api("Missing id in magnet upload response", "transfer_error.mp4"))
+    first.get("id").and_then(|v| v.as_i64()).ok_or_else(|| {
+        ProviderError::api("Missing id in magnet upload response", "transfer_error.mp4")
+    })
 }
 
 /// GET /magnet/files?id[]={id} — returns flattened `(name, size, link)` triples.
@@ -306,7 +312,12 @@ async fn get_magnet_files(
         .get("data")
         .and_then(|d| d.get("magnets"))
         .and_then(|v| v.as_array())
-        .ok_or_else(|| ProviderError::api("Missing data.magnets in files response", "transfer_error.mp4"))?;
+        .ok_or_else(|| {
+            ProviderError::api(
+                "Missing data.magnets in files response",
+                "transfer_error.mp4",
+            )
+        })?;
 
     let mut files: Vec<(String, i64, String)> = Vec::new();
     for magnet_entry in magnets {
@@ -354,7 +365,12 @@ async fn wait_for_ready(
         let magnets = body
             .get("data")
             .and_then(|d| d.get("magnets"))
-            .ok_or_else(|| ProviderError::api("Missing data.magnets in status response", "transfer_error.mp4"))?;
+            .ok_or_else(|| {
+                ProviderError::api(
+                    "Missing data.magnets in status response",
+                    "transfer_error.mp4",
+                )
+            })?;
 
         // Single id query returns an object, not an array
         let magnet = match magnets {
@@ -362,7 +378,10 @@ async fn wait_for_ready(
             other => other.clone(),
         };
 
-        let status_code = magnet.get("statusCode").and_then(|v| v.as_i64()).unwrap_or(-1);
+        let status_code = magnet
+            .get("statusCode")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1);
 
         match status_code {
             4 => return Ok(()), // Ready
@@ -428,6 +447,7 @@ async fn find_magnet_by_hash(
 // ─── Public entry point ────────────────────────────────────────────────────────
 
 /// Resolve a direct video URL from AllDebrid for the given torrent.
+#[allow(clippy::too_many_arguments)]
 pub async fn get_video_url(
     http: &reqwest::Client,
     token: &str,
@@ -455,10 +475,9 @@ pub async fn get_video_url(
                 .get("statusCode")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(-1);
-            let id = existing
-                .get("id")
-                .and_then(|v| v.as_i64())
-                .ok_or_else(|| ProviderError::api("Missing id in existing magnet", "transfer_error.mp4"))?;
+            let id = existing.get("id").and_then(|v| v.as_i64()).ok_or_else(|| {
+                ProviderError::api("Missing id in existing magnet", "transfer_error.mp4")
+            })?;
 
             if status_code == 7 {
                 // Error state — delete and re-add
@@ -500,8 +519,7 @@ pub async fn get_video_url(
     // Build (name, size) slice for selector
     let name_size: Vec<(String, i64)> = files_raw.iter().map(|(n, s, _)| (n.clone(), *s)).collect();
 
-    let selected_idx =
-        select_video_file(&name_size, filename, file_index, season, episode);
+    let selected_idx = select_video_file(&name_size, filename, file_index, season, episode);
 
     let link = files_raw
         .get(selected_idx)
@@ -520,10 +538,7 @@ pub async fn get_video_url(
 // ─── Delete all torrents ───────────────────────────────────────────────────────
 
 /// Delete ALL magnets from the user's AllDebrid account (implements delete-all-watchlist).
-pub async fn delete_all_torrents(
-    http: &reqwest::Client,
-    token: &str,
-) -> Result<(), ProviderError> {
+pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     let body = get_magnet_status(http, token, None, None).await?;
 
     let magnets = match body.get("data").and_then(|d| d.get("magnets")) {

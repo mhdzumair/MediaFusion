@@ -17,7 +17,6 @@
 /// This exactly mirrors the Python implementation in api/routers/user/auth.py.
 ///
 /// Password format: "{salt}${sha256(password + salt).hexdigest()}"
-
 use std::sync::Arc;
 
 use axum::{
@@ -37,10 +36,10 @@ use uuid::Uuid;
 use crate::state::AppState;
 
 // Token expiry
-const ACCESS_TOKEN_EXPIRE_SECS: i64 = 60 * 60 * 24;     // 24h
+const ACCESS_TOKEN_EXPIRE_SECS: i64 = 60 * 60 * 24; // 24h
 const REFRESH_TOKEN_EXPIRE_SECS: i64 = 60 * 60 * 24 * 30; // 30d
 const EMAIL_VERIFY_TOKEN_EXPIRE_SECS: i64 = 60 * 60 * 24; // 24h
-const PASSWORD_RESET_TOKEN_EXPIRE_SECS: i64 = 60 * 60;    // 1h
+const PASSWORD_RESET_TOKEN_EXPIRE_SECS: i64 = 60 * 60; // 1h
 
 // ─── Request / Response types ─────────────────────────────────────────────────
 
@@ -138,8 +137,8 @@ pub struct RegisterResponse {
 
 fn create_token(payload: serde_json::Value, secret_key: &str) -> String {
     let payload_str = URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes())
-        .expect("HMAC accepts any key size");
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).expect("HMAC accepts any key size");
     mac.update(payload_str.as_bytes());
     let signature = hex_encode(&mac.finalize().into_bytes());
     format!("{payload_str}.{signature}")
@@ -150,8 +149,8 @@ fn decode_token(token: &str, secret_key: &str) -> Option<serde_json::Value> {
     let (payload_str, sig) = token.split_at(dot);
     let sig = &sig[1..]; // remove leading '.'
 
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes())
-        .expect("HMAC accepts any key size");
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).expect("HMAC accepts any key size");
     mac.update(payload_str.as_bytes());
     let expected = hex_encode(&mac.finalize().into_bytes());
 
@@ -174,22 +173,34 @@ fn decode_token(token: &str, secret_key: &str) -> Option<serde_json::Value> {
 
 fn create_access_token(user_id: i32, role: &str, secret_key: &str) -> String {
     let exp = Utc::now().timestamp() + ACCESS_TOKEN_EXPIRE_SECS;
-    create_token(serde_json::json!({"sub": user_id.to_string(), "role": role, "type": "access", "exp": exp}), secret_key)
+    create_token(
+        serde_json::json!({"sub": user_id.to_string(), "role": role, "type": "access", "exp": exp}),
+        secret_key,
+    )
 }
 
 fn create_refresh_token(user_id: i32, secret_key: &str) -> String {
     let exp = Utc::now().timestamp() + REFRESH_TOKEN_EXPIRE_SECS;
-    create_token(serde_json::json!({"sub": user_id.to_string(), "type": "refresh", "exp": exp}), secret_key)
+    create_token(
+        serde_json::json!({"sub": user_id.to_string(), "type": "refresh", "exp": exp}),
+        secret_key,
+    )
 }
 
 fn create_email_verify_token(user_id: i32, secret_key: &str) -> String {
     let exp = Utc::now().timestamp() + EMAIL_VERIFY_TOKEN_EXPIRE_SECS;
-    create_token(serde_json::json!({"sub": user_id.to_string(), "type": "email_verify", "exp": exp}), secret_key)
+    create_token(
+        serde_json::json!({"sub": user_id.to_string(), "type": "email_verify", "exp": exp}),
+        secret_key,
+    )
 }
 
 fn create_password_reset_token(user_id: i32, pwd_hash_prefix: &str, secret_key: &str) -> String {
     let exp = Utc::now().timestamp() + PASSWORD_RESET_TOKEN_EXPIRE_SECS;
-    create_token(serde_json::json!({"sub": user_id.to_string(), "type": "password_reset", "pwd_hash": pwd_hash_prefix, "exp": exp}), secret_key)
+    create_token(
+        serde_json::json!({"sub": user_id.to_string(), "type": "password_reset", "pwd_hash": pwd_hash_prefix, "exp": exp}),
+        secret_key,
+    )
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -263,7 +274,25 @@ impl From<UserRow> for UserResponse {
 }
 
 async fn fetch_user_by_email(pool: &PgPool, email: &str) -> Option<UserRow> {
-    sqlx::query_as::<_, (i32, String, String, Option<String>, Option<String>, String, bool, bool, DateTime<Utc>, Option<DateTime<Utc>>, i32, String, bool, bool)>(
+    sqlx::query_as::<
+        _,
+        (
+            i32,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            bool,
+            bool,
+            DateTime<Utc>,
+            Option<DateTime<Utc>>,
+            i32,
+            String,
+            bool,
+            bool,
+        ),
+    >(
         r#"SELECT id, uuid, email, username, password_hash, role::text, is_verified, is_active,
                   created_at, last_login,
                   contribution_points, contribution_level,
@@ -273,14 +302,35 @@ async fn fetch_user_by_email(pool: &PgPool, email: &str) -> Option<UserRow> {
     .bind(email)
     .fetch_optional(pool)
     .await
-    .map_err(|e| { tracing::error!("fetch_user_by_email error: {e}"); e })
+    .map_err(|e| {
+        tracing::error!("fetch_user_by_email error: {e}");
+        e
+    })
     .ok()
     .flatten()
     .map(row_to_user)
 }
 
 async fn fetch_user_by_id(pool: &PgPool, id: i32) -> Option<UserRow> {
-    sqlx::query_as::<_, (i32, String, String, Option<String>, Option<String>, String, bool, bool, DateTime<Utc>, Option<DateTime<Utc>>, i32, String, bool, bool)>(
+    sqlx::query_as::<
+        _,
+        (
+            i32,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            bool,
+            bool,
+            DateTime<Utc>,
+            Option<DateTime<Utc>>,
+            i32,
+            String,
+            bool,
+            bool,
+        ),
+    >(
         r#"SELECT id, uuid, email, username, password_hash, role::text, is_verified, is_active,
                   created_at, last_login,
                   contribution_points, contribution_level,
@@ -295,8 +345,24 @@ async fn fetch_user_by_id(pool: &PgPool, id: i32) -> Option<UserRow> {
     .map(row_to_user)
 }
 
+#[allow(clippy::type_complexity)]
 fn row_to_user(
-    r: (i32, String, String, Option<String>, Option<String>, String, bool, bool, DateTime<Utc>, Option<DateTime<Utc>>, i32, String, bool, bool),
+    r: (
+        i32,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+        bool,
+        bool,
+        DateTime<Utc>,
+        Option<DateTime<Utc>>,
+        i32,
+        String,
+        bool,
+        bool,
+    ),
 ) -> UserRow {
     UserRow {
         id: r.0,
@@ -342,29 +408,47 @@ pub async fn register(
     Json(req): Json<RegisterRequest>,
 ) -> impl IntoResponse {
     if req.password.len() < 8 {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"detail": "Password must be at least 8 characters"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"detail": "Password must be at least 8 characters"})),
+        )
+            .into_response();
     }
     if req.username.len() < 3 || req.username.len() > 100 {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"detail": "Username must be 3–100 characters"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"detail": "Username must be 3–100 characters"})),
+        )
+            .into_response();
     }
 
     // Check duplicate email / username
-    let email_exists: Option<(i32,)> = sqlx::query_as("SELECT id FROM users WHERE LOWER(email) = LOWER($1)")
-        .bind(&req.email)
-        .fetch_optional(&state.pool)
-        .await
-        .unwrap_or(None);
+    let email_exists: Option<(i32,)> =
+        sqlx::query_as("SELECT id FROM users WHERE LOWER(email) = LOWER($1)")
+            .bind(&req.email)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
     if email_exists.is_some() {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"detail": "Email already registered"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"detail": "Email already registered"})),
+        )
+            .into_response();
     }
 
-    let username_exists: Option<(i32,)> = sqlx::query_as("SELECT id FROM users WHERE LOWER(username) = LOWER($1)")
-        .bind(&req.username)
-        .fetch_optional(&state.pool)
-        .await
-        .unwrap_or(None);
+    let username_exists: Option<(i32,)> =
+        sqlx::query_as("SELECT id FROM users WHERE LOWER(username) = LOWER($1)")
+            .bind(&req.username)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
     if username_exists.is_some() {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"detail": "Username already taken"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"detail": "Username already taken"})),
+        )
+            .into_response();
     }
 
     let smtp_configured = state.config.smtp_host.is_some();
@@ -390,7 +474,11 @@ pub async fn register(
     let user_id = match insert {
         Some((id,)) => id,
         None => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"detail": "Registration failed"}))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"detail": "Registration failed"})),
+            )
+                .into_response();
         }
     };
 
@@ -417,18 +505,28 @@ pub async fn register(
 
     let user = match fetch_user_by_id(&state.pool, user_id).await {
         Some(u) => u,
-        None => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"detail": "User not found after insert"}))).into_response(),
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"detail": "User not found after insert"})),
+            )
+                .into_response()
+        }
     };
 
     let access_token = create_access_token(user.id, &user.role, &state.config.secret_key_raw);
     let refresh_token = create_refresh_token(user.id, &state.config.secret_key_raw);
 
-    (StatusCode::CREATED, Json(TokenResponse {
-        access_token,
-        refresh_token,
-        token_type: "bearer".into(),
-        user: user.into(),
-    })).into_response()
+    (
+        StatusCode::CREATED,
+        Json(TokenResponse {
+            access_token,
+            refresh_token,
+            token_type: "bearer".into(),
+            user: user.into(),
+        }),
+    )
+        .into_response()
 }
 
 pub async fn login(
@@ -437,20 +535,38 @@ pub async fn login(
 ) -> impl IntoResponse {
     let user = match fetch_user_by_email(&state.pool, &req.email).await {
         Some(u) => u,
-        None => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Invalid email or password"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Invalid email or password"})),
+            )
+                .into_response()
+        }
     };
 
     let hash = user.password_hash.as_deref().unwrap_or("");
     if !verify_password(&req.password, hash) {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Invalid email or password"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"detail": "Invalid email or password"})),
+        )
+            .into_response();
     }
     if !user.is_active {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"detail": "Account is disabled"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"detail": "Account is disabled"})),
+        )
+            .into_response();
     }
     if !user.is_verified && state.config.smtp_host.is_some() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({
-            "detail": "Email not verified. Please check your inbox for a verification link."
-        }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "detail": "Email not verified. Please check your inbox for a verification link."
+            })),
+        )
+            .into_response();
     }
 
     // Update last_login
@@ -462,12 +578,16 @@ pub async fn login(
     let access_token = create_access_token(user.id, &user.role, &state.config.secret_key_raw);
     let refresh_token = create_refresh_token(user.id, &state.config.secret_key_raw);
 
-    (StatusCode::OK, Json(TokenResponse {
-        access_token,
-        refresh_token,
-        token_type: "bearer".into(),
-        user: user.into(),
-    })).into_response()
+    (
+        StatusCode::OK,
+        Json(TokenResponse {
+            access_token,
+            refresh_token,
+            token_type: "bearer".into(),
+            user: user.into(),
+        }),
+    )
+        .into_response()
 }
 
 pub async fn refresh(
@@ -476,28 +596,50 @@ pub async fn refresh(
 ) -> impl IntoResponse {
     let data = match decode_token(&req.refresh_token, &state.config.secret_key_raw) {
         Some(d) if d["type"].as_str() == Some("refresh") => d,
-        _ => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Invalid refresh token"}))).into_response(),
+        _ => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Invalid refresh token"})),
+            )
+                .into_response()
+        }
     };
 
     let user_id: i32 = match data["sub"].as_str().and_then(|s| s.parse().ok()) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Invalid token"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Invalid token"})),
+            )
+                .into_response()
+        }
     };
 
     let user = match fetch_user_by_id(&state.pool, user_id).await {
         Some(u) if u.is_active => u,
-        _ => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "User not found or inactive"}))).into_response(),
+        _ => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "User not found or inactive"})),
+            )
+                .into_response()
+        }
     };
 
     let access_token = create_access_token(user.id, &user.role, &state.config.secret_key_raw);
     let new_refresh = create_refresh_token(user.id, &state.config.secret_key_raw);
 
-    (StatusCode::OK, Json(TokenResponse {
-        access_token,
-        refresh_token: new_refresh,
-        token_type: "bearer".into(),
-        user: user.into(),
-    })).into_response()
+    (
+        StatusCode::OK,
+        Json(TokenResponse {
+            access_token,
+            refresh_token: new_refresh,
+            token_type: "bearer".into(),
+            user: user.into(),
+        }),
+    )
+        .into_response()
 }
 
 pub async fn verify_email(
@@ -506,12 +648,24 @@ pub async fn verify_email(
 ) -> impl IntoResponse {
     let data = match decode_token(&req.token, &state.config.secret_key_raw) {
         Some(d) if d["type"].as_str() == Some("email_verify") => d,
-        _ => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"detail": "Invalid or expired verification token"}))).into_response(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"detail": "Invalid or expired verification token"})),
+            )
+                .into_response()
+        }
     };
 
     let user_id: i32 = match data["sub"].as_str().and_then(|s| s.parse().ok()) {
         Some(id) => id,
-        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"detail": "Invalid token"}))).into_response(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"detail": "Invalid token"})),
+            )
+                .into_response()
+        }
     };
 
     let _ = sqlx::query("UPDATE users SET is_verified = true, last_login = NOW() WHERE id = $1")
@@ -521,18 +675,28 @@ pub async fn verify_email(
 
     let user = match fetch_user_by_id(&state.pool, user_id).await {
         Some(u) => u,
-        None => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "User not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"detail": "User not found"})),
+            )
+                .into_response()
+        }
     };
 
     let access_token = create_access_token(user.id, &user.role, &state.config.secret_key_raw);
     let refresh_token = create_refresh_token(user.id, &state.config.secret_key_raw);
 
-    (StatusCode::OK, Json(TokenResponse {
-        access_token,
-        refresh_token,
-        token_type: "bearer".into(),
-        user: user.into(),
-    })).into_response()
+    (
+        StatusCode::OK,
+        Json(TokenResponse {
+            access_token,
+            refresh_token,
+            token_type: "bearer".into(),
+            user: user.into(),
+        }),
+    )
+        .into_response()
 }
 
 pub async fn resend_verification(
@@ -546,7 +710,12 @@ pub async fn resend_verification(
             let _ = send_email_verification(&state, &user.email, &token).await;
         }
     }
-    (StatusCode::OK, Json(serde_json::json!({"message": "If that email is registered and unverified, you'll receive a new link shortly."})))
+    (
+        StatusCode::OK,
+        Json(
+            serde_json::json!({"message": "If that email is registered and unverified, you'll receive a new link shortly."}),
+        ),
+    )
 }
 
 pub async fn forgot_password(
@@ -555,11 +724,22 @@ pub async fn forgot_password(
 ) -> impl IntoResponse {
     // Always return 200 to avoid email enumeration
     if let Some(user) = fetch_user_by_email(&state.pool, &req.email).await {
-        let pwd_prefix = user.password_hash.as_deref().unwrap_or("").get(..16).unwrap_or("").to_string();
+        let pwd_prefix = user
+            .password_hash
+            .as_deref()
+            .unwrap_or("")
+            .get(..16)
+            .unwrap_or("")
+            .to_string();
         let token = create_password_reset_token(user.id, &pwd_prefix, &state.config.secret_key_raw);
         let _ = send_password_reset_email(&state, &user.email, &token).await;
     }
-    (StatusCode::OK, Json(serde_json::json!({"message": "If that email is registered, you'll receive a password reset link shortly."})))
+    (
+        StatusCode::OK,
+        Json(
+            serde_json::json!({"message": "If that email is registered, you'll receive a password reset link shortly."}),
+        ),
+    )
 }
 
 pub async fn reset_password(
@@ -567,28 +747,59 @@ pub async fn reset_password(
     Json(req): Json<ResetPasswordRequest>,
 ) -> impl IntoResponse {
     if req.new_password.len() < 8 {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"detail": "Password must be at least 8 characters"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"detail": "Password must be at least 8 characters"})),
+        )
+            .into_response();
     }
 
     let data = match decode_token(&req.token, &state.config.secret_key_raw) {
         Some(d) if d["type"].as_str() == Some("password_reset") => d,
-        _ => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"detail": "Invalid or expired reset token"}))).into_response(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"detail": "Invalid or expired reset token"})),
+            )
+                .into_response()
+        }
     };
 
     let user_id: i32 = match data["sub"].as_str().and_then(|s| s.parse().ok()) {
         Some(id) => id,
-        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"detail": "Invalid token"}))).into_response(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"detail": "Invalid token"})),
+            )
+                .into_response()
+        }
     };
 
     let user = match fetch_user_by_id(&state.pool, user_id).await {
         Some(u) => u,
-        None => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "User not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"detail": "User not found"})),
+            )
+                .into_response()
+        }
     };
 
     // Verify the pwd_hash prefix matches (token invalidated if password already changed)
-    let stored_prefix = user.password_hash.as_deref().unwrap_or("").get(..16).unwrap_or("");
+    let stored_prefix = user
+        .password_hash
+        .as_deref()
+        .unwrap_or("")
+        .get(..16)
+        .unwrap_or("");
     if data["pwd_hash"].as_str().unwrap_or("") != stored_prefix {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"detail": "Reset token is no longer valid"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"detail": "Reset token is no longer valid"})),
+        )
+            .into_response();
     }
 
     let new_hash = hash_password(&req.new_password);
@@ -598,7 +809,11 @@ pub async fn reset_password(
         .execute(&state.pool)
         .await;
 
-    (StatusCode::OK, Json(serde_json::json!({"message": "Password reset successful. You can now log in."}))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"message": "Password reset successful. You can now log in."})),
+    )
+        .into_response()
 }
 
 pub async fn change_password(
@@ -607,21 +822,44 @@ pub async fn change_password(
     Json(req): Json<ChangePasswordRequest>,
 ) -> impl IntoResponse {
     if req.new_password.len() < 8 {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"detail": "New password must be at least 8 characters"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"detail": "New password must be at least 8 characters"})),
+        )
+            .into_response();
     }
 
     let user_id = match validate_access_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Authentication required"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Authentication required"})),
+            )
+                .into_response()
+        }
     };
 
     let user = match fetch_user_by_id(&state.pool, user_id).await {
         Some(u) => u,
-        None => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "User not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"detail": "User not found"})),
+            )
+                .into_response()
+        }
     };
 
-    if !verify_password(&req.current_password, user.password_hash.as_deref().unwrap_or("")) {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Current password is incorrect"}))).into_response();
+    if !verify_password(
+        &req.current_password,
+        user.password_hash.as_deref().unwrap_or(""),
+    ) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"detail": "Current password is incorrect"})),
+        )
+            .into_response();
     }
 
     let new_hash = hash_password(&req.new_password);
@@ -631,7 +869,11 @@ pub async fn change_password(
         .execute(&state.pool)
         .await;
 
-    (StatusCode::OK, Json(serde_json::json!({"message": "Password changed successfully."}))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"message": "Password changed successfully."})),
+    )
+        .into_response()
 }
 
 pub async fn delete_account(
@@ -641,16 +883,32 @@ pub async fn delete_account(
 ) -> impl IntoResponse {
     let user_id = match validate_access_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Authentication required"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Authentication required"})),
+            )
+                .into_response()
+        }
     };
 
     let user = match fetch_user_by_id(&state.pool, user_id).await {
         Some(u) => u,
-        None => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "User not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"detail": "User not found"})),
+            )
+                .into_response()
+        }
     };
 
     if !verify_password(&req.password, user.password_hash.as_deref().unwrap_or("")) {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Invalid password"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"detail": "Invalid password"})),
+        )
+            .into_response();
     }
 
     let _ = sqlx::query("DELETE FROM users WHERE id = $1")
@@ -658,33 +916,49 @@ pub async fn delete_account(
         .execute(&state.pool)
         .await;
 
-    (StatusCode::OK, Json(serde_json::json!({"message": "Account deleted."}))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"message": "Account deleted."})),
+    )
+        .into_response()
 }
 
-pub async fn logout(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
+pub async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMap) -> impl IntoResponse {
     // Stateless JWT — actual invalidation is client-side.
     // We validate the token so bots can't spam this endpoint without a valid token.
     if validate_access_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Authentication required"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"detail": "Authentication required"})),
+        )
+            .into_response();
     }
-    (StatusCode::OK, Json(serde_json::json!({"message": "Successfully logged out"}))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"message": "Successfully logged out"})),
+    )
+        .into_response()
 }
 
-pub async fn get_me(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
+pub async fn get_me(State(state): State<Arc<AppState>>, headers: HeaderMap) -> impl IntoResponse {
     let user_id = match validate_access_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Authentication required"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Authentication required"})),
+            )
+                .into_response()
+        }
     };
 
     match fetch_user_by_id(&state.pool, user_id).await {
         Some(u) => (StatusCode::OK, Json(UserResponse::from(u))).into_response(),
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "User not found"}))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"detail": "User not found"})),
+        )
+            .into_response(),
     }
 }
 
@@ -695,23 +969,36 @@ pub async fn update_me(
 ) -> impl IntoResponse {
     let user_id = match validate_access_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Authentication required"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Authentication required"})),
+            )
+                .into_response()
+        }
     };
 
     if let Some(ref username) = req.username {
         if username.len() < 3 || username.len() > 100 {
-            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"detail": "Username must be 3–100 characters"}))).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"detail": "Username must be 3–100 characters"})),
+            )
+                .into_response();
         }
-        let exists: Option<(i32,)> = sqlx::query_as(
-            "SELECT id FROM users WHERE LOWER(username) = LOWER($1) AND id != $2",
-        )
-        .bind(username)
-        .bind(user_id)
-        .fetch_optional(&state.pool)
-        .await
-        .unwrap_or(None);
+        let exists: Option<(i32,)> =
+            sqlx::query_as("SELECT id FROM users WHERE LOWER(username) = LOWER($1) AND id != $2")
+                .bind(username)
+                .bind(user_id)
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None);
         if exists.is_some() {
-            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"detail": "Username already taken"}))).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"detail": "Username already taken"})),
+            )
+                .into_response();
         }
         let _ = sqlx::query("UPDATE users SET username = $1 WHERE id = $2")
             .bind(username)
@@ -730,7 +1017,11 @@ pub async fn update_me(
 
     match fetch_user_by_id(&state.pool, user_id).await {
         Some(u) => (StatusCode::OK, Json(UserResponse::from(u))).into_response(),
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "User not found"}))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"detail": "User not found"})),
+        )
+            .into_response(),
     }
 }
 
@@ -782,7 +1073,11 @@ async fn send_email(
         AsyncTransport, Message, Tokio1Executor,
     };
 
-    let smtp_host = state.config.smtp_host.as_deref().ok_or("SMTP not configured")?;
+    let smtp_host = state
+        .config
+        .smtp_host
+        .as_deref()
+        .ok_or("SMTP not configured")?;
 
     let email = Message::builder()
         .from(state.config.smtp_from.parse()?)
@@ -791,8 +1086,8 @@ async fn send_email(
         .header(ContentType::TEXT_PLAIN)
         .body(body)?;
 
-    let mut builder = AsyncSmtpTransport::<Tokio1Executor>::relay(smtp_host)?
-        .port(state.config.smtp_port);
+    let mut builder =
+        AsyncSmtpTransport::<Tokio1Executor>::relay(smtp_host)?.port(state.config.smtp_port);
 
     if let (Some(user), Some(pass)) = (
         state.config.smtp_username.as_deref(),

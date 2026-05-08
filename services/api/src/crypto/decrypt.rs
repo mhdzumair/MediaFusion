@@ -43,16 +43,18 @@ pub fn decrypt_user_data(
             .decrypt_padded_mut::<Pkcs7>(&mut buf)
             .map_err(|e| format!("AES decrypt: {e}"))?;
 
-        let json_str =
-            if decrypted.starts_with(b"\x78") || decrypted.starts_with(b"\x9c") || decrypted.starts_with(b"\xda") {
-                let mut decoder = flate2::read::ZlibDecoder::new(decrypted);
-                let mut s = String::new();
-                std::io::Read::read_to_string(&mut decoder, &mut s)
-                    .map_err(|e| format!("zlib: {e}"))?;
-                s
-            } else {
-                String::from_utf8(decrypted.to_vec()).map_err(|e| format!("utf8: {e}"))?
-            };
+        let json_str = if decrypted.starts_with(b"\x78")
+            || decrypted.starts_with(b"\x9c")
+            || decrypted.starts_with(b"\xda")
+        {
+            let mut decoder = flate2::read::ZlibDecoder::new(decrypted);
+            let mut s = String::new();
+            std::io::Read::read_to_string(&mut decoder, &mut s)
+                .map_err(|e| format!("zlib: {e}"))?;
+            s
+        } else {
+            String::from_utf8(decrypted.to_vec()).map_err(|e| format!("utf8: {e}"))?
+        };
 
         return serde_json::from_str(&json_str).map_err(|e| format!("json: {e}").into());
     }

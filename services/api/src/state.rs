@@ -39,12 +39,10 @@ impl AppState {
 
         let pool_ro = if let Some(ro_uri) = &config.postgres_ro_uri {
             tracing::info!("connecting to PostgreSQL (read-replica)…");
-            db_pool::build(ro_uri)
-                .await
-                .unwrap_or_else(|e| {
-                    tracing::warn!("read-replica unavailable ({e}), falling back to primary");
-                    pool.clone()
-                })
+            db_pool::build(ro_uri).await.unwrap_or_else(|e| {
+                tracing::warn!("read-replica unavailable ({e}), falling back to primary");
+                pool.clone()
+            })
         } else {
             pool.clone()
         };

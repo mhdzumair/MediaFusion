@@ -29,7 +29,10 @@ pub enum ProviderError {
 
 impl ProviderError {
     pub fn api(message: impl Into<String>, video_file: &'static str) -> Self {
-        Self::Api { message: message.into(), video_file }
+        Self::Api {
+            message: message.into(),
+            video_file,
+        }
     }
 
     /// The error video filename to redirect to (default: api_error.mp4).

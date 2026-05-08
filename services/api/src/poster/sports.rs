@@ -23,7 +23,11 @@ pub fn random_sports_poster(genres: &[String]) -> Option<String> {
 
     for genre in genres {
         // Exact match
-        if let Some(posters) = obj.get(genre).and_then(|v| v.get("poster")).and_then(|v| v.as_array()) {
+        if let Some(posters) = obj
+            .get(genre)
+            .and_then(|v| v.get("poster"))
+            .and_then(|v| v.as_array())
+        {
             let urls: Vec<&str> = posters.iter().filter_map(|v| v.as_str()).collect();
             if let Some(url) = urls.choose(&mut rng) {
                 return Some((*url).to_string());
@@ -45,7 +49,11 @@ pub fn random_sports_poster(genres: &[String]) -> Option<String> {
 
     // Fallback
     for key in &["Other Sports", "Sports"] {
-        if let Some(posters) = obj.get(*key).and_then(|v| v.get("poster")).and_then(|v| v.as_array()) {
+        if let Some(posters) = obj
+            .get(*key)
+            .and_then(|v| v.get("poster"))
+            .and_then(|v| v.as_array())
+        {
             let urls: Vec<&str> = posters.iter().filter_map(|v| v.as_str()).collect();
             if let Some(url) = urls.choose(&mut rng) {
                 return Some((*url).to_string());

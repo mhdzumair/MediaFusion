@@ -8,7 +8,6 @@
 ///   POST /m3u               → import_m3u
 ///   GET  /job/{job_id}      → get_import_job_status
 ///   GET  /iptv-settings     → get_iptv_settings
-
 use std::sync::Arc;
 
 use axum::{
@@ -131,7 +130,11 @@ pub async fn analyze_m3u(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     let ct = headers
@@ -161,7 +164,11 @@ pub async fn import_m3u(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     let ct = headers
@@ -192,7 +199,11 @@ pub async fn get_import_job_status(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     proxy(
@@ -208,10 +219,7 @@ pub async fn get_import_job_status(
 }
 
 /// GET /api/v1/import/iptv-settings  (no auth required)
-pub async fn get_iptv_settings(
-    State(state): State<Arc<AppState>>,
-    req: Request,
-) -> Response {
+pub async fn get_iptv_settings(State(state): State<Arc<AppState>>, req: Request) -> Response {
     let headers = req.headers().clone();
     let q = req.uri().query().unwrap_or("").to_string();
     proxy(

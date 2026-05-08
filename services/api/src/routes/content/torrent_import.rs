@@ -5,7 +5,6 @@
 ///   POST /api/v1/import/torrent/analyze  → analyze_torrent
 ///   POST /api/v1/import/magnet           → import_magnet
 ///   POST /api/v1/import/torrent          → import_torrent
-
 use std::sync::{Arc, OnceLock};
 
 use axum::{
@@ -15,10 +14,10 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use lava_torrent::torrent::v1::Torrent as LavaTorrent;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
+use lava_torrent::torrent::v1::Torrent as LavaTorrent;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;
@@ -64,8 +63,7 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
 fn extract_info_hash_from_magnet(magnet: &str) -> Option<String> {
     static BTIH_RE: OnceLock<regex::Regex> = OnceLock::new();
     let re = BTIH_RE.get_or_init(|| {
-        regex::Regex::new(r"xt=urn:btih:([0-9a-fA-F]{40}|[A-Z2-7]{32}|[a-z2-7]{32})")
-            .unwrap()
+        regex::Regex::new(r"xt=urn:btih:([0-9a-fA-F]{40}|[A-Z2-7]{32}|[a-z2-7]{32})").unwrap()
     });
     re.captures(magnet).and_then(|c| c.get(1)).map(|m| {
         let s = m.as_str();
@@ -80,9 +78,11 @@ fn extract_info_hash_from_magnet(magnet: &str) -> Option<String> {
 fn extract_dn(magnet: &str) -> Option<String> {
     static DN_RE: OnceLock<regex::Regex> = OnceLock::new();
     let re = DN_RE.get_or_init(|| regex::Regex::new(r"[?&]dn=([^&]+)").unwrap());
-    re.captures(magnet)
-        .and_then(|c| c.get(1))
-        .map(|m| urlencoding::decode(m.as_str()).unwrap_or_default().into_owned())
+    re.captures(magnet).and_then(|c| c.get(1)).map(|m| {
+        urlencoding::decode(m.as_str())
+            .unwrap_or_default()
+            .into_owned()
+    })
 }
 
 /// Decode a 32-char Base32 string (RFC 4648 alphabet, uppercase) to a 40-char hex string.
@@ -124,11 +124,7 @@ struct MediaMatch {
     year: Option<i32>,
 }
 
-async fn search_media(
-    pool: &sqlx::PgPool,
-    title: &str,
-    meta_type: &str,
-) -> Vec<MediaMatch> {
+async fn search_media(pool: &sqlx::PgPool, title: &str, meta_type: &str) -> Vec<MediaMatch> {
     let pattern = format!("%{title}%");
     let type_upper = meta_type.to_uppercase();
     let rows: Vec<(i32, String, Option<i32>)> = sqlx::query_as(
@@ -157,13 +153,12 @@ async fn resolve_media_id(
     parsed_year: Option<i32>,
 ) -> Option<i64> {
     // Try lookup by external ID first (imdb, tmdb, etc.)
-    let row: Option<(i32,)> = sqlx::query_as(
-        "SELECT media_id FROM media_external_id WHERE external_id = $1 LIMIT 1",
-    )
-    .bind(meta_id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+    let row: Option<(i32,)> =
+        sqlx::query_as("SELECT media_id FROM media_external_id WHERE external_id = $1 LIMIT 1")
+            .bind(meta_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
 
     if let Some((id,)) = row {
         return Some(id as i64);
@@ -202,6 +197,7 @@ async fn resolve_media_id(
 
 // ─── DB insert helper ─────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_torrent_stream(
     pool: &sqlx::PgPool,
     info_hash: &str,
@@ -263,13 +259,12 @@ async fn insert_torrent_stream(
                 .ok();
             txn.commit().await?;
             // Return the existing stream_id
-            let existing: i64 = sqlx::query_scalar(
-                "SELECT stream_id FROM torrent_stream WHERE info_hash = $1",
-            )
-            .bind(info_hash)
-            .fetch_one(pool)
-            .await
-            .unwrap_or(stream_id);
+            let existing: i64 =
+                sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
+                    .bind(info_hash)
+                    .fetch_one(pool)
+                    .await
+                    .unwrap_or(stream_id);
             return Ok(existing);
         }
     }
@@ -339,7 +334,11 @@ pub async fn analyze_magnet(
     Json(body): Json<MagnetAnalyzeRequest>,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let info_hash = match extract_info_hash_from_magnet(&body.magnet_link) {
@@ -353,13 +352,12 @@ pub async fn analyze_magnet(
         }
     };
 
-    let already_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM torrent_stream WHERE info_hash = $1)",
-    )
-    .bind(&info_hash)
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(false);
+    let already_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM torrent_stream WHERE info_hash = $1)")
+            .bind(&info_hash)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(false);
 
     let torrent_name = extract_dn(&body.magnet_link).unwrap_or_default();
     let parsed = parser::parse_title(&torrent_name);
@@ -398,7 +396,11 @@ pub async fn analyze_torrent(
     mut multipart: Multipart,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let mut file_bytes: Option<Bytes> = None;
@@ -463,13 +465,12 @@ pub async fn analyze_torrent(
         })
         .unwrap_or_default();
 
-    let already_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM torrent_stream WHERE info_hash = $1)",
-    )
-    .bind(&info_hash)
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(false);
+    let already_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM torrent_stream WHERE info_hash = $1)")
+            .bind(&info_hash)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(false);
 
     let parsed = parser::parse_title(&name);
     let search_title = parsed.title.as_deref().unwrap_or(&name);
@@ -508,7 +509,11 @@ pub async fn import_magnet(
     Json(body): Json<MagnetImportRequest>,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let info_hash = match extract_info_hash_from_magnet(&body.magnet_link) {
@@ -576,11 +581,7 @@ pub async fn import_magnet(
         None
     };
 
-    let source = body
-        .meta_id
-        .as_deref()
-        .unwrap_or("manual")
-        .to_string();
+    let source = body.meta_id.as_deref().unwrap_or("manual").to_string();
 
     match insert_torrent_stream(
         &state.pool,
@@ -621,7 +622,11 @@ pub async fn import_torrent(
     mut multipart: Multipart,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let mut file_bytes: Option<Bytes> = None;
@@ -737,7 +742,11 @@ pub async fn import_torrent(
         &info_hash,
         &torrent_name,
         &source,
-        if total_size > 0 { Some(total_size) } else { None },
+        if total_size > 0 {
+            Some(total_size)
+        } else {
+            None
+        },
         None,
         file_count,
         &parsed,

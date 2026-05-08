@@ -8,11 +8,10 @@ use axum::{
 use serde_json::json;
 
 use crate::{
-    cache,
-    crypto,
+    cache, crypto,
     db::catalog as db_catalog,
     models::{
-        stremio::{Metas, MetaPreview},
+        stremio::{MetaPreview, Metas},
         user_data::UserData,
     },
     state::AppState,
@@ -51,14 +50,16 @@ struct ExtraParams {
     search: Option<String>,
 }
 
-fn preview_poster(host_url: &str, media_type: &str, media_id: i64, db_poster: Option<String>) -> Option<String> {
+fn preview_poster(
+    host_url: &str,
+    media_type: &str,
+    media_id: i64,
+    db_poster: Option<String>,
+) -> Option<String> {
     db_poster.or_else(|| Some(format!("{host_url}/poster/{media_type}/mf{media_id}.jpg")))
 }
 
-fn rows_to_metas(
-    rows: Vec<db_catalog::CatalogRow>,
-    host_url: &str,
-) -> Metas {
+fn rows_to_metas(rows: Vec<db_catalog::CatalogRow>, host_url: &str) -> Metas {
     let metas = rows
         .into_iter()
         .map(|r| {
@@ -89,7 +90,11 @@ async fn handle_catalog(
     rest: &str,
 ) -> axum::response::Response {
     let Some((catalog_id, extra)) = parse_catalog_path(rest) else {
-        return (StatusCode::BAD_REQUEST, Json(json!({"error":"invalid catalog path"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error":"invalid catalog path"})),
+        )
+            .into_response();
     };
 
     // Watchlist catalogs stay in Python → return 404 so nginx falls back
@@ -104,7 +109,10 @@ async fn handle_catalog(
     let is_personal = catalog_id.starts_with("my_library_");
     let cache_key: Option<String> = if is_personal {
         user_data.user_id.map(|uid| {
-            format!("catalog:{media_type}:{catalog_id}:{}:user:{uid}", extra.skip)
+            format!(
+                "catalog:{media_type}:{catalog_id}:{}:user:{uid}",
+                extra.skip
+            )
         })
     } else {
         let genre_part = extra.genre.as_deref().unwrap_or("");
@@ -112,12 +120,7 @@ async fn handle_catalog(
         let nudity_part = nudity_excludes.join(",");
         Some(format!(
             "catalog:{media_type}:{catalog_id}:{}:{}:{}:{}:{}:{}",
-            extra.skip,
-            genre_part,
-            search_part,
-            nudity_part,
-            sort,
-            sort_dir,
+            extra.skip, genre_part, search_part, nudity_part, sort, sort_dir,
         ))
     };
 
@@ -172,7 +175,13 @@ pub async fn user_catalog(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let user_data = serde_json::from_value::<UserData>(
-        crypto::resolve_user_data(&secret_str, &state.config.secret_key, &state.pool, &state.redis).await,
+        crypto::resolve_user_data(
+            &secret_str,
+            &state.config.secret_key,
+            &state.pool,
+            &state.redis,
+        )
+        .await,
     )
     .unwrap_or_default();
     handle_catalog(state, user_data, &media_type, &rest).await

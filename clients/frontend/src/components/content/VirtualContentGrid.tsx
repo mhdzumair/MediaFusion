@@ -5,8 +5,8 @@ import type { ContentCardData } from './ContentCard'
 function getColumnCount() {
   const w = window.innerWidth
   if (w >= 1024) return 6 // lg
-  if (w >= 768) return 4  // md
-  if (w >= 640) return 3  // sm
+  if (w >= 768) return 4 // md
+  if (w >= 640) return 3 // sm
   return 2
 }
 
@@ -116,10 +116,7 @@ export function VirtualContentGrid({
                 transform: `translateY(${virtualRow.start - scrollMargin}px)`,
               }}
             >
-              <div
-                className="grid gap-4"
-                style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
-              >
+              <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
                 {rowItems.map((item) => renderItem(item))}
               </div>
             </div>

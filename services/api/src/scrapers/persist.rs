@@ -86,12 +86,11 @@ async fn upsert_stream(
     episode: Option<i32>,
 ) -> Result<bool, sqlx::Error> {
     // Check existing
-    let existing: Option<(i32,)> = sqlx::query_as(
-        "SELECT stream_id FROM torrent_stream WHERE info_hash = $1",
-    )
-    .bind(&s.info_hash)
-    .fetch_optional(pool)
-    .await?;
+    let existing: Option<(i32,)> =
+        sqlx::query_as("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
+            .bind(&s.info_hash)
+            .fetch_optional(pool)
+            .await?;
 
     if let Some((stream_id,)) = existing {
         // Just refresh seeders

@@ -34,7 +34,6 @@
 ///   DELETE /request-metrics                  → clear_request_metrics
 ///
 ///   GET    /public-indexers/source-health    → get_source_health
-
 use std::sync::Arc;
 
 use axum::{
@@ -257,7 +256,14 @@ pub async fn list_blocked_media(
     if let Some(ref s) = params.search {
         path.push_str(&format!("search={}&", urlencoding::encode(s)));
     }
-    proxy_to_python(&state, reqwest::Method::GET, path.trim_end_matches('&'), &headers, None).await
+    proxy_to_python(
+        &state,
+        reqwest::Method::GET,
+        path.trim_end_matches('&'),
+        &headers,
+        None,
+    )
+    .await
 }
 
 /// POST /api/v1/admin/torrent-streams/{stream_id}/block
@@ -309,22 +315,20 @@ pub async fn get_contribution_settings(
     .await;
 
     match row {
-        Ok(Some((aat, pme, pse, prp, ct, tt, et, aaa, rre, mpsu))) => {
-            Json(json!({
-                "id": "default",
-                "auto_approval_threshold": aat,
-                "points_per_metadata_edit": pme,
-                "points_per_stream_edit": pse,
-                "points_for_rejection_penalty": prp,
-                "contributor_threshold": ct,
-                "trusted_threshold": tt,
-                "expert_threshold": et,
-                "allow_auto_approval": aaa,
-                "require_reason_for_edits": rre,
-                "max_pending_suggestions_per_user": mpsu,
-            }))
-            .into_response()
-        }
+        Ok(Some((aat, pme, pse, prp, ct, tt, et, aaa, rre, mpsu))) => Json(json!({
+            "id": "default",
+            "auto_approval_threshold": aat,
+            "points_per_metadata_edit": pme,
+            "points_per_stream_edit": pse,
+            "points_for_rejection_penalty": prp,
+            "contributor_threshold": ct,
+            "trusted_threshold": tt,
+            "expert_threshold": et,
+            "allow_auto_approval": aaa,
+            "require_reason_for_edits": rre,
+            "max_pending_suggestions_per_user": mpsu,
+        }))
+        .into_response(),
         Ok(None) => {
             // Return defaults
             Json(json!({
@@ -372,19 +376,44 @@ pub async fn update_contribution_settings(
 
     // Apply individual field updates
     if let Some(v) = body.auto_approval_threshold {
-        let _ = sqlx::query("UPDATE contribution_settings SET auto_approval_threshold = $1 WHERE id = 'default'").bind(v).execute(&state.pool).await;
+        let _ = sqlx::query(
+            "UPDATE contribution_settings SET auto_approval_threshold = $1 WHERE id = 'default'",
+        )
+        .bind(v)
+        .execute(&state.pool)
+        .await;
     }
     if let Some(v) = body.points_per_metadata_edit {
-        let _ = sqlx::query("UPDATE contribution_settings SET points_per_metadata_edit = $1 WHERE id = 'default'").bind(v).execute(&state.pool).await;
+        let _ = sqlx::query(
+            "UPDATE contribution_settings SET points_per_metadata_edit = $1 WHERE id = 'default'",
+        )
+        .bind(v)
+        .execute(&state.pool)
+        .await;
     }
     if let Some(v) = body.points_per_stream_edit {
-        let _ = sqlx::query("UPDATE contribution_settings SET points_per_stream_edit = $1 WHERE id = 'default'").bind(v).execute(&state.pool).await;
+        let _ = sqlx::query(
+            "UPDATE contribution_settings SET points_per_stream_edit = $1 WHERE id = 'default'",
+        )
+        .bind(v)
+        .execute(&state.pool)
+        .await;
     }
     if let Some(v) = body.allow_auto_approval {
-        let _ = sqlx::query("UPDATE contribution_settings SET allow_auto_approval = $1 WHERE id = 'default'").bind(v).execute(&state.pool).await;
+        let _ = sqlx::query(
+            "UPDATE contribution_settings SET allow_auto_approval = $1 WHERE id = 'default'",
+        )
+        .bind(v)
+        .execute(&state.pool)
+        .await;
     }
     if let Some(v) = body.require_reason_for_edits {
-        let _ = sqlx::query("UPDATE contribution_settings SET require_reason_for_edits = $1 WHERE id = 'default'").bind(v).execute(&state.pool).await;
+        let _ = sqlx::query(
+            "UPDATE contribution_settings SET require_reason_for_edits = $1 WHERE id = 'default'",
+        )
+        .bind(v)
+        .execute(&state.pool)
+        .await;
     }
     if let Some(v) = body.max_pending_suggestions_per_user {
         let _ = sqlx::query("UPDATE contribution_settings SET max_pending_suggestions_per_user = $1 WHERE id = 'default'").bind(v).execute(&state.pool).await;
@@ -398,7 +427,9 @@ pub async fn update_contribution_settings(
         if c >= t {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(json!({"detail": "Contributor threshold must be less than trusted threshold"})),
+                Json(
+                    json!({"detail": "Contributor threshold must be less than trusted threshold"}),
+                ),
             )
                 .into_response();
         }
@@ -413,13 +444,28 @@ pub async fn update_contribution_settings(
         }
     }
     if let Some(v) = ct {
-        let _ = sqlx::query("UPDATE contribution_settings SET contributor_threshold = $1 WHERE id = 'default'").bind(v).execute(&state.pool).await;
+        let _ = sqlx::query(
+            "UPDATE contribution_settings SET contributor_threshold = $1 WHERE id = 'default'",
+        )
+        .bind(v)
+        .execute(&state.pool)
+        .await;
     }
     if let Some(v) = tt {
-        let _ = sqlx::query("UPDATE contribution_settings SET trusted_threshold = $1 WHERE id = 'default'").bind(v).execute(&state.pool).await;
+        let _ = sqlx::query(
+            "UPDATE contribution_settings SET trusted_threshold = $1 WHERE id = 'default'",
+        )
+        .bind(v)
+        .execute(&state.pool)
+        .await;
     }
     if let Some(v) = et {
-        let _ = sqlx::query("UPDATE contribution_settings SET expert_threshold = $1 WHERE id = 'default'").bind(v).execute(&state.pool).await;
+        let _ = sqlx::query(
+            "UPDATE contribution_settings SET expert_threshold = $1 WHERE id = 'default'",
+        )
+        .bind(v)
+        .execute(&state.pool)
+        .await;
     }
 
     Json(json!({"detail": "Contribution settings updated"})).into_response()
@@ -561,7 +607,11 @@ pub async fn list_exceptions(
     let total = items.len() as i64;
     let pages = (total + per_page - 1) / per_page;
     let offset = ((page - 1) * per_page) as usize;
-    let page_items: Vec<Value> = items.into_iter().skip(offset).take(per_page as usize).collect();
+    let page_items: Vec<Value> = items
+        .into_iter()
+        .skip(offset)
+        .take(per_page as usize)
+        .collect();
 
     Json(json!({
         "items": page_items,
@@ -763,7 +813,11 @@ pub async fn list_endpoint_stats(
     let total = items.len() as i64;
     let pages = (total + per_page - 1) / per_page;
     let offset = ((page - 1) * per_page) as usize;
-    let page_items: Vec<Value> = items.into_iter().skip(offset).take(per_page as usize).collect();
+    let page_items: Vec<Value> = items
+        .into_iter()
+        .skip(offset)
+        .take(per_page as usize)
+        .collect();
 
     Json(json!({
         "items": page_items,
@@ -857,7 +911,11 @@ pub async fn list_recent_requests(
     let total = items.len() as i64;
     let pages = (total + per_page - 1) / per_page;
     let offset = ((page - 1) * per_page) as usize;
-    let page_items: Vec<Value> = items.into_iter().skip(offset).take(per_page as usize).collect();
+    let page_items: Vec<Value> = items
+        .into_iter()
+        .skip(offset)
+        .take(per_page as usize)
+        .collect();
 
     Json(json!({
         "items": page_items,
@@ -894,7 +952,11 @@ pub async fn clear_request_metrics(
         cleared += n;
     }
     let _ = state.redis.del::<i64, _>(METRICS_INDEX_KEY).await;
-    let n: i64 = state.redis.del::<i64, _>(RECENT_REQUESTS_KEY).await.unwrap_or(0);
+    let n: i64 = state
+        .redis
+        .del::<i64, _>(RECENT_REQUESTS_KEY)
+        .await
+        .unwrap_or(0);
     cleared += n;
 
     Json(json!({

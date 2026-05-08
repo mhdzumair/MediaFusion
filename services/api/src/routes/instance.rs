@@ -5,15 +5,9 @@
 ///   GET /api/v1/instance/app-config     → get_app_config
 ///   GET /api/v1/instance/constants      → get_system_constants
 ///   POST /api/v1/instance/setup/create-admin → create_initial_admin
-
 use std::sync::Arc;
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -71,9 +65,7 @@ pub struct CreateAdminRequest {
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 /// GET /api/v1/instance/info
-pub async fn get_instance_info(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn get_instance_info(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     // Check if setup is required (no users exist)
     let setup_required: bool = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users")
         .fetch_one(&state.pool_ro)
@@ -95,9 +87,7 @@ pub async fn get_instance_info(
 }
 
 /// GET /api/v1/instance/app-config
-pub async fn get_app_config(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn get_app_config(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let is_public = state.config.api_password.is_none();
     let telegram_enabled = state.config.telegram_api_id.is_some();
     let bot_configured = state.config.telegram_bot_token.is_some();
@@ -163,14 +153,13 @@ pub async fn create_initial_admin(
     }
 
     // Check email uniqueness
-    let email_exists: bool = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM users WHERE email = $1",
-    )
-    .bind(&body.email)
-    .fetch_one(&state.pool)
-    .await
-    .map(|c| c > 0)
-    .unwrap_or(false);
+    let email_exists: bool =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE email = $1")
+            .bind(&body.email)
+            .fetch_one(&state.pool)
+            .await
+            .map(|c| c > 0)
+            .unwrap_or(false);
 
     if email_exists {
         return (
@@ -181,14 +170,13 @@ pub async fn create_initial_admin(
     }
 
     // Check username uniqueness
-    let username_exists: bool = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM users WHERE username = $1",
-    )
-    .bind(&body.username)
-    .fetch_one(&state.pool)
-    .await
-    .map(|c| c > 0)
-    .unwrap_or(false);
+    let username_exists: bool =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE username = $1")
+            .bind(&body.username)
+            .fetch_one(&state.pool)
+            .await
+            .map(|c| c > 0)
+            .unwrap_or(false);
 
     if username_exists {
         return (
@@ -208,7 +196,11 @@ pub async fn create_initial_admin(
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(format!("{}{}", body.password, salt));
-    let digest = hasher.finalize().iter().map(|x| format!("{x:02x}")).collect::<String>();
+    let digest = hasher
+        .finalize()
+        .iter()
+        .map(|x| format!("{x:02x}"))
+        .collect::<String>();
     let password_hash = format!("{salt}${digest}");
 
     // Create admin user

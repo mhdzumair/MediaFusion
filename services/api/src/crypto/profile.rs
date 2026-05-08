@@ -9,7 +9,12 @@ const REDIS_KEY_PREFIX: &str = "user_profile:";
 /// Checks Redis first (`user_profile:{uuid}`), falls back to Postgres.
 /// Decrypts `encrypted_secrets` from Redis cache and merges tokens back
 /// into the `sps` (streaming_providers) array before returning.
-pub async fn lookup(redis: &fred::clients::Client, pool: &PgPool, key: &[u8; 32], uuid: &str) -> Option<Value> {
+pub async fn lookup(
+    redis: &fred::clients::Client,
+    pool: &PgPool,
+    key: &[u8; 32],
+    uuid: &str,
+) -> Option<Value> {
     // 1. Try Redis cache
     if let Some(v) = lookup_redis(redis, key, uuid).await {
         return Some(v);
@@ -24,12 +29,19 @@ async fn lookup_redis(redis: &fred::clients::Client, key: &[u8; 32], uuid: &str)
     let raw = raw?;
     let cached: Value = serde_json::from_slice(&raw).ok()?;
 
-    let mut config: Value = cached.get("config").cloned().unwrap_or(Value::Object(Default::default()));
+    let mut config: Value = cached
+        .get("config")
+        .cloned()
+        .unwrap_or(Value::Object(Default::default()));
     let user_id = cached.get("user_id").and_then(|v| v.as_i64());
     let profile_id = cached.get("profile_id").and_then(|v| v.as_i64());
 
     // Decrypt and merge secrets
-    if let Some(enc) = cached.get("encrypted_secrets").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+    if let Some(enc) = cached
+        .get("encrypted_secrets")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
         let secrets = decrypt_secrets(enc, key);
         merge_secrets(&mut config, &secrets);
     }
@@ -54,16 +66,15 @@ async fn lookup_redis(redis: &fred::clients::Client, key: &[u8; 32], uuid: &str)
 }
 
 async fn lookup_postgres(pool: &PgPool, uuid: &str) -> Option<Value> {
-    let row: Option<(serde_json::Value, i32)> = sqlx::query_as(
-        "SELECT config, user_id FROM user_profiles WHERE uuid = $1 LIMIT 1",
-    )
-    .bind(uuid)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or_else(|e| {
-        warn!("profile postgres lookup uuid={uuid}: {e}");
-        None
-    });
+    let row: Option<(serde_json::Value, i32)> =
+        sqlx::query_as("SELECT config, user_id FROM user_profiles WHERE uuid = $1 LIMIT 1")
+            .bind(uuid)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or_else(|e| {
+                warn!("profile postgres lookup uuid={uuid}: {e}");
+                None
+            });
 
     row.map(|(mut config, user_id)| {
         if let Some(obj) = config.as_object_mut() {
@@ -84,7 +95,9 @@ async fn lookup_postgres(pool: &PgPool, uuid: &str) -> Option<Value> {
 /// }
 /// ```
 fn merge_secrets(config: &mut Value, secrets: &Value) {
-    let Some(secrets_obj) = secrets.as_object() else { return };
+    let Some(secrets_obj) = secrets.as_object() else {
+        return;
+    };
 
     // Merge streaming provider tokens by _index
     for sps_key in ["sps", "streaming_providers"] {
@@ -93,9 +106,15 @@ fn merge_secrets(config: &mut Value, secrets: &Value) {
             config.get_mut(sps_key).and_then(|v| v.as_array_mut()),
         ) {
             for ps in provider_secrets_arr {
-                let Some(index) = ps.get("_index").and_then(|v| v.as_u64()) else { continue };
-                let Some(provider) = config_sps.get_mut(index as usize) else { continue };
-                let Some(provider_obj) = provider.as_object_mut() else { continue };
+                let Some(index) = ps.get("_index").and_then(|v| v.as_u64()) else {
+                    continue;
+                };
+                let Some(provider) = config_sps.get_mut(index as usize) else {
+                    continue;
+                };
+                let Some(provider_obj) = provider.as_object_mut() else {
+                    continue;
+                };
 
                 // Token fields
                 for field in ["tk", "token", "pw", "password", "em", "email"] {
@@ -106,9 +125,20 @@ fn merge_secrets(config: &mut Value, secrets: &Value) {
                     }
                 }
                 // Nested configs
-                for nested_key in ["qbc", "qbittorrent_config", "ndc", "nzbdav_config", "sbc", "sabnzbd_config", "ngc", "nzbget_config"] {
+                for nested_key in [
+                    "qbc",
+                    "qbittorrent_config",
+                    "ndc",
+                    "nzbdav_config",
+                    "sbc",
+                    "sabnzbd_config",
+                    "ngc",
+                    "nzbget_config",
+                ] {
                     if let Some(nested_secrets) = ps.get(nested_key).and_then(|v| v.as_object()) {
-                        let entry = provider_obj.entry(nested_key).or_insert(Value::Object(Default::default()));
+                        let entry = provider_obj
+                            .entry(nested_key)
+                            .or_insert(Value::Object(Default::default()));
                         if let Some(entry_obj) = entry.as_object_mut() {
                             for (k, v) in nested_secrets {
                                 if !v.is_null() {

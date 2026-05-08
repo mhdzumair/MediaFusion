@@ -13,7 +13,6 @@
 ///   4. Call provider-specific resolver (currently: Real-Debrid)
 ///   5. Cache result → 302 redirect to direct video URL
 ///   6. On any error → 302 to static error video
-
 use std::sync::Arc;
 
 use axum::{
@@ -26,13 +25,7 @@ use fred::prelude::{Expiration, KeysInterface};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::{
-    crypto,
-    db,
-    models::user_data::UserData,
-    providers,
-    state::AppState,
-};
+use crate::{crypto, db, models::user_data::UserData, providers, state::AppState};
 
 const URL_CACHE_TTL: i64 = 3600;
 
@@ -78,28 +71,64 @@ pub async fn handler_base(
     Path(p): Path<PlaybackPath>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    dispatch(&state, p.secret_str, p.provider_name, p.info_hash, None, None, None).await
+    dispatch(
+        &state,
+        p.secret_str,
+        p.provider_name,
+        p.info_hash,
+        None,
+        None,
+        None,
+    )
+    .await
 }
 
 pub async fn handler_with_filename(
     Path(p): Path<PlaybackPathWithFilename>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    dispatch(&state, p.secret_str, p.provider_name, p.info_hash, None, None, Some(p.filename)).await
+    dispatch(
+        &state,
+        p.secret_str,
+        p.provider_name,
+        p.info_hash,
+        None,
+        None,
+        Some(p.filename),
+    )
+    .await
 }
 
 pub async fn handler_seep(
     Path(p): Path<PlaybackPathSeEp>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    dispatch(&state, p.secret_str, p.provider_name, p.info_hash, Some(p.season), Some(p.episode), None).await
+    dispatch(
+        &state,
+        p.secret_str,
+        p.provider_name,
+        p.info_hash,
+        Some(p.season),
+        Some(p.episode),
+        None,
+    )
+    .await
 }
 
 pub async fn handler_seep_filename(
     Path(p): Path<PlaybackPathSeEpFilename>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    dispatch(&state, p.secret_str, p.provider_name, p.info_hash, Some(p.season), Some(p.episode), Some(p.filename)).await
+    dispatch(
+        &state,
+        p.secret_str,
+        p.provider_name,
+        p.info_hash,
+        Some(p.season),
+        Some(p.episode),
+        Some(p.filename),
+    )
+    .await
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -115,7 +144,17 @@ async fn dispatch(
 ) -> Response {
     let info_hash = info_hash.to_lowercase();
 
-    let video_url = match resolve(state, &secret_str, &provider_name, &info_hash, season, episode, filename.as_deref()).await {
+    let video_url = match resolve(
+        state,
+        &secret_str,
+        &provider_name,
+        &info_hash,
+        season,
+        episode,
+        filename.as_deref(),
+    )
+    .await
+    {
         Ok(url) => url,
         Err(e) => {
             tracing::warn!("playback error hash={info_hash} provider={provider_name}: {e}");
@@ -136,17 +175,26 @@ async fn resolve(
     filename: Option<&str>,
 ) -> Result<String, providers::ProviderError> {
     // 1. Decrypt user config
-    let raw_user_data = crypto::resolve_user_data(secret_str, &state.config.secret_key, &state.pool, &state.redis).await;
+    let raw_user_data = crypto::resolve_user_data(
+        secret_str,
+        &state.config.secret_key,
+        &state.pool,
+        &state.redis,
+    )
+    .await;
     let user_data: UserData = serde_json::from_value(raw_user_data).unwrap_or_default();
 
     // 2. Find provider
     let provider = user_data
         .get_provider_by_name(provider_name)
         .or_else(|| user_data.get_primary_provider())
-        .ok_or_else(|| providers::ProviderError::api("No streaming provider configured", "api_error.mp4"))?;
+        .ok_or_else(|| {
+            providers::ProviderError::api("No streaming provider configured", "api_error.mp4")
+        })?;
 
-    let token = provider.token.as_deref()
-        .ok_or_else(|| providers::ProviderError::api("Provider token is missing", "invalid_token.mp4"))?;
+    let token = provider.token.as_deref().ok_or_else(|| {
+        providers::ProviderError::api("Provider token is missing", "invalid_token.mp4")
+    })?;
 
     // 3. Check Redis cache
     let cache_key = playback_cache_key(secret_str, info_hash, season, episode);
@@ -157,7 +205,8 @@ async fn resolve(
     }
 
     // 4. Fetch stream info from DB (announce list, file_index, filename hint)
-    let stream_info = db::fetch_stream_playback_info(&state.pool_ro, info_hash).await
+    let stream_info = db::fetch_stream_playback_info(&state.pool_ro, info_hash)
+        .await
         .ok_or_else(|| providers::ProviderError::api("Stream not found", "stream_not_found.mp4"))?;
 
     let resolved_filename = filename.or(stream_info.filename.as_deref());
@@ -176,21 +225,22 @@ async fn resolve(
                 season,
                 episode,
                 None,
-            ).await?
+            )
+            .await?
         }};
     }
 
     let video_url = match provider.service.as_str() {
-        "realdebrid"  => call_provider!(providers::realdebrid),
-        "alldebrid"   => call_provider!(providers::alldebrid),
-        "premiumize"  => call_provider!(providers::premiumize),
-        "debridlink"  => call_provider!(providers::debridlink),
-        "torbox"      => call_provider!(providers::torbox),
-        "stremthru"   => call_provider!(providers::stremthru),
-        "offcloud"    => call_provider!(providers::offcloud),
-        "easydebrid"  => call_provider!(providers::easydebrid),
-        "seedr"       => call_provider!(providers::seedr),
-        "pikpak"      => call_provider!(providers::pikpak),
+        "realdebrid" => call_provider!(providers::realdebrid),
+        "alldebrid" => call_provider!(providers::alldebrid),
+        "premiumize" => call_provider!(providers::premiumize),
+        "debridlink" => call_provider!(providers::debridlink),
+        "torbox" => call_provider!(providers::torbox),
+        "stremthru" => call_provider!(providers::stremthru),
+        "offcloud" => call_provider!(providers::offcloud),
+        "easydebrid" => call_provider!(providers::easydebrid),
+        "seedr" => call_provider!(providers::seedr),
+        "pikpak" => call_provider!(providers::pikpak),
         other => {
             return Err(providers::ProviderError::api(
                 format!("Provider '{other}' is not yet supported in the Rust service"),
@@ -200,20 +250,28 @@ async fn resolve(
     };
 
     // 6. Cache result
-    let _ = state.redis.set::<(), _, _>(
-        &cache_key,
-        video_url.as_bytes(),
-        Some(Expiration::EX(URL_CACHE_TTL)),
-        None,
-        false,
-    ).await;
+    let _ = state
+        .redis
+        .set::<(), _, _>(
+            &cache_key,
+            video_url.as_bytes(),
+            Some(Expiration::EX(URL_CACHE_TTL)),
+            None,
+            false,
+        )
+        .await;
 
     Ok(video_url)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-fn playback_cache_key(secret_str: &str, info_hash: &str, season: Option<i32>, episode: Option<i32>) -> String {
+fn playback_cache_key(
+    secret_str: &str,
+    info_hash: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+) -> String {
     let raw = format!("{secret_str}_{info_hash}_{season:?}_{episode:?}");
     let mut hasher = Sha256::new();
     hasher.update(raw.as_bytes());

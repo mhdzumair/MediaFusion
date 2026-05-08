@@ -63,9 +63,10 @@ fn select_video_file(
     // 2. By filename
     if let Some(name) = filename {
         let name_lower = name.to_lowercase();
-        if let Some(&idx) = video_indices.iter().find(|&&i| {
-            files[i].0.to_lowercase().contains(&name_lower)
-        }) {
+        if let Some(&idx) = video_indices
+            .iter()
+            .find(|&&i| files[i].0.to_lowercase().contains(&name_lower))
+        {
             return idx;
         }
     }
@@ -116,7 +117,10 @@ fn check_torbox_error(body: &Value) -> Result<(), ProviderError> {
         if let Some((label, file)) = map_torbox_error(error_code) {
             return Err(ProviderError::api(label, file));
         }
-        let detail = body.get("detail").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+        let detail = body
+            .get("detail")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown error");
         return Err(ProviderError::api(
             format!("TorBox error {error_code}: {detail}"),
             "api_error.mp4",
@@ -127,16 +131,8 @@ fn check_torbox_error(body: &Value) -> Result<(), ProviderError> {
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
-async fn tb_get(
-    http: &reqwest::Client,
-    token: &str,
-    url: &str,
-) -> Result<Value, ProviderError> {
-    let resp = http
-        .get(url)
-        .bearer_auth(token)
-        .send()
-        .await?;
+async fn tb_get(http: &reqwest::Client, token: &str, url: &str) -> Result<Value, ProviderError> {
+    let resp = http.get(url).bearer_auth(token).send().await?;
     let body: Value = resp.json().await?;
     check_torbox_error(&body)?;
     Ok(body)
@@ -148,12 +144,7 @@ async fn tb_post_form(
     url: &str,
     form: &[(&str, &str)],
 ) -> Result<Value, ProviderError> {
-    let resp = http
-        .post(url)
-        .bearer_auth(token)
-        .form(form)
-        .send()
-        .await?;
+    let resp = http.post(url).bearer_auth(token).form(form).send().await?;
     let body: Value = resp.json().await?;
     check_torbox_error(&body)?;
     Ok(body)
@@ -178,10 +169,7 @@ async fn tb_post_json(
 
 // ─── TorBox API operations ────────────────────────────────────────────────────
 
-async fn get_mylist(
-    http: &reqwest::Client,
-    token: &str,
-) -> Result<Value, ProviderError> {
+async fn get_mylist(http: &reqwest::Client, token: &str) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}/torrents/mylist?bypass_cache=true");
     tb_get(http, token, &url).await
 }
@@ -199,10 +187,7 @@ fn find_torrent_in_list(list: &Value, info_hash: &str) -> Option<Value> {
         .cloned()
 }
 
-async fn get_queued(
-    http: &reqwest::Client,
-    token: &str,
-) -> Result<Value, ProviderError> {
+async fn get_queued(http: &reqwest::Client, token: &str) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}/queued/getqueued?type=torrent&bypass_cache=true");
     tb_get(http, token, &url).await
 }
@@ -249,7 +234,9 @@ async fn request_download_link(
     body.get("data")
         .and_then(|v| v.as_str())
         .map(str::to_string)
-        .ok_or_else(|| ProviderError::api("Missing download URL in TorBox response", "api_error.mp4"))
+        .ok_or_else(|| {
+            ProviderError::api("Missing download URL in TorBox response", "api_error.mp4")
+        })
 }
 
 fn extract_files_from_torrent(torrent: &Value) -> Vec<(i64, String, i64)> {
@@ -275,6 +262,7 @@ fn extract_files_from_torrent(torrent: &Value) -> Vec<(i64, String, i64)> {
         .unwrap_or_default()
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn build_download_link_from_torrent(
     http: &reqwest::Client,
     token: &str,
@@ -285,10 +273,9 @@ async fn build_download_link_from_torrent(
     episode: Option<i32>,
     user_ip: Option<&str>,
 ) -> Result<String, ProviderError> {
-    let torrent_id = torrent
-        .get("id")
-        .and_then(|v| v.as_i64())
-        .ok_or_else(|| ProviderError::api("Missing torrent id in TorBox response", "api_error.mp4"))?;
+    let torrent_id = torrent.get("id").and_then(|v| v.as_i64()).ok_or_else(|| {
+        ProviderError::api("Missing torrent id in TorBox response", "api_error.mp4")
+    })?;
 
     let raw_files = extract_files_from_torrent(torrent);
     if raw_files.is_empty() {
@@ -312,6 +299,7 @@ async fn build_download_link_from_torrent(
 // ─── Public entry points ──────────────────────────────────────────────────────
 
 /// Resolve a direct video URL from TorBox for the given torrent.
+#[allow(clippy::too_many_arguments)]
 pub async fn get_video_url(
     http: &reqwest::Client,
     token: &str,
@@ -402,10 +390,7 @@ pub async fn get_video_url(
 }
 
 /// Delete ALL torrents from the user's TorBox account.
-pub async fn delete_all_torrents(
-    http: &reqwest::Client,
-    token: &str,
-) -> Result<(), ProviderError> {
+pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     let mylist = get_mylist(http, token).await?;
     let torrents = mylist
         .get("data")

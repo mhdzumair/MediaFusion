@@ -100,8 +100,7 @@ export function BrowseTab() {
   // ---------------------------------------------------------------------------
   const storedState = getStoredState()
 
-  const catalogType: CatalogType =
-    (searchParams.get('type') as CatalogType) || storedState.catalogType || 'movie'
+  const catalogType: CatalogType = (searchParams.get('type') as CatalogType) || storedState.catalogType || 'movie'
   const selectedGenre = searchParams.get('genre') || ''
   const urlSearchMode = searchParams.get('search_mode') as SearchMode | null
   const urlExternalId = searchParams.get('external_id') || ''
@@ -164,13 +163,19 @@ export function BrowseTab() {
         if (updates.type !== undefined) params.set('type', updates.type)
 
         if (updates.genre !== undefined) {
-          updates.genre ? params.set('genre', updates.genre) : params.delete('genre')
+          if (updates.genre) {
+            params.set('genre', updates.genre)
+          } else {
+            params.delete('genre')
+          }
         }
 
         if (updates.scrollMode !== undefined) {
-          updates.scrollMode === 'paged'
-            ? params.set('scroll_mode', 'paged')
-            : params.delete('scroll_mode')
+          if (updates.scrollMode === 'paged') {
+            params.set('scroll_mode', 'paged')
+          } else {
+            params.delete('scroll_mode')
+          }
         }
 
         if (updates.searchMode !== undefined || updates.search !== undefined) {
@@ -188,7 +193,11 @@ export function BrowseTab() {
         }
 
         if (updates.page !== undefined) {
-          updates.page > 1 ? params.set('page', String(updates.page)) : params.delete('page')
+          if (updates.page > 1) {
+            params.set('page', String(updates.page))
+          } else {
+            params.delete('page')
+          }
         } else if (opts.resetPage) {
           params.delete('page')
         }
@@ -298,17 +307,7 @@ export function BrowseTab() {
       window.removeEventListener('scroll', handleScroll)
       clearTimeout(timeoutId)
     }
-  }, [
-    catalogType,
-    selectedCatalog,
-    sort,
-    sortDir,
-    viewMode,
-    scrollMode,
-    pageSize,
-    workingOnly,
-    myChannels,
-  ])
+  }, [catalogType, selectedCatalog, sort, sortDir, viewMode, scrollMode, pageSize, workingOnly, myChannels])
 
   // Restore scroll position after data loads
   useEffect(() => {
@@ -388,8 +387,7 @@ export function BrowseTab() {
     setSelectedItemId(item.id)
   }
 
-  const selectedIndex =
-    selectedItemId != null ? contentItems.findIndex((i) => i.id === selectedItemId) : undefined
+  const selectedIndex = selectedItemId != null ? contentItems.findIndex((i) => i.id === selectedItemId) : undefined
 
   return (
     <div ref={containerRef} className="space-y-6">
@@ -501,9 +499,7 @@ export function BrowseTab() {
                 onLoadMore={fetchNextPage}
                 hasMore={hasNextPage}
                 loading={isFetchingNextPage}
-                scrollTargetIndex={
-                  selectedIndex !== undefined && selectedIndex >= 0 ? selectedIndex : undefined
-                }
+                scrollTargetIndex={selectedIndex !== undefined && selectedIndex >= 0 ? selectedIndex : undefined}
               />
               <div className="flex justify-center py-8">
                 {isFetchingNextPage && (
@@ -698,7 +694,9 @@ function InfiniteScrollSentinel({
     )
     const el = sentinelRef.current
     if (el) observer.observe(el)
-    return () => { if (el) observer.unobserve(el) }
+    return () => {
+      if (el) observer.unobserve(el)
+    }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   return (
@@ -709,9 +707,7 @@ function InfiniteScrollSentinel({
           <span>Loading more...</span>
         </div>
       )}
-      {!hasNextPage && itemCount > 0 && (
-        <p className="text-sm text-muted-foreground">You've reached the end</p>
-      )}
+      {!hasNextPage && itemCount > 0 && <p className="text-sm text-muted-foreground">You've reached the end</p>}
     </div>
   )
 }

@@ -146,7 +146,10 @@ pub async fn fetch_usenet_streams_bulk(
         .bind(e)
         .fetch_all(pool)
         .await
-        .unwrap_or_else(|e| { warn!("usenet series streams query: {e}"); vec![] }),
+        .unwrap_or_else(|e| {
+            warn!("usenet series streams query: {e}");
+            vec![]
+        }),
 
         _ => sqlx::query_as(
             r#"
@@ -175,7 +178,10 @@ pub async fn fetch_usenet_streams_bulk(
         .bind(&ids_i32)
         .fetch_all(pool)
         .await
-        .unwrap_or_else(|e| { warn!("usenet movie streams query: {e}"); vec![] }),
+        .unwrap_or_else(|e| {
+            warn!("usenet movie streams query: {e}");
+            vec![]
+        }),
     };
 
     // Group by media_id
@@ -203,18 +209,37 @@ pub fn usenet_row_to_stremio(
     let quality = row.get("quality").and_then(|v| v.as_str()).unwrap_or("");
     let resolution = row.get("resolution").and_then(|v| v.as_str()).unwrap_or("");
     let codec = row.get("codec").and_then(|v| v.as_str());
-    let indexer = row.get("indexer").and_then(|v| v.as_str()).unwrap_or("Usenet");
+    let indexer = row
+        .get("indexer")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Usenet");
     let size = row.get("size").and_then(|v| v.as_i64());
 
-    let label = if !quality.is_empty() { quality } else if !resolution.is_empty() { resolution } else { "Unknown" };
+    let label = if !quality.is_empty() {
+        quality
+    } else if !resolution.is_empty() {
+        resolution
+    } else {
+        "Unknown"
+    };
 
     let mut desc_parts: Vec<String> = Vec::new();
     let mut q_parts: Vec<&str> = Vec::new();
-    if !quality.is_empty() { q_parts.push(quality); }
-    if !resolution.is_empty() { q_parts.push(resolution); }
-    if let Some(c) = codec.filter(|s| !s.is_empty()) { q_parts.push(c); }
-    if !q_parts.is_empty() { desc_parts.push(format!("📺 {}", q_parts.join(" | "))); }
-    if let Some(s) = size.filter(|&s| s > 0) { desc_parts.push(format!("💾 {}", readable_size(s))); }
+    if !quality.is_empty() {
+        q_parts.push(quality);
+    }
+    if !resolution.is_empty() {
+        q_parts.push(resolution);
+    }
+    if let Some(c) = codec.filter(|s| !s.is_empty()) {
+        q_parts.push(c);
+    }
+    if !q_parts.is_empty() {
+        desc_parts.push(format!("📺 {}", q_parts.join(" | ")));
+    }
+    if let Some(s) = size.filter(|&s| s > 0) {
+        desc_parts.push(format!("💾 {}", readable_size(s)));
+    }
     desc_parts.push(format!("🔗 {indexer}"));
     let description = desc_parts.join("\n");
 
@@ -223,9 +248,7 @@ pub fn usenet_row_to_stremio(
             (Some(s), Some(e)) => format!(
                 "{host_url}/streaming_provider/{secret_str}/usenet/{provider}/{nzb_guid}/{s}/{e}"
             ),
-            _ => format!(
-                "{host_url}/streaming_provider/{secret_str}/usenet/{provider}/{nzb_guid}"
-            ),
+            _ => format!("{host_url}/streaming_provider/{secret_str}/usenet/{provider}/{nzb_guid}"),
         },
         None => format!("{host_url}/usenet/{nzb_guid}"),
     };
@@ -260,7 +283,12 @@ pub async fn fetch_stream_playback_info(
     pool: &PgPool,
     info_hash: &str,
 ) -> Option<StreamPlaybackInfo> {
-    let row: (String, Option<serde_json::Value>, Option<i32>, Option<String>) = sqlx::query_as(
+    let row: (
+        String,
+        Option<serde_json::Value>,
+        Option<i32>,
+        Option<String>,
+    ) = sqlx::query_as(
         r#"
         SELECT
             st.name,
@@ -285,7 +313,8 @@ pub async fn fetch_stream_playback_info(
     .await
     .unwrap_or(None)?;
 
-    let announce_list: Vec<String> = row.1
+    let announce_list: Vec<String> = row
+        .1
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 

@@ -12,9 +12,7 @@ const BASE_URL: &str = "https://easydebrid.com/api/v1";
 
 // ─── File selection helper ─────────────────────────────────────────────────────
 
-static VIDEO_EXTS: &[&str] = &[
-    "mkv", "mp4", "avi", "webm", "mov", "flv", "m4v", "wmv",
-];
+static VIDEO_EXTS: &[&str] = &["mkv", "mp4", "avi", "webm", "mov", "flv", "m4v", "wmv"];
 
 /// Pick the best file index from a list of `(name, size)` pairs.
 ///
@@ -60,17 +58,17 @@ fn select_video_file(
     // 2. Filename match
     if let Some(name) = filename {
         let name_lower = name.to_lowercase();
-        if let Some(idx) = files.iter().position(|(n, _)| n.to_lowercase().contains(&name_lower)) {
+        if let Some(idx) = files
+            .iter()
+            .position(|(n, _)| n.to_lowercase().contains(&name_lower))
+        {
             return idx;
         }
     }
 
     // 3. Season + episode pattern
     if let (Some(s), Some(e)) = (season, episode) {
-        let patterns = [
-            format!("s{:02}e{:02}", s, e),
-            format!("{:01}x{:02}", s, e),
-        ];
+        let patterns = [format!("s{:02}e{:02}", s, e), format!("{:01}x{:02}", s, e)];
         let candidate = video_indices.iter().find(|&&i| {
             let lower = files[i].0.to_lowercase();
             patterns.iter().any(|p| lower.contains(p))
@@ -122,6 +120,7 @@ async fn ed_post(
 ///
 /// EasyDebrid is cache-only: if the torrent is not already cached,
 /// we submit it for caching and return an error directing the user to try later.
+#[allow(clippy::too_many_arguments)]
 pub async fn get_video_url(
     http: &reqwest::Client,
     token: &str,

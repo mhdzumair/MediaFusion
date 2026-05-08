@@ -13,7 +13,10 @@ pub async fn mget(
         .mget(key_refs)
         .await
         .map_err(|e| format!("Redis MGET: {e}"))?;
-    Ok(results.into_iter().map(|opt| opt.map(|b| b.to_vec())).collect())
+    Ok(results
+        .into_iter()
+        .map(|opt| opt.map(|b| b.to_vec()))
+        .collect())
 }
 
 pub async fn set_with_ttl(

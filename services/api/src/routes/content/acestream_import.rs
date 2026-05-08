@@ -3,7 +3,6 @@
 /// Routes (prefix /api/v1/import):
 ///   POST /acestream/analyze  → analyze_acestream
 ///   POST /acestream          → import_acestream
-
 use std::sync::Arc;
 
 use axum::{
@@ -70,7 +69,9 @@ async fn proxy(
         None => {
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"detail": "AceStream import service not available in this deployment"})),
+                Json(
+                    json!({"detail": "AceStream import service not available in this deployment"}),
+                ),
             )
                 .into_response();
         }
@@ -122,14 +123,26 @@ pub async fn analyze_acestream(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     let body = axum::body::to_bytes(req.into_body(), 1024 * 1024)
         .await
         .unwrap_or_default()
         .to_vec();
-    proxy(&state, reqwest::Method::POST, "/api/v1/import/acestream/analyze", &q, &headers, body).await
+    proxy(
+        &state,
+        reqwest::Method::POST,
+        "/api/v1/import/acestream/analyze",
+        &q,
+        &headers,
+        body,
+    )
+    .await
 }
 
 /// POST /api/v1/import/acestream
@@ -139,12 +152,24 @@ pub async fn import_acestream(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     let body = axum::body::to_bytes(req.into_body(), 4 * 1024 * 1024)
         .await
         .unwrap_or_default()
         .to_vec();
-    proxy(&state, reqwest::Method::POST, "/api/v1/import/acestream", &q, &headers, body).await
+    proxy(
+        &state,
+        reqwest::Method::POST,
+        "/api/v1/import/acestream",
+        &q,
+        &headers,
+        body,
+    )
+    .await
 }

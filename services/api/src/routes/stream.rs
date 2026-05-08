@@ -9,8 +9,7 @@ use serde_json::{json, Value};
 
 use crate::{
     cache::{codec, stream_cache},
-    crypto,
-    db,
+    crypto, db,
     models::user_data::UserData,
     scrapers::orchestrator,
     state::AppState,
@@ -44,7 +43,15 @@ pub async fn public_series(
     let imdb_id = parts[0].to_string();
     let season: i32 = parts[1].parse().unwrap_or(1);
     let episode: i32 = parts[2].parse().unwrap_or(1);
-    dispatch(state, String::new(), imdb_id, "series", Some(season), Some(episode)).await
+    dispatch(
+        state,
+        String::new(),
+        imdb_id,
+        "series",
+        Some(season),
+        Some(episode),
+    )
+    .await
 }
 
 pub async fn movie(
@@ -71,7 +78,15 @@ pub async fn series(
     let imdb_id = parts[0].to_string();
     let season: i32 = parts[1].parse().unwrap_or(1);
     let episode: i32 = parts[2].parse().unwrap_or(1);
-    dispatch(state, secret_str, imdb_id, "series", Some(season), Some(episode)).await
+    dispatch(
+        state,
+        secret_str,
+        imdb_id,
+        "series",
+        Some(season),
+        Some(episode),
+    )
+    .await
 }
 
 // ─── Core orchestration ────────────────────────────────────────────────────────
@@ -106,7 +121,13 @@ pub async fn resolve(
     episode: Option<i32>,
 ) -> Result<Vec<Value>, Box<dyn std::error::Error + Send + Sync>> {
     // 1. Decrypt user config → parse into UserData → derive scope
-    let raw_user_data = crypto::resolve_user_data(secret_str, &state.config.secret_key, &state.pool, &state.redis).await;
+    let raw_user_data = crypto::resolve_user_data(
+        secret_str,
+        &state.config.secret_key,
+        &state.pool,
+        &state.redis,
+    )
+    .await;
     let user_data: UserData = serde_json::from_value(raw_user_data).unwrap_or_default();
 
     // 2. api_password gate — mirrors Python's @auth_required + middleware check.
@@ -117,7 +138,10 @@ pub async fn resolve(
             let error_video = if let Some(ref base) = state.config.python_proxy_url {
                 format!("{base}/static/exceptions/invalid_config.mp4")
             } else {
-                format!("{}/static/exceptions/invalid_config.mp4", state.config.host_url)
+                format!(
+                    "{}/static/exceptions/invalid_config.mp4",
+                    state.config.host_url
+                )
             };
             return Ok(vec![json!({
                 "name": state.config.addon_name,
@@ -195,28 +219,31 @@ pub async fn resolve(
     // 6. Fetch usenet streams from DB for the same media IDs
     let usenet_rows: Vec<serde_json::Value> = {
         let usenet_map =
-            db::fetch_usenet_streams_bulk(&state.pool_ro, &all_ids, media_type, season, episode).await;
-        usenet_map
-            .into_iter()
-            .flat_map(|(_, rows)| rows)
-            .collect()
+            db::fetch_usenet_streams_bulk(&state.pool_ro, &all_ids, media_type, season, episode)
+                .await;
+        usenet_map.into_iter().flat_map(|(_, rows)| rows).collect()
     };
 
     // Determine primary provider for debrid URL generation
-    let primary_provider = user_data.streaming_providers.first().map(|p| p.service.as_str());
+    let primary_provider = user_data
+        .streaming_providers
+        .first()
+        .map(|p| p.service.as_str());
     let has_provider = !secret_str.is_empty() && primary_provider.is_some();
 
     // 7. Live scrape when DB has no results and user/global setting allows it.
     let mut live_usenet: Vec<serde_json::Value> = Vec::new();
-    if all_torrents.is_empty() && usenet_rows.is_empty()
-        && user_data.live_search_streams && state.config.live_search_streams
+    if all_torrents.is_empty()
+        && usenet_rows.is_empty()
+        && user_data.live_search_streams
+        && state.config.live_search_streams
     {
-        if let Ok(Some(meta)) =
-            db::get_media_meta(&state.pool, media_id, imdb_id).await
-        {
+        if let Ok(Some(meta)) = db::get_media_meta(&state.pool, media_id, imdb_id).await {
             let (scraped_torrents, scraped_usenet) = tokio::join!(
                 orchestrator::run(state, &user_data, &meta, media_type, season, episode, &scope),
-                orchestrator::run_usenet(state, &user_data, &meta, media_type, season, episode, &scope),
+                orchestrator::run_usenet(
+                    state, &user_data, &meta, media_type, season, episode, &scope
+                ),
             );
             for s in scraped_torrents {
                 all_torrents.push(scraped_to_json(&s));
@@ -227,7 +254,14 @@ pub async fn resolve(
                 None
             };
             for s in scraped_usenet {
-                live_usenet.push(scraped_usenet_to_json(&s, &state.config.host_url, &state.config.addon_name, pinfo, season, episode));
+                live_usenet.push(scraped_usenet_to_json(
+                    &s,
+                    &state.config.host_url,
+                    &state.config.addon_name,
+                    pinfo,
+                    season,
+                    episode,
+                ));
             }
         }
     }
@@ -254,7 +288,9 @@ pub async fn resolve(
     // Format usenet streams into Stremio objects
     let mut usenet_streams: Vec<Value> = usenet_rows
         .iter()
-        .filter_map(|row| db::usenet_row_to_stremio(row, host_url, addon_name, provider_info, season, episode))
+        .filter_map(|row| {
+            db::usenet_row_to_stremio(row, host_url, addon_name, provider_info, season, episode)
+        })
         .collect();
     usenet_streams.extend(live_usenet);
 
@@ -268,7 +304,13 @@ pub async fn resolve(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-fn stream_key(id: i64, media_type: &str, season: Option<i32>, episode: Option<i32>, scope: &str) -> String {
+fn stream_key(
+    id: i64,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+    scope: &str,
+) -> String {
     match (media_type, season, episode) {
         ("series", Some(s), Some(e)) => format!("stream_data:series:{id}:{s}:{e}:{scope}"),
         _ => format!("stream_data:movie:{id}:{scope}"),
@@ -285,8 +327,22 @@ fn scraped_usenet_to_json(
 ) -> Value {
     let quality = s.parsed.quality.as_deref().unwrap_or("");
     let resolution = s.parsed.resolution.as_deref().unwrap_or("");
-    let label = if !quality.is_empty() { quality } else if !resolution.is_empty() { resolution } else { "Unknown" };
-    let description = build_description(quality, resolution, s.parsed.codec.as_deref(), Some(&s.source), None, Some(s.size), &s.source);
+    let label = if !quality.is_empty() {
+        quality
+    } else if !resolution.is_empty() {
+        resolution
+    } else {
+        "Unknown"
+    };
+    let description = build_description(
+        quality,
+        resolution,
+        s.parsed.codec.as_deref(),
+        Some(&s.source),
+        None,
+        Some(s.size),
+        &s.source,
+    );
     let url = build_usenet_url(host_url, &s.nzb_guid, provider_info, season, episode);
     json!({
         "name": s.name,
@@ -303,8 +359,22 @@ fn scraped_usenet_to_json(
 fn scraped_to_json(s: &crate::scrapers::ScrapedStream) -> Value {
     let quality = s.parsed.quality.as_deref().unwrap_or("");
     let resolution = s.parsed.resolution.as_deref().unwrap_or("");
-    let label = if !quality.is_empty() { quality } else if !resolution.is_empty() { resolution } else { "Unknown" };
-    let description = build_description(quality, resolution, s.parsed.codec.as_deref(), None, s.seeders, s.size, &s.source);
+    let label = if !quality.is_empty() {
+        quality
+    } else if !resolution.is_empty() {
+        resolution
+    } else {
+        "Unknown"
+    };
+    let description = build_description(
+        quality,
+        resolution,
+        s.parsed.codec.as_deref(),
+        None,
+        s.seeders,
+        s.size,
+        &s.source,
+    );
     json!({
         "name": s.name,
         "description": description,
@@ -330,9 +400,15 @@ fn build_description(
 
     // Line 1: quality / resolution / codec
     let mut quality_parts: Vec<&str> = Vec::new();
-    if !quality.is_empty() { quality_parts.push(quality); }
-    if !resolution.is_empty() { quality_parts.push(resolution); }
-    if let Some(c) = codec.filter(|s| !s.is_empty()) { quality_parts.push(c); }
+    if !quality.is_empty() {
+        quality_parts.push(quality);
+    }
+    if !resolution.is_empty() {
+        quality_parts.push(resolution);
+    }
+    if let Some(c) = codec.filter(|s| !s.is_empty()) {
+        quality_parts.push(c);
+    }
     if !quality_parts.is_empty() {
         parts.push(format!("📺 {}", quality_parts.join(" | ")));
     }
@@ -384,17 +460,24 @@ fn format_streams(
         .filter_map(|t| {
             let name = t.get("name").and_then(|v| v.as_str())?;
             let hash = t.get("info_hash").and_then(|v| v.as_str())?;
-            let quality    = t.get("quality").and_then(|v| v.as_str()).unwrap_or("");
+            let quality = t.get("quality").and_then(|v| v.as_str()).unwrap_or("");
             let resolution = t.get("resolution").and_then(|v| v.as_str()).unwrap_or("");
-            let codec      = t.get("codec").and_then(|v| v.as_str());
-            let source     = t.get("source").and_then(|v| v.as_str());
-            let seeders    = t.get("seeders").and_then(|v| v.as_i64()).map(|s| s as i32);
-            let size       = t.get("size").and_then(|v| v.as_i64());
+            let codec = t.get("codec").and_then(|v| v.as_str());
+            let source = t.get("source").and_then(|v| v.as_str());
+            let seeders = t.get("seeders").and_then(|v| v.as_i64()).map(|s| s as i32);
+            let size = t.get("size").and_then(|v| v.as_i64());
             let file_index = t.get("file_index").and_then(|v| v.as_i64());
-            let filename   = t.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+            let filename = t.get("filename").and_then(|v| v.as_str()).unwrap_or("");
 
-            let label = if !quality.is_empty() { quality } else if !resolution.is_empty() { resolution } else { "Unknown" };
-            let description = build_description(quality, resolution, codec, source, seeders, size, "");
+            let label = if !quality.is_empty() {
+                quality
+            } else if !resolution.is_empty() {
+                resolution
+            } else {
+                "Unknown"
+            };
+            let description =
+                build_description(quality, resolution, codec, source, seeders, size, "");
             let binge_group = format!("{addon_name}-{label}-{resolution}");
 
             let mut behavior: serde_json::Map<String, Value> = serde_json::Map::new();
@@ -410,7 +493,9 @@ fn format_streams(
             if !secret_str.is_empty() {
                 if let Some(provider) = primary_provider {
                     // Generate debrid proxy URL
-                    let url = build_playback_url(host_url, secret_str, provider, hash, filename, season, episode);
+                    let url = build_playback_url(
+                        host_url, secret_str, provider, hash, filename, season, episode,
+                    );
                     obj.insert("url".into(), json!(url));
                     behavior.insert("notWebReady".into(), json!(false));
                     obj.insert("behaviorHints".into(), Value::Object(behavior));
@@ -451,9 +536,7 @@ fn build_playback_url(
         (Some(s), Some(e)) => format!(
             "{host_url}/streaming_provider/{secret_str}/playback/{provider}/{info_hash}/{s}/{e}"
         ),
-        _ => format!(
-            "{host_url}/streaming_provider/{secret_str}/playback/{provider}/{info_hash}"
-        ),
+        _ => format!("{host_url}/streaming_provider/{secret_str}/playback/{provider}/{info_hash}"),
     };
     if filename.is_empty() {
         base
@@ -474,9 +557,7 @@ fn build_usenet_url(
             (Some(s), Some(e)) => format!(
                 "{host_url}/streaming_provider/{secret_str}/usenet/{provider}/{nzb_guid}/{s}/{e}"
             ),
-            _ => format!(
-                "{host_url}/streaming_provider/{secret_str}/usenet/{provider}/{nzb_guid}"
-            ),
+            _ => format!("{host_url}/streaming_provider/{secret_str}/usenet/{provider}/{nzb_guid}"),
         },
         None => format!("{host_url}/usenet/{nzb_guid}"),
     }

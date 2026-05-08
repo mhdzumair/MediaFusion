@@ -72,7 +72,10 @@ pub async fn handler(
     }
 
     // Authentication check for private instances
-    if !validate_apikey(params.apikey.as_deref(), state.config.api_password.as_deref()) {
+    if !validate_apikey(
+        params.apikey.as_deref(),
+        state.config.api_password.as_deref(),
+    ) {
         return xml_error(100, "Invalid API key");
     }
 
@@ -131,7 +134,10 @@ pub async fn handler(
             &state.config.host_url,
         ));
     } else {
-        return xml_error(200, "Missing search parameters (q, imdbid, or tmdbid required)");
+        return xml_error(
+            200,
+            "Missing search parameters (q, imdbid, or tmdbid required)",
+        );
     }
 
     let offset = params.offset as usize;
@@ -139,7 +145,11 @@ pub async fn handler(
         results = results.into_iter().skip(offset).collect();
     }
 
-    xml_response(build_rss(&results, &state.config.addon_name, &state.config.host_url))
+    xml_response(build_rss(
+        &results,
+        &state.config.addon_name,
+        &state.config.host_url,
+    ))
 }
 
 // ─── XML builders ─────────────────────────────────────────────────────────────
@@ -226,10 +236,7 @@ fn build_rss(rows: &[db::TorznabRow], title: &str, host_url: &str) -> String {
             .uploaded_at
             .map(|dt| {
                 // RFC 2822 date string: "Mon, 01 Jan 2024 00:00:00 +0000"
-                format!(
-                    "{}",
-                    dt.format("%a, %d %b %Y %H:%M:%S +0000")
-                )
+                format!("{}", dt.format("%a, %d %b %Y %H:%M:%S +0000"))
             })
             .unwrap_or_default();
 
@@ -319,15 +326,25 @@ fn build_rss(rows: &[db::TorznabRow], title: &str, host_url: &str) -> String {
 fn category_for(media_type: &str, resolution: Option<&str>) -> u32 {
     let res = resolution.unwrap_or("").to_lowercase();
     if media_type == "movie" {
-        if res.contains("2160") || res.contains("4k") { 2045 }
-        else if res.contains("1080") || res.contains("720") { 2040 }
-        else if res.contains("480") { 2030 }
-        else { 2000 }
+        if res.contains("2160") || res.contains("4k") {
+            2045
+        } else if res.contains("1080") || res.contains("720") {
+            2040
+        } else if res.contains("480") {
+            2030
+        } else {
+            2000
+        }
     } else {
-        if res.contains("2160") || res.contains("4k") { 5045 }
-        else if res.contains("1080") || res.contains("720") { 5030 }
-        else if res.contains("480") { 5020 }
-        else { 5000 }
+        if res.contains("2160") || res.contains("4k") {
+            5045
+        } else if res.contains("1080") || res.contains("720") {
+            5030
+        } else if res.contains("480") {
+            5020
+        } else {
+            5000
+        }
     }
 }
 

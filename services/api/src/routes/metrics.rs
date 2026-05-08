@@ -7,7 +7,6 @@
 ///
 /// No authentication on this endpoint — protect it at nginx/firewall level
 /// or prefix it with a shared secret path if needed.
-
 use std::sync::Arc;
 
 use axum::{
@@ -16,11 +15,7 @@ use axum::{
     http::{header, StatusCode},
     response::{IntoResponse, Response},
 };
-use prometheus_client::{
-    encoding::text::encode,
-    metrics::gauge::Gauge,
-    registry::Registry,
-};
+use prometheus_client::{encoding::text::encode, metrics::gauge::Gauge, registry::Registry};
 use std::sync::atomic::AtomicU64;
 
 use crate::state::AppState;
@@ -35,19 +30,54 @@ pub async fn handler(State(state): State<Arc<AppState>>) -> Response {
     let usenet_count: Gauge<f64, AtomicU64> = Gauge::default();
     let telegram_count: Gauge<f64, AtomicU64> = Gauge::default();
 
-    registry.register("mediafusion_torrents_total", "Total number of torrent streams", torrent_count.clone());
-    registry.register("mediafusion_movies_total", "Total number of movie metadata entries", movie_count.clone());
-    registry.register("mediafusion_series_total", "Total number of series metadata entries", series_count.clone());
-    registry.register("mediafusion_usenet_streams_total", "Total number of usenet streams", usenet_count.clone());
-    registry.register("mediafusion_telegram_streams_total", "Total number of telegram streams", telegram_count.clone());
+    registry.register(
+        "mediafusion_torrents_total",
+        "Total number of torrent streams",
+        torrent_count.clone(),
+    );
+    registry.register(
+        "mediafusion_movies_total",
+        "Total number of movie metadata entries",
+        movie_count.clone(),
+    );
+    registry.register(
+        "mediafusion_series_total",
+        "Total number of series metadata entries",
+        series_count.clone(),
+    );
+    registry.register(
+        "mediafusion_usenet_streams_total",
+        "Total number of usenet streams",
+        usenet_count.clone(),
+    );
+    registry.register(
+        "mediafusion_telegram_streams_total",
+        "Total number of telegram streams",
+        telegram_count.clone(),
+    );
 
     // Fetch counts concurrently
     let (tc, mc, sc, uc, tgc) = tokio::join!(
-        fetch_count(&state.pool_ro, "SELECT COUNT(*) FROM torrent_stream WHERE 1=1"),
-        fetch_count(&state.pool_ro, "SELECT COUNT(*) FROM media WHERE media_type = 'movie'"),
-        fetch_count(&state.pool_ro, "SELECT COUNT(*) FROM media WHERE media_type = 'series'"),
-        fetch_count(&state.pool_ro, "SELECT COUNT(*) FROM usenet_stream WHERE 1=1"),
-        fetch_count(&state.pool_ro, "SELECT COUNT(*) FROM telegram_stream WHERE 1=1"),
+        fetch_count(
+            &state.pool_ro,
+            "SELECT COUNT(*) FROM torrent_stream WHERE 1=1"
+        ),
+        fetch_count(
+            &state.pool_ro,
+            "SELECT COUNT(*) FROM media WHERE media_type = 'movie'"
+        ),
+        fetch_count(
+            &state.pool_ro,
+            "SELECT COUNT(*) FROM media WHERE media_type = 'series'"
+        ),
+        fetch_count(
+            &state.pool_ro,
+            "SELECT COUNT(*) FROM usenet_stream WHERE 1=1"
+        ),
+        fetch_count(
+            &state.pool_ro,
+            "SELECT COUNT(*) FROM telegram_stream WHERE 1=1"
+        ),
     );
 
     torrent_count.set(tc as f64);
@@ -77,9 +107,13 @@ pub async fn handler(State(state): State<Arc<AppState>>) -> Response {
         }
     }
 
-    buf.push_str("# HELP http_request_duration_ms_sum Sum of HTTP request durations in milliseconds\n");
+    buf.push_str(
+        "# HELP http_request_duration_ms_sum Sum of HTTP request durations in milliseconds\n",
+    );
     buf.push_str("# TYPE http_request_duration_ms_sum gauge\n");
-    buf.push_str("# HELP http_request_duration_ms_count Count of HTTP requests for duration tracking\n");
+    buf.push_str(
+        "# HELP http_request_duration_ms_count Count of HTTP requests for duration tracking\n",
+    );
     buf.push_str("# TYPE http_request_duration_ms_count gauge\n");
 
     if let Ok(durations) = state.metrics.durations.read() {

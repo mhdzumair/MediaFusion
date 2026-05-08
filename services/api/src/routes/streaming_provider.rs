@@ -6,15 +6,9 @@
 ///
 /// These mirror Python's cache_helpers: Redis hash `debrid_cache:{service}`
 /// stores info_hash → unix expiry timestamp.
-
 use std::sync::Arc;
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use chrono::Utc;
 use fred::prelude::HashesInterface;
 use serde::{Deserialize, Serialize};
@@ -62,7 +56,8 @@ pub async fn check_cache_status(
     let now = Utc::now().timestamp();
 
     let fields: Vec<String> = req.info_hashes.clone();
-    let timestamps: Vec<Option<String>> = state.redis
+    let timestamps: Vec<Option<String>> = state
+        .redis
         .hmget(&cache_key, fields)
         .await
         .unwrap_or_else(|_| vec![None; req.info_hashes.len()]);
@@ -114,21 +109,24 @@ pub async fn submit_cached_hashes(
     let expiry_ts = (Utc::now().timestamp() + EXPIRY_DAYS_SECS).to_string();
 
     // Build mapping: info_hash → expiry timestamp
-    let mapping: Vec<(String, String)> = req.info_hashes
+    let mapping: Vec<(String, String)> = req
+        .info_hashes
         .iter()
         .map(|h| (h.clone(), expiry_ts.clone()))
         .collect();
 
-    let result = state.redis
-        .hset::<(), _, _>(&cache_key, mapping)
-        .await;
+    let result = state.redis.hset::<(), _, _>(&cache_key, mapping).await;
 
     match result {
         Ok(_) => (
             StatusCode::OK,
             Json(CacheSubmitResponse {
                 success: true,
-                message: format!("Stored {} cached info hashes for {}", req.info_hashes.len(), service),
+                message: format!(
+                    "Stored {} cached info hashes for {}",
+                    req.info_hashes.len(),
+                    service
+                ),
             }),
         ),
         Err(e) => {

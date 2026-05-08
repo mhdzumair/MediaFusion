@@ -10,13 +10,12 @@ pub async fn get_media_meta(
     media_id: i64,
     imdb_id: &str,
 ) -> Result<Option<SearchMeta>, Box<dyn std::error::Error + Send + Sync>> {
-    let row: Option<(String, Option<i32>)> = sqlx::query_as(
-        r#"SELECT title, year FROM media WHERE id = $1 LIMIT 1"#,
-    )
-    .bind(media_id as i32)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| format!("get_media_meta: {e}"))?;
+    let row: Option<(String, Option<i32>)> =
+        sqlx::query_as(r#"SELECT title, year FROM media WHERE id = $1 LIMIT 1"#)
+            .bind(media_id as i32)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| format!("get_media_meta: {e}"))?;
 
     Ok(row.map(|(title, year)| SearchMeta {
         media_id,

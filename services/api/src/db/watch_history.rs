@@ -3,6 +3,7 @@ use tracing::warn;
 
 /// Fire-and-forget: insert a watch_history row if we have a user.
 /// Silently ignores errors (best-effort tracking).
+#[allow(clippy::too_many_arguments)]
 pub async fn record_playback(
     pool: &PgPool,
     user_id: i64,

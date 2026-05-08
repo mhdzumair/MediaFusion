@@ -9,7 +9,6 @@
 ///   PATCH  /{user_id}/role    → update_user_role
 ///   DELETE /{user_id}         → delete_user
 ///   POST   /{user_id}/send-upload-warning → send_upload_warning
-
 use std::sync::Arc;
 
 use axum::{
@@ -63,6 +62,7 @@ fn validate_admin(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
     data["sub"].as_str()?.parse().ok()
 }
 
+#[allow(dead_code)]
 fn unauthorized() -> impl IntoResponse {
     (
         StatusCode::UNAUTHORIZED,
@@ -212,8 +212,16 @@ pub async fn list_users(
         "status" => "CASE WHEN is_active THEN 2 ELSE 0 END + CASE WHEN is_verified THEN 1 ELSE 0 END".to_string(),
         _ => "created_at".to_string(), // "joined" is default
     };
-    let dir = if params.sort_order == "asc" { "ASC" } else { "DESC" };
-    let secondary_dir = if params.sort_order == "asc" { "ASC" } else { "DESC" };
+    let dir = if params.sort_order == "asc" {
+        "ASC"
+    } else {
+        "DESC"
+    };
+    let secondary_dir = if params.sort_order == "asc" {
+        "ASC"
+    } else {
+        "DESC"
+    };
 
     // Build WHERE clause
     let mut conditions: Vec<String> = Vec::new();
@@ -345,22 +353,21 @@ pub async fn update_user(
     };
 
     // Confirm user exists
-    let exists: Option<(i64,)> =
-        match sqlx::query_as("SELECT id FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(&state.pool)
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!("update_user existence check: {e}");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({"error": "Database error"})),
-                )
-                    .into_response();
-            }
-        };
+    let exists: Option<(i64,)> = match sqlx::query_as("SELECT id FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&state.pool)
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("update_user existence check: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Database error"})),
+            )
+                .into_response();
+        }
+    };
     if exists.is_none() {
         return (
             StatusCode::NOT_FOUND,
@@ -371,23 +378,24 @@ pub async fn update_user(
 
     // Check username uniqueness if username is being changed
     if let Some(ref new_username) = body.username {
-        let conflict: Option<(i64,)> =
-            match sqlx::query_as("SELECT id FROM users WHERE LOWER(username) = LOWER($1) AND id != $2")
-                .bind(new_username)
-                .bind(user_id)
-                .fetch_optional(&state.pool)
-                .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    tracing::error!("update_user username conflict: {e}");
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(serde_json::json!({"error": "Database error"})),
-                    )
-                        .into_response();
-                }
-            };
+        let conflict: Option<(i64,)> = match sqlx::query_as(
+            "SELECT id FROM users WHERE LOWER(username) = LOWER($1) AND id != $2",
+        )
+        .bind(new_username)
+        .bind(user_id)
+        .fetch_optional(&state.pool)
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("update_user username conflict: {e}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": "Database error"})),
+                )
+                    .into_response();
+            }
+        };
         if conflict.is_some() {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -478,22 +486,21 @@ pub async fn update_user_role(
     }
 
     // Confirm user exists
-    let exists: Option<(i64,)> =
-        match sqlx::query_as("SELECT id FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(&state.pool)
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!("update_user_role existence check: {e}");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({"error": "Database error"})),
-                )
-                    .into_response();
-            }
-        };
+    let exists: Option<(i64,)> = match sqlx::query_as("SELECT id FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&state.pool)
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("update_user_role existence check: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Database error"})),
+            )
+                .into_response();
+        }
+    };
     if exists.is_none() {
         return (
             StatusCode::NOT_FOUND,
@@ -546,22 +553,21 @@ pub async fn delete_user(
             .into_response();
     }
 
-    let exists: Option<(i64,)> =
-        match sqlx::query_as("SELECT id FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(&state.pool)
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!("delete_user existence check: {e}");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({"error": "Database error"})),
-                )
-                    .into_response();
-            }
-        };
+    let exists: Option<(i64,)> = match sqlx::query_as("SELECT id FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&state.pool)
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("delete_user existence check: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Database error"})),
+            )
+                .into_response();
+        }
+    };
     if exists.is_none() {
         return (
             StatusCode::NOT_FOUND,
@@ -602,22 +608,21 @@ pub async fn send_upload_warning(
     };
 
     // Fetch user email
-    let row: Option<(String,)> =
-        match sqlx::query_as("SELECT email FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(&state.pool_ro)
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!("send_upload_warning fetch user: {e}");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({"error": "Database error"})),
-                )
-                    .into_response();
-            }
-        };
+    let row: Option<(String,)> = match sqlx::query_as("SELECT email FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&state.pool_ro)
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("send_upload_warning fetch user: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Database error"})),
+            )
+                .into_response();
+        }
+    };
 
     let Some((email,)) = row else {
         return (
@@ -685,7 +690,11 @@ async fn send_email(
         AsyncTransport, Message, Tokio1Executor,
     };
 
-    let smtp_host = state.config.smtp_host.as_deref().ok_or("SMTP not configured")?;
+    let smtp_host = state
+        .config
+        .smtp_host
+        .as_deref()
+        .ok_or("SMTP not configured")?;
 
     let email = Message::builder()
         .from(state.config.smtp_from.parse()?)
@@ -736,4 +745,3 @@ async fn get_user_by_id_response(pool: &sqlx::PgPool, user_id: i64) -> Response 
         }
     }
 }
-

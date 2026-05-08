@@ -50,7 +50,8 @@ pub async fn scrape(
 
     // 2. Title query search (additional results)
     let query = build_query(&meta.title, media_type, season, episode);
-    let by_title = search_by_query(client, &headers, &query, media_type, season, episode, meta).await;
+    let by_title =
+        search_by_query(client, &headers, &query, media_type, season, episode, meta).await;
     for s in by_title {
         if seen.insert(s.info_hash.clone()) {
             results.push(s);
@@ -216,10 +217,8 @@ fn parse_torrents_json(
 
         // Title similarity check for query-based results
         if let Some(m) = meta {
-            let ratio = parser::similarity_ratio(
-                parsed.title.as_deref().unwrap_or(raw_title),
-                &m.title,
-            );
+            let ratio =
+                parser::similarity_ratio(parsed.title.as_deref().unwrap_or(raw_title), &m.title);
             if ratio < 80 {
                 continue;
             }
@@ -284,7 +283,8 @@ pub async fn scrape_usenet(
 
     // 1. IMDb ID search
     if let Some(ref imdb_id) = meta.imdb_id {
-        let by_id = search_usenet_by_imdb(client, &headers, imdb_id, media_type, season, episode).await;
+        let by_id =
+            search_usenet_by_imdb(client, &headers, imdb_id, media_type, season, episode).await;
         for s in by_id {
             if seen.insert(s.nzb_guid.clone()) {
                 results.push(s);
@@ -400,9 +400,17 @@ fn parse_usenet_json(
             .get("hash")
             .or_else(|| nzb.get("id"))
             .or_else(|| nzb.get("guid"))
-            .and_then(|v| v.as_str().map(str::to_string).or_else(|| v.as_i64().map(|n| n.to_string())))
+            .and_then(|v| {
+                v.as_str()
+                    .map(str::to_string)
+                    .or_else(|| v.as_i64().map(|n| n.to_string()))
+            })
             .unwrap_or_default();
-        let nzb_url = nzb.get("nzb").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let nzb_url = nzb
+            .get("nzb")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
         if raw_title.is_empty() || nzb_guid.is_empty() {
             continue;
@@ -414,10 +422,8 @@ fn parse_usenet_json(
         let parsed = parser::parse_title(raw_title);
 
         if let Some(m) = meta {
-            let ratio = parser::similarity_ratio(
-                parsed.title.as_deref().unwrap_or(raw_title),
-                &m.title,
-            );
+            let ratio =
+                parser::similarity_ratio(parsed.title.as_deref().unwrap_or(raw_title), &m.title);
             if ratio < 80 {
                 continue;
             }
@@ -432,10 +438,13 @@ fn parse_usenet_json(
             continue;
         }
 
-        let size = nzb.get("size").and_then(|v| {
-            v.as_i64()
-                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-        }).unwrap_or(0);
+        let size = nzb
+            .get("size")
+            .and_then(|v| {
+                v.as_i64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
+            .unwrap_or(0);
 
         results.push(ScrapedUsenetStream {
             nzb_guid,

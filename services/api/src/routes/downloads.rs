@@ -8,7 +8,6 @@
 ///   POST   /        → log_download
 ///   DELETE /{id}    → delete_download
 ///   DELETE /        → clear_downloads
-
 use std::sync::Arc;
 
 use axum::{
@@ -102,13 +101,12 @@ pub struct DownloadCreate {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async fn get_external_ids(pool: &sqlx::PgPool, media_id: i32) -> serde_json::Value {
-    let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT source, external_id FROM media_external_id WHERE media_id = $1",
-    )
-    .bind(media_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT source, external_id FROM media_external_id WHERE media_id = $1")
+            .bind(media_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
     let mut map = serde_json::Map::new();
     for (source, id) in rows {
         map.insert(source, serde_json::Value::String(id));
@@ -143,6 +141,7 @@ async fn get_external_ids_batch(
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_download_response(
     id: i32,
     user_id: i32,
@@ -210,14 +209,13 @@ pub async fn list_downloads(
 
     // Verify profile ownership if given
     if let Some(pid) = params.profile_id {
-        let exists: Option<i32> = sqlx::query_scalar(
-            "SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2",
-        )
-        .bind(pid)
-        .bind(user_id)
-        .fetch_optional(&state.pool_ro)
-        .await
-        .unwrap_or(None);
+        let exists: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2")
+                .bind(pid)
+                .bind(user_id)
+                .fetch_optional(&state.pool_ro)
+                .await
+                .unwrap_or(None);
         if exists.is_none() {
             return (
                 StatusCode::NOT_FOUND,
@@ -324,7 +322,17 @@ pub async fn list_downloads(
                 .cloned()
                 .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
             build_download_response(
-                r.0, r.1, r.2, r.3, &r.4, &r.5, r.6, r.7, r.8.as_ref(), r.9, &ext,
+                r.0,
+                r.1,
+                r.2,
+                r.3,
+                &r.4,
+                &r.5,
+                r.6,
+                r.7,
+                r.8.as_ref(),
+                r.9,
+                &ext,
             )
         })
         .collect();
@@ -358,14 +366,13 @@ pub async fn get_download_stats(
     };
 
     if let Some(pid) = params.profile_id {
-        let exists: Option<i32> = sqlx::query_scalar(
-            "SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2",
-        )
-        .bind(pid)
-        .bind(user_id)
-        .fetch_optional(&state.pool_ro)
-        .await
-        .unwrap_or(None);
+        let exists: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2")
+                .bind(pid)
+                .bind(user_id)
+                .fetch_optional(&state.pool_ro)
+                .await
+                .unwrap_or(None);
         if exists.is_none() {
             return (
                 StatusCode::NOT_FOUND,
@@ -454,14 +461,13 @@ pub async fn log_download(
     }
 
     // Verify profile ownership
-    let profile_exists: Option<i32> = sqlx::query_scalar(
-        "SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2",
-    )
-    .bind(body.profile_id)
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None);
+    let profile_exists: Option<i32> =
+        sqlx::query_scalar("SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2")
+            .bind(body.profile_id)
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
 
     if profile_exists.is_none() {
         return (
@@ -528,7 +534,17 @@ pub async fn log_download(
 
     let ext = get_external_ids(&state.pool, body.media_id).await;
     let response = build_download_response(
-        row.0, row.1, row.2, row.3, &row.4, &row.5, row.6, row.7, row.8.as_ref(), row.9, &ext,
+        row.0,
+        row.1,
+        row.2,
+        row.3,
+        &row.4,
+        &row.5,
+        row.6,
+        row.7,
+        row.8.as_ref(),
+        row.9,
+        &ext,
     );
     (StatusCode::CREATED, Json(response)).into_response()
 }
@@ -591,14 +607,13 @@ pub async fn clear_downloads(
     };
 
     if let Some(pid) = params.profile_id {
-        let exists: Option<i32> = sqlx::query_scalar(
-            "SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2",
-        )
-        .bind(pid)
-        .bind(user_id)
-        .fetch_optional(&state.pool)
-        .await
-        .unwrap_or(None);
+        let exists: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2")
+                .bind(pid)
+                .bind(user_id)
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None);
         if exists.is_none() {
             return (
                 StatusCode::NOT_FOUND,
@@ -642,8 +657,8 @@ pub async fn clear_downloads(
 
 // ─── Aliases for mod.rs compatibility ────────────────────────────────────────
 
-pub use log_download as create_download;
 pub use get_download_stats as get_download;
+pub use log_download as create_download;
 
 pub async fn retry_download(
     headers: HeaderMap,
@@ -653,14 +668,19 @@ pub async fn retry_download(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Unauthorized"}))).into_response()
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
         }
     };
     if let Some(py_url) = &state.config.python_proxy_url {
         let url = format!("{py_url}/api/v1/downloads/{id}/retry");
         match state.http.post(&url).send().await {
             Ok(r) => {
-                let status = StatusCode::from_u16(r.status().as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+                let status = StatusCode::from_u16(r.status().as_u16())
+                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
                 let body: serde_json::Value = r.json().await.unwrap_or(serde_json::json!({}));
                 return (status, Json(body)).into_response();
             }
@@ -671,5 +691,9 @@ pub async fn retry_download(
         }
     }
     let _ = (user_id, id);
-    (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"detail": "Not implemented"}))).into_response()
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(serde_json::json!({"detail": "Not implemented"})),
+    )
+        .into_response()
 }

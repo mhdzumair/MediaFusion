@@ -19,15 +19,15 @@ use imageproc::rect::Rect;
 
 // ─── Embedded assets ──────────────────────────────────────────────────────────
 
-static IMDB_LOGO:   &[u8] = include_bytes!("../../../../resources/images/imdb_logo.png");
-static WATERMARK:   &[u8] = include_bytes!("../../../../resources/images/logo_text.png");
+static IMDB_LOGO: &[u8] = include_bytes!("../../../../resources/images/imdb_logo.png");
+static WATERMARK: &[u8] = include_bytes!("../../../../resources/images/logo_text.png");
 static FONT_MEDIUM: &[u8] = include_bytes!("../../../../resources/fonts/IBMPlexSans-Medium.ttf");
-static FONT_BOLD:   &[u8] = include_bytes!("../../../../resources/fonts/IBMPlexSans-Bold.ttf");
+static FONT_BOLD: &[u8] = include_bytes!("../../../../resources/fonts/IBMPlexSans-Bold.ttf");
 
 // Lazy-loaded fonts (compiled into the binary at startup)
 use std::sync::OnceLock;
 static MEDIUM_FONT: OnceLock<FontArc> = OnceLock::new();
-static BOLD_FONT:   OnceLock<FontArc> = OnceLock::new();
+static BOLD_FONT: OnceLock<FontArc> = OnceLock::new();
 
 fn medium_font() -> &'static FontArc {
     MEDIUM_FONT.get_or_init(|| FontArc::try_from_slice(FONT_MEDIUM).expect("IBM Plex Sans Medium"))
@@ -49,10 +49,12 @@ pub struct AnnotateParams {
 /// Annotate a JPEG poster image.
 ///
 /// This is CPU-bound; wrap in `tokio::task::spawn_blocking` at the call site.
-pub fn annotate(jpeg_bytes: &[u8], params: &AnnotateParams) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+pub fn annotate(
+    jpeg_bytes: &[u8],
+    params: &AnnotateParams,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     // Load and resize to canonical 300×450 poster size
-    let img = image::load_from_memory(jpeg_bytes)?
-        .resize_exact(300, 450, FilterType::Lanczos3);
+    let img = image::load_from_memory(jpeg_bytes)?.resize_exact(300, 450, FilterType::Lanczos3);
     let mut canvas = img.to_rgba8();
 
     // 1. IMDb badge
@@ -82,10 +84,10 @@ pub fn annotate(jpeg_bytes: &[u8], params: &AnnotateParams) -> Result<Vec<u8>, B
 // ─── IMDb badge ───────────────────────────────────────────────────────────────
 
 fn add_imdb_badge(canvas: &mut RgbaImage, rating: f32) {
-    let font   = medium_font();
-    let scale  = PxScale::from(20.0);
+    let font = medium_font();
+    let scale = PxScale::from(20.0);
     let margin = 10i32;
-    let pad    = 5i32;
+    let pad = 5i32;
 
     let rating_text = format!(" {:.1}/10", rating);
 
@@ -102,7 +104,8 @@ fn add_imdb_badge(canvas: &mut RgbaImage, rating: f32) {
         .map(|img| {
             let aspect = img.width() as f32 / img.height() as f32;
             let logo_w = (text_h as f32 * aspect) as u32;
-            img.resize_exact(logo_w, text_h as u32, FilterType::Lanczos3).to_rgba8()
+            img.resize_exact(logo_w, text_h as u32, FilterType::Lanczos3)
+                .to_rgba8()
         })
         .ok();
 
@@ -144,11 +147,15 @@ fn add_imdb_badge(canvas: &mut RgbaImage, rating: f32) {
 
 fn add_watermark(canvas: &mut RgbaImage) {
     let margin = 10i64;
-    let Ok(wm_img) = image::load_from_memory(WATERMARK) else { return };
+    let Ok(wm_img) = image::load_from_memory(WATERMARK) else {
+        return;
+    };
     let new_w = canvas.width() / 2;
     let aspect = wm_img.width() as f32 / wm_img.height() as f32;
     let new_h = (new_w as f32 / aspect) as u32;
-    let wm = wm_img.resize_exact(new_w, new_h, FilterType::Lanczos3).to_rgba8();
+    let wm = wm_img
+        .resize_exact(new_w, new_h, FilterType::Lanczos3)
+        .to_rgba8();
     let x = canvas.width() as i64 - wm.width() as i64 - margin;
     let y = margin;
     imageops::overlay(canvas, &wm, x, y);
@@ -163,7 +170,9 @@ fn add_title(canvas: &mut RgbaImage, title: &str) {
 
     // Find a font size that fits within max_lines
     let (lines, scale) = fit_title(title, font, max_w, max_lines, 50, 20);
-    if lines.is_empty() { return; }
+    if lines.is_empty() {
+        return;
+    }
 
     let line_spacing = 10i32;
     let sf = font.as_scaled(scale);
@@ -175,7 +184,8 @@ fn add_title(canvas: &mut RgbaImage, title: &str) {
     // Sample center strip to pick text color
     let sample_top = (y_start - block_h / 2).clamp(0, canvas.height() as i32 - 1) as u32;
     let sample_bot = (y_start + block_h + block_h / 2).clamp(0, canvas.height() as i32 - 1) as u32;
-    let (text_color, outline_color) = text_color_for_region(canvas, 0, sample_top, canvas.width(), sample_bot);
+    let (text_color, outline_color) =
+        text_color_for_region(canvas, 0, sample_top, canvas.width(), sample_bot);
 
     let mut y = y_start;
     for line in &lines {
@@ -241,7 +251,10 @@ fn fit_title(
 
 fn text_color_for_region(
     img: &RgbaImage,
-    x: u32, y_top: u32, w: u32, y_bot: u32,
+    x: u32,
+    y_top: u32,
+    w: u32,
+    y_bot: u32,
 ) -> (Rgba<u8>, Rgba<u8>) {
     let mut r_sum = 0u64;
     let mut g_sum = 0u64;
@@ -264,8 +277,8 @@ fn text_color_for_region(
         return (Rgba([255, 255, 255, 255]), Rgba([0, 0, 0, 255]));
     }
 
-    let brightness = (0.299 * r_sum as f64 + 0.587 * g_sum as f64 + 0.114 * b_sum as f64)
-        / count as f64;
+    let brightness =
+        (0.299 * r_sum as f64 + 0.587 * g_sum as f64 + 0.114 * b_sum as f64) / count as f64;
     if brightness > 128.0 {
         (Rgba([0, 0, 0, 255]), Rgba([255, 255, 255, 255]))
     } else {
@@ -273,6 +286,7 @@ fn text_color_for_region(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_outlined_text(
     canvas: &mut RgbaImage,
     x: i32,
@@ -286,7 +300,9 @@ fn draw_outlined_text(
     const W: i32 = 2;
     for dx in -W..=W {
         for dy in -W..=W {
-            if dx == 0 && dy == 0 { continue; }
+            if dx == 0 && dy == 0 {
+                continue;
+            }
             draw_text_mut(canvas, outline, x + dx, y + dy, scale, font, text);
         }
     }

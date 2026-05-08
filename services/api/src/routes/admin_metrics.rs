@@ -24,7 +24,6 @@
 ///   GET /scraper/search-runs                  → get_search_run_metrics
 ///   GET /scraper/history/{scraper_name}/recent→ get_scraper_recent_runs
 ///   GET /workers/memory                       → (same as above)
-
 use std::sync::Arc;
 
 use axum::{
@@ -306,28 +305,22 @@ pub async fn get_total_metadata(
 
     let (movies, series, tv): (i64, i64, i64) = tokio::join!(
         async {
-            sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM media WHERE type = 'movie'",
-            )
-            .fetch_one(&state.pool_ro)
-            .await
-            .unwrap_or(0)
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM media WHERE type = 'movie'")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
         },
         async {
-            sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM media WHERE type = 'series'",
-            )
-            .fetch_one(&state.pool_ro)
-            .await
-            .unwrap_or(0)
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM media WHERE type = 'series'")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
         },
         async {
-            sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM media WHERE type = 'tv'",
-            )
-            .fetch_one(&state.pool_ro)
-            .await
-            .unwrap_or(0)
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM media WHERE type = 'tv'")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
         },
     );
 
@@ -453,8 +446,17 @@ pub async fn debrid_cache_metrics(
     }
 
     let services = [
-        "alldebrid", "debridlink", "offcloud", "pikpak", "premiumize",
-        "qbittorrent", "realdebrid", "seedr", "torbox", "easydebrid", "debrider",
+        "alldebrid",
+        "debridlink",
+        "offcloud",
+        "pikpak",
+        "premiumize",
+        "qbittorrent",
+        "realdebrid",
+        "seedr",
+        "torbox",
+        "easydebrid",
+        "debrider",
     ];
 
     let mut service_data = serde_json::Map::new();
@@ -462,10 +464,7 @@ pub async fn debrid_cache_metrics(
         let key = format!("debrid_cache:{service}");
         let size: i64 = state.redis.hlen::<i64, _>(&key).await.unwrap_or(0);
         if size > 0 {
-            service_data.insert(
-                service.to_string(),
-                json!({"cached_torrents": size}),
-            );
+            service_data.insert(service.to_string(), json!({"cached_torrents": size}));
         }
     }
 
@@ -491,20 +490,52 @@ pub async fn get_user_stats(
     let month_ago = now - chrono::Duration::days(30);
 
     let (total, active_daily, active_weekly, active_monthly, verified, total_profiles) = tokio::join!(
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users").fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE last_login >= $1").bind(day_ago).fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE last_login >= $1").bind(week_ago).fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE last_login >= $1").bind(month_ago).fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE is_verified = true").fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM user_profiles").fetch_one(&state.pool_ro).await.unwrap_or(0) },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE last_login >= $1")
+                .bind(day_ago)
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE last_login >= $1")
+                .bind(week_ago)
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE last_login >= $1")
+                .bind(month_ago)
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE is_verified = true")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM user_profiles")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
     );
 
-    let role_rows = sqlx::query_as::<_, (String, i64)>(
-        "SELECT role, COUNT(*) FROM users GROUP BY role",
-    )
-    .fetch_all(&state.pool_ro)
-    .await
-    .unwrap_or_default();
+    let role_rows =
+        sqlx::query_as::<_, (String, i64)>("SELECT role, COUNT(*) FROM users GROUP BY role")
+            .fetch_all(&state.pool_ro)
+            .await
+            .unwrap_or_default();
 
     let users_by_role: serde_json::Map<String, Value> = role_rows
         .into_iter()
@@ -541,10 +572,33 @@ pub async fn get_contribution_stats(
     let week_ago = now - chrono::Duration::days(7);
 
     let (total, recent, total_stream_votes, total_metadata_votes) = tokio::join!(
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM contributions").fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM contributions WHERE created_at >= $1").bind(week_ago).fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM stream_votes").fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM metadata_votes").fetch_one(&state.pool_ro).await.unwrap_or(0) },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM contributions")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM contributions WHERE created_at >= $1",
+            )
+            .bind(week_ago)
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM stream_votes")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM metadata_votes")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
     );
 
     let status_rows = sqlx::query_as::<_, (String, i64)>(
@@ -583,10 +637,33 @@ pub async fn get_activity_stats(
     let week_ago = now - chrono::Duration::days(7);
 
     let (total_wh, recent_wh, total_rss, active_rss) = tokio::join!(
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM watch_history").fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM watch_history WHERE watched_at >= $1").bind(week_ago).fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM rss_feeds").fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM rss_feeds WHERE is_active = true").fetch_one(&state.pool_ro).await.unwrap_or(0) },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM watch_history")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM watch_history WHERE watched_at >= $1",
+            )
+            .bind(week_ago)
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM rss_feeds")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM rss_feeds WHERE is_active = true")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
     );
 
     Json(json!({
@@ -630,14 +707,24 @@ pub async fn get_scraper_latest_metrics(
     }
 
     let key = "scraper_metrics:latest";
-    let raw: Option<String> = state.redis.get::<Option<String>, _>(key).await.unwrap_or(None);
+    let raw: Option<String> = state
+        .redis
+        .get::<Option<String>, _>(key)
+        .await
+        .unwrap_or(None);
 
     match raw {
         Some(s) => match serde_json::from_str::<Value>(&s) {
             Ok(v) => Json(v).into_response(),
-            Err(_) => Json(json!({"scrapers": [], "total_scrapers": 0, "timestamp": Utc::now().to_rfc3339()})).into_response(),
+            Err(_) => Json(
+                json!({"scrapers": [], "total_scrapers": 0, "timestamp": Utc::now().to_rfc3339()}),
+            )
+            .into_response(),
         },
-        None => Json(json!({"scrapers": [], "total_scrapers": 0, "timestamp": Utc::now().to_rfc3339()})).into_response(),
+        None => {
+            Json(json!({"scrapers": [], "total_scrapers": 0, "timestamp": Utc::now().to_rfc3339()}))
+                .into_response()
+        }
     }
 }
 
@@ -651,7 +738,11 @@ pub async fn get_scraper_aggregated_metrics(
     }
 
     let key = "scraper_metrics:aggregated";
-    let raw: Option<String> = state.redis.get::<Option<String>, _>(key).await.unwrap_or(None);
+    let raw: Option<String> = state
+        .redis
+        .get::<Option<String>, _>(key)
+        .await
+        .unwrap_or(None);
 
     match raw {
         Some(s) => match serde_json::from_str::<Value>(&s) {

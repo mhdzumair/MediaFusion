@@ -2,7 +2,6 @@
 ///
 /// Routes (prefix /api/v1/streams):
 ///   DELETE /{stream_id}  → delete_stream  (moderator required)
-
 use std::sync::Arc;
 
 use axum::{
@@ -79,23 +78,22 @@ pub async fn delete_stream(
     let stream_id_i32 = stream_id as i32;
 
     // 2. Check stream exists and get stream_type
-    let stream_type: Option<String> = match sqlx::query_scalar(
-        "SELECT stream_type FROM stream WHERE id = $1",
-    )
-    .bind(stream_id_i32)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("DB error checking stream {stream_id}: {e}");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "Database error"})),
-            )
-                .into_response();
-        }
-    };
+    let stream_type: Option<String> =
+        match sqlx::query_scalar("SELECT stream_type FROM stream WHERE id = $1")
+            .bind(stream_id_i32)
+            .fetch_optional(&state.pool)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("DB error checking stream {stream_id}: {e}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "Database error"})),
+                )
+                    .into_response();
+            }
+        };
 
     let stream_type = match stream_type {
         Some(t) => t,
@@ -122,23 +120,22 @@ pub async fn delete_stream(
     };
 
     // 4. Fetch linked media IDs, then decrement total_streams
-    let media_ids: Vec<i32> = match sqlx::query_scalar(
-        "SELECT media_id FROM stream_media_link WHERE stream_id = $1",
-    )
-    .bind(stream_id_i32)
-    .fetch_all(&mut *txn)
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("DB error fetching media links for stream {stream_id}: {e}");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "Database error"})),
-            )
-                .into_response();
-        }
-    };
+    let media_ids: Vec<i32> =
+        match sqlx::query_scalar("SELECT media_id FROM stream_media_link WHERE stream_id = $1")
+            .bind(stream_id_i32)
+            .fetch_all(&mut *txn)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("DB error fetching media links for stream {stream_id}: {e}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "Database error"})),
+                )
+                    .into_response();
+            }
+        };
 
     for media_id in &media_ids {
         if let Err(e) = sqlx::query(

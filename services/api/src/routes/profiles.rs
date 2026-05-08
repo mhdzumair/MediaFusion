@@ -12,7 +12,6 @@
 ///   POST   /{id}/reset-uuid      → reset_uuid
 ///   GET    /{id}/manifest-url    → manifest_url
 ///   GET    /{id}/kodi-addon      → kodi_addon
-
 use std::sync::Arc;
 
 use axum::{
@@ -350,7 +349,10 @@ fn build_profile_response(
 fn extract_provider_secrets(
     provider: &serde_json::Map<String, Value>,
     index: usize,
-) -> (serde_json::Map<String, Value>, serde_json::Map<String, Value>) {
+) -> (
+    serde_json::Map<String, Value>,
+    serde_json::Map<String, Value>,
+) {
     let mut clean = provider.clone();
     let mut secrets_entry: serde_json::Map<String, Value> = serde_json::Map::new();
     let sensitive_fields = ["token", "tk", "password", "pw", "email", "em"];
@@ -373,8 +375,7 @@ fn extract_provider_secrets(
                 }
             }
             if !sub_secrets.is_empty() {
-                secrets_entry
-                    .insert((*sub_key).to_string(), Value::Object(sub_secrets));
+                secrets_entry.insert((*sub_key).to_string(), Value::Object(sub_secrets));
             }
         }
     }
@@ -389,8 +390,7 @@ fn extract_provider_secrets(
                 }
             }
             if !sub_secrets.is_empty() {
-                secrets_entry
-                    .insert((*sub_key).to_string(), Value::Object(sub_secrets));
+                secrets_entry.insert((*sub_key).to_string(), Value::Object(sub_secrets));
             }
         }
     }
@@ -430,10 +430,7 @@ fn extract_provider_secrets(
 
 /// Split a config into (clean_config, encrypted_secrets).
 /// Extracts sensitive credential fields from providers and encrypts them separately.
-pub fn split_config(
-    config: &Value,
-    key: &[u8; 32],
-) -> (Value, Option<String>) {
+pub fn split_config(config: &Value, key: &[u8; 32]) -> (Value, Option<String>) {
     let mut clean = config.clone();
     let mut all_secrets = serde_json::Map::new();
 
@@ -461,7 +458,10 @@ pub fn split_config(
             }
         }
         *providers = clean_providers;
-        if secrets_list.iter().any(|s| !s.as_object().map(|o| o.is_empty()).unwrap_or(true)) {
+        if secrets_list
+            .iter()
+            .any(|s| !s.as_object().map(|o| o.is_empty()).unwrap_or(true))
+        {
             all_secrets.insert(sps_key.to_string(), Value::Array(secrets_list));
         }
     }
@@ -522,23 +522,32 @@ fn restore_masked(new_config: &mut Value, existing_full: &Value) {
 
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 
+#[allow(clippy::type_complexity)]
 async fn fetch_profile_by_id(
     pool: &sqlx::PgPool,
     id: i32,
     user_id: i32,
 ) -> Result<Option<ProfileRow>, sqlx::Error> {
-    let row: Option<(i32, String, i32, String, serde_json::Value, Option<String>, bool, DateTime<Utc>)> =
-        sqlx::query_as(
-            r#"SELECT id, uuid, user_id, name, config, encrypted_secrets, is_default, created_at
+    let row: Option<(
+        i32,
+        String,
+        i32,
+        String,
+        serde_json::Value,
+        Option<String>,
+        bool,
+        DateTime<Utc>,
+    )> = sqlx::query_as(
+        r#"SELECT id, uuid, user_id, name, config, encrypted_secrets, is_default, created_at
                FROM user_profiles
                WHERE id = $1 AND user_id = $2"#,
-        )
-        .bind(id)
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await?;
-    Ok(row.map(|(id, uuid, user_id, name, config, encrypted_secrets, is_default, created_at)| {
-        ProfileRow {
+    )
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(
+        |(id, uuid, user_id, name, config, encrypted_secrets, is_default, created_at)| ProfileRow {
             id,
             uuid,
             user_id,
@@ -547,26 +556,35 @@ async fn fetch_profile_by_id(
             encrypted_secrets,
             is_default,
             created_at,
-        }
-    }))
+        },
+    ))
 }
 
+#[allow(clippy::type_complexity)]
 async fn fetch_default_profile(
     pool: &sqlx::PgPool,
     user_id: i32,
 ) -> Result<Option<ProfileRow>, sqlx::Error> {
-    let row: Option<(i32, String, i32, String, serde_json::Value, Option<String>, bool, DateTime<Utc>)> =
-        sqlx::query_as(
-            r#"SELECT id, uuid, user_id, name, config, encrypted_secrets, is_default, created_at
+    let row: Option<(
+        i32,
+        String,
+        i32,
+        String,
+        serde_json::Value,
+        Option<String>,
+        bool,
+        DateTime<Utc>,
+    )> = sqlx::query_as(
+        r#"SELECT id, uuid, user_id, name, config, encrypted_secrets, is_default, created_at
                FROM user_profiles
                WHERE user_id = $1 AND is_default = true
                LIMIT 1"#,
-        )
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await?;
-    Ok(row.map(|(id, uuid, user_id, name, config, encrypted_secrets, is_default, created_at)| {
-        ProfileRow {
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(
+        |(id, uuid, user_id, name, config, encrypted_secrets, is_default, created_at)| ProfileRow {
             id,
             uuid,
             user_id,
@@ -575,28 +593,33 @@ async fn fetch_default_profile(
             encrypted_secrets,
             is_default,
             created_at,
-        }
-    }))
+        },
+    ))
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 /// GET /api/v1/profiles/user-config
-pub async fn user_config(
-    headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
-) -> Response {
+pub async fn user_config(headers: HeaderMap, State(state): State<Arc<AppState>>) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
     let profile = match fetch_default_profile(&state.pool_ro, user_id).await {
         Ok(Some(p)) => p,
         Ok(None) => {
-            return (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "No default profile found"}))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"detail": "No default profile found"})),
+            )
+                .into_response();
         }
         Err(e) => {
             tracing::error!("user_config db error: {e}");
@@ -622,21 +645,26 @@ pub async fn user_config(
 }
 
 /// GET /api/v1/profiles/rpdb-key
-pub async fn rpdb_key(
-    headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
-) -> Response {
+pub async fn rpdb_key(headers: HeaderMap, State(state): State<Arc<AppState>>) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
     let profile = match fetch_default_profile(&state.pool_ro, user_id).await {
         Ok(Some(p)) => p,
         Ok(None) => {
-            return (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "No default profile found"}))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"detail": "No default profile found"})),
+            )
+                .into_response();
         }
         Err(e) => {
             tracing::error!("rpdb_key db error: {e}");
@@ -657,50 +685,62 @@ pub async fn rpdb_key(
 }
 
 /// GET /api/v1/profiles
-pub async fn list_profiles(
-    headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
-) -> Response {
+#[allow(clippy::type_complexity)]
+pub async fn list_profiles(headers: HeaderMap, State(state): State<Arc<AppState>>) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
-    let rows: Vec<(i32, String, i32, String, serde_json::Value, Option<String>, bool, DateTime<Utc>)> =
-        match sqlx::query_as(
-            r#"SELECT id, uuid, user_id, name, config, encrypted_secrets, is_default, created_at
+    let rows: Vec<(
+        i32,
+        String,
+        i32,
+        String,
+        serde_json::Value,
+        Option<String>,
+        bool,
+        DateTime<Utc>,
+    )> = match sqlx::query_as(
+        r#"SELECT id, uuid, user_id, name, config, encrypted_secrets, is_default, created_at
                FROM user_profiles
                WHERE user_id = $1
                ORDER BY is_default DESC, created_at ASC"#,
-        )
-        .bind(user_id)
-        .fetch_all(&state.pool_ro)
-        .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!("list_profiles db error: {e}");
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            }
-        };
+    )
+    .bind(user_id)
+    .fetch_all(&state.pool_ro)
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("list_profiles db error: {e}");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
 
     let profiles: Vec<serde_json::Value> = rows
         .iter()
-        .map(|(id, uuid, user_id, name, config, encrypted_secrets, is_default, created_at)| {
-            let row = ProfileRow {
-                id: *id,
-                uuid: uuid.clone(),
-                user_id: *user_id,
-                name: name.clone(),
-                config: config.clone(),
-                encrypted_secrets: encrypted_secrets.clone(),
-                is_default: *is_default,
-                created_at: *created_at,
-            };
-            build_profile_response(&row, &state.config.secret_key, false)
-        })
+        .map(
+            |(id, uuid, user_id, name, config, encrypted_secrets, is_default, created_at)| {
+                let row = ProfileRow {
+                    id: *id,
+                    uuid: uuid.clone(),
+                    user_id: *user_id,
+                    name: name.clone(),
+                    config: config.clone(),
+                    encrypted_secrets: encrypted_secrets.clone(),
+                    is_default: *is_default,
+                    created_at: *created_at,
+                };
+                build_profile_response(&row, &state.config.secret_key, false)
+            },
+        )
         .collect();
 
     (
@@ -723,24 +763,27 @@ pub async fn create_profile(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
     // Check count
-    let count: i64 = match sqlx::query_scalar(
-        "SELECT COUNT(*) FROM user_profiles WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(&state.pool)
-    .await
-    {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!("create_profile count error: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    let count: i64 =
+        match sqlx::query_scalar("SELECT COUNT(*) FROM user_profiles WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(&state.pool)
+            .await
+        {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("create_profile count error: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
 
     if count >= 5 {
         return (
@@ -770,12 +813,11 @@ pub async fn create_profile(
     };
 
     if should_set_default {
-        if let Err(e) = sqlx::query(
-            "UPDATE user_profiles SET is_default = false WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
+        if let Err(e) =
+            sqlx::query("UPDATE user_profiles SET is_default = false WHERE user_id = $1")
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await
         {
             tracing::error!("create_profile unset default: {e}");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -821,7 +863,11 @@ pub async fn create_profile(
 
     (
         StatusCode::CREATED,
-        Json(build_profile_response(&profile, &state.config.secret_key, false)),
+        Json(build_profile_response(
+            &profile,
+            &state.config.secret_key,
+            false,
+        )),
     )
         .into_response()
 }
@@ -835,14 +881,22 @@ pub async fn get_profile(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
     let profile = match fetch_profile_by_id(&state.pool_ro, id, user_id).await {
         Ok(Some(p)) => p,
         Ok(None) => {
-            return (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "Profile not found"}))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"detail": "Profile not found"})),
+            )
+                .into_response();
         }
         Err(e) => {
             tracing::error!("get_profile db error: {e}");
@@ -856,7 +910,11 @@ pub async fn get_profile(
             (header::CACHE_CONTROL, "no-cache, no-store, must-revalidate"),
             (header::PRAGMA, "no-cache"),
         ],
-        Json(build_profile_response(&profile, &state.config.secret_key, false)),
+        Json(build_profile_response(
+            &profile,
+            &state.config.secret_key,
+            false,
+        )),
     )
         .into_response()
 }
@@ -871,14 +929,22 @@ pub async fn update_profile(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(uid) => uid,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
     let profile = match fetch_profile_by_id(&state.pool, id, user_id).await {
         Ok(Some(p)) => p,
         Ok(None) => {
-            return (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "Profile not found"}))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"detail": "Profile not found"})),
+            )
+                .into_response();
         }
         Err(e) => {
             tracing::error!("update_profile fetch: {e}");
@@ -900,8 +966,7 @@ pub async fn update_profile(
         get_full_config(&profile, &state.config.secret_key)
     };
 
-    let (clean_config, encrypted_secrets) =
-        split_config(&merged_config, &state.config.secret_key);
+    let (clean_config, encrypted_secrets) = split_config(&merged_config, &state.config.secret_key);
 
     let mut tx = match state.pool.begin().await {
         Ok(t) => t,
@@ -913,12 +978,11 @@ pub async fn update_profile(
 
     // Handle is_default change
     if let Some(true) = body.is_default {
-        if let Err(e) = sqlx::query(
-            "UPDATE user_profiles SET is_default = false WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
+        if let Err(e) =
+            sqlx::query("UPDATE user_profiles SET is_default = false WHERE user_id = $1")
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await
         {
             tracing::error!("update_profile unset default: {e}");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -983,14 +1047,22 @@ pub async fn delete_profile(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(uid) => uid,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
     let profile = match fetch_profile_by_id(&state.pool, id, user_id).await {
         Ok(Some(p)) => p,
         Ok(None) => {
-            return (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "Profile not found"}))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"detail": "Profile not found"})),
+            )
+                .into_response();
         }
         Err(e) => {
             tracing::error!("delete_profile fetch: {e}");
@@ -999,19 +1071,18 @@ pub async fn delete_profile(
     };
 
     // Can't delete last profile
-    let count: i64 = match sqlx::query_scalar(
-        "SELECT COUNT(*) FROM user_profiles WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(&state.pool)
-    .await
-    {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!("delete_profile count: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    let count: i64 =
+        match sqlx::query_scalar("SELECT COUNT(*) FROM user_profiles WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(&state.pool)
+            .await
+        {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("delete_profile count: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
 
     if count <= 1 {
         return (
@@ -1061,12 +1132,11 @@ pub async fn delete_profile(
         }
     }
 
-    if let Err(e) =
-        sqlx::query("DELETE FROM user_profiles WHERE id = $1 AND user_id = $2")
-            .bind(id)
-            .bind(user_id)
-            .execute(&mut *tx)
-            .await
+    if let Err(e) = sqlx::query("DELETE FROM user_profiles WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
     {
         tracing::error!("delete_profile delete: {e}");
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -1089,7 +1159,11 @@ pub async fn set_default(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(uid) => uid,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
@@ -1101,28 +1175,29 @@ pub async fn set_default(
         }
     };
 
-    if let Err(e) = sqlx::query(
-        "UPDATE user_profiles SET is_default = false WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .execute(&mut *tx)
-    .await
+    if let Err(e) = sqlx::query("UPDATE user_profiles SET is_default = false WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
     {
         tracing::error!("set_default unset: {e}");
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
-    let updated = sqlx::query(
-        "UPDATE user_profiles SET is_default = true WHERE id = $1 AND user_id = $2",
-    )
-    .bind(id)
-    .bind(user_id)
-    .execute(&mut *tx)
-    .await;
+    let updated =
+        sqlx::query("UPDATE user_profiles SET is_default = true WHERE id = $1 AND user_id = $2")
+            .bind(id)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await;
 
     match updated {
         Ok(r) if r.rows_affected() == 0 => {
-            return (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "Profile not found"}))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"detail": "Profile not found"})),
+            )
+                .into_response();
         }
         Err(e) => {
             tracing::error!("set_default update: {e}");
@@ -1148,7 +1223,11 @@ pub async fn reset_uuid(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(uid) => uid,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
@@ -1172,7 +1251,11 @@ pub async fn reset_uuid(
 
     match new_uuid {
         Some(uuid) => Json(serde_json::json!({"profile_id": id, "new_uuid": uuid})).into_response(),
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "Profile not found"}))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"detail": "Profile not found"})),
+        )
+            .into_response(),
     }
 }
 
@@ -1185,14 +1268,22 @@ pub async fn manifest_url(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(uid) => uid,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
     let profile = match fetch_profile_by_id(&state.pool_ro, id, user_id).await {
         Ok(Some(p)) => p,
         Ok(None) => {
-            return (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "Profile not found"}))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"detail": "Profile not found"})),
+            )
+                .into_response();
         }
         Err(e) => {
             tracing::error!("manifest_url db error: {e}");
@@ -1232,14 +1323,22 @@ pub async fn kodi_addon(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(uid) => uid,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
     let profile = match fetch_profile_by_id(&state.pool_ro, id, user_id).await {
         Ok(Some(p)) => p,
         Ok(None) => {
-            return (StatusCode::NOT_FOUND, Json(serde_json::json!({"detail": "Profile not found"}))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"detail": "Profile not found"})),
+            )
+                .into_response();
         }
         Err(e) => {
             tracing::error!("kodi_addon db error: {e}");

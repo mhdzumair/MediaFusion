@@ -17,7 +17,6 @@
 ///   POST   /{provider}/import/advanced → advanced_import  (stub)
 ///   POST   /{provider}/remove        → remove_torrent  (stub)
 ///   POST   /{provider}/clear-all     → clear_all_torrents  (stub)
-
 use std::sync::Arc;
 
 use axum::{
@@ -116,13 +115,12 @@ fn default_watchlist_page_size() -> i64 {
 // ─── Helper: fetch external IDs for a media item ──────────────────────────────
 
 async fn get_external_ids(pool: &sqlx::PgPool, media_id: i64) -> serde_json::Value {
-    let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT source, external_id FROM media_external_id WHERE media_id = $1",
-    )
-    .bind(media_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT source, external_id FROM media_external_id WHERE media_id = $1")
+            .bind(media_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
     let mut map = serde_json::Map::new();
     for (source, id) in rows {
         map.insert(source, serde_json::Value::String(id));
@@ -157,6 +155,7 @@ async fn get_external_ids_batch(
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_library_item(
     id: i64,
     media_id: i64,
@@ -196,6 +195,7 @@ fn build_library_item(
 // ─── Handlers: User Library ───────────────────────────────────────────────────
 
 /// GET /api/v1/library
+#[allow(clippy::type_complexity)]
 pub async fn get_library(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -248,8 +248,7 @@ pub async fn get_library(
     }
 
     // Build count query
-    let mut count_sql =
-        String::from("SELECT COUNT(*) FROM user_library_item WHERE user_id = $1");
+    let mut count_sql = String::from("SELECT COUNT(*) FROM user_library_item WHERE user_id = $1");
     let mut idx = 2i32;
     if params.catalog_type.is_some() {
         count_sql.push_str(&format!(" AND catalog_type = ${idx}"));
@@ -312,11 +311,9 @@ pub async fn get_library(
     sql.push_str(&format!(" LIMIT ${idx} OFFSET ${}", idx + 1));
 
     let rows: Vec<(i64, i64, String, String, Option<String>, DateTime<Utc>)> = {
-        let mut q = sqlx::query_as::<
-            _,
-            (i64, i64, String, String, Option<String>, DateTime<Utc>),
-        >(&sql)
-        .bind(user_id);
+        let mut q =
+            sqlx::query_as::<_, (i64, i64, String, String, Option<String>, DateTime<Utc>)>(&sql)
+                .bind(user_id);
         if let Some(ref ct) = params.catalog_type {
             q = q.bind(ct.clone());
         }
@@ -371,10 +368,7 @@ pub async fn get_library(
 }
 
 /// GET /api/v1/library/stats
-pub async fn get_library_stats(
-    headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
-) -> Response {
+pub async fn get_library_stats(headers: HeaderMap, State(state): State<Arc<AppState>>) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
@@ -386,13 +380,12 @@ pub async fn get_library_stats(
         }
     };
 
-    let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM user_library_item WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(&state.pool_ro)
-    .await
-    .unwrap_or(0);
+    let total: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM user_library_item WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
 
     let movies: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM user_library_item WHERE user_id = $1 AND catalog_type = 'movie'",
@@ -533,6 +526,7 @@ pub async fn add_to_library(
 }
 
 /// GET /api/v1/library/{item_id}
+#[allow(clippy::type_complexity)]
 pub async fn get_library_item(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -639,13 +633,11 @@ pub async fn remove_from_library(
         }
     };
 
-    let result = sqlx::query(
-        "DELETE FROM user_library_item WHERE id = $1 AND user_id = $2",
-    )
-    .bind(item_id)
-    .bind(user_id)
-    .execute(&state.pool)
-    .await;
+    let result = sqlx::query("DELETE FROM user_library_item WHERE id = $1 AND user_id = $2")
+        .bind(item_id)
+        .bind(user_id)
+        .execute(&state.pool)
+        .await;
 
     match result {
         Ok(r) if r.rows_affected() == 0 => (
@@ -678,13 +670,11 @@ pub async fn remove_from_library_by_media_id(
         }
     };
 
-    let result = sqlx::query(
-        "DELETE FROM user_library_item WHERE media_id = $1 AND user_id = $2",
-    )
-    .bind(media_id)
-    .bind(user_id)
-    .execute(&state.pool)
-    .await;
+    let result = sqlx::query("DELETE FROM user_library_item WHERE media_id = $1 AND user_id = $2")
+        .bind(media_id)
+        .bind(user_id)
+        .execute(&state.pool)
+        .await;
 
     match result {
         Ok(r) if r.rows_affected() == 0 => (
@@ -724,9 +714,7 @@ pub async fn get_watchlist_providers(
         }
     };
 
-    let profile_id: Option<i64> = params
-        .get("profile_id")
-        .and_then(|v| v.as_i64());
+    let profile_id: Option<i64> = params.get("profile_id").and_then(|v| v.as_i64());
 
     // Find the profile — prefer explicit profile_id, fall back to default
     let profile: Option<(i32, serde_json::Value, Option<String>)> = if let Some(pid) = profile_id {
@@ -893,9 +881,13 @@ pub async fn get_missing_torrents(
         }
     };
 
-    proxy_or_stub(&state, &headers, &format!("/api/v1/watchlist/{provider}/missing"), &params, || {
-        serde_json::json!({"items": [], "total": 0, "provider": provider})
-    })
+    proxy_or_stub(
+        &state,
+        &headers,
+        &format!("/api/v1/watchlist/{provider}/missing"),
+        &params,
+        || serde_json::json!({"items": [], "total": 0, "provider": provider}),
+    )
     .await
 }
 
@@ -1027,7 +1019,13 @@ async fn proxy_or_stub(
             .unwrap_or("")
             .to_string();
         let url = format!("{python_url}{path}");
-        match state.http.get(&url).header("Authorization", auth).send().await {
+        match state
+            .http
+            .get(&url)
+            .header("Authorization", auth)
+            .send()
+            .await
+        {
             Ok(resp) => {
                 let status = StatusCode::from_u16(resp.status().as_u16())
                     .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
@@ -1099,8 +1097,8 @@ async fn proxy_post_or_stub(
 
 // ─── Aliases for mod.rs compatibility ────────────────────────────────────────
 
-pub use get_library as list_library;
 pub use check_in_library as get_library_status;
+pub use get_library as list_library;
 
 pub async fn bulk_library_operation(
     headers: HeaderMap,
@@ -1110,14 +1108,19 @@ pub async fn bulk_library_operation(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"detail": "Unauthorized"}))).into_response()
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
         }
     };
     if let Some(py_url) = &state.config.python_proxy_url {
         let url = format!("{py_url}/api/v1/library/bulk");
         match state.http.post(&url).json(&body).send().await {
             Ok(r) => {
-                let status = StatusCode::from_u16(r.status().as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+                let status = StatusCode::from_u16(r.status().as_u16())
+                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
                 let resp_body: serde_json::Value = r.json().await.unwrap_or(serde_json::json!({}));
                 return (status, Json(resp_body)).into_response();
             }
@@ -1128,5 +1131,9 @@ pub async fn bulk_library_operation(
         }
     }
     let _ = user_id;
-    (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"detail": "Not implemented"}))).into_response()
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(serde_json::json!({"detail": "Not implemented"})),
+    )
+        .into_response()
 }

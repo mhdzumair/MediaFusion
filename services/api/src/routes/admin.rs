@@ -9,7 +9,6 @@
 ///   POST   /api/v1/admin/cache/clear
 ///   GET    /api/v1/admin/db/stats
 ///   GET    /api/v1/admin/db/tables
-
 use std::sync::Arc;
 
 use axum::{
@@ -66,7 +65,10 @@ fn validate_admin(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
 }
 
 fn forbidden() -> impl IntoResponse {
-    (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Forbidden"})))
+    (
+        StatusCode::FORBIDDEN,
+        Json(serde_json::json!({"error": "Forbidden"})),
+    )
 }
 
 // ─── Cache patterns map ───────────────────────────────────────────────────────
@@ -295,7 +297,7 @@ pub async fn cache_keys(
         return forbidden().into_response();
     }
 
-    let count = params.count.min(200).max(1) as u32;
+    let count = params.count.clamp(1, 200) as u32;
     let (next_cursor, keys) =
         redis_scan_page(&state.redis, &params.cursor, &params.pattern, count).await;
 
@@ -380,39 +382,35 @@ pub async fn cache_clear(
     .into_response()
 }
 
-pub async fn db_stats(
-    headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn db_stats(headers: HeaderMap, State(state): State<Arc<AppState>>) -> impl IntoResponse {
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden().into_response();
     }
 
-    let (version, database, size, active_conn, torrents, movies, series, usenets, telegrams, users) =
-        tokio::join!(
-            fetch_scalar_str(&state.pool_ro, "SELECT version()"),
-            fetch_scalar_str(&state.pool_ro, "SELECT current_database()"),
-            fetch_scalar_str(
-                &state.pool_ro,
-                "SELECT pg_size_pretty(pg_database_size(current_database()))"
-            ),
-            fetch_scalar_i64(
-                &state.pool_ro,
-                "SELECT count(*) FROM pg_stat_activity WHERE state = 'active'"
-            ),
-            fetch_scalar_i64(&state.pool_ro, "SELECT COUNT(*) FROM torrent_stream"),
-            fetch_scalar_i64(
-                &state.pool_ro,
-                "SELECT COUNT(*) FROM media WHERE media_type = 'movie'"
-            ),
-            fetch_scalar_i64(
-                &state.pool_ro,
-                "SELECT COUNT(*) FROM media WHERE media_type = 'series'"
-            ),
-            fetch_scalar_i64(&state.pool_ro, "SELECT COUNT(*) FROM usenet_stream"),
-            fetch_scalar_i64(&state.pool_ro, "SELECT COUNT(*) FROM telegram_stream"),
-            fetch_scalar_i64(&state.pool_ro, "SELECT COUNT(*) FROM users"),
-        );
+    let (version, database, size, active_conn, torrents, movies, series, usenets, telegrams, users) = tokio::join!(
+        fetch_scalar_str(&state.pool_ro, "SELECT version()"),
+        fetch_scalar_str(&state.pool_ro, "SELECT current_database()"),
+        fetch_scalar_str(
+            &state.pool_ro,
+            "SELECT pg_size_pretty(pg_database_size(current_database()))"
+        ),
+        fetch_scalar_i64(
+            &state.pool_ro,
+            "SELECT count(*) FROM pg_stat_activity WHERE state = 'active'"
+        ),
+        fetch_scalar_i64(&state.pool_ro, "SELECT COUNT(*) FROM torrent_stream"),
+        fetch_scalar_i64(
+            &state.pool_ro,
+            "SELECT COUNT(*) FROM media WHERE media_type = 'movie'"
+        ),
+        fetch_scalar_i64(
+            &state.pool_ro,
+            "SELECT COUNT(*) FROM media WHERE media_type = 'series'"
+        ),
+        fetch_scalar_i64(&state.pool_ro, "SELECT COUNT(*) FROM usenet_stream"),
+        fetch_scalar_i64(&state.pool_ro, "SELECT COUNT(*) FROM telegram_stream"),
+        fetch_scalar_i64(&state.pool_ro, "SELECT COUNT(*) FROM users"),
+    );
 
     Json(DbStatsResponse {
         version,

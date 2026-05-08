@@ -91,9 +91,8 @@ pub async fn get_media_meta(
 
     let result = match parse_meta_id(meta_id) {
         MetaIdKind::Internal(id) => {
-            let sql = format!(
-                "{base_sql} WHERE m.id = $1 AND m.type = upper($2)::mediatype LIMIT 1"
-            );
+            let sql =
+                format!("{base_sql} WHERE m.id = $1 AND m.type = upper($2)::mediatype LIMIT 1");
             sqlx::query_as::<_, MediaMetaRow>(&sql)
                 .bind(id as i32)
                 .bind(media_type)
@@ -116,11 +115,10 @@ pub async fn get_media_meta(
         }
     };
 
-    result
-        .unwrap_or_else(|e| {
-            warn!("meta query [{meta_id}]: {e}");
-            None
-        })
+    result.unwrap_or_else(|e| {
+        warn!("meta query [{meta_id}]: {e}");
+        None
+    })
 }
 
 pub async fn get_genres(pool: &PgPool, media_id: i64) -> Vec<String> {

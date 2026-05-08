@@ -110,7 +110,10 @@ async fn search(
     let params = [
         ("st", "adv"),
         ("sb", "1"),
-        ("fex", "m4v,3gp,mov,divx,xvid,wmv,avi,mpg,mpeg,mp4,mkv,avc,flv,webm"),
+        (
+            "fex",
+            "m4v,3gp,mov,divx,xvid,wmv,avi,mpg,mpeg,mp4,mkv,avc,flv,webm",
+        ),
         ("spamf", "1"),
         ("u", "1"),
         ("gx", "1"),
@@ -149,11 +152,19 @@ async fn search(
         }
     };
 
-    let down_url = json.get("downURL").and_then(|v| v.as_str()).map(str::to_owned);
-    let dl_farm = json.get("dlFarm").and_then(|v| v.as_str()).map(str::to_owned);
-    let dl_port = json
-        .get("dlPort")
-        .and_then(|v| v.as_str().map(str::to_owned).or_else(|| v.as_u64().map(|n| n.to_string())));
+    let down_url = json
+        .get("downURL")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+    let dl_farm = json
+        .get("dlFarm")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+    let dl_port = json.get("dlPort").and_then(|v| {
+        v.as_str()
+            .map(str::to_owned)
+            .or_else(|| v.as_u64().map(|n| n.to_string()))
+    });
 
     let data = match json.get("data").and_then(|d| d.as_array()) {
         Some(arr) => arr,
@@ -173,7 +184,11 @@ async fn search(
 
         let nzb_guid = sha256_prefix_40(&format!("easynews:{file_id}"));
 
-        let extension = item.get("11").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let extension = item
+            .get("11")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let post_title = item
             .get("10")
             .or_else(|| item.get("fn"))
@@ -183,20 +198,28 @@ async fn search(
 
         let filename = if !post_title.is_empty() {
             if !extension.is_empty()
-                && !post_title.to_lowercase().ends_with(&extension.to_lowercase())
+                && !post_title
+                    .to_lowercase()
+                    .ends_with(&extension.to_lowercase())
             {
                 format!("{post_title}{extension}")
             } else {
                 post_title.clone()
             }
         } else {
-            item.get("2").and_then(|v| v.as_str()).unwrap_or("").to_string()
+            item.get("2")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
         };
 
         let size = item
             .get("rawSize")
             .or_else(|| item.get("4"))
-            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .and_then(|v| {
+                v.as_i64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
             .unwrap_or(0);
 
         let group = item.get("6").and_then(|v| v.as_str()).map(str::to_owned);
@@ -214,8 +237,16 @@ async fn search(
             dl_farm: dl_farm.clone(),
             dl_port: dl_port.clone(),
             file_hash,
-            file_title: if post_title.is_empty() { None } else { Some(post_title) },
-            file_extension: if extension.is_empty() { None } else { Some(extension) },
+            file_title: if post_title.is_empty() {
+                None
+            } else {
+                Some(post_title)
+            },
+            file_extension: if extension.is_empty() {
+                None
+            } else {
+                Some(extension)
+            },
         });
     }
 
@@ -265,7 +296,11 @@ fn parse_item(
     }
 
     // Title similarity check
-    let sim_min = if media_type == "movie" { MOVIE_SIMILARITY_MIN } else { SERIES_SIMILARITY_MIN };
+    let sim_min = if media_type == "movie" {
+        MOVIE_SIMILARITY_MIN
+    } else {
+        SERIES_SIMILARITY_MIN
+    };
     let ratio = parser::similarity_ratio(
         parsed.title.as_deref().unwrap_or(&item.filename),
         &meta.title,
@@ -385,6 +420,7 @@ pub async fn scrape_with_credentials(
 
 // ─── URL helpers ──────────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn generate_download_url(
     username: &str,
     password: &str,
@@ -412,7 +448,7 @@ fn generate_download_url(
             let file_path = format!("{hash}{ext_dot}/{title}{ext_dot}");
             let encoded_path: String = file_path
                 .split('/')
-                .map(|seg| url_encode_component(seg))
+                .map(url_encode_component)
                 .collect::<Vec<_>>()
                 .join("/");
             return format!(
@@ -428,7 +464,11 @@ fn generate_download_url(
     // Legacy URL
     let effective_filename = match (filename.is_empty(), file_title, file_extension) {
         (true, Some(title), Some(ext)) => {
-            let ext_dot = if ext.starts_with('.') { ext.to_string() } else { format!(".{ext}") };
+            let ext_dot = if ext.starts_with('.') {
+                ext.to_string()
+            } else {
+                format!(".{ext}")
+            };
             format!("{title}{ext_dot}")
         }
         _ => filename.to_string(),
@@ -457,7 +497,10 @@ fn inject_auth(url: &str, username: &str, password: &str) -> String {
     } else if let Some(rest) = url.strip_prefix("http://") {
         format!("http://{enc_user}:{enc_pass}@{rest}")
     } else {
-        format!("https://{enc_user}:{enc_pass}@{}", url.trim_start_matches('/'))
+        format!(
+            "https://{enc_user}:{enc_pass}@{}",
+            url.trim_start_matches('/')
+        )
     }
 }
 
@@ -475,8 +518,5 @@ fn url_encode_component(s: &str) -> String {
 
 fn sha256_prefix_40(input: &str) -> String {
     let hash = Sha256::digest(input.as_bytes());
-    hash.iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<String>()[..40]
-        .to_string()
+    hash.iter().map(|b| format!("{b:02x}")).collect::<String>()[..40].to_string()
 }

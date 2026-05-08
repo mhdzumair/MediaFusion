@@ -3,7 +3,7 @@
 /// Token format:
 ///   - OAuth token (base64 "client_id:client_secret:refresh_code") — exchange for bearer
 ///   - Private token (raw, not valid base64) — used directly as Bearer
-use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -16,7 +16,11 @@ const OAUTH_URL: &str = "https://api.real-debrid.com/oauth/v2";
 
 enum TokenKind {
     Private(String),
-    OAuth { client_id: String, client_secret: String, code: String },
+    OAuth {
+        client_id: String,
+        client_secret: String,
+        code: String,
+    },
 }
 
 fn decode_token(token: &str) -> TokenKind {
@@ -39,32 +43,51 @@ fn decode_token(token: &str) -> TokenKind {
 
 fn map_error_code(code: i64) -> Option<(&'static str, &'static str)> {
     Some(match code {
-        -1 => ("Real-Debrid internal error", "debrid_service_down_error.mp4"),
-        5  => ("Real-Debrid slow down", "too_many_requests.mp4"),
-        7  => ("Real-Debrid resource not found", "torrent_not_downloaded.mp4"),
-        8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 => ("Real-Debrid authentication error", "invalid_token.mp4"),
-        18 | 23 | 36 => ("Real-Debrid traffic limit reached", "exceed_remote_traffic_limit.mp4"),
+        -1 => (
+            "Real-Debrid internal error",
+            "debrid_service_down_error.mp4",
+        ),
+        5 => ("Real-Debrid slow down", "too_many_requests.mp4"),
+        7 => (
+            "Real-Debrid resource not found",
+            "torrent_not_downloaded.mp4",
+        ),
+        8..=15 => ("Real-Debrid authentication error", "invalid_token.mp4"),
+        18 | 23 | 36 => (
+            "Real-Debrid traffic limit reached",
+            "exceed_remote_traffic_limit.mp4",
+        ),
         21 => ("Real-Debrid too many active downloads", "torrent_limit.mp4"),
         22 => ("Real-Debrid IP not allowed", "ip_not_allowed.mp4"),
         24 => ("Real-Debrid file unavailable", "torrent_not_downloaded.mp4"),
-        33 => ("Real-Debrid torrent already active", "torrent_not_downloaded.mp4"),
+        33 => (
+            "Real-Debrid torrent already active",
+            "torrent_not_downloaded.mp4",
+        ),
         34 => ("Real-Debrid too many requests", "too_many_requests.mp4"),
         35 => ("Real-Debrid infringing file", "content_infringing.mp4"),
-        _ if code >= 16 && code <= 19 => ("Real-Debrid hoster error", "debrid_service_down_error.mp4"),
-        _ if code >= 26 && code <= 32 => ("Real-Debrid transfer error", "transfer_error.mp4"),
+        _ if (16..=19).contains(&code) => {
+            ("Real-Debrid hoster error", "debrid_service_down_error.mp4")
+        }
+        _ if (26..=32).contains(&code) => ("Real-Debrid transfer error", "transfer_error.mp4"),
         _ => return None,
     })
 }
 
 fn check_rd_error(body: &Value) -> Result<(), ProviderError> {
     if let Some(code) = body.get("error_code").and_then(|v| v.as_i64()) {
-        let msg = body.get("error").and_then(|v| v.as_str())
+        let msg = body
+            .get("error")
+            .and_then(|v| v.as_str())
             .or_else(|| body.get("error_details").and_then(|v| v.as_str()))
             .unwrap_or("Unknown error");
         if let Some((label, file)) = map_error_code(code) {
             return Err(ProviderError::api(format!("{label}: {msg}"), file));
         }
-        return Err(ProviderError::api(format!("Real-Debrid error {code}: {msg}"), "api_error.mp4"));
+        return Err(ProviderError::api(
+            format!("Real-Debrid error {code}: {msg}"),
+            "api_error.mp4",
+        ));
     }
     Ok(())
 }
@@ -82,7 +105,10 @@ async fn get_access_token(
         ("client_id", client_id.to_string()),
         ("client_secret", client_secret.to_string()),
         ("code", code.to_string()),
-        ("grant_type", "http://oauth.net/grant_type/device/1.0".to_string()),
+        (
+            "grant_type",
+            "http://oauth.net/grant_type/device/1.0".to_string(),
+        ),
     ];
     if let Some(ip) = user_ip {
         form.push(("ip", ip.to_string()));
@@ -99,7 +125,12 @@ async fn get_access_token(
     body.get("access_token")
         .and_then(|v| v.as_str())
         .map(str::to_string)
-        .ok_or_else(|| ProviderError::api("Missing access_token in OAuth response", "invalid_token.mp4"))
+        .ok_or_else(|| {
+            ProviderError::api(
+                "Missing access_token in OAuth response",
+                "invalid_token.mp4",
+            )
+        })
 }
 
 async fn rd_get(
@@ -134,7 +165,12 @@ async fn rd_post(
         owned_ip = ip.to_string();
         form.push(("ip", &owned_ip));
     }
-    let resp = http.post(url).bearer_auth(bearer).form(&form).send().await?;
+    let resp = http
+        .post(url)
+        .bearer_auth(bearer)
+        .form(&form)
+        .send()
+        .await?;
     if resp.status() == 204 {
         return Ok(Value::Null);
     }
@@ -143,11 +179,7 @@ async fn rd_post(
     Ok(body)
 }
 
-async fn rd_delete(
-    http: &reqwest::Client,
-    bearer: &str,
-    url: &str,
-) -> Result<(), ProviderError> {
+async fn rd_delete(http: &reqwest::Client, bearer: &str, url: &str) -> Result<(), ProviderError> {
     http.delete(url).bearer_auth(bearer).send().await?;
     Ok(())
 }
@@ -189,7 +221,11 @@ async fn find_torrent_by_hash(
         }
         let first_page_unbounded = page == 1 && page_data.len() > PAGE_SIZE as usize;
         for t in &page_data {
-            if t.get("hash").and_then(|v| v.as_str()).map(str::to_lowercase) == Some(info_hash.to_lowercase()) {
+            if t.get("hash")
+                .and_then(|v| v.as_str())
+                .map(str::to_lowercase)
+                == Some(info_hash.to_lowercase())
+            {
                 return Ok(Some(t.clone()));
             }
         }
@@ -205,9 +241,18 @@ async fn get_torrent_info(
     bearer: &str,
     torrent_id: &str,
 ) -> Result<Value, ProviderError> {
-    let body = rd_get(http, bearer, &format!("{BASE_URL}/torrents/info/{torrent_id}"), None).await?;
+    let body = rd_get(
+        http,
+        bearer,
+        &format!("{BASE_URL}/torrents/info/{torrent_id}"),
+        None,
+    )
+    .await?;
     if body.is_null() {
-        return Err(ProviderError::api("Torrent not found", "torrent_not_downloaded.mp4"));
+        return Err(ProviderError::api(
+            "Torrent not found",
+            "torrent_not_downloaded.mp4",
+        ));
     }
     Ok(body)
 }
@@ -218,7 +263,14 @@ async fn add_magnet(
     magnet: &str,
     user_ip: Option<&str>,
 ) -> Result<String, ProviderError> {
-    let body = rd_post(http, bearer, &format!("{BASE_URL}/torrents/addMagnet"), &[("magnet", magnet)], user_ip).await?;
+    let body = rd_post(
+        http,
+        bearer,
+        &format!("{BASE_URL}/torrents/addMagnet"),
+        &[("magnet", magnet)],
+        user_ip,
+    )
+    .await?;
     body.get("id")
         .and_then(|v| v.as_str())
         .map(str::to_string)
@@ -229,15 +281,17 @@ async fn select_files(
     http: &reqwest::Client,
     bearer: &str,
     torrent_id: &str,
-    file_ids: &str,  // "all" or comma-separated IDs
+    file_ids: &str, // "all" or comma-separated IDs
     user_ip: Option<&str>,
 ) -> Result<(), ProviderError> {
     rd_post(
-        http, bearer,
+        http,
+        bearer,
         &format!("{BASE_URL}/torrents/selectFiles/{torrent_id}"),
         &[("files", file_ids)],
         user_ip,
-    ).await?;
+    )
+    .await?;
     Ok(())
 }
 
@@ -246,19 +300,23 @@ async fn delete_torrent(
     bearer: &str,
     torrent_id: &str,
 ) -> Result<(), ProviderError> {
-    rd_delete(http, bearer, &format!("{BASE_URL}/torrents/delete/{torrent_id}")).await
+    rd_delete(
+        http,
+        bearer,
+        &format!("{BASE_URL}/torrents/delete/{torrent_id}"),
+    )
+    .await
 }
 
 /// Delete ALL torrents from the user's Real-Debrid account (implements delete-all-watchlist).
-pub async fn delete_all_torrents(
-    http: &reqwest::Client,
-    token: &str,
-) -> Result<(), ProviderError> {
+pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     let bearer = match decode_token(token) {
         TokenKind::Private(t) => t,
-        TokenKind::OAuth { client_id, client_secret, code } => {
-            get_access_token(http, &client_id, &client_secret, &code, None).await?
-        }
+        TokenKind::OAuth {
+            client_id,
+            client_secret,
+            code,
+        } => get_access_token(http, &client_id, &client_secret, &code, None).await?,
     };
     const PAGE_SIZE: u32 = 100;
     loop {
@@ -284,14 +342,24 @@ async fn unrestrict_link(
     link: &str,
     user_ip: Option<&str>,
 ) -> Result<Value, ProviderError> {
-    rd_post(http, bearer, &format!("{BASE_URL}/unrestrict/link"), &[("link", link)], user_ip).await
+    rd_post(
+        http,
+        bearer,
+        &format!("{BASE_URL}/unrestrict/link"),
+        &[("link", link)],
+        user_ip,
+    )
+    .await
 }
 
-async fn get_active_count(
-    http: &reqwest::Client,
-    bearer: &str,
-) -> Result<Value, ProviderError> {
-    rd_get(http, bearer, &format!("{BASE_URL}/torrents/activeCount"), None).await
+async fn get_active_count(http: &reqwest::Client, bearer: &str) -> Result<Value, ProviderError> {
+    rd_get(
+        http,
+        bearer,
+        &format!("{BASE_URL}/torrents/activeCount"),
+        None,
+    )
+    .await
 }
 
 // ─── Wait for torrent status ──────────────────────────────────────────────────
@@ -342,13 +410,19 @@ async fn add_new_torrent(
         active.get("nb").and_then(|v| v.as_i64()),
     ) {
         if limit == nb {
-            return Err(ProviderError::api("Torrent limit reached", "torrent_limit.mp4"));
+            return Err(ProviderError::api(
+                "Torrent limit reached",
+                "torrent_limit.mp4",
+            ));
         }
     }
     if let Some(list) = active.get("list").and_then(|v| v.as_array()) {
         for item in list {
             if item.as_str().map(|s| s.to_lowercase()) == Some(info_hash.to_lowercase()) {
-                return Err(ProviderError::api("Torrent is already downloading", "torrent_not_downloaded.mp4"));
+                return Err(ProviderError::api(
+                    "Torrent is already downloading",
+                    "torrent_not_downloaded.mp4",
+                ));
             }
         }
     }
@@ -361,22 +435,34 @@ async fn add_new_torrent(
                 Ok(info) => return Ok(info),
                 Err(e) => {
                     let msg = e.to_string().to_lowercase();
-                    let is_unknown = msg.contains("unknown_ressource") || msg.contains("resource not found");
-                    if !is_unknown { return Err(e); }
+                    let is_unknown =
+                        msg.contains("unknown_ressource") || msg.contains("resource not found");
+                    if !is_unknown {
+                        return Err(e);
+                    }
                     if info_attempt < 2 {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(500 * (info_attempt + 1) as u64)).await;
+                        tokio::time::sleep(tokio::time::Duration::from_millis(
+                            500 * (info_attempt + 1) as u64,
+                        ))
+                        .await;
                         continue;
                     }
                     if create_attempt < 1 {
                         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                         break;
                     }
-                    return Err(ProviderError::api("Failed to fetch torrent info from Real-Debrid", "transfer_error.mp4"));
+                    return Err(ProviderError::api(
+                        "Failed to fetch torrent info from Real-Debrid",
+                        "transfer_error.mp4",
+                    ));
                 }
             }
         }
     }
-    Err(ProviderError::api("Failed to add magnet to Real-Debrid", "transfer_error.mp4"))
+    Err(ProviderError::api(
+        "Failed to add magnet to Real-Debrid",
+        "transfer_error.mp4",
+    ))
 }
 
 // ─── File selection helpers ───────────────────────────────────────────────────
@@ -420,10 +506,7 @@ fn select_video_file_index(
 
     // 3. For series: match S##E## in path
     if let (Some(s), Some(e)) = (season, episode) {
-        let patterns = [
-            format!("s{:02}e{:02}", s, e),
-            format!("{:01}x{:02}", s, e),
-        ];
+        let patterns = [format!("s{:02}e{:02}", s, e), format!("{:01}x{:02}", s, e)];
         if let Some(idx) = files.iter().position(|f| {
             let lower = f.path.to_lowercase();
             patterns.iter().any(|p| lower.contains(p))
@@ -434,7 +517,8 @@ fn select_video_file_index(
 
     // 4. Fallback: largest video file (mimics Python's `get_main_file`)
     let video_exts = ["mkv", "mp4", "avi", "webm", "mov", "flv", "wmv", "m4v"];
-    files.iter()
+    files
+        .iter()
         .enumerate()
         .filter(|(_, f)| {
             let ext = std::path::Path::new(&f.path)
@@ -451,6 +535,7 @@ fn select_video_file_index(
 
 // ─── create_download_link ─────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 async fn create_download_link(
     http: &reqwest::Client,
     bearer: &str,
@@ -472,12 +557,20 @@ async fn create_download_link(
     let links: Vec<String> = torrent_info
         .get("links")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
 
-    let torrent_id = torrent_info.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    let torrent_id = torrent_info
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
 
-    let selected_idx = select_video_file_index(&files, links.len(), filename, season, episode, file_index);
+    let selected_idx =
+        select_video_file_index(&files, links.len(), filename, season, episode, file_index);
 
     let selected_files: Vec<&RdFile> = files.iter().filter(|f| f.selected == Some(1)).collect();
     let relevant_file = files.get(selected_idx);
@@ -490,35 +583,68 @@ async fn create_download_link(
         delete_torrent(http, bearer, torrent_id).await.ok();
 
         let new_id = add_magnet(http, bearer, magnet, user_ip).await?;
-        let info_wait = wait_for_status(http, bearer, &new_id, "waiting_files_selection", max_retries, retry_interval).await?;
+        let info_wait = wait_for_status(
+            http,
+            bearer,
+            &new_id,
+            "waiting_files_selection",
+            max_retries,
+            retry_interval,
+        )
+        .await?;
 
-        let files2: Vec<RdFile> = info_wait.get("files")
+        let files2: Vec<RdFile> = info_wait
+            .get("files")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
-        let file_id = files2.get(selected_idx).map(|f| f.id.to_string()).unwrap_or_else(|| "1".to_string());
+        let file_id = files2
+            .get(selected_idx)
+            .map(|f| f.id.to_string())
+            .unwrap_or_else(|| "1".to_string());
         select_files(http, bearer, &new_id, &file_id, user_ip).await?;
-        let downloaded = wait_for_status(http, bearer, &new_id, "downloaded", max_retries, retry_interval).await?;
+        let downloaded = wait_for_status(
+            http,
+            bearer,
+            &new_id,
+            "downloaded",
+            max_retries,
+            retry_interval,
+        )
+        .await?;
         (downloaded, 0usize)
     } else {
-        let link_idx = selected_files.iter().position(|f| {
-            relevant_file.map(|rf| std::ptr::eq(*f, rf)).unwrap_or(false)
-        }).unwrap_or(0);
+        let link_idx = selected_files
+            .iter()
+            .position(|f| {
+                relevant_file
+                    .map(|rf| std::ptr::eq(*f, rf))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(0);
         (torrent_info, link_idx)
     };
 
     let links: Vec<String> = torrent_info
         .get("links")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
 
-    let link = links.get(link_idx)
-        .ok_or_else(|| ProviderError::api("No download link available", "torrent_not_downloaded.mp4"))?;
+    let link = links.get(link_idx).ok_or_else(|| {
+        ProviderError::api("No download link available", "torrent_not_downloaded.mp4")
+    })?;
 
     let unrestricted = unrestrict_link(http, bearer, link, user_ip).await?;
     check_rd_error(&unrestricted)?;
 
-    let mime = unrestricted.get("mimeType").and_then(|v| v.as_str()).unwrap_or("");
+    let mime = unrestricted
+        .get("mimeType")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if !mime.is_empty() && !mime.starts_with("video") {
         return Err(ProviderError::api(
             format!("Requested file is not a video: {mime}"),
@@ -530,7 +656,12 @@ async fn create_download_link(
         .get("download")
         .and_then(|v| v.as_str())
         .map(str::to_string)
-        .ok_or_else(|| ProviderError::api("Missing download URL in unrestrict response", "api_error.mp4"))
+        .ok_or_else(|| {
+            ProviderError::api(
+                "Missing download URL in unrestrict response",
+                "api_error.mp4",
+            )
+        })
 }
 
 // ─── Public entry point ───────────────────────────────────────────────────────
@@ -538,6 +669,7 @@ async fn create_download_link(
 /// Resolve a direct video URL from Real-Debrid for the given torrent.
 ///
 /// `announce_list` items are the tracker URLs (from the DB stream row).
+#[allow(clippy::too_many_arguments)]
 pub async fn get_video_url(
     http: &reqwest::Client,
     token: &str,
@@ -555,13 +687,16 @@ pub async fn get_video_url(
     // Resolve bearer token
     let bearer = match decode_token(token) {
         TokenKind::Private(t) => t,
-        TokenKind::OAuth { client_id, client_secret, code } => {
-            get_access_token(http, &client_id, &client_secret, &code, user_ip).await?
-        }
+        TokenKind::OAuth {
+            client_id,
+            client_secret,
+            code,
+        } => get_access_token(http, &client_id, &client_secret, &code, user_ip).await?,
     };
 
     // Build magnet from info_hash + trackers
-    let trackers: String = announce_list.iter()
+    let trackers: String = announce_list
+        .iter()
         .map(|t| format!("&tr={}", urlencoding::encode(t)))
         .collect();
     let magnet = format!("magnet:?xt=urn:btih:{info_hash}{trackers}");
@@ -569,7 +704,10 @@ pub async fn get_video_url(
     // Check if torrent already exists in user's RD library
     let torrent_info = match find_torrent_by_hash(http, &bearer, info_hash).await? {
         Some(existing) => {
-            let status = existing.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            let status = existing
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if matches!(status, "magnet_error" | "error" | "virus" | "dead") {
                 let torrent_id = existing.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 delete_torrent(http, &bearer, torrent_id).await.ok();
@@ -581,15 +719,36 @@ pub async fn get_video_url(
         None => add_new_torrent(http, &bearer, &magnet, info_hash, user_ip).await?,
     };
 
-    let torrent_id = torrent_info.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let status = torrent_info.get("status").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let torrent_id = torrent_info
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let status = torrent_info
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
 
     // Ensure files are selected and downloading
     let torrent_info = if !matches!(status.as_str(), "queued" | "downloading" | "downloaded") {
-        let info_ws = wait_for_status(http, &bearer, &torrent_id, "waiting_files_selection", MAX_RETRIES, RETRY_INTERVAL).await?;
-        let tid = info_ws.get("id").and_then(|v| v.as_str()).unwrap_or(&torrent_id).to_string();
-        select_files(http, &bearer, &tid, "all", user_ip).await
-            .map_err(|e| {
+        let info_ws = wait_for_status(
+            http,
+            &bearer,
+            &torrent_id,
+            "waiting_files_selection",
+            MAX_RETRIES,
+            RETRY_INTERVAL,
+        )
+        .await?;
+        let tid = info_ws
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&torrent_id)
+            .to_string();
+        select_files(http, &bearer, &tid, "all", user_ip)
+            .await
+            .inspect_err(|_e| {
                 let tid2 = tid.clone();
                 let http2 = http.clone();
                 let bearer2 = bearer.clone();
@@ -597,11 +756,26 @@ pub async fn get_video_url(
                 tokio::spawn(async move {
                     delete_torrent(&http2, &bearer2, &tid2).await.ok();
                 });
-                e
             })?;
-        wait_for_status(http, &bearer, &tid, "downloaded", MAX_RETRIES, RETRY_INTERVAL).await?
+        wait_for_status(
+            http,
+            &bearer,
+            &tid,
+            "downloaded",
+            MAX_RETRIES,
+            RETRY_INTERVAL,
+        )
+        .await?
     } else if status != "downloaded" {
-        wait_for_status(http, &bearer, &torrent_id, "downloaded", MAX_RETRIES, RETRY_INTERVAL).await?
+        wait_for_status(
+            http,
+            &bearer,
+            &torrent_id,
+            "downloaded",
+            MAX_RETRIES,
+            RETRY_INTERVAL,
+        )
+        .await?
     } else {
         torrent_info
     };
@@ -618,5 +792,6 @@ pub async fn get_video_url(
         user_ip,
         MAX_RETRIES,
         RETRY_INTERVAL,
-    ).await
+    )
+    .await
 }

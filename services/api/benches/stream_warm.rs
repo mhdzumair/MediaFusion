@@ -15,9 +15,7 @@ fn bench_decode_blob(c: &mut Criterion) {
     });
     let blob = encode_blob(&data).unwrap();
 
-    c.bench_function("decode_blob_50_torrents", |b| {
-        b.iter(|| decode_blob(&blob))
-    });
+    c.bench_function("decode_blob_50_torrents", |b| b.iter(|| decode_blob(&blob)));
 }
 
 criterion_group!(benches, bench_decode_blob);

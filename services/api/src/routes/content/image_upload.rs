@@ -6,7 +6,6 @@
 /// Routes (prefix /api/v1/import):
 ///   POST /images/upload   → upload_image
 ///   GET  /images/{key}    → get_uploaded_image
-
 use std::sync::Arc;
 
 use axum::{
@@ -88,7 +87,10 @@ async fn proxy(
     let mut req = state.http.request(method, &url);
     for (key, val) in headers.iter() {
         let name = key.as_str().to_lowercase();
-        if matches!(name.as_str(), "authorization" | "accept" | "content-type" | "content-length") {
+        if matches!(
+            name.as_str(),
+            "authorization" | "accept" | "content-type" | "content-length"
+        ) {
             if let Ok(v) = val.to_str() {
                 req = req.header(key.as_str(), v);
             }
@@ -109,7 +111,12 @@ async fn proxy(
                 .unwrap_or("application/octet-stream")
                 .to_string();
             let bytes = resp.bytes().await.unwrap_or_default();
-            (status, [(axum::http::header::CONTENT_TYPE, ct)], Body::from(bytes)).into_response()
+            (
+                status,
+                [(axum::http::header::CONTENT_TYPE, ct)],
+                Body::from(bytes),
+            )
+                .into_response()
         }
         Err(e) => {
             tracing::error!("image_upload proxy error: {e}");
@@ -131,7 +138,11 @@ pub async fn upload_image(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     // Forward content-type (multipart boundary is embedded)
@@ -139,7 +150,15 @@ pub async fn upload_image(
         .await
         .unwrap_or_default()
         .to_vec();
-    proxy(&state, reqwest::Method::POST, "/api/v1/import/images/upload", &q, &headers, body).await
+    proxy(
+        &state,
+        reqwest::Method::POST,
+        "/api/v1/import/images/upload",
+        &q,
+        &headers,
+        body,
+    )
+    .await
 }
 
 /// GET /api/v1/import/images/{key}

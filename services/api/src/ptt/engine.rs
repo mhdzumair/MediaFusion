@@ -32,10 +32,22 @@ impl Opts {
             ..Default::default()
         }
     }
-    pub fn with_skip(mut self, v: bool) -> Self { self.skip_if_already_found = v; self }
-    pub fn with_remove(mut self, v: bool) -> Self { self.remove = v; self }
-    pub fn with_skip_from_title(mut self, v: bool) -> Self { self.skip_from_title = v; self }
-    pub fn with_skip_if_first(mut self, v: bool) -> Self { self.skip_if_first = v; self }
+    pub fn with_skip(mut self, v: bool) -> Self {
+        self.skip_if_already_found = v;
+        self
+    }
+    pub fn with_remove(mut self, v: bool) -> Self {
+        self.remove = v;
+        self
+    }
+    pub fn with_skip_from_title(mut self, v: bool) -> Self {
+        self.skip_from_title = v;
+        self
+    }
+    pub fn with_skip_if_first(mut self, v: bool) -> Self {
+        self.skip_if_first = v;
+        self
+    }
 }
 
 // ── Per-match bookkeeping ─────────────────────────────────────────────────────
@@ -65,8 +77,7 @@ pub struct Ctx {
 
 // ── Transformer type ─────────────────────────────────────────────────────────
 
-pub type Transformer =
-    Arc<dyn Fn(&str, Option<&FieldValue>) -> Option<FieldValue> + Send + Sync>;
+pub type Transformer = Arc<dyn Fn(&str, Option<&FieldValue>) -> Option<FieldValue> + Send + Sync>;
 
 // ── Handler type ──────────────────────────────────────────────────────────────
 
@@ -77,7 +88,7 @@ pub type Handler = Box<dyn Fn(&mut Ctx) -> Option<HandlerReturn> + Send + Sync>;
 /// Compile a PCRE2 regex (panics at startup if pattern is invalid).
 pub fn compile(pattern: &str) -> Regex {
     RegexBuilder::new()
-        .ucp(true)     // Unicode character properties for \w, \d, etc.
+        .ucp(true) // Unicode character properties for \w, \d, etc.
         .utf(true)
         .build(pattern)
         .unwrap_or_else(|e| panic!("bad regex `{pattern}`: {e}"))
@@ -96,7 +107,8 @@ pub fn compile_i(pattern: &str) -> Regex {
 // ── Helper: extract text from a PCRE2 match ──────────────────────────────────
 
 fn caps_to_str(caps: &Captures, index: usize) -> Option<String> {
-    caps.get(index).map(|m| String::from_utf8_lossy(m.as_bytes()).into_owned())
+    caps.get(index)
+        .map(|m| String::from_utf8_lossy(m.as_bytes()).into_owned())
 }
 
 // ── Regex used to detect "before-title" bracket content ──────────────────────
@@ -134,7 +146,11 @@ pub fn regex_handler(
 
         // skipIfFirst: skip when this match precedes every other known match
         if opts.skip_if_first {
-            let other: Vec<_> = ctx.matched.iter().filter(|(k, _)| k.as_str() != name).collect();
+            let other: Vec<_> = ctx
+                .matched
+                .iter()
+                .filter(|(k, _)| k.as_str() != name)
+                .collect();
             if !other.is_empty() && other.iter().all(|(_, v)| match_start < v.match_index) {
                 return None;
             }
@@ -153,7 +169,7 @@ pub fn regex_handler(
             .ok()
             .flatten()
             .and_then(|caps| caps_to_str(&caps, 1))
-            .map_or(false, |bracket_content| bracket_content.contains(&raw_match));
+            .is_some_and(|bracket_content| bracket_content.contains(&raw_match));
 
         Some(HandlerReturn {
             raw_match,
@@ -171,11 +187,15 @@ pub struct Parser {
 }
 
 impl Default for Parser {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Parser {
-    pub fn new() -> Self { Self { handlers: vec![] } }
+    pub fn new() -> Self {
+        Self { handlers: vec![] }
+    }
 
     pub fn add(&mut self, name: &'static str, re: Regex, tr: Transformer, opts: Opts) {
         self.handlers.push(regex_handler(name, re, tr, opts));
@@ -195,7 +215,9 @@ impl Parser {
         let mut end_of_title = ctx.title.len();
 
         for handler in &self.handlers {
-            let Some(ret) = handler(&mut ctx) else { continue; };
+            let Some(ret) = handler(&mut ctx) else {
+                continue;
+            };
             let idx = ret.match_index;
             let raw_len = ret.raw_match.len();
 
@@ -214,9 +236,15 @@ impl Parser {
             }
         }
 
-        ctx.result.entry("episodes".into()).or_insert(FieldValue::Ints(vec![]));
-        ctx.result.entry("seasons".into()).or_insert(FieldValue::Ints(vec![]));
-        ctx.result.entry("languages".into()).or_insert(FieldValue::Strs(vec![]));
+        ctx.result
+            .entry("episodes".into())
+            .or_insert(FieldValue::Ints(vec![]));
+        ctx.result
+            .entry("seasons".into())
+            .or_insert(FieldValue::Ints(vec![]));
+        ctx.result
+            .entry("languages".into())
+            .or_insert(FieldValue::Strs(vec![]));
 
         let title_str = &ctx.title[..end_of_title.min(ctx.title.len())];
         ctx.result.insert(

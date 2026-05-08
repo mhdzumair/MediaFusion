@@ -10,7 +10,6 @@
 ///   GET    /suggestions/{suggestion_id}    → get_suggestion
 ///   DELETE /suggestions/{suggestion_id}    → delete_suggestion
 ///   PUT    /suggestions/{suggestion_id}/review → review_suggestion      (moderator)
-
 use std::sync::Arc;
 
 use axum::{
@@ -105,20 +104,22 @@ pub struct SuggestionReviewRequest {
     pub review_notes: Option<String>,
 }
 
-fn default_page() -> i64 { 1 }
-fn default_page_size() -> i64 { 20 }
+fn default_page() -> i64 {
+    1
+}
+fn default_page_size() -> i64 {
+    20
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Check if a user is a moderator or admin (role stored as TEXT in DB).
 async fn is_moderator(pool: &sqlx::PgPool, user_id: i64) -> bool {
-    let role: Option<String> = sqlx::query_scalar(
-        "SELECT role::text FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+    let role: Option<String> = sqlx::query_scalar("SELECT role::text FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
     matches!(role.as_deref(), Some("moderator") | Some("admin"))
 }
 
@@ -130,15 +131,40 @@ async fn get_username(pool: &sqlx::PgPool, user_id: i64) -> Option<String> {
         .unwrap_or(None)
 }
 
+#[allow(clippy::type_complexity)]
 async fn build_suggestion_json(
     pool: &sqlx::PgPool,
     row: &(
-        String, i64, i64, String, Option<String>, String, Option<String>, String,
-        Option<String>, Option<String>, Option<String>, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>,
+        String,
+        i64,
+        i64,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<Utc>,
+        Option<chrono::DateTime<Utc>>,
     ),
 ) -> serde_json::Value {
-    let (id, user_id, media_id, field_name, current_value, suggested_value, reason, status,
-         reviewed_by, review_notes, _updated_at, created_at, reviewed_at) = row;
+    let (
+        id,
+        user_id,
+        media_id,
+        field_name,
+        current_value,
+        suggested_value,
+        reason,
+        status,
+        reviewed_by,
+        review_notes,
+        _updated_at,
+        created_at,
+        reviewed_at,
+    ) = row;
 
     let username = get_username(pool, *user_id).await;
     let reviewer_name = if let Some(rb) = reviewed_by.as_deref() {
@@ -152,26 +178,24 @@ async fn build_suggestion_json(
     };
 
     // Media context
-    let media_info: Option<(String, String, Option<i32>)> = sqlx::query_as(
-        "SELECT title, type::text, year FROM media WHERE id = $1",
-    )
-    .bind(media_id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+    let media_info: Option<(String, String, Option<i32>)> =
+        sqlx::query_as("SELECT title, type::text, year FROM media WHERE id = $1")
+            .bind(media_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
 
     let (media_title, media_type, media_year) = media_info
         .map(|(t, mt, y)| (Some(t), Some(mt), y))
         .unwrap_or((None, None, None));
 
     // User contribution info
-    let contrib: Option<(i32, String)> = sqlx::query_as(
-        "SELECT contribution_points, contribution_level FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+    let contrib: Option<(i32, String)> =
+        sqlx::query_as("SELECT contribution_points, contribution_level FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
 
     json!({
         "id": id,
@@ -207,25 +231,53 @@ pub async fn create_suggestion(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     // Validate field_name
     const EDITABLE_FIELDS: &[&str] = &[
-        "title", "description", "year", "poster", "background", "runtime",
-        "genres", "country", "language", "aka_titles", "cast", "directors",
-        "writers", "imdb_id", "tmdb_id", "tvdb_id", "mal_id", "kitsu_id",
-        "catalogs", "parental_certificate", "nudity_status",
+        "title",
+        "description",
+        "year",
+        "poster",
+        "background",
+        "runtime",
+        "genres",
+        "country",
+        "language",
+        "aka_titles",
+        "cast",
+        "directors",
+        "writers",
+        "imdb_id",
+        "tmdb_id",
+        "tvdb_id",
+        "mal_id",
+        "kitsu_id",
+        "catalogs",
+        "parental_certificate",
+        "nudity_status",
     ];
     if !EDITABLE_FIELDS.contains(&body.field_name.as_str()) {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"detail": format!("Invalid field_name: {}", body.field_name)})),
-        ).into_response();
+        )
+            .into_response();
     }
 
     if body.suggested_value.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({"detail": "suggested_value must not be empty"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "suggested_value must not be empty"})),
+        )
+            .into_response();
     }
 
     // Check media exists
@@ -236,7 +288,11 @@ pub async fn create_suggestion(
         .unwrap_or(false);
 
     if !media_exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Metadata not found"})),
+        )
+            .into_response();
     }
 
     // Check pending limit (default 10)
@@ -272,7 +328,8 @@ pub async fn create_suggestion(
         return (
             StatusCode::CONFLICT,
             Json(json!({"detail": "You already have a pending suggestion for this field"})),
-        ).into_response();
+        )
+            .into_response();
     }
 
     // Check auto-approval: moderators/admins auto-approve
@@ -300,13 +357,12 @@ pub async fn create_suggestion(
     .unwrap_or_default();
 
     let username = get_username(&state.pool, user_id).await;
-    let contrib: Option<(i32, String)> = sqlx::query_as(
-        "SELECT contribution_points, contribution_level FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None);
+    let contrib: Option<(i32, String)> =
+        sqlx::query_as("SELECT contribution_points, contribution_level FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
 
     (
         StatusCode::CREATED,
@@ -328,10 +384,12 @@ pub async fn create_suggestion(
             "user_contribution_level": contrib.as_ref().map(|(_, l)| l.as_str()),
             "user_contribution_points": contrib.as_ref().map(|(p, _)| *p),
         })),
-    ).into_response()
+    )
+        .into_response()
 }
 
 /// GET /api/v1/suggestions
+#[allow(clippy::type_complexity)]
 pub async fn list_my_suggestions(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -339,7 +397,13 @@ pub async fn list_my_suggestions(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let page = params.page.max(1);
@@ -356,52 +420,75 @@ pub async fn list_my_suggestions(
         .await
         .unwrap_or(0);
 
-        let rows: Vec<(String, i64, i64, String, Option<String>, String, Option<String>, String,
-            Option<String>, Option<String>, Option<String>, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>)> =
-            sqlx::query_as(
-                r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
+        let rows: Vec<(
+            String,
+            i64,
+            i64,
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            chrono::DateTime<Utc>,
+            Option<chrono::DateTime<Utc>>,
+        )> = sqlx::query_as(
+            r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
                           reason, status, reviewed_by, review_notes, NULL::text,
                           created_at, reviewed_at
                    FROM metadata_suggestion
                    WHERE user_id = $1 AND status = $2
                    ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC
                    LIMIT $3 OFFSET $4"#,
-            )
-            .bind(user_id)
-            .bind(st)
-            .bind(page_size)
-            .bind(offset)
-            .fetch_all(&state.pool_ro)
-            .await
-            .unwrap_or_default();
+        )
+        .bind(user_id)
+        .bind(st)
+        .bind(page_size)
+        .bind(offset)
+        .fetch_all(&state.pool_ro)
+        .await
+        .unwrap_or_default();
 
         (total, rows)
     } else {
-        let total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_one(&state.pool_ro)
-        .await
-        .unwrap_or(0);
+        let total: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1")
+                .bind(user_id)
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0);
 
-        let rows: Vec<(String, i64, i64, String, Option<String>, String, Option<String>, String,
-            Option<String>, Option<String>, Option<String>, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>)> =
-            sqlx::query_as(
-                r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
+        let rows: Vec<(
+            String,
+            i64,
+            i64,
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            chrono::DateTime<Utc>,
+            Option<chrono::DateTime<Utc>>,
+        )> = sqlx::query_as(
+            r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
                           reason, status, reviewed_by, review_notes, NULL::text,
                           created_at, reviewed_at
                    FROM metadata_suggestion
                    WHERE user_id = $1
                    ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC
                    LIMIT $2 OFFSET $3"#,
-            )
-            .bind(user_id)
-            .bind(page_size)
-            .bind(offset)
-            .fetch_all(&state.pool_ro)
-            .await
-            .unwrap_or_default();
+        )
+        .bind(user_id)
+        .bind(page_size)
+        .bind(offset)
+        .fetch_all(&state.pool_ro)
+        .await
+        .unwrap_or_default();
 
         (total, rows)
     };
@@ -428,7 +515,13 @@ pub async fn get_my_contribution_info(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let row: Option<(i32, String, i32, i32)> = sqlx::query_as(
@@ -439,9 +532,8 @@ pub async fn get_my_contribution_info(
     .await
     .unwrap_or(None);
 
-    let (points, level, meta_approved, stream_approved) = row
-        .map(|(p, l, ma, sa)| (p, l, ma, sa))
-        .unwrap_or((0, "new".to_string(), 0, 0));
+    let (points, level, meta_approved, stream_approved) =
+        row.unwrap_or((0, "new".to_string(), 0, 0));
 
     let is_mod = is_moderator(&state.pool_ro, user_id).await;
 
@@ -466,6 +558,7 @@ pub async fn get_my_contribution_info(
 }
 
 /// GET /api/v1/suggestions/pending  (moderator)
+#[allow(clippy::type_complexity)]
 pub async fn list_pending_suggestions(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -473,7 +566,13 @@ pub async fn list_pending_suggestions(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     if !is_moderator(&state.pool_ro, user_id).await {
@@ -499,9 +598,24 @@ pub async fn list_pending_suggestions(
         )
     };
 
-    let (total, rows): (i64, Vec<(String, i64, i64, String, Option<String>, String, Option<String>, String,
-        Option<String>, Option<String>, Option<String>, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>)>) =
-    if status_filter == "all" {
+    let (total, rows): (
+        i64,
+        Vec<(
+            String,
+            i64,
+            i64,
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            chrono::DateTime<Utc>,
+            Option<chrono::DateTime<Utc>>,
+        )>,
+    ) = if status_filter == "all" {
         let t: i64 = sqlx::query_scalar(&total_sql)
             .bind(params.field_name.as_deref())
             .fetch_one(&state.pool_ro)
@@ -557,7 +671,13 @@ pub async fn bulk_review_suggestions(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     if !is_moderator(&state.pool, user_id).await {
@@ -568,7 +688,13 @@ pub async fn bulk_review_suggestions(
     let new_status = match action {
         "approve" => "approved",
         "reject" => "rejected",
-        _ => return (StatusCode::BAD_REQUEST, Json(json!({"detail": "action must be approve or reject"}))).into_response(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "action must be approve or reject"})),
+            )
+                .into_response()
+        }
     };
 
     let mut approved = 0i32;
@@ -576,17 +702,19 @@ pub async fn bulk_review_suggestions(
     let mut skipped = 0i32;
 
     for sid in &suggestion_ids {
-        let current_status: Option<String> = sqlx::query_scalar(
-            "SELECT status FROM metadata_suggestion WHERE id = $1::uuid",
-        )
-        .bind(sid)
-        .fetch_optional(&state.pool)
-        .await
-        .unwrap_or(None);
+        let current_status: Option<String> =
+            sqlx::query_scalar("SELECT status FROM metadata_suggestion WHERE id = $1::uuid")
+                .bind(sid)
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None);
 
         match current_status.as_deref() {
             Some("pending") => {}
-            _ => { skipped += 1; continue; }
+            _ => {
+                skipped += 1;
+                continue;
+            }
         }
 
         let result = sqlx::query(
@@ -603,9 +731,15 @@ pub async fn bulk_review_suggestions(
 
         match result {
             Ok(r) if r.rows_affected() > 0 => {
-                if new_status == "approved" { approved += 1; } else { rejected += 1; }
+                if new_status == "approved" {
+                    approved += 1;
+                } else {
+                    rejected += 1;
+                }
             }
-            _ => { skipped += 1; }
+            _ => {
+                skipped += 1;
+            }
         }
     }
 
@@ -619,54 +753,101 @@ pub async fn get_suggestion_stats(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let is_mod = is_moderator(&state.pool_ro, user_id).await;
 
     let (total, pending, approved, auto_approved, rejected, approved_today, rejected_today) =
-    if is_mod {
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM metadata_suggestion")
-            .fetch_one(&state.pool_ro).await.unwrap_or(0);
-        let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'pending'")
-            .fetch_one(&state.pool_ro).await.unwrap_or(0);
-        let approved: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'approved'")
-            .fetch_one(&state.pool_ro).await.unwrap_or(0);
-        let auto_approved: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'auto_approved'")
-            .fetch_one(&state.pool_ro).await.unwrap_or(0);
-        let rejected: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'rejected'")
-            .fetch_one(&state.pool_ro).await.unwrap_or(0);
-        let approved_today: i64 = sqlx::query_scalar(
+        if is_mod {
+            let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM metadata_suggestion")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0);
+            let pending: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'pending'",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+            let approved: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'approved'",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+            let auto_approved: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'auto_approved'",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+            let rejected: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'rejected'",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+            let approved_today: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM metadata_suggestion WHERE status IN ('approved','auto_approved') AND reviewed_at >= NOW()::date",
         ).fetch_one(&state.pool_ro).await.unwrap_or(0);
-        let rejected_today: i64 = sqlx::query_scalar(
+            let rejected_today: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'rejected' AND reviewed_at >= NOW()::date",
         ).fetch_one(&state.pool_ro).await.unwrap_or(0);
-        (total, pending, approved, auto_approved, rejected, approved_today, rejected_today)
-    } else {
-        (0i64, 0i64, 0i64, 0i64, 0i64, 0i64, 0i64)
-    };
+            (
+                total,
+                pending,
+                approved,
+                auto_approved,
+                rejected,
+                approved_today,
+                rejected_today,
+            )
+        } else {
+            (0i64, 0i64, 0i64, 0i64, 0i64, 0i64, 0i64)
+        };
 
     let user_pending: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1 AND status = 'pending'",
-    ).bind(user_id).fetch_one(&state.pool_ro).await.unwrap_or(0);
-    let user_approved: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1 AND status = 'approved'",
-    ).bind(user_id).fetch_one(&state.pool_ro).await.unwrap_or(0);
-    let user_auto_approved: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1 AND status = 'auto_approved'",
-    ).bind(user_id).fetch_one(&state.pool_ro).await.unwrap_or(0);
-    let user_rejected: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1 AND status = 'rejected'",
-    ).bind(user_id).fetch_one(&state.pool_ro).await.unwrap_or(0);
-
-    let contrib: Option<(i32, String)> = sqlx::query_as(
-        "SELECT contribution_points, contribution_level FROM users WHERE id = $1",
     )
     .bind(user_id)
-    .fetch_optional(&state.pool_ro)
+    .fetch_one(&state.pool_ro)
     .await
-    .unwrap_or(None);
+    .unwrap_or(0);
+    let user_approved: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1 AND status = 'approved'",
+    )
+    .bind(user_id)
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(0);
+    let user_auto_approved: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1 AND status = 'auto_approved'",
+    )
+    .bind(user_id)
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(0);
+    let user_rejected: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1 AND status = 'rejected'",
+    )
+    .bind(user_id)
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(0);
+
+    let contrib: Option<(i32, String)> =
+        sqlx::query_as("SELECT contribution_points, contribution_level FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None);
 
     Json(json!({
         "total": total,
@@ -687,6 +868,7 @@ pub async fn get_suggestion_stats(
 }
 
 /// GET /api/v1/suggestions/{suggestion_id}
+#[allow(clippy::type_complexity)]
 pub async fn get_suggestion(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -694,30 +876,58 @@ pub async fn get_suggestion(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let row: Option<(String, i64, i64, String, Option<String>, String, Option<String>, String,
-        Option<String>, Option<String>, Option<String>, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>)> =
-        sqlx::query_as(
-            r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
+    let row: Option<(
+        String,
+        i64,
+        i64,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<Utc>,
+        Option<chrono::DateTime<Utc>>,
+    )> = sqlx::query_as(
+        r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
                       reason, status, reviewed_by, review_notes, NULL::text, created_at, reviewed_at
                FROM metadata_suggestion WHERE id = $1::uuid"#,
-        )
-        .bind(&suggestion_id)
-        .fetch_optional(&state.pool_ro)
-        .await
-        .unwrap_or(None);
+    )
+    .bind(&suggestion_id)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .unwrap_or(None);
 
     let row = match row {
         Some(r) => r,
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Suggestion not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Suggestion not found"})),
+            )
+                .into_response()
+        }
     };
 
     let suggestion_user_id = row.1;
     let is_mod = is_moderator(&state.pool_ro, user_id).await;
     if suggestion_user_id != user_id && !is_mod {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Access denied"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Access denied"})),
+        )
+            .into_response();
     }
 
     Json(build_suggestion_json(&state.pool_ro, &row).await).into_response()
@@ -731,7 +941,13 @@ pub async fn delete_suggestion(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let row: Option<(String,)> = sqlx::query_as(
@@ -744,9 +960,19 @@ pub async fn delete_suggestion(
     .unwrap_or(None);
 
     match row {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Suggestion not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Suggestion not found"})),
+            )
+                .into_response()
+        }
         Some((ref st,)) if st != "pending" => {
-            return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Can only delete pending suggestions"}))).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Can only delete pending suggestions"})),
+            )
+                .into_response();
         }
         _ => {}
     }
@@ -762,6 +988,7 @@ pub async fn delete_suggestion(
 }
 
 /// PUT /api/v1/suggestions/{suggestion_id}/review  (moderator)
+#[allow(clippy::type_complexity)]
 pub async fn review_suggestion(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -770,7 +997,13 @@ pub async fn review_suggestion(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     if !is_moderator(&state.pool, user_id).await {
@@ -780,21 +1013,36 @@ pub async fn review_suggestion(
     let new_status = match body.action.as_str() {
         "approve" => "approved",
         "reject" => "rejected",
-        _ => return (StatusCode::BAD_REQUEST, Json(json!({"detail": "action must be approve or reject"}))).into_response(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "action must be approve or reject"})),
+            )
+                .into_response()
+        }
     };
 
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT status FROM metadata_suggestion WHERE id = $1::uuid",
-    )
-    .bind(&suggestion_id)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None);
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT status FROM metadata_suggestion WHERE id = $1::uuid")
+            .bind(&suggestion_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
 
     match row {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Suggestion not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Suggestion not found"})),
+            )
+                .into_response()
+        }
         Some((ref st,)) if st != "pending" => {
-            return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Suggestion has already been reviewed"}))).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Suggestion has already been reviewed"})),
+            )
+                .into_response();
         }
         _ => {}
     }
@@ -812,17 +1060,29 @@ pub async fn review_suggestion(
     .await
     .ok();
 
-    let updated_row: Option<(String, i64, i64, String, Option<String>, String, Option<String>, String,
-        Option<String>, Option<String>, Option<String>, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>)> =
-        sqlx::query_as(
-            r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
+    let updated_row: Option<(
+        String,
+        i64,
+        i64,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<Utc>,
+        Option<chrono::DateTime<Utc>>,
+    )> = sqlx::query_as(
+        r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
                       reason, status, reviewed_by, review_notes, NULL::text, created_at, reviewed_at
                FROM metadata_suggestion WHERE id = $1::uuid"#,
-        )
-        .bind(&suggestion_id)
-        .fetch_optional(&state.pool)
-        .await
-        .unwrap_or(None);
+    )
+    .bind(&suggestion_id)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
 
     match updated_row {
         Some(row) => Json(build_suggestion_json(&state.pool, &row).await).into_response(),

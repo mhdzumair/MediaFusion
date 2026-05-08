@@ -69,9 +69,8 @@ pub async fn resolve_user_data(
             .await
             .unwrap_or_else(|| Value::Object(Default::default()));
     }
-    decrypt_user_data(secret_str, key)
-        .unwrap_or_else(|e| {
-            tracing::warn!("resolve_user_data: {e}");
-            Value::Object(Default::default())
-        })
+    decrypt_user_data(secret_str, key).unwrap_or_else(|e| {
+        tracing::warn!("resolve_user_data: {e}");
+        Value::Object(Default::default())
+    })
 }

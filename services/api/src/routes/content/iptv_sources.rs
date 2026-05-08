@@ -6,7 +6,6 @@
 ///   PATCH  /sources/{source_id}  → update_iptv_source
 ///   DELETE /sources/{source_id}  → delete_iptv_source
 ///   POST   /sources/{source_id}/sync → sync_iptv_source
-
 use std::sync::Arc;
 
 use axum::{
@@ -89,9 +88,19 @@ struct SourceResponse {
 // ─── DB row helper ────────────────────────────────────────────────────────────
 
 type SourceRow = (
-    i64, String, String, bool, bool, bool, bool,
-    Option<DateTime<Utc>>, Option<serde_json::Value>,
-    bool, DateTime<Utc>, Option<String>, Option<String>,
+    i64,
+    String,
+    String,
+    bool,
+    bool,
+    bool,
+    bool,
+    Option<DateTime<Utc>>,
+    Option<serde_json::Value>,
+    bool,
+    DateTime<Utc>,
+    Option<String>,
+    Option<String>,
 );
 
 fn row_to_response(r: SourceRow) -> SourceResponse {
@@ -115,13 +124,16 @@ fn row_to_response(r: SourceRow) -> SourceResponse {
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 /// GET /api/v1/import/sources
-pub async fn list_iptv_sources(
-    headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
-) -> Response {
+pub async fn list_iptv_sources(headers: HeaderMap, State(state): State<Arc<AppState>>) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let rows: Vec<SourceRow> = sqlx::query_as(
@@ -154,7 +166,13 @@ pub async fn get_iptv_source(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let row: Option<SourceRow> = sqlx::query_as(
@@ -171,7 +189,11 @@ pub async fn get_iptv_source(
 
     match row {
         Some(r) => Json(row_to_response(r)).into_response(),
-        None => (StatusCode::NOT_FOUND, Json(json!({"detail": "Source not found"}))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Source not found"})),
+        )
+            .into_response(),
     }
 }
 
@@ -184,7 +206,13 @@ pub async fn update_iptv_source(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     // Verify ownership
@@ -198,7 +226,11 @@ pub async fn update_iptv_source(
     .unwrap_or(false);
 
     if !exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Source not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Source not found"})),
+        )
+            .into_response();
     }
 
     if let Some(ref name) = body.name {
@@ -267,21 +299,27 @@ pub async fn delete_iptv_source(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let result = sqlx::query(
-        "DELETE FROM iptv_source WHERE id = $1 AND user_id = $2",
-    )
-    .bind(source_id)
-    .bind(user_id)
-    .execute(&state.pool)
-    .await;
+    let result = sqlx::query("DELETE FROM iptv_source WHERE id = $1 AND user_id = $2")
+        .bind(source_id)
+        .bind(user_id)
+        .execute(&state.pool)
+        .await;
 
     match result {
-        Ok(r) if r.rows_affected() == 0 => {
-            (StatusCode::NOT_FOUND, Json(json!({"detail": "Source not found"}))).into_response()
-        }
+        Ok(r) if r.rows_affected() == 0 => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Source not found"})),
+        )
+            .into_response(),
         Ok(_) => Json(json!({"status": "success", "message": "Source deleted"})).into_response(),
         Err(e) => {
             tracing::error!("delete_iptv_source db error: {e}");
@@ -299,7 +337,13 @@ pub async fn sync_iptv_source(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     // Verify ownership before proxying
@@ -313,7 +357,11 @@ pub async fn sync_iptv_source(
     .unwrap_or(false);
 
     if !exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Source not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Source not found"})),
+        )
+            .into_response();
     }
 
     let base = match &state.config.python_proxy_url {
@@ -329,10 +377,13 @@ pub async fn sync_iptv_source(
 
     let url = format!("{base}/api/v1/import/sources/{source_id}/sync");
 
-    let req = state
-        .http
-        .post(&url)
-        .header("authorization", headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or(""));
+    let req = state.http.post(&url).header(
+        "authorization",
+        headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or(""),
+    );
 
     match req.send().await {
         Ok(resp) => {

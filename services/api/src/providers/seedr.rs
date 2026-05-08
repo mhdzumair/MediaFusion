@@ -6,7 +6,6 @@
 /// Token format accepted:
 ///   - PAT string directly
 ///   - Base64-encoded JSON: {"access_token": "...", ...}
-
 use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -42,12 +41,18 @@ async fn api_get(http: &Client, token: &str, path: &str) -> Result<Value, Provid
     handle_response(resp).await
 }
 
-async fn api_post(http: &Client, token: &str, path: &str, body: &Value) -> Result<Value, ProviderError> {
+async fn api_post(
+    http: &Client,
+    token: &str,
+    path: &str,
+    body: &Value,
+) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
     let resp = http.post(&url).bearer_auth(token).json(body).send().await?;
     handle_response(resp).await
 }
 
+#[allow(dead_code)]
 async fn api_delete(http: &Client, token: &str, path: &str) -> Result<(), ProviderError> {
     let url = format!("{BASE_URL}{path}");
     let resp = http.delete(&url).bearer_auth(token).send().await?;
@@ -64,27 +69,36 @@ async fn api_delete(http: &Client, token: &str, path: &str) -> Result<(), Provid
 async fn handle_response(resp: reqwest::Response) -> Result<Value, ProviderError> {
     let status = resp.status();
     match status.as_u16() {
-        401 => return Err(ProviderError::api(
-            "Seedr token is expired or invalid. Please reconnect your Seedr account.",
-            "invalid_token.mp4",
-        )),
-        402 | 403 => return Err(ProviderError::api(
-            "Seedr premium plan required for this operation.",
-            "debrid_service_down_error.mp4",
-        )),
-        429 => return Err(ProviderError::api(
-            "Seedr rate limit exceeded. Please try again later.",
-            "api_error.mp4",
-        )),
-        500..=599 => return Err(ProviderError::api(
-            "Seedr service is temporarily unavailable.",
-            "debrid_service_down_error.mp4",
-        )),
+        401 => {
+            return Err(ProviderError::api(
+                "Seedr token is expired or invalid. Please reconnect your Seedr account.",
+                "invalid_token.mp4",
+            ))
+        }
+        402 | 403 => {
+            return Err(ProviderError::api(
+                "Seedr premium plan required for this operation.",
+                "debrid_service_down_error.mp4",
+            ))
+        }
+        429 => {
+            return Err(ProviderError::api(
+                "Seedr rate limit exceeded. Please try again later.",
+                "api_error.mp4",
+            ))
+        }
+        500..=599 => {
+            return Err(ProviderError::api(
+                "Seedr service is temporarily unavailable.",
+                "debrid_service_down_error.mp4",
+            ))
+        }
         _ => {}
     }
     let body: Value = resp.json().await.unwrap_or_default();
     if !status.is_success() {
-        let msg = body["error_description"].as_str()
+        let msg = body["error_description"]
+            .as_str()
             .or_else(|| body["error"].as_str())
             .unwrap_or("Seedr API error");
         return Err(ProviderError::api(msg.to_string(), "api_error.mp4"));
@@ -112,8 +126,15 @@ fn extract_info_hash_from_magnet(magnet: &str) -> Option<String> {
     let prefix = "urn:btih:";
     let pos = lower.find(prefix)?;
     let rest = &magnet[pos + prefix.len()..];
-    let hash: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
-    if hash.len() >= 32 { Some(hash.to_lowercase()) } else { None }
+    let hash: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric())
+        .collect();
+    if hash.len() >= 32 {
+        Some(hash.to_lowercase())
+    } else {
+        None
+    }
 }
 
 // ─── Task helpers ─────────────────────────────────────────────────────────────
@@ -129,7 +150,8 @@ fn task_info_hash(task: &Value) -> Option<String> {
         return Some(h.to_lowercase());
     }
     // Extract from magnet URL in various possible locations
-    let magnet = task["url"].as_str()
+    let magnet = task["url"]
+        .as_str()
         .or_else(|| task["params"]["url"].as_str())
         .or_else(|| task["torrent_url"].as_str());
     if let Some(m) = magnet {
@@ -146,14 +168,19 @@ fn task_is_complete(task: &Value) -> bool {
     }
     // Some API versions use progress 0.0-1.0
     if let Some(p) = task["progress"].as_f64() {
-        if p >= 1.0 { return true; }
+        if p >= 1.0 {
+            return true;
+        }
     }
     false
 }
 
 fn task_is_downloading(task: &Value) -> bool {
     let status = task["status"].as_str().unwrap_or("");
-    matches!(status, "downloading" | "queued" | "active" | "pending" | "waiting")
+    matches!(
+        status,
+        "downloading" | "queued" | "active" | "pending" | "waiting"
+    )
 }
 
 // ─── File collection ──────────────────────────────────────────────────────────
@@ -178,14 +205,22 @@ fn collect_files(v: &Value, out: &mut Vec<(String, i64, i64)>) {
     }
 }
 
-async fn task_files(http: &Client, token: &str, task_id: i64) -> Result<Vec<(String, i64, i64)>, ProviderError> {
+async fn task_files(
+    http: &Client,
+    token: &str,
+    task_id: i64,
+) -> Result<Vec<(String, i64, i64)>, ProviderError> {
     let resp = api_get(http, token, &format!("/tasks/{task_id}/contents")).await?;
     let mut files = Vec::new();
     collect_files(&resp, &mut files);
     Ok(files)
 }
 
-async fn folder_files_recursive(http: &Client, token: &str, folder_id: i64) -> Result<Vec<(String, i64, i64)>, ProviderError> {
+async fn folder_files_recursive(
+    http: &Client,
+    token: &str,
+    folder_id: i64,
+) -> Result<Vec<(String, i64, i64)>, ProviderError> {
     let resp = api_get(http, token, &format!("/fs/folder/{folder_id}/contents")).await?;
     let mut files = Vec::new();
     collect_files(&resp, &mut files);
@@ -230,7 +265,10 @@ fn select_video<'a>(
     // 2. Filename substring match
     if let Some(fname) = filename {
         let fname_lower = fname.to_lowercase();
-        if let Some(f) = videos.iter().find(|(n, _, _)| n.to_lowercase().contains(&fname_lower)) {
+        if let Some(f) = videos
+            .iter()
+            .find(|(n, _, _)| n.to_lowercase().contains(&fname_lower))
+        {
             return Some(f);
         }
     }
@@ -259,7 +297,8 @@ fn select_video<'a>(
 async fn file_url(http: &Client, token: &str, file_id: i64) -> Result<String, ProviderError> {
     // Try video presentation first (streaming URL)
     if let Ok(resp) = api_get(http, token, &format!("/presentations/file/{file_id}/video")).await {
-        if let Some(url) = resp["url"].as_str()
+        if let Some(url) = resp["url"]
+            .as_str()
             .or_else(|| resp["stream_url"].as_str())
             .or_else(|| resp["link"]["url"].as_str())
         {
@@ -269,13 +308,16 @@ async fn file_url(http: &Client, token: &str, file_id: i64) -> Result<String, Pr
 
     // Fall back to direct download URL
     let resp = api_get(http, token, &format!("/download/file/{file_id}/url")).await?;
-    resp["url"].as_str()
+    resp["url"]
+        .as_str()
         .or_else(|| resp["download_url"].as_str())
         .map(|s| s.to_string())
-        .ok_or_else(|| ProviderError::api(
-            "Seedr returned no download URL for this file.",
-            "api_error.mp4",
-        ))
+        .ok_or_else(|| {
+            ProviderError::api(
+                "Seedr returned no download URL for this file.",
+                "api_error.mp4",
+            )
+        })
 }
 
 // ─── Internal resolution ──────────────────────────────────────────────────────
@@ -290,11 +332,12 @@ async fn resolve_from_task(
     episode: Option<i32>,
 ) -> Result<String, ProviderError> {
     let files = task_files(http, token, task_id).await?;
-    let sel = select_video(&files, filename, file_index, season, episode)
-        .ok_or_else(|| ProviderError::api(
+    let sel = select_video(&files, filename, file_index, season, episode).ok_or_else(|| {
+        ProviderError::api(
             "No matching video file found in Seedr torrent.",
             "no_matching_file.mp4",
-        ))?;
+        )
+    })?;
     file_url(http, token, sel.2).await
 }
 
@@ -308,16 +351,18 @@ async fn resolve_from_folder(
     episode: Option<i32>,
 ) -> Result<String, ProviderError> {
     let files = folder_files_recursive(http, token, folder_id).await?;
-    let sel = select_video(&files, filename, file_index, season, episode)
-        .ok_or_else(|| ProviderError::api(
+    let sel = select_video(&files, filename, file_index, season, episode).ok_or_else(|| {
+        ProviderError::api(
             "No matching video file found in Seedr folder.",
             "no_matching_file.mp4",
-        ))?;
+        )
+    })?;
     file_url(http, token, sel.2).await
 }
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 pub async fn get_video_url(
     http: &Client,
     token: &str,
@@ -347,9 +392,11 @@ pub async fn get_video_url(
             ));
         }
         if task_is_complete(task) {
-            let task_id = task["id"].as_i64()
+            let task_id = task["id"]
+                .as_i64()
                 .ok_or_else(|| ProviderError::api("Invalid task ID from Seedr", "api_error.mp4"))?;
-            return resolve_from_task(http, &token, task_id, filename, file_index, season, episode).await;
+            return resolve_from_task(http, &token, task_id, filename, file_index, season, episode)
+                .await;
         }
     }
 
@@ -359,50 +406,69 @@ pub async fn get_video_url(
             for folder in folders {
                 let name = folder["name"].as_str().unwrap_or("").to_lowercase();
                 if name == hash {
-                    let folder_id = folder["id"].as_i64()
-                        .ok_or_else(|| ProviderError::api("Invalid folder ID from Seedr", "api_error.mp4"))?;
-                    return resolve_from_folder(http, &token, folder_id, filename, file_index, season, episode).await;
+                    let folder_id = folder["id"].as_i64().ok_or_else(|| {
+                        ProviderError::api("Invalid folder ID from Seedr", "api_error.mp4")
+                    })?;
+                    return resolve_from_folder(
+                        http, &token, folder_id, filename, file_index, season, episode,
+                    )
+                    .await;
                 }
             }
         }
     }
 
     // 3. Add new torrent task
-    let add_resp = api_post(http, &token, "/tasks", &json!({"url": magnet, "name": hash}))
-        .await
-        .map_err(|e| ProviderError::api(
+    let add_resp = api_post(
+        http,
+        &token,
+        "/tasks",
+        &json!({"url": magnet, "name": hash}),
+    )
+    .await
+    .map_err(|e| {
+        ProviderError::api(
             format!("Failed to add torrent to Seedr: {e}"),
             "transfer_error.mp4",
-        ))?;
+        )
+    })?;
 
     // Handle space/queue errors
     if let Some(err) = add_resp["error"].as_str() {
-        let msg = match err {
-            "not_enough_space" | "not_enough_space_added_to_wishlist" =>
-                return Err(ProviderError::api("Not enough storage space in your Seedr account.", "not_enough_space.mp4")),
-            "queue_full" | "queue_full_added_to_wishlist" =>
-                return Err(ProviderError::api(
+        let msg =
+            match err {
+                "not_enough_space" | "not_enough_space_added_to_wishlist" => {
+                    return Err(ProviderError::api(
+                        "Not enough storage space in your Seedr account.",
+                        "not_enough_space.mp4",
+                    ))
+                }
+                "queue_full" | "queue_full_added_to_wishlist" => return Err(ProviderError::api(
                     "Seedr download queue is full. Please wait for current downloads to finish.",
                     "queue_full.mp4",
                 )),
-            _ => format!("Seedr rejected the torrent: {err}"),
-        };
+                _ => format!("Seedr rejected the torrent: {err}"),
+            };
         return Err(ProviderError::api(msg, "transfer_error.mp4"));
     }
 
-    let task_id = add_resp["id"].as_i64()
+    let task_id = add_resp["id"]
+        .as_i64()
         .or_else(|| add_resp["task"]["id"].as_i64())
         .or_else(|| add_resp["data"]["id"].as_i64())
-        .ok_or_else(|| ProviderError::api(
-            "Seedr did not return a task ID after adding torrent.",
-            "transfer_error.mp4",
-        ))?;
+        .ok_or_else(|| {
+            ProviderError::api(
+                "Seedr did not return a task ID after adding torrent.",
+                "transfer_error.mp4",
+            )
+        })?;
 
     // 4. Poll for completion
     for _ in 0..MAX_RETRIES {
         tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_SECS)).await;
 
-        let task_resp = api_get(http, &token, &format!("/tasks/{task_id}")).await
+        let task_resp = api_get(http, &token, &format!("/tasks/{task_id}"))
+            .await
             .unwrap_or_default();
 
         let status = task_resp["status"].as_str().unwrap_or("");
@@ -413,7 +479,8 @@ pub async fn get_video_url(
             ));
         }
         if task_is_complete(&task_resp) {
-            return resolve_from_task(http, &token, task_id, filename, file_index, season, episode).await;
+            return resolve_from_task(http, &token, task_id, filename, file_index, season, episode)
+                .await;
         }
     }
 

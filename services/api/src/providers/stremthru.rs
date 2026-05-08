@@ -67,9 +67,10 @@ fn select_video_file(
     // 2. By filename
     if let Some(name) = filename {
         let name_lower = name.to_lowercase();
-        if let Some(&idx) = video_indices.iter().find(|&&i| {
-            files[i].0.to_lowercase().contains(&name_lower)
-        }) {
+        if let Some(&idx) = video_indices
+            .iter()
+            .find(|&&i| files[i].0.to_lowercase().contains(&name_lower))
+        {
             return idx;
         }
     }
@@ -112,7 +113,10 @@ struct StremThruConfig {
 
 enum StremThruAuth {
     /// Store-level auth: X-StremThru-Store-Name + X-StremThru-Store-Authorization
-    Store { store_name: String, store_token: String },
+    Store {
+        store_name: String,
+        store_token: String,
+    },
     /// Proxy auth: Proxy-Authorization: Basic {token}
     Proxy(String),
 }
@@ -131,7 +135,10 @@ fn parse_config(token: &str) -> StremThruConfig {
     let auth = if let Some(colon_pos) = auth_str.find(':') {
         let store_name = auth_str[..colon_pos].to_string();
         let store_token = auth_str[colon_pos + 1..].to_string();
-        StremThruAuth::Store { store_name, store_token }
+        StremThruAuth::Store {
+            store_name,
+            store_token,
+        }
     } else {
         StremThruAuth::Proxy(auth_str)
     };
@@ -143,10 +150,7 @@ fn parse_config(token: &str) -> StremThruConfig {
 
 fn check_stremthru_error(body: &Value) -> Result<(), ProviderError> {
     if let Some(err) = body.get("error") {
-        let code = err
-            .get("code")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let code = err.get("code").and_then(|v| v.as_str()).unwrap_or("");
         let (msg, file) = match code {
             "FORBIDDEN" | "UNAUTHORIZED" => {
                 ("Invalid Token / Permission Denied", "invalid_token.mp4")
@@ -171,17 +175,15 @@ fn check_stremthru_error(body: &Value) -> Result<(), ProviderError> {
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
-fn apply_auth<'a>(
-    builder: reqwest::RequestBuilder,
-    auth: &'a StremThruAuth,
-) -> reqwest::RequestBuilder {
+fn apply_auth(builder: reqwest::RequestBuilder, auth: &StremThruAuth) -> reqwest::RequestBuilder {
     match auth {
-        StremThruAuth::Store { store_name, store_token } => builder
-            .header("X-StremThru-Store-Name", store_name)
-            .header(
-                "X-StremThru-Store-Authorization",
-                format!("Bearer {store_token}"),
-            ),
+        StremThruAuth::Store {
+            store_name,
+            store_token,
+        } => builder.header("X-StremThru-Store-Name", store_name).header(
+            "X-StremThru-Store-Authorization",
+            format!("Bearer {store_token}"),
+        ),
         StremThruAuth::Proxy(token) => {
             builder.header("Proxy-Authorization", format!("Basic {token}"))
         }
@@ -317,9 +319,7 @@ async fn wait_for_downloaded(
         }
     }
     Err(ProviderError::api(
-        format!(
-            "StremThru magnet did not reach 'downloaded' status after {max_retries} retries"
-        ),
+        format!("StremThru magnet did not reach 'downloaded' status after {max_retries} retries"),
         "torrent_not_downloaded.mp4",
     ))
 }
@@ -327,6 +327,7 @@ async fn wait_for_downloaded(
 // ─── Public entry points ──────────────────────────────────────────────────────
 
 /// Resolve a direct video URL from StremThru for the given torrent.
+#[allow(clippy::too_many_arguments)]
 pub async fn get_video_url(
     http: &reqwest::Client,
     token: &str,
@@ -357,7 +358,10 @@ pub async fn get_video_url(
     let add_resp = add_magnet(http, &cfg, &magnet).await?;
 
     let data = add_resp.get("data").ok_or_else(|| {
-        ProviderError::api("Missing data in StremThru add magnet response", "api_error.mp4")
+        ProviderError::api(
+            "Missing data in StremThru add magnet response",
+            "api_error.mp4",
+        )
     })?;
 
     let magnet_id = data
@@ -369,10 +373,7 @@ pub async fn get_video_url(
         .to_string();
 
     // Check status — may already be downloaded
-    let status = data
-        .get("status")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let status = data.get("status").and_then(|v| v.as_str()).unwrap_or("");
 
     let torrent_data = if status.eq_ignore_ascii_case("downloaded") {
         add_resp.clone()
@@ -414,17 +415,17 @@ pub async fn get_video_url(
         .get("link")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            ProviderError::api("Selected file has no link in StremThru response", "api_error.mp4")
+            ProviderError::api(
+                "Selected file has no link in StremThru response",
+                "api_error.mp4",
+            )
         })?;
 
     generate_link(http, &cfg, file_link).await
 }
 
 /// Delete ALL magnets from the user's StremThru store.
-pub async fn delete_all_torrents(
-    http: &reqwest::Client,
-    token: &str,
-) -> Result<(), ProviderError> {
+pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     let cfg = parse_config(token);
     let items = list_magnets(http, &cfg).await?;
 

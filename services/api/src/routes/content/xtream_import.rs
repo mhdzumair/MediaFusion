@@ -3,7 +3,6 @@
 /// Routes (prefix /api/v1/import):
 ///   POST /xtream/analyze  → analyze_xtream
 ///   POST /xtream          → import_xtream
-
 use std::sync::Arc;
 
 use axum::{
@@ -122,14 +121,26 @@ pub async fn analyze_xtream(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     let body = axum::body::to_bytes(req.into_body(), 1024 * 1024)
         .await
         .unwrap_or_default()
         .to_vec();
-    proxy(&state, reqwest::Method::POST, "/api/v1/import/xtream/analyze", &q, &headers, body).await
+    proxy(
+        &state,
+        reqwest::Method::POST,
+        "/api/v1/import/xtream/analyze",
+        &q,
+        &headers,
+        body,
+    )
+    .await
 }
 
 /// POST /api/v1/import/xtream
@@ -139,12 +150,24 @@ pub async fn import_xtream(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     let body = axum::body::to_bytes(req.into_body(), 2 * 1024 * 1024)
         .await
         .unwrap_or_default()
         .to_vec();
-    proxy(&state, reqwest::Method::POST, "/api/v1/import/xtream", &q, &headers, body).await
+    proxy(
+        &state,
+        reqwest::Method::POST,
+        "/api/v1/import/xtream",
+        &q,
+        &headers,
+        body,
+    )
+    .await
 }

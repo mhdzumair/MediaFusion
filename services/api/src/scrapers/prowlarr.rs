@@ -142,8 +142,7 @@ pub async fn scrape(
             continue;
         };
 
-        let query = if !imdb_id.is_empty()
-            && (search_type == "movie" || search_type == "tvsearch")
+        let query = if !imdb_id.is_empty() && (search_type == "movie" || search_type == "tvsearch")
         {
             format!("{{IMDbId:{imdb_id}}}")
         } else {

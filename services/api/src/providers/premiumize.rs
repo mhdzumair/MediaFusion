@@ -3,7 +3,7 @@
 /// Token format:
 ///   - Base64-encoded OAuth token → decode to JSON `{"access_token": "..."}` → Bearer
 ///   - Private API key → appended as `?apikey={token}` to every request
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use serde_json::Value;
 
 use super::ProviderError;
@@ -80,7 +80,10 @@ async fn pm_post_form(
 
 fn check_status_code(status: reqwest::StatusCode) -> Result<(), ProviderError> {
     if status == 403 {
-        return Err(ProviderError::api("Invalid Premiumize token", "invalid_token.mp4"));
+        return Err(ProviderError::api(
+            "Invalid Premiumize token",
+            "invalid_token.mp4",
+        ));
     }
     Ok(())
 }
@@ -88,7 +91,10 @@ fn check_status_code(status: reqwest::StatusCode) -> Result<(), ProviderError> {
 fn check_pm_error(body: &Value) -> Result<(), ProviderError> {
     if let Some(status) = body.get("status").and_then(|v| v.as_str()) {
         if status != "success" {
-            let msg = body.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+            let msg = body
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown error");
             return Err(ProviderError::api(
                 format!("Premiumize API error: {msg}"),
                 "transfer_error.mp4",
@@ -120,14 +126,22 @@ fn select_video_file(
     }
 
     // Collect video file indices
-    let video_indices: Vec<usize> = files.iter().enumerate().filter_map(|(i, (name, _))| {
-        let ext = std::path::Path::new(name.as_str())
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-        if video_exts.contains(&ext.as_str()) { Some(i) } else { None }
-    }).collect();
+    let video_indices: Vec<usize> = files
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (name, _))| {
+            let ext = std::path::Path::new(name.as_str())
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if video_exts.contains(&ext.as_str()) {
+                Some(i)
+            } else {
+                None
+            }
+        })
+        .collect();
 
     // 2. Filename substring match
     if let Some(fname) = filename {
@@ -157,7 +171,8 @@ fn select_video_file(
     }
 
     // 4. Largest video
-    video_indices.iter()
+    video_indices
+        .iter()
         .max_by_key(|&&i| files[i].1)
         .copied()
         .unwrap_or(0)
@@ -171,7 +186,8 @@ async fn check_cache(
     info_hash: &str,
 ) -> Result<bool, ProviderError> {
     let body = pm_get(http, kind, "/cache/check", &[("items[]", info_hash)]).await?;
-    Ok(body.get("response")
+    Ok(body
+        .get("response")
         .and_then(|v| v.as_array())
         .and_then(|a| a.first())
         .and_then(|v| v.as_bool())
@@ -188,7 +204,8 @@ async fn direct_download(
         kind,
         "/transfer/directdl",
         vec![("src".to_string(), magnet.to_string())],
-    ).await
+    )
+    .await
 }
 
 fn select_from_directdl_content(
@@ -198,11 +215,18 @@ fn select_from_directdl_content(
     season: Option<i32>,
     episode: Option<i32>,
 ) -> Option<String> {
-    let files: Vec<(String, i64)> = content.iter().map(|f| {
-        let path = f.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let size = f.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
-        (path, size)
-    }).collect();
+    let files: Vec<(String, i64)> = content
+        .iter()
+        .map(|f| {
+            let path = f
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let size = f.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
+            (path, size)
+        })
+        .collect();
 
     if files.is_empty() {
         return None;
@@ -210,7 +234,8 @@ fn select_from_directdl_content(
 
     let idx = select_video_file(&files, filename, file_index, season, episode);
     let entry = &content[idx];
-    entry.get("stream_link")
+    entry
+        .get("stream_link")
         .or_else(|| entry.get("link"))
         .and_then(|v| v.as_str())
         .map(str::to_string)
@@ -238,11 +263,14 @@ async fn get_or_create_folder(
         kind,
         "/folder/create",
         vec![("name".to_string(), name.to_string())],
-    ).await?;
+    )
+    .await?;
     resp.get("id")
         .and_then(|v| v.as_str())
         .map(str::to_string)
-        .ok_or_else(|| ProviderError::api("Failed to create Premiumize folder", "transfer_error.mp4"))
+        .ok_or_else(|| {
+            ProviderError::api("Failed to create Premiumize folder", "transfer_error.mp4")
+        })
 }
 
 async fn create_transfer(
@@ -259,7 +287,8 @@ async fn create_transfer(
             ("src".to_string(), magnet.to_string()),
             ("folder_id".to_string(), folder_id.to_string()),
         ],
-    ).await
+    )
+    .await
 }
 
 async fn wait_for_transfer(
@@ -280,7 +309,10 @@ async fn wait_for_transfer(
                     }
                     // Error states
                     if status == "error" || status == "deleted" {
-                        let msg = t.get("message").and_then(|v| v.as_str()).unwrap_or("Transfer error");
+                        let msg = t
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Transfer error");
                         return Err(ProviderError::api(
                             format!("Premiumize transfer error: {msg}"),
                             "transfer_error.mp4",
@@ -306,7 +338,8 @@ async fn get_folder_contents(
     folder_id: &str,
 ) -> Result<Vec<Value>, ProviderError> {
     let body = pm_get(http, kind, "/folder/list", &[("id", folder_id)]).await?;
-    Ok(body.get("content")
+    Ok(body
+        .get("content")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default())
@@ -320,25 +353,36 @@ fn select_from_folder_content(
     episode: Option<i32>,
 ) -> Option<String> {
     // Filter to video files by mime_type
-    let video_files: Vec<&Value> = content.iter().filter(|f| {
-        f.get("mime_type")
-            .and_then(|v| v.as_str())
-            .map(|m| m.contains("video"))
-            .unwrap_or(false)
-    }).collect();
+    let video_files: Vec<&Value> = content
+        .iter()
+        .filter(|f| {
+            f.get("mime_type")
+                .and_then(|v| v.as_str())
+                .map(|m| m.contains("video"))
+                .unwrap_or(false)
+        })
+        .collect();
 
     if video_files.is_empty() {
         return None;
     }
 
-    let pairs: Vec<(String, i64)> = video_files.iter().map(|f| {
-        let name = f.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let size = f.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
-        (name, size)
-    }).collect();
+    let pairs: Vec<(String, i64)> = video_files
+        .iter()
+        .map(|f| {
+            let name = f
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let size = f.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
+            (name, size)
+        })
+        .collect();
 
     let idx = select_video_file(&pairs, filename, file_index, season, episode);
-    video_files.get(idx)
+    video_files
+        .get(idx)
         .and_then(|f| f.get("link"))
         .and_then(|v| v.as_str())
         .map(str::to_string)
@@ -347,6 +391,7 @@ fn select_from_folder_content(
 // ─── Public entry points ──────────────────────────────────────────────────────
 
 /// Resolve a direct video URL from Premiumize for the given torrent.
+#[allow(clippy::too_many_arguments)]
 pub async fn get_video_url(
     http: &reqwest::Client,
     token: &str,
@@ -364,7 +409,8 @@ pub async fn get_video_url(
     let kind = decode_token(token);
 
     // Build magnet
-    let trackers: String = announce_list.iter()
+    let trackers: String = announce_list
+        .iter()
         .map(|t| format!("&tr={}", urlencoding::encode(t)))
         .collect();
     let magnet = format!("magnet:?xt=urn:btih:{info_hash}{trackers}");
@@ -375,11 +421,16 @@ pub async fn get_video_url(
     if cached {
         let body = direct_download(http, &kind, &magnet).await?;
         if let Some(content) = body.get("content").and_then(|v| v.as_array()) {
-            if let Some(url) = select_from_directdl_content(content, filename, file_index, season, episode) {
+            if let Some(url) =
+                select_from_directdl_content(content, filename, file_index, season, episode)
+            {
                 return Ok(url);
             }
         }
-        return Err(ProviderError::api("No video file found in Premiumize direct download", "torrent_not_downloaded.mp4"));
+        return Err(ProviderError::api(
+            "No video file found in Premiumize direct download",
+            "torrent_not_downloaded.mp4",
+        ));
     }
 
     // Not cached — use transfer flow
@@ -388,12 +439,15 @@ pub async fn get_video_url(
 
     // If the transfer already has content (immediate), skip waiting
     if let Some(content) = transfer_resp.get("content").and_then(|v| v.as_array()) {
-        if let Some(url) = select_from_directdl_content(content, filename, file_index, season, episode) {
+        if let Some(url) =
+            select_from_directdl_content(content, filename, file_index, season, episode)
+        {
             return Ok(url);
         }
     }
 
-    let transfer_id = transfer_resp.get("id")
+    let transfer_id = transfer_resp
+        .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ProviderError::api("No transfer id from Premiumize", "transfer_error.mp4"))?
         .to_string();
@@ -401,19 +455,21 @@ pub async fn get_video_url(
     wait_for_transfer(http, &kind, &transfer_id, MAX_RETRIES, RETRY_SECS).await?;
 
     let content = get_folder_contents(http, &kind, &folder_id).await?;
-    select_from_folder_content(&content, filename, file_index, season, episode)
-        .ok_or_else(|| ProviderError::api("No video file found in Premiumize folder", "torrent_not_downloaded.mp4"))
+    select_from_folder_content(&content, filename, file_index, season, episode).ok_or_else(|| {
+        ProviderError::api(
+            "No video file found in Premiumize folder",
+            "torrent_not_downloaded.mp4",
+        )
+    })
 }
 
 /// Delete ALL folders (and their contents) from the Premiumize account.
-pub async fn delete_all_torrents(
-    http: &reqwest::Client,
-    token: &str,
-) -> Result<(), ProviderError> {
+pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     let kind = decode_token(token);
 
     let body = pm_get(http, &kind, "/folder/list", &[]).await?;
-    let folders = body.get("content")
+    let folders = body
+        .get("content")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -425,7 +481,9 @@ pub async fn delete_all_torrents(
                 &kind,
                 "/folder/delete",
                 vec![("id".to_string(), id.to_string())],
-            ).await.ok();
+            )
+            .await
+            .ok();
         }
     }
 

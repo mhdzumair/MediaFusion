@@ -52,16 +52,17 @@ pub async fn scrape(
     };
 
     let categories: &[&str] = if is_series {
-        &["5000", "5010", "5020", "5030", "5040", "5045", "5050", "5060", "5070"]
+        &[
+            "5000", "5010", "5020", "5030", "5040", "5045", "5050", "5060", "5070",
+        ]
     } else {
-        &["2000", "2010", "2020", "2030", "2040", "2045", "2050", "2060", "2070"]
+        &[
+            "2000", "2010", "2020", "2030", "2040", "2045", "2050", "2060", "2070",
+        ]
     };
 
     // Build params with repeated Category[] keys
-    let mut params: Vec<(&str, String)> = vec![
-        ("apikey", api_key.to_string()),
-        ("Query", query),
-    ];
+    let mut params: Vec<(&str, String)> = vec![("apikey", api_key.to_string()), ("Query", query)];
     for cat in categories {
         params.push(("Category[]", cat.to_string()));
     }
@@ -138,9 +139,7 @@ fn parse_result(
                 .and_then(parser::extract_info_hash)
         })?;
 
-    let source = item
-        .tracker
-        .unwrap_or_else(|| "Jackett".to_string());
+    let source = item.tracker.unwrap_or_else(|| "Jackett".to_string());
 
     let parsed = parser::parse_title(&title);
     let files = if media_type == "series" {

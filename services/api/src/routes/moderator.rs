@@ -11,7 +11,6 @@
 ///   POST /{media_id}/fetch-external → moderator_fetch_external_metadata
 ///   POST /{media_id}/apply-external → moderator_apply_external_metadata
 ///   POST /{media_id}/migrate-id     → moderator_migrate_metadata_id
-
 use std::sync::Arc;
 
 use axum::{
@@ -155,7 +154,14 @@ pub async fn moderator_list_metadata(
         path.push_str(&format!("has_streams={hs}&"));
     }
 
-    proxy_to_python(&state, reqwest::Method::GET, path.trim_end_matches('&'), &headers, None).await
+    proxy_to_python(
+        &state,
+        reqwest::Method::GET,
+        path.trim_end_matches('&'),
+        &headers,
+        None,
+    )
+    .await
 }
 
 /// GET /api/v1/moderator/metadata/{media_id}

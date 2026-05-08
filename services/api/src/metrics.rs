@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
+#[allow(clippy::type_complexity)]
 pub struct Metrics {
     /// Flat counters: (method, route, status) → count
     pub requests: RwLock<HashMap<(String, String, u16), u64>>,

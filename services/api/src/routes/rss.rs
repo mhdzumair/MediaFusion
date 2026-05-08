@@ -23,11 +23,10 @@
 ///   POST   /feeds/run-all                  → user_run_all_scrapers
 ///   POST   /feeds/bulk-status              → user_bulk_update_feed_status
 ///   GET    /scheduler-status               → user_get_scheduler_status
-
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
@@ -111,7 +110,11 @@ fn validate_token_and_role(headers: &HeaderMap, secret_key: &str) -> Option<(i32
 
 fn validate_admin_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     let (user_id, role) = validate_token_and_role(headers, secret_key)?;
-    if role == "admin" { Some(user_id) } else { None }
+    if role == "admin" {
+        Some(user_id)
+    } else {
+        None
+    }
 }
 
 // ─── Request / Response types ─────────────────────────────────────────────────
@@ -253,7 +256,14 @@ pub async fn list_rss_feeds(
     if validate_admin_token(&headers, &state.config.secret_key_raw).is_none() {
         return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
     }
-    proxy_to_python(&state, reqwest::Method::GET, "/api/v1/admin/rss/feeds", &headers, None).await
+    proxy_to_python(
+        &state,
+        reqwest::Method::GET,
+        "/api/v1/admin/rss/feeds",
+        &headers,
+        None,
+    )
+    .await
 }
 
 /// GET /api/v1/admin/rss/feeds/{feed_id}
@@ -349,7 +359,14 @@ pub async fn run_rss_feed_scraper(
     if validate_admin_token(&headers, &state.config.secret_key_raw).is_none() {
         return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
     }
-    proxy_to_python(&state, reqwest::Method::POST, "/api/v1/admin/rss/feeds/run", &headers, None).await
+    proxy_to_python(
+        &state,
+        reqwest::Method::POST,
+        "/api/v1/admin/rss/feeds/run",
+        &headers,
+        None,
+    )
+    .await
 }
 
 /// POST /api/v1/admin/rss/feeds/test-feed
@@ -400,7 +417,11 @@ pub async fn user_list_rss_feeds(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
@@ -447,7 +468,11 @@ pub async fn user_get_rss_feed(
     let (user_id, role) = match validate_token_and_role(&headers, &state.config.secret_key_raw) {
         Some(r) => r,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
@@ -501,19 +526,22 @@ pub async fn user_create_rss_feed(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
     // Check duplicate URL for this user
-    let existing: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM rss_feed WHERE url = $1 AND user_id = $2",
-    )
-    .bind(&body.url)
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None);
+    let existing: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM rss_feed WHERE url = $1 AND user_id = $2")
+            .bind(&body.url)
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
 
     if existing.is_some() {
         return (
@@ -575,7 +603,11 @@ pub async fn user_update_rss_feed(
     let (user_id, role) = match validate_token_and_role(&headers, &state.config.secret_key_raw) {
         Some(r) => r,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
@@ -583,20 +615,16 @@ pub async fn user_update_rss_feed(
 
     // Build update query dynamically
     let check_result = if let Some(uid) = user_id_filter {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM rss_feed WHERE id::text = $1 AND user_id = $2",
-        )
-        .bind(&feed_id)
-        .bind(uid)
-        .fetch_optional(&state.pool)
-        .await
+        sqlx::query_scalar::<_, i64>("SELECT id FROM rss_feed WHERE id::text = $1 AND user_id = $2")
+            .bind(&feed_id)
+            .bind(uid)
+            .fetch_optional(&state.pool)
+            .await
     } else {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM rss_feed WHERE id::text = $1",
-        )
-        .bind(&feed_id)
-        .fetch_optional(&state.pool)
-        .await
+        sqlx::query_scalar::<_, i64>("SELECT id FROM rss_feed WHERE id::text = $1")
+            .bind(&feed_id)
+            .fetch_optional(&state.pool)
+            .await
     };
 
     let db_id = match check_result {
@@ -649,7 +677,11 @@ pub async fn user_delete_rss_feed(
     let (user_id, role) = match validate_token_and_role(&headers, &state.config.secret_key_raw) {
         Some(r) => r,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
@@ -689,7 +721,11 @@ pub async fn user_test_rss_feed(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
     let _ = user_id;
@@ -706,7 +742,11 @@ pub async fn user_test_rss_feed_url(
     Json(body): Json<UserTestFeedRequest>,
 ) -> impl IntoResponse {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     proxy_to_python(
         &state,
@@ -725,7 +765,11 @@ pub async fn user_scrape_single_feed(
     Path(feed_id): Path<String>,
 ) -> impl IntoResponse {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let path = format!("/api/v1/user-rss/feeds/{feed_id}/scrape");
     proxy_to_python(&state, reqwest::Method::POST, &path, &headers, None).await
@@ -746,10 +790,21 @@ pub async fn user_run_all_scrapers(
                 .into_response();
         }
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     }
-    proxy_to_python(&state, reqwest::Method::POST, "/api/v1/user-rss/feeds/run-all", &headers, None).await
+    proxy_to_python(
+        &state,
+        reqwest::Method::POST,
+        "/api/v1/user-rss/feeds/run-all",
+        &headers,
+        None,
+    )
+    .await
 }
 
 /// POST /api/v1/user-rss/feeds/bulk-status
@@ -759,7 +814,11 @@ pub async fn user_bulk_update_feed_status(
     Json(body): Json<BulkStatusRequest>,
 ) -> impl IntoResponse {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     proxy_to_python(
         &state,
@@ -777,7 +836,18 @@ pub async fn user_get_scheduler_status(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
-    proxy_to_python(&state, reqwest::Method::GET, "/api/v1/user-rss/scheduler-status", &headers, None).await
+    proxy_to_python(
+        &state,
+        reqwest::Method::GET,
+        "/api/v1/user-rss/scheduler-status",
+        &headers,
+        None,
+    )
+    .await
 }

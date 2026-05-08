@@ -61,9 +61,10 @@ fn select_video_file(
     // 2. By filename
     if let Some(name) = filename {
         let name_lower = name.to_lowercase();
-        if let Some(&idx) = video_indices.iter().find(|&&i| {
-            files[i].0.to_lowercase().contains(&name_lower)
-        }) {
+        if let Some(&idx) = video_indices
+            .iter()
+            .find(|&&i| files[i].0.to_lowercase().contains(&name_lower))
+        {
             return idx;
         }
     }
@@ -100,11 +101,7 @@ fn select_video_file(
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
 /// GET request with Bearer auth + `key=` query param.
-async fn oc_get(
-    http: &reqwest::Client,
-    token: &str,
-    path: &str,
-) -> Result<Value, ProviderError> {
+async fn oc_get(http: &reqwest::Client, token: &str, path: &str) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
     let resp = http
         .get(&url)
@@ -115,7 +112,10 @@ async fn oc_get(
 
     let status = resp.status();
     if status == reqwest::StatusCode::FORBIDDEN {
-        return Err(ProviderError::api("Invalid OffCloud API key", "invalid_token.mp4"));
+        return Err(ProviderError::api(
+            "Invalid OffCloud API key",
+            "invalid_token.mp4",
+        ));
     }
     if status == reqwest::StatusCode::PAYMENT_REQUIRED {
         return Err(ProviderError::api(
@@ -154,7 +154,10 @@ async fn oc_post_form(
 
     let status = resp.status();
     if status == reqwest::StatusCode::FORBIDDEN {
-        return Err(ProviderError::api("Invalid OffCloud API key", "invalid_token.mp4"));
+        return Err(ProviderError::api(
+            "Invalid OffCloud API key",
+            "invalid_token.mp4",
+        ));
     }
     if status == reqwest::StatusCode::PAYMENT_REQUIRED {
         return Err(ProviderError::api(
@@ -186,7 +189,10 @@ fn check_offcloud_error(body: &Value) -> Result<(), ProviderError> {
     }
     if let Some(obj) = body.as_object() {
         for (_, v) in obj {
-            if v.as_str().map(|s| s.contains("not_available")).unwrap_or(false) {
+            if v.as_str()
+                .map(|s| s.contains("not_available"))
+                .unwrap_or(false)
+            {
                 return Err(ProviderError::api(
                     "Need premium OffCloud account",
                     "need_premium.mp4",
@@ -243,13 +249,7 @@ async fn submit_magnet(
     token: &str,
     magnet: &str,
 ) -> Result<String, ProviderError> {
-    let body = oc_post_form(
-        http,
-        token,
-        "/api/cloud",
-        vec![("url", magnet.to_string())],
-    )
-    .await?;
+    let body = oc_post_form(http, token, "/api/cloud", vec![("url", magnet.to_string())]).await?;
 
     body.get("requestId")
         .and_then(|v| v.as_str())
@@ -333,9 +333,7 @@ async fn wait_for_downloaded(
         }
     }
     Err(ProviderError::api(
-        format!(
-            "OffCloud download did not reach 'downloaded' status after {max_retries} retries"
-        ),
+        format!("OffCloud download did not reach 'downloaded' status after {max_retries} retries"),
         "torrent_not_downloaded.mp4",
     ))
 }
@@ -368,7 +366,10 @@ fn try_single_file_url(info: &Value, request_id: &str) -> Option<String> {
     }
 
     // isDirectory == false with server + fileName
-    let is_dir = info.get("isDirectory").and_then(|v| v.as_bool()).unwrap_or(true);
+    let is_dir = info
+        .get("isDirectory")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     if !is_dir {
         if let (Some(server), Some(file_name)) = (
             info.get("server").and_then(|v| v.as_str()),
@@ -402,7 +403,7 @@ fn select_url_from_list(
         .map(|(i, url)| {
             let basename = url
                 .split('/')
-                .last()
+                .next_back()
                 .and_then(|s| {
                     // Strip query string if any
                     s.split('?').next()
@@ -421,6 +422,7 @@ fn select_url_from_list(
 // ─── Public entry points ──────────────────────────────────────────────────────
 
 /// Resolve a direct video URL from OffCloud for the given torrent.
+#[allow(clippy::too_many_arguments)]
 pub async fn get_video_url(
     http: &reqwest::Client,
     token: &str,
@@ -447,18 +449,16 @@ pub async fn get_video_url(
 
     // Check history for existing download
     let request_id = match find_in_history(http, token, info_hash).await? {
-        Some(existing) => {
-            existing
-                .get("requestId")
-                .and_then(|v| v.as_str())
-                .map(str::to_string)
-                .ok_or_else(|| {
-                    ProviderError::api(
-                        "Missing requestId in OffCloud history entry",
-                        "api_error.mp4",
-                    )
-                })?
-        }
+        Some(existing) => existing
+            .get("requestId")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .ok_or_else(|| {
+                ProviderError::api(
+                    "Missing requestId in OffCloud history entry",
+                    "api_error.mp4",
+                )
+            })?,
         None => submit_magnet(http, token, &magnet).await?,
     };
 
@@ -483,10 +483,7 @@ pub async fn get_video_url(
 }
 
 /// Delete ALL cloud downloads from the user's OffCloud account.
-pub async fn delete_all_torrents(
-    http: &reqwest::Client,
-    token: &str,
-) -> Result<(), ProviderError> {
+pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     let body = oc_get(http, token, "/api/cloud/history").await?;
 
     let items = match body.as_array() {

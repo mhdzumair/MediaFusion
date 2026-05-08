@@ -32,9 +32,7 @@ pub async fn handler(
         let poster_url = match meta.poster_url {
             Some(ref u) if !u.is_empty() => Some(u.clone()),
             // Sports: no stored poster but title overlay enabled → pick from artifacts
-            None | Some(_) if meta.is_add_title => {
-                resolve_sports_poster_url(&state, id).await
-            }
+            None | Some(_) if meta.is_add_title => resolve_sports_poster_url(&state, id).await,
             _ => None,
         };
 
@@ -64,16 +62,33 @@ async fn serve_event_poster(state: &AppState, event_id: &str, cache_key: &str) -
         return StatusCode::NOT_FOUND.into_response();
     };
 
-    let poster_url = data.get("poster").and_then(|v| v.as_str()).map(str::to_string);
-    let title = data.get("title").and_then(|v| v.as_str()).map(str::to_string);
-    let imdb_rating = data.get("imdb_rating").and_then(|v| v.as_f64()).map(|f| f as f32);
-    let is_add_title = data.get("is_add_title_to_poster").and_then(|v| v.as_bool()).unwrap_or(false);
+    let poster_url = data
+        .get("poster")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let title = data
+        .get("title")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let imdb_rating = data
+        .get("imdb_rating")
+        .and_then(|v| v.as_f64())
+        .map(|f| f as f32);
+    let is_add_title = data
+        .get("is_add_title_to_poster")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let Some(url) = poster_url else {
         return StatusCode::NOT_FOUND.into_response();
     };
 
-    let meta = PosterMeta { poster_url: Some(url.clone()), imdb_rating, title, is_add_title };
+    let meta = PosterMeta {
+        poster_url: Some(url.clone()),
+        imdb_rating,
+        title,
+        is_add_title,
+    };
     fetch_annotate_cache(state, cache_key, &url, meta).await
 }
 
@@ -118,7 +133,10 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
         .bind(media_type)
         .fetch_optional(&state.pool_ro)
         .await
-        .unwrap_or_else(|e| { warn!("poster meta mf{internal_id}: {e}"); None })
+        .unwrap_or_else(|e| {
+            warn!("poster meta mf{internal_id}: {e}");
+            None
+        })
     } else {
         sqlx::query_as(
             r#"
@@ -149,7 +167,10 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
         .bind(media_type)
         .fetch_optional(&state.pool_ro)
         .await
-        .unwrap_or_else(|e| { warn!("poster meta {id}: {e}"); None })
+        .unwrap_or_else(|e| {
+            warn!("poster meta {id}: {e}");
+            None
+        })
     };
 
     row.map(|(url, rating, title, add_title)| PosterMeta {
@@ -211,10 +232,19 @@ async fn fetch_annotate_cache(
     let raw_bytes = match resp {
         Ok(r) if r.status().is_success() => match r.bytes().await {
             Ok(b) => b,
-            Err(e) => { warn!("poster fetch bytes {url}: {e}"); return StatusCode::BAD_GATEWAY.into_response(); }
+            Err(e) => {
+                warn!("poster fetch bytes {url}: {e}");
+                return StatusCode::BAD_GATEWAY.into_response();
+            }
         },
-        Ok(r) => { warn!("poster upstream {url}: HTTP {}", r.status()); return StatusCode::NOT_FOUND.into_response(); }
-        Err(e) => { warn!("poster fetch {url}: {e}"); return StatusCode::BAD_GATEWAY.into_response(); }
+        Ok(r) => {
+            warn!("poster upstream {url}: HTTP {}", r.status());
+            return StatusCode::NOT_FOUND.into_response();
+        }
+        Err(e) => {
+            warn!("poster fetch {url}: {e}");
+            return StatusCode::BAD_GATEWAY.into_response();
+        }
     };
 
     let params = AnnotateParams {
@@ -223,10 +253,9 @@ async fn fetch_annotate_cache(
         is_add_title: meta.is_add_title,
     };
     let raw_bytes_clone = raw_bytes.to_vec();
-    let annotated = tokio::task::spawn_blocking(move || {
-        crate::poster::annotate(&raw_bytes_clone, &params)
-    })
-    .await;
+    let annotated =
+        tokio::task::spawn_blocking(move || crate::poster::annotate(&raw_bytes_clone, &params))
+            .await;
 
     let final_bytes: Vec<u8> = match annotated {
         Ok(Ok(b)) => b,

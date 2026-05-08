@@ -6,7 +6,6 @@
 ///   GET  /qr-code/{secret_str}/{code}→ get_qr_code_with_secret
 ///   POST /associate-manifest         → associate_manifest
 ///   GET  /get-manifest/{code}        → get_manifest
-
 use std::sync::Arc;
 
 use axum::{
@@ -56,7 +55,13 @@ pub async fn generate_setup_code(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     // On private instances validate API key
-    if state.config.api_password.is_some() && !validate_api_key(&headers, &state.config.api_password, &state.config.secret_key_raw) {
+    if state.config.api_password.is_some()
+        && !validate_api_key(
+            &headers,
+            &state.config.api_password,
+            &state.config.secret_key_raw,
+        )
+    {
         return (
             StatusCode::UNAUTHORIZED,
             Json(json!({"detail": "Authentication required"})),
@@ -163,7 +168,13 @@ pub async fn associate_manifest(
     State(state): State<Arc<AppState>>,
     Json(body): Json<AssociateManifestRequest>,
 ) -> impl IntoResponse {
-    if state.config.api_password.is_some() && !validate_api_key(&headers, &state.config.api_password, &state.config.secret_key_raw) {
+    if state.config.api_password.is_some()
+        && !validate_api_key(
+            &headers,
+            &state.config.api_password,
+            &state.config.secret_key_raw,
+        )
+    {
         return (
             StatusCode::UNAUTHORIZED,
             Json(json!({"detail": "Invalid or missing API key"})),
@@ -192,7 +203,13 @@ pub async fn associate_manifest(
     let manifest_key = format!("manifest:{}", body.code);
     if let Err(e) = state
         .redis
-        .set::<(), _, _>(&manifest_key, body.manifest_url.as_str(), Some(Expiration::EX(300)), None, false)
+        .set::<(), _, _>(
+            &manifest_key,
+            body.manifest_url.as_str(),
+            Some(Expiration::EX(300)),
+            None,
+            false,
+        )
         .await
     {
         tracing::error!("associate_manifest redis set: {e}");
@@ -223,7 +240,10 @@ pub async fn get_manifest(
         Some(url) => {
             // Delete both keys after retrieval (one-time use)
             let setup_key = format!("setup_code:{code}");
-            let _ = state.redis.del::<i64, _>(vec![setup_key, manifest_key.clone()]).await;
+            let _ = state
+                .redis
+                .del::<i64, _>(vec![setup_key, manifest_key.clone()])
+                .await;
 
             // Extract secret_string from manifest URL (second-to-last path segment)
             let parts: Vec<&str> = url.trim_end_matches('/').split('/').collect();

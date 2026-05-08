@@ -47,7 +47,7 @@ async fn build_client(
     api_hash: &str,
     session_b64: &str,
 ) -> Result<Client, Box<dyn std::error::Error + Send + Sync>> {
-    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
     use grammers_session::storages::MemorySession;
 
     // Decode session bytes
@@ -132,6 +132,7 @@ pub async fn scrape(
 
 // ─── Per-channel scrape ───────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 async fn scrape_channel(
     client: &Client,
     channel: &str,
@@ -175,17 +176,22 @@ async fn scrape_channel(
     };
 
     // Iterate messages
-    let mut iter = client
-        .iter_messages(peer_ref)
-        .limit(message_limit as usize);
+    let mut iter = client.iter_messages(peer_ref).limit(message_limit as usize);
 
     let mut results = Vec::new();
     loop {
         match iter.next().await {
             Ok(Some(msg)) => {
-                if let Some(stream) =
-                    process_message(&msg, chat_id, &chat_username, meta, media_type, season, episode, min_size)
-                {
+                if let Some(stream) = process_message(
+                    &msg,
+                    chat_id,
+                    &chat_username,
+                    meta,
+                    media_type,
+                    season,
+                    episode,
+                    min_size,
+                ) {
                     results.push(stream);
                 }
             }
@@ -246,10 +252,8 @@ fn process_message(
     let parsed = parser::parse_title(&file_name);
 
     // Title similarity check (80% threshold)
-    let ratio = parser::similarity_ratio(
-        parsed.title.as_deref().unwrap_or(&file_name),
-        &meta.title,
-    );
+    let ratio =
+        parser::similarity_ratio(parsed.title.as_deref().unwrap_or(&file_name), &meta.title);
     if ratio < 80 {
         return None;
     }
@@ -257,8 +261,8 @@ fn process_message(
     // For series: verify season/episode match
     if media_type == "series" {
         if let (Some(s), Some(e)) = (season, episode) {
-            let matches_season = parsed.seasons.iter().any(|&ps| ps == s);
-            let matches_ep = parsed.episodes.iter().any(|&pe| pe == e);
+            let matches_season = parsed.seasons.contains(&s);
+            let matches_ep = parsed.episodes.contains(&e);
             if !matches_season || !matches_ep {
                 return None;
             }

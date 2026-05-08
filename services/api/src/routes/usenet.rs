@@ -15,10 +15,7 @@ use axum::{
 use crate::state::AppState;
 
 /// `GET /usenet/{nzb_guid}` — public (credentials embedded in URL)
-pub async fn handler(
-    Path(nzb_guid): Path<String>,
-    State(state): State<Arc<AppState>>,
-) -> Response {
+pub async fn handler(Path(nzb_guid): Path<String>, State(state): State<Arc<AppState>>) -> Response {
     redirect(&state, &nzb_guid).await
 }
 
@@ -34,7 +31,13 @@ pub async fn provider_handler(
 
 /// `GET /streaming_provider/{secret_str}/usenet/{provider_name}/{nzb_guid}/{season}/{episode}`
 pub async fn provider_seep_handler(
-    Path((_secret_str, _provider_name, nzb_guid, _season, _episode)): Path<(String, String, String, i32, i32)>,
+    Path((_secret_str, _provider_name, nzb_guid, _season, _episode)): Path<(
+        String,
+        String,
+        String,
+        i32,
+        i32,
+    )>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
     redirect(&state, &nzb_guid).await

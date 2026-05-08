@@ -59,18 +59,53 @@ pub struct ParsedTitle {
 // ── Language translation table ────────────────────────────────────────────────
 
 static LANG_TABLE: &[(&str, &str)] = &[
-    ("en", "English"), ("ja", "Japanese"), ("zh", "Chinese"), ("ru", "Russian"),
-    ("ar", "Arabic"),  ("pt", "Portuguese"), ("es", "Spanish"), ("fr", "French"),
-    ("de", "German"),  ("it", "Italian"),  ("ko", "Korean"),  ("hi", "Hindi"),
-    ("bn", "Bengali"), ("pa", "Punjabi"),  ("mr", "Marathi"), ("gu", "Gujarati"),
-    ("ta", "Tamil"),   ("te", "Telugu"),   ("kn", "Kannada"), ("ml", "Malayalam"),
-    ("th", "Thai"),    ("vi", "Vietnamese"),("id", "Indonesian"),("tr", "Turkish"),
-    ("he", "Hebrew"),  ("fa", "Persian"),  ("uk", "Ukrainian"),("el", "Greek"),
-    ("lt", "Lithuanian"),("lv", "Latvian"),("et", "Estonian"),("pl", "Polish"),
-    ("cs", "Czech"),   ("sk", "Slovak"),   ("hu", "Hungarian"),("ro", "Romanian"),
-    ("bg", "Bulgarian"),("sr", "Serbian"), ("hr", "Croatian"),("sl", "Slovenian"),
-    ("nl", "Dutch"),   ("da", "Danish"),   ("fi", "Finnish"),  ("sv", "Swedish"),
-    ("no", "Norwegian"),("ms", "Malay"),   ("la", "Latino"),
+    ("en", "English"),
+    ("ja", "Japanese"),
+    ("zh", "Chinese"),
+    ("ru", "Russian"),
+    ("ar", "Arabic"),
+    ("pt", "Portuguese"),
+    ("es", "Spanish"),
+    ("fr", "French"),
+    ("de", "German"),
+    ("it", "Italian"),
+    ("ko", "Korean"),
+    ("hi", "Hindi"),
+    ("bn", "Bengali"),
+    ("pa", "Punjabi"),
+    ("mr", "Marathi"),
+    ("gu", "Gujarati"),
+    ("ta", "Tamil"),
+    ("te", "Telugu"),
+    ("kn", "Kannada"),
+    ("ml", "Malayalam"),
+    ("th", "Thai"),
+    ("vi", "Vietnamese"),
+    ("id", "Indonesian"),
+    ("tr", "Turkish"),
+    ("he", "Hebrew"),
+    ("fa", "Persian"),
+    ("uk", "Ukrainian"),
+    ("el", "Greek"),
+    ("lt", "Lithuanian"),
+    ("lv", "Latvian"),
+    ("et", "Estonian"),
+    ("pl", "Polish"),
+    ("cs", "Czech"),
+    ("sk", "Slovak"),
+    ("hu", "Hungarian"),
+    ("ro", "Romanian"),
+    ("bg", "Bulgarian"),
+    ("sr", "Serbian"),
+    ("hr", "Croatian"),
+    ("sl", "Slovenian"),
+    ("nl", "Dutch"),
+    ("da", "Danish"),
+    ("fi", "Finnish"),
+    ("sv", "Swedish"),
+    ("no", "Norwegian"),
+    ("ms", "Malay"),
+    ("la", "Latino"),
 ];
 
 fn translate_lang(code: &str) -> Option<&'static str> {
@@ -109,57 +144,90 @@ pub fn parse_title(raw: &str) -> ParsedTitle {
 fn from_map(mut m: HashMap<String, FieldValue>, translate: bool) -> ParsedTitle {
     let mut out = ParsedTitle::default();
 
-    if let Some(FieldValue::Str(s)) = m.remove("title") { out.title = s; }
-    if let Some(FieldValue::Int(n)) = m.remove("year")  { out.year = Some(n); }
+    if let Some(FieldValue::Str(s)) = m.remove("title") {
+        out.title = s;
+    }
+    if let Some(FieldValue::Int(n)) = m.remove("year") {
+        out.year = Some(n);
+    }
 
-    if let Some(FieldValue::Str(s)) = m.remove("resolution") { out.resolution = Some(s); }
-    if let Some(FieldValue::Str(s)) = m.remove("quality")    { out.quality = Some(s); }
-    if let Some(FieldValue::Str(s)) = m.remove("codec")      { out.codec = Some(s); }
-    if let Some(FieldValue::Str(s)) = m.remove("date")       { out.date = Some(s); }
-    if let Some(FieldValue::Str(s)) = m.remove("bit_depth")  { out.bit_depth = Some(s); }
-    if let Some(FieldValue::Str(s)) = m.remove("edition")    { out.edition = Some(s); }
-    if let Some(FieldValue::Str(s)) = m.remove("network")    { out.network = Some(s); }
-    if let Some(FieldValue::Str(s)) = m.remove("site")       { out.site = Some(s); }
-    if let Some(FieldValue::Str(s)) = m.remove("size")       { out.size = Some(s); }
-    if let Some(FieldValue::Str(s)) = m.remove("group")      { out.group = Some(s); }
-    if let Some(FieldValue::Str(s)) = m.remove("country")    { out.country = Some(s); }
-    if let Some(FieldValue::Str(s)) = m.remove("container")  { out.container = Some(s); }
-    if let Some(FieldValue::Str(s)) = m.remove("extension")  { out.extension = Some(s); }
-    if let Some(FieldValue::Str(s)) = m.remove("bitrate")    { out.bitrate = Some(s); }
+    if let Some(FieldValue::Str(s)) = m.remove("resolution") {
+        out.resolution = Some(s);
+    }
+    if let Some(FieldValue::Str(s)) = m.remove("quality") {
+        out.quality = Some(s);
+    }
+    if let Some(FieldValue::Str(s)) = m.remove("codec") {
+        out.codec = Some(s);
+    }
+    if let Some(FieldValue::Str(s)) = m.remove("date") {
+        out.date = Some(s);
+    }
+    if let Some(FieldValue::Str(s)) = m.remove("bit_depth") {
+        out.bit_depth = Some(s);
+    }
+    if let Some(FieldValue::Str(s)) = m.remove("edition") {
+        out.edition = Some(s);
+    }
+    if let Some(FieldValue::Str(s)) = m.remove("network") {
+        out.network = Some(s);
+    }
+    if let Some(FieldValue::Str(s)) = m.remove("site") {
+        out.site = Some(s);
+    }
+    if let Some(FieldValue::Str(s)) = m.remove("size") {
+        out.size = Some(s);
+    }
+    if let Some(FieldValue::Str(s)) = m.remove("group") {
+        out.group = Some(s);
+    }
+    if let Some(FieldValue::Str(s)) = m.remove("country") {
+        out.country = Some(s);
+    }
+    if let Some(FieldValue::Str(s)) = m.remove("container") {
+        out.container = Some(s);
+    }
+    if let Some(FieldValue::Str(s)) = m.remove("extension") {
+        out.extension = Some(s);
+    }
+    if let Some(FieldValue::Str(s)) = m.remove("bitrate") {
+        out.bitrate = Some(s);
+    }
 
-    out.audio    = strs(m.remove("audio"));
+    out.audio = strs(m.remove("audio"));
     out.channels = strs(m.remove("channels"));
-    out.hdr      = strs(m.remove("hdr"));
-    out.extras   = strs(m.remove("extras"));
+    out.hdr = strs(m.remove("hdr"));
+    out.extras = strs(m.remove("extras"));
 
     let mut langs = strs(m.remove("languages"));
     if translate {
-        langs = langs.iter()
+        langs = langs
+            .iter()
             .map(|c| translate_lang(c).unwrap_or(c.as_str()).to_string())
             .collect();
     }
     out.languages = langs;
 
-    out.seasons  = ints(m.remove("seasons"));
+    out.seasons = ints(m.remove("seasons"));
     out.episodes = ints(m.remove("episodes"));
 
-    out.is_3d         = bool_val(m.remove("3d"));
-    out.is_complete   = bool_val(m.remove("complete"));
-    out.is_proper     = bool_val(m.remove("proper"));
-    out.is_repack     = bool_val(m.remove("repack"));
-    out.is_retail     = bool_val(m.remove("retail"));
+    out.is_3d = bool_val(m.remove("3d"));
+    out.is_complete = bool_val(m.remove("complete"));
+    out.is_proper = bool_val(m.remove("proper"));
+    out.is_repack = bool_val(m.remove("repack"));
+    out.is_retail = bool_val(m.remove("retail"));
     out.is_remastered = bool_val(m.remove("remastered"));
-    out.is_unrated    = bool_val(m.remove("unrated"));
+    out.is_unrated = bool_val(m.remove("unrated"));
     out.is_uncensored = bool_val(m.remove("uncensored"));
-    out.is_documentary= bool_val(m.remove("documentary"));
-    out.is_upscaled   = bool_val(m.remove("upscaled"));
-    out.is_hardcoded  = bool_val(m.remove("hardcoded"));
-    out.is_trash      = bool_val(m.remove("trash"));
-    out.is_scene      = bool_val(m.remove("scene"));
-    out.is_adult      = bool_val(m.remove("adult"));
-    out.is_dubbed     = bool_val(m.remove("dubbed"));
-    out.is_subbed     = bool_val(m.remove("subbed"));
-    out.is_ppv        = bool_val(m.remove("ppv"));
+    out.is_documentary = bool_val(m.remove("documentary"));
+    out.is_upscaled = bool_val(m.remove("upscaled"));
+    out.is_hardcoded = bool_val(m.remove("hardcoded"));
+    out.is_trash = bool_val(m.remove("trash"));
+    out.is_scene = bool_val(m.remove("scene"));
+    out.is_adult = bool_val(m.remove("adult"));
+    out.is_dubbed = bool_val(m.remove("dubbed"));
+    out.is_subbed = bool_val(m.remove("subbed"));
+    out.is_ppv = bool_val(m.remove("ppv"));
 
     out
 }
@@ -167,7 +235,7 @@ fn from_map(mut m: HashMap<String, FieldValue>, translate: bool) -> ParsedTitle 
 fn strs(v: Option<FieldValue>) -> Vec<String> {
     match v {
         Some(FieldValue::Strs(s)) => s,
-        Some(FieldValue::Str(s))  => vec![s],
+        Some(FieldValue::Str(s)) => vec![s],
         _ => vec![],
     }
 }
@@ -175,7 +243,7 @@ fn strs(v: Option<FieldValue>) -> Vec<String> {
 fn ints(v: Option<FieldValue>) -> Vec<i32> {
     match v {
         Some(FieldValue::Ints(i)) => i,
-        Some(FieldValue::Int(i))  => vec![i],
+        Some(FieldValue::Int(i)) => vec![i],
         _ => vec![],
     }
 }
@@ -222,10 +290,7 @@ mod tests {
 
     #[test]
     fn test_translate_languages() {
-        let r = parse(
-            "Movie.2020.1080p.English.French.Spanish.mkv",
-            true,
-        );
+        let r = parse("Movie.2020.1080p.English.French.Spanish.mkv", true);
         assert!(r.languages.contains(&"English".to_string()));
         assert!(r.languages.contains(&"French".to_string()));
         assert!(r.languages.contains(&"Spanish".to_string()));

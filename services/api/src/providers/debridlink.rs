@@ -3,7 +3,7 @@
 /// Token format:
 ///   - Base64-encoded refresh_token (URL_SAFE_NO_PAD) → exchange for access_token via OAuth
 ///   - Plain private token → used directly as Bearer
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use serde_json::{json, Value};
 
 use super::ProviderError;
@@ -29,7 +29,7 @@ fn decode_token(token: &str) -> TokenKind {
     if let Ok(bytes) = B64.decode(token) {
         if let Ok(s) = std::str::from_utf8(&bytes) {
             let trimmed = s.trim();
-            let is_printable_ascii = trimmed.bytes().all(|b| b >= 0x21 && b < 0x7f);
+            let is_printable_ascii = trimmed.bytes().all(|b| (0x21..0x7f).contains(&b));
             let no_json_chars = !trimmed.contains('{') && !trimmed.contains(' ');
             if is_printable_ascii && no_json_chars && trimmed.len() >= 20 {
                 return TokenKind::Refresh(trimmed.to_string());
@@ -63,13 +63,15 @@ async fn exchange_refresh_token(
     json.get("access_token")
         .and_then(|v| v.as_str())
         .map(str::to_string)
-        .ok_or_else(|| ProviderError::api("Missing access_token in Debrid-Link OAuth response", "invalid_token.mp4"))
+        .ok_or_else(|| {
+            ProviderError::api(
+                "Missing access_token in Debrid-Link OAuth response",
+                "invalid_token.mp4",
+            )
+        })
 }
 
-async fn resolve_bearer(
-    http: &reqwest::Client,
-    token: &str,
-) -> Result<String, ProviderError> {
+async fn resolve_bearer(http: &reqwest::Client, token: &str) -> Result<String, ProviderError> {
     match decode_token(token) {
         TokenKind::Private(t) => Ok(t),
         TokenKind::Refresh(rt) => exchange_refresh_token(http, &rt).await,
@@ -82,10 +84,13 @@ fn map_dl_error(code: &str) -> Option<(&'static str, &'static str)> {
     Some(match code {
         "badToken" | "expired_token" => ("Invalid token", "invalid_token.mp4"),
         "freeServerOverload" => ("Debrid-Link free servers overloaded", "need_premium.mp4"),
-        "server_error" | "notDebrid" => ("Debrid-Link server error", "debrid_service_down_error.mp4"),
-        "maxLink" | "maxData" | "maxTorrent" | "maxLinkHost" | "maxDataHost" => {
-            ("Debrid-Link daily limit reached", "daily_download_limit.mp4")
+        "server_error" | "notDebrid" => {
+            ("Debrid-Link server error", "debrid_service_down_error.mp4")
         }
+        "maxLink" | "maxData" | "maxTorrent" | "maxLinkHost" | "maxDataHost" => (
+            "Debrid-Link daily limit reached",
+            "daily_download_limit.mp4",
+        ),
         "floodDetected" => ("Flood detected", "too_many_requests.mp4"),
         _ => return None,
     })
@@ -93,7 +98,10 @@ fn map_dl_error(code: &str) -> Option<(&'static str, &'static str)> {
 
 fn check_dl_error(body: &Value) -> Result<(), ProviderError> {
     // Debrid-Link uses `{"success": false, "error": "errorCode"}` on failure
-    let success = body.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
+    let success = body
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     if !success {
         if let Some(err) = body.get("error").and_then(|v| v.as_str()) {
             if let Some((msg, file)) = map_dl_error(err) {
@@ -134,17 +142,18 @@ async fn dl_post(
     payload: Value,
 ) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
-    let resp = http.post(&url).bearer_auth(bearer).json(&payload).send().await?;
+    let resp = http
+        .post(&url)
+        .bearer_auth(bearer)
+        .json(&payload)
+        .send()
+        .await?;
     let body: Value = resp.json().await?;
     check_dl_error(&body)?;
     Ok(body)
 }
 
-async fn dl_delete(
-    http: &reqwest::Client,
-    bearer: &str,
-    path: &str,
-) -> Result<(), ProviderError> {
+async fn dl_delete(http: &reqwest::Client, bearer: &str, path: &str) -> Result<(), ProviderError> {
     let url = format!("{BASE_URL}{path}");
     http.delete(&url).bearer_auth(bearer).send().await?;
     Ok(())
@@ -171,9 +180,11 @@ async fn find_torrent_by_hash(
                 ("page", &page.to_string()),
                 ("perPage", &per_page.to_string()),
             ],
-        ).await?;
+        )
+        .await?;
 
-        let items = body.get("value")
+        let items = body
+            .get("value")
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
@@ -183,7 +194,8 @@ async fn find_torrent_by_hash(
         }
 
         for item in &items {
-            let hash = item.get("hashString")
+            let hash = item
+                .get("hashString")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             if hash.to_lowercase() == info_hash.to_lowercase() {
@@ -211,11 +223,15 @@ async fn add_torrent(
         bearer,
         "/seedbox/add",
         json!({ "url": magnet, "async": true }),
-    ).await?;
+    )
+    .await?;
 
-    body.get("value")
-        .cloned()
-        .ok_or_else(|| ProviderError::api("No torrent info in Debrid-Link add response", "transfer_error.mp4"))
+    body.get("value").cloned().ok_or_else(|| {
+        ProviderError::api(
+            "No torrent info in Debrid-Link add response",
+            "transfer_error.mp4",
+        )
+    })
 }
 
 /// Poll until the torrent identified by `torrent_id` has `downloadPercent == 100`.
@@ -232,14 +248,12 @@ async fn wait_for_download(
             http,
             bearer,
             "/seedbox/list",
-            &[
-                ("ids", torrent_id),
-                ("page", "0"),
-                ("perPage", "1"),
-            ],
-        ).await?;
+            &[("ids", torrent_id), ("page", "0"), ("perPage", "1")],
+        )
+        .await?;
 
-        let items = body.get("value")
+        let items = body
+            .get("value")
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
@@ -249,7 +263,9 @@ async fn wait_for_download(
             if let Some(err) = torrent.get("errorString").and_then(|v| v.as_str()) {
                 if !err.is_empty() {
                     // Delete the broken torrent and bail
-                    dl_delete(http, bearer, &format!("/seedbox/{torrent_id}/delete")).await.ok();
+                    dl_delete(http, bearer, &format!("/seedbox/{torrent_id}/delete"))
+                        .await
+                        .ok();
                     return Err(ProviderError::api(
                         format!("Debrid-Link torrent error: {err}"),
                         "transfer_error.mp4",
@@ -257,7 +273,8 @@ async fn wait_for_download(
                 }
             }
 
-            let pct = torrent.get("downloadPercent")
+            let pct = torrent
+                .get("downloadPercent")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
             if pct == 100 {
@@ -295,14 +312,22 @@ fn select_video_file(
     }
 
     // Collect video file indices
-    let video_indices: Vec<usize> = files.iter().enumerate().filter_map(|(i, (name, _))| {
-        let ext = std::path::Path::new(name.as_str())
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-        if video_exts.contains(&ext.as_str()) { Some(i) } else { None }
-    }).collect();
+    let video_indices: Vec<usize> = files
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (name, _))| {
+            let ext = std::path::Path::new(name.as_str())
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if video_exts.contains(&ext.as_str()) {
+                Some(i)
+            } else {
+                None
+            }
+        })
+        .collect();
 
     // 2. Filename substring match
     if let Some(fname) = filename {
@@ -331,7 +356,8 @@ fn select_video_file(
     }
 
     // 4. Largest video
-    video_indices.iter()
+    video_indices
+        .iter()
         .max_by_key(|&&i| files[i].1)
         .copied()
         .unwrap_or(0)
@@ -340,6 +366,7 @@ fn select_video_file(
 // ─── Public entry points ──────────────────────────────────────────────────────
 
 /// Resolve a direct video URL from Debrid-Link for the given torrent.
+#[allow(clippy::too_many_arguments)]
 pub async fn get_video_url(
     http: &reqwest::Client,
     token: &str,
@@ -357,7 +384,8 @@ pub async fn get_video_url(
     let bearer = resolve_bearer(http, token).await?;
 
     // Build magnet
-    let trackers: String = announce_list.iter()
+    let trackers: String = announce_list
+        .iter()
         .map(|t| format!("&tr={}", urlencoding::encode(t)))
         .collect();
     let magnet = format!("magnet:?xt=urn:btih:{info_hash}{trackers}");
@@ -366,12 +394,15 @@ pub async fn get_video_url(
     let torrent = match find_torrent_by_hash(http, &bearer, info_hash).await? {
         Some(existing) => {
             // Check if it errored
-            let err_str = existing.get("errorString")
+            let err_str = existing
+                .get("errorString")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             if !err_str.is_empty() {
                 if let Some(id) = existing.get("id").and_then(|v| v.as_str()) {
-                    dl_delete(http, &bearer, &format!("/seedbox/{id}/delete")).await.ok();
+                    dl_delete(http, &bearer, &format!("/seedbox/{id}/delete"))
+                        .await
+                        .ok();
                 }
                 add_torrent(http, &bearer, &magnet).await?
             } else {
@@ -381,13 +412,17 @@ pub async fn get_video_url(
         None => add_torrent(http, &bearer, &magnet).await?,
     };
 
-    let torrent_id = torrent.get("id")
+    let torrent_id = torrent
+        .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ProviderError::api("No torrent id from Debrid-Link", "transfer_error.mp4"))?
         .to_string();
 
     // Wait for download to complete
-    let download_pct = torrent.get("downloadPercent").and_then(|v| v.as_i64()).unwrap_or(0);
+    let download_pct = torrent
+        .get("downloadPercent")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     let torrent = if download_pct < 100 {
         wait_for_download(http, &bearer, &torrent_id, MAX_RETRIES, RETRY_SECS).await?
     } else {
@@ -395,34 +430,61 @@ pub async fn get_video_url(
     };
 
     // Select file
-    let files_arr = torrent.get("files")
+    let files_arr = torrent
+        .get("files")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
 
     // Only consider files that are fully downloaded
-    let ready_files: Vec<&Value> = files_arr.iter().filter(|f| {
-        f.get("downloadPercent").and_then(|v| v.as_i64()).unwrap_or(0) == 100
-    }).collect();
+    let ready_files: Vec<&Value> = files_arr
+        .iter()
+        .filter(|f| {
+            f.get("downloadPercent")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0)
+                == 100
+        })
+        .collect();
 
     if ready_files.is_empty() {
-        return Err(ProviderError::api("No ready files in Debrid-Link torrent", "torrent_not_downloaded.mp4"));
+        return Err(ProviderError::api(
+            "No ready files in Debrid-Link torrent",
+            "torrent_not_downloaded.mp4",
+        ));
     }
 
-    let pairs: Vec<(String, i64)> = ready_files.iter().map(|f| {
-        let name = f.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let size = f.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
-        (name, size)
-    }).collect();
+    let pairs: Vec<(String, i64)> = ready_files
+        .iter()
+        .map(|f| {
+            let name = f
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let size = f.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
+            (name, size)
+        })
+        .collect();
 
     let idx = select_video_file(&pairs, filename, file_index, season, episode);
 
-    let selected = ready_files.get(idx)
-        .ok_or_else(|| ProviderError::api("File index out of range for Debrid-Link torrent", "torrent_not_downloaded.mp4"))?;
+    let selected = ready_files.get(idx).ok_or_else(|| {
+        ProviderError::api(
+            "File index out of range for Debrid-Link torrent",
+            "torrent_not_downloaded.mp4",
+        )
+    })?;
 
-    let mut url = selected.get("downloadUrl")
+    let mut url = selected
+        .get("downloadUrl")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| ProviderError::api("No downloadUrl on Debrid-Link file", "torrent_not_downloaded.mp4"))?
+        .ok_or_else(|| {
+            ProviderError::api(
+                "No downloadUrl on Debrid-Link file",
+                "torrent_not_downloaded.mp4",
+            )
+        })?
         .to_string();
 
     // Append user_ip if provided
@@ -435,10 +497,7 @@ pub async fn get_video_url(
 }
 
 /// Delete ALL seedbox torrents from the Debrid-Link account.
-pub async fn delete_all_torrents(
-    http: &reqwest::Client,
-    token: &str,
-) -> Result<(), ProviderError> {
+pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     let bearer = resolve_bearer(http, token).await?;
     let mut page = 0usize;
     let per_page = 25usize;
@@ -452,9 +511,11 @@ pub async fn delete_all_torrents(
                 ("page", &page.to_string()),
                 ("perPage", &per_page.to_string()),
             ],
-        ).await?;
+        )
+        .await?;
 
-        let items = body.get("value")
+        let items = body
+            .get("value")
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
@@ -465,7 +526,9 @@ pub async fn delete_all_torrents(
 
         for item in &items {
             if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
-                dl_delete(http, &bearer, &format!("/seedbox/{id}/delete")).await.ok();
+                dl_delete(http, &bearer, &format!("/seedbox/{id}/delete"))
+                    .await
+                    .ok();
             }
         }
 

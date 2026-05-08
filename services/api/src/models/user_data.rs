@@ -129,7 +129,11 @@ pub struct StreamingProvider {
     pub name: String,
     #[serde(rename = "sv", alias = "service")]
     pub service: String,
-    #[serde(default = "default_true", rename = "ewc", alias = "enable_watchlist_catalogs")]
+    #[serde(
+        default = "default_true",
+        rename = "ewc",
+        alias = "enable_watchlist_catalogs"
+    )]
     pub enable_watchlist_catalogs: bool,
     #[serde(default, rename = "tk", alias = "token")]
     pub token: Option<String>,
@@ -146,7 +150,12 @@ pub struct StreamingProvider {
     #[serde(default, rename = "oscs", alias = "only_show_cached_streams")]
     pub only_show_cached_streams: bool,
     // Complex nested configs — kept as raw JSON so we don't lose data but don't need to parse
-    #[serde(default, rename = "qbc", alias = "qbittorrent_config", skip_serializing)]
+    #[serde(
+        default,
+        rename = "qbc",
+        alias = "qbittorrent_config",
+        skip_serializing
+    )]
     pub qbittorrent_config: Option<Value>,
     #[serde(default, rename = "sbc", alias = "sabnzbd_config", skip_serializing)]
     pub sabnzbd_config: Option<Value>,
@@ -158,7 +167,12 @@ pub struct StreamingProvider {
     pub easynews_config: Option<Value>,
     #[serde(default, rename = "u", alias = "url", skip_serializing)]
     pub url: Option<String>,
-    #[serde(default, rename = "stsn", alias = "stremthru_store_name", skip_serializing)]
+    #[serde(
+        default,
+        rename = "stsn",
+        alias = "stremthru_store_name",
+        skip_serializing
+    )]
     pub stremthru_store_name: Option<String>,
 }
 
@@ -226,17 +240,33 @@ pub struct UserData {
     // Stream display / combining
     #[serde(default = "default_max_streams", rename = "mxs", alias = "max_streams")]
     pub max_streams: u32,
-    #[serde(default = "default_max_streams_per_resolution", rename = "mspr", alias = "max_streams_per_resolution")]
+    #[serde(
+        default = "default_max_streams_per_resolution",
+        rename = "mspr",
+        alias = "max_streams_per_resolution"
+    )]
     pub max_streams_per_resolution: u32,
-    #[serde(default = "default_stream_type_grouping", rename = "stg", alias = "stream_type_grouping")]
+    #[serde(
+        default = "default_stream_type_grouping",
+        rename = "stg",
+        alias = "stream_type_grouping"
+    )]
     pub stream_type_grouping: String,
-    #[serde(default = "default_stream_type_order", rename = "sto", alias = "stream_type_order")]
+    #[serde(
+        default = "default_stream_type_order",
+        rename = "sto",
+        alias = "stream_type_order"
+    )]
     pub stream_type_order: Vec<String>,
     #[serde(default, rename = "pg", alias = "provider_grouping", skip_serializing)]
     pub provider_grouping: Option<String>,
 
     // Stream type toggles
-    #[serde(default = "default_enable_usenet_streams", rename = "eus", alias = "enable_usenet_streams")]
+    #[serde(
+        default = "default_enable_usenet_streams",
+        rename = "eus",
+        alias = "enable_usenet_streams"
+    )]
     pub enable_usenet_streams: bool,
     #[serde(default, rename = "puot", alias = "prefer_usenet_over_torrent")]
     pub prefer_usenet_over_torrent: bool,
@@ -272,11 +302,26 @@ pub struct UserData {
     pub stream_template: Option<Value>,
 
     // Stream name filter — not yet used in Rust but must survive round-trip
-    #[serde(default, rename = "snfm", alias = "stream_name_filter_mode", skip_serializing)]
+    #[serde(
+        default,
+        rename = "snfm",
+        alias = "stream_name_filter_mode",
+        skip_serializing
+    )]
     pub stream_name_filter_mode: Option<String>,
-    #[serde(default, rename = "snfp", alias = "stream_name_filter_patterns", skip_serializing)]
+    #[serde(
+        default,
+        rename = "snfp",
+        alias = "stream_name_filter_patterns",
+        skip_serializing
+    )]
     pub stream_name_filter_patterns: Vec<String>,
-    #[serde(default, rename = "snfr", alias = "stream_name_filter_use_regex", skip_serializing)]
+    #[serde(
+        default,
+        rename = "snfr",
+        alias = "stream_name_filter_use_regex",
+        skip_serializing
+    )]
     pub stream_name_filter_use_regex: bool,
 
     // Misc unused fields — round-trip safe
@@ -284,7 +329,12 @@ pub struct UserData {
     pub include_anime: bool,
     #[serde(default, rename = "ed", alias = "enable_discover", skip_serializing)]
     pub enable_discover: bool,
-    #[serde(default, rename = "tsp", alias = "torrent_sorting_priority", skip_serializing)]
+    #[serde(
+        default,
+        rename = "tsp",
+        alias = "torrent_sorting_priority",
+        skip_serializing
+    )]
     pub torrent_sorting_priority: Vec<Value>,
     #[serde(default, rename = "ls", alias = "language_sorting", skip_serializing)]
     pub language_sorting: Vec<Value>,
@@ -453,13 +503,19 @@ impl UserData {
                 .iter()
                 .filter_map(|t| {
                     let lst = stream_groups.get(t.as_str())?;
-                    if lst.is_empty() { None } else { Some(lst.iter()) }
+                    if lst.is_empty() {
+                        None
+                    } else {
+                        Some(lst.iter())
+                    }
                 })
                 .collect();
 
             let mut combined: Vec<T> = Vec::new();
             loop {
-                if iters.is_empty() { break; }
+                if iters.is_empty() {
+                    break;
+                }
                 let mut exhausted = Vec::new();
                 for (i, it) in iters.iter_mut().enumerate() {
                     match it.next() {
@@ -468,7 +524,7 @@ impl UserData {
                     }
                 }
                 for i in exhausted.into_iter().rev() {
-                    iters.remove(i);
+                    let _ = iters.remove(i);
                 }
             }
             combined.truncate(self.max_streams as usize);

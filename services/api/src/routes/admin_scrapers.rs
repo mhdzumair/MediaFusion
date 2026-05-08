@@ -50,7 +50,6 @@
 ///   POST /migrate                        → migrate_single_stream
 ///   POST /migrate/bulk                   → migrate_bulk_streams
 ///   GET  /exportable                     → get_exportable_streams
-
 use std::sync::Arc;
 
 use axum::{
@@ -142,11 +141,7 @@ fn validate_moderator_or_admin(headers: &HeaderMap, secret_key: &str) -> Option<
 }
 
 fn forbidden() -> axum::response::Response {
-    (
-        StatusCode::FORBIDDEN,
-        Json(json!({"detail": "Forbidden"})),
-    )
-        .into_response()
+    (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response()
 }
 
 // ─── Proxy helper ─────────────────────────────────────────────────────────────

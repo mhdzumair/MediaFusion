@@ -22,7 +22,6 @@
 ///   POST   /import/table                   → import_table
 ///   GET    /indexes                        → list_indexes
 ///   POST   /indexes/rebuild                → rebuild_indexes
-
 use std::sync::Arc;
 
 use axum::{
@@ -34,7 +33,7 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
@@ -149,24 +148,86 @@ pub struct RebuildIndexRequest {
 // ─── Rust-native DB endpoints ─────────────────────────────────────────────────
 
 /// GET /api/v1/admin/db/stats
-pub async fn db_stats(
-    headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn db_stats(headers: HeaderMap, State(state): State<Arc<AppState>>) -> impl IntoResponse {
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
 
-    let (version, db_name, size_pretty, total_bytes, active_conn, max_conn, deadlocks, commits, rollbacks) = tokio::join!(
-        async { sqlx::query_scalar::<_, String>("SELECT version()").fetch_one(&state.pool_ro).await.unwrap_or_else(|_| "unknown".into()) },
-        async { sqlx::query_scalar::<_, String>("SELECT current_database()").fetch_one(&state.pool_ro).await.unwrap_or_else(|_| "unknown".into()) },
-        async { sqlx::query_scalar::<_, String>("SELECT pg_size_pretty(pg_database_size(current_database()))").fetch_one(&state.pool_ro).await.unwrap_or_else(|_| "unknown".into()) },
-        async { sqlx::query_scalar::<_, i64>("SELECT pg_database_size(current_database())").fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT count(*) FROM pg_stat_activity WHERE state = 'active'").fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT current_setting('max_connections')::int").fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()").fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT xact_commit FROM pg_stat_database WHERE datname = current_database()").fetch_one(&state.pool_ro).await.unwrap_or(0) },
-        async { sqlx::query_scalar::<_, i64>("SELECT xact_rollback FROM pg_stat_database WHERE datname = current_database()").fetch_one(&state.pool_ro).await.unwrap_or(0) },
+    let (
+        version,
+        db_name,
+        size_pretty,
+        total_bytes,
+        active_conn,
+        max_conn,
+        deadlocks,
+        commits,
+        rollbacks,
+    ) = tokio::join!(
+        async {
+            sqlx::query_scalar::<_, String>("SELECT version()")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or_else(|_| "unknown".into())
+        },
+        async {
+            sqlx::query_scalar::<_, String>("SELECT current_database()")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or_else(|_| "unknown".into())
+        },
+        async {
+            sqlx::query_scalar::<_, String>(
+                "SELECT pg_size_pretty(pg_database_size(current_database()))",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or_else(|_| "unknown".into())
+        },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT pg_database_size(current_database())")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM pg_stat_activity WHERE state = 'active'",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>("SELECT current_setting('max_connections')::int")
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT xact_commit FROM pg_stat_database WHERE datname = current_database()",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT xact_rollback FROM pg_stat_database WHERE datname = current_database()",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0)
+        },
     );
 
     let cache_hit = sqlx::query_scalar::<_, f64>(
@@ -202,7 +263,20 @@ pub async fn db_tables(
         return forbidden();
     }
 
-    let rows = sqlx::query_as::<_, (String, String, i64, String, i64, String, i64, Option<String>, Option<String>)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            i64,
+            String,
+            i64,
+            String,
+            i64,
+            Option<String>,
+            Option<String>,
+        ),
+    >(
         r#"SELECT
             t.schemaname,
             t.relname as tablename,
@@ -225,19 +299,31 @@ pub async fn db_tables(
             let total_size: i64 = tables.iter().map(|t| t.4).sum();
             let items: Vec<Value> = tables
                 .into_iter()
-                .map(|(schema, name, row_count, size_human, size_bytes, idx_size_h, idx_size_b, last_av, last_aa)| {
-                    json!({
-                        "name": name,
-                        "schema_name": schema,
-                        "row_count": row_count,
-                        "size_human": size_human,
-                        "size_bytes": size_bytes,
-                        "index_size_human": idx_size_h,
-                        "index_size_bytes": idx_size_b,
-                        "last_autovacuum": last_av,
-                        "last_autoanalyze": last_aa,
-                    })
-                })
+                .map(
+                    |(
+                        schema,
+                        name,
+                        row_count,
+                        size_human,
+                        size_bytes,
+                        idx_size_h,
+                        idx_size_b,
+                        last_av,
+                        last_aa,
+                    )| {
+                        json!({
+                            "name": name,
+                            "schema_name": schema,
+                            "row_count": row_count,
+                            "size_human": size_human,
+                            "size_bytes": size_bytes,
+                            "index_size_human": idx_size_h,
+                            "index_size_bytes": idx_size_b,
+                            "last_autovacuum": last_av,
+                            "last_autoanalyze": last_aa,
+                        })
+                    },
+                )
                 .collect();
 
             let total_count = items.len();
@@ -372,7 +458,11 @@ pub async fn get_table_data(
     let offset = (page - 1) * per_page;
 
     let sort_col = params.sort_by.as_deref().unwrap_or("id");
-    let sort_order = if params.sort_order.as_deref() == Some("asc") { "ASC" } else { "DESC" };
+    let sort_order = if params.sort_order.as_deref() == Some("asc") {
+        "ASC"
+    } else {
+        "DESC"
+    };
 
     // Validate sort column (only alphanumeric + underscore)
     if !sort_col.chars().all(|c| c.is_alphanumeric() || c == '_') {
@@ -485,7 +575,8 @@ pub async fn run_vacuum(
     }
 
     match sqlx::query("VACUUM ANALYZE").execute(&state.pool).await {
-        Ok(_) => Json(json!({"status": "success", "message": "VACUUM ANALYZE completed"})).into_response(),
+        Ok(_) => Json(json!({"status": "success", "message": "VACUUM ANALYZE completed"}))
+            .into_response(),
         Err(e) => {
             tracing::error!("vacuum: {e}");
             (
@@ -657,12 +748,10 @@ pub async fn detect_orphan_media(
     }
 
     // Media with zero total_streams
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM media WHERE total_streams = 0",
-    )
-    .fetch_one(&state.pool_ro)
-    .await
-    .unwrap_or(0);
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM media WHERE total_streams = 0")
+        .fetch_one(&state.pool_ro)
+        .await
+        .unwrap_or(0);
 
     Json(json!({"orphan_media_count": count})).into_response()
 }
@@ -675,7 +764,14 @@ pub async fn cleanup_orphans(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    proxy_to_python(&state, reqwest::Method::POST, "/api/v1/admin/db/orphans/cleanup", &headers, None).await
+    proxy_to_python(
+        &state,
+        reqwest::Method::POST,
+        "/api/v1/admin/db/orphans/cleanup",
+        &headers,
+        None,
+    )
+    .await
 }
 
 /// POST /api/v1/admin/db/export/table/{table_name}
@@ -700,7 +796,14 @@ pub async fn import_table(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    proxy_to_python(&state, reqwest::Method::POST, "/api/v1/admin/db/import/table", &headers, Some(body)).await
+    proxy_to_python(
+        &state,
+        reqwest::Method::POST,
+        "/api/v1/admin/db/import/table",
+        &headers,
+        Some(body),
+    )
+    .await
 }
 
 /// GET /api/v1/admin/db/indexes
@@ -763,7 +866,10 @@ pub async fn rebuild_indexes(
         }
         let query = format!("REINDEX INDEX {idx}");
         match sqlx::query(&query).execute(&state.pool).await {
-            Ok(_) => return Json(json!({"status": "success", "message": format!("Reindexed {idx}")})).into_response(),
+            Ok(_) => {
+                return Json(json!({"status": "success", "message": format!("Reindexed {idx}")}))
+                    .into_response()
+            }
             Err(e) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -784,7 +890,12 @@ pub async fn rebuild_indexes(
         }
         let query = format!("REINDEX TABLE {table}");
         match sqlx::query(&query).execute(&state.pool).await {
-            Ok(_) => return Json(json!({"status": "success", "message": format!("Reindexed table {table}")})).into_response(),
+            Ok(_) => {
+                return Json(
+                    json!({"status": "success", "message": format!("Reindexed table {table}")}),
+                )
+                .into_response()
+            }
             Err(e) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,

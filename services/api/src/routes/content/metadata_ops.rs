@@ -6,7 +6,6 @@
 ///   POST /{media_id}/link-multiple-external-ids → link_multiple_external_ids
 ///   GET  /{media_id}                        → get_media_metadata
 ///   GET  /search                            → search_metadata
-
 use std::sync::Arc;
 
 use axum::{
@@ -126,7 +125,11 @@ pub async fn refresh_metadata(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     let body = axum::body::to_bytes(req.into_body(), 1024 * 1024)
@@ -152,7 +155,11 @@ pub async fn link_external_id(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     let body = axum::body::to_bytes(req.into_body(), 1024 * 1024)
@@ -178,7 +185,11 @@ pub async fn link_multiple_external_ids(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     let body = axum::body::to_bytes(req.into_body(), 1024 * 1024)
@@ -204,7 +215,11 @@ pub async fn get_media_metadata(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
     proxy(
@@ -225,8 +240,20 @@ pub async fn search_metadata(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let q = req.uri().query().unwrap_or("").to_string();
-    proxy(&state, reqwest::Method::GET, "/api/v1/metadata/search", &q, &headers, vec![]).await
+    proxy(
+        &state,
+        reqwest::Method::GET,
+        "/api/v1/metadata/search",
+        &q,
+        &headers,
+        vec![],
+    )
+    .await
 }

@@ -9,16 +9,15 @@
 /// For now this is a lightweight passthrough that forwards updates to the
 /// Python service via HTTP proxy when PYTHON_BASE_URL is configured,
 /// or returns 200 OK (no-op) when standalone.
-
 use std::sync::Arc;
 
+use axum::body::to_bytes;
 use axum::{
     body::Body,
     extract::{Request, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
-use axum::body::to_bytes;
 
 use crate::state::AppState;
 
@@ -29,7 +28,10 @@ pub async fn handler(
 ) -> Response {
     // Require bot token
     if state.config.telegram_bot_token.is_none() {
-        return (StatusCode::BAD_REQUEST, r#"{"ok":false,"detail":"Telegram bot not configured"}"#)
+        return (
+            StatusCode::BAD_REQUEST,
+            r#"{"ok":false,"detail":"Telegram bot not configured"}"#,
+        )
             .into_response();
     }
 
@@ -41,7 +43,10 @@ pub async fn handler(
             .unwrap_or("");
         if provided != expected {
             tracing::warn!("telegram webhook: invalid secret token");
-            return (StatusCode::FORBIDDEN, r#"{"ok":false,"detail":"Invalid secret token"}"#)
+            return (
+                StatusCode::FORBIDDEN,
+                r#"{"ok":false,"detail":"Invalid secret token"}"#,
+            )
                 .into_response();
         }
     }
@@ -60,7 +65,8 @@ pub async fn handler(
             }
         };
 
-        let mut forward_req = state.http
+        let mut forward_req = state
+            .http
             .post(&target)
             .header(header::CONTENT_TYPE, "application/json")
             .body(body_bytes.to_vec());

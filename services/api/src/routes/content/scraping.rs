@@ -6,7 +6,6 @@
 ///   GET  /scrapers               → list_scrapers
 ///   GET  /{media_id}/status      → get_scrape_status
 ///   POST /{media_id}/scrape      → trigger_scrape
-
 use std::sync::Arc;
 
 use axum::{
@@ -138,7 +137,11 @@ pub async fn list_scrapers(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let query = req.uri().query().unwrap_or("").to_string();
     proxy_to_python(
@@ -160,7 +163,11 @@ pub async fn get_scrape_status(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let query = req.uri().query().unwrap_or("").to_string();
     proxy_to_python(
@@ -182,7 +189,11 @@ pub async fn trigger_scrape(
     req: Request,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
     }
     let query = req.uri().query().unwrap_or("").to_string();
     let body = axum::body::to_bytes(req.into_body(), 1024 * 1024)

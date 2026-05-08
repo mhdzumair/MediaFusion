@@ -23,7 +23,15 @@ pub struct TelegramUserForwardRow {
     pub created_at: DateTime<Utc>,
 }
 
-type TgStreamTuple = (i64, Option<String>, Option<String>, Option<i64>, Option<String>, Option<i64>, Option<String>);
+type TgStreamTuple = (
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+    Option<String>,
+    Option<i64>,
+    Option<String>,
+);
 type TgForwardTuple = (i64, i64, i64, i64, String, i64, DateTime<Utc>);
 
 fn tuple_to_stream_row(r: TgStreamTuple) -> TelegramStreamRow {
@@ -168,11 +176,7 @@ pub async fn create_telegram_user_forward(
 }
 
 /// Delete a TelegramUserForward row (used when refreshing stale forwards).
-pub async fn delete_telegram_user_forward(
-    pool: &PgPool,
-    telegram_stream_id: i64,
-    user_id: i64,
-) {
+pub async fn delete_telegram_user_forward(pool: &PgPool, telegram_stream_id: i64, user_id: i64) {
     let _ = sqlx::query(
         "DELETE FROM telegram_user_forward WHERE telegram_stream_id = $1 AND user_id = $2",
     )
@@ -184,13 +188,11 @@ pub async fn delete_telegram_user_forward(
 
 /// Get the telegram_user_id for a given MediaFusion user_id.
 pub async fn get_user_telegram_id(pool: &PgPool, user_id: i64) -> Option<i64> {
-    sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT telegram_user_id FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten()
-    .flatten()
+    sqlx::query_scalar::<_, Option<i64>>("SELECT telegram_user_id FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .flatten()
 }

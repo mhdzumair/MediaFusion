@@ -3,7 +3,21 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Film, Tv, Radio, Search, Grid3X3, List, SortAsc, SortDesc, CheckCircle, User, X, Infinity, LayoutList } from 'lucide-react'
+import {
+  Film,
+  Tv,
+  Radio,
+  Search,
+  Grid3X3,
+  List,
+  SortAsc,
+  SortDesc,
+  CheckCircle,
+  User,
+  X,
+  Infinity as InfinityIcon,
+  LayoutList,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CatalogType, SortOption, SortDirection, GenreResponse, CatalogInfo } from '@/lib/api'
 
@@ -254,7 +268,7 @@ export function ContentFilters({
                     onClick={() => onScrollModeChange('infinite')}
                     title="Infinite scroll"
                   >
-                    <Infinity className="h-4 w-4" />
+                    <InfinityIcon className="h-4 w-4" />
                   </Button>
                   <Button
                     variant={scrollMode === 'paged' ? 'secondary' : 'ghost'}

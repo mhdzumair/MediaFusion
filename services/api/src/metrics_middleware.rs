@@ -18,9 +18,7 @@ fn uuid_re() -> &'static Regex {
 }
 
 fn num_re() -> &'static Regex {
-    RE_NUM.get_or_init(|| {
-        Regex::new(r"/(\d+)(/|$)").expect("valid numeric segment regex")
-    })
+    RE_NUM.get_or_init(|| Regex::new(r"/(\d+)(/|$)").expect("valid numeric segment regex"))
 }
 
 fn normalize_route(path: &str) -> String {
@@ -45,6 +43,8 @@ pub async fn metrics_middleware(
     let status = resp.status().as_u16();
     state.metrics.in_flight.fetch_sub(1, Ordering::Relaxed);
 
-    state.metrics.record_request(&method, &route, status, duration_ms);
+    state
+        .metrics
+        .record_request(&method, &route, status, duration_ms);
     resp
 }

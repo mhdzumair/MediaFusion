@@ -101,7 +101,10 @@ fn process_item(
         return None;
     }
 
-    let info_hash = item.get("info_hash").and_then(|v| v.as_str())?.to_lowercase();
+    let info_hash = item
+        .get("info_hash")
+        .and_then(|v| v.as_str())?
+        .to_lowercase();
     if info_hash.len() != 40 || !info_hash.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
     }

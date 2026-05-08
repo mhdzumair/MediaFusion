@@ -48,18 +48,18 @@ pub fn tr_range_func(input: &str, _: Option<&FieldValue>) -> Option<FieldValue> 
     let nums: Vec<i32> = re
         .find_iter(input.as_bytes())
         .filter_map(|r| r.ok())
-        .filter_map(|m| std::str::from_utf8(m.as_bytes()).ok().and_then(|s| s.parse().ok()))
+        .filter_map(|m| {
+            std::str::from_utf8(m.as_bytes())
+                .ok()
+                .and_then(|s| s.parse().ok())
+        })
         .collect();
 
     match nums.len() {
         0 => None,
         1 => Some(FieldValue::Ints(nums)),
-        2 if nums[0] < nums[1] => {
-            Some(FieldValue::Ints((nums[0]..=nums[1]).collect()))
-        }
-        n if n > 2 && nums.windows(2).all(|w| w[0] + 1 == w[1]) => {
-            Some(FieldValue::Ints(nums))
-        }
+        2 if nums[0] < nums[1] => Some(FieldValue::Ints((nums[0]..=nums[1]).collect())),
+        n if n > 2 && nums.windows(2).all(|w| w[0] + 1 == w[1]) => Some(FieldValue::Ints(nums)),
         _ => Some(FieldValue::Ints(nums)),
     }
 }
@@ -71,7 +71,11 @@ pub fn tr_range_x_of_y(input: &str, _: Option<&FieldValue>) -> Option<FieldValue
     let nums: Vec<i32> = re
         .find_iter(input.as_bytes())
         .filter_map(|r| r.ok())
-        .filter_map(|m| std::str::from_utf8(m.as_bytes()).ok().and_then(|s| s.parse().ok()))
+        .filter_map(|m| {
+            std::str::from_utf8(m.as_bytes())
+                .ok()
+                .and_then(|s| s.parse().ok())
+        })
         .collect();
     if nums.len() != 1 {
         return None;
@@ -113,13 +117,13 @@ pub fn value(val: &'static str) -> Transformer {
 
 /// Wrap the result of `chain` in a single-element Vec.
 pub fn array(chain: Transformer) -> Transformer {
-    std::sync::Arc::new(move |input: &str, _: Option<&FieldValue>| {
-        match chain(input, None)? {
+    std::sync::Arc::new(
+        move |input: &str, _: Option<&FieldValue>| match chain(input, None)? {
             FieldValue::Int(n) => Some(FieldValue::Ints(vec![n])),
             FieldValue::Str(s) => Some(FieldValue::Strs(vec![s])),
             other => Some(other),
-        }
-    })
+        },
+    )
 }
 
 /// Append unique string values returned by `chain` to an existing Strs list.

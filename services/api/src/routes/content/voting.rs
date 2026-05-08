@@ -11,7 +11,6 @@
 ///   POST   /api/v1/content/{media_id}/like       → like_content
 ///   DELETE /api/v1/content/{media_id}/like       → unlike_content      (204)
 ///   GET    /api/v1/content/{media_id}/likes      → get_content_likes   (optional auth)
-
 use std::sync::Arc;
 
 use axum::{
@@ -230,13 +229,12 @@ pub async fn vote_stream(
     };
 
     // Verify stream exists
-    let exists: bool = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)",
-    )
-    .bind(stream_id as i32)
-    .fetch_one(&state.pool_ro)
-    .await
-    .unwrap_or(false);
+    let exists: bool =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
+            .bind(stream_id as i32)
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(false);
 
     if !exists {
         return (
@@ -326,13 +324,11 @@ pub async fn delete_stream_vote(
         }
     };
 
-    let result = sqlx::query(
-        "DELETE FROM stream_votes WHERE user_id = $1 AND stream_id = $2",
-    )
-    .bind(user_id)
-    .bind(stream_id as i32)
-    .execute(&state.pool)
-    .await;
+    let result = sqlx::query("DELETE FROM stream_votes WHERE user_id = $1 AND stream_id = $2")
+        .bind(user_id)
+        .bind(stream_id as i32)
+        .execute(&state.pool)
+        .await;
 
     match result {
         Ok(r) if r.rows_affected() == 0 => (
@@ -450,13 +446,12 @@ pub async fn rate_content(
     };
 
     // Verify media exists
-    let exists: bool = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)",
-    )
-    .bind(media_id as i32)
-    .fetch_one(&state.pool_ro)
-    .await
-    .unwrap_or(false);
+    let exists: bool =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)")
+            .bind(media_id as i32)
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(false);
 
     if !exists {
         return (
@@ -609,13 +604,12 @@ pub async fn like_content(
     };
 
     // Verify media exists
-    let exists: bool = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)",
-    )
-    .bind(media_id as i32)
-    .fetch_one(&state.pool_ro)
-    .await
-    .unwrap_or(false);
+    let exists: bool =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)")
+            .bind(media_id as i32)
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(false);
 
     if !exists {
         return (

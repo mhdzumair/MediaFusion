@@ -119,7 +119,13 @@ pub async fn run_usenet(
     ) {
         if !u.is_empty() && !p.is_empty() {
             let en = easynews::scrape_with_credentials(
-                &state.http, u, p, meta, media_type, season, episode,
+                &state.http,
+                u,
+                p,
+                meta,
+                media_type,
+                season,
+                episode,
             )
             .await;
             results.extend(en);
@@ -127,10 +133,9 @@ pub async fn run_usenet(
     }
 
     // ── TorBox Usenet ─────────────────────────────────────────────────────────
-    let tb = torbox_search::scrape_usenet(
-        &state.http, user_data, meta, media_type, season, episode,
-    )
-    .await;
+    let tb =
+        torbox_search::scrape_usenet(&state.http, user_data, meta, media_type, season, episode)
+            .await;
     results.extend(tb);
 
     // Persist to DB
@@ -181,10 +186,7 @@ async fn fan_out(
     let http = state.http.clone();
     let cfg = state.config.clone();
     let meta = Arc::new(meta.clone());
-    let ic = user_data
-        .indexer_config
-        .clone()
-        .unwrap_or_default();
+    let ic = user_data.indexer_config.clone().unwrap_or_default();
 
     let mut set: JoinSet<Vec<ScrapedStream>> = JoinSet::new();
 
@@ -194,9 +196,7 @@ async fn fan_out(
         let url = cfg.torrentio_url.clone();
         let meta = meta.clone();
         let mt = media_type.to_string();
-        set.spawn(async move {
-            torrentio::scrape(&http, &url, &meta, &mt, season, episode).await
-        });
+        set.spawn(async move { torrentio::scrape(&http, &url, &meta, &mt, season, episode).await });
     }
 
     // ── Prowlarr (global config, or user-overridden URL/key) ──────────────────
@@ -209,7 +209,13 @@ async fn fan_out(
         let prowlarr_key = ic
             .prowlarr
             .as_ref()
-            .and_then(|p| if p.use_global { None } else { p.api_key.clone() })
+            .and_then(|p| {
+                if p.use_global {
+                    None
+                } else {
+                    p.api_key.clone()
+                }
+            })
             .or_else(|| cfg.prowlarr_api_key.clone());
         if let (Some(url), Some(key)) = (prowlarr_url, prowlarr_key) {
             let http = http.clone();
@@ -231,7 +237,13 @@ async fn fan_out(
         let jackett_key = ic
             .jackett
             .as_ref()
-            .and_then(|j| if j.use_global { None } else { j.api_key.clone() })
+            .and_then(|j| {
+                if j.use_global {
+                    None
+                } else {
+                    j.api_key.clone()
+                }
+            })
             .or_else(|| cfg.jackett_api_key.clone());
         if let (Some(url), Some(key)) = (jackett_url, jackett_key) {
             let http = http.clone();
@@ -248,9 +260,7 @@ async fn fan_out(
         let http = http.clone();
         let meta = meta.clone();
         let mt = media_type.to_string();
-        set.spawn(async move {
-            zilean::scrape(&http, &url, &meta, &mt, season, episode).await
-        });
+        set.spawn(async move { zilean::scrape(&http, &url, &meta, &mt, season, episode).await });
     }
 
     // ── User-configured Torznab endpoints ─────────────────────────────────────
@@ -288,9 +298,9 @@ async fn fan_out(
         let http = http.clone();
         let meta = meta.clone();
         let mt = media_type.to_string();
-        set.spawn(async move {
-            mediafusion::scrape(&http, &url, &meta, &mt, season, episode).await
-        });
+        set.spawn(
+            async move { mediafusion::scrape(&http, &url, &meta, &mt, season, episode).await },
+        );
     }
 
     // ── TorBox Search (user token) ────────────────────────────────────────────
@@ -299,9 +309,9 @@ async fn fan_out(
         let meta = meta.clone();
         let mt = media_type.to_string();
         let ud = user_data.clone();
-        set.spawn(async move {
-            torbox_search::scrape(&http, &ud, &meta, &mt, season, episode).await
-        });
+        set.spawn(
+            async move { torbox_search::scrape(&http, &ud, &meta, &mt, season, episode).await },
+        );
     }
 
     // ── Public indexers (stub) ────────────────────────────────────────────────

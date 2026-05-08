@@ -9,7 +9,6 @@
 ///   POST   /jackett/test   → test_jackett_connection
 ///   POST   /torznab/test   → test_torznab_endpoint
 ///   POST   /newznab/test   → test_newznab_indexer
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -87,6 +86,7 @@ fn xml_attrs(bytes: &quick_xml::events::BytesStart<'_>) -> HashMap<String, Strin
 /// Returns (server_title, category_count, search_available, error_code, error_desc, indexers).
 ///
 /// `indexers` is only populated for Jackett torznab indexer discovery format.
+#[allow(clippy::type_complexity)]
 fn parse_caps_xml(
     xml: &str,
 ) -> (
@@ -240,7 +240,7 @@ pub async fn test_prowlarr_connection(
     };
 
     // Fetch indexer status
-    let status_map: HashMap<i64, serde_json::Value> = state
+    let _status_map: HashMap<i64, serde_json::Value> = state
         .http
         .get(&status_url)
         .header("X-Api-Key", &api_key)
@@ -393,20 +393,16 @@ pub async fn test_jackett_connection(
         .send()
         .await
     {
-        Err(e) => {
-            return Json(serde_json::json!({
-                "success": false,
-                "message": format!("Connection failed: {e}"),
-            }))
-            .into_response();
-        }
-        Ok(r) if !r.status().is_success() => {
-            return Json(serde_json::json!({
-                "success": false,
-                "message": format!("HTTP error: {}", r.status().as_u16()),
-            }))
-            .into_response();
-        }
+        Err(e) => Json(serde_json::json!({
+            "success": false,
+            "message": format!("Connection failed: {e}"),
+        }))
+        .into_response(),
+        Ok(r) if !r.status().is_success() => Json(serde_json::json!({
+            "success": false,
+            "message": format!("HTTP error: {}", r.status().as_u16()),
+        }))
+        .into_response(),
         Ok(r) => {
             let xml_text = r.text().await.unwrap_or_default();
             let (_, _, _, _, _, xml_indexers) = parse_caps_xml(&xml_text);
@@ -483,17 +479,15 @@ pub async fn test_jackett_connection(
                                 .get("TrackerId")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or(tracker);
-                            by_tracker
-                                .entry(tracker.to_string())
-                                .or_insert_with(|| {
-                                    serde_json::json!({
-                                        "name": tracker,
-                                        "id": tid,
-                                        "enabled": true,
-                                        "status": "healthy",
-                                        "error_message": null,
-                                    })
-                                });
+                            by_tracker.entry(tracker.to_string()).or_insert_with(|| {
+                                serde_json::json!({
+                                    "name": tracker,
+                                    "id": tid,
+                                    "enabled": true,
+                                    "status": "healthy",
+                                    "error_message": null,
+                                })
+                            });
                         }
                     }
                     let mut fallback: Vec<serde_json::Value> = by_tracker.into_values().collect();
@@ -563,8 +557,7 @@ pub async fn test_torznab_endpoint(
         .into_response(),
         Ok(r) => {
             let xml_text = r.text().await.unwrap_or_default();
-            let (server_title, cat_count, _, error_code, error_desc, _) =
-                parse_caps_xml(&xml_text);
+            let (server_title, cat_count, _, error_code, error_desc, _) = parse_caps_xml(&xml_text);
 
             if error_code.is_some() || error_desc.is_some() {
                 return Json(serde_json::json!({
@@ -681,7 +674,9 @@ async fn indexer_proxy(
     };
     let url = format!("{py_url}{path}");
     let mut req = state.http.request(method, &url);
-    if let Some(b) = body { req = req.json(&b); }
+    if let Some(b) = body {
+        req = req.json(&b);
+    }
     match req.send().await {
         Ok(r) => {
             let status = axum::http::StatusCode::from_u16(r.status().as_u16())
@@ -697,22 +692,68 @@ pub async fn list_indexers(State(state): State<Arc<AppState>>) -> Response {
     indexer_proxy(&state, reqwest::Method::GET, "/api/v1/indexers", None).await
 }
 
-pub async fn create_indexer(State(state): State<Arc<AppState>>, Json(body): Json<serde_json::Value>) -> Response {
-    indexer_proxy(&state, reqwest::Method::POST, "/api/v1/indexers", Some(body)).await
+pub async fn create_indexer(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    indexer_proxy(
+        &state,
+        reqwest::Method::POST,
+        "/api/v1/indexers",
+        Some(body),
+    )
+    .await
 }
 
-pub async fn get_indexer(State(state): State<Arc<AppState>>, axum::extract::Path(id): axum::extract::Path<i64>) -> Response {
-    indexer_proxy(&state, reqwest::Method::GET, &format!("/api/v1/indexers/{id}"), None).await
+pub async fn get_indexer(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Response {
+    indexer_proxy(
+        &state,
+        reqwest::Method::GET,
+        &format!("/api/v1/indexers/{id}"),
+        None,
+    )
+    .await
 }
 
-pub async fn update_indexer(State(state): State<Arc<AppState>>, axum::extract::Path(id): axum::extract::Path<i64>, Json(body): Json<serde_json::Value>) -> Response {
-    indexer_proxy(&state, reqwest::Method::PUT, &format!("/api/v1/indexers/{id}"), Some(body)).await
+pub async fn update_indexer(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    indexer_proxy(
+        &state,
+        reqwest::Method::PUT,
+        &format!("/api/v1/indexers/{id}"),
+        Some(body),
+    )
+    .await
 }
 
-pub async fn delete_indexer(State(state): State<Arc<AppState>>, axum::extract::Path(id): axum::extract::Path<i64>) -> Response {
-    indexer_proxy(&state, reqwest::Method::DELETE, &format!("/api/v1/indexers/{id}"), None).await
+pub async fn delete_indexer(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Response {
+    indexer_proxy(
+        &state,
+        reqwest::Method::DELETE,
+        &format!("/api/v1/indexers/{id}"),
+        None,
+    )
+    .await
 }
 
-pub async fn test_indexer(State(state): State<Arc<AppState>>, axum::extract::Path(id): axum::extract::Path<i64>) -> Response {
-    indexer_proxy(&state, reqwest::Method::POST, &format!("/api/v1/indexers/{id}/test"), None).await
+pub async fn test_indexer(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Response {
+    indexer_proxy(
+        &state,
+        reqwest::Method::POST,
+        &format!("/api/v1/indexers/{id}/test"),
+        None,
+    )
+    .await
 }

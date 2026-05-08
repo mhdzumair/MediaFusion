@@ -50,7 +50,16 @@ pub async fn series(
     let imdb_id = parts[0].to_string();
     let season: i32 = parts[1].parse().unwrap_or(1);
     let episode: i32 = parts[2].parse().unwrap_or(1);
-    dispatch(state, String::new(), imdb_id, "series", Some(season), Some(episode), q.page).await
+    dispatch(
+        state,
+        String::new(),
+        imdb_id,
+        "series",
+        Some(season),
+        Some(episode),
+        q.page,
+    )
+    .await
 }
 
 // ─── Authenticated ─────────────────────────────────────────────────────────────
@@ -81,7 +90,16 @@ pub async fn user_series(
     let imdb_id = parts[0].to_string();
     let season: i32 = parts[1].parse().unwrap_or(1);
     let episode: i32 = parts[2].parse().unwrap_or(1);
-    dispatch(state, secret_str, imdb_id, "series", Some(season), Some(episode), q.page).await
+    dispatch(
+        state,
+        secret_str,
+        imdb_id,
+        "series",
+        Some(season),
+        Some(episode),
+        q.page,
+    )
+    .await
 }
 
 // ─── Core dispatch ─────────────────────────────────────────────────────────────

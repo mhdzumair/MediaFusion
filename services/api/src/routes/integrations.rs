@@ -25,7 +25,6 @@
 ///
 /// Complex OAuth exchange and sync operations proxy to Python when
 /// `python_proxy_url` is configured. Simple DB CRUD runs natively.
-
 use std::sync::Arc;
 
 use axum::{
@@ -276,15 +275,13 @@ pub async fn list_integrations(
         pid
     } else {
         // Use default profile
-        let default: Option<(i32,)> =
-            match sqlx::query_as("SELECT id FROM user_profiles WHERE user_id = $1 AND is_default = true LIMIT 1")
-                .bind(user_id)
-                .fetch_optional(&state.pool_ro)
-                .await
-            {
-                Ok(r) => r,
-                Err(_) => None,
-            };
+        let default: Option<(i32,)> = sqlx::query_as(
+            "SELECT id FROM user_profiles WHERE user_id = $1 AND is_default = true LIMIT 1",
+        )
+        .bind(user_id)
+        .fetch_optional(&state.pool_ro)
+        .await
+        .unwrap_or_default();
         match default {
             Some((id,)) => id,
             None => return not_found("No default profile found"),
@@ -306,7 +303,8 @@ pub async fn list_integrations(
     };
 
     // Build a map of platform → row
-    let mut map: std::collections::HashMap<String, &IntegrationRow> = std::collections::HashMap::new();
+    let mut map: std::collections::HashMap<String, &IntegrationRow> =
+        std::collections::HashMap::new();
     for row in &rows {
         map.insert(row.2.clone(), row);
     }
@@ -461,7 +459,8 @@ pub async fn simkl_oauth_callback(
 
     if params.code.is_none() && params.error.is_none() {
         query_parts.push("simkl_error=missing_code".to_string());
-        query_parts.push("simkl_error_description=Missing+authorization+code+in+callback.".to_string());
+        query_parts
+            .push("simkl_error_description=Missing+authorization+code+in+callback.".to_string());
     }
 
     let host = state.config.host_url.trim_end_matches('/');
@@ -626,7 +625,7 @@ pub async fn update_integration_settings(
         Err(e) => return db_error("update_integration_settings fetch", &e),
     };
 
-    let Some((integ_id, existing_settings)) = row else {
+    let Some((integ_id, _existing_settings)) = row else {
         return not_found("Integration not connected");
     };
 
@@ -749,9 +748,7 @@ pub async fn get_telegram_status(State(state): State<Arc<AppState>>) -> Response
     } else if global_channels_count == 0 {
         "No global channels configured. Users can add their own channels.".to_string()
     } else {
-        format!(
-            "Telegram scraping is enabled with {global_channels_count} global channel(s)"
-        )
+        format!("Telegram scraping is enabled with {global_channels_count} global channel(s)")
     };
 
     (
@@ -839,7 +836,10 @@ pub async fn remove_telegram_channel(
     proxy_to_python(
         &state,
         reqwest::Method::DELETE,
-        &format!("/api/v1/telegram/channels/{}", urlencoding::encode(&channel_id)),
+        &format!(
+            "/api/v1/telegram/channels/{}",
+            urlencoding::encode(&channel_id)
+        ),
         &headers,
         None,
         None,
@@ -860,7 +860,10 @@ pub async fn update_telegram_channel(
     proxy_to_python(
         &state,
         reqwest::Method::PATCH,
-        &format!("/api/v1/telegram/channels/{}", urlencoding::encode(&channel_id)),
+        &format!(
+            "/api/v1/telegram/channels/{}",
+            urlencoding::encode(&channel_id)
+        ),
         &headers,
         Some(body),
         None,
@@ -993,10 +996,7 @@ pub async fn telegram_login(
 }
 
 /// DELETE /api/v1/telegram/unlink
-pub async fn telegram_unlink(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn telegram_unlink(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
