@@ -61,7 +61,9 @@ endif
 		fi; \
 	done
 	# Update pyproject.toml
-	@sed -i -e "s/version = \"[0-9.]*\"/version = \"$(VERSION_NEW)\"/" pyproject.toml
+	@sed -i -e "s/^version = \"[^\"]*\"/version = \"$(VERSION_NEW)\"/" pyproject.toml
+	# Update Rust Cargo.toml
+	@sed -i -e "s/^version = \"[^\"]*\"/version = \"$(VERSION_NEW)\"/" services/api/Cargo.toml
 	# Refresh uv.lock so project and lock versions stay in sync
 	@uv lock
 	@echo "Version updated to $(VERSION_NEW) in all files"
