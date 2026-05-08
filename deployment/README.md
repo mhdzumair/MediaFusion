@@ -68,6 +68,7 @@ cat > .env << EOF
 HOST_URL=http://127.0.0.1:8000
 SECRET_KEY=${SECRET_KEY}
 API_PASSWORD=dev_password
+STREAM_RS_PORT=8000        # Rust server port (default: 8000)
 
 # Database URIs (matching docker-compose-minimal.yml)
 POSTGRES_URI=postgresql://mediafusion:mediafusion@localhost:5432/mediafusion

@@ -228,7 +228,7 @@ rust-build:
 	cd services/api && cargo build --release
 
 rust-dev:
-	cd services/api && cargo run
+	cargo run --manifest-path services/api/Cargo.toml
 
 rust-test:
 	cd services/api && cargo test

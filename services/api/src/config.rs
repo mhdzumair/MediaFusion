@@ -82,7 +82,18 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn from_env() -> Self {
-        let _ = dotenvy::dotenv();
+        // Walk up from cwd until we find a .env file (handles running from
+        // services/api/ or repo root interchangeably).
+        if let Ok(cwd) = std::env::current_dir() {
+            let mut dir = Some(cwd.as_path());
+            while let Some(d) = dir {
+                if d.join(".env").exists() {
+                    let _ = dotenvy::from_path(d.join(".env"));
+                    break;
+                }
+                dir = d.parent();
+            }
+        }
 
         let raw = std::env::var("SECRET_KEY").expect("SECRET_KEY required");
         let mut key = [b' '; 32];
