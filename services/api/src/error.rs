@@ -38,6 +38,9 @@ impl IntoResponse for AppError {
             AppError::Crypto(_) => StatusCode::UNAUTHORIZED,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
+        if status == StatusCode::INTERNAL_SERVER_ERROR {
+            tracing::error!(error = %self, "internal server error");
+        }
         (status, Json(json!({"error": self.to_string()}))).into_response()
     }
 }

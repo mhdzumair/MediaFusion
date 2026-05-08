@@ -41,8 +41,9 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
-use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer, trace::TraceLayer};
+use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
 
+use crate::make_trace_layer;
 use crate::metrics_middleware::metrics_middleware;
 use crate::state::AppState;
 
@@ -482,6 +483,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/library/{media_id}", post(user_library::add_to_library).delete(user_library::remove_from_library))
         .route("/api/v1/library/{media_id}/status", get(user_library::get_library_status))
         .route("/api/v1/library/bulk", post(user_library::bulk_library_operation))
+        .route("/api/v1/library/stats", get(user_library::get_library_stats))
         // ── User catalogs ─────────────────────────────────────────────────────
         .route("/api/v1/user/catalogs", get(user_catalogs::list_user_catalogs).post(user_catalogs::create_user_catalog))
         .route("/api/v1/user/catalogs/{id}", get(user_catalogs::get_user_catalog).put(user_catalogs::update_user_catalog).delete(user_catalogs::delete_user_catalog))
@@ -521,6 +523,6 @@ pub fn router(state: Arc<AppState>) -> Router {
             axum::http::StatusCode::GATEWAY_TIMEOUT,
             std::time::Duration::from_secs(30),
         ))
-        .layer(TraceLayer::new_for_http())
+        .layer(make_trace_layer!())
         .with_state(state)
 }

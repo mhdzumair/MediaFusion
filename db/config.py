@@ -109,6 +109,16 @@ class Settings(BaseSettings):
     # Number of worker processes; used to size SQLAlchemy connection pool per process.
     gunicorn_workers: int = Field(default=3, ge=1)
 
+    # ── Rust API Server ─────────────────────────────────────────────────────
+    stream_rs_port: int = Field(
+        default=8000,
+        description="Port the Rust API server listens on.",
+    )
+    redis_rs_url: str | None = Field(
+        default=None,
+        description="Redis URL for the Rust service. Defaults to REDIS_URL on DB 1 (to avoid colliding with Python workers on DB 0). Set REDIS_RS_URL to override completely.",
+    )
+
     # Streaming Provider Toggles
     disabled_providers: list[
         Literal[
