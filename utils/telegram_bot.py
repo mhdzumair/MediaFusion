@@ -47,7 +47,7 @@ from db.models.streams import (
     YouTubeStream,
 )
 from db.models.providers import MediaImage, MetadataProvider
-from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
+from reference.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
 from utils.sports_parser import (
     SPORTS_CATEGORIES,
     detect_sports_category,
@@ -55,10 +55,10 @@ from utils.sports_parser import (
 )
 from utils.runtime_const import SPORTS_ARTIFACTS
 from db.redis_database import REDIS_ASYNC_CLIENT, REDIS_SYNC_CLIENT
-from api.routers.content.torrent_import import fetch_and_create_media_from_external
-from scrapers.imdb_data import get_imdb_title_data, search_multiple_imdb
-from scrapers.non_torrent_background_scraper import _normalize_telegram_channel_identifier
-from scrapers.scraper_tasks import meta_fetcher
+from reference.routers.content.torrent_import import fetch_and_create_media_from_external
+from workers.scrapers.imdb_data import get_imdb_title_data, search_multiple_imdb
+from workers.scrapers.non_torrent_background_scraper import _normalize_telegram_channel_identifier
+from workers.scrapers.scraper_tasks import meta_fetcher
 from utils.notification_registry import (
     register_file_annotation_handler,
     register_pending_contribution_handler,

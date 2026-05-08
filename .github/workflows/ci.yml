@@ -7,8 +7,34 @@ on:
     branches: [main]
 
 jobs:
+  # ── Detect which parts of the codebase changed ───────────────────────────
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      rust: ${{ steps.filter.outputs.rust }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            python:
+              - '**/*.py'
+              - 'pyproject.toml'
+              - 'uv.lock'
+            rust:
+              - 'services/api/**'
+            frontend:
+              - 'clients/frontend/**'
+
+  # ── Python ────────────────────────────────────────────────────────────────
   python-lint:
     name: Python Lint
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +52,8 @@ jobs:
 
   python-format:
     name: Python Format
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +71,8 @@ jobs:
 
   env-config-sync:
     name: Env Config Sync
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,12 +85,15 @@ jobs:
       - name: Validate env docs/deploy sync
         run: python scripts/check_env_sync.py
 
+  # ── Frontend ──────────────────────────────────────────────────────────────
   frontend-lint:
     name: Frontend Lint
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: clients/frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -69,7 +102,7 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: clients/frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -79,10 +112,12 @@ jobs:
 
   frontend-format:
     name: Frontend Format
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: clients/frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -91,7 +126,7 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: clients/frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -101,10 +136,12 @@ jobs:
 
   frontend-build:
     name: Frontend Build
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: clients/frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -113,10 +150,77 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: clients/frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
       - name: Build
         run: npm run build
+
+  # ── Rust ──────────────────────────────────────────────────────────────────
+  rust-fmt:
+    name: Rust Format
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+
+
+      - name: Rustfmt check
+        run: cargo fmt --check
+
+  rust-lint:
+    name: Rust Lint
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: services/api
+
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  rust-build:
+    name: Rust Build
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: services/api
+
+
+      - name: Build (release)
+        run: cargo build --release
+
+      - name: Test
+        run: cargo test

@@ -20,7 +20,7 @@ from datetime import datetime
 import pytz
 from sqlmodel import select
 
-from api.routers.user.auth import hash_password
+from reference.routers.user.auth import hash_password
 from db.database import get_async_session_context
 from db.enums import UserRole
 from db.models import User, UserProfile

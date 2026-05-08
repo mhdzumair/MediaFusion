@@ -203,6 +203,8 @@ services:
       - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
       # Use read replica PgBouncer for read operations
       - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
+      # Disable asyncpg prepared-statement cache — required for PgBouncer transaction mode
+      - POSTGRES_USE_PGBOUNCER=true
       - REDIS_URL=redis://redis:6379
       - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
       - TASKIQ_SINGLE_WORKER_MODE=false
@@ -221,6 +223,7 @@ services:
     environment:
       - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
       - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
+      - POSTGRES_USE_PGBOUNCER=true
       - REDIS_URL=redis://redis:6379
       - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
       - TASKIQ_SINGLE_WORKER_MODE=false
@@ -234,11 +237,12 @@ services:
 
   taskiq-worker-scrapy:
     image: mhdzumair/mediafusion:5.5.2
-    command: ["taskiq", "worker", "api.taskiq_worker:broker_scrapy", "--workers", "1", "--max-async-tasks", "1", "--ack-type", "when_executed"]
+    command: ["taskiq", "worker", "workers.taskiq_worker:broker_scrapy", "--workers", "1", "--max-async-tasks", "1", "--ack-type", "when_executed"]
     env_file: .env
     environment:
       - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
       - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
+      - POSTGRES_USE_PGBOUNCER=true
       - REDIS_URL=redis://redis:6379
       - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
       - TASKIQ_SINGLE_WORKER_MODE=false
@@ -260,11 +264,12 @@ services:
 
   taskiq-worker-import:
     image: mhdzumair/mediafusion:5.5.2
-    command: ["taskiq", "worker", "api.taskiq_worker:broker_import", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
+    command: ["taskiq", "worker", "workers.taskiq_worker:broker_import", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
     env_file: .env
     environment:
       - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
       - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
+      - POSTGRES_USE_PGBOUNCER=true
       - REDIS_URL=redis://redis:6379
       - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
       - TASKIQ_SINGLE_WORKER_MODE=false
@@ -286,11 +291,12 @@ services:
 
   taskiq-worker-priority:
     image: mhdzumair/mediafusion:5.5.2
-    command: ["taskiq", "worker", "api.taskiq_worker:broker_priority", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
+    command: ["taskiq", "worker", "workers.taskiq_worker:broker_priority", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
     env_file: .env
     environment:
       - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
       - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
+      - POSTGRES_USE_PGBOUNCER=true
       - REDIS_URL=redis://redis:6379
       - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
       - TASKIQ_SINGLE_WORKER_MODE=false

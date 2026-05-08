@@ -1,0 +1,185 @@
+"""FastAPI application factory."""
+
+import os
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from starlette.responses import Response
+
+from reference import middleware
+from reference.exception_handlers import (
+    api_http_exception_handler,
+    api_validation_exception_handler,
+)
+from reference.lifespan import lifespan
+from db.config import settings
+from utils import const
+
+# Path to React frontend build
+FRONTEND_DIST_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+
+
+def create_app() -> FastAPI:
+    """Create and configure the FastAPI application.
+
+    Returns:
+        Configured FastAPI application instance.
+    """
+    app = FastAPI(
+        title=settings.addon_name,
+        description=settings.description,
+        version=settings.version,
+        lifespan=lifespan,
+    )
+
+    # Exception handlers: wrap 4xx/5xx as HTTP 200 for /api/v1/* paths so that
+    # reverse proxies (e.g. Traefik) don't replace the response body.
+    app.add_exception_handler(HTTPException, api_http_exception_handler)
+    app.add_exception_handler(RequestValidationError, api_validation_exception_handler)
+
+    # Configure CORS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Add custom middleware
+    @app.middleware("http")
+    async def add_cors_header(request: Request, call_next):
+        response = await call_next(request)
+        response.headers.update(const.CORS_HEADERS)
+        # if "cache-control" not in response.headers:
+        #     response.headers.update(const.CACHE_HEADERS)
+        return response
+
+    app.add_middleware(middleware.RateLimitMiddleware)
+    app.add_middleware(middleware.APIKeyMiddleware)
+    app.add_middleware(middleware.UserDataMiddleware)
+    app.add_middleware(middleware.TimingMiddleware)
+    app.add_middleware(middleware.SecureLoggingMiddleware)
+    app.add_middleware(middleware.TransientDatabaseRetryMiddleware)
+    app.add_middleware(middleware.RequestIdMiddleware)
+    if settings.enable_profiler:
+        app.add_middleware(middleware.ProfilerMiddleware)
+
+    # Prometheus /metrics endpoint (unauthenticated; protect with network ACLs or
+    # set METRICS_BEARER_TOKEN to require Authorization: Bearer <token>)
+    if settings.enable_metrics_endpoint:
+        _register_metrics_endpoint(app)
+
+    # Mount static files
+    app.mount("/static", StaticFiles(directory="resources"), name="static")
+
+    # Setup React SPA serving
+    _setup_spa(app)
+
+    # Register routers
+    _register_routers(app)
+
+    return app
+
+
+def _register_routers(app: FastAPI) -> None:
+    """Register all API routers.
+
+    Args:
+        app: FastAPI application instance.
+    """
+    # Deferred to avoid circular imports at module load time
+    from reference.routers.admin import get_router as get_admin_router  # noqa: PLC0415
+    from reference.routers.content import get_router as get_content_router  # noqa: PLC0415
+    from reference.routers.instance import get_router as get_instance_router  # noqa: PLC0415
+    from reference.routers.moderator import get_router as get_moderator_router  # noqa: PLC0415
+    from reference.routers.rss import get_router as get_rss_router  # noqa: PLC0415
+    from reference.routers.streaming import (  # noqa: PLC0415
+        get_provider_router as get_streaming_provider_router,
+    )
+    from reference.routers.streaming import get_router as get_streaming_router  # noqa: PLC0415
+    from reference.routers.stremio import get_router as get_stremio_router  # noqa: PLC0415
+    from reference.routers.torznab import get_router as get_torznab_router  # noqa: PLC0415
+    from reference.routers.user import get_router as get_user_router  # noqa: PLC0415
+
+    from reference.routers.kodi import get_router as get_kodi_router  # noqa: PLC0415
+
+    # Register Stremio addon routes (home, manifest, catalog, meta, stream, etc.)
+    app.include_router(get_stremio_router())
+
+    # Register organized router packages
+    app.include_router(get_instance_router())  # instance info, app-config, constants
+    app.include_router(get_user_router())  # auth, user, profiles, watch_history, downloads, user_library, indexers
+    app.include_router(
+        get_admin_router()
+    )  # admin, scheduler, cache, database_admin, contribution_settings, metrics, scrapers
+    app.include_router(get_moderator_router())  # moderator metadata migration/search endpoints
+    app.include_router(get_content_router())  # catalog, contributions, content_import, voting, suggestions, scraping
+    app.include_router(get_rss_router())  # rss_feeds, user_rss
+    app.include_router(get_streaming_router(), prefix="/streaming_provider")  # playback, cache
+    app.include_router(get_streaming_provider_router(), prefix="/streaming_provider")  # debrid provider auth
+
+    # Kodi device pairing routes
+    app.include_router(get_kodi_router())
+
+    # Torznab API (optional, controlled by enable_torznab_api setting)
+    app.include_router(get_torznab_router())
+
+
+def _register_metrics_endpoint(app: FastAPI) -> None:
+    """Register the Prometheus /metrics scrape endpoint.
+
+    Excluded from TimingMiddleware and rate-limiting via the wrappers.exclude_rate_limit
+    decorator so scraper traffic doesn't inflate request metrics.
+    """
+    from utils import wrappers  # noqa: PLC0415
+
+    @app.get("/metrics", include_in_schema=False)
+    @wrappers.exclude_rate_limit
+    async def prometheus_scrape(request: Request):
+        if settings.metrics_bearer_token:
+            auth = request.headers.get("authorization", "")
+            expected = f"Bearer {settings.metrics_bearer_token}"
+            if auth != expected:
+                return Response(content="Unauthorized", status_code=401)
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+def _setup_spa(app: FastAPI) -> None:
+    """Setup React SPA serving.
+
+    Args:
+        app: FastAPI application instance.
+    """
+    if not os.path.exists(FRONTEND_DIST_PATH):
+        return
+
+    # Mount static assets from the React build
+    assets_path = os.path.join(FRONTEND_DIST_PATH, "assets")
+    if os.path.exists(assets_path):
+        app.mount("/app/assets", StaticFiles(directory=assets_path), name="app_assets")
+
+    @app.get("/app/{path:path}", tags=["spa"])
+    @app.get("/app", tags=["spa"])
+    async def serve_spa(path: str = ""):
+        """Serve the React SPA for all /app routes."""
+        index_path = os.path.join(FRONTEND_DIST_PATH, "index.html")
+        if os.path.exists(index_path):
+            # Add no-cache headers to ensure the latest version is always served
+            # The JS/CSS assets have content hashes and can be cached indefinitely
+            return FileResponse(
+                index_path,
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
+        raise HTTPException(
+            status_code=404,
+            detail="Frontend not built. Run 'npm run build' in the frontend directory.",
+        )

@@ -31,15 +31,15 @@ from db.schemas import (
     UserData,
     YouTubeStreamData,
 )
-from streaming_providers import mapper
-from streaming_providers.exceptions import ProviderException
-from streaming_providers.cache_helpers import (
+from workers.providers import mapper
+from workers.providers.exceptions import ProviderException
+from workers.providers.cache_helpers import (
     get_cached_status,
     is_cache_check_done,
     mark_cache_check_done,
     store_cached_info_hashes,
 )
-from streaming_providers.usenet_compatibility import is_usenet_stream_compatible
+from workers.providers.usenet_compatibility import is_usenet_stream_compatible
 from utils import const
 from utils.config import config_manager
 from utils.nzb_storage import generate_signed_nzb_url

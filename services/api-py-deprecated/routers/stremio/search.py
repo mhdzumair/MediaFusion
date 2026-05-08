@@ -1,0 +1,119 @@
+"""Stremio search routes."""
+
+import logging
+
+from fastapi import APIRouter, Depends, Request, Response
+from pydantic import ValidationError
+
+from db import crud, public_schemas
+from db.database import get_async_session_context, get_read_session_context
+from db.enums import MediaType
+from db.redis_database import REDIS_ASYNC_CLIENT
+from db.retry_utils import run_db_read_with_primary_fallback
+from db.schemas import UserData
+from workers.scrapers.rpdb import update_rpdb_posters
+from utils import const, wrappers
+from utils.network import get_request_namespace, get_user_data
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def get_search_cache_key(
+    catalog_type: MediaType,
+    catalog_id: str,
+    search_query: str,
+    user_data: UserData,
+    namespace: str,
+) -> str:
+    """Generate cache key for search results."""
+    key_parts = [catalog_type.value, catalog_id, search_query]
+    if catalog_type in [MediaType.MOVIE, MediaType.SERIES]:
+        key_parts.extend(user_data.nudity_filter + user_data.certification_filter)
+    if catalog_type == MediaType.TV:
+        key_parts.append(namespace)
+    return f"search:{':'.join(key_parts)}"
+
+
+@router.get(
+    "/{secret_str}/catalog/{catalog_type}/{catalog_id}/search={search_query}.json",
+    tags=["search"],
+    response_model=public_schemas.Metas,
+    response_model_exclude_none=True,
+    response_model_by_alias=False,
+)
+@router.get(
+    "/catalog/{catalog_type}/{catalog_id}/search={search_query}.json",
+    tags=["search"],
+    response_model=public_schemas.Metas,
+    response_model_exclude_none=True,
+    response_model_by_alias=False,
+)
+@wrappers.auth_required
+async def search_meta(
+    response: Response,
+    request: Request,
+    catalog_type: MediaType,
+    catalog_id: str,
+    search_query: str,
+    user_data: UserData = Depends(get_user_data),
+) -> public_schemas.Metas:
+    """
+    Enhanced search endpoint with caching and efficient text search.
+    """
+    response.headers.update(const.CACHE_HEADERS)
+
+    if not search_query.strip():
+        return public_schemas.Metas(metas=[])
+
+    namespace = get_request_namespace(request)
+    # Generate cache key
+    cache_key = get_search_cache_key(catalog_type, catalog_id, search_query, user_data, namespace)
+
+    # Try to get from cache
+    cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
+    if cached_data:
+        try:
+            metas = public_schemas.Metas.model_validate_json(cached_data)
+            return await update_rpdb_posters(metas, user_data, catalog_type)
+        except ValidationError:
+            pass
+
+    async def _search_with_session(session):
+        return await crud.search_metadata(
+            session=session,
+            catalog_type=catalog_type,
+            search_query=search_query,
+            user_data=user_data,
+            namespace=namespace,
+        )
+
+    async def _search_on_read_replica():
+        async with get_read_session_context() as session:
+            return await _search_with_session(session)
+
+    async def _search_on_primary():
+        async with get_async_session_context() as session:
+            return await _search_with_session(session)
+
+    # Perform search with read replica retry + primary fallback.
+    metas = await run_db_read_with_primary_fallback(
+        _search_on_read_replica,
+        _search_on_primary,
+        operation_name=f"stremio search {catalog_type.value}:{catalog_id}:{search_query}",
+        on_fallback=lambda exc: logger.warning(
+            "Read replica conflict for stremio search %s:%s, retrying on primary: %s",
+            catalog_type.value,
+            catalog_id,
+            exc,
+        ),
+    )
+
+    # Cache the results (5 minutes for search results)
+    await REDIS_ASYNC_CLIENT.set(
+        cache_key,
+        metas.model_dump_json(exclude_none=True),
+        ex=300,  # 5 minutes cache
+    )
+
+    return await update_rpdb_posters(metas, user_data, catalog_type)

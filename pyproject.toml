@@ -66,6 +66,8 @@ dependencies = [
     "taskiq",
     "taskiq-redis",
     "scrapling[fetchers]",
+    "pyinstrument",
+    "orjson",
 ]
 
 [dependency-groups]
@@ -76,6 +78,8 @@ dev = [
     "ruff",
     "pytest",
     "pytest-asyncio",
+    "locust>=2.43.4",
+    "httpx>=0.28.1",
 ]
 
 [tool.uv.sources]

@@ -1,0 +1,130 @@
+# Performance testing overlay for MediaFusion.
+#
+# Extends the HA stack with Prometheus, Grafana, and Redis Exporter
+# so you can observe DB pool utilisation, p95 latency, Redis hit rate,
+# and CPU/memory during load tests.
+#
+# Usage (from deployment/docker-compose/):
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose-postgres-ha.yml \
+#     -f docker-compose-perf.yml \
+#     up -d
+#
+# Then open:
+#   Grafana:    http://localhost:3000  (admin / admin)
+#   Prometheus: http://localhost:9090
+#   App:        http://localhost:8000
+#
+# Run load tests:
+#   python perf/seed_cache.py --host http://localhost:8000
+#   locust -f perf/locustfile.py --host http://localhost:8000 \
+#          --tags warm -u 1000 -r 50 -t 5m \
+#          --html perf/results/warm.html
+
+services:
+  # ---------------------------------------------------------------------------
+  # Prometheus — scrapes app /metrics + postgres_exporter + redis_exporter
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.4.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=2h"   # local perf run — no need to keep long
+      - "--web.enable-admin-api"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    networks:
+      - mediafusion-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  # ---------------------------------------------------------------------------
+  # Grafana — pre-provisioned with MediaFusion stream dashboard
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:12.0.1
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../perf/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - mediafusion-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  # ---------------------------------------------------------------------------
+  # Redis Exporter — exposes Redis metrics to Prometheus
+  # ---------------------------------------------------------------------------
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.74.0
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - mediafusion-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ---------------------------------------------------------------------------
+  # Postgres Exporter — exposes PG metrics (pool wait, lock counts, etc.)
+  # ---------------------------------------------------------------------------
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    environment:
+      - DATA_SOURCE_NAME=postgresql://mediafusion:mediafusion@postgres:5432/mediafusion?sslmode=disable
+    ports:
+      - "9187:9187"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - mediafusion-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ---------------------------------------------------------------------------
+  # Override mediafusion-api to expose /metrics without auth (perf only!)
+  # ---------------------------------------------------------------------------
+  mediafusion-api:
+    environment:
+      - PROMETHEUS_DISABLE_AUTH=true
+
+volumes:
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local

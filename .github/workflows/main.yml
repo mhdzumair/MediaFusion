@@ -134,9 +134,9 @@ jobs:
 
       - name: Build addon and repository
         run: |
-          make -C kodi
+          make -C clients/kodi
           # Validate build artifacts
-          for file in kodi/dist/plugin.video.mediafusion/plugin.video.mediafusion-*.zip kodi/dist/repository.mediafusion/repository.mediafusion-*.zip; do
+          for file in clients/kodi/dist/plugin.video.mediafusion/plugin.video.mediafusion-*.zip clients/kodi/dist/repository.mediafusion/repository.mediafusion-*.zip; do
             if [ ! -f "$file" ]; then
               echo "Error: Build artifact $file not found"
               exit 1
@@ -148,7 +148,7 @@ jobs:
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: kodi/dist
+          publish_dir: clients/kodi/dist
           enable_jekyll: false
           force_orphan: true
 
@@ -156,7 +156,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            kodi/dist/plugin.video.mediafusion/plugin.video.mediafusion-*.zip
+            clients/kodi/dist/plugin.video.mediafusion/plugin.video.mediafusion-*.zip
           token: ${{ secrets.GITHUB_TOKEN }}
 
   generate_release_notes:

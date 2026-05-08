@@ -7,8 +7,8 @@ from dataclasses import replace
 
 from db.config import settings
 from db.schemas import MetadataData
-from scrapers.public_indexer_registry import PUBLIC_INDEXER_DEFINITIONS
-from scrapers.public_indexers import PublicIndexerScraper
+from workers.scrapers.public_indexer_registry import PUBLIC_INDEXER_DEFINITIONS
+from workers.scrapers.public_indexers import PublicIndexerScraper
 
 
 def _configure_logging():

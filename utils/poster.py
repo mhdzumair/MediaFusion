@@ -12,7 +12,7 @@ from PIL.Image import DecompressionBombError
 from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import PosterData
-from scrapers.imdb_data import get_imdb_rating
+from workers.scrapers.imdb_data import get_imdb_rating
 from utils import const
 
 font_cache = {}

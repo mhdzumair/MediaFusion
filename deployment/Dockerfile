@@ -1,10 +1,33 @@
 # Frontend build stage
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
-COPY frontend/package*.json ./
+COPY clients/frontend/package*.json ./
 RUN npm ci
-COPY frontend/ ./
+COPY clients/frontend/ ./
 RUN npm run build
+
+# Rust build stage
+FROM rust:1.87-slim-bookworm AS rust-builder
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends pkg-config libssl-dev && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Cache dependencies by building a dummy project first
+COPY services/api/Cargo.toml services/api/Cargo.lock ./services/api/
+# PTT is a workspace sibling dependency
+COPY PTT/ptt-rs ./PTT/ptt-rs/
+RUN mkdir -p services/api/src && echo "fn main(){}" > services/api/src/main.rs && \
+    echo "// placeholder" > services/api/src/lib.rs && \
+    cd services/api && cargo build --release --bin mediafusion-api 2>/dev/null || true && \
+    rm -rf services/api/src
+
+# Build the real binary
+COPY services/api/ ./services/api/
+RUN cd services/api && cargo build --release --bin mediafusion-api
 
 # Python builder stage
 FROM python:3.13-slim-bookworm AS builder
@@ -53,6 +76,11 @@ RUN apt-get update && \
 RUN groupadd -r mediafusion && \
     useradd --no-log-init -r -g mediafusion -m -d /home/mediafusion mediafusion
 
+# Copy the Rust binary from the rust-builder stage
+COPY --from=rust-builder --chown=mediafusion:mediafusion \
+    /build/services/api/target/release/mediafusion-api \
+    /usr/local/bin/mediafusion-api
+
 # Copy the Python environment and other necessary files from the builder stage
 COPY --from=builder --chown=mediafusion:mediafusion /mediafusion/.venv /mediafusion/.venv
 
@@ -61,7 +89,7 @@ ENV PATH="/mediafusion/.venv/bin:$PATH"
 COPY --chown=mediafusion:mediafusion . /mediafusion
 
 # Copy the frontend build from the frontend-builder stage
-COPY --from=frontend-builder --chown=mediafusion:mediafusion /app/frontend/dist /mediafusion/frontend/dist
+COPY --from=frontend-builder --chown=mediafusion:mediafusion /app/frontend/dist /mediafusion/clients/frontend/dist
 
 ARG VERSION
 ENV VERSION=${VERSION}
@@ -69,6 +97,5 @@ ENV VERSION=${VERSION}
 USER mediafusion
 
 EXPOSE 8000
-EXPOSE 9191
 
 CMD ["/mediafusion/deployment/startup.sh"]

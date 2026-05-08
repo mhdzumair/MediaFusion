@@ -840,7 +840,7 @@ async def update_single_imdb_metadata(
     - Genres, keywords
     - Ratings
     """
-    from scrapers.scraper_tasks import meta_fetcher  # noqa: PLC0415
+    from workers.scrapers.scraper_tasks import meta_fetcher  # noqa: PLC0415
 
     # Fetch fresh data before any DB work so no session stays open during network I/O.
     try:

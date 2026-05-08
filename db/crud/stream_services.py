@@ -14,6 +14,8 @@ import importlib
 import logging
 import time
 import zlib
+from dataclasses import dataclass
+from datetime import date
 
 import orjson
 from collections.abc import Awaitable
@@ -87,6 +89,63 @@ TORRENT_CAPABLE_PROVIDERS = {
     "debrider",
     "p2p",
 }
+
+# Redis cache for imdb_id → (media_id, related_ids) lookups.
+# Shared across all workers; eliminates the mandatory DB query on warm requests.
+_MEDIA_ID_REDIS_PREFIX = "media_ids:"
+_MEDIA_ID_REDIS_TTL = 300  # seconds — matches stream_data TTL
+
+
+@dataclass
+class _CachedMedia:
+    """Lightweight stand-in for Media returned from the Redis id-cache."""
+
+    id: int
+    title: str
+    original_title: str | None
+    year: int | None
+    release_date: date | None
+
+
+async def _media_ids_redis_get(video_id: str, media_type: MediaType) -> "tuple[_CachedMedia, list[int]] | None":
+    key = f"{_MEDIA_ID_REDIS_PREFIX}{media_type.value}:{video_id}"
+    try:
+        raw = await REDIS_ASYNC_CLIENT.get(key)
+    except Exception:
+        return None
+    if raw is None:
+        return None
+    try:
+        data = orjson.loads(raw)
+        media = _CachedMedia(
+            id=data["id"],
+            title=data["title"],
+            original_title=data.get("original_title"),
+            year=data.get("year"),
+            release_date=date.fromisoformat(data["release_date"]) if data.get("release_date") else None,
+        )
+        return media, data["related_ids"]
+    except Exception:
+        return None
+
+
+async def _media_ids_redis_set(video_id: str, media_type: MediaType, media: Media, related_ids: list[int]) -> None:
+    key = f"{_MEDIA_ID_REDIS_PREFIX}{media_type.value}:{video_id}"
+    payload = orjson.dumps(
+        {
+            "id": media.id,
+            "title": media.title,
+            "original_title": media.original_title,
+            "year": media.year,
+            "release_date": media.release_date.isoformat() if media.release_date else None,
+            "related_ids": related_ids,
+        }
+    )
+    try:
+        await REDIS_ASYNC_CLIENT.set(key, payload, ex=_MEDIA_ID_REDIS_TTL)
+    except Exception:
+        pass
+
 
 # Redis cache for raw stream payloads (see settings.stream_raw_redis_cache_*)
 _STREAM_CACHE_MAGIC = b"\x01MFsc1"  # zlib-compressed JSON blob prefix
@@ -274,8 +333,15 @@ async def _get_media_and_related_media_ids_by_external_id_with_retry(
     video_id: str,
     media_type: MediaType,
     operation_name: str,
-) -> tuple[Media | None, list[int]]:
-    """Single read session for media + related IDs (avoids two pool checkouts per request)."""
+) -> tuple[Media | _CachedMedia | None, list[int]]:
+    """Single read session for media + related IDs (avoids two pool checkouts per request).
+
+    Results are cached in Redis for _MEDIA_ID_REDIS_TTL seconds so that all
+    workers skip the DB entirely on repeated lookups for the same video_id.
+    """
+    cached = await _media_ids_redis_get(video_id, media_type)
+    if cached is not None:
+        return cached
 
     async def _lookup() -> tuple[Media | None, list[int]]:
         async with get_read_session_context() as read_session:
@@ -285,11 +351,14 @@ async def _get_media_and_related_media_ids_by_external_id_with_retry(
             related = await get_related_media_ids_by_external_id(read_session, video_id, media_type)
             return media, related
 
-    return await run_db_operation_with_retry(
+    media, related_ids = await run_db_operation_with_retry(
         operation=_lookup,
         operation_name=operation_name,
         on_retry=_log_db_retry_attempt(operation_name),
     )
+    if media is not None:
+        await _media_ids_redis_set(video_id, media_type, media, related_ids)
+    return media, related_ids
 
 
 def _get_scraper_tasks_module():

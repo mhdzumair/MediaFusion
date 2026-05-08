@@ -101,18 +101,7 @@ echo "Running Alembic migrations..."
 alembic upgrade head
 
 echo "=========================================="
-echo "Starting FastAPI server..."
+echo "Starting Rust API server..."
 echo "=========================================="
 
-GUNICORN_WORKERS="${GUNICORN_WORKERS:-3}"
-GUNICORN_TIMEOUT="${GUNICORN_TIMEOUT:-120}"
-GUNICORN_MAX_REQUESTS="${GUNICORN_MAX_REQUESTS:-5000}"
-GUNICORN_MAX_REQUESTS_JITTER="${GUNICORN_MAX_REQUESTS_JITTER:-2000}"
-
-exec gunicorn api.main:app \
-    -w "$GUNICORN_WORKERS" \
-    -k uvicorn.workers.UvicornWorker \
-    --bind 0.0.0.0:8000 \
-    --timeout "$GUNICORN_TIMEOUT" \
-    --max-requests "$GUNICORN_MAX_REQUESTS" \
-    --max-requests-jitter "$GUNICORN_MAX_REQUESTS_JITTER"
+exec /usr/local/bin/mediafusion-api

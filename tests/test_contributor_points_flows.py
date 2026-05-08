@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from api.routers.content import contributions, stream_suggestions
+from reference.routers.content import contributions, stream_suggestions
 from db.enums import ContributionStatus, UserRole
 from db.models import Contribution, ContributionSettings, User
 

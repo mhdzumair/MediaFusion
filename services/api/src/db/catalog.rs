@@ -1,0 +1,212 @@
+use sqlx::PgPool;
+use tracing::warn;
+
+const LIMIT: i64 = 100;
+
+#[derive(sqlx::FromRow, Debug)]
+pub struct CatalogRow {
+    pub media_id: i64,
+    pub media_type: String,
+    pub title: String,
+    pub year: Option<i32>,
+    pub description: Option<String>,
+    pub imdb_id: Option<String>,
+    pub poster_url: Option<String>,
+}
+
+fn order_clause(sort: &str, sort_dir: &str) -> &'static str {
+    match (sort, sort_dir) {
+        ("year", "asc") => "m.year ASC NULLS LAST, m.id DESC",
+        ("year", _) => "m.year DESC NULLS LAST, m.id DESC",
+        ("title", "asc") => "m.title ASC",
+        ("title", _) => "m.title DESC",
+        (_, "asc") => "m.last_stream_added ASC NULLS LAST, m.id ASC",
+        _ => "m.last_stream_added DESC NULLS LAST, m.id DESC",
+    }
+}
+
+pub struct CatalogQuery<'a> {
+    pub catalog_id: &'a str,
+    pub media_type: &'a str,
+    pub skip: i64,
+    pub genre: Option<&'a str>,
+    pub nudity_excludes: &'a [String],
+    pub sort: &'a str,
+    pub sort_dir: &'a str,
+    /// Set for my_library_* catalogs; filters by user_library_item.user_id.
+    pub user_id: Option<i64>,
+}
+
+pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<CatalogRow> {
+    let CatalogQuery {
+        catalog_id,
+        media_type,
+        skip,
+        genre,
+        nudity_excludes,
+        sort,
+        sort_dir,
+        user_id,
+    } = q;
+
+    // my_library_* catalogs join through user_library_item instead of catalog/media_catalog_link.
+    if catalog_id.starts_with("my_library_") {
+        return get_library_items(pool, media_type, skip, nudity_excludes, user_id).await;
+    }
+
+    let ord = order_clause(sort, sort_dir);
+    let sql = format!(
+        r#"
+        SELECT
+            m.id::bigint AS media_id,
+            lower(m.type::text) AS media_type,
+            m.title,
+            m.year,
+            m.description,
+            mei.external_id AS imdb_id,
+            mi.url AS poster_url
+        FROM media m
+        JOIN media_catalog_link mcl ON mcl.media_id = m.id
+        JOIN catalog c ON c.id = mcl.catalog_id AND c.name = $1
+        LEFT JOIN media_external_id mei ON mei.media_id = m.id AND mei.provider = 'imdb'
+        LEFT JOIN LATERAL (
+            SELECT url FROM media_image
+            WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
+            LIMIT 1
+        ) mi ON true
+        WHERE m.type = upper($2)::mediatype
+          AND m.total_streams > 0
+          AND NOT m.is_blocked
+          AND ($4::text IS NULL OR EXISTS (
+              SELECT 1 FROM media_genre_link mgl
+              JOIN genre g ON g.id = mgl.genre_id
+              WHERE mgl.media_id = m.id AND g.name = $4
+          ))
+          AND (ARRAY_LENGTH($5::text[], 1) IS NULL OR m.nudity_status::text <> ALL($5))
+        ORDER BY {ord}
+        LIMIT {LIMIT} OFFSET $3
+        "#
+    );
+
+    sqlx::query_as::<_, CatalogRow>(&sql)
+        .bind(catalog_id) // $1
+        .bind(media_type) // $2
+        .bind(skip) // $3
+        .bind(genre) // $4 - Option<&str> → NULL when None
+        .bind(nudity_excludes) // $5 - &[String] → text[]
+        .fetch_all(pool)
+        .await
+        .unwrap_or_else(|e| {
+            warn!("catalog query [{catalog_id}]: {e}");
+            vec![]
+        })
+}
+
+async fn get_library_items(
+    pool: &PgPool,
+    media_type: &str,
+    skip: i64,
+    nudity_excludes: &[String],
+    user_id: Option<i64>,
+) -> Vec<CatalogRow> {
+    let Some(uid) = user_id else {
+        return vec![];
+    };
+    sqlx::query_as::<_, CatalogRow>(
+        r#"
+        SELECT
+            m.id::bigint AS media_id,
+            lower(m.type::text) AS media_type,
+            m.title,
+            m.year,
+            m.description,
+            mei.external_id AS imdb_id,
+            mi.url AS poster_url
+        FROM user_library_item uli
+        JOIN media m ON m.id = uli.media_id
+        LEFT JOIN media_external_id mei ON mei.media_id = m.id AND mei.provider = 'imdb'
+        LEFT JOIN LATERAL (
+            SELECT url FROM media_image
+            WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
+            LIMIT 1
+        ) mi ON true
+        WHERE uli.user_id = $1
+          AND m.type = upper($2)::mediatype
+          AND NOT m.is_blocked
+          AND (ARRAY_LENGTH($3::text[], 1) IS NULL OR m.nudity_status::text <> ALL($3))
+        ORDER BY uli.added_at DESC
+        LIMIT 100 OFFSET $4
+        "#,
+    )
+    .bind(uid as i32) // $1
+    .bind(media_type) // $2
+    .bind(nudity_excludes) // $3
+    .bind(skip) // $4
+    .fetch_all(pool)
+    .await
+    .unwrap_or_else(|e| {
+        warn!("library query [uid={uid} type={media_type}]: {e}");
+        vec![]
+    })
+}
+
+pub async fn search_metadata(
+    pool: &PgPool,
+    media_type: &str,
+    query: &str,
+    skip: i64,
+    nudity_excludes: &[String],
+) -> Vec<CatalogRow> {
+    sqlx::query_as::<_, CatalogRow>(
+        r#"
+        SELECT
+            m.id::bigint AS media_id,
+            lower(m.type::text) AS media_type,
+            m.title,
+            m.year,
+            m.description,
+            mei.external_id AS imdb_id,
+            mi.url AS poster_url
+        FROM media m
+        LEFT JOIN media_external_id mei ON mei.media_id = m.id AND mei.provider = 'imdb'
+        LEFT JOIN LATERAL (
+            SELECT url FROM media_image
+            WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
+            LIMIT 1
+        ) mi ON true
+        WHERE m.type = upper($1)::mediatype
+          AND m.total_streams > 0
+          AND NOT m.is_blocked
+          AND (ARRAY_LENGTH($3::text[], 1) IS NULL OR m.nudity_status::text <> ALL($3))
+          AND m.id IN (
+              -- Phase 1: FTS on main title (uses GIN index)
+              SELECT m2.id FROM media m2
+              WHERE m2.title_tsv @@ plainto_tsquery('simple', $2)
+                AND m2.type = upper($1)::mediatype
+              UNION
+              -- Phase 2: FTS on aka_title
+              SELECT at2.media_id FROM aka_title at2
+              WHERE at2.title_tsv @@ plainto_tsquery('simple', $2)
+              UNION
+              -- Phase 3: trigram similarity (uses GIN gin_trgm_ops index)
+              SELECT m3.id FROM media m3
+              WHERE m3.title % $2
+                AND m3.type = upper($1)::mediatype
+          )
+        ORDER BY
+            ts_rank_cd(m.title_tsv, plainto_tsquery('simple', $2)) DESC,
+            m.total_streams DESC
+        LIMIT 100 OFFSET $4
+        "#,
+    )
+    .bind(media_type) // $1
+    .bind(query) // $2
+    .bind(nudity_excludes) // $3
+    .bind(skip) // $4
+    .fetch_all(pool)
+    .await
+    .unwrap_or_else(|e| {
+        warn!("search query [type={media_type} q={query}]: {e}");
+        vec![]
+    })
+}

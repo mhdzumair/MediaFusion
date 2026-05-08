@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 
 from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
+from utils.request_context import REQUEST_ID_VAR
 
 _logger = logging.getLogger(__name__)
 
@@ -159,7 +160,9 @@ async def record_request(
         await REDIS_ASYNC_CLIENT.expire(_ENDPOINTS_INDEX, settings.request_metrics_ttl)
 
         # --- 5. Recent individual request log ---
-        request_id = uuid.uuid4().hex
+        # Reuse the correlation ID set by RequestIdMiddleware when available so
+        # the Redis entry and log lines share the same ID for cross-referencing.
+        request_id = REQUEST_ID_VAR.get(None) or uuid.uuid4().hex
         req_key = f"{_REQ_PREFIX}{request_id}"
 
         await REDIS_ASYNC_CLIENT.hset(
@@ -171,6 +174,7 @@ async def record_request(
                 "status_code": str(status_code),
                 "process_time": f"{process_time:.6f}",
                 "timestamp": now_iso,
+                "request_id": request_id,
             },
         )
         await REDIS_ASYNC_CLIENT.expire(req_key, settings.request_metrics_recent_ttl)

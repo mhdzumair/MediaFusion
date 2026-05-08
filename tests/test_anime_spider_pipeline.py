@@ -1,7 +1,7 @@
 import scrapy
 from scrapy.http import HtmlResponse, Request
 
-from mediafusion_scrapy.spiders.public_indexers import BasePublicIndexerSpider
+from workers.scrapy.spiders.public_indexers import BasePublicIndexerSpider
 
 
 class _FallbackSpider(BasePublicIndexerSpider):

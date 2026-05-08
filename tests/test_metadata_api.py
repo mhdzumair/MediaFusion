@@ -1,4 +1,4 @@
-from api.routers.content.metadata import LinkMultipleExternalIdsRequest, _get_canonical_external_id
+from reference.routers.content.metadata import LinkMultipleExternalIdsRequest, _get_canonical_external_id
 
 
 def test_canonical_external_id_prefers_anime_ids_over_tmdb():

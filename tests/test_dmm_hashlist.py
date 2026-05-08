@@ -1,6 +1,6 @@
 import json
 
-from scrapers.dmm_hashlist import (
+from workers.scrapers.dmm_hashlist import (
     HashlistTorrentEntry,
     decode_hashlist_payload,
     deduplicate_entries_by_info_hash,

@@ -1,6 +1,6 @@
 import pytest
 
-from api.routers.streaming import playback
+from reference.routers.streaming import playback
 
 
 class _FakeRedisNoPipeline:

@@ -6,14 +6,14 @@ from sqlalchemy.exc import IntegrityError
 from db import crud
 from db.database import get_background_session
 from db.redis_database import REDIS_ASYNC_CLIENT
-from scrapers.non_torrent_background_scraper import (
+from workers.scrapers.non_torrent_background_scraper import (
     _build_telegram_candidate,
     _is_adult_title,
     _iter_unique,
     _resolve_metadata,
     _tmp_external_id,
 )
-from scrapers.telegram import telegram_scraper
+from workers.scrapers.telegram import telegram_scraper
 
 logger = logging.getLogger(__name__)
 

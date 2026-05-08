@@ -35,7 +35,7 @@ MAX_TOKENS ?= 4096
 SUBREDDIT ?= MediaFusion
 REDDIT_POST_TITLE ?= "MediaFusion $(VERSION_NEW) Update - What's New?"
 
-.PHONY: build tag push prompt update-version generate-notes generate-reddit-post frontend-install frontend-build frontend-dev dev backend-dev
+.PHONY: build tag push prompt update-version generate-notes generate-reddit-post frontend-install frontend-build frontend-dev dev backend-dev rust-build rust-dev rust-test rust-fmt rust-lint
 
 build:
 	docker build --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE) -f deployment/Dockerfile .
@@ -47,9 +47,9 @@ ifndef VERSION_NEW
 endif
 	@echo "Updating version to $(VERSION_NEW)..."
 	# Update main addon.xml
-	@sed -i -e "/<addon\s*id=\"plugin\.video\.mediafusion\"/s/version=\"[^\"]*\"/version=\"$(VERSION_NEW)\"/" kodi/plugin.video.mediafusion/addon.xml
+	@sed -i -e "/<addon\s*id=\"plugin\.video\.mediafusion\"/s/version=\"[^\"]*\"/version=\"$(VERSION_NEW)\"/" clients/kodi/plugin.video.mediafusion/addon.xml
 	# Update repository addon.xml
-	@sed -i -e "/<addon\s*id=\"repository\.mediafusion\"/s/version=\"[^\"]*\"/version=\"$(VERSION_NEW)\"/" kodi/repository.mediafusion/addon.xml
+	@sed -i -e "/<addon\s*id=\"repository\.mediafusion\"/s/version=\"[^\"]*\"/version=\"$(VERSION_NEW)\"/" clients/kodi/repository.mediafusion/addon.xml
 	# Update deployment manifests that reference the docker image
 	@for file in \
 		deployment/docker-compose/docker-compose.yml \
@@ -205,13 +205,13 @@ endif
 
 # Frontend build targets
 frontend-install:
-	cd frontend && npm ci
+	cd clients/frontend && npm ci
 
 frontend-build: frontend-install
-	cd frontend && npm run build
+	cd clients/frontend && npm run build
 
 frontend-dev:
-	cd frontend && npm run dev
+	cd clients/frontend && npm run dev
 
 # Development targets
 backend-dev:
@@ -220,5 +220,21 @@ backend-dev:
 dev:
 	@echo "Starting backend and frontend in development mode..."
 	@echo "Run 'make backend-dev' in one terminal and 'make frontend-dev' in another"
+
+# Rust targets
+rust-build:
+	cd services/api && cargo build --release
+
+rust-dev:
+	cd services/api && cargo run
+
+rust-test:
+	cd services/api && cargo test
+
+rust-fmt:
+	cd services/api && cargo fmt --check
+
+rust-lint:
+	cd services/api && cargo clippy --all-targets -- -D warnings
 
 all: build-multi

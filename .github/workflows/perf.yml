@@ -1,0 +1,178 @@
+name: Performance Smoke Test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      # Only run when API code, DB layer, or middleware changes
+      - "api/**"
+      - "db/**"
+      - "utils/**"
+      - "perf/**"
+      - "deployment/docker-compose/docker-compose.yml"
+      - "deployment/docker-compose/postgres-init/**"
+  workflow_dispatch:
+    inputs:
+      users:
+        description: "Number of concurrent users"
+        default: "15"
+      duration:
+        description: "Test duration (e.g. 60s, 2m)"
+        default: "60s"
+
+jobs:
+  perf-smoke:
+    name: Perf Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install locust
+        run: pip install locust
+
+      - name: Generate test secrets
+        id: secrets
+        run: |
+          SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(16))")
+          API_PASSWORD=$(python -c "import secrets; print(secrets.token_hex(8))")
+          echo "SECRET_KEY=$SECRET_KEY" >> $GITHUB_ENV
+          echo "API_PASSWORD=$API_PASSWORD" >> $GITHUB_ENV
+
+      - name: Create .env for docker-compose
+        run: |
+          cat > deployment/docker-compose/.env <<EOF
+          SECRET_KEY=${{ env.SECRET_KEY }}
+          API_PASSWORD=${{ env.API_PASSWORD }}
+          ADDON_NAME=MediaFusion-CI
+          DESCRIPTION=CI test instance
+          HOST_URL=http://localhost:8000
+          CONTACT_EMAIL=ci@example.com
+          LOGO_URL=https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/images/mediafusion_logo.png
+          LOGGING_LEVEL=WARNING
+          ENABLE_METRICS_ENDPOINT=true
+          ENABLE_REQUEST_METRICS=true
+          EOF
+
+      - name: Start services
+        working-directory: deployment/docker-compose
+        run: |
+          docker compose up -d postgres redis
+          sleep 10
+          docker compose up -d mediafusion
+        env:
+          COMPOSE_FILE: docker-compose.yml
+
+      - name: Wait for app to be ready
+        run: |
+          echo "Waiting for /ready..."
+          for i in $(seq 1 30); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/ready || echo "000")
+            echo "  attempt $i: HTTP $status"
+            if [ "$status" = "200" ]; then
+              echo "App is ready!"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "App never became ready."
+              docker compose -f deployment/docker-compose/docker-compose.yml logs mediafusion | tail -50
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Verify observability endpoints
+        run: |
+          echo "=== /health ==="
+          curl -sf http://localhost:8000/health | python -m json.tool
+          echo "=== /ready ==="
+          curl -sf http://localhost:8000/ready | python -m json.tool
+          echo "=== /metrics (first 20 lines) ==="
+          curl -sf http://localhost:8000/metrics | head -20
+
+      - name: Run Locust smoke test
+        run: |
+          mkdir -p perf/results
+          locust -f perf/locustfile.py \
+            --headless \
+            -u ${{ github.event.inputs.users || '15' }} \
+            -r 3 \
+            -t ${{ github.event.inputs.duration || '60s' }} \
+            --host http://localhost:8000 \
+            --only-summary \
+            --csv perf/results/ci-smoke \
+            --exit-code-on-error 1 \
+            --tags manifest catalog meta health \
+            2>&1 | tee perf/results/ci-smoke.log
+
+      - name: Check performance thresholds
+        run: |
+          python - <<'EOF'
+          import csv, sys
+
+          # Read the stats CSV produced by locust
+          failures = 0
+          threshold_violations = []
+
+          try:
+              with open("perf/results/ci-smoke_stats.csv") as f:
+                  reader = csv.DictReader(f)
+                  for row in reader:
+                      name = row.get("Name", "")
+                      if name == "Aggregated":
+                          continue
+
+                      fail_pct = float(row.get("Failure Count", 0)) / max(float(row.get("Request Count", 1)), 1) * 100
+                      p95 = float(row.get("95%", 0))
+                      method = row.get("Type", "GET")
+
+                      print(f"  {method} {name}: p95={p95:.0f}ms fail_pct={fail_pct:.1f}%")
+
+                      if fail_pct > 2:
+                          threshold_violations.append(f"FAIL: {method} {name} — {fail_pct:.1f}% failure rate (threshold: 2%)")
+                          failures += 1
+
+                      # Loose p95 thresholds for CI (no live scraping in smoke test)
+                      endpoint_limits = {
+                          "/manifest.json": 500,
+                          "/health": 100,
+                          "/ready": 200,
+                      }
+                      for pattern, limit in endpoint_limits.items():
+                          if pattern in name and p95 > limit:
+                              threshold_violations.append(f"SLOW: {method} {name} — p95={p95:.0f}ms (threshold: {limit}ms)")
+                              failures += 1
+          except FileNotFoundError:
+              print("No stats CSV found — locust may not have produced output. Check the log.")
+              sys.exit(1)
+
+          if threshold_violations:
+              print("\nThreshold violations:")
+              for v in threshold_violations:
+                  print(f"  {v}")
+              sys.exit(1)
+          else:
+              print("\nAll thresholds passed.")
+          EOF
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-smoke-results
+          path: perf/results/
+          retention-days: 14
+
+      - name: Tear down services
+        if: always()
+        working-directory: deployment/docker-compose
+        run: docker compose down -v

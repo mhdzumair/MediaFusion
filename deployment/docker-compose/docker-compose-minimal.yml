@@ -1,24 +1,50 @@
 services:
-  mediafusion:
+  # ── Primary API (Rust) ────────────────────────────────────────────────────
+  mediafusion-api:
     image: mhdzumair/mediafusion:5.5.2
+    entrypoint: ["/usr/local/bin/mediafusion-api"]
     ports:
       - "8000:8000"
     env_file: .env
     environment:
-      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
+      - POSTGRES_URI=postgresql://mediafusion:mediafusion@postgres:5432/mediafusion
+      - REDIS_RS_URL=redis://redis:6379/1
+      - STREAM_RS_PORT=8000
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      browserless:
-        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 1m
       timeout: 10s
       retries: 5
       start_period: 20m
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mediafusion-network
+
+  # ── Background Scheduler (Python APScheduler) ─────────────────────────────
+  mediafusion-scheduler:
+    image: mhdzumair/mediafusion:5.5.2
+    command: ["python", "-m", "workers.run_scheduler"]
+    env_file: .env
+    environment:
+      - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@postgres:5432/mediafusion
+      - REDIS_URL=redis://redis:6379
+      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
+      - TASKIQ_SINGLE_WORKER_MODE=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -37,7 +63,7 @@ services:
     ports:
       - "443:443"
     depends_on:
-      mediafusion:
+      mediafusion-api:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -57,7 +83,7 @@ services:
   postgres:
     image: postgres:18-alpine
     container_name: mediafusion-postgres
-    shm_size: 256mb  # Must be >= shared_buffers (128MB) + overhead
+    shm_size: 256mb
     environment:
       POSTGRES_USER: mediafusion
       POSTGRES_PASSWORD: mediafusion

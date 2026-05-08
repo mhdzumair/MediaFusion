@@ -147,3 +147,4 @@ kodi/*.zip
 .claude/
 *.tar
 *.nzb
+perf/

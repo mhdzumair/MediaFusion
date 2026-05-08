@@ -4,16 +4,16 @@ from datetime import UTC, date, datetime
 import aiohttp
 import pytest
 
-from streaming_providers.alldebrid import utils as alldebrid_utils
-from streaming_providers.debrid_client import DebridClient
-from streaming_providers.easydebrid import utils as easydebrid_utils
-from streaming_providers.exceptions import ProviderException
-from streaming_providers.pikpak import utils as pikpak_utils
-from streaming_providers.premiumize import utils as premiumize_utils
-from streaming_providers.realdebrid.client import RealDebrid
-from streaming_providers.realdebrid import utils as realdebrid_utils
-from streaming_providers.parser import _get_episode_date
-from streaming_providers.torbox.client import Torbox
+from workers.providers.alldebrid import utils as alldebrid_utils
+from workers.providers.debrid_client import DebridClient
+from workers.providers.easydebrid import utils as easydebrid_utils
+from workers.providers.exceptions import ProviderException
+from workers.providers.pikpak import utils as pikpak_utils
+from workers.providers.premiumize import utils as premiumize_utils
+from workers.providers.realdebrid.client import RealDebrid
+from workers.providers.realdebrid import utils as realdebrid_utils
+from workers.providers.parser import _get_episode_date
+from workers.providers.torbox.client import Torbox
 
 
 class _DummyDebridClient(DebridClient):

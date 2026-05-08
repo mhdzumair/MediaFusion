@@ -1,0 +1,111 @@
+[package]
+name = "mediafusion-api"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "mediafusion_api"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mediafusion-api"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime + HTTP server
+axum = { version = "0.8", features = ["macros", "multipart"] }
+lava_torrent = "0.10"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "compression-full", "timeout"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# XML parsing (Torznab / Newznab scrapers)
+quick-xml = { version = "0.36", features = ["serde"] }
+
+# HTTP client (live scrapers)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "http2", "json"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "json", "chrono"] }
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Redis
+fred = { version = "10", features = ["tokio-rustls"] }
+
+# AES-256-CBC decryption (matches Python PyCryptodome AES.MODE_CBC)
+aes = "0.8"
+cbc = { version = "0.1", features = ["std"] }
+base64 = "0.22"
+
+# Hashing (manifest cache key HMAC-SHA256)
+hmac = { version = "0.12", features = [] }
+sha2 = "0.10"
+
+# Compression
+flate2 = "1"
+
+# Random bytes for AES IV generation + sports poster selection
+rand_core = { version = "0.6", features = ["getrandom"] }
+rand = { version = "0.8", features = ["small_rng"] }
+
+# Poster annotation (Phase 1d)
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+imageproc = "0.25"
+ab_glyph = "0.2"
+
+# In-process LRU cache (imdb_id → media_id)
+moka = { version = "0.12", features = ["future"] }
+
+# Typed errors
+thiserror = "2"
+
+# Scraper rate-limiting
+governor = "0.8"
+
+# Scraper retries
+backon = "1"
+
+# Config from env
+dotenvy = "0.15"
+urlencoding = "2"
+
+# UUID generation for user registration
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Prometheus metrics
+prometheus-client = "0.22"
+
+# Email (SMTP) for auth flows
+lettre = { version = "0.11", default-features = false, features = ["tokio1-native-tls", "smtp-transport", "builder"] }
+
+# Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+regex = "1.12.3"
+pcre2 = "0.2"
+once_cell = "1"
+
+# Telegram MTProto live scraper (Phase 2c)
+grammers-client = { version = "0.9", default-features = false }
+grammers-session = { version = "0.9", default-features = false }
+
+[dev-dependencies]
+wiremock = "0.6"
+insta = { version = "1", features = ["json"] }
+criterion = { version = "0.5", features = ["async_tokio"] }
+tokio = { version = "1", features = ["full"] }
+
+[[bench]]
+name = "stream_warm"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

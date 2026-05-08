@@ -6,8 +6,8 @@ import pytest
 
 from db.schemas import MetadataData
 from db.config import settings
-from scrapers.public_indexer_registry import PUBLIC_INDEXER_DEFINITIONS
-from scrapers.public_indexers import PublicIndexerScraper
+from workers.scrapers.public_indexer_registry import PUBLIC_INDEXER_DEFINITIONS
+from workers.scrapers.public_indexers import PublicIndexerScraper
 
 
 def test_is_anime_metadata_detects_japanese_series_without_anime_genre():

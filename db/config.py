@@ -93,7 +93,6 @@ class Settings(BaseSettings):
     addon_name: str = "MediaFusion"
     version: str = "1.0.0"
     description: str = "Open-source streaming platform for Movies, Series, and Live TV. Source: https://github.com/mhdzumair/MediaFusion"
-    branding_description: str = ""
     branding_svg: str | None = None  # Optional partner/host SVG logo URL
     contact_email: str
     host_url: str
@@ -101,32 +100,14 @@ class Settings(BaseSettings):
     api_password: str
     logging_level: str = "INFO"
     logo_url: str = "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/images/mediafusion_logo.png"
-    # Default frontend color scheme for users without a saved local preference.
-    default_color_scheme: Literal[
-        "mediafusion",
-        "cinematic",
-        "ocean",
-        "forest",
-        "emeraldnight",
-        "midnight",
-        "arctic",
-        "slate",
-        "rose",
-        "purple",
-        "sunset",
-        "youtube",
-    ] = "mediafusion"
     is_public_instance: bool = False
     poster_host_url: str | None = None
     min_scraping_video_size: int = 26214400  # 25 MB in bytes
     metadata_primary_source: Literal["imdb", "tmdb"] = "imdb"
     # When True, failed cinemagoerng IMDb title fetch falls back to v3-cinemeta.strem.io.
     imdb_cinemeta_fallback_enabled: bool = True
-    startup_migrate_only: bool = False  # Skip startup DB bootstrap checks; run Alembic + Gunicorn only
-    gunicorn_workers: int = Field(default=3, ge=1)  # Gunicorn worker process count
-    gunicorn_timeout: int = Field(default=120, ge=1)  # Gunicorn worker timeout in seconds
-    gunicorn_max_requests: int = Field(default=5000, ge=1)  # Max requests before Gunicorn worker restart
-    gunicorn_max_requests_jitter: int = Field(default=2000, ge=0)  # Randomized restart spread for workers
+    # Number of worker processes; used to size SQLAlchemy connection pool per process.
+    gunicorn_workers: int = Field(default=3, ge=1)
 
     # Streaming Provider Toggles
     disabled_providers: list[
@@ -159,6 +140,11 @@ class Settings(BaseSettings):
     # Database and Cache Settings
     postgres_uri: str  # Primary read-write PostgreSQL URI
     postgres_read_uri: str | None = None  # Optional read replica URI (if None, uses primary)
+    # Set to True when postgres_uri points at PgBouncer in transaction mode.
+    # Disables asyncpg's prepared-statement cache which is incompatible with
+    # PgBouncer transaction pooling (causes "cached statement ... cannot be
+    # executed because the session lock was acquired" protocol errors).
+    postgres_use_pgbouncer: bool = False
     # Total SQLAlchemy connection budget per app instance. Divided by GUNICORN_WORKERS and 1 or 2 (if POSTGRES_READ_URI set) to size each pool;
     # raise together with PostgreSQL max_connections if you see QueuePool timeouts.
     db_max_connections: int = Field(default=50, ge=1)
@@ -337,7 +323,6 @@ class Settings(BaseSettings):
     local_config_path: str = "resources/json/scraper_config.json"
 
     # Feature Toggles
-    enable_rate_limit: bool = False
     validate_m3u8_urls_liveness: bool = True
     store_stremthru_magnet_cache: bool = False
     scrape_with_aka_titles: bool = True
@@ -379,18 +364,13 @@ class Settings(BaseSettings):
     exception_tracking_max_entries: int = 500
 
     # Request Metrics Tracking
-    enable_request_metrics: bool = False
+    enable_request_metrics: bool = True
     request_metrics_ttl: int = 86400  # 1 day for aggregated stats
     request_metrics_recent_ttl: int = 3600  # 1 hour for individual request logs
     request_metrics_max_recent: int = 1000  # max individual requests to keep
     request_metrics_latency_window: int = 1000  # samples per endpoint for percentiles
 
-    # IPTV Import Settings
-    enable_iptv_import: bool = True  # Master toggle for M3U/Xtream import feature
-    allow_public_iptv_sharing: bool = True  # If False, all imported streams are private to user profile only
-
     # NZB File Import Settings
-    enable_nzb_file_import: bool = False  # Opt-in for NZB file uploads (NZB URL import is always available)
     nzb_file_storage_backend: Literal["local", "s3"] = "local"  # Where to store uploaded NZB files
 
     # S3/R2 Storage Settings (shared, usable by NZB file storage + future features)
@@ -400,10 +380,7 @@ class Settings(BaseSettings):
     s3_bucket_name: str | None = None
     s3_region: str = "auto"
 
-    # Upload Size Limits
-    max_torrent_file_size: int = 5_242_880  # 5 MB (torrent files are typically <1MB)
     max_nzb_file_size: int = 104_857_600  # 100 MB
-    max_image_upload_size: int = 5_242_880  # 5 MB for poster/background/logo uploads
 
     # Zyclops NZB Health API Integration (optional)
     # When set, every NZB the system processes is forwarded to Zyclops for ingestion.
@@ -416,16 +393,6 @@ class Settings(BaseSettings):
     # Torznab API Settings
     enable_torznab_api: bool = True  # Master toggle for Torznab API endpoint
 
-    # External Platform Integration Settings (Trakt, Simkl, etc.)
-    # Get Trakt credentials from: https://trakt.tv/oauth/applications
-    trakt_client_id: str | None = None
-    trakt_client_secret: str | None = None
-    # Get Simkl credentials from: https://simkl.com/settings/developer/
-    # and register callback URL: <HOST_URL>/api/v1/integrations/simkl/callback.
-    simkl_client_id: str | None = None
-    # Client secret for Simkl app that uses callback URL <HOST_URL>/api/v1/integrations/simkl/callback.
-    simkl_client_secret: str | None = None
-
     # Email / SMTP Settings (required for email verification and password reset)
     # When smtp_host is None, email verification is skipped and users are auto-verified.
     smtp_host: str | None = None
@@ -436,14 +403,6 @@ class Settings(BaseSettings):
     smtp_from_name: str | None = None  # Defaults to addon_name if not set
     smtp_use_tls: bool = True  # STARTTLS on port 587
     smtp_use_ssl: bool = False  # Implicit SSL on port 465
-
-    # ConvertKit Newsletter Integration (optional)
-    # When convertkit_api_key and convertkit_form_id are both set,
-    # a newsletter opt-in checkbox is shown during registration.
-    convertkit_api_key: str | None = None
-    convertkit_form_id: str | None = None
-    convertkit_newsletter_label: str = "Subscribe to our newsletter"
-    convertkit_newsletter_default_checked: bool = False
 
     # Operator-Configured NzbDAV Defaults
     # When both are set, all users automatically get NzbDAV as a streaming provider
@@ -459,15 +418,11 @@ class Settings(BaseSettings):
         r"(\b|\s|$|[\]._-])"
     )
     adult_content_filter_in_torrent_title: bool = True
-    max_upload_contributions_per_hour: int = 10000
-    upload_warning_email_cooldown_minutes: int = 180
 
     # Time-related Settings
     meta_cache_ttl: int = 1800  # 30 minutes in seconds
     enable_worker_memory_metrics: bool = True
     worker_memory_metrics_history_size: int = 1000
-    enable_worker_max_tasks_per_child: bool = False
-    worker_max_tasks_per_child: int = 20
 
     # Global Scheduler Settings
     disable_all_scheduler: bool = False

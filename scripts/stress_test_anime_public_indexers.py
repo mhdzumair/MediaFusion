@@ -9,9 +9,9 @@ from typing import Any
 
 from db.config import settings
 from db.schemas import MetadataData
-from scrapers.public_indexer_registry import PUBLIC_INDEXER_DEFINITIONS
-from scrapers.public_indexers import PublicIndexerScraper
-from scrapers.source_health import get_source_health, record_source_outcome
+from workers.scrapers.public_indexer_registry import PUBLIC_INDEXER_DEFINITIONS
+from workers.scrapers.public_indexers import PublicIndexerScraper
+from workers.scrapers.source_health import get_source_health, record_source_outcome
 
 DEFAULT_ANIME_SCENARIOS: tuple[tuple[str, int | None, int, int], ...] = (
     ("One Piece", 1999, 1, 1),

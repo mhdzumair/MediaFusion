@@ -1,6 +1,6 @@
 import pytest
 
-from scrapers.scraper_tasks import MetadataFetcher
+from workers.scrapers.scraper_tasks import MetadataFetcher
 
 
 class _DummyReadSessionContext:

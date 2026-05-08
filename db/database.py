@@ -158,16 +158,33 @@ def _create_primary_engine() -> AsyncEngine:
             "unless the database can accept more connections.",
             snap["per_engine_budget"],
         )
-    engine = create_async_engine(
-        settings.postgres_uri,
-        echo=False,
-        pool_size=pool_size,
-        max_overflow=max_overflow,
-        pool_pre_ping=True,
-        pool_recycle=300,
-        pool_timeout=30,
-    )
+    engine_kwargs: dict = {
+        "echo": False,
+        "pool_size": pool_size,
+        "max_overflow": max_overflow,
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+        "pool_timeout": 30,
+    }
+    if settings.postgres_use_pgbouncer:
+        # PgBouncer transaction mode is incompatible with asyncpg's prepared-statement
+        # cache — each transaction may land on a different backend connection, causing
+        # "cached statement X cannot be executed because the session lock was acquired".
+        # Disable the cache so every query uses the extended-query protocol without a
+        # named prepared statement, matching the replica engine behaviour.
+        engine_kwargs["connect_args"] = {
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+        }
+        logger.info("Primary engine: prepared-statement cache disabled (PgBouncer transaction mode)")
+    engine = create_async_engine(settings.postgres_uri, **engine_kwargs)
     _install_asyncpg_guards(engine)
+    try:
+        from utils.prometheus_metrics import register_pool_metrics  # noqa: PLC0415
+
+        register_pool_metrics(engine, "primary")
+    except Exception:
+        pass
     return engine
 
 
@@ -203,6 +220,12 @@ def _create_read_engine() -> AsyncEngine:
             },
         )
         _install_asyncpg_guards(engine)
+        try:
+            from utils.prometheus_metrics import register_pool_metrics  # noqa: PLC0415
+
+            register_pool_metrics(engine, "replica")
+        except Exception:
+            pass
         return engine
     return _get_engine()
 

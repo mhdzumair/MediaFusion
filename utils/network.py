@@ -13,7 +13,7 @@ from fastapi.requests import Request
 from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
-from streaming_providers.exceptions import ProviderException
+from workers.providers.exceptions import ProviderException
 from utils import crypto, runtime_const
 
 

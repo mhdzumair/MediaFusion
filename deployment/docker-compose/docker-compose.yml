@@ -1,32 +1,26 @@
 services:
-  mediafusion:
+  # ── Primary API (Rust) ────────────────────────────────────────────────────
+  mediafusion-api:
     image: mhdzumair/mediafusion:5.5.2
+    entrypoint: ["/usr/local/bin/mediafusion-api"]
     ports:
       - "8000:8000"
     env_file: .env
     environment:
-      # Override these in .env file for customization
-      - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@postgres:5432/mediafusion
-      # For read replicas, uncomment and configure:
-      # - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@postgres-replica:5432/mediafusion
-      - REDIS_URL=redis://redis:6379
-      - PROWLARR_URL=http://prowlarr:9696
-      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
-      # Standard compose runs in single-worker mode by default.
-      - TASKIQ_SINGLE_WORKER_MODE=true
+      - POSTGRES_URI=postgresql://mediafusion:mediafusion@postgres:5432/mediafusion
+      - REDIS_RS_URL=redis://redis:6379/1
+      - STREAM_RS_PORT=8000
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      browserless:
-        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 1m
-      timeout: 10s
+      interval: 30s
+      timeout: 5s
       retries: 5
-      start_period: 20m
+      start_period: 30s
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -36,6 +30,57 @@ services:
     networks:
       - mediafusion-network
 
+  # ── Background Scheduler (Python APScheduler) ─────────────────────────────
+  mediafusion-scheduler:
+    image: mhdzumair/mediafusion:5.5.2
+    command: ["python", "-m", "workers.run_scheduler"]
+    env_file: .env
+    environment:
+      - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@postgres:5432/mediafusion
+      - REDIS_URL=redis://redis:6379
+      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
+      - TASKIQ_SINGLE_WORKER_MODE=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mediafusion-network
+
+  # ── Background Worker (default queue) ────────────────────────────────────
+  taskiq-worker-default:
+    image: mhdzumair/mediafusion:5.5.2
+    command: ["taskiq", "worker", "workers.taskiq_worker:broker_default", "--workers", "1", "--max-async-tasks", "8", "--ack-type", "when_executed"]
+    env_file: .env
+    environment:
+      - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@postgres:5432/mediafusion
+      - REDIS_URL=redis://redis:6379
+      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
+      - TASKIQ_SINGLE_WORKER_MODE=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      browserless:
+        condition: service_started
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mediafusion-network
+
+  # ── Nginx reverse proxy ───────────────────────────────────────────────────
   nginx:
     image: nginx:alpine
     volumes:
@@ -45,7 +90,7 @@ services:
     ports:
       - "443:443"
     depends_on:
-      mediafusion:
+      mediafusion-api:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -61,15 +106,14 @@ services:
     networks:
       - mediafusion-network
 
-  # PostgreSQL - Primary (read-write)
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
   postgres:
     image: postgres:18-alpine
-    shm_size: 512mb  # Must be >= shared_buffers (256MB) + overhead
+    shm_size: 512mb
     environment:
       POSTGRES_USER: mediafusion
       POSTGRES_PASSWORD: mediafusion
       POSTGRES_DB: mediafusion
-      # Performance tuning
       POSTGRES_INITDB_ARGS: "--data-checksums"
     command:
       - "postgres"
@@ -105,6 +149,12 @@ services:
       - "max_parallel_workers=4"
       - "-c"
       - "max_parallel_maintenance_workers=2"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+      - "-c"
+      - "pg_stat_statements.track=all"
+      - "-c"
+      - "pg_stat_statements.max=10000"
     volumes:
       - postgres-data:/var/lib/postgresql
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
@@ -131,7 +181,6 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
-    # Evict LRU keys when maxmemory is set (avoids write failures under memory pressure).
     command: redis-server --appendonly yes --save 60 1 --maxmemory-policy allkeys-lru
     restart: unless-stopped
     healthcheck:
@@ -154,31 +203,6 @@ services:
       - PREBOOT_CHROME=true
       - MAX_CONCURRENT_SESSIONS=4
       - CONNECTION_TIMEOUT=60000
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - mediafusion-network
-
-  taskiq-worker-default:
-    image: mhdzumair/mediafusion:5.5.2
-    command: ["taskiq", "worker", "api.taskiq_worker:broker_default", "--workers", "1", "--max-async-tasks", "8", "--ack-type", "when_executed"]
-    env_file: .env
-    environment:
-      - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@postgres:5432/mediafusion
-      - REDIS_URL=redis://redis:6379
-      - SCRAPLING_CDP_URL=${SCRAPLING_CDP_URL:-ws://browserless:3000}
-      - TASKIQ_SINGLE_WORKER_MODE=true
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      browserless:
-        condition: service_started
     restart: unless-stopped
     logging:
       driver: "json-file"

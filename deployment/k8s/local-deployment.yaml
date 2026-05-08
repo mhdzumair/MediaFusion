@@ -18,25 +18,22 @@ spec:
         app: mediafusion
     spec:
       containers:
-      - name: mediafusion
+      - name: mediafusion-scheduler
         image: mhdzumair/mediafusion:5.5.2
-        ports:
-        - containerPort: 8000
+        command: ["python", "-m", "workers.run_scheduler"]
         resources:
           requests:
-            memory: "500Mi"
-            cpu: "200m"
+            memory: "300Mi"
+            cpu: "100m"
           limits:
-            memory: "800Mi"
-            cpu: "400m"
+            memory: "600Mi"
+            cpu: "300m"
         env:
-          # PostgreSQL Primary (read-write)
           - name: POSTGRES_URI
             valueFrom:
               secretKeyRef:
                 name: mediafusion-secrets
                 key: POSTGRES_URI
-          # PostgreSQL Read Replica (optional)
           - name: POSTGRES_READ_URI
             valueFrom:
               secretKeyRef:
@@ -81,29 +78,12 @@ spec:
             value: "redis://redis-service:6379"
           - name: PROWLARR_URL
             value: "http://prowlarr-service:9696"
-          - name: ENABLE_TAMILMV_SEARCH_SCRAPER
-            value: "false"
           - name: PROWLARR_IMMEDIATE_MAX_PROCESS
             value: "3"
           - name: PROWLARR_SEARCH_INTERVAL_HOUR
             value: "24"
           - name: IS_SCRAP_FROM_TORRENTIO
             value: "true"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 10
-          periodSeconds: 60
-          failureThreshold: 5
-          timeoutSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 1200
-          periodSeconds: 5
-          timeoutSeconds: 10
 ---
 # ConfigMap for PostgreSQL initialization scripts
 apiVersion: v1
@@ -114,7 +94,10 @@ data:
   01-extensions.sql: |
     -- Create required PostgreSQL extensions for MediaFusion
     CREATE EXTENSION IF NOT EXISTS pg_trgm;
-    
+    -- Enable slow-query tracking; set pg_stat_statements.track = all in postgresql.conf
+    -- or via the shared_preload_libraries mechanism for full coverage.
+    CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
     -- Log successful initialization
     DO $$ BEGIN RAISE NOTICE 'MediaFusion PostgreSQL extensions initialized successfully'; END $$;
 
@@ -178,6 +161,12 @@ spec:
           - "work_mem=16MB"
           - "-c"
           - "max_connections=200"
+          - "-c"
+          - "shared_preload_libraries=pg_stat_statements"
+          - "-c"
+          - "pg_stat_statements.track=all"
+          - "-c"
+          - "pg_stat_statements.max=10000"
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/postgresql
@@ -222,7 +211,7 @@ spec:
       containers:
       - name: taskiq-worker-default
         image: mhdzumair/mediafusion:5.5.2
-        command: ["taskiq", "worker", "api.taskiq_worker:broker_default", "--workers", "1", "--max-async-tasks", "8", "--ack-type", "when_executed"]
+        command: ["taskiq", "worker", "workers.taskiq_worker:broker_default", "--workers", "1", "--max-async-tasks", "8", "--ack-type", "when_executed"]
         env:
           - name: HOST_URL
             value: "https://mediafusion.local"
@@ -284,7 +273,7 @@ spec:
       containers:
       - name: taskiq-worker-scrapy
         image: mhdzumair/mediafusion:5.5.2
-        command: ["taskiq", "worker", "api.taskiq_worker:broker_scrapy", "--workers", "1", "--max-async-tasks", "1", "--ack-type", "when_executed"]
+        command: ["taskiq", "worker", "workers.taskiq_worker:broker_scrapy", "--workers", "1", "--max-async-tasks", "1", "--ack-type", "when_executed"]
         env:
           - name: HOST_URL
             value: "https://mediafusion.local"
@@ -319,6 +308,8 @@ spec:
                 name: mediafusion-secrets
                 key: PROWLARR_API_KEY
                 optional: true
+          - name: SCRAPLING_CDP_URL
+            value: "ws://localhost:3000"
         resources:
           requests:
             memory: "500Mi"
@@ -326,6 +317,26 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "400m"
+      - name: browserless
+        image: browserless/chrome:latest
+        ports:
+        - containerPort: 3000
+        env:
+          - name: ENABLE_DEBUGGER
+            value: "false"
+          - name: PREBOOT_CHROME
+            value: "true"
+          - name: MAX_CONCURRENT_SESSIONS
+            value: "2"
+          - name: CONNECTION_TIMEOUT
+            value: "60000"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
 
 ---
 
@@ -346,7 +357,7 @@ spec:
       containers:
       - name: taskiq-worker-import
         image: mhdzumair/mediafusion:5.5.2
-        command: ["taskiq", "worker", "api.taskiq_worker:broker_import", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
+        command: ["taskiq", "worker", "workers.taskiq_worker:broker_import", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
         env:
           - name: HOST_URL
             value: "https://mediafusion.local"
@@ -408,7 +419,7 @@ spec:
       containers:
       - name: taskiq-worker-priority
         image: mhdzumair/mediafusion:5.5.2
-        command: ["taskiq", "worker", "api.taskiq_worker:broker_priority", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
+        command: ["taskiq", "worker", "workers.taskiq_worker:broker_priority", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
         env:
           - name: HOST_URL
             value: "https://mediafusion.local"

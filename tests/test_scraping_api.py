@@ -1,4 +1,4 @@
-from api.routers.content.scraping import SCRAPER_CONFIG
+from reference.routers.content.scraping import SCRAPER_CONFIG
 
 
 def test_public_indexer_scraper_config_exposes_anime_capability():

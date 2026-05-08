@@ -1,4 +1,4 @@
-from api.routers.admin.source_health import _classify_gate_status
+from reference.routers.admin.source_health import _classify_gate_status
 
 
 def test_classify_gate_status_warming_when_samples_low():
