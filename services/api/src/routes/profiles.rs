@@ -96,13 +96,21 @@ pub struct UpdateProfileRequest {
 
 // ─── Config helpers ───────────────────────────────────────────────────────────
 
-/// Merge secrets into the config JSON (secrets fields override config fields at top level).
+/// Merge secrets into the config JSON (secrets fields overlay config fields).
+/// Arrays are merged element-by-element so the base structure (with sv, n, pr, en, etc.)
+/// is preserved while secrets (tk, em, pw, etc.) are injected into each element.
 fn deep_merge(base: &mut serde_json::Value, overlay: serde_json::Value) {
     match (base, overlay) {
         (Value::Object(base_map), Value::Object(overlay_map)) => {
             for (k, v) in overlay_map {
                 let entry = base_map.entry(k).or_insert(Value::Null);
                 deep_merge(entry, v);
+            }
+        }
+        (Value::Array(base_arr), Value::Array(overlay_arr)) => {
+            // Merge each element pair; base array is authoritative for length/structure.
+            for (base_el, overlay_el) in base_arr.iter_mut().zip(overlay_arr) {
+                deep_merge(base_el, overlay_el);
             }
         }
         (base, overlay) => {
@@ -224,6 +232,7 @@ fn build_streaming_providers_summary(full_config: &serde_json::Value) -> serde_j
     for (i, p) in providers_arr.iter().enumerate() {
         let service = p
             .get("service")
+            .or_else(|| p.get("sv")) // Python alias used by frontend
             .or_else(|| p.get("svc"))
             .and_then(|v| v.as_str())
             .unwrap_or("")
@@ -277,6 +286,7 @@ fn build_streaming_provider_summary(full_config: &serde_json::Value) -> serde_js
         Some(Value::Object(obj)) => {
             let service = obj
                 .get("service")
+                .or_else(|| obj.get("sv"))
                 .or_else(|| obj.get("svc"))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());

@@ -23,6 +23,10 @@ use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
+use super::import_helpers::{
+    award_contribution_points, create_contribution_record, enforce_upload_permissions,
+    fetch_user_info, is_adult_content, notify_pending_contribution, resolve_uploader_identity,
+};
 use crate::{parser, state::AppState};
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -271,23 +275,30 @@ async fn insert_usenet_stream(
     group_name: Option<&str>,
     parsed: &parser::ParsedTitle,
     media_id: Option<i64>,
+    uploader: &str,
+    uploader_user_id: Option<i64>,
+    is_public: bool,
 ) -> Result<i64, sqlx::Error> {
     let mut txn = pool.begin().await?;
 
     let stream_id: i64 = sqlx::query_scalar(
         r#"INSERT INTO stream(
-               stream_type, name, source, resolution, codec, quality,
+               stream_type, name, source, uploader, uploader_user_id,
+               resolution, codec, quality,
                is_proper, is_repack, is_extended, is_complete, is_dubbed, release_group,
                is_active, is_blocked, is_public, playback_count, created_at
            ) VALUES(
-               'USENET'::streamtype, $1, $2, $3, $4, $5,
-               $6, $7, $8, $9, $10, $11,
-               true, false, true, 0, NOW()
+               'USENET'::streamtype, $1, $2, $3, $4,
+               $5, $6, $7,
+               $8, $9, $10, $11, $12, $13,
+               true, false, $14, 0, NOW()
            )
            RETURNING id"#,
     )
     .bind(name)
     .bind(source)
+    .bind(uploader)
+    .bind(uploader_user_id)
     .bind(parsed.resolution.as_deref())
     .bind(parsed.codec.as_deref())
     .bind(parsed.quality.as_deref())
@@ -297,6 +308,7 @@ async fn insert_usenet_stream(
     .bind(parsed.is_complete)
     .bind(parsed.is_dubbed)
     .bind(parsed.release_group.as_deref())
+    .bind(is_public)
     .fetch_one(&mut *txn)
     .await?;
 
@@ -526,12 +538,38 @@ pub async fn import_nzb(
     headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
+
+    let user = match fetch_user_info(&state.pool_ro, user_id).await {
+        Some(u) => u,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "User not found"})),
+            )
+                .into_response();
+        }
+    };
+
+    if let Err((status, msg)) = enforce_upload_permissions(
+        &state.pool,
+        &state.redis,
+        user_id,
+        user.uploads_restricted,
+        &user.role,
+    )
+    .await
+    {
+        return (status, Json(json!({"detail": msg}))).into_response();
     }
 
     let mut file_bytes: Option<Bytes> = None;
@@ -540,6 +578,8 @@ pub async fn import_nzb(
     let mut title: Option<String> = None;
     let mut indexer: Option<String> = None;
     let mut force_import = false;
+    let mut is_anonymous_field: Option<bool> = None;
+    let mut anonymous_display_name: Option<String> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
@@ -566,6 +606,14 @@ pub async fn import_nzb(
                     .map(|v| v == "true" || v == "1")
                     .unwrap_or(false);
             }
+            Some("is_anonymous") => {
+                if let Ok(raw) = field.text().await {
+                    is_anonymous_field = Some(raw == "true" || raw == "1");
+                }
+            }
+            Some("anonymous_display_name") => {
+                anonymous_display_name = field.text().await.ok().filter(|s| !s.is_empty());
+            }
             _ => {}
         }
     }
@@ -588,6 +636,16 @@ pub async fn import_nzb(
         }
     };
 
+    let resolved_is_anonymous = is_anonymous_field.unwrap_or(user.contribute_anonymously);
+    let (uploader_name, uploader_user_id) = resolve_uploader_identity(
+        resolved_is_anonymous,
+        anonymous_display_name.as_deref(),
+        &user.username,
+        user_id,
+    );
+    let is_privileged = matches!(user.role.as_str(), "moderator" | "admin");
+    let auto_approve = is_privileged || !resolved_is_anonymous;
+
     do_nzb_import(
         &state,
         &info,
@@ -597,6 +655,11 @@ pub async fn import_nzb(
         title.as_deref(),
         indexer.as_deref(),
         force_import,
+        uploader_name,
+        uploader_user_id,
+        is_privileged,
+        auto_approve,
+        resolved_is_anonymous,
     )
     .await
 }
@@ -609,6 +672,8 @@ pub struct ImportNzbUrlBody {
     title: Option<String>,
     indexer: Option<String>,
     force_import: Option<bool>,
+    is_anonymous: Option<bool>,
+    anonymous_display_name: Option<String>,
 }
 
 pub async fn import_nzb_url(
@@ -616,12 +681,38 @@ pub async fn import_nzb_url(
     headers: HeaderMap,
     Json(body): Json<ImportNzbUrlBody>,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
+
+    let user = match fetch_user_info(&state.pool_ro, user_id).await {
+        Some(u) => u,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "User not found"})),
+            )
+                .into_response();
+        }
+    };
+
+    if let Err((status, msg)) = enforce_upload_permissions(
+        &state.pool,
+        &state.redis,
+        user_id,
+        user.uploads_restricted,
+        &user.role,
+    )
+    .await
+    {
+        return (status, Json(json!({"detail": msg}))).into_response();
     }
 
     let resp = match state
@@ -662,6 +753,16 @@ pub async fn import_nzb_url(
     let meta_type = body.meta_type.as_deref().unwrap_or("movie");
     let force_import = body.force_import.unwrap_or(false);
 
+    let resolved_is_anonymous = body.is_anonymous.unwrap_or(user.contribute_anonymously);
+    let (uploader_name, uploader_user_id) = resolve_uploader_identity(
+        resolved_is_anonymous,
+        body.anonymous_display_name.as_deref(),
+        &user.username,
+        user_id,
+    );
+    let is_privileged = matches!(user.role.as_str(), "moderator" | "admin");
+    let auto_approve = is_privileged || !resolved_is_anonymous;
+
     do_nzb_import(
         &state,
         &info,
@@ -671,6 +772,11 @@ pub async fn import_nzb_url(
         body.title.as_deref(),
         body.indexer.as_deref(),
         force_import,
+        uploader_name,
+        uploader_user_id,
+        is_privileged,
+        auto_approve,
+        resolved_is_anonymous,
     )
     .await
 }
@@ -685,7 +791,23 @@ async fn do_nzb_import(
     title_override: Option<&str>,
     indexer: Option<&str>,
     force_import: bool,
+    uploader_name: String,
+    uploader_user_id: Option<i64>,
+    is_privileged: bool,
+    auto_approve: bool,
+    resolved_is_anonymous: bool,
 ) -> Response {
+    let name = title_override.unwrap_or(&info.title);
+
+    // Adult content check
+    if is_adult_content(name) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"detail": "Adult content is not allowed."})),
+        )
+            .into_response();
+    }
+
     // Check duplicate
     let existing_id: Option<i64> =
         sqlx::query_scalar("SELECT stream_id FROM usenet_stream WHERE nzb_guid = $1 LIMIT 1")
@@ -708,7 +830,6 @@ async fn do_nzb_import(
         }
     }
 
-    let name = title_override.unwrap_or(&info.title);
     let parsed = parser::parse_title(name);
 
     let media_id = if let Some(mid) = meta_id {
@@ -735,7 +856,7 @@ async fn do_nzb_import(
         None
     };
 
-    match insert_usenet_stream(
+    let stream_id = match insert_usenet_stream(
         &state.pool,
         &info.nzb_guid,
         nzb_url,
@@ -746,27 +867,78 @@ async fn do_nzb_import(
         info.group.as_deref(),
         &parsed,
         media_id,
+        &uploader_name,
+        uploader_user_id,
+        auto_approve,
     )
     .await
     {
-        Ok(stream_id) => (
-            StatusCode::CREATED,
-            Json(json!({
-                "status": "success",
-                "message": "Stream imported successfully",
-                "import_id": stream_id,
-            })),
-        )
-            .into_response(),
+        Ok(id) => id,
         Err(e) => {
             tracing::error!("nzb import DB error: {e}");
-            (
+            return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"detail": "Database error"})),
             )
-                .into_response()
+                .into_response();
         }
+    };
+
+    let data = serde_json::json!({
+        "name": name,
+        "nzb_guid": info.nzb_guid,
+        "meta_type": meta_type,
+        "uploader_name": uploader_name,
+        "is_anonymous": resolved_is_anonymous,
+        "is_public": auto_approve,
+        "size": info.total_size,
+    });
+
+    let mut contrib_id: Option<String> = None;
+    if let Ok(cid) = create_contribution_record(
+        &state.pool,
+        uploader_user_id,
+        "nzb",
+        Some(&info.nzb_guid),
+        &data,
+        auto_approve,
+        is_privileged,
+    )
+    .await
+    {
+        if auto_approve {
+            if let Some(uid) = uploader_user_id {
+                award_contribution_points(&state.pool, uid).await;
+            }
+        } else if let (Some(bot_token), Some(chat_id)) = (
+            state.config.telegram_bot_token.as_deref(),
+            state.config.telegram_chat_id.as_deref(),
+        ) {
+            notify_pending_contribution(
+                &state.http,
+                bot_token,
+                chat_id,
+                &state.config.host_url,
+                "nzb",
+                &uploader_name,
+                &data,
+            )
+            .await;
+        }
+        contrib_id = Some(cid);
     }
+
+    (
+        StatusCode::CREATED,
+        Json(json!({
+            "status": "success",
+            "message": "Stream imported successfully",
+            "import_id": stream_id,
+            "contribution_id": contrib_id,
+            "auto_approved": auto_approve,
+        })),
+    )
+        .into_response()
 }
 
 // ─── Signed NZB download ──────────────────────────────────────────────────────

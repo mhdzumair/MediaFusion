@@ -4,7 +4,7 @@
 use serde_json::Value;
 use std::sync::OnceLock;
 
-use super::ProviderError;
+use crate::providers::ProviderError;
 
 const BASE_URL: &str = "https://api.torbox.app/v1/api";
 
@@ -389,6 +389,27 @@ pub async fn get_video_url(
     ))
 }
 
+/// Delete the torrent matching `info_hash` from TorBox.
+/// Returns `true` if found and deleted, `false` if not found.
+pub async fn delete_torrent_by_hash(
+    http: &reqwest::Client,
+    token: &str,
+    info_hash: &str,
+) -> Result<bool, ProviderError> {
+    let mylist = get_mylist(http, token).await?;
+    match find_torrent_in_list(&mylist, info_hash) {
+        None => Ok(false),
+        Some(torrent) => {
+            if let Some(id) = torrent.get("id").and_then(|v| v.as_i64()) {
+                let url = format!("{BASE_URL}/torrents/controltorrent");
+                let payload = serde_json::json!({ "torrent_id": id, "operation": "delete" });
+                tb_post_json(http, token, &url, &payload).await.ok();
+            }
+            Ok(true)
+        }
+    }
+}
+
 /// Delete ALL torrents from the user's TorBox account.
 pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     let mylist = get_mylist(http, token).await?;
@@ -410,4 +431,55 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
     }
 
     Ok(())
+}
+
+// ─── Debrid cache check ───────────────────────────────────────────────────────
+
+/// Check which hashes are instantly cached on TorBox.
+///
+/// Uses `format=object` — only cached hashes appear as object keys in `data`.
+pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]) -> Vec<String> {
+    const CHUNK: usize = 80;
+    let mut cached = Vec::new();
+
+    for chunk in hashes.chunks(CHUNK) {
+        let params: Vec<(&str, &str)> = chunk.iter().map(|h| ("hash", h.as_str())).collect();
+        let resp = match http
+            .get(format!("{BASE_URL}/torrents/checkcached"))
+            .bearer_auth(token)
+            .query(&[("format", "object")])
+            .query(&params)
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("torbox checkcached: {e}");
+                continue;
+            }
+        };
+        let body: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("torbox checkcached json: {e}");
+                continue;
+            }
+        };
+        match body.get("data") {
+            Some(Value::Object(obj)) => {
+                for hash in obj.keys() {
+                    cached.push(hash.clone());
+                }
+            }
+            Some(Value::Array(arr)) => {
+                for v in arr {
+                    if let Some(h) = v.as_str() {
+                        cached.push(h.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    cached
 }

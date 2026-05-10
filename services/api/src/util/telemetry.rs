@@ -1,11 +1,25 @@
-pub fn init() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "mediafusion_api=info,tower_http=info".parse().unwrap()),
-        )
+use crate::exception_tracker::ExceptionTrackerLayer;
+use tokio::sync::mpsc;
+
+pub fn init(exc_tx: Option<mpsc::UnboundedSender<crate::exception_tracker::ExcEvent>>) {
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        "mediafusion_api=debug,tower_http=info,sqlx=warn"
+            .parse()
+            .unwrap()
+    });
+
+    let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(false)
-        .compact()
+        .compact();
+
+    let exc_layer = exc_tx.map(|tx| ExceptionTrackerLayer { tx });
+
+    tracing_subscriber::Registry::default()
+        .with(env_filter)
+        .with(fmt_layer)
+        .with(exc_layer)
         .init();
 }
 

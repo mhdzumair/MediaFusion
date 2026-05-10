@@ -1,3 +1,4 @@
+pub mod episode_detector;
 pub mod filter;
 
 use std::sync::OnceLock;
@@ -21,6 +22,9 @@ pub struct ParsedTitle {
     pub is_extended: bool,
     pub is_complete: bool,
     pub is_dubbed: bool,
+    pub is_subbed: bool,
+    pub is_remastered: bool,
+    pub is_upscaled: bool,
     pub release_group: Option<String>,
 }
 
@@ -46,6 +50,9 @@ pub fn parse_title(raw: &str) -> ParsedTitle {
             .is_some_and(|e| e.to_lowercase().contains("extended")),
         is_complete: p.is_complete,
         is_dubbed: p.is_dubbed,
+        is_subbed: p.is_subbed,
+        is_remastered: p.is_remastered,
+        is_upscaled: p.is_upscaled,
         release_group: p.group,
     }
 }

@@ -13,7 +13,6 @@
 ///   POST   /api/v1/streams/{stream_id}/signals               → get_stream_signals
 ///   POST   /api/v1/streams/signals/bulk                      → bulk_stream_signals
 ///   GET    /api/v1/streams/{stream_id}/editable-fields        → get_stream_editable_fields
-
 use std::sync::Arc;
 
 use axum::{
@@ -71,7 +70,7 @@ fn validate_token_optional(headers: &HeaderMap, secret_key: &str) -> Option<i64>
 }
 
 async fn get_user_role(pool: &sqlx::PgPool, user_id: i64) -> Option<String> {
-    sqlx::query_scalar::<_, String>("SELECT role::text FROM users WHERE id = $1")
+    sqlx::query_scalar::<_, String>("SELECT LOWER(role::text) FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(pool)
         .await
@@ -92,7 +91,7 @@ pub struct StreamSuggestionCreateRequest {
     pub suggested_value: Option<String>,
     pub reason: Option<String>,
     pub related_stream_id: Option<String>,
-    pub target_media_id: Option<i64>,
+    pub target_media_id: Option<i32>,
     pub target_external_id: Option<String>,
     pub target_media_type: Option<String>,
     pub target_title: Option<String>,
@@ -124,8 +123,12 @@ pub struct ListSuggestionsQuery {
     pub page_size: i64,
 }
 
-fn default_page() -> i64 { 1 }
-fn default_page_size() -> i64 { 20 }
+fn default_page() -> i64 {
+    1
+}
+fn default_page_size() -> i64 {
+    20
+}
 
 #[derive(Deserialize)]
 pub struct PendingQuery {
@@ -147,7 +150,7 @@ pub struct BulkReviewBody {
 
 struct SuggestionRow {
     id: String,
-    user_id: i64,
+    user_id: i32,
     stream_id: i64,
     suggestion_type: String,
     field_name: Option<String>,
@@ -164,24 +167,50 @@ struct SuggestionRow {
 }
 
 async fn fetch_suggestion(pool: &sqlx::PgPool, id: &str) -> Option<SuggestionRow> {
-    let row: Option<(String, i64, i64, String, Option<String>, Option<String>, Option<String>, Option<String>, String, Option<String>, Option<DateTime<Utc>>, Option<String>, Option<String>, Option<String>, DateTime<Utc>)> =
-        sqlx::query_as(
-            r#"SELECT id, user_id, stream_id, suggestion_type, field_name,
+    type R = (
+        String,
+        i32,
+        i64,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<DateTime<Utc>>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        DateTime<Utc>,
+    );
+    let row: R = sqlx::query_as::<_, R>(
+        r#"SELECT id, user_id, stream_id, suggestion_type, field_name,
                       current_value, suggested_value, reason, status,
                       reviewed_by, reviewed_at, review_notes,
                       issue_triage_status, issue_triage_note, created_at
                FROM stream_suggestion WHERE id = $1"#,
-        )
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None)?;
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None)?;
 
     Some(SuggestionRow {
-        id: row.0, user_id: row.1, stream_id: row.2, suggestion_type: row.3,
-        field_name: row.4, current_value: row.5, suggested_value: row.6,
-        reason: row.7, status: row.8, reviewed_by: row.9, reviewed_at: row.10,
-        review_notes: row.11, issue_triage_status: row.12, issue_triage_note: row.13,
+        id: row.0,
+        user_id: row.1,
+        stream_id: row.2,
+        suggestion_type: row.3,
+        field_name: row.4,
+        current_value: row.5,
+        suggested_value: row.6,
+        reason: row.7,
+        status: row.8,
+        reviewed_by: row.9,
+        reviewed_at: row.10,
+        review_notes: row.11,
+        issue_triage_status: row.12,
+        issue_triage_note: row.13,
         created_at: row.14,
     })
 }
@@ -194,7 +223,7 @@ async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_j
         .unwrap_or(None);
 
     let reviewer_name: Option<String> = if let Some(ref rb) = row.reviewed_by {
-        if let Ok(rid) = rb.parse::<i64>() {
+        if let Ok(rid) = rb.parse::<i32>() {
             sqlx::query_scalar::<_, String>("SELECT username FROM users WHERE id = $1")
                 .bind(rid)
                 .fetch_optional(pool)
@@ -214,7 +243,7 @@ async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_j
         .unwrap_or(None);
 
     // Source media via stream_media_link
-    let source_media: Option<(i64, String, String, Option<i32>)> = sqlx::query_as(
+    let source_media: Option<(i32, String, String, Option<i32>)> = sqlx::query_as(
         r#"SELECT m.id, m.title, m.type::text, m.year
            FROM media m
            JOIN stream_media_link sml ON sml.media_id = m.id
@@ -288,27 +317,41 @@ pub async fn create_stream_suggestion(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let stream_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
-        .bind(stream_id)
-        .fetch_one(&state.pool)
-        .await
-        .unwrap_or(false);
+    let stream_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
+            .bind(stream_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(false);
 
     if !stream_exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Stream not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Stream not found"})),
+        )
+            .into_response();
     }
 
     // Check auto-approval eligibility
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
-    let user_points: i32 = sqlx::query_scalar("SELECT COALESCE(contribution_points, 0) FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(&state.pool)
+    let role = get_user_role(&state.pool, user_id)
         .await
-        .unwrap_or(None)
-        .unwrap_or(0);
+        .unwrap_or_default();
+    let user_points: i32 =
+        sqlx::query_scalar("SELECT COALESCE(contribution_points, 0) FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None)
+            .unwrap_or(0);
 
     let auto_threshold: i32 = sqlx::query_scalar(
         "SELECT COALESCE(auto_approval_threshold, 100) FROM contribution_settings WHERE id = 'default'",
@@ -326,14 +369,20 @@ pub async fn create_stream_suggestion(
     .unwrap_or(None)
     .unwrap_or(true);
 
-    let can_auto_approve =
-        is_mod_or_admin(&role) || (allow_auto && user_points >= auto_threshold);
+    let can_auto_approve = is_mod_or_admin(&role) || (allow_auto && user_points >= auto_threshold);
 
-    let initial_status = if can_auto_approve { "auto_approved" } else { "pending" };
+    let initial_status = if can_auto_approve {
+        "auto_approved"
+    } else {
+        "pending"
+    };
     let suggestion_id = Uuid::new_v4().to_string();
 
     // Build suggested_value for relink/add_media_link types
-    let suggested_value = if matches!(body.suggestion_type.as_str(), "relink_media" | "add_media_link") {
+    let suggested_value = if matches!(
+        body.suggestion_type.as_str(),
+        "relink_media" | "add_media_link"
+    ) {
         let link_data = json!({
             "target_media_id": body.target_media_id,
             "target_external_id": body.target_external_id,
@@ -349,8 +398,16 @@ pub async fn create_stream_suggestion(
         body.suggested_value.clone()
     };
 
-    let reviewed_by = if can_auto_approve { Some(user_id.to_string()) } else { None };
-    let review_notes = if can_auto_approve { Some("Auto-approved based on user reputation".to_string()) } else { None };
+    let reviewed_by = if can_auto_approve {
+        Some(user_id.to_string())
+    } else {
+        None
+    };
+    let review_notes = if can_auto_approve {
+        Some("Auto-approved based on user reputation".to_string())
+    } else {
+        None
+    };
 
     if let Err(e) = sqlx::query(
         r#"INSERT INTO stream_suggestion
@@ -381,7 +438,14 @@ pub async fn create_stream_suggestion(
 
     // If auto-approved, apply changes
     if can_auto_approve {
-        apply_stream_field_change(&state.pool, stream_id, &body.suggestion_type, body.field_name.as_deref(), suggested_value.as_deref()).await;
+        apply_stream_field_change(
+            &state.pool,
+            stream_id,
+            &body.suggestion_type,
+            body.field_name.as_deref(),
+            suggested_value.as_deref(),
+        )
+        .await;
     }
 
     let row = match fetch_suggestion(&state.pool, &suggestion_id).await {
@@ -389,7 +453,11 @@ pub async fn create_stream_suggestion(
         Some(r) => r,
     };
 
-    (StatusCode::CREATED, Json(suggestion_to_json(&state.pool, &row).await)).into_response()
+    (
+        StatusCode::CREATED,
+        Json(suggestion_to_json(&state.pool, &row).await),
+    )
+        .into_response()
 }
 
 /// Apply a stream field change
@@ -443,23 +511,38 @@ async fn apply_stream_field_change(
     let result = match field {
         "name" => {
             sqlx::query("UPDATE stream SET name = $1 WHERE id = $2")
-                .bind(val).bind(stream_id).execute(pool).await
+                .bind(val)
+                .bind(stream_id)
+                .execute(pool)
+                .await
         }
         "resolution" => {
             sqlx::query("UPDATE stream SET resolution = $1 WHERE id = $2")
-                .bind(val).bind(stream_id).execute(pool).await
+                .bind(val)
+                .bind(stream_id)
+                .execute(pool)
+                .await
         }
         "codec" => {
             sqlx::query("UPDATE stream SET codec = $1 WHERE id = $2")
-                .bind(val).bind(stream_id).execute(pool).await
+                .bind(val)
+                .bind(stream_id)
+                .execute(pool)
+                .await
         }
         "quality" => {
             sqlx::query("UPDATE stream SET quality = $1 WHERE id = $2")
-                .bind(val).bind(stream_id).execute(pool).await
+                .bind(val)
+                .bind(stream_id)
+                .execute(pool)
+                .await
         }
         "bit_depth" => {
             sqlx::query("UPDATE stream SET bit_depth = $1 WHERE id = $2")
-                .bind(val).bind(stream_id).execute(pool).await
+                .bind(val)
+                .bind(stream_id)
+                .execute(pool)
+                .await
         }
         _ => return,
     };
@@ -477,7 +560,13 @@ pub async fn list_my_stream_suggestions(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let page = params.page.max(1);
@@ -502,7 +591,10 @@ pub async fn list_my_stream_suggestions(
         next_idx += 1;
     }
 
-    fetch_sql.push_str(&format!(" ORDER BY created_at DESC LIMIT ${next_idx} OFFSET ${}", next_idx + 1));
+    fetch_sql.push_str(&format!(
+        " ORDER BY created_at DESC LIMIT ${next_idx} OFFSET ${}",
+        next_idx + 1
+    ));
 
     let mut cq = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id);
     for v in &extra_binds {
@@ -541,24 +633,50 @@ pub async fn get_stream_suggestion_stats(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool_ro, user_id)
+        .await
+        .unwrap_or_default();
     let is_moderator = is_mod_or_admin(&role);
 
     let (total, pending, approved, auto_approved, rejected, approved_today, rejected_today) =
         if is_moderator {
             let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion")
-                .fetch_one(&state.pool_ro).await.unwrap_or(0);
-            let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'pending'")
-                .fetch_one(&state.pool_ro).await.unwrap_or(0);
-            let approved: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'approved'")
-                .fetch_one(&state.pool_ro).await.unwrap_or(0);
-            let auto_approved: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'auto_approved'")
-                .fetch_one(&state.pool_ro).await.unwrap_or(0);
-            let rejected: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'rejected'")
-                .fetch_one(&state.pool_ro).await.unwrap_or(0);
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0);
+            let pending: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM stream_suggestion WHERE status = 'pending'",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+            let approved: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM stream_suggestion WHERE status = 'approved'",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+            let auto_approved: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM stream_suggestion WHERE status = 'auto_approved'",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+            let rejected: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM stream_suggestion WHERE status = 'rejected'",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
             let at: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM stream_suggestion WHERE status IN ('approved', 'auto_approved') AND reviewed_at >= CURRENT_DATE",
             ).fetch_one(&state.pool_ro).await.unwrap_or(0);
@@ -570,14 +688,34 @@ pub async fn get_stream_suggestion_stats(
             (0, 0, 0, 0, 0, 0, 0)
         };
 
-    let user_pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'pending'")
-        .bind(user_id).fetch_one(&state.pool_ro).await.unwrap_or(0);
-    let user_approved: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'approved'")
-        .bind(user_id).fetch_one(&state.pool_ro).await.unwrap_or(0);
-    let user_auto_approved: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'auto_approved'")
-        .bind(user_id).fetch_one(&state.pool_ro).await.unwrap_or(0);
-    let user_rejected: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'rejected'")
-        .bind(user_id).fetch_one(&state.pool_ro).await.unwrap_or(0);
+    let user_pending: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'pending'",
+    )
+    .bind(user_id)
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(0);
+    let user_approved: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'approved'",
+    )
+    .bind(user_id)
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(0);
+    let user_auto_approved: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'auto_approved'",
+    )
+    .bind(user_id)
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(0);
+    let user_rejected: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'rejected'",
+    )
+    .bind(user_id)
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(0);
 
     Json(json!({
         "total": total,
@@ -603,19 +741,32 @@ pub async fn list_pending_stream_suggestions(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool_ro, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let page = params.page.max(1);
     let page_size = params.page_size.clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    let mut count_sql = String::from("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'pending'");
+    let mut count_sql =
+        String::from("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'pending'");
     let mut fetch_sql = String::from("SELECT id FROM stream_suggestion WHERE status = 'pending'");
     let mut extra_binds: Vec<String> = Vec::new();
     let mut next_idx = 1i32;
@@ -627,7 +778,10 @@ pub async fn list_pending_stream_suggestions(
         next_idx += 1;
     }
 
-    fetch_sql.push_str(&format!(" ORDER BY created_at ASC LIMIT ${next_idx} OFFSET ${}", next_idx + 1));
+    fetch_sql.push_str(&format!(
+        " ORDER BY created_at ASC LIMIT ${next_idx} OFFSET ${}",
+        next_idx + 1
+    ));
 
     let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
     for v in &extra_binds {
@@ -667,18 +821,36 @@ pub async fn bulk_review_stream_suggestions(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let new_status = match body.action.as_str() {
         "approve" => "approved",
         "reject" => "rejected",
-        _ => return (StatusCode::BAD_REQUEST, Json(json!({"detail": "action must be approve or reject"}))).into_response(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "action must be approve or reject"})),
+            )
+                .into_response()
+        }
     };
 
     let points_per_edit: i32 = sqlx::query_scalar(
@@ -695,7 +867,10 @@ pub async fn bulk_review_stream_suggestions(
 
     for id in &body.suggestion_ids {
         let row = match fetch_suggestion(&state.pool, id).await {
-            None => { skipped += 1; continue; }
+            None => {
+                skipped += 1;
+                continue;
+            }
             Some(r) => r,
         };
 
@@ -726,7 +901,8 @@ pub async fn bulk_review_stream_suggestions(
                 &row.suggestion_type,
                 row.field_name.as_deref(),
                 row.suggested_value.as_deref(),
-            ).await;
+            )
+            .await;
             if points_per_edit > 0 {
                 let _ = sqlx::query(
                     "UPDATE users SET contribution_points = GREATEST(0, COALESCE(contribution_points, 0) + $1), stream_edits_approved = COALESCE(stream_edits_approved, 0) + 1 WHERE id = $2",
@@ -753,17 +929,35 @@ pub async fn get_stream_suggestion(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let row = match fetch_suggestion(&state.pool_ro, &suggestion_id).await {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Suggestion not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Suggestion not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
-    let role = get_user_role(&state.pool_ro, user_id).await.unwrap_or_default();
-    if row.user_id != user_id && !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Access denied"}))).into_response();
+    let role = get_user_role(&state.pool_ro, user_id)
+        .await
+        .unwrap_or_default();
+    if row.user_id as i64 != user_id && !is_mod_or_admin(&role) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Access denied"})),
+        )
+            .into_response();
     }
 
     Json(suggestion_to_json(&state.pool_ro, &row).await).into_response()
@@ -777,20 +971,40 @@ pub async fn delete_stream_suggestion(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let row = match fetch_suggestion(&state.pool, &suggestion_id).await {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Suggestion not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Suggestion not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
-    if row.user_id != user_id {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Suggestion not found"}))).into_response();
+    if row.user_id as i64 != user_id {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Suggestion not found"})),
+        )
+            .into_response();
     }
 
     if row.status != "pending" {
-        return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Can only delete pending suggestions"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Can only delete pending suggestions"})),
+        )
+            .into_response();
     }
 
     if let Err(e) = sqlx::query("DELETE FROM stream_suggestion WHERE id = $1")
@@ -814,27 +1028,55 @@ pub async fn review_stream_suggestion(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let row = match fetch_suggestion(&state.pool, &suggestion_id).await {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Suggestion not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Suggestion not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
     if row.status != "pending" {
-        return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Suggestion has already been reviewed"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Suggestion has already been reviewed"})),
+        )
+            .into_response();
     }
 
     let new_status = match body.action.as_str() {
         "approve" => "approved",
         "reject" => "rejected",
-        _ => return (StatusCode::BAD_REQUEST, Json(json!({"detail": "action must be approve or reject"}))).into_response(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "action must be approve or reject"})),
+            )
+                .into_response()
+        }
     };
 
     if let Err(e) = sqlx::query(
@@ -866,7 +1108,8 @@ pub async fn review_stream_suggestion(
             &row.suggestion_type,
             row.field_name.as_deref(),
             row.suggested_value.as_deref(),
-        ).await;
+        )
+        .await;
         if points_per_edit > 0 {
             let _ = sqlx::query(
                 "UPDATE users SET contribution_points = GREATEST(0, COALESCE(contribution_points, 0) + $1), stream_edits_approved = COALESCE(stream_edits_approved, 0) + 1 WHERE id = $2",
@@ -894,22 +1137,39 @@ pub async fn triage_stream_suggestion(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream_suggestion WHERE id = $1)")
-        .bind(&suggestion_id)
-        .fetch_one(&state.pool)
-        .await
-        .unwrap_or(false);
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream_suggestion WHERE id = $1)")
+            .bind(&suggestion_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(false);
 
     if !exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Suggestion not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Suggestion not found"})),
+        )
+            .into_response();
     }
 
     if let Err(e) = sqlx::query(
@@ -933,25 +1193,45 @@ pub async fn triage_stream_suggestion(
 }
 
 /// GET /api/v1/streams/{stream_id}/editable-fields
+#[allow(clippy::type_complexity)]
 pub async fn get_stream_editable_fields(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(stream_id): Path<i64>,
+    Path(stream_id): Path<i32>,
 ) -> Response {
     let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let row: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as("SELECT name, resolution, codec, quality, bit_depth FROM stream WHERE id = $1")
-            .bind(stream_id)
-            .fetch_optional(&state.pool_ro)
-            .await
-            .unwrap_or(None);
+    let row: Option<(
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> = sqlx::query_as(
+        "SELECT name, resolution, codec, quality, bit_depth FROM stream WHERE id = $1",
+    )
+    .bind(stream_id)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .unwrap_or(None);
 
     let (name, resolution, codec, quality, bit_depth) = match row {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Stream not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Stream not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
@@ -975,7 +1255,7 @@ pub async fn get_stream_editable_fields(
 pub async fn get_stream_signals(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(stream_id): Path<i64>,
+    Path(stream_id): Path<i32>,
 ) -> Response {
     let user_id = validate_token_optional(&headers, &state.config.secret_key_raw);
 
@@ -986,7 +1266,11 @@ pub async fn get_stream_signals(
         .unwrap_or(None);
 
     if stream_row.is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Stream not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Stream not found"})),
+        )
+            .into_response();
     }
 
     let is_blocked = stream_row.map(|(b,)| b).unwrap_or(false);
@@ -1002,7 +1286,7 @@ pub async fn get_stream_signals(
     let vote_counts: (Option<i64>, Option<i64>) = sqlx::query_as(
         "SELECT COUNT(*) FILTER (WHERE vote_type = 'up'), COUNT(*) FILTER (WHERE vote_type = 'down') FROM stream_votes WHERE stream_id = $1",
     )
-    .bind(stream_id as i32)
+    .bind(stream_id)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or((None, None));
@@ -1047,7 +1331,7 @@ pub async fn get_stream_signals(
             "SELECT vote_type FROM stream_votes WHERE user_id = $1 AND stream_id = $2 LIMIT 1",
         )
         .bind(uid)
-        .bind(stream_id as i32)
+        .bind(stream_id)
         .fetch_optional(&state.pool_ro)
         .await
         .unwrap_or(None);
@@ -1082,6 +1366,166 @@ pub async fn get_stream_signals(
     .into_response()
 }
 
+/// GET /api/v1/streams/{stream_id}/suggestions
+pub async fn list_stream_suggestions(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(stream_id): Path<i64>,
+    Query(params): Query<ListSuggestionsQuery>,
+) -> Response {
+    let _user_id = validate_token_optional(&headers, &state.config.secret_key_raw);
+
+    let page = params.page.max(1);
+    let page_size = params.page_size.clamp(1, 100);
+    let offset = (page - 1) * page_size;
+
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE stream_id = $1")
+            .bind(stream_id)
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+
+    let ids: Vec<(String,)> = sqlx::query_as(
+        "SELECT id FROM stream_suggestion WHERE stream_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+    )
+    .bind(stream_id)
+    .bind(page_size)
+    .bind(offset)
+    .fetch_all(&state.pool_ro)
+    .await
+    .unwrap_or_default();
+
+    let mut suggestions = Vec::new();
+    for (id,) in &ids {
+        if let Some(row) = fetch_suggestion(&state.pool_ro, id).await {
+            suggestions.push(suggestion_to_json(&state.pool_ro, &row).await);
+        }
+    }
+
+    Json(json!({
+        "suggestions": suggestions,
+        "total": count,
+        "page": page,
+        "page_size": page_size,
+        "has_more": offset + page_size < count,
+    }))
+    .into_response()
+}
+
+/// GET /api/v1/streams/{stream_id}/broken-status
+pub async fn get_stream_broken_status(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(stream_id): Path<i32>,
+) -> Response {
+    let _user_id = validate_token_optional(&headers, &state.config.secret_key_raw);
+
+    let row: Option<(bool,)> = sqlx::query_as("SELECT is_blocked FROM stream WHERE id = $1")
+        .bind(stream_id)
+        .fetch_optional(&state.pool_ro)
+        .await
+        .unwrap_or(None);
+
+    if row.is_none() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Stream not found"})),
+        )
+            .into_response();
+    }
+
+    let is_blocked = row.map(|(b,)| b).unwrap_or(false);
+    let broken_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM stream_suggestion WHERE stream_id = $1 AND suggestion_type = 'report_broken' AND status IN ('approved', 'auto_approved', 'pending')",
+    )
+    .bind(stream_id)
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(0);
+
+    Json(json!({
+        "stream_id": stream_id,
+        "is_blocked": is_blocked,
+        "broken_report_count": broken_count,
+    }))
+    .into_response()
+}
+
+/// PATCH /api/v1/streams/{stream_id}/broken-status
+pub async fn update_stream_broken_status(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(stream_id): Path<i32>,
+) -> Response {
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
+    };
+
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
+    if !is_mod_or_admin(&role) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
+    }
+
+    // Check stream exists
+    let existing: Option<(bool,)> = sqlx::query_as("SELECT is_blocked FROM streams WHERE id = $1")
+        .bind(stream_id)
+        .fetch_optional(&state.pool_ro)
+        .await
+        .unwrap_or(None);
+
+    if existing.is_none() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Stream not found"})),
+        )
+            .into_response();
+    }
+
+    // Toggle is_blocked
+    let row: Option<(bool,)> = sqlx::query_as(
+        "UPDATE streams SET is_blocked = NOT is_blocked WHERE id = $1 RETURNING is_blocked",
+    )
+    .bind(stream_id)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    match row {
+        Some((new_blocked,)) => {
+            let message = if new_blocked {
+                "Stream blocked"
+            } else {
+                "Stream unblocked"
+            };
+            Json(json!({
+                "stream_id": stream_id,
+                "is_blocked": new_blocked,
+                "message": message,
+            }))
+            .into_response()
+        }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Stream not found"})),
+        )
+            .into_response(),
+    }
+}
+
 /// POST /api/v1/streams/signals/bulk  (optional auth)
 pub async fn bulk_stream_signals(
     headers: HeaderMap,
@@ -1089,7 +1533,11 @@ pub async fn bulk_stream_signals(
     Json(stream_ids): Json<Vec<i64>>,
 ) -> Response {
     if stream_ids.len() > 100 {
-        return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Maximum 100 stream_ids allowed"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Maximum 100 stream_ids allowed"})),
+        )
+            .into_response();
     }
 
     let user_id = validate_token_optional(&headers, &state.config.secret_key_raw);
@@ -1146,15 +1594,18 @@ pub async fn bulk_stream_signals(
             None
         };
 
-        signals.insert(stream_id.to_string(), json!({
-            "issue_report_count": issue_count,
-            "rating_up": upvotes,
-            "rating_down": downvotes,
-            "rating_score": score,
-            "rating_total": total_votes,
-            "user_vote": user_vote,
-            "user_has_issue_report": user_has_issue_report,
-        }));
+        signals.insert(
+            stream_id.to_string(),
+            json!({
+                "issue_report_count": issue_count,
+                "rating_up": upvotes,
+                "rating_down": downvotes,
+                "rating_score": score,
+                "rating_total": total_votes,
+                "user_vote": user_vote,
+                "user_has_issue_report": user_has_issue_report,
+            }),
+        );
     }
 
     Json(json!({"signals": serde_json::Value::Object(signals)})).into_response()

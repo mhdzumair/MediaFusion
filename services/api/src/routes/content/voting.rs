@@ -31,7 +31,7 @@ use crate::state::AppState;
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
+fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -108,8 +108,8 @@ struct StreamVoteSummary {
 
 async fn stream_vote_summary(
     pool_ro: &sqlx::PgPool,
-    stream_id: i64,
-    user_id: Option<i64>,
+    stream_id: i32,
+    user_id: Option<i32>,
 ) -> Result<StreamVoteSummary, sqlx::Error> {
     // Get aggregated counts
     let row: (Option<i64>, Option<i64>) = sqlx::query_as(
@@ -121,7 +121,7 @@ async fn stream_vote_summary(
         WHERE stream_id = $1
         "#,
     )
-    .bind(stream_id as i32)
+    .bind(stream_id)
     .fetch_one(pool_ro)
     .await?;
 
@@ -136,7 +136,7 @@ async fn stream_vote_summary(
             "SELECT vote_type, quality_status, comment FROM stream_votes WHERE user_id = $1 AND stream_id = $2 LIMIT 1",
         )
         .bind(uid)
-        .bind(stream_id as i32)
+        .bind(stream_id)
         .fetch_optional(pool_ro)
         .await?
         .map(|(vote_type, quality_status, comment)| {
@@ -169,8 +169,8 @@ struct ContentRatingSummary {
 
 async fn content_rating_summary(
     pool_ro: &sqlx::PgPool,
-    media_id: i64,
-    user_id: Option<i64>,
+    media_id: i32,
+    user_id: Option<i32>,
 ) -> Result<ContentRatingSummary, sqlx::Error> {
     let row: (Option<f64>, Option<i64>) = sqlx::query_as(
         r#"
@@ -181,7 +181,7 @@ async fn content_rating_summary(
         WHERE media_id = $1 AND vote_type = 'rating'
         "#,
     )
-    .bind(media_id as i32)
+    .bind(media_id)
     .fetch_one(pool_ro)
     .await?;
 
@@ -193,7 +193,7 @@ async fn content_rating_summary(
             "SELECT vote FROM metadata_votes WHERE user_id = $1 AND media_id = $2 AND vote_type = 'rating' LIMIT 1",
         )
         .bind(uid)
-        .bind(media_id as i32)
+        .bind(media_id)
         .fetch_optional(pool_ro)
         .await?
         .flatten()
@@ -214,7 +214,7 @@ async fn content_rating_summary(
 pub async fn vote_stream(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(stream_id): Path<i64>,
+    Path(stream_id): Path<i32>,
     Json(body): Json<StreamVoteRequest>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
@@ -231,7 +231,7 @@ pub async fn vote_stream(
     // Verify stream exists
     let exists: bool =
         sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
-            .bind(stream_id as i32)
+            .bind(stream_id)
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(false);
@@ -271,7 +271,7 @@ pub async fn vote_stream(
         )
         .bind(&vote_id)
         .bind(user_id)
-        .bind(stream_id as i32)
+        .bind(stream_id)
         .bind(vote_type_str)
         .bind(&body.quality_status)
         .bind(&body.comment)
@@ -311,7 +311,7 @@ pub async fn vote_stream(
 pub async fn delete_stream_vote(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(stream_id): Path<i64>,
+    Path(stream_id): Path<i32>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -326,7 +326,7 @@ pub async fn delete_stream_vote(
 
     let result = sqlx::query("DELETE FROM stream_votes WHERE user_id = $1 AND stream_id = $2")
         .bind(user_id)
-        .bind(stream_id as i32)
+        .bind(stream_id)
         .execute(&state.pool)
         .await;
 
@@ -352,7 +352,7 @@ pub async fn delete_stream_vote(
 pub async fn get_stream_votes(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(stream_id): Path<i64>,
+    Path(stream_id): Path<i32>,
 ) -> Response {
     let user_id = validate_token(&headers, &state.config.secret_key_raw);
 
@@ -386,10 +386,14 @@ pub async fn bulk_stream_votes(
     headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    let stream_ids: Vec<i64> = body
+    let stream_ids: Vec<i32> = body
         .get("stream_ids")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_i64().map(|n| n as i32))
+                .collect()
+        })
         .unwrap_or_default();
 
     if stream_ids.len() > 50 {
@@ -431,7 +435,7 @@ pub async fn bulk_stream_votes(
 pub async fn rate_content(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<i32>,
     Json(body): Json<ContentRatingRequest>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
@@ -448,7 +452,7 @@ pub async fn rate_content(
     // Verify media exists
     let exists: bool =
         sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)")
-            .bind(media_id as i32)
+            .bind(media_id)
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(false);
@@ -484,7 +488,7 @@ pub async fn rate_content(
     )
     .bind(&vote_id)
     .bind(user_id)
-    .bind(media_id as i32)
+    .bind(media_id)
     .bind(rating_int)
     .fetch_one(&state.pool)
     .await
@@ -516,7 +520,7 @@ pub async fn rate_content(
 pub async fn get_content_ratings(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<i32>,
 ) -> Response {
     let user_id = validate_token(&headers, &state.config.secret_key_raw);
 
@@ -548,10 +552,14 @@ pub async fn bulk_content_ratings(
     headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    let media_ids: Vec<i64> = body
+    let media_ids: Vec<i32> = body
         .get("media_ids")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_i64().map(|n| n as i32))
+                .collect()
+        })
         .unwrap_or_default();
     if media_ids.len() > 100 {
         return (
@@ -590,7 +598,7 @@ pub async fn bulk_content_ratings(
 pub async fn like_content(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<i32>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -606,7 +614,7 @@ pub async fn like_content(
     // Verify media exists
     let exists: bool =
         sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)")
-            .bind(media_id as i32)
+            .bind(media_id)
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(false);
@@ -624,7 +632,7 @@ pub async fn like_content(
         "SELECT id, created_at FROM metadata_votes WHERE user_id = $1 AND media_id = $2 AND vote_type = 'like' LIMIT 1",
     )
     .bind(user_id)
-    .bind(media_id as i32)
+    .bind(media_id)
     .fetch_optional(&state.pool_ro)
     .await
     {
@@ -664,7 +672,7 @@ pub async fn like_content(
     )
     .bind(&like_id)
     .bind(user_id)
-    .bind(media_id as i32)
+    .bind(media_id)
     .fetch_one(&state.pool)
     .await
     {
@@ -695,7 +703,7 @@ pub async fn like_content(
 pub async fn unlike_content(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<i32>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -712,7 +720,7 @@ pub async fn unlike_content(
         "DELETE FROM metadata_votes WHERE user_id = $1 AND media_id = $2 AND vote_type = 'like'",
     )
     .bind(user_id)
-    .bind(media_id as i32)
+    .bind(media_id)
     .execute(&state.pool)
     .await;
 
@@ -738,14 +746,14 @@ pub async fn unlike_content(
 pub async fn get_content_likes(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<i32>,
 ) -> Response {
     let user_id = validate_token(&headers, &state.config.secret_key_raw);
 
     let likes_count: i64 = match sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM metadata_votes WHERE media_id = $1 AND vote_type = 'like'",
     )
-    .bind(media_id as i32)
+    .bind(media_id)
     .fetch_one(&state.pool_ro)
     .await
     {
@@ -765,7 +773,7 @@ pub async fn get_content_likes(
             "SELECT EXISTS(SELECT 1 FROM metadata_votes WHERE user_id = $1 AND media_id = $2 AND vote_type = 'like')",
         )
         .bind(uid)
-        .bind(media_id as i32)
+        .bind(media_id)
         .fetch_one(&state.pool_ro)
         .await
         {

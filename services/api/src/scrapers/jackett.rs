@@ -32,6 +32,7 @@ struct JackettResult {
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 pub async fn scrape(
     client: &Client,
     base_url: &str,
@@ -40,6 +41,9 @@ pub async fn scrape(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    max_process: usize,
+    max_process_time: std::time::Duration,
+    query_timeout: std::time::Duration,
 ) -> Vec<ScrapedStream> {
     let imdb_id = meta.imdb_id.as_deref().unwrap_or("");
     let is_series = media_type == "series";
@@ -67,32 +71,46 @@ pub async fn scrape(
         params.push(("Category[]", cat.to_string()));
     }
 
-    let resp = match client
-        .get(format!("{base_url}/api/v2.0/indexers/all/results"))
-        .query(&params)
-        .timeout(std::time::Duration::from_secs(30))
-        .send()
-        .await
+    let result = match tokio::time::timeout(max_process_time, async {
+        let resp = match client
+            .get(format!("{base_url}/api/v2.0/indexers/all/results"))
+            .query(&params)
+            .timeout(query_timeout)
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::debug!("jackett request failed: {e}");
+                return vec![];
+            }
+        };
+
+        let body: JackettResponse = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::debug!("jackett response parse failed: {e}");
+                return vec![];
+            }
+        };
+
+        let mut items: Vec<ScrapedStream> = body
+            .results
+            .into_iter()
+            .filter_map(|r| parse_result(r, media_type, season, episode))
+            .collect();
+        items.truncate(max_process);
+        items
+    })
+    .await
     {
         Ok(r) => r,
-        Err(e) => {
-            tracing::debug!("jackett request failed: {e}");
-            return vec![];
+        Err(_) => {
+            tracing::debug!("jackett: max_process_time exceeded");
+            vec![]
         }
     };
-
-    let body: JackettResponse = match resp.json().await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::debug!("jackett response parse failed: {e}");
-            return vec![];
-        }
-    };
-
-    body.results
-        .into_iter()
-        .filter_map(|r| parse_result(r, media_type, season, episode))
-        .collect()
+    result
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

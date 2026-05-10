@@ -6,7 +6,7 @@
 /// IP forwarding: `X-Forwarded-For: {user_ip}` when user_ip is set.
 use serde_json::Value;
 
-use super::ProviderError;
+use crate::providers::ProviderError;
 
 const BASE_URL: &str = "https://easydebrid.com/api/v1";
 
@@ -192,4 +192,48 @@ pub async fn delete_all_torrents(
     _token: &str,
 ) -> Result<(), ProviderError> {
     Ok(())
+}
+
+// ─── Debrid cache check ───────────────────────────────────────────────────────
+
+/// Check which hashes are cached on EasyDebrid.
+pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]) -> Vec<String> {
+    const CHUNK: usize = 50;
+    let mut cached = Vec::new();
+    for chunk in hashes.chunks(CHUNK) {
+        let urls: Vec<String> = chunk
+            .iter()
+            .map(|h| format!("magnet:?xt=urn:btih:{h}"))
+            .collect();
+        let resp = match ed_post(
+            http,
+            token,
+            "/link/lookup",
+            &serde_json::json!({"urls": urls}),
+            None,
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("easydebrid link/lookup: {e}");
+                continue;
+            }
+        };
+        let body: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("easydebrid link/lookup json: {e}");
+                continue;
+            }
+        };
+        if let Some(arr) = body.get("cached").and_then(|v| v.as_array()) {
+            for (hash, is_cached) in chunk.iter().zip(arr.iter()) {
+                if is_cached.as_bool().unwrap_or(false) {
+                    cached.push(hash.clone());
+                }
+            }
+        }
+    }
+    cached
 }

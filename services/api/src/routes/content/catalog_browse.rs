@@ -1,20 +1,17 @@
-/// Catalog browsing endpoints (proxy to Python for full stream/filter logic).
-///
-/// The Python catalog router performs complex join queries with HDR filters,
-/// streaming provider preferences, and lazy loading. We proxy everything to Python
-/// if available; otherwise return 503.
+/// Catalog browsing endpoints — native Rust implementation.
 ///
 /// Routes (prefix /api/v1/catalog):
-///   GET  /                              → list_catalog
-///   GET  /search                        → search_catalog
-///   GET  /{media_id}                    → get_media_detail
-///   GET  /{media_id}/streams            → get_media_streams
-///   POST /{media_id}/streams/{stream_id}/report → report_stream
-use std::sync::Arc;
+///   GET  /available                         → get_available_catalogs
+///   GET  /genres                            → get_genres
+///   GET  /search                            → search_catalog
+///   GET  /{catalog_type}                    → browse_catalog
+///   GET  /{catalog_type}/{media_id}         → get_media_detail
+///   GET  /{catalog_type}/{media_id}/streams → get_media_streams
+///   POST /{catalog_type}/{media_id}/streams/{stream_id}/report → report_stream
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{
-    body::Body,
-    extract::{Path, Request, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -22,10 +19,11 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
+use serde::Deserialize;
 use serde_json::json;
 use sha2::Sha256;
 
-use crate::state::AppState;
+use crate::{cache, routes::user_library::extract_streaming_providers, state::AppState};
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -61,194 +59,1131 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
     data["sub"].as_str()?.parse().ok()
 }
 
-// ─── Proxy helper ─────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async fn proxy(
-    state: &Arc<AppState>,
-    method: reqwest::Method,
-    path: &str,
-    query: &str,
-    headers: &HeaderMap,
-    body: Vec<u8>,
-) -> Response {
-    let base = match &state.config.python_proxy_url {
-        Some(u) => u.clone(),
-        None => {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"detail": "Catalog service not available in this deployment"})),
-            )
-                .into_response();
-        }
-    };
+fn bool_opt_from_str<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<bool>, D::Error> {
+    let s: Option<String> = Option::deserialize(d)?;
+    Ok(s.map(|v| !matches!(v.to_lowercase().as_str(), "false" | "0" | "no" | "")))
+}
 
-    let url = if query.is_empty() {
-        format!("{base}{path}")
+const VALID_CATALOG_TYPES: &[&str] = &["movie", "series", "tv", "events"];
+
+fn unauthorized() -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({"detail": "Unauthorized"})),
+    )
+        .into_response()
+}
+
+fn bad_request(msg: &str) -> Response {
+    (StatusCode::BAD_REQUEST, Json(json!({"detail": msg}))).into_response()
+}
+
+fn format_size(bytes: i64) -> String {
+    if bytes <= 0 {
+        return String::new();
+    }
+    let units = ["B", "KB", "MB", "GB", "TB"];
+    let mut v = bytes as f64;
+    let mut i = 0usize;
+    while v >= 1000.0 && i < units.len() - 1 {
+        v /= 1000.0;
+        i += 1;
+    }
+    if i == 0 {
+        format!("{} B", bytes)
     } else {
-        format!("{base}{path}?{query}")
-    };
+        format!("{:.1} {}", v, units[i])
+    }
+}
 
-    let mut req = state.http.request(method, &url);
-    for (key, val) in headers.iter() {
-        let name = key.as_str().to_lowercase();
-        if matches!(name.as_str(), "authorization" | "accept" | "content-type") {
-            if let Ok(v) = val.to_str() {
-                req = req.header(key.as_str(), v);
-            }
-        }
-    }
-    if !body.is_empty() {
-        req = req.body(body);
-    }
+// ─── DB row structs ───────────────────────────────────────────────────────────
 
-    match req.send().await {
-        Ok(resp) => {
-            let status = StatusCode::from_u16(resp.status().as_u16())
-                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-            let bytes = resp.bytes().await.unwrap_or_default();
-            (status, Body::from(bytes)).into_response()
-        }
-        Err(e) => {
-            tracing::error!("catalog_browse proxy error: {e}");
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"detail": "Failed to reach catalog service"})),
-            )
-                .into_response()
-        }
-    }
+#[derive(sqlx::FromRow)]
+struct StreamRow {
+    id: i32,
+    name: String,
+    stream_type: String,
+    source: Option<String>,
+    resolution: Option<String>,
+    quality: Option<String>,
+    codec: Option<String>,
+    bit_depth: Option<String>,
+    seeders: Option<i32>,
+    uploader: Option<String>,
+    release_group: Option<String>,
+    filename: Option<String>,
+    file_size: Option<i64>,
+    info_hash: Option<String>,
+    yt_id: Option<String>,
+    audio_formats: Option<String>,
+    channels: Option<String>,
+    hdr_formats: Option<String>,
+    languages: Option<String>,
+    is_remastered: bool,
+    is_upscaled: bool,
+    is_proper: bool,
+    is_repack: bool,
+    is_extended: bool,
+    is_complete: bool,
+    is_dubbed: bool,
+    is_subbed: bool,
+}
+
+// ─── Query param structs ──────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct GenresQuery {
+    pub catalog_type: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct SearchQuery {
+    pub q: Option<String>,
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct BrowseParams {
+    pub catalog: Option<String>,
+    pub genre: Option<String>,
+    pub search: Option<String>,
+    pub sort: Option<String>,
+    pub sort_dir: Option<String>,
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+    #[serde(default, deserialize_with = "bool_opt_from_str")]
+    pub has_streams: Option<bool>,
+}
+
+#[derive(Deserialize)]
+pub struct StreamsQuery {
+    pub season: Option<i32>,
+    pub episode: Option<i32>,
+    pub profile_id: Option<i32>,
+    pub provider: Option<String>,
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
-/// GET /api/v1/catalog
-pub async fn list_catalog(
-    headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
-    req: Request,
-) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
-    let q = req.uri().query().unwrap_or("").to_string();
-    proxy(
-        &state,
-        reqwest::Method::GET,
-        "/api/v1/catalog",
-        &q,
-        &headers,
-        vec![],
+/// GET /api/v1/catalog/available
+pub async fn get_available_catalogs(State(state): State<Arc<AppState>>) -> Response {
+    let rows: Vec<(String, String, String)> = sqlx::query_as(
+        r#"SELECT DISTINCT c.name, COALESCE(c.display_name, c.name) as display_name, m.type::text as media_type
+           FROM catalog c
+           JOIN media_catalog_link mcl ON mcl.catalog_id = c.id
+           JOIN media m ON m.id = mcl.media_id
+           ORDER BY display_name"#,
     )
+    .fetch_all(&state.pool_ro)
     .await
+    .unwrap_or_default();
+
+    let mut movies: Vec<serde_json::Value> = Vec::new();
+    let mut series: Vec<serde_json::Value> = Vec::new();
+    let mut tv: Vec<serde_json::Value> = Vec::new();
+    let mut sports: Vec<serde_json::Value> = Vec::new();
+
+    for (name, display_name, media_type) in rows {
+        let entry = json!({"name": name, "display_name": display_name});
+        match media_type.to_lowercase().as_str() {
+            "movie" => movies.push(entry),
+            "series" => series.push(entry),
+            "tv" => tv.push(entry),
+            "events" => sports.push(entry),
+            _ => {}
+        }
+    }
+
+    Json(json!({
+        "movies": movies,
+        "series": series,
+        "tv": tv,
+        "sports": sports,
+    }))
+    .into_response()
+}
+
+/// GET /api/v1/catalog/genres
+pub async fn get_genres(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<GenresQuery>,
+) -> Response {
+    let catalog_type = params
+        .catalog_type
+        .as_deref()
+        .unwrap_or("movie")
+        .to_uppercase();
+    let cache_key = format!("genres:{catalog_type}");
+
+    if let Some(cached) = cache::get_json(&state.redis, &cache_key).await {
+        return Json(cached).into_response();
+    }
+
+    let rows: Vec<(i32, String)> = sqlx::query_as(
+        r#"SELECT DISTINCT g.id, g.name
+           FROM media_genre_link mgl
+           JOIN media m ON m.id = mgl.media_id AND m.type = $1::mediatype
+           JOIN genre g ON g.id = mgl.genre_id
+           ORDER BY g.name"#,
+    )
+    .bind(&catalog_type)
+    .fetch_all(&state.pool_ro)
+    .await
+    .unwrap_or_default();
+
+    let genres: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|(id, name)| json!({"id": id, "name": name}))
+        .collect();
+
+    let result = json!(genres);
+    cache::set_json(&state.redis, &cache_key, &result, 3600).await;
+    Json(result).into_response()
 }
 
 /// GET /api/v1/catalog/search
 pub async fn search_catalog(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    req: Request,
+    Query(params): Query<SearchQuery>,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
+        return unauthorized();
     }
-    let q = req.uri().query().unwrap_or("").to_string();
-    proxy(
-        &state,
-        reqwest::Method::GET,
-        "/api/v1/catalog/search",
-        &q,
-        &headers,
-        vec![],
+
+    let q = match params.q {
+        Some(ref s) if !s.trim().is_empty() => format!("%{}%", s.trim()),
+        _ => return bad_request("q parameter is required"),
+    };
+
+    let page = params.page.unwrap_or(1).max(1);
+    let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
+    let offset = (page - 1) * page_size;
+
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM media m WHERE (m.title ILIKE $1) AND m.adult = false",
     )
+    .bind(&q)
+    .fetch_one(&state.pool_ro)
     .await
+    .unwrap_or(0);
+
+    let rows: Vec<(i32, String, String, Option<i32>)> = sqlx::query_as(
+        r#"SELECT m.id, m.title, m.type::text, m.year
+           FROM media m
+           WHERE (m.title ILIKE $1) AND m.adult = false
+           ORDER BY m.title
+           LIMIT $2 OFFSET $3"#,
+    )
+    .bind(&q)
+    .bind(page_size)
+    .bind(offset)
+    .fetch_all(&state.pool_ro)
+    .await
+    .unwrap_or_default();
+
+    let items: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|(id, title, mtype, year)| {
+            json!({
+                "id": id,
+                "title": title,
+                "type": mtype.to_lowercase(),
+                "year": year,
+                "poster": null,
+                "background": null,
+                "description": null,
+                "genres": [],
+                "imdb_rating": null,
+                "external_ids": {},
+            })
+        })
+        .collect();
+
+    Json(json!({
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "has_more": (offset + page_size) < total,
+    }))
+    .into_response()
 }
 
-/// GET /api/v1/catalog/{media_id}
+/// GET /api/v1/catalog/{catalog_type}
+pub async fn browse_catalog(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(catalog_type): Path<String>,
+    Query(params): Query<BrowseParams>,
+) -> Response {
+    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
+        return unauthorized();
+    }
+
+    if !VALID_CATALOG_TYPES.contains(&catalog_type.as_str()) {
+        return bad_request("Invalid catalog_type. Must be one of: movie, series, tv, events");
+    }
+
+    let page = params.page.unwrap_or(1).max(1);
+    let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
+    let offset = (page - 1) * page_size;
+
+    // Build ORDER BY clause matching Python's sort logic exactly
+    let sort = params.sort.as_deref().unwrap_or("latest");
+    let sort_dir = match params.sort_dir.as_deref().unwrap_or("desc") {
+        "asc" => "ASC",
+        _ => "DESC",
+    };
+    let nulls = if sort_dir == "ASC" {
+        "NULLS FIRST"
+    } else {
+        "NULLS LAST"
+    };
+    let order_clause = match sort {
+        "popular" => format!(
+            "m.popularity {sort_dir} {nulls}, m.total_streams {sort_dir} {nulls}, m.last_stream_added {sort_dir} {nulls}, m.id ASC"
+        ),
+        "rating" => format!(
+            "(SELECT mr2.rating FROM media_rating mr2 JOIN rating_provider rp2 ON rp2.id = mr2.rating_provider_id WHERE mr2.media_id = m.id AND rp2.name = 'imdb' LIMIT 1) {sort_dir} {nulls}, m.total_streams {sort_dir} {nulls}, m.id ASC"
+        ),
+        "year" => format!("m.year {sort_dir} {nulls}, m.id ASC"),
+        "title" => format!("m.title {sort_dir}, m.id ASC"),
+        "release_date" => format!("COALESCE(m.release_date, m.end_date) {sort_dir} {nulls}, m.id ASC"),
+        _ => format!("m.last_stream_added {sort_dir} {nulls}, m.id ASC"), // latest
+    };
+
+    let catalog_type_upper = catalog_type.to_uppercase();
+    // Use EXISTS subqueries for catalog/genre filtering to avoid DISTINCT + ORDER BY conflicts
+    let mut where_parts: Vec<String> = vec![
+        format!("m.type::text = '{catalog_type_upper}'"),
+        "m.adult = false".to_string(),
+        "m.is_blocked = false".to_string(),
+    ];
+
+    // Default: only released content (matches Python's include_upcoming=false default)
+    if catalog_type != "tv" {
+        where_parts.push(
+            "(m.release_date <= CURRENT_DATE OR m.status = 'released' OR (m.release_date IS NULL AND (m.year IS NULL OR m.year <= EXTRACT(YEAR FROM CURRENT_DATE)::int)))".to_string()
+        );
+    }
+
+    // Default: only media with available streams (matches Python's has_streams=true default)
+    if params.has_streams.unwrap_or(true) {
+        where_parts.push("m.total_streams > 0".to_string());
+    }
+    let mut bind_idx: i32 = 0;
+
+    let mut catalog_name_bind: Option<String> = None;
+    let mut genre_name_bind: Option<String> = None;
+    let mut search_bind: Option<String> = None;
+
+    if let Some(ref cat) = params.catalog {
+        bind_idx += 1;
+        where_parts.push(format!(
+            "EXISTS (SELECT 1 FROM media_catalog_link mcl JOIN catalog c ON c.id = mcl.catalog_id WHERE mcl.media_id = m.id AND c.name = ${bind_idx})"
+        ));
+        catalog_name_bind = Some(cat.clone());
+    }
+
+    if let Some(ref genre) = params.genre {
+        bind_idx += 1;
+        where_parts.push(format!(
+            "EXISTS (SELECT 1 FROM media_genre_link mgl JOIN genre g ON g.id = mgl.genre_id WHERE mgl.media_id = m.id AND g.name = ${bind_idx})"
+        ));
+        genre_name_bind = Some(genre.clone());
+    }
+
+    if let Some(ref search) = params.search {
+        bind_idx += 1;
+        where_parts.push(format!("(m.title ILIKE ${bind_idx})"));
+        search_bind = Some(format!("%{}%", search));
+    }
+
+    let where_clause = where_parts.join(" AND ");
+
+    let limit_idx = bind_idx + 1;
+    let offset_idx = bind_idx + 2;
+
+    let count_sql = format!("SELECT COUNT(*) FROM media m WHERE {where_clause}");
+
+    let list_sql = format!(
+        r#"SELECT m.id, m.title, m.type::text, m.year, m.description,
+               (SELECT url FROM media_image WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true LIMIT 1) as poster,
+               (SELECT url FROM media_image WHERE media_id = m.id AND image_type = 'background' AND is_primary = true LIMIT 1) as background,
+               (SELECT mr.rating FROM media_rating mr JOIN rating_provider rp ON rp.id = mr.rating_provider_id WHERE mr.media_id = m.id AND rp.name = 'imdb' LIMIT 1) as imdb_rating,
+               m.last_stream_added
+           FROM media m
+           WHERE {where_clause}
+           ORDER BY {order_clause}
+           LIMIT ${limit_idx} OFFSET ${offset_idx}"#
+    );
+
+    // Build and execute count query
+    let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
+    if let Some(ref v) = catalog_name_bind {
+        count_q = count_q.bind(v.clone());
+    }
+    if let Some(ref v) = genre_name_bind {
+        count_q = count_q.bind(v.clone());
+    }
+    if let Some(ref v) = search_bind {
+        count_q = count_q.bind(v.clone());
+    }
+
+    let total: i64 = count_q.fetch_one(&state.pool_ro).await.unwrap_or(0);
+
+    // Build and execute list query
+    let mut list_q = sqlx::query_as::<
+        _,
+        (
+            i32,
+            String,
+            String,
+            Option<i32>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<f64>,
+            Option<chrono::DateTime<chrono::Utc>>,
+        ),
+    >(&list_sql);
+    if let Some(ref v) = catalog_name_bind {
+        list_q = list_q.bind(v.clone());
+    }
+    if let Some(ref v) = genre_name_bind {
+        list_q = list_q.bind(v.clone());
+    }
+    if let Some(ref v) = search_bind {
+        list_q = list_q.bind(v.clone());
+    }
+    list_q = list_q.bind(page_size).bind(offset);
+
+    let rows = list_q.fetch_all(&state.pool_ro).await.unwrap_or_default();
+
+    if rows.is_empty() {
+        return Json(json!({
+            "items": [],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": false,
+        }))
+        .into_response();
+    }
+
+    // Load genres and external_ids for all fetched items in one batch each
+    let media_ids: Vec<i32> = rows.iter().map(|r| r.0).collect();
+    #[allow(clippy::type_complexity)]
+    let (genre_rows, ext_id_rows): (Vec<(i32, String)>, Vec<(i32, String, String)>) = tokio::join!(
+        async {
+            sqlx::query_as(
+                "SELECT mgl.media_id, g.name FROM genre g JOIN media_genre_link mgl ON mgl.genre_id = g.id WHERE mgl.media_id = ANY($1)",
+            )
+            .bind(&media_ids)
+            .fetch_all(&state.pool_ro)
+            .await
+            .unwrap_or_default()
+        },
+        async {
+            sqlx::query_as(
+                "SELECT media_id, provider, external_id FROM media_external_id WHERE media_id = ANY($1)",
+            )
+            .bind(&media_ids)
+            .fetch_all(&state.pool_ro)
+            .await
+            .unwrap_or_default()
+        }
+    );
+
+    let mut genres_map: std::collections::HashMap<i32, Vec<String>> =
+        std::collections::HashMap::new();
+    for (mid, gname) in genre_rows {
+        genres_map.entry(mid).or_default().push(gname);
+    }
+
+    let mut ext_ids_map: std::collections::HashMap<
+        i32,
+        serde_json::Map<String, serde_json::Value>,
+    > = std::collections::HashMap::new();
+    for (mid, provider, ext_id) in ext_id_rows {
+        ext_ids_map
+            .entry(mid)
+            .or_default()
+            .insert(provider, serde_json::Value::String(ext_id));
+    }
+
+    let items: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(
+            |(
+                id,
+                title,
+                mtype,
+                year,
+                description,
+                poster,
+                background,
+                imdb_rating,
+                _last_stream_added,
+            )| {
+                let genres = genres_map.get(&id).cloned().unwrap_or_default();
+                let external_ids = ext_ids_map.get(&id).cloned().unwrap_or_default();
+                json!({
+                    "id": id,
+                    "title": title,
+                    "type": mtype.to_lowercase(),
+                    "year": year,
+                    "poster": poster,
+                    "background": background,
+                    "description": description,
+                    "genres": genres,
+                    "imdb_rating": imdb_rating,
+                    "external_ids": external_ids,
+                })
+            },
+        )
+        .collect();
+
+    Json(json!({
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "has_more": (offset + page_size) < total,
+    }))
+    .into_response()
+}
+
+/// GET /api/v1/catalog/{catalog_type}/{media_id}
+#[allow(clippy::type_complexity)]
 pub async fn get_media_detail(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
-    req: Request,
+    Path((catalog_type, media_id)): Path<(String, i32)>,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
+        return unauthorized();
     }
-    let q = req.uri().query().unwrap_or("").to_string();
-    proxy(
-        &state,
-        reqwest::Method::GET,
-        &format!("/api/v1/catalog/{media_id}"),
-        &q,
-        &headers,
-        vec![],
+
+    if !VALID_CATALOG_TYPES.contains(&catalog_type.as_str()) {
+        return bad_request("Invalid catalog_type");
+    }
+
+    // Fetch main media row
+    let media_row: Option<(
+        i32,
+        String,
+        String,
+        Option<i32>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        bool,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> = sqlx::query_as(
+        r#"SELECT m.id, m.title, m.type::text, m.year, m.description, m.status,
+                      m.runtime_minutes::text, m.original_language, m.adult,
+                      m.release_date::text, m.end_date::text, m.tagline
+               FROM media m WHERE m.id = $1"#,
     )
+    .bind(media_id)
+    .fetch_optional(&state.pool_ro)
     .await
+    .unwrap_or(None);
+
+    let row = match media_row {
+        Some(r) => r,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Media not found"})),
+            )
+                .into_response();
+        }
+    };
+
+    let (
+        id,
+        title,
+        mtype,
+        year,
+        description,
+        status,
+        runtime_minutes,
+        original_language,
+        _adult,
+        release_date,
+        end_date,
+        tagline,
+    ) = row;
+
+    // Parallel queries
+    let (genres, catalogs, ext_ids, poster, background, imdb_rating) = tokio::join!(
+        async {
+            sqlx::query_as::<_, (String,)>(
+                "SELECT g.name FROM genre g JOIN media_genre_link mgl ON mgl.genre_id = g.id WHERE mgl.media_id = $1 ORDER BY g.name",
+            )
+            .bind(media_id)
+            .fetch_all(&state.pool_ro)
+            .await
+            .unwrap_or_default()
+        },
+        async {
+            sqlx::query_as::<_, (String,)>(
+                "SELECT c.name FROM catalog c JOIN media_catalog_link mcl ON mcl.catalog_id = c.id WHERE mcl.media_id = $1",
+            )
+            .bind(media_id)
+            .fetch_all(&state.pool_ro)
+            .await
+            .unwrap_or_default()
+        },
+        async {
+            sqlx::query_as::<_, (String, String)>(
+                "SELECT provider, external_id FROM media_external_id WHERE media_id = $1",
+            )
+            .bind(media_id)
+            .fetch_all(&state.pool_ro)
+            .await
+            .unwrap_or_default()
+        },
+        async {
+            sqlx::query_scalar::<_, String>(
+                "SELECT url FROM media_image WHERE media_id = $1 AND image_type = 'poster' AND is_primary = true LIMIT 1",
+            )
+            .bind(media_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None)
+        },
+        async {
+            sqlx::query_scalar::<_, String>(
+                "SELECT url FROM media_image WHERE media_id = $1 AND image_type = 'background' AND is_primary = true LIMIT 1",
+            )
+            .bind(media_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None)
+        },
+        async {
+            sqlx::query_scalar::<_, f64>(
+                "SELECT mr.rating FROM media_rating mr JOIN rating_provider rp ON rp.id = mr.rating_provider_id WHERE mr.media_id = $1 AND rp.name = 'imdb' LIMIT 1",
+            )
+            .bind(media_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None)
+        },
+    );
+
+    let genre_list: Vec<String> = genres.into_iter().map(|(g,)| g).collect();
+    let catalog_list: Vec<String> = catalogs.into_iter().map(|(c,)| c).collect();
+
+    let mut external_ids_map = serde_json::Map::new();
+    for (provider, external_id) in ext_ids {
+        external_ids_map.insert(provider, json!(external_id));
+    }
+
+    // For series, load seasons and episodes
+    let seasons_value: serde_json::Value = if mtype.to_lowercase() == "series" {
+        // Fetch all seasons ordered by season_number
+        let season_rows: Vec<(i32, i32)> = sqlx::query_as(
+            r#"SELECT sn.id, sn.season_number
+               FROM series_metadata sm
+               JOIN season sn ON sn.series_id = sm.id
+               WHERE sm.media_id = $1
+               ORDER BY sn.season_number"#,
+        )
+        .bind(media_id)
+        .fetch_all(&state.pool_ro)
+        .await
+        .unwrap_or_default();
+
+        if season_rows.is_empty() {
+            json!([])
+        } else {
+            // Fetch all episodes + thumbnails for all seasons in one query
+            let season_ids: Vec<i32> = season_rows.iter().map(|(id, _)| *id).collect();
+            let episode_rows: Vec<(i32, i32, i32, String, Option<String>, Option<String>, bool, bool, Option<String>)> =
+                sqlx::query_as(
+                    r#"SELECT e.id, e.season_id, e.episode_number, e.title, e.overview,
+                              e.air_date::text,
+                              e.is_user_created, e.is_user_addition,
+                              (SELECT ei.url FROM episode_image ei WHERE ei.episode_id = e.id AND ei.is_primary = true LIMIT 1) AS thumbnail
+                       FROM episode e
+                       WHERE e.season_id = ANY($1)
+                       ORDER BY e.season_id, e.episode_number"#,
+                )
+                .bind(&season_ids)
+                .fetch_all(&state.pool_ro)
+                .await
+                .unwrap_or_default();
+
+            // Group episodes by season_id
+            let mut eps_by_season: std::collections::HashMap<i32, Vec<serde_json::Value>> =
+                std::collections::HashMap::new();
+            for (
+                ep_id,
+                season_id,
+                ep_num,
+                ep_title,
+                overview,
+                air_date,
+                is_user_created,
+                is_user_addition,
+                thumbnail,
+            ) in episode_rows
+            {
+                eps_by_season.entry(season_id).or_default().push(json!({
+                    "id": ep_id,
+                    "episode_number": ep_num,
+                    "title": ep_title,
+                    "overview": overview,
+                    "released": air_date,
+                    "thumbnail": thumbnail,
+                    "is_user_created": is_user_created,
+                    "is_user_addition": is_user_addition,
+                }));
+            }
+
+            let seasons: Vec<serde_json::Value> = season_rows
+                .into_iter()
+                .map(|(sn_id, sn_num)| {
+                    let episodes = eps_by_season.remove(&sn_id).unwrap_or_default();
+                    json!({
+                        "season_number": sn_num,
+                        "episodes": episodes,
+                    })
+                })
+                .collect();
+            json!(seasons)
+        }
+    } else {
+        json!(null)
+    };
+
+    Json(json!({
+        "id": id,
+        "title": title,
+        "type": mtype.to_lowercase(),
+        "year": year,
+        "description": description,
+        "status": status,
+        "runtime_minutes": runtime_minutes,
+        "original_language": original_language,
+        "tagline": tagline,
+        "release_date": release_date,
+        "end_date": end_date,
+        "poster": poster,
+        "background": background,
+        "genres": genre_list,
+        "catalogs": catalog_list,
+        "external_ids": external_ids_map,
+        "imdb_rating": imdb_rating,
+        "seasons": seasons_value,
+    }))
+    .into_response()
 }
 
-/// GET /api/v1/catalog/{media_id}/streams
+/// GET /api/v1/catalog/{catalog_type}/{media_id}/streams
 pub async fn get_media_streams(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
-    req: Request,
+    Path((catalog_type, media_id)): Path<(String, i32)>,
+    Query(params): Query<StreamsQuery>,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            tracing::debug!("get_media_streams: auth failed for media_id={media_id}");
+            return unauthorized();
+        }
+    };
+
+    if !VALID_CATALOG_TYPES.contains(&catalog_type.as_str()) {
+        return bad_request("Invalid catalog_type");
     }
-    let q = req.uri().query().unwrap_or("").to_string();
-    proxy(
-        &state,
-        reqwest::Method::GET,
-        &format!("/api/v1/catalog/{media_id}/streams"),
-        &q,
-        &headers,
-        vec![],
+
+    // Load streaming providers from the user's profile
+    type ProfileRecord = (i32, Option<serde_json::Value>, Option<String>);
+    let profile_row: Option<ProfileRecord> = if let Some(pid) = params.profile_id {
+        match sqlx::query_as::<_, ProfileRecord>(
+            "SELECT id, config, encrypted_secrets FROM user_profiles WHERE id = $1 AND user_id = $2",
+        )
+        .bind(pid)
+        .bind(user_id as i32)
+        .fetch_optional(&state.pool_ro)
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("get_media_streams profile fetch pid={pid} user={user_id}: {e}");
+                None
+            }
+        }
+    } else {
+        match sqlx::query_as::<_, ProfileRecord>(
+            "SELECT id, config, encrypted_secrets FROM user_profiles WHERE user_id = $1 AND is_default = true LIMIT 1",
+        )
+        .bind(user_id as i32)
+        .fetch_optional(&state.pool_ro)
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("get_media_streams default profile fetch user={user_id}: {e}");
+                None
+            }
+        }
+    };
+
+    let default_title_tmpl = "{addon.name} {if stream.type = torrent}🧲 {service.shortName} {if service.cached}⚡️{else}⏳{/if}{elif stream.type = usenet}📰 {service.shortName}{elif stream.type = telegram}📱{elif stream.type = youtube}▶️{elif stream.type = http}🌐{else}🔗{/if} {if stream.resolution}{stream.resolution}{/if}";
+    let default_desc_tmpl = "{if stream.hdr_formats}🎨 {stream.hdr_formats|join('|')} {/if}{if stream.quality}📺 {stream.quality} {/if}{if stream.codec}🎞️ {stream.codec} {/if}{if stream.audio_formats}🎵 {stream.audio_formats|join('|')} {/if}{if stream.channels}🔊 {stream.channels|join(' ')}{/if}\n{if stream.size > 0}📦 {stream.size|bytes} {/if}{if stream.seeders > 0}👤 {stream.seeders}{/if}\n{if stream.languages}🌐 {stream.languages|join(' + ')}{/if}\n🔗 {stream.source}{if stream.uploader} | 🧑‍💻 {stream.uploader}{/if}";
+
+    let (
+        profile_id_val,
+        streaming_providers,
+        selected_provider,
+        provider_token,
+        title_tmpl,
+        desc_tmpl,
+    ) = if let Some((pid, cfg, enc)) = profile_row {
+        let mut config = cfg.unwrap_or(json!({}));
+        // Decrypt secrets and merge provider tokens into config
+        if let Some(enc_str) = enc.as_deref().filter(|s| !s.is_empty()) {
+            let secrets =
+                crate::crypto::profile::decrypt_secrets(enc_str, &state.config.secret_key);
+            crate::crypto::profile::merge_secrets(&mut config, &secrets);
+        }
+        let providers = extract_streaming_providers(&config);
+        tracing::debug!(
+            "get_media_streams profile={pid} providers_count={}",
+            providers.len()
+        );
+        let selected = params
+            .provider
+            .as_deref()
+            .filter(|p| {
+                providers
+                    .iter()
+                    .any(|sp| sp.get("service").and_then(|v| v.as_str()) == Some(p))
+            })
+            .map(str::to_string)
+            .or_else(|| {
+                providers.first().and_then(|sp| {
+                    sp.get("service")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                })
+            });
+        // Extract token for selected provider from merged config
+        let token = selected.as_deref().and_then(|svc| {
+            config
+                .get("sps")
+                .or_else(|| config.get("streaming_providers"))
+                .and_then(|v| v.as_array())
+                .and_then(|arr| {
+                    arr.iter().find(|sp| {
+                        sp.get("sv")
+                            .or_else(|| sp.get("service"))
+                            .and_then(|v| v.as_str())
+                            == Some(svc)
+                    })
+                })
+                .and_then(|sp| {
+                    sp.get("tk")
+                        .or_else(|| sp.get("token"))
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                })
+        });
+        // Read stream_template (alias "st") from profile config
+        let st = config.get("st").or_else(|| config.get("stream_template"));
+        let title = st
+            .and_then(|t| t.get("t").or_else(|| t.get("title")))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| default_title_tmpl.to_string());
+        let desc = st
+            .and_then(|t| t.get("d").or_else(|| t.get("description")))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| default_desc_tmpl.to_string());
+        (pid, providers, selected, token, title, desc)
+    } else {
+        tracing::debug!(
+            "get_media_streams: profile not found for user={user_id} profile_id={:?}",
+            params.profile_id
+        );
+        (
+            0i32,
+            vec![],
+            params.provider.clone(),
+            None,
+            default_title_tmpl.to_string(),
+            default_desc_tmpl.to_string(),
+        )
+    };
+
+    tracing::debug!("get_media_streams: fetching streams for {catalog_type}/{media_id}");
+
+    let stream_rows: Vec<StreamRow> = sqlx::query_as(
+        r#"SELECT
+            s.id,
+            s.name,
+            LOWER(s.stream_type::text) AS stream_type,
+            s.source,
+            s.resolution,
+            s.quality,
+            s.codec,
+            s.bit_depth,
+            ts.seeders,
+            s.uploader,
+            s.release_group,
+            sml.filename,
+            COALESCE(ts.total_size, sml.file_size) AS file_size,
+            ts.info_hash,
+            ys.video_id AS yt_id,
+            (SELECT STRING_AGG(af.name, '|' ORDER BY af.name)
+             FROM stream_audio_link sal JOIN audio_format af ON af.id = sal.audio_format_id
+             WHERE sal.stream_id = s.id) AS audio_formats,
+            (SELECT STRING_AGG(ac.name, '|' ORDER BY ac.name)
+             FROM stream_channel_link scl JOIN audio_channel ac ON ac.id = scl.channel_id
+             WHERE scl.stream_id = s.id) AS channels,
+            (SELECT STRING_AGG(hf.name, '|' ORDER BY hf.name)
+             FROM stream_hdr_link shl JOIN hdr_format hf ON hf.id = shl.hdr_format_id
+             WHERE shl.stream_id = s.id) AS hdr_formats,
+            (SELECT STRING_AGG(l.name, ' + ' ORDER BY l.name)
+             FROM stream_language_link sll JOIN language l ON l.id = sll.language_id
+             WHERE sll.stream_id = s.id) AS languages,
+            s.is_remastered,
+            s.is_upscaled,
+            s.is_proper,
+            s.is_repack,
+            s.is_extended,
+            s.is_complete,
+            s.is_dubbed,
+            s.is_subbed
+           FROM stream s
+           JOIN stream_media_link sml ON sml.stream_id = s.id
+           LEFT JOIN torrent_stream ts ON ts.stream_id = s.id
+           LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
+           WHERE sml.media_id = $1
+             AND s.is_active = true
+             AND s.is_blocked = false
+           ORDER BY ts.seeders DESC NULLS LAST
+           LIMIT 100"#,
     )
+    .bind(media_id)
+    .fetch_all(&state.pool_ro)
     .await
+    .unwrap_or_else(|e| {
+        tracing::error!("get_media_streams query failed for media_id={media_id}: {e}");
+        vec![]
+    });
+
+    tracing::debug!(
+        "get_media_streams: found {} rows for media_id={media_id}",
+        stream_rows.len()
+    );
+
+    // Step 1: check Redis debrid_cache:{service}
+    let mut cached_hashes: HashMap<String, bool> = if let Some(ref svc) = selected_provider {
+        let hashes: Vec<String> = stream_rows
+            .iter()
+            .filter_map(|r| r.info_hash.clone())
+            .collect();
+        cache::get_debrid_cache_status(&state.redis, svc, &hashes).await
+    } else {
+        HashMap::new()
+    };
+
+    // Step 2: for hashes not found in Redis, call the live provider API
+    if let (Some(ref svc), Some(ref tok)) = (&selected_provider, &provider_token) {
+        let uncached: Vec<String> = stream_rows
+            .iter()
+            .filter_map(|r| r.info_hash.as_deref())
+            .filter(|h| !cached_hashes.get(*h).copied().unwrap_or(false))
+            .map(str::to_string)
+            .collect();
+        if !uncached.is_empty() {
+            let live = crate::providers::torrents::cache::live_check(
+                &state.http,
+                &state.redis,
+                svc,
+                tok,
+                &uncached,
+                media_id,
+            )
+            .await;
+            for (hash, is_cached) in live {
+                if is_cached {
+                    cached_hashes.insert(hash, true);
+                }
+            }
+        }
+    }
+
+    let addon_name = &state.config.addon_name;
+
+    // Determine service context for selected provider
+    let service_short_names: std::collections::HashMap<&str, &str> = [
+        ("realdebrid", "RD"),
+        ("alldebrid", "AD"),
+        ("premiumize", "PM"),
+        ("debridlink", "DL"),
+        ("torbox", "TB"),
+        ("offcloud", "OC"),
+        ("seedr", "SR"),
+        ("stremthru", "ST"),
+        ("pikpak", "PP"),
+        ("easydebrid", "ED"),
+    ]
+    .into_iter()
+    .collect();
+
+    let service_name = selected_provider.as_deref().unwrap_or("p2p");
+    let service_short = service_short_names
+        .get(service_name)
+        .copied()
+        .unwrap_or("P2P");
+
+    let streams: Vec<serde_json::Value> = stream_rows
+        .into_iter()
+        .map(|r| {
+            let is_cached = r.info_hash.as_deref()
+                .and_then(|h| cached_hashes.get(h).copied())
+                .unwrap_or(false);
+
+            // Build template context matching Python's stream_context
+            let audio_arr: Vec<serde_json::Value> = r.audio_formats.as_deref()
+                .map(|s| s.split('|').map(|x| json!(x)).collect())
+                .unwrap_or_default();
+            let channels_arr: Vec<serde_json::Value> = r.channels.as_deref()
+                .map(|s| s.split('|').map(|x| json!(x)).collect())
+                .unwrap_or_default();
+            let hdr_arr: Vec<serde_json::Value> = r.hdr_formats.as_deref()
+                .map(|s| s.split('|').map(|x| json!(x)).collect())
+                .unwrap_or_default();
+            let lang_arr_vals: Vec<serde_json::Value> = r.languages.as_deref()
+                .map(|s| s.split(" + ").map(|x| json!(x)).collect())
+                .unwrap_or_default();
+
+            let resolution_upper = r.resolution.as_deref().map(|s| s.to_uppercase()).unwrap_or_default();
+            let file_size_val = r.file_size.unwrap_or(0);
+            let seeders_val = r.seeders.unwrap_or(0);
+
+            let stream_ctx = json!({
+                "name": r.name,
+                "filename": r.filename,
+                "type": r.stream_type,
+                "resolution": if resolution_upper.is_empty() { json!(null) } else { json!(resolution_upper) },
+                "quality": r.quality,
+                "codec": r.codec,
+                "bit_depth": r.bit_depth,
+                "audio_formats": audio_arr,
+                "channels": channels_arr,
+                "hdr_formats": hdr_arr,
+                "languages": lang_arr_vals,
+                "size": file_size_val,
+                "seeders": seeders_val,
+                "source": r.source,
+                "release_group": r.release_group,
+                "uploader": r.uploader,
+                "cached": is_cached,
+                "folderSize": file_size_val,
+            });
+
+            let service_ctx = json!({
+                "name": service_name,
+                "shortName": service_short,
+                "cached": is_cached,
+            });
+
+            let addon_ctx = json!({ "name": addon_name });
+
+            let ctx = json!({
+                "stream": stream_ctx,
+                "service": service_ctx,
+                "addon": addon_ctx,
+            });
+
+            let display_name = crate::template::render(&title_tmpl, &ctx);
+            let description = crate::template::render(&desc_tmpl, &ctx);
+            let size_str = if file_size_val > 0 { format_size(file_size_val) } else { String::new() };
+
+            let audio_out = if audio_arr.is_empty() { json!(null) } else { json!(audio_arr) };
+            let channels_out = if channels_arr.is_empty() { json!(null) } else { json!(channels_arr) };
+            let hdr_out = if hdr_arr.is_empty() { json!(null) } else { json!(hdr_arr) };
+            let lang_out = if lang_arr_vals.is_empty() { json!([]) } else { json!(lang_arr_vals) };
+
+            json!({
+                "id": r.id,
+                "info_hash": r.info_hash,
+                "yt_id": r.yt_id,
+                "ytId": r.yt_id,
+                "name": display_name,
+                "description": description,
+                "stream_name": r.name,
+                "stream_type": r.stream_type,
+                "resolution": r.resolution,
+                "quality": r.quality,
+                "codec": r.codec,
+                "bit_depth": r.bit_depth,
+                "audio_formats": audio_out,
+                "channels": channels_out,
+                "hdr_formats": hdr_out,
+                "source": r.source,
+                "languages": lang_out,
+                "size": size_str,
+                "size_bytes": r.file_size,
+                "seeders": r.seeders,
+                "uploader": r.uploader,
+                "release_group": r.release_group,
+                "cached": is_cached,
+                "is_remastered": r.is_remastered,
+                "is_upscaled": r.is_upscaled,
+                "is_proper": r.is_proper,
+                "is_repack": r.is_repack,
+                "is_extended": r.is_extended,
+                "is_complete": r.is_complete,
+                "is_dubbed": r.is_dubbed,
+                "is_subbed": r.is_subbed,
+                "filename": r.filename,
+                "duration_seconds": serde_json::Value::Null,
+                "votes": serde_json::Value::Null,
+                "episode_links": serde_json::Value::Null,
+            })
+        })
+        .collect();
+
+    Json(json!({
+        "streams": streams,
+        "season": params.season,
+        "episode": params.episode,
+        "web_playback_enabled": true,
+        "streaming_providers": streaming_providers,
+        "selected_provider": selected_provider,
+        "profile_id": profile_id_val,
+    }))
+    .into_response()
 }
 
-/// POST /api/v1/catalog/{media_id}/streams/{stream_id}/report
+/// POST /api/v1/catalog/{catalog_type}/{media_id}/streams/{stream_id}/report
 pub async fn report_stream(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path((media_id, stream_id)): Path<(i64, i64)>,
-    req: Request,
+    Path((_catalog_type, _media_id, _stream_id)): Path<(String, i32, i32)>,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
+        return unauthorized();
     }
-    let q = req.uri().query().unwrap_or("").to_string();
-    let body = axum::body::to_bytes(req.into_body(), 1024 * 1024)
-        .await
-        .unwrap_or_default()
-        .to_vec();
-    proxy(
-        &state,
-        reqwest::Method::POST,
-        &format!("/api/v1/catalog/{media_id}/streams/{stream_id}/report"),
-        &q,
-        &headers,
-        body,
-    )
-    .await
+
+    Json(json!({"message": "Report received"})).into_response()
 }

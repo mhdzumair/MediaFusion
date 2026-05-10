@@ -6,7 +6,7 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use serde_json::Value;
 
-use super::ProviderError;
+use crate::providers::ProviderError;
 
 const BASE_URL: &str = "https://www.premiumize.me/api";
 
@@ -463,6 +463,49 @@ pub async fn get_video_url(
     })
 }
 
+/// Delete the transfer matching `info_hash` from Premiumize.
+/// Lists `/transfer/list` to find the transfer by its `hash` field, then calls `/transfer/delete`.
+/// Returns `true` if found and deleted, `false` if not found.
+pub async fn delete_torrent_by_hash(
+    http: &reqwest::Client,
+    token: &str,
+    info_hash: &str,
+) -> Result<bool, ProviderError> {
+    let kind = decode_token(token);
+    let body = pm_get(http, &kind, "/transfer/list", &[]).await?;
+    let hash_lower = info_hash.to_lowercase();
+
+    let transfer_id = body
+        .get("transfers")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| {
+            arr.iter().find(|t| {
+                t.get("src")
+                    .or_else(|| t.get("hash"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_lowercase().contains(&hash_lower))
+                    .unwrap_or(false)
+            })
+        })
+        .and_then(|t| t.get("id").and_then(|v| v.as_str()))
+        .map(str::to_string);
+
+    match transfer_id {
+        None => Ok(false),
+        Some(id) => {
+            pm_post_form(
+                http,
+                &kind,
+                "/transfer/delete",
+                vec![("id".to_string(), id)],
+            )
+            .await
+            .ok();
+            Ok(true)
+        }
+    }
+}
+
 /// Delete ALL folders (and their contents) from the Premiumize account.
 pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     let kind = decode_token(token);
@@ -488,4 +531,37 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
     }
 
     Ok(())
+}
+
+// ─── Debrid cache check ───────────────────────────────────────────────────────
+
+/// Check which hashes are cached on Premiumize.
+pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]) -> Vec<String> {
+    let kind = decode_token(token);
+    let params: Vec<(&str, &str)> = hashes.iter().map(|h| ("items[]", h.as_str())).collect();
+    let body = match pm_get(http, &kind, "/cache/check", &params).await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("premiumize cache/check: {e}");
+            return vec![];
+        }
+    };
+    if body.get("status").and_then(|v| v.as_str()) != Some("success") {
+        return vec![];
+    }
+    let responses = match body.get("response").and_then(|v| v.as_array()) {
+        Some(a) => a.clone(),
+        None => return vec![],
+    };
+    hashes
+        .iter()
+        .zip(responses.iter())
+        .filter_map(|(h, v)| {
+            if v.as_bool().unwrap_or(false) {
+                Some(h.clone())
+            } else {
+                None
+            }
+        })
+        .collect()
 }

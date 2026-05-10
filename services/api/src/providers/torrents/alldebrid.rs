@@ -4,7 +4,7 @@
 /// All requests require `?agent=mediafusion` appended and a Bearer token.
 use serde_json::Value;
 
-use super::ProviderError;
+use crate::providers::ProviderError;
 
 const BASE_URL: &str = "https://api.alldebrid.com/v4.1";
 const AGENT: &str = "mediafusion";
@@ -535,7 +535,25 @@ pub async fn get_video_url(
     unlock_link(http, token, link, user_ip).await
 }
 
-// ─── Delete all torrents ───────────────────────────────────────────────────────
+// ─── Delete by hash / Delete all torrents ─────────────────────────────────────
+
+/// Delete the magnet matching `info_hash` from AllDebrid.
+/// Returns `true` if found and deleted, `false` if not found.
+pub async fn delete_torrent_by_hash(
+    http: &reqwest::Client,
+    token: &str,
+    info_hash: &str,
+) -> Result<bool, ProviderError> {
+    match find_magnet_by_hash(http, token, info_hash, None).await? {
+        None => Ok(false),
+        Some(magnet) => {
+            if let Some(id) = magnet.get("id").and_then(|v| v.as_i64()) {
+                delete_magnet(http, token, id, None).await.ok();
+            }
+            Ok(true)
+        }
+    }
+}
 
 /// Delete ALL magnets from the user's AllDebrid account (implements delete-all-watchlist).
 pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
@@ -569,4 +587,54 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
         .await?;
 
     Ok(())
+}
+
+// ─── Debrid cache check ───────────────────────────────────────────────────────
+
+/// Check which hashes are in the user's AllDebrid account (status=ready).
+pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]) -> Vec<String> {
+    use std::collections::HashSet;
+    let url = format!("{BASE_URL}/magnet/status");
+    let resp = match http
+        .get(&url)
+        .bearer_auth(token)
+        .query(&[("agent", AGENT), ("status", "ready")])
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("alldebrid magnet/status: {e}");
+            return vec![];
+        }
+    };
+    let body: Value = match resp.json().await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("alldebrid magnet/status json: {e}");
+            return vec![];
+        }
+    };
+    if body.get("status").and_then(|v| v.as_str()) != Some("success") {
+        return vec![];
+    }
+    let hash_set: HashSet<String> = hashes.iter().map(|h| h.to_lowercase()).collect();
+    let mut found = Vec::new();
+    if let Some(magnets_val) = body.get("data").and_then(|d| d.get("magnets")) {
+        let iter_magnets = |m: &serde_json::Value| {
+            if let Some(h) = m.get("hash").and_then(|v| v.as_str()) {
+                let lower = h.to_lowercase();
+                if hash_set.contains(&lower) {
+                    return Some(lower);
+                }
+            }
+            None
+        };
+        if let Some(arr) = magnets_val.as_array() {
+            found.extend(arr.iter().filter_map(iter_magnets));
+        } else if let Some(obj) = magnets_val.as_object() {
+            found.extend(obj.values().filter_map(iter_magnets));
+        }
+    }
+    found
 }

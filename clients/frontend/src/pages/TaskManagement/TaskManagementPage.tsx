@@ -785,19 +785,19 @@ export function TaskManagementPage() {
               <CardContent className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Total Events</span>
-                  <span>{workerMemoryQuery.data?.summary.total_events || 0}</span>
+                  <span>{workerMemoryQuery.data?.summary?.total_events || 0}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Last RSS</span>
-                  <span>{formatBytes(workerMemoryQuery.data?.summary.last_rss_bytes)}</span>
+                  <span>{formatBytes(workerMemoryQuery.data?.summary?.last_rss_bytes)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Peak RSS</span>
-                  <span>{formatBytes(workerMemoryQuery.data?.summary.peak_rss_bytes)}</span>
+                  <span>{formatBytes(workerMemoryQuery.data?.summary?.peak_rss_bytes)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Error Samples</span>
-                  <span>{workerMemoryQuery.data?.summary.status_counts.error || 0}</span>
+                  <span>{workerMemoryQuery.data?.summary?.status_counts?.error || 0}</span>
                 </div>
               </CardContent>
             </Card>

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
 };
@@ -39,6 +39,25 @@ pub async fn handler(
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": "encryption failed"})),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// GET /decrypt-user-data/{secret_str}
+pub async fn decrypt_handler(
+    State(state): State<Arc<AppState>>,
+    Path(secret_str): Path<String>,
+) -> impl IntoResponse {
+    let raw = crate::crypto::decrypt_user_data(&secret_str, &state.config.secret_key);
+    match raw {
+        Ok(val) => Json(json!({"status": "success", "data": val})).into_response(),
+        Err(e) => {
+            tracing::warn!("decrypt_user_data failed: {e}");
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "decryption failed"})),
             )
                 .into_response()
         }

@@ -6,7 +6,7 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use serde_json::{json, Value};
 
-use super::ProviderError;
+use crate::providers::ProviderError;
 
 const BASE_URL: &str = "https://debrid-link.com/api/v2";
 const CLIENT_ID: &str = "RyrV22FOg30DsxjYPziRKA";
@@ -496,6 +496,25 @@ pub async fn get_video_url(
     Ok(url)
 }
 
+/// Delete the seedbox torrent matching `info_hash` from the Debrid-Link account.
+/// Returns `true` if found and deleted, `false` if not found.
+pub async fn delete_torrent_by_hash(
+    http: &reqwest::Client,
+    token: &str,
+    info_hash: &str,
+) -> Result<bool, ProviderError> {
+    let bearer = resolve_bearer(http, token).await?;
+    match find_torrent_by_hash(http, &bearer, info_hash).await? {
+        None => Ok(false),
+        Some(torrent) => {
+            if let Some(id) = torrent.get("id").and_then(|v| v.as_str()) {
+                dl_delete(http, &bearer, &format!("/seedbox/{id}/delete")).await?;
+            }
+            Ok(true)
+        }
+    }
+}
+
 /// Delete ALL seedbox torrents from the Debrid-Link account.
 pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     let bearer = resolve_bearer(http, token).await?;
@@ -539,4 +558,70 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
     }
 
     Ok(())
+}
+
+// ─── Debrid cache check ───────────────────────────────────────────────────────
+
+/// Check which hashes are downloaded in the user's DebridLink account.
+pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]) -> Vec<String> {
+    use std::collections::HashSet;
+    const PER_PAGE: usize = 25;
+    const MAX_PAGES: usize = 100;
+
+    let bearer = match decode_token(token) {
+        TokenKind::Private(t) => t,
+        TokenKind::Refresh(refresh) => match exchange_refresh_token(http, &refresh).await {
+            Ok(t) => t,
+            Err(_) => return vec![],
+        },
+    };
+
+    let hash_set: HashSet<String> = hashes.iter().map(|h| h.to_lowercase()).collect();
+    let mut found = Vec::new();
+
+    for page in 0..MAX_PAGES {
+        let per_page_str = PER_PAGE.to_string();
+        let page_str = page.to_string();
+        let resp = match http
+            .get(format!("{BASE_URL}/seedbox/list"))
+            .bearer_auth(&bearer)
+            .query(&[
+                ("page", page_str.as_str()),
+                ("perPage", per_page_str.as_str()),
+            ])
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("debridlink seedbox/list page {page}: {e}");
+                break;
+            }
+        };
+        let body: serde_json::Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("debridlink seedbox/list json page {page}: {e}");
+                break;
+            }
+        };
+        let arr = match body.get("value").and_then(|v| v.as_array()) {
+            Some(a) if !a.is_empty() => a.clone(),
+            _ => break,
+        };
+        for t in &arr {
+            if t.get("downloadPercent").and_then(|v| v.as_i64()) == Some(100) {
+                if let Some(h) = t.get("hashString").and_then(|v| v.as_str()) {
+                    let lower = h.to_lowercase();
+                    if hash_set.contains(&lower) {
+                        found.push(lower);
+                    }
+                }
+            }
+        }
+        if (page == 0 && arr.len() > PER_PAGE) || arr.len() < PER_PAGE {
+            break;
+        }
+    }
+    found
 }

@@ -16,7 +16,6 @@
 ///   DELETE /{media_id}/episodes/{episode_id}/admin → delete_episode_admin
 ///   DELETE /{media_id}/seasons/{season_number}  → delete_season
 ///   DELETE /{media_id}/seasons/{season_number}/admin → delete_season_admin
-
 use std::sync::Arc;
 
 use axum::{
@@ -28,7 +27,7 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use sha2::Sha256;
 
@@ -70,7 +69,7 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
 
 async fn require_mod_or_admin(pool: &sqlx::PgPool, user_id: i64) -> Result<(), Response> {
     let role: Option<String> =
-        sqlx::query_scalar("SELECT role::text FROM users WHERE id = $1")
+        sqlx::query_scalar("SELECT LOWER(role::text) FROM users WHERE id = $1")
             .bind(user_id)
             .fetch_optional(pool)
             .await
@@ -251,25 +250,26 @@ struct MediaBasicRow {
     source: Option<String>,
 }
 
+#[allow(clippy::type_complexity)]
 async fn media_row_to_json(
     pool: &sqlx::PgPool,
     media_id: i64,
     include_seasons: bool,
 ) -> serde_json::Value {
     let row = sqlx::query_as::<_, MediaBasicRow>(
-            r#"SELECT id, type, title, original_title, year, description, tagline,
+        r#"SELECT id, type, title, original_title, year, description, tagline,
                       status, website, is_public, is_user_created,
                       created_by_user_id, total_streams,
                       created_at, updated_at,
                       runtime_minutes, release_date::text,
                       original_language, nudity_status::text, source
                FROM media WHERE id = $1"#,
-        )
-        .bind(media_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+    )
+    .bind(media_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
 
     let row = match row {
         Some(r) => r,
@@ -301,7 +301,9 @@ async fn media_row_to_json(
     for (img_type, url) in &images {
         match img_type.as_str() {
             "poster" if poster_url.is_none() => poster_url = Some(url.clone()),
-            "background" | "backdrop" if background_url.is_none() => background_url = Some(url.clone()),
+            "background" | "backdrop" if background_url.is_none() => {
+                background_url = Some(url.clone())
+            }
             "logo" if logo_url.is_none() => logo_url = Some(url.clone()),
             _ => {}
         }
@@ -326,12 +328,11 @@ async fn media_row_to_json(
     .unwrap_or_default();
 
     // AKA titles
-    let aka: Vec<(String,)> =
-        sqlx::query_as("SELECT title FROM aka_title WHERE media_id = $1")
-            .bind(media_id)
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default();
+    let aka: Vec<(String,)> = sqlx::query_as("SELECT title FROM aka_title WHERE media_id = $1")
+        .bind(media_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
 
     // Cast
     let cast: Vec<(String,)> = sqlx::query_as(
@@ -412,18 +413,20 @@ async fn media_row_to_json(
 
                 let episodes_arr: Vec<serde_json::Value> = ep_rows
                     .into_iter()
-                    .map(|(eid, enum_, etitle, eoverview, eair, eruntime, euser, eaddition)| {
-                        json!({
-                            "id": eid,
-                            "episode_number": enum_,
-                            "title": etitle,
-                            "overview": eoverview,
-                            "air_date": eair,
-                            "runtime_minutes": eruntime,
-                            "is_user_created": euser,
-                            "is_user_addition": eaddition,
-                        })
-                    })
+                    .map(
+                        |(eid, enum_, etitle, eoverview, eair, eruntime, euser, eaddition)| {
+                            json!({
+                                "id": eid,
+                                "episode_number": enum_,
+                                "title": etitle,
+                                "overview": eoverview,
+                                "air_date": eair,
+                                "runtime_minutes": eruntime,
+                                "is_user_created": euser,
+                                "is_user_addition": eaddition,
+                            })
+                        },
+                    )
                     .collect();
 
                 seasons_arr.push(json!({
@@ -460,6 +463,7 @@ async fn media_row_to_json(
         "release_date": row.release_date,
         "original_language": row.original_language,
         "nudity_status": row.nudity_status,
+        "source": row.source,
         "poster_url": poster_url,
         "background_url": background_url,
         "logo_url": logo_url,
@@ -488,7 +492,11 @@ pub async fn create_user_metadata(
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
         }
     };
 
@@ -497,7 +505,11 @@ pub async fn create_user_metadata(
         "series" => "SERIES",
         "tv" => "TV",
         _ => {
-            return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Invalid media type"}))).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Invalid media type"})),
+            )
+                .into_response();
         }
     };
 
@@ -579,10 +591,11 @@ pub async fn create_user_metadata(
 
     // Type-specific metadata
     if media_type_db == "MOVIE" {
-        let _ = sqlx::query("INSERT INTO movie_metadata (media_id) VALUES ($1) ON CONFLICT DO NOTHING")
-            .bind(media_id)
-            .execute(&state.pool)
-            .await;
+        let _ =
+            sqlx::query("INSERT INTO movie_metadata (media_id) VALUES ($1) ON CONFLICT DO NOTHING")
+                .bind(media_id)
+                .execute(&state.pool)
+                .await;
     } else if media_type_db == "SERIES" {
         let total_ep_count: i32 = body
             .seasons
@@ -656,7 +669,13 @@ pub async fn list_user_metadata(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let page = params.page.max(1);
@@ -716,7 +735,11 @@ pub async fn list_user_metadata(
         items.push(media_row_to_json(&state.pool_ro, id, false).await);
     }
 
-    let pages = if total > 0 { (total + per_page - 1) / per_page } else { 1 };
+    let pages = if total > 0 {
+        (total + per_page - 1) / per_page
+    } else {
+        1
+    };
 
     Json(json!({
         "items": items,
@@ -736,15 +759,19 @@ pub async fn search_all_metadata(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let limit = params.limit.clamp(1, 50);
     let pattern = format!("%{}%", params.query);
 
-    let mut sql = String::from(
-        "SELECT id FROM media WHERE title ILIKE $1",
-    );
+    let mut sql = String::from("SELECT id FROM media WHERE title ILIKE $1");
 
     if let Some(ref mt) = params.media_type {
         match mt.as_str() {
@@ -756,9 +783,9 @@ pub async fn search_all_metadata(
     }
 
     if params.include_official {
-        sql.push_str(&format!(
-            " AND (is_user_created = false OR created_by_user_id = $2 OR is_public = true)"
-        ));
+        sql.push_str(
+            " AND (is_user_created = false OR created_by_user_id = $2 OR is_public = true)",
+        );
     } else {
         sql.push_str(" AND created_by_user_id = $2");
     }
@@ -789,17 +816,22 @@ pub async fn search_all_metadata(
             .await
             .unwrap_or(None);
 
-            let ext_ids: Vec<(String, String)> =
-                sqlx::query_as("SELECT provider, external_id FROM media_external_id WHERE media_id = $1")
-                    .bind(id)
-                    .fetch_all(&state.pool_ro)
-                    .await
-                    .unwrap_or_default();
+            let ext_ids: Vec<(String, String)> = sqlx::query_as(
+                "SELECT provider, external_id FROM media_external_id WHERE media_id = $1",
+            )
+            .bind(id)
+            .fetch_all(&state.pool_ro)
+            .await
+            .unwrap_or_default();
 
             let mut ext_map = serde_json::Map::new();
             let mut canonical_id = format!("mf:{id}");
             for (p, e) in &ext_ids {
-                let formatted = if p == "imdb" { e.clone() } else { format!("{p}:{e}") };
+                let formatted = if p == "imdb" {
+                    e.clone()
+                } else {
+                    format!("{p}:{e}")
+                };
                 if p == "imdb" && canonical_id.starts_with("mf:") {
                     canonical_id = formatted.clone();
                 }
@@ -831,21 +863,39 @@ pub async fn get_user_metadata(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let row = sqlx::query_as::<_, (bool, Option<i64>)>("SELECT is_public, created_by_user_id FROM media WHERE id = $1")
-            .bind(media_id)
-            .fetch_optional(&state.pool_ro)
-            .await
-            .ok()
-            .flatten();
+    let row = sqlx::query_as::<_, (bool, Option<i64>)>(
+        "SELECT is_public, created_by_user_id FROM media WHERE id = $1",
+    )
+    .bind(media_id)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .ok()
+    .flatten();
 
     match row {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Metadata not found"})),
+            )
+                .into_response()
+        }
         Some((is_public, creator_id)) => {
             if creator_id != Some(user_id) && !is_public {
-                return (StatusCode::FORBIDDEN, Json(json!({"detail": "Access denied"}))).into_response();
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(json!({"detail": "Access denied"})),
+                )
+                    .into_response();
             }
         }
     }
@@ -863,7 +913,13 @@ pub async fn update_user_metadata(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let creator_id: Option<Option<i64>> =
@@ -874,9 +930,19 @@ pub async fn update_user_metadata(
             .unwrap_or(None);
 
     match creator_id {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Metadata not found"})),
+            )
+                .into_response()
+        }
         Some(cid) if cid != Some(user_id) => {
-            return (StatusCode::FORBIDDEN, Json(json!({"detail": "Can only update your own metadata"}))).into_response();
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"detail": "Can only update your own metadata"})),
+            )
+                .into_response();
         }
         _ => {}
     }
@@ -904,19 +970,40 @@ pub async fn update_user_metadata(
     push_field!(body.status, "status");
     push_field!(body.website, "website");
     push_field!(body.original_language, "original_language");
+    let _ = idx;
 
     let sql = format!("UPDATE media SET {} WHERE id = $1", updates.join(", "));
     let mut q = sqlx::query(&sql).bind(media_id);
-    if let Some(ref v) = body.title { q = q.bind(v); }
-    if let Some(ref v) = body.original_title { q = q.bind(v); }
-    if let Some(v) = body.year { q = q.bind(v); }
-    if let Some(ref v) = body.description { q = q.bind(v); }
-    if let Some(ref v) = body.tagline { q = q.bind(v); }
-    if let Some(v) = body.is_public { q = q.bind(v); }
-    if let Some(v) = body.runtime_minutes { q = q.bind(v); }
-    if let Some(ref v) = body.status { q = q.bind(v); }
-    if let Some(ref v) = body.website { q = q.bind(v); }
-    if let Some(ref v) = body.original_language { q = q.bind(v); }
+    if let Some(ref v) = body.title {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = body.original_title {
+        q = q.bind(v);
+    }
+    if let Some(v) = body.year {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = body.description {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = body.tagline {
+        q = q.bind(v);
+    }
+    if let Some(v) = body.is_public {
+        q = q.bind(v);
+    }
+    if let Some(v) = body.runtime_minutes {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = body.status {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = body.website {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = body.original_language {
+        q = q.bind(v);
+    }
 
     if let Err(e) = q.execute(&state.pool).await {
         tracing::error!("update_user_metadata: {e}");
@@ -976,7 +1063,13 @@ pub async fn delete_user_metadata(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let creator_id: Option<Option<i64>> =
@@ -987,9 +1080,19 @@ pub async fn delete_user_metadata(
             .unwrap_or(None);
 
     match creator_id {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Metadata not found"})),
+            )
+                .into_response()
+        }
         Some(cid) if cid != Some(user_id) => {
-            return (StatusCode::FORBIDDEN, Json(json!({"detail": "Can only delete your own metadata"}))).into_response();
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"detail": "Can only delete your own metadata"})),
+            )
+                .into_response();
         }
         _ => {}
     }
@@ -1031,26 +1134,48 @@ pub async fn add_season_to_series(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let row = sqlx::query_as::<_, (String, Option<i64>)>("SELECT type::text, created_by_user_id FROM media WHERE id = $1")
-            .bind(media_id)
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten();
+    let row = sqlx::query_as::<_, (String, Option<i64>)>(
+        "SELECT type::text, created_by_user_id FROM media WHERE id = $1",
+    )
+    .bind(media_id)
+    .fetch_optional(&state.pool)
+    .await
+    .ok()
+    .flatten();
 
     let (mtype, creator_id) = match row {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Metadata not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
     if mtype.to_uppercase() != "SERIES" {
-        return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Can only add seasons to series"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Can only add seasons to series"})),
+        )
+            .into_response();
     }
     if creator_id != Some(user_id) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Can only modify your own metadata"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Can only modify your own metadata"})),
+        )
+            .into_response();
     }
 
     let series_id: Option<i64> =
@@ -1076,7 +1201,11 @@ pub async fn add_season_to_series(
     .unwrap_or(false);
 
     if exists {
-        return (StatusCode::CONFLICT, Json(json!({"detail": format!("Season {} already exists", body.season_number)}))).into_response();
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"detail": format!("Season {} already exists", body.season_number)})),
+        )
+            .into_response();
     }
 
     let season_id: i64 = match sqlx::query_scalar(
@@ -1156,26 +1285,48 @@ pub async fn add_episodes_to_series(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let row = sqlx::query_as::<_, (String, Option<i64>)>("SELECT type::text, created_by_user_id FROM media WHERE id = $1")
-            .bind(media_id)
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten();
+    let row = sqlx::query_as::<_, (String, Option<i64>)>(
+        "SELECT type::text, created_by_user_id FROM media WHERE id = $1",
+    )
+    .bind(media_id)
+    .fetch_optional(&state.pool)
+    .await
+    .ok()
+    .flatten();
 
     let (mtype, creator_id) = match row {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Metadata not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
     if mtype.to_uppercase() != "SERIES" {
-        return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Can only add episodes to series"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Can only add episodes to series"})),
+        )
+            .into_response();
     }
     if creator_id != Some(user_id) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Can only modify your own metadata"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Can only modify your own metadata"})),
+        )
+            .into_response();
     }
 
     let series_id: Option<i64> =
@@ -1197,7 +1348,13 @@ pub async fn add_episodes_to_series(
             .await
             .unwrap_or(None);
     let season_id = match season_id {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": format!("Season {} not found", body.season_number)}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": format!("Season {} not found", body.season_number)})),
+            )
+                .into_response()
+        }
         Some(sid) => sid,
     };
 
@@ -1233,13 +1390,11 @@ pub async fn add_episodes_to_series(
         }
     }
 
-    let _ = sqlx::query(
-        "UPDATE season SET episode_count = episode_count + $1 WHERE id = $2",
-    )
-    .bind(body.episodes.len() as i32)
-    .bind(season_id)
-    .execute(&state.pool)
-    .await;
+    let _ = sqlx::query("UPDATE season SET episode_count = episode_count + $1 WHERE id = $2")
+        .bind(body.episodes.len() as i32)
+        .bind(season_id)
+        .execute(&state.pool)
+        .await;
 
     let _ = sqlx::query(
         "UPDATE series_metadata SET total_episodes = COALESCE(total_episodes, 0) + $1 WHERE id = $2",
@@ -1261,7 +1416,13 @@ pub async fn update_episode(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let creator_id: Option<Option<i64>> =
@@ -1272,9 +1433,19 @@ pub async fn update_episode(
             .unwrap_or(None);
 
     match creator_id {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Metadata not found"})),
+            )
+                .into_response()
+        }
         Some(cid) if cid != Some(user_id) => {
-            return (StatusCode::FORBIDDEN, Json(json!({"detail": "Can only modify your own metadata"}))).into_response();
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"detail": "Can only modify your own metadata"})),
+            )
+                .into_response();
         }
         _ => {}
     }
@@ -1286,24 +1457,62 @@ pub async fn update_episode(
         .unwrap_or(false);
 
     if !ep_exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Episode not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Episode not found"})),
+        )
+            .into_response();
     }
 
     let mut updates = vec!["updated_at = NOW()".to_string()];
     let mut idx = 2i32;
 
-    if body.title.is_some() { updates.push(format!("title = ${idx}")); idx += 1; }
-    if body.overview.is_some() { updates.push(format!("overview = ${idx}")); idx += 1; }
-    if body.air_date.is_some() { updates.push(format!("air_date = ${idx}::date")); idx += 1; }
-    if body.runtime_minutes.is_some() { updates.push(format!("runtime_minutes = ${idx}")); idx += 1; }
+    if body.title.is_some() {
+        updates.push(format!("title = ${idx}"));
+        idx += 1;
+    }
+    if body.overview.is_some() {
+        updates.push(format!("overview = ${idx}"));
+        idx += 1;
+    }
+    if body.air_date.is_some() {
+        updates.push(format!("air_date = ${idx}::date"));
+        idx += 1;
+    }
+    if body.runtime_minutes.is_some() {
+        updates.push(format!("runtime_minutes = ${idx}"));
+        idx += 1;
+    }
+    let _ = idx;
 
     let sql = format!("UPDATE episode SET {} WHERE id = $1 RETURNING id, episode_number, title, overview, air_date::text, runtime_minutes, is_user_created, is_user_addition", updates.join(", "));
-    let mut q = sqlx::query_as::<_, (i64, i32, String, Option<String>, Option<String>, Option<i32>, bool, bool)>(&sql).bind(episode_id);
+    let mut q = sqlx::query_as::<
+        _,
+        (
+            i64,
+            i32,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<i32>,
+            bool,
+            bool,
+        ),
+    >(&sql)
+    .bind(episode_id);
 
-    if let Some(ref v) = body.title { q = q.bind(v); }
-    if let Some(ref v) = body.overview { q = q.bind(v); }
-    if let Some(ref v) = body.air_date { q = q.bind(v); }
-    if let Some(v) = body.runtime_minutes { q = q.bind(v); }
+    if let Some(ref v) = body.title {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = body.overview {
+        q = q.bind(v);
+    }
+    if let Some(ref v) = body.air_date {
+        q = q.bind(v);
+    }
+    if let Some(v) = body.runtime_minutes {
+        q = q.bind(v);
+    }
 
     match q.fetch_optional(&state.pool).await {
         Ok(Some((eid, enum_, etitle, eoverview, eair, eruntime, euser, eaddition))) => {
@@ -1319,7 +1528,11 @@ pub async fn update_episode(
             }))
             .into_response()
         }
-        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({"detail": "Episode not found"}))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Episode not found"})),
+        )
+            .into_response(),
         Err(e) => {
             tracing::error!("update_episode: {e}");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -1335,7 +1548,13 @@ pub async fn delete_episode(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let creator_id: Option<Option<i64>> =
@@ -1346,22 +1565,35 @@ pub async fn delete_episode(
             .unwrap_or(None);
 
     match creator_id {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Metadata not found"})),
+            )
+                .into_response()
+        }
         Some(cid) if cid != Some(user_id) => {
-            return (StatusCode::FORBIDDEN, Json(json!({"detail": "Can only modify your own metadata"}))).into_response();
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"detail": "Can only modify your own metadata"})),
+            )
+                .into_response();
         }
         _ => {}
     }
 
-    let season_id: Option<i64> =
-        sqlx::query_scalar("SELECT season_id FROM episode WHERE id = $1")
-            .bind(episode_id)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None);
+    let season_id: Option<i64> = sqlx::query_scalar("SELECT season_id FROM episode WHERE id = $1")
+        .bind(episode_id)
+        .fetch_optional(&state.pool)
+        .await
+        .unwrap_or(None);
 
     if season_id.is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Episode not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Episode not found"})),
+        )
+            .into_response();
     }
 
     let _ = sqlx::query("DELETE FROM episode_image WHERE episode_id = $1")
@@ -1379,10 +1611,12 @@ pub async fn delete_episode(
     }
 
     if let Some(sid) = season_id {
-        let _ = sqlx::query("UPDATE season SET episode_count = GREATEST(0, episode_count - 1) WHERE id = $1")
-            .bind(sid)
-            .execute(&state.pool)
-            .await;
+        let _ = sqlx::query(
+            "UPDATE season SET episode_count = GREATEST(0, episode_count - 1) WHERE id = $1",
+        )
+        .bind(sid)
+        .execute(&state.pool)
+        .await;
         let series_id: Option<i64> =
             sqlx::query_scalar("SELECT series_id FROM season WHERE id = $1")
                 .bind(sid)
@@ -1401,7 +1635,7 @@ pub async fn delete_episode(
 }
 
 /// DELETE /api/v1/metadata/user/{media_id}/episodes/{episode_id}/admin
-pub async fn delete_episode_admin(
+pub async fn admin_delete_episode(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Path((media_id, episode_id)): Path<(i64, i64)>,
@@ -1409,7 +1643,13 @@ pub async fn delete_episode_admin(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     if let Err(resp) = require_mod_or_admin(&state.pool, user_id).await {
@@ -1423,18 +1663,25 @@ pub async fn delete_episode_admin(
         .unwrap_or(false);
 
     if !media_exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Metadata not found"})),
+        )
+            .into_response();
     }
 
-    let season_id: Option<i64> =
-        sqlx::query_scalar("SELECT season_id FROM episode WHERE id = $1")
-            .bind(episode_id)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None);
+    let season_id: Option<i64> = sqlx::query_scalar("SELECT season_id FROM episode WHERE id = $1")
+        .bind(episode_id)
+        .fetch_optional(&state.pool)
+        .await
+        .unwrap_or(None);
 
     if season_id.is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Episode not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Episode not found"})),
+        )
+            .into_response();
     }
 
     if params.delete_stream_links {
@@ -1460,10 +1707,12 @@ pub async fn delete_episode_admin(
     }
 
     if let Some(sid) = season_id {
-        let _ = sqlx::query("UPDATE season SET episode_count = GREATEST(0, episode_count - 1) WHERE id = $1")
-            .bind(sid)
-            .execute(&state.pool)
-            .await;
+        let _ = sqlx::query(
+            "UPDATE season SET episode_count = GREATEST(0, episode_count - 1) WHERE id = $1",
+        )
+        .bind(sid)
+        .execute(&state.pool)
+        .await;
         let series_id: Option<i64> =
             sqlx::query_scalar("SELECT series_id FROM season WHERE id = $1")
                 .bind(sid)
@@ -1489,7 +1738,13 @@ pub async fn delete_season(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let creator_id: Option<Option<i64>> =
@@ -1500,9 +1755,19 @@ pub async fn delete_season(
             .unwrap_or(None);
 
     match creator_id {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Metadata not found"})),
+            )
+                .into_response()
+        }
         Some(cid) if cid != Some(user_id) => {
-            return (StatusCode::FORBIDDEN, Json(json!({"detail": "Can only modify your own metadata"}))).into_response();
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"detail": "Can only modify your own metadata"})),
+            )
+                .into_response();
         }
         _ => {}
     }
@@ -1518,16 +1783,23 @@ pub async fn delete_season(
         Some(sid) => sid,
     };
 
-    let season_row: Option<(i64, i32)> =
-        sqlx::query_as("SELECT id, episode_count FROM season WHERE series_id = $1 AND season_number = $2")
-            .bind(series_id)
-            .bind(season_number)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None);
+    let season_row: Option<(i64, i32)> = sqlx::query_as(
+        "SELECT id, episode_count FROM season WHERE series_id = $1 AND season_number = $2",
+    )
+    .bind(series_id)
+    .bind(season_number)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
 
     let (season_id, ep_count) = match season_row {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": format!("Season {} not found", season_number)}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": format!("Season {} not found", season_number)})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
@@ -1552,14 +1824,20 @@ pub async fn delete_season(
 }
 
 /// DELETE /api/v1/metadata/user/{media_id}/seasons/{season_number}/admin
-pub async fn delete_season_admin(
+pub async fn admin_delete_season(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Path((media_id, season_number)): Path<(i64, i32)>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     if let Err(resp) = require_mod_or_admin(&state.pool, user_id).await {
@@ -1573,7 +1851,11 @@ pub async fn delete_season_admin(
         .unwrap_or(false);
 
     if !media_exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Metadata not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Metadata not found"})),
+        )
+            .into_response();
     }
 
     let series_id: Option<i64> =
@@ -1587,16 +1869,23 @@ pub async fn delete_season_admin(
         Some(sid) => sid,
     };
 
-    let season_row: Option<(i64, i32)> =
-        sqlx::query_as("SELECT id, episode_count FROM season WHERE series_id = $1 AND season_number = $2")
-            .bind(series_id)
-            .bind(season_number)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None);
+    let season_row: Option<(i64, i32)> = sqlx::query_as(
+        "SELECT id, episode_count FROM season WHERE series_id = $1 AND season_number = $2",
+    )
+    .bind(series_id)
+    .bind(season_number)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
 
     let (season_id, ep_count) = match season_row {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": format!("Season {} not found", season_number)}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": format!("Season {} not found", season_number)})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
@@ -1620,34 +1909,135 @@ pub async fn delete_season_admin(
     StatusCode::NO_CONTENT.into_response()
 }
 
-/// POST /api/v1/metadata/user/import/preview  (stub — preview only, no DB writes)
-pub async fn preview_import_from_external(
+// ─── Import request body ──────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ImportFromExternalRequest {
+    pub provider: String,
+    pub external_id: String,
+    pub media_type: String,
+}
+
+fn validate_external_id(provider: &str, external_id: &str) -> Result<(), String> {
+    match provider {
+        "imdb" => {
+            if !external_id.starts_with("tt") {
+                return Err("IMDB external_id must start with 'tt'".to_string());
+            }
+        }
+        "tmdb" | "tvdb" => {
+            if external_id.parse::<i64>().is_err() {
+                return Err(format!("{} external_id must be numeric", provider));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// POST /api/v1/metadata/user/import/preview  (preview only, no DB writes)
+pub async fn import_user_metadata_preview(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
+    Json(body): Json<ImportFromExternalRequest>,
 ) -> Response {
     let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({"detail": "External import preview not implemented in Rust API"})),
+
+    if let Err(msg) = validate_external_id(&body.provider, &body.external_id) {
+        return (StatusCode::BAD_REQUEST, Json(json!({"detail": msg}))).into_response();
+    }
+
+    // Check if media already exists
+    let existing: Option<(i64, String, Option<i32>)> = sqlx::query_as(
+        r#"SELECT m.id, m.title, m.year FROM media m
+           JOIN media_external_id meid ON m.id = meid.media_id
+           WHERE meid.provider = $1 AND meid.external_id = $2
+           LIMIT 1"#,
     )
-        .into_response()
+    .bind(&body.provider)
+    .bind(&body.external_id)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .unwrap_or(None);
+
+    match existing {
+        Some((media_id, title, year)) => Json(json!({
+            "exists": true,
+            "media_id": media_id,
+            "title": title,
+            "year": year,
+            "provider": body.provider,
+            "external_id": body.external_id,
+            "media_type": body.media_type,
+            "message": "Media already exists in the database",
+        }))
+        .into_response(),
+        None => Json(json!({
+            "exists": false,
+            "media_id": null,
+            "provider": body.provider,
+            "external_id": body.external_id,
+            "media_type": body.media_type,
+            "message": "Media not found. Import would fetch from external provider via worker service.",
+        }))
+        .into_response(),
+    }
 }
 
-/// POST /api/v1/metadata/user/import  (stub)
+/// POST /api/v1/metadata/user/import
 pub async fn import_from_external(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
+    Json(body): Json<ImportFromExternalRequest>,
 ) -> Response {
     let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({"detail": "External import not implemented in Rust API"})),
+
+    if let Err(msg) = validate_external_id(&body.provider, &body.external_id) {
+        return (StatusCode::BAD_REQUEST, Json(json!({"detail": msg}))).into_response();
+    }
+
+    // Check if media already exists
+    let existing: Option<i64> = sqlx::query_scalar(
+        r#"SELECT m.id FROM media m
+           JOIN media_external_id meid ON m.id = meid.media_id
+           WHERE meid.provider = $1 AND meid.external_id = $2
+           LIMIT 1"#,
     )
-        .into_response()
+    .bind(&body.provider)
+    .bind(&body.external_id)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .unwrap_or(None);
+
+    match existing {
+        Some(media_id) => {
+            let media_json = media_row_to_json(&state.pool_ro, media_id, false).await;
+            Json(media_json).into_response()
+        }
+        None => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({
+                "detail": "Fetching from external provider not yet supported. Use the worker service or add the media manually."
+            })),
+        )
+            .into_response(),
+    }
 }

@@ -49,6 +49,16 @@ pub struct AppConfigResponse {
     pub is_public_instance: bool,
     pub contact_email: Option<String>,
     pub authentication_required: bool,
+    pub disabled_providers: Vec<String>,
+    pub disabled_content_types: Vec<String>,
+    pub max_streaming_providers_per_profile: u32,
+    pub provider_signup_links: std::collections::HashMap<String, Vec<String>>,
+    pub torznab_enabled: bool,
+    pub nzb_file_import_enabled: bool,
+    pub image_upload_enabled: bool,
+    pub nzbdav_configured: bool,
+    pub premiumize_oauth_configured: bool,
+    pub branding_description: String,
     pub telegram: TelegramFeatureConfig,
 }
 
@@ -92,6 +102,11 @@ pub async fn get_app_config(State(state): State<Arc<AppState>>) -> impl IntoResp
     let telegram_enabled = state.config.telegram_api_id.is_some();
     let bot_configured = state.config.telegram_bot_token.is_some();
 
+    let nzbdav_configured =
+        state.config.default_nzbdav_url.is_some() && state.config.default_nzbdav_api_key.is_some();
+    let premiumize_oauth_configured = state.config.premiumize_oauth_client_id.is_some()
+        && state.config.premiumize_oauth_client_secret.is_some();
+
     Json(AppConfigResponse {
         addon_name: state.config.addon_name.clone(),
         logo_url: state.config.logo_url.clone(),
@@ -100,6 +115,16 @@ pub async fn get_app_config(State(state): State<Arc<AppState>>) -> impl IntoResp
         is_public_instance: is_public,
         contact_email: state.config.contact_email.clone(),
         authentication_required: !is_public,
+        disabled_providers: state.config.disabled_providers.clone(),
+        disabled_content_types: state.config.disabled_content_types.clone(),
+        max_streaming_providers_per_profile: state.config.max_streaming_providers_per_profile,
+        provider_signup_links: state.config.provider_signup_links.clone(),
+        torznab_enabled: state.config.enable_torznab_api,
+        nzb_file_import_enabled: state.config.enable_nzb_file_import,
+        image_upload_enabled: state.config.image_upload_enabled,
+        nzbdav_configured,
+        premiumize_oauth_configured,
+        branding_description: state.config.branding_description.clone(),
         telegram: TelegramFeatureConfig {
             enabled: telegram_enabled,
             bot_configured,

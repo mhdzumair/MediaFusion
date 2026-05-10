@@ -9,7 +9,6 @@
 ///   GET    /api/v1/episode-suggestions/{suggestion_id}        → get_episode_suggestion
 ///   DELETE /api/v1/episode-suggestions/{suggestion_id}        → delete_episode_suggestion
 ///   PUT    /api/v1/episode-suggestions/{suggestion_id}/review → review_episode_suggestion         (moderator)
-
 use std::sync::Arc;
 
 use axum::{
@@ -63,7 +62,7 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
 }
 
 async fn get_user_role(pool: &sqlx::PgPool, user_id: i64) -> Option<String> {
-    sqlx::query_scalar::<_, String>("SELECT role::text FROM users WHERE id = $1")
+    sqlx::query_scalar::<_, String>("SELECT LOWER(role::text) FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(pool)
         .await
@@ -99,8 +98,12 @@ pub struct ListSuggestionsQuery {
     pub page_size: i64,
 }
 
-fn default_page() -> i64 { 1 }
-fn default_page_size() -> i64 { 20 }
+fn default_page() -> i64 {
+    1
+}
+fn default_page_size() -> i64 {
+    20
+}
 
 #[derive(Deserialize)]
 pub struct PendingQuery {
@@ -136,22 +139,45 @@ struct SuggestionRow {
 }
 
 async fn fetch_suggestion(pool: &sqlx::PgPool, id: &str) -> Option<SuggestionRow> {
-    let row: Option<(String, i64, i64, String, Option<String>, String, Option<String>, String, Option<String>, Option<DateTime<Utc>>, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>)> =
-        sqlx::query_as(
-            r#"SELECT id, user_id, episode_id, field_name, current_value, suggested_value,
+    type R = (
+        String,
+        i64,
+        i64,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<DateTime<Utc>>,
+        Option<String>,
+        DateTime<Utc>,
+        Option<DateTime<Utc>>,
+    );
+    let row: R = sqlx::query_as::<_, R>(
+        r#"SELECT id, user_id, episode_id, field_name, current_value, suggested_value,
                       reason, status, reviewed_by, reviewed_at, review_notes, created_at, updated_at
                FROM episode_suggestion WHERE id = $1"#,
-        )
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None)?;
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None)?;
 
     Some(SuggestionRow {
-        id: row.0, user_id: row.1, episode_id: row.2, field_name: row.3,
-        current_value: row.4, suggested_value: row.5, reason: row.6,
-        status: row.7, reviewed_by: row.8, reviewed_at: row.9,
-        review_notes: row.10, created_at: row.11, updated_at: row.12,
+        id: row.0,
+        user_id: row.1,
+        episode_id: row.2,
+        field_name: row.3,
+        current_value: row.4,
+        suggested_value: row.5,
+        reason: row.6,
+        status: row.7,
+        reviewed_by: row.8,
+        reviewed_at: row.9,
+        review_notes: row.10,
+        created_at: row.11,
+        updated_at: row.12,
     })
 }
 
@@ -261,11 +287,13 @@ async fn apply_episode_change(
         }
         "runtime_minutes" => {
             if let Ok(minutes) = value.parse::<i32>() {
-                sqlx::query("UPDATE episode SET runtime_minutes = $1, updated_at = NOW() WHERE id = $2")
-                    .bind(minutes)
-                    .bind(episode_id)
-                    .execute(pool)
-                    .await
+                sqlx::query(
+                    "UPDATE episode SET runtime_minutes = $1, updated_at = NOW() WHERE id = $2",
+                )
+                .bind(minutes)
+                .bind(episode_id)
+                .execute(pool)
+                .await
             } else {
                 return false;
             }
@@ -286,7 +314,13 @@ pub async fn create_episode_suggestion(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     // Verify episode exists
@@ -297,7 +331,11 @@ pub async fn create_episode_suggestion(
         .unwrap_or(false);
 
     if !ep_exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Episode not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Episode not found"})),
+        )
+            .into_response();
     }
 
     // Check for duplicate pending suggestion
@@ -312,17 +350,24 @@ pub async fn create_episode_suggestion(
     .unwrap_or(false);
 
     if dup {
-        return (StatusCode::CONFLICT, Json(json!({"detail": "You already have a pending suggestion for this field"}))).into_response();
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"detail": "You already have a pending suggestion for this field"})),
+        )
+            .into_response();
     }
 
     // Check auto-approval eligibility
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
-    let user_points: i32 = sqlx::query_scalar("SELECT COALESCE(contribution_points, 0) FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(&state.pool)
+    let role = get_user_role(&state.pool, user_id)
         .await
-        .unwrap_or(None)
-        .unwrap_or(0);
+        .unwrap_or_default();
+    let user_points: i32 =
+        sqlx::query_scalar("SELECT COALESCE(contribution_points, 0) FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None)
+            .unwrap_or(0);
 
     let auto_threshold: i32 = sqlx::query_scalar(
         "SELECT COALESCE(auto_approval_threshold, 100) FROM contribution_settings WHERE id = 'default'",
@@ -340,10 +385,8 @@ pub async fn create_episode_suggestion(
     .unwrap_or(None)
     .unwrap_or(true);
 
-    let can_auto_approve =
-        is_mod_or_admin(&role) || (allow_auto && user_points >= auto_threshold);
+    let can_auto_approve = is_mod_or_admin(&role) || (allow_auto && user_points >= auto_threshold);
 
-    let initial_status = if can_auto_approve { "auto_approved" } else { "pending" };
     let suggestion_id = Uuid::new_v4().to_string();
 
     let mut reviewed_by: Option<String> = None;
@@ -353,12 +396,30 @@ pub async fn create_episode_suggestion(
     if can_auto_approve {
         reviewed_by = Some(user_id.to_string());
         review_notes = Some("Auto-approved based on user reputation".to_string());
-        apply_success = apply_episode_change(&state.pool, episode_id, &body.field_name, &body.suggested_value).await;
+        apply_success = apply_episode_change(
+            &state.pool,
+            episode_id,
+            &body.field_name,
+            &body.suggested_value,
+        )
+        .await;
     }
 
-    let final_status = if can_auto_approve && apply_success { "auto_approved" } else { "pending" };
-    let final_reviewed_by = if final_status == "auto_approved" { reviewed_by } else { None };
-    let final_review_notes = if final_status == "auto_approved" { review_notes } else { None };
+    let final_status = if can_auto_approve && apply_success {
+        "auto_approved"
+    } else {
+        "pending"
+    };
+    let final_reviewed_by = if final_status == "auto_approved" {
+        reviewed_by
+    } else {
+        None
+    };
+    let final_review_notes = if final_status == "auto_approved" {
+        review_notes
+    } else {
+        None
+    };
 
     if let Err(e) = sqlx::query(
         r#"INSERT INTO episode_suggestion
@@ -390,7 +451,11 @@ pub async fn create_episode_suggestion(
         Some(r) => r,
     };
 
-    (StatusCode::CREATED, Json(suggestion_to_json(&state.pool, &row).await)).into_response()
+    (
+        StatusCode::CREATED,
+        Json(suggestion_to_json(&state.pool, &row).await),
+    )
+        .into_response()
 }
 
 /// GET /api/v1/episode-suggestions
@@ -401,7 +466,13 @@ pub async fn list_my_episode_suggestions(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let page = params.page.max(1);
@@ -409,9 +480,7 @@ pub async fn list_my_episode_suggestions(
     let offset = (page - 1) * page_size;
 
     let mut count_sql = String::from("SELECT COUNT(*) FROM episode_suggestion WHERE user_id = $1");
-    let mut fetch_sql = String::from(
-        "SELECT id FROM episode_suggestion WHERE user_id = $1",
-    );
+    let mut fetch_sql = String::from("SELECT id FROM episode_suggestion WHERE user_id = $1");
 
     if let Some(ref s) = params.status {
         let esc = s.replace('\'', "''");
@@ -459,24 +528,50 @@ pub async fn get_episode_suggestion_stats(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool_ro, user_id)
+        .await
+        .unwrap_or_default();
     let is_moderator = is_mod_or_admin(&role);
 
     let (total, pending, approved, auto_approved, rejected, approved_today, rejected_today) =
         if is_moderator {
             let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM episode_suggestion")
-                .fetch_one(&state.pool_ro).await.unwrap_or(0);
-            let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM episode_suggestion WHERE status = 'pending'")
-                .fetch_one(&state.pool_ro).await.unwrap_or(0);
-            let approved: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM episode_suggestion WHERE status = 'approved'")
-                .fetch_one(&state.pool_ro).await.unwrap_or(0);
-            let auto_approved: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM episode_suggestion WHERE status = 'auto_approved'")
-                .fetch_one(&state.pool_ro).await.unwrap_or(0);
-            let rejected: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM episode_suggestion WHERE status = 'rejected'")
-                .fetch_one(&state.pool_ro).await.unwrap_or(0);
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0);
+            let pending: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM episode_suggestion WHERE status = 'pending'",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+            let approved: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM episode_suggestion WHERE status = 'approved'",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+            let auto_approved: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM episode_suggestion WHERE status = 'auto_approved'",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+            let rejected: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM episode_suggestion WHERE status = 'rejected'",
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
             let approved_today: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM episode_suggestion WHERE status IN ('approved', 'auto_approved') AND reviewed_at >= CURRENT_DATE",
             )
@@ -485,7 +580,15 @@ pub async fn get_episode_suggestion_stats(
                 "SELECT COUNT(*) FROM episode_suggestion WHERE status = 'rejected' AND reviewed_at >= CURRENT_DATE",
             )
             .fetch_one(&state.pool_ro).await.unwrap_or(0);
-            (total, pending, approved, auto_approved, rejected, approved_today, rejected_today)
+            (
+                total,
+                pending,
+                approved,
+                auto_approved,
+                rejected,
+                approved_today,
+                rejected_today,
+            )
         } else {
             (0, 0, 0, 0, 0, 0, 0)
         };
@@ -494,43 +597,49 @@ pub async fn get_episode_suggestion_stats(
         "SELECT COUNT(*) FROM episode_suggestion WHERE user_id = $1 AND status = 'pending'",
     )
     .bind(user_id)
-    .fetch_one(&state.pool_ro).await.unwrap_or(0);
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(0);
 
     let user_approved: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM episode_suggestion WHERE user_id = $1 AND status = 'approved'",
     )
     .bind(user_id)
-    .fetch_one(&state.pool_ro).await.unwrap_or(0);
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(0);
 
     let user_auto_approved: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM episode_suggestion WHERE user_id = $1 AND status = 'auto_approved'",
     )
     .bind(user_id)
-    .fetch_one(&state.pool_ro).await.unwrap_or(0);
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(0);
 
     let user_rejected: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM episode_suggestion WHERE user_id = $1 AND status = 'rejected'",
     )
     .bind(user_id)
-    .fetch_one(&state.pool_ro).await.unwrap_or(0);
-
-    let user_points: i32 = sqlx::query_scalar(
-        "SELECT COALESCE(contribution_points, 0) FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool_ro)
+    .fetch_one(&state.pool_ro)
     .await
-    .unwrap_or(None)
     .unwrap_or(0);
 
-    let user_level: String = sqlx::query_scalar(
-        "SELECT COALESCE(contribution_level, 'new') FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool_ro)
-    .await
-    .unwrap_or(None)
-    .unwrap_or_else(|| "new".to_string());
+    let user_points: i32 =
+        sqlx::query_scalar("SELECT COALESCE(contribution_points, 0) FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None)
+            .unwrap_or(0);
+
+    let user_level: String =
+        sqlx::query_scalar("SELECT COALESCE(contribution_level, 'new') FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None)
+            .unwrap_or_else(|| "new".to_string());
 
     Json(json!({
         "total": total,
@@ -558,19 +667,32 @@ pub async fn list_pending_episode_suggestions(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool_ro, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let page = params.page.max(1);
     let page_size = params.page_size.clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    let mut count_sql = String::from("SELECT COUNT(*) FROM episode_suggestion WHERE status = 'pending'");
+    let mut count_sql =
+        String::from("SELECT COUNT(*) FROM episode_suggestion WHERE status = 'pending'");
     let mut fetch_sql = String::from("SELECT id FROM episode_suggestion WHERE status = 'pending'");
 
     if let Some(ref fn_) = params.field_name {
@@ -582,7 +704,9 @@ pub async fn list_pending_episode_suggestions(
     fetch_sql.push_str(" ORDER BY created_at ASC LIMIT $1 OFFSET $2");
 
     let total: i64 = sqlx::query_scalar(&count_sql)
-        .fetch_one(&state.pool_ro).await.unwrap_or(0);
+        .fetch_one(&state.pool_ro)
+        .await
+        .unwrap_or(0);
 
     let ids: Vec<(String,)> = sqlx::query_as::<_, (String,)>(&fetch_sql)
         .bind(page_size)
@@ -617,12 +741,24 @@ pub async fn bulk_review_episode_suggestions(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let points_per_edit: i32 = sqlx::query_scalar(
@@ -644,7 +780,13 @@ pub async fn bulk_review_episode_suggestions(
     let new_status = match params.action.as_str() {
         "approve" => "approved",
         "reject" => "rejected",
-        _ => return (StatusCode::BAD_REQUEST, Json(json!({"detail": "action must be approve or reject"}))).into_response(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "action must be approve or reject"})),
+            )
+                .into_response()
+        }
     };
 
     let mut approved = 0i64;
@@ -653,7 +795,10 @@ pub async fn bulk_review_episode_suggestions(
 
     for id in &suggestion_ids {
         let row = match fetch_suggestion(&state.pool, id).await {
-            None => { skipped += 1; continue; }
+            None => {
+                skipped += 1;
+                continue;
+            }
             Some(r) => r,
         };
 
@@ -678,7 +823,13 @@ pub async fn bulk_review_episode_suggestions(
         }
 
         if new_status == "approved" {
-            apply_episode_change(&state.pool, row.episode_id, &row.field_name, &row.suggested_value).await;
+            apply_episode_change(
+                &state.pool,
+                row.episode_id,
+                &row.field_name,
+                &row.suggested_value,
+            )
+            .await;
             if points_per_edit > 0 {
                 let _ = sqlx::query(
                     "UPDATE users SET contribution_points = GREATEST(0, COALESCE(contribution_points, 0) + $1), metadata_edits_approved = COALESCE(metadata_edits_approved, 0) + 1 WHERE id = $2",
@@ -714,17 +865,35 @@ pub async fn get_episode_suggestion(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let row = match fetch_suggestion(&state.pool_ro, &suggestion_id).await {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Suggestion not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Suggestion not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
-    let role = get_user_role(&state.pool_ro, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool_ro, user_id)
+        .await
+        .unwrap_or_default();
     if row.user_id != user_id && !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Access denied"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Access denied"})),
+        )
+            .into_response();
     }
 
     Json(suggestion_to_json(&state.pool_ro, &row).await).into_response()
@@ -738,20 +907,40 @@ pub async fn delete_episode_suggestion(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let row = match fetch_suggestion(&state.pool, &suggestion_id).await {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Suggestion not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Suggestion not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
     if row.user_id != user_id {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Suggestion not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Suggestion not found"})),
+        )
+            .into_response();
     }
 
     if row.status != "pending" {
-        return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Can only delete pending suggestions"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Can only delete pending suggestions"})),
+        )
+            .into_response();
     }
 
     if let Err(e) = sqlx::query("DELETE FROM episode_suggestion WHERE id = $1")
@@ -775,27 +964,55 @@ pub async fn review_episode_suggestion(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let row = match fetch_suggestion(&state.pool, &suggestion_id).await {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Suggestion not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Suggestion not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
     if row.status != "pending" {
-        return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Suggestion has already been reviewed"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Suggestion has already been reviewed"})),
+        )
+            .into_response();
     }
 
     let new_status = match body.action.as_str() {
         "approve" => "approved",
         "reject" => "rejected",
-        _ => return (StatusCode::BAD_REQUEST, Json(json!({"detail": "action must be approve or reject"}))).into_response(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "action must be approve or reject"})),
+            )
+                .into_response()
+        }
     };
 
     if let Err(e) = sqlx::query(
@@ -829,7 +1046,13 @@ pub async fn review_episode_suggestion(
     .unwrap_or(0);
 
     if new_status == "approved" {
-        apply_episode_change(&state.pool, row.episode_id, &row.field_name, &row.suggested_value).await;
+        apply_episode_change(
+            &state.pool,
+            row.episode_id,
+            &row.field_name,
+            &row.suggested_value,
+        )
+        .await;
         if points_per_edit > 0 {
             let _ = sqlx::query(
                 "UPDATE users SET contribution_points = GREATEST(0, COALESCE(contribution_points, 0) + $1), metadata_edits_approved = COALESCE(metadata_edits_approved, 0) + 1 WHERE id = $2",

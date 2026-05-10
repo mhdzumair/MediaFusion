@@ -1,17 +1,13 @@
 /// Poster image upload endpoints.
 ///
-/// If `python_proxy_url` is set, multipart requests are forwarded to Python.
-/// Otherwise returns 503.
-///
 /// Routes (prefix /api/v1/import):
 ///   POST /images/upload   → upload_image
 ///   GET  /images/{key}    → get_uploaded_image
 use std::sync::Arc;
 
 use axum::{
-    body::Body,
-    extract::{Path, Request, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Multipart, Path, State},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -20,6 +16,7 @@ use chrono::Utc;
 use hmac::{Hmac, Mac};
 use serde_json::json;
 use sha2::Sha256;
+use uuid::Uuid;
 
 use crate::state::AppState;
 
@@ -57,75 +54,34 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
     data["sub"].as_str()?.parse().ok()
 }
 
-// ─── Proxy helper ─────────────────────────────────────────────────────────────
+// ─── Magic-byte content type detection ───────────────────────────────────────
 
-async fn proxy(
-    state: &Arc<AppState>,
-    method: reqwest::Method,
-    path: &str,
-    query: &str,
-    headers: &HeaderMap,
-    body: Vec<u8>,
-) -> Response {
-    let base = match &state.config.python_proxy_url {
-        Some(u) => u.clone(),
-        None => {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"detail": "Image upload service not available in this deployment"})),
-            )
-                .into_response();
-        }
-    };
-
-    let url = if query.is_empty() {
-        format!("{base}{path}")
+fn detect_content_type(bytes: &[u8]) -> (&'static str, &'static str) {
+    if bytes.len() >= 4
+        && bytes[0] == 0x89
+        && bytes[1] == 0x50
+        && bytes[2] == 0x4e
+        && bytes[3] == 0x47
+    {
+        ("image/png", "png")
+    } else if bytes.len() >= 2 && bytes[0] == 0xff && bytes[1] == 0xd8 {
+        ("image/jpeg", "jpg")
+    } else if bytes.len() >= 12 && &bytes[8..12] == b"WEBP" {
+        ("image/webp", "webp")
+    } else if bytes.len() >= 4 && (&bytes[0..4] == b"GIF8") {
+        ("image/gif", "gif")
     } else {
-        format!("{base}{path}?{query}")
-    };
-
-    let mut req = state.http.request(method, &url);
-    for (key, val) in headers.iter() {
-        let name = key.as_str().to_lowercase();
-        if matches!(
-            name.as_str(),
-            "authorization" | "accept" | "content-type" | "content-length"
-        ) {
-            if let Ok(v) = val.to_str() {
-                req = req.header(key.as_str(), v);
-            }
-        }
+        ("application/octet-stream", "bin")
     }
-    if !body.is_empty() {
-        req = req.body(body);
-    }
+}
 
-    match req.send().await {
-        Ok(resp) => {
-            let status = StatusCode::from_u16(resp.status().as_u16())
-                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-            let ct = resp
-                .headers()
-                .get("content-type")
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("application/octet-stream")
-                .to_string();
-            let bytes = resp.bytes().await.unwrap_or_default();
-            (
-                status,
-                [(axum::http::header::CONTENT_TYPE, ct)],
-                Body::from(bytes),
-            )
-                .into_response()
-        }
-        Err(e) => {
-            tracing::error!("image_upload proxy error: {e}");
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"detail": "Failed to reach image upload service"})),
-            )
-                .into_response()
-        }
+fn content_type_from_ext(ext: &str) -> &'static str {
+    match ext {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => "application/octet-stream",
     }
 }
 
@@ -135,7 +91,7 @@ async fn proxy(
 pub async fn upload_image(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    req: Request,
+    mut multipart: Multipart,
 ) -> Response {
     if validate_token(&headers, &state.config.secret_key_raw).is_none() {
         return (
@@ -144,38 +100,126 @@ pub async fn upload_image(
         )
             .into_response();
     }
-    let q = req.uri().query().unwrap_or("").to_string();
-    // Forward content-type (multipart boundary is embedded)
-    let body = axum::body::to_bytes(req.into_body(), 20 * 1024 * 1024)
-        .await
-        .unwrap_or_default()
-        .to_vec();
-    proxy(
-        &state,
-        reqwest::Method::POST,
-        "/api/v1/import/images/upload",
-        &q,
-        &headers,
-        body,
-    )
-    .await
+
+    if !state.config.image_upload_enabled {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Image upload is not enabled on this server."})),
+        )
+            .into_response();
+    }
+
+    // Read image field from multipart
+    let mut image_bytes: Option<Vec<u8>> = None;
+    while let Ok(Some(field)) = multipart.next_field().await {
+        if field.name() == Some("image") || image_bytes.is_none() {
+            match field.bytes().await {
+                Ok(data) if !data.is_empty() => {
+                    image_bytes = Some(data.to_vec());
+                    break;
+                }
+                _ => continue,
+            }
+        }
+    }
+
+    let data = match image_bytes {
+        Some(b) => b,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "No image field found in multipart body"})),
+            )
+                .into_response();
+        }
+    };
+
+    let (content_type, ext) = detect_content_type(&data);
+    let key = format!("{}.{}", Uuid::new_v4(), ext);
+    let images_dir = &state.config.images_dir;
+    let file_path = format!("{images_dir}/{key}");
+
+    // Create parent directory if needed
+    if let Err(e) = tokio::fs::create_dir_all(images_dir).await {
+        tracing::error!("upload_image: create_dir_all {images_dir}: {e}");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"detail": "Failed to create image storage directory"})),
+        )
+            .into_response();
+    }
+
+    let size = data.len();
+    if let Err(e) = tokio::fs::write(&file_path, &data).await {
+        tracing::error!("upload_image: write {file_path}: {e}");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"detail": "Failed to save image"})),
+        )
+            .into_response();
+    }
+
+    Json(json!({
+        "url": format!("/api/v1/import/images/{key}"),
+        "key": key,
+        "content_type": content_type,
+        "size": size,
+    }))
+    .into_response()
 }
 
 /// GET /api/v1/import/images/{key}
 pub async fn get_uploaded_image(
     State(state): State<Arc<AppState>>,
     Path(key): Path<String>,
-    req: Request,
 ) -> Response {
-    let headers = req.headers().clone();
-    let q = req.uri().query().unwrap_or("").to_string();
-    proxy(
-        &state,
-        reqwest::Method::GET,
-        &format!("/api/v1/import/images/{key}"),
-        &q,
-        &headers,
-        vec![],
-    )
-    .await
+    if !state.config.image_upload_enabled {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Image upload is not enabled on this server."})),
+        )
+            .into_response();
+    }
+
+    // Validate key — only alphanumeric, hyphens, and dots (no path traversal)
+    if !key
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '.')
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Invalid image key"})),
+        )
+            .into_response();
+    }
+
+    let file_path = format!("{}/{key}", state.config.images_dir);
+    let data = match tokio::fs::read(&file_path).await {
+        Ok(d) => d,
+        Err(_) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Image not found"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Determine content type from extension
+    let ext = key.rsplit('.').next().unwrap_or("");
+    let content_type = content_type_from_ext(ext);
+
+    let mut response = axum::response::Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", content_type)
+        .header(
+            "Cache-Control",
+            HeaderValue::from_static("public, max-age=31536000"),
+        )
+        .body(axum::body::Body::from(data))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+
+    // Suppress unused variable warning from the builder pattern
+    let _ = &mut response;
+    response
 }

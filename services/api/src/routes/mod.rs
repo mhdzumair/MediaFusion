@@ -41,14 +41,21 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
-use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
+use tower_http::{
+    compression::CompressionLayer, cors::CorsLayer, services::ServeDir, timeout::TimeoutLayer,
+};
 
+use crate::api_key_middleware::api_key_middleware;
 use crate::make_trace_layer;
 use crate::metrics_middleware::metrics_middleware;
 use crate::state::AppState;
+use crate::stremio_auth_middleware::stremio_auth_middleware;
 
 pub fn router(state: Arc<AppState>) -> Router {
-    Router::new()
+    let resources_dir = state.config.resources_dir.clone();
+    let stream_timeout = std::time::Duration::from_secs(state.config.request_timeout);
+
+    let api_router = Router::new()
         // ── Health ───────────────────────────────────────────────────────────
         .route("/health", get(health::handler))
         .route("/ready", get(health::handler))
@@ -73,8 +80,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         // ── Stream ───────────────────────────────────────────────────────────
         .route("/stream/movie/{video_id}", get(stream::public_movie))
         .route("/stream/series/{video_id}", get(stream::public_series))
+        .route("/stream/tv/{video_id}", get(stream::public_tv))
         .route("/{secret_str}/stream/movie/{video_id}", get(stream::movie))
         .route("/{secret_str}/stream/series/{video_id}", get(stream::series))
+        .route("/{secret_str}/stream/tv/{video_id}", get(stream::tv))
         // ── Poster ───────────────────────────────────────────────────────────
         .route("/poster/{media_type}/{id_jpg}", get(poster::handler))
         // ── Kodi stream (with pagination) ─────────────────────────────────────
@@ -85,8 +94,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         // ── Torznab feed ─────────────────────────────────────────────────────
         .route("/torznab", get(torznab::handler))
         .route("/torznab/api", get(torznab::handler))
-        // ── Encrypt user data ─────────────────────────────────────────────────
+        // ── Encrypt / Decrypt user data ───────────────────────────────────────
         .route("/encrypt-user-data", post(encrypt::handler))
+        .route("/encrypt-user-data/{existing_secret_str}", post(encrypt::handler))
+        .route("/decrypt-user-data/{secret_str}", get(encrypt::decrypt_handler))
         // ── Usenet playback (public — credentials embedded in NZB URL) ────────
         .route("/usenet/{nzb_guid}", get(usenet::handler))
         // ── Streaming provider namespace ──────────────────────────────────────
@@ -106,6 +117,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route(
             "/streaming_provider/{secret_str}/playback/{provider_name}/{info_hash}/{season}/{episode}/{filename}",
             get(playback::handler_seep_filename),
+        )
+        // Usenet NZB proxy (providers fetch NZB bytes through this endpoint)
+        .route(
+            "/streaming_provider/{secret_str}/usenet/nzb/{nzb_guid}",
+            get(usenet::nzb_proxy_handler),
         )
         // Usenet via provider
         .route(
@@ -141,6 +157,14 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/streaming_provider/cache/submit",
             post(streaming_provider::submit_cached_hashes),
         )
+        // ── Streaming provider OAuth / device-code auth ───────────────────────
+        .route("/streaming_provider/realdebrid/get-device-code", get(streaming_provider::realdebrid_get_device_code))
+        .route("/streaming_provider/realdebrid/authorize", post(streaming_provider::realdebrid_authorize))
+        .route("/streaming_provider/seedr/get-device-code", get(streaming_provider::seedr_get_device_code))
+        .route("/streaming_provider/seedr/authorize", post(streaming_provider::seedr_authorize))
+        .route("/streaming_provider/debridlink/get-device-code", get(streaming_provider::debridlink_get_device_code))
+        .route("/streaming_provider/debridlink/authorize", post(streaming_provider::debridlink_authorize))
+        .route("/streaming_provider/premiumize/authorize", get(streaming_provider::premiumize_authorize))
         // ── User profiles ─────────────────────────────────────────────────────
         .route(
             "/api/v1/profiles/user-config",
@@ -261,15 +285,22 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/metadata/user/{media_id}/seasons", post(content::user_metadata::add_season_to_series))
         .route("/api/v1/metadata/user/{media_id}/episodes", post(content::user_metadata::add_episodes_to_series))
         .route("/api/v1/metadata/user/{media_id}/episodes/{episode_id}", put(content::user_metadata::update_episode).delete(content::user_metadata::delete_episode))
+        .route("/api/v1/metadata/user/{media_id}/episodes/{episode_id}/admin", delete(content::user_metadata::admin_delete_episode))
+        .route("/api/v1/metadata/user/{media_id}/seasons/{season_number}", delete(content::user_metadata::delete_season))
+        .route("/api/v1/metadata/user/{media_id}/seasons/{season_number}/admin", delete(content::user_metadata::admin_delete_season))
+        .route("/api/v1/metadata/user/import/preview", post(content::user_metadata::import_user_metadata_preview))
         // ── Metadata operations ───────────────────────────────────────────────
         .route("/api/v1/metadata/search", get(content::metadata_ops::search_metadata))
+        .route("/api/v1/metadata/search-external", post(content::metadata_ops::search_external_metadata))
         .route("/api/v1/metadata/{media_id}/refresh", post(content::metadata_ops::refresh_metadata))
         .route("/api/v1/metadata/{media_id}/link", post(content::metadata_ops::link_external_id))
+        .route("/api/v1/metadata/{media_id}/link-external", post(content::metadata_ops::link_external_id))
         .route("/api/v1/metadata/{media_id}/link-multiple", post(content::metadata_ops::link_multiple_external_ids))
+        .route("/api/v1/metadata/{media_id}/migrate", post(content::metadata_ops::migrate_media_id))
         .route("/api/v1/metadata/{media_id}/suggest", post(content::suggestions::create_suggestion))
         .route("/api/v1/metadata/{media_id}", get(content::metadata_ops::get_media_metadata))
         // ── Contributions ─────────────────────────────────────────────────────
-        .route("/api/v1/contributions", get(content::contributions::list_contributions))
+        .route("/api/v1/contributions", get(content::contributions::list_contributions).post(content::contributions::create_contribution))
         .route("/api/v1/contributions/me", get(content::suggestions::get_my_contribution_info))
         .route("/api/v1/contributions/stats", get(content::contributions::get_contribution_stats))
         .route("/api/v1/contributions/contributors", get(content::contributions::list_contribution_contributors))
@@ -280,9 +311,43 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/contributions/{contribution_id}/review", patch(content::contributions::review_contribution))
         .route("/api/v1/contributions/{contribution_id}/flag-admin-review", patch(content::contributions::flag_contribution_for_admin_review))
         .route("/api/v1/contributions/{contribution_id}/reject-approved", patch(content::contributions::reject_approved_contribution))
-        // ── Suggestions ───────────────────────────────────────────────────────
+        // ── Stream Linking ────────────────────────────────────────────────────
+        .route("/api/v1/stream-links", post(content::stream_linking::create_stream_link))
+        .route("/api/v1/stream-links/bulk", post(content::stream_linking::create_bulk_stream_links))
+        .route("/api/v1/stream-links/search", get(content::stream_linking::search_unlinked_streams))
+        .route("/api/v1/stream-links/files", put(content::stream_linking::update_file_links))
+        .route("/api/v1/stream-links/needs-annotation", get(content::stream_linking::get_streams_needing_annotation))
+        .route("/api/v1/stream-links/needs-annotation/{stream_id}/media/{media_id}/dismiss", post(content::stream_linking::dismiss_annotation_request))
+        .route("/api/v1/stream-links/{link_id}", delete(content::stream_linking::delete_stream_link))
+        .route("/api/v1/stream-links/stream/{stream_id}", get(content::stream_linking::get_media_for_stream))
+        .route("/api/v1/stream-links/media/{media_id}", get(content::stream_linking::get_streams_for_media))
+        .route("/api/v1/stream-links/files/{stream_id}", get(content::stream_linking::get_stream_file_links))
+        .route("/api/v1/stream-links/stream/{stream_id}/files", get(content::stream_linking::get_stream_files_for_annotation))
+        // ── Stream Suggestions ────────────────────────────────────────────────
+        .route("/api/v1/stream-suggestions", get(content::stream_suggestions::list_my_stream_suggestions))
+        .route("/api/v1/stream-suggestions/stats", get(content::stream_suggestions::get_stream_suggestion_stats))
+        .route("/api/v1/stream-suggestions/pending", get(content::stream_suggestions::list_pending_stream_suggestions))
+        .route("/api/v1/stream-suggestions/bulk-review", post(content::stream_suggestions::bulk_review_stream_suggestions))
+        .route("/api/v1/stream-suggestions/{suggestion_id}", get(content::stream_suggestions::get_stream_suggestion).delete(content::stream_suggestions::delete_stream_suggestion))
+        .route("/api/v1/stream-suggestions/{suggestion_id}/review", put(content::stream_suggestions::review_stream_suggestion))
+        .route("/api/v1/stream-suggestions/{suggestion_id}/triage", patch(content::stream_suggestions::triage_stream_suggestion))
+        .route("/api/v1/streams/{stream_id}/suggest", post(content::stream_suggestions::create_stream_suggestion))
+        .route("/api/v1/streams/{stream_id}/signals", get(content::stream_suggestions::get_stream_signals))
+        .route("/api/v1/streams/signals/bulk", post(content::stream_suggestions::bulk_stream_signals))
+        .route("/api/v1/streams/{stream_id}/editable-fields", get(content::stream_suggestions::get_stream_editable_fields))
+        .route("/api/v1/streams/{stream_id}/suggestions", get(content::stream_suggestions::list_stream_suggestions))
+        .route("/api/v1/streams/{stream_id}/broken-status", get(content::stream_suggestions::get_stream_broken_status).patch(content::stream_suggestions::update_stream_broken_status))
+        .route("/api/v1/stream-suggestions/{suggestion_id}/issue-triage", patch(content::stream_suggestions::triage_stream_suggestion))
+        // ── Episode Suggestions ───────────────────────────────────────────────
+        .route("/api/v1/episode/{episode_id}/suggest", post(content::episode_suggestions::create_episode_suggestion))
+        .route("/api/v1/episode-suggestions", get(content::episode_suggestions::list_my_episode_suggestions))
+        .route("/api/v1/episode-suggestions/stats", get(content::episode_suggestions::get_episode_suggestion_stats))
+        .route("/api/v1/episode-suggestions/pending", get(content::episode_suggestions::list_pending_episode_suggestions))
+        .route("/api/v1/episode-suggestions/bulk-review", post(content::episode_suggestions::bulk_review_episode_suggestions))
+        .route("/api/v1/episode-suggestions/{suggestion_id}", get(content::episode_suggestions::get_episode_suggestion).delete(content::episode_suggestions::delete_episode_suggestion))
+        .route("/api/v1/episode-suggestions/{suggestion_id}/review", put(content::episode_suggestions::review_episode_suggestion))
+        // ── Old suggestions aliases ───────────────────────────────────────────
         .route("/api/v1/stream-suggestions/my", get(content::suggestions::list_my_suggestions))
-        .route("/api/v1/stream-suggestions/pending", get(content::suggestions::list_pending_suggestions))
         .route("/api/v1/suggestions", get(content::suggestions::list_my_suggestions))
         .route("/api/v1/suggestions/my", get(content::suggestions::list_my_suggestions))
         .route("/api/v1/suggestions/pending", get(content::suggestions::list_pending_suggestions))
@@ -298,6 +363,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/scraping/scrapers", get(content::scraping::list_scrapers))
         .route("/api/v1/scraping/status", get(content::scraping::get_scrape_status))
         .route("/api/v1/scraping/trigger", post(content::scraping::trigger_scrape))
+        .route("/api/v1/scraping/{media_id}/status", get(content::scraping::get_scrape_status_by_media))
+        .route("/api/v1/scraping/{media_id}/scrape", post(content::scraping::trigger_scrape_by_media))
         // ── Discover ──────────────────────────────────────────────────────────
         .route("/api/v1/discover/trending", get(content::discover::discover_trending))
         .route("/api/v1/discover/list", get(content::discover::discover_list))
@@ -309,11 +376,13 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/discover/mdblist", get(content::discover::discover_mdblist))
         .route("/api/v1/discover/verify-tmdb-key", get(content::discover::verify_tmdb_key))
         // ── Catalog browse ────────────────────────────────────────────────────
-        .route("/api/v1/catalog", get(content::catalog_browse::list_catalog))
+        .route("/api/v1/catalog/available", get(content::catalog_browse::get_available_catalogs))
+        .route("/api/v1/catalog/genres", get(content::catalog_browse::get_genres))
         .route("/api/v1/catalog/search", get(content::catalog_browse::search_catalog))
-        .route("/api/v1/catalog/{media_id}", get(content::catalog_browse::get_media_detail))
-        .route("/api/v1/catalog/{media_id}/streams", get(content::catalog_browse::get_media_streams))
-        .route("/api/v1/catalog/{media_id}/streams/{stream_id}/report", post(content::catalog_browse::report_stream))
+        .route("/api/v1/catalog/{catalog_type}", get(content::catalog_browse::browse_catalog))
+        .route("/api/v1/catalog/{catalog_type}/{media_id}", get(content::catalog_browse::get_media_detail))
+        .route("/api/v1/catalog/{catalog_type}/{media_id}/streams", get(content::catalog_browse::get_media_streams))
+        .route("/api/v1/catalog/{catalog_type}/{media_id}/streams/{stream_id}/report", post(content::catalog_browse::report_stream))
         // ── Content stream management ─────────────────────────────────────────
         .route(
             "/api/v1/streams/{stream_id}",
@@ -358,10 +427,27 @@ pub fn router(state: Arc<AppState>) -> Router {
         // ── Admin ─────────────────────────────────────────────────────────────
         .route("/api/v1/admin/cache/stats", get(admin::cache_stats))
         .route("/api/v1/admin/cache/keys", get(admin::cache_keys))
-        .route("/api/v1/admin/cache/key/{*key}", delete(admin::cache_key_delete))
+        .route("/api/v1/admin/cache/key/{*key}", get(admin::cache_key_get).delete(admin::cache_key_delete))
         .route("/api/v1/admin/cache/clear", post(admin::cache_clear))
+        .route("/api/v1/admin/cache/image/{*key}", get(admin::cache_image_get))
         .route("/api/v1/admin/db/stats", get(admin::db_stats))
         .route("/api/v1/admin/db/tables", get(admin::db_tables))
+        // ── Admin DB Python-path aliases (/api/v1/admin/db/ → /api/v1/admin/database/) ──
+        .route("/api/v1/admin/db/tables/{table}/schema", get(admin_database::get_table_schema))
+        .route("/api/v1/admin/db/tables/{table}/data", get(admin_database::get_table_data))
+        .route("/api/v1/admin/db/tables/{table}/export", get(admin_database::export_table_by_path))
+        .route("/api/v1/admin/db/tables/{table}/rows/{id}/related", get(admin_database::get_related_rows))
+        .route("/api/v1/admin/db/orphans", get(admin_database::detect_orphans_combined))
+        .route("/api/v1/admin/db/orphans/cleanup", post(admin_database::cleanup_orphans))
+        .route("/api/v1/admin/db/slow-queries", get(admin_database::get_slow_queries))
+        .route("/api/v1/admin/db/slow-queries/reset", post(admin_database::reset_slow_queries))
+        .route("/api/v1/admin/db/maintenance/vacuum", post(admin_database::run_vacuum))
+        .route("/api/v1/admin/db/maintenance/analyze", post(admin_database::run_analyze))
+        .route("/api/v1/admin/db/maintenance/reindex", post(admin_database::run_reindex))
+        .route("/api/v1/admin/db/bulk/delete", post(admin_database::bulk_delete))
+        .route("/api/v1/admin/db/bulk/update", post(admin_database::bulk_update))
+        .route("/api/v1/admin/db/import/preview", post(admin_database::import_preview))
+        .route("/api/v1/admin/db/import/execute", post(admin_database::import_execute))
         // ── Admin extended (metadata CRUD, exceptions, request metrics, source health) ─
         .route("/api/v1/admin/metadata/{media_id}", delete(admin_extended::delete_metadata))
         .route("/api/v1/admin/metadata/{media_id}/block", post(admin_extended::block_media))
@@ -389,7 +475,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/metrics/torrents/by-uploaders", get(admin_metrics::get_torrents_by_uploaders))
         .route("/api/v1/admin/metrics/torrents/uploaders", get(admin_metrics::get_torrents_by_uploaders))
         .route("/api/v1/admin/metrics/torrents/weekly-top-uploaders", get(admin_metrics::get_weekly_top_uploaders))
-        .route("/api/v1/admin/metrics/torrents/uploaders/weekly/:week_date", get(admin_metrics::get_weekly_top_uploaders))
+        .route("/api/v1/admin/metrics/torrents/uploaders/weekly/{week_date}", get(admin_metrics::get_weekly_top_uploaders))
         .route("/api/v1/admin/metrics/metadata/total", get(admin_metrics::get_total_metadata))
         .route("/api/v1/admin/metrics/metadata", get(admin_metrics::get_total_metadata))
         .route("/api/v1/admin/metrics/users", get(admin_metrics::get_user_stats))
@@ -399,11 +485,18 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/metrics/activity/stats", get(admin_metrics::get_activity_stats))
         .route("/api/v1/admin/metrics/redis", get(admin_metrics::redis_metrics))
         .route("/api/v1/admin/metrics/worker-memory", get(admin_metrics::get_worker_memory_metrics))
+        .route("/api/v1/admin/metrics/workers/memory", get(admin_metrics::get_worker_memory_metrics))
         .route("/api/v1/admin/metrics/debrid-cache", get(admin_metrics::debrid_cache_metrics))
         .route("/api/v1/admin/metrics/scrapers", get(admin_metrics::get_scraper_latest_metrics))
         .route("/api/v1/admin/metrics/scrapers/latest", get(admin_metrics::get_scraper_latest_metrics))
         .route("/api/v1/admin/metrics/scrapers/aggregated", get(admin_metrics::get_scraper_aggregated_metrics))
         .route("/api/v1/admin/metrics/scrapers/history", get(admin_metrics::get_scraper_history))
+        .route("/api/v1/admin/metrics/scrapers/searches", get(admin_metrics::get_search_run_metrics))
+        .route("/api/v1/admin/metrics/scrapy-schedulers", get(admin_metrics::get_scrapy_schedulers))
+        .route("/api/v1/admin/metrics/scrapers/{scraper_name}", get(admin_metrics::get_scraper_by_name).delete(admin_metrics::delete_scraper_metrics))
+        .route("/api/v1/admin/metrics/scrapers/{scraper_name}/history", get(admin_metrics::get_scraper_name_history))
+        .route("/api/v1/admin/metrics/scrapers/{scraper_name}/latest", get(admin_metrics::get_scraper_name_latest))
+        .route("/api/v1/admin/metrics/scrapers/{scraper_name}/metrics", get(admin_metrics::get_scraper_name_metrics).delete(admin_metrics::delete_scraper_metrics))
         .route("/api/v1/admin/metrics/schedulers/last-run", get(admin_metrics::get_schedulers_last_run))
         .route("/api/v1/admin/metrics/prometheus", get(admin_metrics::prometheus_metrics))
         .route("/api/v1/admin/metrics/system-overview", get(admin_metrics::get_system_overview))
@@ -464,6 +557,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/telegram/migrate", post(admin_scrapers::migrate_single_stream))
         .route("/api/v1/admin/telegram/migrate/bulk", post(admin_scrapers::migrate_bulk_streams))
         .route("/api/v1/admin/telegram/exportable", get(admin_scrapers::get_exportable_streams))
+        // Top-level Python-compat telegram aliases
+        .route("/telegram/stats", get(admin_scrapers::get_telegram_stats))
+        .route("/telegram/exportable", get(admin_scrapers::get_exportable_streams))
+        .route("/telegram/migrate", post(admin_scrapers::migrate_single_stream))
+        .route("/telegram/migrate/bulk", post(admin_scrapers::migrate_bulk_streams))
         // ── Moderator metadata ────────────────────────────────────────────────
         .route("/api/v1/moderator/metadata", get(moderator::moderator_list_metadata))
         .route("/api/v1/moderator/metadata/search-external", post(moderator::moderator_search_external_metadata))
@@ -498,6 +596,14 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/user/rss/run-all", post(rss::user_run_all_scrapers))
         .route("/api/v1/user/rss/status", get(rss::user_get_scheduler_status))
         .route("/api/v1/user/rss/bulk-update", post(rss::user_bulk_update_feed_status))
+        // ── RSS feeds (user) — Python hyphenated path aliases ─────────────────
+        .route("/api/v1/user-rss/feeds", get(rss::user_list_rss_feeds).post(rss::user_create_rss_feed))
+        .route("/api/v1/user-rss/feeds/{id}", get(rss::user_get_rss_feed).put(rss::user_update_rss_feed).delete(rss::user_delete_rss_feed))
+        .route("/api/v1/user-rss/feeds/{id}/test", post(rss::user_test_rss_feed))
+        .route("/api/v1/user-rss/feeds/{id}/scrape", post(rss::user_scrape_single_feed))
+        .route("/api/v1/user-rss/feeds/run-all", post(rss::user_run_all_scrapers))
+        .route("/api/v1/user-rss/feeds/bulk-status", post(rss::user_bulk_update_feed_status))
+        .route("/api/v1/user-rss/scheduler-status", get(rss::user_get_scheduler_status))
         // ── Downloads ─────────────────────────────────────────────────────────
         .route("/api/v1/downloads", get(downloads::list_downloads).post(downloads::create_download).delete(downloads::clear_downloads))
         .route("/api/v1/downloads/{id}", get(downloads::get_download).delete(downloads::delete_download))
@@ -506,17 +612,34 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/indexers", get(indexers::list_indexers).post(indexers::create_indexer))
         .route("/api/v1/indexers/{id}", get(indexers::get_indexer).put(indexers::update_indexer).delete(indexers::delete_indexer))
         .route("/api/v1/indexers/{id}/test", post(indexers::test_indexer))
+        // Python path aliases for indexers (/api/v1/profile/indexers/*)
+        .route("/api/v1/profile/indexers/global-status", get(indexers::get_global_indexer_status))
+        .route("/api/v1/profile/indexers/prowlarr/test", post(indexers::test_prowlarr_connection))
+        .route("/api/v1/profile/indexers/jackett/test", post(indexers::test_jackett_connection))
+        .route("/api/v1/profile/indexers/torznab/test", post(indexers::test_torznab_endpoint))
+        .route("/api/v1/profile/indexers/newznab/test", post(indexers::test_newznab_indexer))
         // ── User library ──────────────────────────────────────────────────────
-        .route("/api/v1/library", get(user_library::list_library))
-        .route("/api/v1/library/{media_id}", post(user_library::add_to_library).delete(user_library::remove_from_library))
-        .route("/api/v1/library/{media_id}/status", get(user_library::get_library_status))
-        .route("/api/v1/library/bulk", post(user_library::bulk_library_operation))
+        // Static paths must come before parameterized paths
         .route("/api/v1/library/stats", get(user_library::get_library_stats))
+        .route("/api/v1/library/bulk", post(user_library::bulk_library_operation))
+        .route("/api/v1/library/check/{media_id}", get(user_library::get_library_status))
+        .route("/api/v1/library/by-media-id/{media_id}", delete(user_library::remove_from_library_by_media_id))
+        // Python-compat: POST /api/v1/library with body {media_id, catalog_type}
+        .route("/api/v1/library", get(user_library::list_library).post(user_library::add_to_library))
+        .route("/api/v1/library/{item_id}", get(user_library::get_library_item).post(user_library::add_to_library).delete(user_library::remove_from_library))
+        .route("/api/v1/library/{media_id}/status", get(user_library::get_library_status))
         // ── User catalogs ─────────────────────────────────────────────────────
+        // Static paths must come before parameterized paths
+        .route("/api/v1/user/catalogs/public", get(user_catalogs::list_public_catalogs))
+        .route("/api/v1/user/catalogs/subscribed", get(user_catalogs::list_subscribed_catalogs))
+        .route("/api/v1/user/catalogs/share/{uuid}", get(user_catalogs::get_catalog_by_share_link))
         .route("/api/v1/user/catalogs", get(user_catalogs::list_user_catalogs).post(user_catalogs::create_user_catalog))
-        .route("/api/v1/user/catalogs/{id}", get(user_catalogs::get_user_catalog).put(user_catalogs::update_user_catalog).delete(user_catalogs::delete_user_catalog))
+        .route("/api/v1/user/catalogs/{id}", get(user_catalogs::get_user_catalog).put(user_catalogs::update_user_catalog).patch(user_catalogs::update_user_catalog).delete(user_catalogs::delete_user_catalog))
+        .route("/api/v1/user/catalogs/{id}/items/reorder", put(user_catalogs::reorder_items))
         .route("/api/v1/user/catalogs/{id}/items", get(user_catalogs::list_catalog_items).post(user_catalogs::add_catalog_item))
         .route("/api/v1/user/catalogs/{id}/items/{media_id}", delete(user_catalogs::remove_catalog_item))
+        .route("/api/v1/user/catalogs/{id}/subscribe", post(user_catalogs::subscribe_catalog).delete(user_catalogs::unsubscribe_catalog))
+        .route("/api/v1/user/catalogs/{id}/subscribed", get(user_catalogs::check_subscription))
         // ── User management (admin) ───────────────────────────────────────────
         .route("/api/v1/users", get(user_management::list_users))
         .route("/api/v1/users/{user_id}", get(user_management::get_user).patch(user_management::update_user).delete(user_management::delete_user))
@@ -524,6 +647,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/users/{user_id}/send-upload-warning", post(user_management::send_upload_warning))
         // ── Watchlist ─────────────────────────────────────────────────────────
         .route("/api/v1/watchlist/providers", get(watchlist::get_providers))
+        .route("/api/v1/watchlist/{provider}/missing", get(user_library::get_missing_torrents))
+        .route("/api/v1/watchlist/{provider}/import/advanced", post(user_library::advanced_import_torrents))
+        .route("/api/v1/watchlist/{provider}/import", post(user_library::import_torrents))
+        .route("/api/v1/watchlist/{provider}/remove", post(user_library::remove_torrent_from_debrid))
+        .route("/api/v1/watchlist/{provider}/clear-all", post(user_library::clear_all_torrents_from_debrid))
         .route("/api/v1/watchlist/{provider}", get(watchlist::get_watchlist))
         // ── Integrations (Trakt/SIMKL + Telegram channels) ───────────────────
         .route("/api/v1/integrations", get(integrations::list_integrations))
@@ -547,13 +675,26 @@ pub fn router(state: Arc<AppState>) -> Router {
         // ── Middleware ───────────────────────────────────────────────────────
         .layer(axum::middleware::from_fn_with_state(
             Arc::clone(&state),
+            api_key_middleware,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::clone(&state),
+            stremio_auth_middleware,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::clone(&state),
             metrics_middleware,
         ))
         .layer(CompressionLayer::new())
         .layer(TimeoutLayer::with_status_code(
             axum::http::StatusCode::GATEWAY_TIMEOUT,
-            std::time::Duration::from_secs(30),
+            stream_timeout,
         ))
         .layer(make_trace_layer!())
-        .with_state(state)
+        .layer(CorsLayer::permissive())
+        .with_state(state);
+
+    Router::new()
+        .merge(api_router)
+        .nest_service("/static", ServeDir::new(resources_dir))
 }

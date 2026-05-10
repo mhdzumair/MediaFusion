@@ -80,48 +80,6 @@ fn forbidden() -> axum::response::Response {
     (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response()
 }
 
-// ─── Proxy helper ─────────────────────────────────────────────────────────────
-
-async fn proxy_to_python(
-    state: &AppState,
-    method: reqwest::Method,
-    path: &str,
-    headers: &HeaderMap,
-    body: Option<Value>,
-) -> axum::response::Response {
-    let py_url = match &state.config.python_proxy_url {
-        Some(u) => u.clone(),
-        None => {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"detail": "Background service unavailable"})),
-            )
-                .into_response();
-        }
-    };
-    let url = format!("{py_url}{path}");
-    let mut req = state.http.request(method, &url);
-    if let Some(auth) = headers.get("authorization") {
-        req = req.header("authorization", auth);
-    }
-    if let Some(b) = body {
-        req = req.json(&b);
-    }
-    match req.send().await {
-        Ok(r) => {
-            let status = StatusCode::from_u16(r.status().as_u16())
-                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-            let body: Value = r.json().await.unwrap_or(json!({}));
-            (status, Json(body)).into_response()
-        }
-        Err(e) => (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({"detail": e.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
 // ─── Query / Request types ────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -365,60 +323,154 @@ pub async fn get_table_schema(
         return forbidden();
     }
 
-    // Column info
-    let columns = sqlx::query_as::<_, (String, String, bool, Option<String>)>(
-        r#"SELECT column_name, data_type, is_nullable = 'YES' as nullable, column_default
-           FROM information_schema.columns
-           WHERE table_name = $1 AND table_schema = 'public'
-           ORDER BY ordinal_position"#,
-    )
-    .bind(&table_name)
-    .fetch_all(&state.pool_ro)
-    .await
-    .unwrap_or_default();
+    // Run all queries concurrently
+    let (col_rows, idx_rows, fk_rows, pk_rows, fk_col_rows, row_count, size_human) = tokio::join!(
+        // columns
+        sqlx::query_as::<_, (String, String, bool, Option<String>)>(
+            r#"SELECT column_name, data_type,
+                      is_nullable = 'YES',
+                      column_default
+               FROM information_schema.columns
+               WHERE table_name = $1 AND table_schema = 'public'
+               ORDER BY ordinal_position"#,
+        )
+        .bind(&table_name)
+        .fetch_all(&state.pool_ro),
+        // indexes with columns via pg_catalog
+        sqlx::query_as::<_, (String, bool, bool, String, String)>(
+            r#"SELECT
+                   i.relname,
+                   ix.indisunique,
+                   ix.indisprimary,
+                   am.amname,
+                   string_agg(a.attname, ',' ORDER BY k.ord)
+               FROM pg_class t
+               JOIN pg_index ix ON t.oid = ix.indrelid
+               JOIN pg_class i ON ix.indexrelid = i.oid
+               JOIN pg_am am ON i.relam = am.oid
+               JOIN pg_namespace n ON t.relnamespace = n.oid
+               JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+               JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum AND k.attnum > 0
+               WHERE t.relname = $1 AND n.nspname = 'public'
+               GROUP BY i.relname, ix.indisunique, ix.indisprimary, am.amname"#,
+        )
+        .bind(&table_name)
+        .fetch_all(&state.pool_ro),
+        // foreign key constraints
+        sqlx::query_as::<_, (String, String, String, String)>(
+            r#"SELECT
+                   tc.constraint_name,
+                   string_agg(kcu.column_name, ',' ORDER BY kcu.ordinal_position),
+                   ccu.table_name,
+                   string_agg(ccu.column_name, ',' ORDER BY kcu.ordinal_position)
+               FROM information_schema.table_constraints tc
+               JOIN information_schema.key_column_usage kcu
+                   ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+               JOIN information_schema.constraint_column_usage ccu
+                   ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
+               WHERE tc.table_name = $1 AND tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
+               GROUP BY tc.constraint_name, ccu.table_name"#,
+        )
+        .bind(&table_name)
+        .fetch_all(&state.pool_ro),
+        // primary key columns
+        sqlx::query_as::<_, (String,)>(
+            r#"SELECT kcu.column_name
+               FROM information_schema.table_constraints tc
+               JOIN information_schema.key_column_usage kcu
+                   ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+               WHERE tc.table_name = $1 AND tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public'"#,
+        )
+        .bind(&table_name)
+        .fetch_all(&state.pool_ro),
+        // foreign key column names (to mark is_foreign_key on columns)
+        sqlx::query_as::<_, (String, String, String)>(
+            r#"SELECT kcu.column_name, ccu.table_name, ccu.column_name
+               FROM information_schema.table_constraints tc
+               JOIN information_schema.key_column_usage kcu
+                   ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+               JOIN information_schema.constraint_column_usage ccu
+                   ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
+               WHERE tc.table_name = $1 AND tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'"#,
+        )
+        .bind(&table_name)
+        .fetch_all(&state.pool_ro),
+        // row count + size
+        async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT n_live_tup FROM pg_stat_user_tables WHERE relname = $1",
+            )
+            .bind(&table_name)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None)
+            .unwrap_or(0)
+        },
+        async {
+            sqlx::query_scalar::<_, String>(
+                "SELECT pg_size_pretty(pg_total_relation_size(quote_ident($1)))",
+            )
+            .bind(&table_name)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None)
+            .unwrap_or_else(|| "0 bytes".to_string())
+        },
+    );
 
-    // Index info
-    let indexes = sqlx::query_as::<_, (String, bool, bool, String)>(
-        r#"SELECT indexname, indisunique, indisprimary,
-                  pg_get_indexdef(indexrelid) as indexdef
-           FROM pg_indexes
-           JOIN pg_index ON pg_index.indexrelid = (SELECT oid FROM pg_class WHERE relname = pg_indexes.indexname LIMIT 1)
-           WHERE tablename = $1 AND schemaname = 'public'"#,
-    )
-    .bind(&table_name)
-    .fetch_all(&state.pool_ro)
-    .await
-    .unwrap_or_default();
+    let col_rows = col_rows.unwrap_or_default();
+    let idx_rows = idx_rows.unwrap_or_default();
+    let fk_rows = fk_rows.unwrap_or_default();
+    let pk_rows = pk_rows.unwrap_or_default();
+    let fk_col_rows = fk_col_rows.unwrap_or_default();
 
-    let row_count: i64 = sqlx::query_scalar::<_, i64>(
-        "SELECT n_live_tup FROM pg_stat_user_tables WHERE relname = $1",
-    )
-    .bind(&table_name)
-    .fetch_optional(&state.pool_ro)
-    .await
-    .unwrap_or(None)
-    .unwrap_or(0);
+    let pk_cols: std::collections::HashSet<String> = pk_rows.into_iter().map(|(c,)| c).collect();
+    let fk_col_map: std::collections::HashMap<String, String> = fk_col_rows
+        .into_iter()
+        .map(|(col, ref_tbl, ref_col)| (col, format!("{ref_tbl}.{ref_col}")))
+        .collect();
 
-    let col_items: Vec<Value> = columns
+    let col_items: Vec<Value> = col_rows
         .into_iter()
         .map(|(name, dtype, nullable, default)| {
+            let is_pk = pk_cols.contains(&name);
+            let fk_ref = fk_col_map.get(&name).cloned();
             json!({
                 "name": name,
                 "data_type": dtype,
                 "is_nullable": nullable,
                 "default_value": default,
+                "is_primary_key": is_pk,
+                "is_foreign_key": fk_ref.is_some(),
+                "foreign_key_ref": fk_ref,
             })
         })
         .collect();
 
-    let idx_items: Vec<Value> = indexes
+    let idx_items: Vec<Value> = idx_rows
         .into_iter()
-        .map(|(name, is_unique, is_primary, def)| {
+        .map(|(name, is_unique, is_primary, index_type, cols_str)| {
+            let cols: Vec<&str> = cols_str.split(',').collect();
             json!({
                 "name": name,
+                "columns": cols,
                 "is_unique": is_unique,
                 "is_primary": is_primary,
-                "definition": def,
+                "index_type": index_type,
+            })
+        })
+        .collect();
+
+    let fk_items: Vec<Value> = fk_rows
+        .into_iter()
+        .map(|(name, cols_str, ref_table, ref_cols_str)| {
+            let cols: Vec<&str> = cols_str.split(',').collect();
+            let ref_cols: Vec<&str> = ref_cols_str.split(',').collect();
+            json!({
+                "name": name,
+                "columns": cols,
+                "referenced_table": ref_table,
+                "referenced_columns": ref_cols,
             })
         })
         .collect();
@@ -428,7 +480,9 @@ pub async fn get_table_schema(
         "schema_name": "public",
         "columns": col_items,
         "indexes": idx_items,
+        "foreign_keys": fk_items,
         "row_count": row_count,
+        "size_human": size_human,
     }))
     .into_response()
 }
@@ -457,15 +511,30 @@ pub async fn get_table_data(
     let per_page = params.per_page.unwrap_or(25).clamp(1, 100);
     let offset = (page - 1) * per_page;
 
-    let sort_col = params.sort_by.as_deref().unwrap_or("id");
-    let sort_order = if params.sort_order.as_deref() == Some("asc") {
-        "ASC"
-    } else {
-        "DESC"
-    };
+    // Fetch column names to determine a valid sort column and populate the columns field
+    let col_names: Vec<String> = sqlx::query_scalar(
+        "SELECT column_name FROM information_schema.columns \
+         WHERE table_name = $1 AND table_schema = 'public' ORDER BY ordinal_position",
+    )
+    .bind(&table_name)
+    .fetch_all(&state.pool_ro)
+    .await
+    .unwrap_or_default();
 
-    // Validate sort column (only alphanumeric + underscore)
-    if !sort_col.chars().all(|c| c.is_alphanumeric() || c == '_') {
+    if col_names.is_empty() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Table not found or has no columns"})),
+        )
+            .into_response();
+    }
+
+    // Determine sort column: use requested, fall back to 'id', then first indexed column
+    let requested_sort = params.sort_by.as_deref().unwrap_or("id");
+    if !requested_sort
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_')
+    {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"detail": "Invalid sort column"})),
@@ -473,25 +542,49 @@ pub async fn get_table_data(
             .into_response();
     }
 
-    let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table_name}"))
-        .fetch_one(&state.pool_ro)
-        .await
-        .unwrap_or(0);
+    // Only sort if the requested column exists; otherwise use ctid (physical order, no sort cost)
+    let sort_col = if col_names.iter().any(|c| c == requested_sort) {
+        requested_sort.to_string()
+    } else {
+        "ctid".to_string()
+    };
 
-    let query = format!(
-        "SELECT row_to_json(t) FROM (SELECT * FROM {table_name} ORDER BY {sort_col} {sort_order} LIMIT {per_page} OFFSET {offset}) t"
+    let sort_order = if params.sort_order.as_deref() == Some("asc") {
+        "ASC"
+    } else {
+        "DESC"
+    };
+
+    let (total, rows) = tokio::join!(
+        async {
+            // Use stats estimate for large tables — exact COUNT(*) on 75M+ row tables is seconds
+            sqlx::query_scalar::<_, i64>(
+                "SELECT GREATEST(n_live_tup, 0) FROM pg_stat_user_tables WHERE relname = $1",
+            )
+            .bind(&table_name)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None)
+            .unwrap_or(0)
+        },
+        async {
+            let q = format!(
+                "SELECT row_to_json(t) FROM \
+                 (SELECT * FROM {table_name} ORDER BY {sort_col} {sort_order} \
+                 LIMIT {per_page} OFFSET {offset}) t"
+            );
+            sqlx::query_scalar::<_, Value>(&q)
+                .fetch_all(&state.pool_ro)
+                .await
+                .unwrap_or_default()
+        },
     );
-
-    let rows: Vec<Value> = sqlx::query_scalar::<_, Value>(&query)
-        .fetch_all(&state.pool_ro)
-        .await
-        .unwrap_or_default();
 
     let pages = (total + per_page - 1) / per_page;
 
     Json(json!({
         "table": table_name,
-        "columns": [],
+        "columns": col_names,
         "rows": rows,
         "total": total,
         "page": page,
@@ -764,15 +857,41 @@ pub async fn cleanup_orphans(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    proxy_to_python(
-        &state,
-        reqwest::Method::POST,
-        "/api/v1/admin/db/orphans/cleanup",
-        &headers,
-        None,
+    let result = sqlx::query(
+        "DELETE FROM stream_media_link sml \
+         WHERE NOT EXISTS (SELECT 1 FROM media m WHERE m.id = sml.media_id)",
     )
-    .await
+    .execute(&state.pool)
+    .await;
+
+    match result {
+        Ok(r) => {
+            Json(json!({"status": "success", "cleaned_rows": r.rows_affected()})).into_response()
+        }
+        Err(e) => {
+            tracing::error!("cleanup_orphans error: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": "Database error during orphan cleanup"})),
+            )
+                .into_response()
+        }
+    }
 }
+
+const ALLOWED_TABLES: &[&str] = &[
+    "media",
+    "stream",
+    "torrent_stream",
+    "http_stream",
+    "youtube_stream",
+    "acestream_stream",
+    "rss_feed",
+    "media_external_id",
+    "stream_media_link",
+    "users",
+    "user_profiles",
+];
 
 /// POST /api/v1/admin/db/export/table/{table_name}
 pub async fn export_table(
@@ -783,8 +902,28 @@ pub async fn export_table(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    let path = format!("/api/v1/admin/db/export/table/{table_name}");
-    proxy_to_python(&state, reqwest::Method::POST, &path, &headers, None).await
+
+    if !ALLOWED_TABLES.contains(&table_name.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Table not allowed for export"})),
+        )
+            .into_response();
+    }
+
+    let query = format!("SELECT row_to_json(t) FROM {table_name} t LIMIT 10000");
+    let rows: Vec<Value> = sqlx::query_scalar::<_, Value>(&query)
+        .fetch_all(&state.pool_ro)
+        .await
+        .unwrap_or_default();
+
+    let row_count = rows.len();
+    Json(json!({
+        "table": table_name,
+        "row_count": row_count,
+        "rows": rows,
+    }))
+    .into_response()
 }
 
 /// POST /api/v1/admin/db/import/table
@@ -796,14 +935,73 @@ pub async fn import_table(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    proxy_to_python(
-        &state,
-        reqwest::Method::POST,
-        "/api/v1/admin/db/import/table",
-        &headers,
-        Some(body),
-    )
-    .await
+
+    let table = match body.get("table").and_then(|v| v.as_str()) {
+        Some(t) => t.to_string(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Missing 'table' field"})),
+            )
+                .into_response();
+        }
+    };
+
+    if !ALLOWED_TABLES.contains(&table.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Table not allowed for import"})),
+        )
+            .into_response();
+    }
+
+    let rows = match body.get("rows").and_then(|v| v.as_array()) {
+        Some(r) if !r.is_empty() => r.clone(),
+        Some(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "rows array is empty"})),
+            )
+                .into_response();
+        }
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Missing or invalid 'rows' field"})),
+            )
+                .into_response();
+        }
+    };
+
+    let row_count = rows.len();
+    let rows_json = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string());
+    let sql = format!(
+        "INSERT INTO {table} SELECT * FROM json_populate_recordset(null::{table}, $1::json)"
+    );
+
+    match sqlx::query(&sql)
+        .bind(&rows_json)
+        .execute(&state.pool)
+        .await
+    {
+        Ok(_) => (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "detail": "Import accepted",
+                "table": table,
+                "row_count": row_count,
+            })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("import_table {table}: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": e.to_string()})),
+            )
+                .into_response()
+        }
+    }
 }
 
 /// GET /api/v1/admin/db/indexes
@@ -911,4 +1109,501 @@ pub async fn rebuild_indexes(
         Json(json!({"detail": "Provide table_name or index_name"})),
     )
         .into_response()
+}
+
+// ── Legacy /api/v1/admin/db/ path alias stubs ─────────────────────────────────
+
+/// GET /api/v1/admin/db/tables/{table}/export — alias for export_table with different param order
+pub async fn export_table_by_path(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(table): Path<String>,
+    Query(_params): Query<serde_json::Value>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return (StatusCode::FORBIDDEN, Json(json!({"error": "Forbidden"}))).into_response();
+    }
+
+    if !ALLOWED_TABLES.contains(&table.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Table not allowed for export"})),
+        )
+            .into_response();
+    }
+
+    let query = format!("SELECT row_to_json(t) FROM {table} t LIMIT 10000");
+    let rows: Vec<Value> = sqlx::query_scalar::<_, Value>(&query)
+        .fetch_all(&state.pool_ro)
+        .await
+        .unwrap_or_default();
+
+    let row_count = rows.len();
+    Json(json!({
+        "table": table,
+        "row_count": row_count,
+        "rows": rows,
+    }))
+    .into_response()
+}
+
+/// GET /api/v1/admin/db/orphans — combined orphan detection
+pub async fn detect_orphans_combined(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return (StatusCode::FORBIDDEN, Json(json!({"error": "Forbidden"}))).into_response();
+    }
+
+    // 30s hard cap — NOT EXISTS on millions of rows can still be slow without FK indexes
+    let timeout = "SET LOCAL statement_timeout = '30s'";
+    let (orphan_sml_by_media, orphan_sml_by_stream, orphan_http_streams) = tokio::join!(
+        async {
+            let mut tx = state.pool_ro.begin().await.ok()?;
+            sqlx::query(timeout).execute(&mut *tx).await.ok()?;
+            let n: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM stream_media_link sml \
+                 WHERE NOT EXISTS (SELECT 1 FROM media m WHERE m.id = sml.media_id)",
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .ok()?;
+            Some(n)
+        },
+        async {
+            let mut tx = state.pool_ro.begin().await.ok()?;
+            sqlx::query(timeout).execute(&mut *tx).await.ok()?;
+            let n: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM stream_media_link sml \
+                 WHERE NOT EXISTS (SELECT 1 FROM stream s WHERE s.id = sml.stream_id)",
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .ok()?;
+            Some(n)
+        },
+        async {
+            let mut tx = state.pool_ro.begin().await.ok()?;
+            sqlx::query(timeout).execute(&mut *tx).await.ok()?;
+            let n: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM http_stream hs \
+                 WHERE NOT EXISTS (SELECT 1 FROM stream s WHERE s.id = hs.stream_id)",
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .ok()?;
+            Some(n)
+        },
+    );
+    let orphan_sml_by_media = orphan_sml_by_media.unwrap_or(-1);
+    let orphan_sml_by_stream = orphan_sml_by_stream.unwrap_or(-1);
+    let orphan_http_streams = orphan_http_streams.unwrap_or(-1);
+
+    let known = [
+        orphan_sml_by_media,
+        orphan_sml_by_stream,
+        orphan_http_streams,
+    ];
+    let total: i64 = known.iter().filter(|&&v| v >= 0).sum();
+    let timed_out = known.iter().any(|&v| v < 0);
+    Json(json!({
+        "orphan_stream_media_links_by_media": orphan_sml_by_media,
+        "orphan_stream_media_links_by_stream": orphan_sml_by_stream,
+        "orphan_http_streams": orphan_http_streams,
+        "total": total,
+        "timed_out": timed_out,
+    }))
+    .into_response()
+}
+
+/// POST /api/v1/admin/db/slow-queries/reset
+pub async fn reset_slow_queries(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return (StatusCode::FORBIDDEN, Json(json!({"error": "Forbidden"}))).into_response();
+    }
+    match sqlx::query("SELECT pg_stat_reset()")
+        .execute(&state.pool)
+        .await
+    {
+        Ok(_) => {
+            Json(json!({"status": "success", "message": "Slow query stats reset"})).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"detail": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+/// POST /api/v1/admin/db/bulk/delete
+pub async fn bulk_delete(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return (StatusCode::FORBIDDEN, Json(json!({"error": "Forbidden"}))).into_response();
+    }
+
+    const ALLOWED_TABLES: &[&str] = &["media", "streams", "torrent_streams"];
+
+    let table = match body.get("table").and_then(|v| v.as_str()) {
+        Some(t) => t.to_string(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Missing 'table' field"})),
+            )
+                .into_response()
+        }
+    };
+
+    if !ALLOWED_TABLES.contains(&table.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Table not allowed for bulk delete"})),
+        )
+            .into_response();
+    }
+
+    let ids: Vec<i64> = match body.get("ids").and_then(|v| v.as_array()) {
+        Some(arr) => arr.iter().filter_map(|v| v.as_i64()).collect(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Missing or invalid 'ids' field"})),
+            )
+                .into_response()
+        }
+    };
+
+    if ids.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "'ids' must not be empty"})),
+        )
+            .into_response();
+    }
+
+    let sql = format!("DELETE FROM {} WHERE id = ANY($1)", table);
+    match sqlx::query(&sql).bind(&ids).execute(&state.pool).await {
+        Ok(r) => Json(json!({
+            "status": "success",
+            "deleted_count": r.rows_affected(),
+            "table": table,
+        }))
+        .into_response(),
+        Err(e) => {
+            tracing::error!("bulk_delete error: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": e.to_string()})),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// POST /api/v1/admin/db/bulk/update
+pub async fn bulk_update(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return (StatusCode::FORBIDDEN, Json(json!({"error": "Forbidden"}))).into_response();
+    }
+
+    // Only allow specific tables and columns
+    let allowed_columns: std::collections::HashMap<&str, &[&str]> = [
+        ("media", ["is_blocked"].as_slice()),
+        ("streams", ["is_blocked"].as_slice()),
+    ]
+    .iter()
+    .cloned()
+    .collect();
+
+    let table = match body.get("table").and_then(|v| v.as_str()) {
+        Some(t) => t.to_string(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Missing 'table' field"})),
+            )
+                .into_response()
+        }
+    };
+
+    let allowed_cols = match allowed_columns.get(table.as_str()) {
+        Some(cols) => *cols,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Table not allowed for bulk update"})),
+            )
+                .into_response()
+        }
+    };
+
+    let ids: Vec<i64> = match body.get("ids").and_then(|v| v.as_array()) {
+        Some(arr) => arr.iter().filter_map(|v| v.as_i64()).collect(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Missing or invalid 'ids' field"})),
+            )
+                .into_response()
+        }
+    };
+
+    let updates = match body.get("updates").and_then(|v| v.as_object()) {
+        Some(u) => u.clone(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Missing or invalid 'updates' field"})),
+            )
+                .into_response()
+        }
+    };
+
+    if ids.is_empty() || updates.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "'ids' and 'updates' must not be empty"})),
+        )
+            .into_response();
+    }
+
+    let mut total_updated: u64 = 0;
+    for (col, val) in &updates {
+        if !allowed_cols.contains(&col.as_str()) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": format!("Column '{}' not allowed for this table", col)})),
+            )
+                .into_response();
+        }
+
+        let bool_val = match val.as_bool() {
+            Some(b) => b,
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"detail": format!("Value for '{}' must be a boolean", col)})),
+                )
+                    .into_response()
+            }
+        };
+
+        let sql = format!("UPDATE {} SET {} = $1 WHERE id = ANY($2)", table, col);
+        match sqlx::query(&sql)
+            .bind(bool_val)
+            .bind(&ids)
+            .execute(&state.pool)
+            .await
+        {
+            Ok(r) => total_updated += r.rows_affected(),
+            Err(e) => {
+                tracing::error!("bulk_update error: {e}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"detail": e.to_string()})),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    Json(json!({
+        "status": "success",
+        "updated_count": total_updated,
+    }))
+    .into_response()
+}
+
+/// POST /api/v1/admin/db/import/preview
+pub async fn import_preview(
+    headers: HeaderMap,
+    State(_state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &_state.config.secret_key_raw).is_none() {
+        return (StatusCode::FORBIDDEN, Json(json!({"error": "Forbidden"}))).into_response();
+    }
+
+    let table = match body.get("table").and_then(|v| v.as_str()) {
+        Some(t) => t.to_string(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Missing 'table' field"})),
+            )
+                .into_response();
+        }
+    };
+
+    if !ALLOWED_TABLES.contains(&table.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Table not allowed for import"})),
+        )
+            .into_response();
+    }
+
+    let rows = body
+        .get("rows")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let row_count = rows.len();
+    let preview: Vec<_> = rows.iter().take(5).cloned().collect();
+
+    Json(json!({
+        "table": table,
+        "row_count": row_count,
+        "preview": preview,
+        "status": "preview_only",
+    }))
+    .into_response()
+}
+
+/// POST /api/v1/admin/db/import/execute
+pub async fn import_execute(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return (StatusCode::FORBIDDEN, Json(json!({"error": "Forbidden"}))).into_response();
+    }
+
+    let table = match body.get("table").and_then(|v| v.as_str()) {
+        Some(t) => t.to_string(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Missing 'table' field"})),
+            )
+                .into_response();
+        }
+    };
+
+    if !ALLOWED_TABLES.contains(&table.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Table not allowed for import"})),
+        )
+            .into_response();
+    }
+
+    let rows = match body.get("rows").and_then(|v| v.as_array()) {
+        Some(r) if !r.is_empty() => r.clone(),
+        Some(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "rows array is empty"})),
+            )
+                .into_response();
+        }
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Missing or invalid 'rows' field"})),
+            )
+                .into_response();
+        }
+    };
+
+    let row_count = rows.len();
+    let rows_json = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string());
+    let sql = format!(
+        "INSERT INTO {table} SELECT * FROM json_populate_recordset(null::{table}, $1::json)"
+    );
+
+    match sqlx::query(&sql)
+        .bind(&rows_json)
+        .execute(&state.pool)
+        .await
+    {
+        Ok(_) => Json(json!({
+            "detail": "Import executed",
+            "table": table,
+            "row_count": row_count,
+        }))
+        .into_response(),
+        Err(e) => {
+            tracing::error!("import_execute {table}: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": e.to_string()})),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// GET /api/v1/admin/db/tables/{table}/rows/{id}/related
+pub async fn get_related_rows(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path((table, id)): Path<(String, i64)>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return (StatusCode::FORBIDDEN, Json(json!({"error": "Forbidden"}))).into_response();
+    }
+
+    if !ALLOWED_TABLES.contains(&table.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Table not allowed"})),
+        )
+            .into_response();
+    }
+
+    match table.as_str() {
+        "media" => {
+            let count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM stream_media_link WHERE media_id = $1")
+                    .bind(id)
+                    .fetch_one(&state.pool_ro)
+                    .await
+                    .unwrap_or(0);
+            Json(json!({
+                "table": table,
+                "id": id,
+                "related": {
+                    "stream_media_link": count,
+                }
+            }))
+            .into_response()
+        }
+        "stream" => {
+            let count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM stream_media_link WHERE stream_id = $1")
+                    .bind(id)
+                    .fetch_one(&state.pool_ro)
+                    .await
+                    .unwrap_or(0);
+            Json(json!({
+                "table": table,
+                "id": id,
+                "related": {
+                    "stream_media_link": count,
+                }
+            }))
+            .into_response()
+        }
+        _ => Json(json!({
+            "message": "Related rows lookup not supported for this table",
+            "table": table,
+            "id": id,
+        }))
+        .into_response(),
+    }
 }

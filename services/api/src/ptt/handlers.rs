@@ -1168,15 +1168,18 @@ pub fn add_defaults(p: &mut Parser) {
         // handle_volumes custom handler
         static RE: OnceCell<Regex> = OnceCell::new();
         let re = RE.get_or_init(|| compile_i(r"\bvol(?:ume)?[. -]*(\d{1,2})"));
-        let start_index = ctx.matched.get("year").map(|m| m.match_index).unwrap_or(0);
-        let search_str = &ctx.title[start_index.min(ctx.title.len())..];
+        let raw_idx = ctx.matched.get("year").map(|m| m.match_index).unwrap_or(0);
+        // match_index is a byte offset; floor it to the nearest char boundary so we
+        // never split a multi-byte character (e.g. Cyrillic, CJK).
+        let safe_idx = ctx.title.floor_char_boundary(raw_idx.min(ctx.title.len()));
+        let search_str = &ctx.title[safe_idx..];
         if let Ok(Some(caps)) = re.captures(search_str.as_bytes()) {
             if let Some(g1) = caps.get(1) {
                 let n_str = String::from_utf8_lossy(g1.as_bytes());
                 if let Ok(n) = n_str.parse::<i32>() {
                     let g0 = caps.get(0).unwrap();
                     let raw = String::from_utf8_lossy(g0.as_bytes()).into_owned();
-                    let idx = g0.start() + start_index;
+                    let idx = g0.start() + safe_idx;
                     ctx.matched.insert(
                         "volumes".into(),
                         MatchInfo {
@@ -1737,8 +1740,10 @@ pub fn add_defaults(p: &mut Parser) {
         let start_index = start_indexes.iter().copied().min().unwrap_or(0);
         let end_index = end_indexes.iter().copied().min().unwrap_or(ctx.title.len());
 
-        let beginning = &ctx.title[..end_index.min(ctx.title.len())];
-        let middle = &ctx.title[start_index.min(ctx.title.len())..end_index.min(ctx.title.len())];
+        let safe_end = end_index.min(ctx.title.len());
+        let safe_start = start_index.min(safe_end);
+        let beginning = &ctx.title[..safe_end];
+        let middle = &ctx.title[safe_start..safe_end];
 
         static BEG_RE: OnceCell<Regex> = OnceCell::new();
         static MID_RE: OnceCell<Regex> = OnceCell::new();

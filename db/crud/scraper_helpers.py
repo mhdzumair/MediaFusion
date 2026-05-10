@@ -1273,48 +1273,40 @@ async def _batch_get_or_create_reference_data(
     if not names:
         return {}
 
-    # Remove duplicates while preserving order
     unique_names = list(dict.fromkeys(names))
     result_map: dict[str, Any] = {}
     missing_names: list[str] = []
 
-    # Check Redis cache first
     for name in unique_names:
         cache_key = f"{cache_prefix}:{name}"
         cached_id = await REDIS_ASYNC_CLIENT.get(cache_key)
         if cached_id:
-            query = select(model_class).where(model_class.id == int(cached_id))
-            result = await session.exec(query)
+            result = await session.exec(select(model_class).where(model_class.id == int(cached_id)))
             obj = result.one_or_none()
             if obj:
                 result_map[name] = obj
-            else:
-                missing_names.append(name)
-        else:
-            missing_names.append(name)
+                continue
+        missing_names.append(name)
 
-    # Query database for missing items
     if missing_names:
-        query = select(model_class).where(model_class.name.in_(missing_names))
-        result = await session.exec(query)
-        existing = {obj.name: obj for obj in result.all()}
+        # Race-safe: INSERT ... ON CONFLICT DO NOTHING, then SELECT
+        insert_stmt = (
+            pg_insert(model_class)
+            .values([{"name": n} for n in missing_names])
+            .on_conflict_do_nothing(index_elements=["name"])
+        )
+        await session.execute(insert_stmt)
 
-        # Create missing items
-        to_create = [name for name in missing_names if name not in existing]
-        for name in to_create:
-            obj = model_class(name=name)
-            session.add(obj)
+        select_result = await session.exec(select(model_class).where(model_class.name.in_(missing_names)))
+        db_rows_by_name = {obj.name: obj for obj in select_result.all()}
+
+        for name in missing_names:
+            obj = db_rows_by_name.get(name)
+            if obj is None:
+                continue
             result_map[name] = obj
-
-        # Add existing items to result map
-        result_map.update(existing)
-
-        # Cache all items (existing and newly created)
-        await session.flush()
-        for name, obj in result_map.items():
-            if name in missing_names:  # Only cache if it was missing
-                cache_key = f"{cache_prefix}:{name}"
-                await REDIS_ASYNC_CLIENT.set(cache_key, str(obj.id), ex=86400)
+            cache_key = f"{cache_prefix}:{name}"
+            await REDIS_ASYNC_CLIENT.set(cache_key, str(obj.id), ex=86400)
 
     return result_map
 

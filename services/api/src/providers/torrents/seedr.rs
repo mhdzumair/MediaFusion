@@ -10,7 +10,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use super::ProviderError;
+use crate::providers::ProviderError;
 
 const BASE_URL: &str = "https://v2.seedr.cc/api/v0.1/p";
 const MAX_RETRIES: u32 = 3;
@@ -52,7 +52,6 @@ async fn api_post(
     handle_response(resp).await
 }
 
-#[allow(dead_code)]
 async fn api_delete(http: &Client, token: &str, path: &str) -> Result<(), ProviderError> {
     let url = format!("{BASE_URL}{path}");
     let resp = http.delete(&url).bearer_auth(token).send().await?;
@@ -488,4 +487,47 @@ pub async fn get_video_url(
         "Torrent is still downloading in Seedr. Please try again in a few minutes.",
         "torrent_not_downloaded.mp4",
     ))
+}
+
+/// Delete ALL tasks from the Seedr account.
+pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), ProviderError> {
+    let bearer = resolve_token(token);
+    let tasks = list_tasks(http, &bearer).await?;
+    for task in &tasks {
+        if let Some(id) = task["id"].as_i64() {
+            api_delete(http, &bearer, &format!("/tasks/{id}"))
+                .await
+                .ok();
+        }
+    }
+    Ok(())
+}
+
+/// Delete the task matching `info_hash` from Seedr.
+/// Returns `true` if found and deleted, `false` if not found.
+pub async fn delete_torrent_by_hash(
+    http: &Client,
+    token: &str,
+    info_hash: &str,
+) -> Result<bool, ProviderError> {
+    let bearer = resolve_token(token);
+    let tasks = list_tasks(http, &bearer).await?;
+    let hash_lower = info_hash.to_lowercase();
+
+    let task_id = tasks.iter().find_map(|t| {
+        let h = task_info_hash(t)?;
+        if h == hash_lower {
+            t["id"].as_i64()
+        } else {
+            None
+        }
+    });
+
+    match task_id {
+        None => Ok(false),
+        Some(id) => {
+            api_delete(http, &bearer, &format!("/tasks/{id}")).await?;
+            Ok(true)
+        }
+    }
 }

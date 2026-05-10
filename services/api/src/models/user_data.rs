@@ -1,6 +1,96 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// Mirrors Python's `SortingOption` (schema/config.py).
+/// Stored in `torrent_sorting_priority` as `{"k": "resolution", "d": "desc"}`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SortingOption {
+    #[serde(rename = "k", alias = "key")]
+    pub key: String,
+    #[serde(default = "default_sort_direction", rename = "d", alias = "direction")]
+    pub direction: String,
+}
+
+fn default_sort_direction() -> String {
+    "desc".to_string()
+}
+
+fn default_torrent_sorting_priority() -> Vec<Value> {
+    const KEYS: &[&str] = &[
+        "cached",
+        "resolution",
+        "quality",
+        "language",
+        "size",
+        "seeders",
+        "created_at",
+    ];
+    KEYS.iter()
+        .map(|k| serde_json::json!({"k": k, "d": "desc"}))
+        .collect()
+}
+
+fn default_language_sorting() -> Vec<Value> {
+    const LANGS: &[Option<&str>] = &[
+        Some("English"),
+        Some("Tamil"),
+        Some("Hindi"),
+        Some("Malayalam"),
+        Some("Kannada"),
+        Some("Telugu"),
+        Some("Chinese"),
+        Some("Russian"),
+        Some("Arabic"),
+        Some("Japanese"),
+        Some("Korean"),
+        Some("Taiwanese"),
+        Some("Latino"),
+        Some("French"),
+        Some("Spanish"),
+        Some("Portuguese"),
+        Some("Italian"),
+        Some("German"),
+        Some("Ukrainian"),
+        Some("Polish"),
+        Some("Czech"),
+        Some("Thai"),
+        Some("Indonesian"),
+        Some("Vietnamese"),
+        Some("Dutch"),
+        Some("Bengali"),
+        Some("Turkish"),
+        Some("Greek"),
+        Some("Swedish"),
+        Some("Romanian"),
+        Some("Hungarian"),
+        Some("Finnish"),
+        Some("Norwegian"),
+        Some("Danish"),
+        Some("Hebrew"),
+        Some("Lithuanian"),
+        Some("Punjabi"),
+        Some("Marathi"),
+        Some("Gujarati"),
+        Some("Bhojpuri"),
+        Some("Nepali"),
+        Some("Urdu"),
+        Some("Tagalog"),
+        Some("Filipino"),
+        Some("Malay"),
+        Some("Mongolian"),
+        Some("Armenian"),
+        Some("Georgian"),
+        None,
+    ];
+    LANGS
+        .iter()
+        .map(|l| match l {
+            Some(s) => Value::String(s.to_string()),
+            None => Value::Null,
+        })
+        .collect()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -12,6 +102,15 @@ fn default_nudity_filter() -> Vec<String> {
 }
 fn default_cert_filter() -> Vec<String> {
     vec!["Adults+".to_string()]
+}
+fn default_quality_filter() -> Vec<String> {
+    // Mirrors Python's `list(const.QUALITY_GROUPS.keys())`
+    vec![
+        "BluRay/UHD".to_string(),
+        "WEB/HD".to_string(),
+        "DVD/TV/SAT".to_string(),
+        "CAM/Screener".to_string(),
+    ]
 }
 fn default_priority() -> i32 {
     1
@@ -234,7 +333,12 @@ pub struct UserData {
     pub selected_resolutions: Vec<Option<String>>,
     #[serde(default, rename = "hf", alias = "hdr_filter", skip_serializing)]
     pub hdr_filter: Vec<String>,
-    #[serde(default, rename = "qf", alias = "quality_filter", skip_serializing)]
+    #[serde(
+        default = "default_quality_filter",
+        rename = "qf",
+        alias = "quality_filter",
+        skip_serializing
+    )]
     pub quality_filter: Vec<String>,
 
     // Stream display / combining
@@ -330,13 +434,18 @@ pub struct UserData {
     #[serde(default, rename = "ed", alias = "enable_discover", skip_serializing)]
     pub enable_discover: bool,
     #[serde(
-        default,
+        default = "default_torrent_sorting_priority",
         rename = "tsp",
         alias = "torrent_sorting_priority",
         skip_serializing
     )]
     pub torrent_sorting_priority: Vec<Value>,
-    #[serde(default, rename = "ls", alias = "language_sorting", skip_serializing)]
+    #[serde(
+        default = "default_language_sorting",
+        rename = "ls",
+        alias = "language_sorting",
+        skip_serializing
+    )]
     pub language_sorting: Vec<Value>,
 }
 
@@ -358,7 +467,7 @@ impl Default for UserData {
             certification_filter: default_cert_filter(),
             selected_resolutions: Vec::new(),
             hdr_filter: Vec::new(),
-            quality_filter: Vec::new(),
+            quality_filter: default_quality_filter(),
             max_streams: 25,
             max_streams_per_resolution: 10,
             stream_type_grouping: default_stream_type_grouping(),
@@ -382,8 +491,8 @@ impl Default for UserData {
             stream_name_filter_use_regex: false,
             include_anime: true,
             enable_discover: false,
-            torrent_sorting_priority: Vec::new(),
-            language_sorting: Vec::new(),
+            torrent_sorting_priority: default_torrent_sorting_priority(),
+            language_sorting: default_language_sorting(),
         }
     }
 }
@@ -415,6 +524,19 @@ fn short_name(service: &str) -> Option<&'static str> {
 // ─── UserData methods ─────────────────────────────────────────────────────────
 
 impl UserData {
+    /// True when MediaFlow is configured with both proxy_url and api_password.
+    pub fn has_mediaflow_config(&self) -> bool {
+        self.mediaflow_config
+            .as_ref()
+            .map(|m| {
+                m.proxy_url
+                    .as_deref()
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    }
+
     /// All enabled streaming providers (merges legacy `sp` into `sps`).
     pub fn all_providers(&self) -> Vec<&StreamingProvider> {
         let mut providers: Vec<&StreamingProvider> = self
@@ -497,40 +619,8 @@ impl UserData {
         stream_groups: &std::collections::HashMap<&str, Vec<T>>,
     ) -> Vec<T> {
         if self.stream_type_grouping == "mixed" {
-            // Build ordered lists of non-empty groups
-            let mut iters: Vec<std::slice::Iter<'_, T>> = self
-                .stream_type_order
-                .iter()
-                .filter_map(|t| {
-                    let lst = stream_groups.get(t.as_str())?;
-                    if lst.is_empty() {
-                        None
-                    } else {
-                        Some(lst.iter())
-                    }
-                })
-                .collect();
-
-            let mut combined: Vec<T> = Vec::new();
-            loop {
-                if iters.is_empty() {
-                    break;
-                }
-                let mut exhausted = Vec::new();
-                for (i, it) in iters.iter_mut().enumerate() {
-                    match it.next() {
-                        Some(v) => combined.push(v.clone()),
-                        None => exhausted.push(i),
-                    }
-                }
-                for i in exhausted.into_iter().rev() {
-                    let _ = iters.remove(i);
-                }
-            }
-            combined.truncate(self.max_streams as usize);
-            combined
-        } else {
-            // "separate": concatenate in sto order
+            // "mixed" mode is handled by the unified-sort path in stream.rs before reaching here.
+            // This fallback concatenates in type order and applies the total cap.
             let mut combined: Vec<T> = Vec::new();
             for stream_type in &self.stream_type_order {
                 if let Some(lst) = stream_groups.get(stream_type.as_str()) {
@@ -538,6 +628,16 @@ impl UserData {
                 }
             }
             combined.truncate(self.max_streams as usize);
+            combined
+        } else {
+            // "separate": concatenate in stream_type_order.
+            // Each type was already capped at max_streams before this call — no re-cap.
+            let mut combined: Vec<T> = Vec::new();
+            for stream_type in &self.stream_type_order {
+                if let Some(lst) = stream_groups.get(stream_type.as_str()) {
+                    combined.extend_from_slice(lst);
+                }
+            }
             combined
         }
     }

@@ -127,6 +127,13 @@ class Stream(TimestampMixin, table=True):
             "uploader_user_id",
             postgresql_where="uploader_user_id IS NOT NULL",
         ),
+        # GIN trigram index for fast ILIKE search on stream name
+        Index(
+            "idx_stream_name_trgm",
+            "name",
+            postgresql_ops={"name": "gin_trgm_ops"},
+            postgresql_using="gin",
+        ),
     )
 
     id: int = Field(default=None, primary_key=True)

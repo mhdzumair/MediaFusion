@@ -2,6 +2,7 @@
 
 import json
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -21,170 +22,102 @@ from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.const import ADULT_GENRE_NAMES
 
 
+async def _get_or_create_by_name(session: AsyncSession, model, name: str):
+    """Race-safe upsert for reference tables that have a UNIQUE name column."""
+    result = await session.exec(select(model).where(model.name == name))
+    row = result.one_or_none()
+    if row is not None:
+        return row
+    stmt = pg_insert(model).values(name=name).on_conflict_do_nothing(index_elements=["name"])
+    await session.execute(stmt)
+    result = await session.exec(select(model).where(model.name == name))
+    return result.one()
+
+
 async def get_or_create_genre(session: AsyncSession, name: str) -> Genre:
-    """Get or create a genre by name."""
-    query = select(Genre).where(Genre.name == name)
-    result = await session.exec(query)
-    genre = result.one_or_none()
-
-    if not genre:
-        genre = Genre(name=name)
-        session.add(genre)
-        await session.flush()
-
-    return genre
+    return await _get_or_create_by_name(session, Genre, name)
 
 
 async def get_or_create_catalog(session: AsyncSession, name: str) -> Catalog:
-    """Get or create a catalog by name with caching."""
     cache_key = f"catalog:{name}"
     cached_id = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_id:
-        query = select(Catalog).where(Catalog.id == int(cached_id))
-        result = await session.exec(query)
+        result = await session.exec(select(Catalog).where(Catalog.id == int(cached_id)))
         catalog = result.one_or_none()
         if catalog:
             return catalog
 
-    query = select(Catalog).where(Catalog.name == name)
-    result = await session.exec(query)
-    catalog = result.one_or_none()
-
-    if not catalog:
-        catalog = Catalog(name=name)
-        session.add(catalog)
-        await session.flush()
-
-    # Cache the ID
-    await REDIS_ASYNC_CLIENT.set(cache_key, str(catalog.id), ex=86400)  # 24h
-
+    catalog = await _get_or_create_by_name(session, Catalog, name)
+    await REDIS_ASYNC_CLIENT.set(cache_key, str(catalog.id), ex=86400)
     return catalog
 
 
 async def get_or_create_parental_certificate(session: AsyncSession, name: str) -> ParentalCertificate:
-    """Get or create a parental certificate by name."""
-    query = select(ParentalCertificate).where(ParentalCertificate.name == name)
-    result = await session.exec(query)
-    cert = result.one_or_none()
-
-    if not cert:
-        cert = ParentalCertificate(name=name)
-        session.add(cert)
-        await session.flush()
-
-    return cert
+    return await _get_or_create_by_name(session, ParentalCertificate, name)
 
 
 async def get_or_create_language(session: AsyncSession, name: str) -> Language:
-    """Get or create a language by name with caching."""
     cache_key = f"lang:{name}"
     cached_id = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_id:
-        query = select(Language).where(Language.id == int(cached_id))
-        result = await session.exec(query)
+        result = await session.exec(select(Language).where(Language.id == int(cached_id)))
         lang = result.one_or_none()
         if lang:
             return lang
 
-    query = select(Language).where(Language.name == name)
-    result = await session.exec(query)
-    lang = result.one_or_none()
-
-    if not lang:
-        lang = Language(name=name)
-        session.add(lang)
-        await session.flush()
-
-    # Cache the ID
-    await REDIS_ASYNC_CLIENT.set(cache_key, str(lang.id), ex=86400)  # 24h
-
+    lang = await _get_or_create_by_name(session, Language, name)
+    await REDIS_ASYNC_CLIENT.set(cache_key, str(lang.id), ex=86400)
     return lang
 
 
 async def get_or_create_audio_format(session: AsyncSession, name: str) -> AudioFormat:
-    """Get or create an audio format by name with caching."""
     if not name:
         name = "Unknown"
 
     cache_key = f"audio_format:{name}"
     cached_id = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_id:
-        query = select(AudioFormat).where(AudioFormat.id == int(cached_id))
-        result = await session.exec(query)
+        result = await session.exec(select(AudioFormat).where(AudioFormat.id == int(cached_id)))
         af = result.one_or_none()
         if af:
             return af
 
-    query = select(AudioFormat).where(AudioFormat.name == name)
-    result = await session.exec(query)
-    af = result.one_or_none()
-
-    if not af:
-        af = AudioFormat(name=name)
-        session.add(af)
-        await session.flush()
-
-    # Cache the ID
-    await REDIS_ASYNC_CLIENT.set(cache_key, str(af.id), ex=86400)  # 24h
-
+    af = await _get_or_create_by_name(session, AudioFormat, name)
+    await REDIS_ASYNC_CLIENT.set(cache_key, str(af.id), ex=86400)
     return af
 
 
 async def get_or_create_audio_channel(session: AsyncSession, name: str) -> AudioChannel:
-    """Get or create an audio channel by name with caching."""
     if not name:
         name = "Unknown"
 
     cache_key = f"audio_channel:{name}"
     cached_id = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_id:
-        query = select(AudioChannel).where(AudioChannel.id == int(cached_id))
-        result = await session.exec(query)
+        result = await session.exec(select(AudioChannel).where(AudioChannel.id == int(cached_id)))
         ch = result.one_or_none()
         if ch:
             return ch
 
-    query = select(AudioChannel).where(AudioChannel.name == name)
-    result = await session.exec(query)
-    ch = result.one_or_none()
-
-    if not ch:
-        ch = AudioChannel(name=name)
-        session.add(ch)
-        await session.flush()
-
-    # Cache the ID
-    await REDIS_ASYNC_CLIENT.set(cache_key, str(ch.id), ex=86400)  # 24h
-
+    ch = await _get_or_create_by_name(session, AudioChannel, name)
+    await REDIS_ASYNC_CLIENT.set(cache_key, str(ch.id), ex=86400)
     return ch
 
 
 async def get_or_create_hdr_format(session: AsyncSession, name: str) -> HDRFormat:
-    """Get or create an HDR format by name with caching."""
     if not name:
         name = "Unknown"
 
     cache_key = f"hdr_format:{name}"
     cached_id = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_id:
-        query = select(HDRFormat).where(HDRFormat.id == int(cached_id))
-        result = await session.exec(query)
+        result = await session.exec(select(HDRFormat).where(HDRFormat.id == int(cached_id)))
         hdr = result.one_or_none()
         if hdr:
             return hdr
 
-    query = select(HDRFormat).where(HDRFormat.name == name)
-    result = await session.exec(query)
-    hdr = result.one_or_none()
-
-    if not hdr:
-        hdr = HDRFormat(name=name)
-        session.add(hdr)
-        await session.flush()
-
-    # Cache the ID
-    await REDIS_ASYNC_CLIENT.set(cache_key, str(hdr.id), ex=86400)  # 24h
-
+    hdr = await _get_or_create_by_name(session, HDRFormat, name)
+    await REDIS_ASYNC_CLIENT.set(cache_key, str(hdr.id), ex=86400)
     return hdr
 
 

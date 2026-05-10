@@ -13,7 +13,6 @@
 ///   PATCH  /{contribution_id}/review   → review_contribution             (moderator)
 ///   PATCH  /{contribution_id}/flag-admin-review → flag_contribution_for_admin_review (moderator)
 ///   PATCH  /{contribution_id}/reject-approved  → reject_approved_contribution       (moderator)
-
 use std::sync::Arc;
 
 use axum::{
@@ -25,9 +24,17 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::json;
 use sha2::Sha256;
+
+fn bool_from_str<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+    let s: String = String::deserialize(d)?;
+    Ok(!matches!(
+        s.to_lowercase().as_str(),
+        "false" | "0" | "no" | ""
+    ))
+}
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -67,7 +74,7 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
 }
 
 async fn get_user_role(pool: &sqlx::PgPool, user_id: i64) -> Option<String> {
-    sqlx::query_scalar::<_, String>("SELECT role::text FROM users WHERE id = $1")
+    sqlx::query_scalar::<_, String>("SELECT LOWER(role::text) FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(pool)
         .await
@@ -91,7 +98,7 @@ pub struct ListContributionsQuery {
     pub contributor: Option<String>,
     pub uploader_query: Option<String>,
     pub reviewer_query: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "bool_from_str")]
     pub me_only: bool,
     #[serde(default = "default_page")]
     pub page: i64,
@@ -99,8 +106,12 @@ pub struct ListContributionsQuery {
     pub page_size: i64,
 }
 
-fn default_page() -> i64 { 1 }
-fn default_page_size() -> i64 { 20 }
+fn default_page() -> i64 {
+    1
+}
+fn default_page_size() -> i64 {
+    20
+}
 
 #[derive(Deserialize)]
 pub struct PendingListQuery {
@@ -151,7 +162,9 @@ pub struct ContributorsQuery {
     pub limit: i64,
 }
 
-fn default_limit() -> i64 { 80 }
+fn default_limit() -> i64 {
+    80
+}
 
 // ─── DB row helper ────────────────────────────────────────────────────────────
 
@@ -174,20 +187,36 @@ struct ContribRow {
 }
 
 async fn fetch_contrib_row(pool: &sqlx::PgPool, id: &str) -> Option<ContribRow> {
-    type RowTuple = (String, Option<i64>, String, Option<String>, serde_json::Value, String, Option<String>, Option<DateTime<Utc>>, Option<String>, bool, Option<String>, Option<DateTime<Utc>>, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>);
+    type RowTuple = (
+        String,
+        Option<i64>,
+        String,
+        Option<String>,
+        serde_json::Value,
+        String,
+        Option<String>,
+        Option<DateTime<Utc>>,
+        Option<String>,
+        bool,
+        Option<String>,
+        Option<DateTime<Utc>>,
+        Option<String>,
+        DateTime<Utc>,
+        Option<DateTime<Utc>>,
+    );
     let row = sqlx::query_as::<_, RowTuple>(
-            r#"SELECT id, user_id, contribution_type, target_id, data, status,
+        r#"SELECT id, user_id, contribution_type, target_id, data, status,
                       reviewed_by, reviewed_at, review_notes,
                       admin_review_requested, admin_review_requested_by,
                       admin_review_requested_at, admin_review_reason,
                       created_at, updated_at
                FROM contribution WHERE id = $1"#,
-        )
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()?;
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()?;
 
     Some(ContribRow {
         id: row.0,
@@ -266,10 +295,18 @@ pub async fn list_contributions(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool_ro, user_id)
+        .await
+        .unwrap_or_default();
     let is_privileged = is_mod_or_admin(&role);
     let show_all = is_privileged && !params.me_only;
 
@@ -300,32 +337,19 @@ pub async fn list_contributions(
     }
 
     if !show_all {
-        count_sql.push_str(&format!(" AND user_id = ${idx}"));
-        fetch_sql.push_str(&format!(" AND user_id = ${idx}"));
-        bind_values.push(json!(user_id));
-        idx += 1;
+        push_condition!(format!("user_id = ${idx}"), user_id);
     }
-
     if let Some(ref ct) = params.contribution_type {
-        count_sql.push_str(&format!(" AND contribution_type = ${idx}"));
-        fetch_sql.push_str(&format!(" AND contribution_type = ${idx}"));
-        bind_values.push(json!(ct));
-        idx += 1;
+        push_condition!(format!("contribution_type = ${idx}"), ct.clone());
     }
-
     if let Some(ref cs) = params.contribution_status {
-        count_sql.push_str(&format!(" AND status = ${idx}"));
-        fetch_sql.push_str(&format!(" AND status = ${idx}"));
-        bind_values.push(json!(cs));
-        idx += 1;
+        push_condition!(format!("status = ${idx}"), cs.clone());
     }
 
     fetch_sql.push_str(&format!(
         " ORDER BY created_at DESC LIMIT ${idx} OFFSET ${}",
         idx + 1
     ));
-    let limit_idx = idx;
-    let offset_idx = idx + 1;
 
     // Build and execute count query
     let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
@@ -335,7 +359,23 @@ pub async fn list_contributions(
     let total: i64 = cq.fetch_one(&state.pool_ro).await.unwrap_or(0);
 
     // Build and execute fetch query
-    type ContribTuple = (String, Option<i64>, String, Option<String>, serde_json::Value, String, Option<String>, Option<DateTime<Utc>>, Option<String>, bool, Option<String>, Option<DateTime<Utc>>, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>);
+    type ContribTuple = (
+        String,
+        Option<i64>,
+        String,
+        Option<String>,
+        serde_json::Value,
+        String,
+        Option<String>,
+        Option<DateTime<Utc>>,
+        Option<String>,
+        bool,
+        Option<String>,
+        Option<DateTime<Utc>>,
+        Option<String>,
+        DateTime<Utc>,
+        Option<DateTime<Utc>>,
+    );
     let mut fq = sqlx::query_as::<_, ContribTuple>(&fetch_sql);
     for v in &bind_values {
         fq = fq.bind(v.clone());
@@ -384,7 +424,13 @@ pub async fn get_contribution_stats(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contribution WHERE user_id = $1")
@@ -394,7 +440,7 @@ pub async fn get_contribution_stats(
         .unwrap_or(0);
 
     let pending: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM contribution WHERE user_id = $1 AND status = 'pending'",
+        "SELECT COUNT(*) FROM contribution WHERE user_id = $1 AND status = 'PENDING'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
@@ -402,7 +448,7 @@ pub async fn get_contribution_stats(
     .unwrap_or(0);
 
     let approved: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM contribution WHERE user_id = $1 AND status = 'approved'",
+        "SELECT COUNT(*) FROM contribution WHERE user_id = $1 AND status = 'APPROVED'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
@@ -410,23 +456,22 @@ pub async fn get_contribution_stats(
     .unwrap_or(0);
 
     let rejected: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM contribution WHERE user_id = $1 AND status = 'rejected'",
+        "SELECT COUNT(*) FROM contribution WHERE user_id = $1 AND status = 'REJECTED'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
 
-    let stream_total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(&state.pool_ro)
-    .await
-    .unwrap_or(0);
+    let stream_total: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
 
     let stream_pending: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'pending'",
+        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'PENDING'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
@@ -442,14 +487,23 @@ pub async fn get_contribution_stats(
     .unwrap_or(0);
 
     let stream_rejected: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'rejected'",
+        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'REJECTED'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
 
-    let contribution_types = ["metadata", "stream", "torrent", "telegram", "youtube", "nzb", "http", "acestream"];
+    let contribution_types = [
+        "metadata",
+        "stream",
+        "torrent",
+        "telegram",
+        "youtube",
+        "nzb",
+        "http",
+        "acestream",
+    ];
     let mut by_type = serde_json::Map::new();
     for ct in contribution_types {
         let cnt: i64 = sqlx::query_scalar(
@@ -475,6 +529,7 @@ pub async fn get_contribution_stats(
 }
 
 /// GET /api/v1/contributions/contributors  (moderator)
+#[allow(clippy::type_complexity)]
 pub async fn list_contribution_contributors(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -482,12 +537,24 @@ pub async fn list_contribution_contributors(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool_ro, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let limit = params.limit.clamp(1, 200);
@@ -495,16 +562,19 @@ pub async fn list_contribution_contributors(
     let mut sql = String::from(
         r#"SELECT c.user_id, u.username,
                   COUNT(*) as total,
-                  COUNT(*) FILTER (WHERE c.status = 'pending') as pending,
-                  COUNT(*) FILTER (WHERE c.status = 'approved') as approved,
-                  COUNT(*) FILTER (WHERE c.status = 'rejected') as rejected
+                  COUNT(*) FILTER (WHERE c.status = 'PENDING') as pending,
+                  COUNT(*) FILTER (WHERE c.status = 'APPROVED') as approved,
+                  COUNT(*) FILTER (WHERE c.status = 'REJECTED') as rejected
            FROM contribution c
            JOIN users u ON u.id = c.user_id
            WHERE c.user_id IS NOT NULL"#,
     );
 
     if let Some(ref ct) = params.contribution_type {
-        sql.push_str(&format!(" AND c.contribution_type = '{}'", ct.replace('\'', "''")));
+        sql.push_str(&format!(
+            " AND c.contribution_type = '{}'",
+            ct.replace('\'', "''")
+        ));
     }
     if let Some(ref cs) = params.contribution_status {
         sql.push_str(&format!(" AND c.status = '{}'", cs.replace('\'', "''")));
@@ -520,16 +590,17 @@ pub async fn list_contribution_contributors(
         " GROUP BY c.user_id, u.username ORDER BY total DESC, u.username ASC LIMIT {limit}"
     ));
 
-    let rows: Vec<(Option<i64>, Option<String>, i64, i64, i64, i64)> =
-        sqlx::query_as(&sql)
-            .fetch_all(&state.pool_ro)
-            .await
-            .unwrap_or_default();
+    let rows: Vec<(Option<i64>, Option<String>, i64, i64, i64, i64)> = sqlx::query_as(&sql)
+        .fetch_all(&state.pool_ro)
+        .await
+        .unwrap_or_default();
 
-    let mut contributors: Vec<serde_json::Value> = rows
+    let contributors: Vec<serde_json::Value> = rows
         .into_iter()
         .map(|(uid, uname, total, pending, approved, rejected)| {
-            let label = uname.clone().unwrap_or_else(|| format!("User #{}", uid.unwrap_or(0)));
+            let label = uname
+                .clone()
+                .unwrap_or_else(|| format!("User #{}", uid.unwrap_or(0)));
             json!({
                 "key": format!("user:{}", uid.unwrap_or(0)),
                 "label": label,
@@ -554,27 +625,38 @@ pub async fn list_pending_contributions(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool_ro, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let page = params.page.max(1);
     let page_size = params.page_size.clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    let mut count_sql =
-        String::from("SELECT COUNT(*) FROM contribution WHERE status = 'pending'");
+    let mut count_sql = String::from("SELECT COUNT(*) FROM contribution WHERE status = 'PENDING'");
     let mut fetch_sql = String::from(
         r#"SELECT id, user_id, contribution_type, target_id, data, status,
                   reviewed_by, reviewed_at, review_notes,
                   admin_review_requested, admin_review_requested_by,
                   admin_review_requested_at, admin_review_reason,
                   created_at, updated_at
-           FROM contribution WHERE status = 'pending'"#,
+           FROM contribution WHERE status = 'PENDING'"#,
     );
 
     if let Some(ref ct) = params.contribution_type {
@@ -590,7 +672,23 @@ pub async fn list_pending_contributions(
         .await
         .unwrap_or(0);
 
-    type ContribTuple = (String, Option<i64>, String, Option<String>, serde_json::Value, String, Option<String>, Option<DateTime<Utc>>, Option<String>, bool, Option<String>, Option<DateTime<Utc>>, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>);
+    type ContribTuple = (
+        String,
+        Option<i64>,
+        String,
+        Option<String>,
+        serde_json::Value,
+        String,
+        Option<String>,
+        Option<DateTime<Utc>>,
+        Option<String>,
+        bool,
+        Option<String>,
+        Option<DateTime<Utc>>,
+        Option<String>,
+        DateTime<Utc>,
+        Option<DateTime<Utc>>,
+    );
     let rows: Vec<ContribTuple> = sqlx::query_as::<_, ContribTuple>(&fetch_sql)
         .bind(page_size)
         .bind(offset)
@@ -601,12 +699,21 @@ pub async fn list_pending_contributions(
     let mut items = Vec::new();
     for r in &rows {
         let row = ContribRow {
-            id: r.0.clone(), user_id: r.1, contribution_type: r.2.clone(),
-            target_id: r.3.clone(), data: r.4.clone(), status: r.5.clone(),
-            reviewed_by: r.6.clone(), reviewed_at: r.7, review_notes: r.8.clone(),
-            admin_review_requested: r.9, admin_review_requested_by: r.10.clone(),
-            admin_review_requested_at: r.11, admin_review_reason: r.12.clone(),
-            created_at: r.13, updated_at: r.14,
+            id: r.0.clone(),
+            user_id: r.1,
+            contribution_type: r.2.clone(),
+            target_id: r.3.clone(),
+            data: r.4.clone(),
+            status: r.5.clone(),
+            reviewed_by: r.6.clone(),
+            reviewed_at: r.7,
+            review_notes: r.8.clone(),
+            admin_review_requested: r.9,
+            admin_review_requested_by: r.10.clone(),
+            admin_review_requested_at: r.11,
+            admin_review_reason: r.12.clone(),
+            created_at: r.13,
+            updated_at: r.14,
         };
         items.push(contrib_row_to_json(&state.pool_ro, &row).await);
     }
@@ -629,42 +736,85 @@ pub async fn get_all_contribution_stats(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool_ro, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contribution")
-        .fetch_one(&state.pool_ro).await.unwrap_or(0);
-    let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contribution WHERE status = 'pending'")
-        .fetch_one(&state.pool_ro).await.unwrap_or(0);
-    let approved: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contribution WHERE status = 'approved'")
-        .fetch_one(&state.pool_ro).await.unwrap_or(0);
-    let rejected: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contribution WHERE status = 'rejected'")
-        .fetch_one(&state.pool_ro).await.unwrap_or(0);
-
-    let stream_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion")
-        .fetch_one(&state.pool_ro).await.unwrap_or(0);
-    let stream_pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'pending'")
-        .fetch_one(&state.pool_ro).await.unwrap_or(0);
-    let stream_approved: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE status IN ('approved', 'auto_approved')")
-        .fetch_one(&state.pool_ro).await.unwrap_or(0);
-    let stream_rejected: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'rejected'")
-        .fetch_one(&state.pool_ro).await.unwrap_or(0);
-
-    let contribution_types = ["metadata", "stream", "torrent", "telegram", "youtube", "nzb", "http", "acestream"];
-    let mut by_type = serde_json::Map::new();
-    for ct in contribution_types {
-        let cnt: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM contribution WHERE contribution_type = $1",
-        )
-        .bind(ct)
         .fetch_one(&state.pool_ro)
         .await
         .unwrap_or(0);
+    let pending: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM contribution WHERE status = 'PENDING'")
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+    let approved: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM contribution WHERE status = 'APPROVED'")
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+    let rejected: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM contribution WHERE status = 'REJECTED'")
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+
+    let stream_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion")
+        .fetch_one(&state.pool_ro)
+        .await
+        .unwrap_or(0);
+    let stream_pending: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'PENDING'")
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+    let stream_approved: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM stream_suggestion WHERE status IN ('approved', 'auto_approved')",
+    )
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(0);
+    let stream_rejected: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'REJECTED'")
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0);
+
+    let contribution_types = [
+        "metadata",
+        "stream",
+        "torrent",
+        "telegram",
+        "youtube",
+        "nzb",
+        "http",
+        "acestream",
+    ];
+    let mut by_type = serde_json::Map::new();
+    for ct in contribution_types {
+        let cnt: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM contribution WHERE contribution_type = $1")
+                .bind(ct)
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0);
         by_type.insert(ct.to_string(), json!(cnt));
     }
     by_type.insert("stream_suggestions".to_string(), json!(stream_total));
@@ -687,17 +837,35 @@ pub async fn get_contribution(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let row = match fetch_contrib_row(&state.pool_ro, &contribution_id).await {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Contribution not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Contribution not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
-    let role = get_user_role(&state.pool_ro, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool_ro, user_id)
+        .await
+        .unwrap_or_default();
     if row.user_id != Some(user_id) && !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Not authorized"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Not authorized"})),
+        )
+            .into_response();
     }
 
     Json(contrib_row_to_json(&state.pool_ro, &row).await).into_response()
@@ -711,12 +879,24 @@ pub async fn create_contribution(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     let is_privileged = is_mod_or_admin(&role);
-    let is_anonymous = body.data.get("is_anonymous").and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_anonymous = body
+        .data
+        .get("is_anonymous")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let auto_types = ["torrent", "stream"];
     let is_active: bool = sqlx::query_scalar("SELECT is_active FROM users WHERE id = $1")
@@ -729,8 +909,16 @@ pub async fn create_contribution(
     let should_auto_approve = is_privileged
         || (!is_anonymous && is_active && auto_types.contains(&body.contribution_type.as_str()));
 
-    let initial_status = if should_auto_approve { "approved" } else { "pending" };
-    let reviewer_id = if should_auto_approve { Some("auto".to_string()) } else { None };
+    let initial_status = if should_auto_approve {
+        "APPROVED"
+    } else {
+        "PENDING"
+    };
+    let reviewer_id = if should_auto_approve {
+        Some("auto".to_string())
+    } else {
+        None
+    };
     let review_notes = if is_privileged {
         Some("Auto-approved: Privileged reviewer".to_string())
     } else if should_auto_approve {
@@ -773,7 +961,11 @@ pub async fn create_contribution(
         Some(r) => r,
     };
 
-    (StatusCode::CREATED, Json(contrib_row_to_json(&state.pool, &row).await)).into_response()
+    (
+        StatusCode::CREATED,
+        Json(contrib_row_to_json(&state.pool, &row).await),
+    )
+        .into_response()
 }
 
 /// DELETE /api/v1/contributions/{contribution_id}
@@ -784,19 +976,33 @@ pub async fn delete_contribution(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
     let row = match fetch_contrib_row(&state.pool, &contribution_id).await {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Contribution not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Contribution not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     let is_owner = row.user_id == Some(user_id);
     let is_pending = row.status == "pending";
 
-    if !is_admin(&role) && !(is_owner && is_pending) {
+    if !(is_admin(&role) || is_owner && is_pending) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Cannot delete this contribution. Only pending contributions can be deleted by their owner."})),
@@ -825,16 +1031,34 @@ pub async fn review_contribution(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let row = match fetch_contrib_row(&state.pool, &contribution_id).await {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Contribution not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Contribution not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
@@ -847,9 +1071,15 @@ pub async fn review_contribution(
     }
 
     let new_status = match body.status.as_str() {
-        "APPROVED" | "approved" => "approved",
-        "REJECTED" | "rejected" => "rejected",
-        _ => return (StatusCode::BAD_REQUEST, Json(json!({"detail": "status must be approved or rejected"}))).into_response(),
+        "APPROVED" | "approved" => "APPROVED",
+        "REJECTED" | "rejected" => "REJECTED",
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "status must be approved or rejected"})),
+            )
+                .into_response()
+        }
     };
 
     if let Err(e) = sqlx::query(
@@ -882,16 +1112,34 @@ pub async fn flag_contribution_for_admin_review(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let row = match fetch_contrib_row(&state.pool, &contribution_id).await {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Contribution not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Contribution not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
@@ -939,16 +1187,34 @@ pub async fn reject_approved_contribution(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let row = match fetch_contrib_row(&state.pool, &contribution_id).await {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Contribution not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Contribution not found"})),
+            )
+                .into_response()
+        }
         Some(r) => r,
     };
 
@@ -962,7 +1228,9 @@ pub async fn reject_approved_contribution(
 
     let rollback_note = "Moderation rejection rollback: no linked stream could be resolved.";
     let mut notes = row.review_notes.clone().unwrap_or_default();
-    if !notes.is_empty() { notes.push('\n'); }
+    if !notes.is_empty() {
+        notes.push('\n');
+    }
     notes.push_str(rollback_note);
     if let Some(ref extra) = body.review_notes {
         let trimmed = extra.trim();
@@ -974,7 +1242,7 @@ pub async fn reject_approved_contribution(
 
     if let Err(e) = sqlx::query(
         r#"UPDATE contribution
-           SET status = 'rejected',
+           SET status = 'REJECTED',
                reviewed_by = $1,
                reviewed_at = NOW(),
                admin_review_requested = false,
@@ -1006,23 +1274,39 @@ pub async fn bulk_review_contributions(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let new_status = match body.action.as_str() {
-        "approve" => "approved",
-        "reject" => "rejected",
-        _ => return (StatusCode::BAD_REQUEST, Json(json!({"detail": "action must be approve or reject"}))).into_response(),
+        "approve" => "APPROVED",
+        "reject" => "REJECTED",
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "action must be approve or reject"})),
+            )
+                .into_response()
+        }
     };
 
-    let mut fetch_sql = String::from(
-        "SELECT id FROM contribution WHERE status = 'pending'",
-    );
+    let mut fetch_sql = String::from("SELECT id FROM contribution WHERE status = 'PENDING'");
 
     if let Some(ref ct) = body.contribution_type {
         let esc = ct.replace('\'', "''");
@@ -1049,7 +1333,7 @@ pub async fn bulk_review_contributions(
         }
 
         let result = sqlx::query(
-            "UPDATE contribution SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3 WHERE id = $4 AND status = 'pending'",
+            "UPDATE contribution SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3 WHERE id = $4 AND status = 'PENDING'",
         )
         .bind(new_status)
         .bind(user_id.to_string())
@@ -1060,9 +1344,15 @@ pub async fn bulk_review_contributions(
 
         match result {
             Ok(r) if r.rows_affected() > 0 => {
-                if new_status == "approved" { approved += 1; } else { rejected += 1; }
+                if new_status == "approved" {
+                    approved += 1;
+                } else {
+                    rejected += 1;
+                }
             }
-            _ => { skipped += 1; }
+            _ => {
+                skipped += 1;
+            }
         }
     }
 

@@ -1,19 +1,12 @@
 /// Peer MediaFusion instance scraper.
 ///
-/// Calls the Stremio stream endpoint on a peer MediaFusion instance using the
-/// public "D-" (empty user data) prefix so no auth is required.
-///
-/// Stream description format (from Python):
-///   line 0: "📂 <torrent_name> ┈➤ <extra>"  or just "<torrent_name>"
-///   name field first token: source (e.g. "YTS", "RARBG")
-///   "⚡️" in name → debrid-cached
-use std::sync::OnceLock;
-
+/// Calls the Kodi stream endpoint on a peer MediaFusion instance (no auth required).
+/// Parses the rich `{ stream, metadata }` format returned by the kodi endpoint.
 use reqwest::Client;
 use serde_json::Value;
 
 use crate::{
-    parser,
+    parser::ParsedTitle,
     scrapers::{ScrapedStream, SearchMeta},
 };
 
@@ -24,6 +17,7 @@ pub async fn scrape(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    secret_str: Option<&str>,
 ) -> Vec<ScrapedStream> {
     let imdb_id = match &meta.imdb_id {
         Some(id) => id.clone(),
@@ -36,12 +30,21 @@ pub async fn scrape(
         }
     };
 
-    // Use "D-" prefix (empty encrypted user data = public scope).
-    let url = match (media_type, season, episode) {
-        ("series", Some(s), Some(e)) => {
-            format!("{base_url}/D-/stream/series/{imdb_id}:{s}:{e}.json")
+    // Build URL: with secret_str uses authenticated kodi endpoint, otherwise public.
+    let url = if let Some(ss) = secret_str.filter(|s| !s.is_empty()) {
+        match (media_type, season, episode) {
+            ("series", Some(s), Some(e)) => {
+                format!("{base_url}/{ss}/kodi/stream/series/{imdb_id}:{s}:{e}.json?page_size=100")
+            }
+            _ => format!("{base_url}/{ss}/kodi/stream/movie/{imdb_id}.json?page_size=100"),
         }
-        _ => format!("{base_url}/D-/stream/movie/{imdb_id}.json"),
+    } else {
+        match (media_type, season, episode) {
+            ("series", Some(s), Some(e)) => {
+                format!("{base_url}/kodi/stream/series/{imdb_id}:{s}:{e}.json?page_size=100")
+            }
+            _ => format!("{base_url}/kodi/stream/movie/{imdb_id}.json?page_size=100"),
+        }
     };
 
     let resp = match client
@@ -70,61 +73,77 @@ pub async fn scrape(
         None => return vec![],
     };
 
-    streams.iter().filter_map(parse_stream).collect()
+    streams.iter().filter_map(parse_rich_stream).collect()
 }
 
-fn parse_stream(stream: &Value) -> Option<ScrapedStream> {
-    let description = stream.get("description").and_then(|v| v.as_str())?;
-    if description.trim().is_empty() {
-        return None;
-    }
-
-    let name_raw = stream.get("name").and_then(|v| v.as_str()).unwrap_or("");
-    let source = name_raw
-        .split_whitespace()
-        .next()
-        .unwrap_or("MediaFusion")
-        .to_string();
-    let is_cached = name_raw.contains('⚡');
-
-    // Extract torrent name: first line, strip "📂 " prefix, take part before " ┈➤ "
-    let first_line = description.lines().next().unwrap_or("").trim();
-    let stripped = first_line.trim_start_matches("📂 ").trim();
-    let torrent_name = stripped
-        .split(" ┈➤ ")
-        .next()
-        .unwrap_or(stripped)
-        .trim()
-        .to_string();
-
-    if torrent_name.is_empty() {
-        return None;
-    }
-
-    // Resolve info_hash from infoHash field or streaming_provider URL
-    let info_hash = if let Some(h) = stream.get("infoHash").and_then(|v| v.as_str()) {
-        h.to_lowercase()
-    } else {
-        let url = stream.get("url").and_then(|v| v.as_str()).unwrap_or("");
-        if url.contains("/streaming_provider/") {
-            // URL shape: /streaming_provider/{info_hash}/...
-            url.split('/').nth(2).map(|s| s.to_lowercase())?
-        } else {
-            return None;
-        }
-    };
-
+fn parse_rich_stream(item: &Value) -> Option<ScrapedStream> {
+    let meta = item.get("metadata")?;
+    let info_hash = meta.get("info_hash")?.as_str()?;
     if info_hash.len() != 40 || !info_hash.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
     }
+    let name = meta
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let source = meta
+        .get("source")
+        .and_then(|v| v.as_str())
+        .unwrap_or("MediaFusion")
+        .to_string();
+    let quality = meta
+        .get("quality")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let resolution = meta
+        .get("resolution")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let codec = meta
+        .get("codec")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let size = meta.get("size").and_then(|v| v.as_i64());
+    let seeders = meta
+        .get("seeders")
+        .and_then(|v| v.as_i64())
+        .map(|n| n as i32);
+    let is_cached = meta
+        .get("cached")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
-    let size = parse_size(description);
-    let seeders = parse_seeders(description);
-    let parsed = parser::parse_title(&torrent_name);
+    // Build ParsedTitle from the already-parsed fields (no re-parsing needed)
+    let parsed = ParsedTitle {
+        quality,
+        resolution,
+        codec,
+        title: Some(name.clone()),
+        year: None,
+        audio: vec![],
+        channels: vec![],
+        hdr: vec![],
+        languages: vec![],
+        seasons: vec![],
+        episodes: vec![],
+        is_proper: false,
+        is_repack: false,
+        is_extended: false,
+        is_complete: false,
+        is_dubbed: false,
+        is_subbed: false,
+        is_remastered: false,
+        is_upscaled: false,
+        release_group: None,
+    };
 
     Some(ScrapedStream {
-        info_hash,
-        name: torrent_name,
+        info_hash: info_hash.to_lowercase(),
+        name,
         source,
         seeders,
         size,
@@ -132,27 +151,4 @@ fn parse_stream(stream: &Value) -> Option<ScrapedStream> {
         files: vec![],
         is_cached,
     })
-}
-
-fn parse_size(desc: &str) -> Option<i64> {
-    static RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| regex::Regex::new(r"(?i)(\d+(?:\.\d+)?)\s*(GB|MB|TB|KB)").unwrap());
-    let caps = re.captures(desc)?;
-    let amount: f64 = caps.get(1)?.as_str().parse().ok()?;
-    let unit = caps.get(2)?.as_str().to_uppercase();
-    Some(match unit.as_str() {
-        "TB" => (amount * 1_099_511_627_776.0) as i64,
-        "GB" => (amount * 1_073_741_824.0) as i64,
-        "MB" => (amount * 1_048_576.0) as i64,
-        "KB" => (amount * 1024.0) as i64,
-        _ => return None,
-    })
-}
-
-fn parse_seeders(desc: &str) -> Option<i32> {
-    static RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| regex::Regex::new(r"(?i)👤\s*(\d+)|Seeds?[:\s]+(\d+)").unwrap());
-    let caps = re.captures(desc)?;
-    let n = caps.get(1).or_else(|| caps.get(2))?;
-    n.as_str().parse().ok()
 }

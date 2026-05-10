@@ -12,7 +12,6 @@
 ///   GET    /stream/{stream_id}/files                     → get_stream_files_for_annotation (auth)
 ///   GET    /needs-annotation                             → get_streams_needing_annotation (moderator)
 ///   POST   /needs-annotation/{stream_id}/media/{media_id}/dismiss → dismiss_annotation_request (moderator)
-
 use std::sync::Arc;
 
 use axum::{
@@ -65,7 +64,7 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
 }
 
 async fn get_user_role(pool: &sqlx::PgPool, user_id: i64) -> Option<String> {
-    sqlx::query_scalar::<_, String>("SELECT role::text FROM users WHERE id = $1")
+    sqlx::query_scalar::<_, String>("SELECT LOWER(role::text) FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(pool)
         .await
@@ -80,8 +79,8 @@ fn is_mod_or_admin(role: &str) -> bool {
 
 #[derive(Deserialize)]
 pub struct StreamLinkCreate {
-    pub stream_id: i64,
-    pub media_id: i64,
+    pub stream_id: i32,
+    pub media_id: i32,
     pub file_index: Option<i32>,
     pub season: Option<i32>,
     pub episode: Option<i32>,
@@ -94,7 +93,7 @@ pub struct BulkLinkCreate {
 
 #[derive(Deserialize)]
 pub struct FileLinkUpdate {
-    pub file_id: i64,
+    pub file_id: i32,
     pub season_number: Option<i32>,
     pub episode_number: Option<i32>,
     pub episode_end: Option<i32>,
@@ -102,8 +101,8 @@ pub struct FileLinkUpdate {
 
 #[derive(Deserialize)]
 pub struct BulkFileLinkUpdate {
-    pub stream_id: i64,
-    pub media_id: i64,
+    pub stream_id: i32,
+    pub media_id: i32,
     pub updates: Vec<FileLinkUpdate>,
 }
 
@@ -114,11 +113,13 @@ pub struct SearchQuery {
     pub limit: i64,
 }
 
-fn default_limit() -> i64 { 20 }
+fn default_limit() -> i64 {
+    20
+}
 
 #[derive(Deserialize)]
 pub struct StreamFilesQuery {
-    pub media_id: i64,
+    pub media_id: i32,
 }
 
 #[derive(Deserialize)]
@@ -130,8 +131,12 @@ pub struct AnnotationQuery {
     pub search: Option<String>,
 }
 
-fn default_page() -> i64 { 1 }
-fn default_per_page() -> i64 { 20 }
+fn default_page() -> i64 {
+    1
+}
+fn default_per_page() -> i64 {
+    20
+}
 
 #[derive(Deserialize)]
 pub struct DismissRequest {
@@ -148,22 +153,39 @@ pub async fn create_stream_link(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
-    let stream_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
-        .bind(body.stream_id)
-        .fetch_one(&state.pool)
-        .await
-        .unwrap_or(false);
+    let stream_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
+            .bind(body.stream_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(false);
 
     if !stream_exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Stream not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Stream not found"})),
+        )
+            .into_response();
     }
 
     let media_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)")
@@ -173,7 +195,11 @@ pub async fn create_stream_link(
         .unwrap_or(false);
 
     if !media_exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Media not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Media not found"})),
+        )
+            .into_response();
     }
 
     // Check if link already exists
@@ -188,10 +214,14 @@ pub async fn create_stream_link(
     .unwrap_or(false);
 
     if existing {
-        return (StatusCode::CONFLICT, Json(json!({"detail": "This link already exists"}))).into_response();
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"detail": "This link already exists"})),
+        )
+            .into_response();
     }
 
-    let link_row: (i64, i64, i64, Option<i32>, DateTime<Utc>) = match sqlx::query_as(
+    let link_row: (i32, i32, i32, Option<i32>, DateTime<Utc>) = match sqlx::query_as(
         "INSERT INTO stream_media_link (stream_id, media_id, file_index, created_at) VALUES ($1, $2, $3, NOW()) RETURNING id, stream_id, media_id, file_index, created_at",
     )
     .bind(body.stream_id)
@@ -230,16 +260,32 @@ pub async fn create_bulk_stream_links(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     if body.links.is_empty() || body.links.len() > 50 {
-        return (StatusCode::BAD_REQUEST, Json(json!({"detail": "links must have between 1 and 50 entries"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "links must have between 1 and 50 entries"})),
+        )
+            .into_response();
     }
 
     let mut created = 0i64;
@@ -248,11 +294,12 @@ pub async fn create_bulk_stream_links(
 
     for link_req in &body.links {
         // Verify stream
-        let stream_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
-            .bind(link_req.stream_id)
-            .fetch_one(&state.pool)
-            .await
-            .unwrap_or(false);
+        let stream_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
+                .bind(link_req.stream_id)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap_or(false);
 
         if !stream_exists {
             errors.push(format!("Stream {} not found", link_req.stream_id));
@@ -261,11 +308,12 @@ pub async fn create_bulk_stream_links(
         }
 
         // Verify media
-        let media_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)")
-            .bind(link_req.media_id)
-            .fetch_one(&state.pool)
-            .await
-            .unwrap_or(false);
+        let media_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)")
+                .bind(link_req.media_id)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap_or(false);
 
         if !media_exists {
             errors.push(format!("Media {} not found", link_req.media_id));
@@ -285,7 +333,10 @@ pub async fn create_bulk_stream_links(
         .unwrap_or(false);
 
         if existing {
-            errors.push(format!("Link already exists: stream {} -> media {}", link_req.stream_id, link_req.media_id));
+            errors.push(format!(
+                "Link already exists: stream {} -> media {}",
+                link_req.stream_id, link_req.media_id
+            ));
             failed += 1;
             continue;
         }
@@ -319,19 +370,31 @@ pub async fn create_bulk_stream_links(
 pub async fn delete_stream_link(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(link_id): Path<i64>,
+    Path(link_id): Path<i32>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
-    let link: Option<(i64, i64)> =
+    let link: Option<(i32, i32)> =
         sqlx::query_as("SELECT stream_id, media_id FROM stream_media_link WHERE id = $1")
             .bind(link_id)
             .fetch_optional(&state.pool)
@@ -339,7 +402,11 @@ pub async fn delete_stream_link(
             .unwrap_or(None);
 
     if link.is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Link not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Link not found"})),
+        )
+            .into_response();
     }
 
     match sqlx::query("DELETE FROM stream_media_link WHERE id = $1")
@@ -358,9 +425,9 @@ pub async fn delete_stream_link(
 /// GET /api/v1/stream-links/stream/{stream_id}
 pub async fn get_media_for_stream(
     State(state): State<Arc<AppState>>,
-    Path(stream_id): Path<i64>,
+    Path(stream_id): Path<i32>,
 ) -> Response {
-    let links: Vec<(i64, i64, Option<i32>)> = sqlx::query_as(
+    let links: Vec<(i32, i32, Option<i32>)> = sqlx::query_as(
         "SELECT id, media_id, file_index FROM stream_media_link WHERE stream_id = $1",
     )
     .bind(stream_id)
@@ -370,13 +437,12 @@ pub async fn get_media_for_stream(
 
     let mut media_entries = Vec::new();
     for (link_id, media_id, file_index) in links {
-        let media_row: Option<(String, Option<i32>, String)> = sqlx::query_as(
-            "SELECT title, year, type::text FROM media WHERE id = $1",
-        )
-        .bind(media_id)
-        .fetch_optional(&state.pool_ro)
-        .await
-        .unwrap_or(None);
+        let media_row: Option<(String, Option<i32>, String)> =
+            sqlx::query_as("SELECT title, year, type::text FROM media WHERE id = $1")
+                .bind(media_id)
+                .fetch_optional(&state.pool_ro)
+                .await
+                .unwrap_or(None);
 
         if let Some((title, year, mtype)) = media_row {
             // Get canonical external ID (prefer imdb)
@@ -410,9 +476,9 @@ pub async fn get_media_for_stream(
 /// GET /api/v1/stream-links/media/{media_id}
 pub async fn get_streams_for_media(
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<i32>,
 ) -> Response {
-    let links: Vec<(i64, i64, Option<i32>)> = sqlx::query_as(
+    let links: Vec<(i32, i32, Option<i32>)> = sqlx::query_as(
         "SELECT id, stream_id, file_index FROM stream_media_link WHERE media_id = $1",
     )
     .bind(media_id)
@@ -422,22 +488,20 @@ pub async fn get_streams_for_media(
 
     let mut streams = Vec::new();
     for (link_id, stream_id, file_index) in links {
-        let stream_row: Option<(Option<String>, String, Option<String>)> = sqlx::query_as(
-            "SELECT name, stream_type::text, resolution FROM stream WHERE id = $1",
-        )
-        .bind(stream_id)
-        .fetch_optional(&state.pool_ro)
-        .await
-        .unwrap_or(None);
+        let stream_row: Option<(Option<String>, String, Option<String>)> =
+            sqlx::query_as("SELECT name, stream_type::text, resolution FROM stream WHERE id = $1")
+                .bind(stream_id)
+                .fetch_optional(&state.pool_ro)
+                .await
+                .unwrap_or(None);
 
         if let Some((name, stype, resolution)) = stream_row {
-            let size: Option<i64> = sqlx::query_scalar(
-                "SELECT total_size FROM torrent_stream WHERE stream_id = $1",
-            )
-            .bind(stream_id)
-            .fetch_optional(&state.pool_ro)
-            .await
-            .unwrap_or(None);
+            let size: Option<i64> =
+                sqlx::query_scalar("SELECT total_size FROM torrent_stream WHERE stream_id = $1")
+                    .bind(stream_id)
+                    .fetch_optional(&state.pool_ro)
+                    .await
+                    .unwrap_or(None);
 
             streams.push(json!({
                 "link_id": link_id,
@@ -468,38 +532,48 @@ pub async fn search_unlinked_streams(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool_ro, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let limit = params.limit.clamp(1, 100);
     let pattern = format!("%{}%", params.query);
 
-    let stream_ids: Vec<(i64,)> = sqlx::query_as(
-        "SELECT id FROM stream WHERE name ILIKE $1 LIMIT $2",
-    )
-    .bind(&pattern)
-    .bind(limit)
-    .fetch_all(&state.pool_ro)
-    .await
-    .unwrap_or_default();
+    let stream_ids: Vec<(i32,)> =
+        sqlx::query_as("SELECT id FROM stream WHERE name ILIKE $1 LIMIT $2")
+            .bind(&pattern)
+            .bind(limit)
+            .fetch_all(&state.pool_ro)
+            .await
+            .unwrap_or_default();
 
     let mut results = Vec::new();
     for (stream_id,) in stream_ids {
-        let stream_row: Option<(Option<String>, String, Option<String>)> = sqlx::query_as(
-            "SELECT name, stream_type::text, resolution FROM stream WHERE id = $1",
-        )
-        .bind(stream_id)
-        .fetch_optional(&state.pool_ro)
-        .await
-        .unwrap_or(None);
+        let stream_row: Option<(Option<String>, String, Option<String>)> =
+            sqlx::query_as("SELECT name, stream_type::text, resolution FROM stream WHERE id = $1")
+                .bind(stream_id)
+                .fetch_optional(&state.pool_ro)
+                .await
+                .unwrap_or(None);
 
         if let Some((name, stype, _res)) = stream_row {
-            let links: Vec<(i64, Option<i32>)> = sqlx::query_as(
+            let links: Vec<(i32, Option<i32>)> = sqlx::query_as(
                 "SELECT media_id, file_index FROM stream_media_link WHERE stream_id = $1",
             )
             .bind(stream_id)
@@ -507,13 +581,12 @@ pub async fn search_unlinked_streams(
             .await
             .unwrap_or_default();
 
-            let size: Option<i64> = sqlx::query_scalar(
-                "SELECT total_size FROM torrent_stream WHERE stream_id = $1",
-            )
-            .bind(stream_id)
-            .fetch_optional(&state.pool_ro)
-            .await
-            .unwrap_or(None);
+            let size: Option<i64> =
+                sqlx::query_scalar("SELECT total_size FROM torrent_stream WHERE stream_id = $1")
+                    .bind(stream_id)
+                    .fetch_optional(&state.pool_ro)
+                    .await
+                    .unwrap_or(None);
 
             let link_count = links.len();
             let links_json: Vec<serde_json::Value> = links
@@ -543,32 +616,56 @@ pub async fn update_file_links(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
-    let stream_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
-        .bind(body.stream_id)
-        .fetch_one(&state.pool)
-        .await
-        .unwrap_or(false);
+    let stream_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
+            .bind(body.stream_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(false);
 
     if !stream_exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Stream not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Stream not found"})),
+        )
+            .into_response();
     }
 
-    let media_type: Option<String> = sqlx::query_scalar("SELECT type::text FROM media WHERE id = $1")
-        .bind(body.media_id)
-        .fetch_optional(&state.pool)
-        .await
-        .unwrap_or(None);
+    let media_type: Option<String> =
+        sqlx::query_scalar("SELECT type::text FROM media WHERE id = $1")
+            .bind(body.media_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
 
     match media_type.as_deref() {
-        None => return (StatusCode::NOT_FOUND, Json(json!({"detail": "Media not found"}))).into_response(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Media not found"})),
+            )
+                .into_response()
+        }
         Some(t) if t.to_uppercase() != "SERIES" => {
             return (StatusCode::BAD_REQUEST, Json(json!({"detail": "File annotation updates are only supported for series media"}))).into_response();
         }
@@ -597,7 +694,7 @@ pub async fn update_file_links(
         }
 
         // Check if link exists
-        let existing_link: Option<i64> = sqlx::query_scalar(
+        let existing_link: Option<i32> = sqlx::query_scalar(
             "SELECT id FROM file_media_link WHERE file_id = $1 AND media_id = $2",
         )
         .bind(update.file_id)
@@ -647,29 +744,41 @@ pub async fn update_file_links(
 }
 
 /// GET /api/v1/stream-links/files/{stream_id}  (auth)
+#[allow(clippy::type_complexity)]
 pub async fn get_stream_file_links(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(stream_id): Path<i64>,
+    Path(stream_id): Path<i32>,
     Query(params): Query<StreamFilesQuery>,
 ) -> Response {
     let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let stream_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
-        .bind(stream_id)
-        .fetch_one(&state.pool_ro)
-        .await
-        .unwrap_or(false);
+    let stream_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
+            .bind(stream_id)
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(false);
 
     if !stream_exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Stream not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Stream not found"})),
+        )
+            .into_response();
     }
 
     // Get all files for this stream
-    let file_rows: Vec<(i64, Option<String>, Option<i32>, Option<i64>)> = sqlx::query_as(
+    let file_rows: Vec<(i32, Option<String>, Option<i32>, Option<i64>)> = sqlx::query_as(
         "SELECT id, filename, file_index, size FROM stream_file WHERE stream_id = $1 ORDER BY filename ASC",
     )
     .bind(stream_id)
@@ -689,20 +798,21 @@ pub async fn get_stream_file_links(
         .unwrap_or(None);
 
         // Check if this file is linked to any media at all
-        let has_links: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM file_media_link WHERE file_id = $1)",
-        )
-        .bind(file_id)
-        .fetch_one(&state.pool_ro)
-        .await
-        .unwrap_or(false);
+        let has_links: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM file_media_link WHERE file_id = $1)")
+                .bind(file_id)
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(false);
 
         // Skip files linked to other media
         if has_links && link.is_none() {
             continue;
         }
 
-        let display_name = filename.clone().unwrap_or_else(|| format!("File {}", file_index.unwrap_or(file_id as i32)));
+        let display_name = filename
+            .clone()
+            .unwrap_or_else(|| format!("File {}", file_index.unwrap_or(file_id)));
 
         files.push(json!({
             "file_id": file_id,
@@ -725,6 +835,7 @@ pub async fn get_stream_file_links(
 }
 
 /// GET /api/v1/stream-links/stream/{stream_id}/files  (auth)
+#[allow(clippy::type_complexity)]
 pub async fn get_stream_files_for_annotation(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -732,25 +843,42 @@ pub async fn get_stream_files_for_annotation(
 ) -> Response {
     let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let sid: i64 = match stream_id.parse() {
+    let sid: i32 = match stream_id.parse() {
         Ok(id) => id,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!({"detail": "Invalid stream ID"}))).into_response(),
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Invalid stream ID"})),
+            )
+                .into_response()
+        }
     };
 
-    let stream_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
-        .bind(sid)
-        .fetch_one(&state.pool_ro)
-        .await
-        .unwrap_or(false);
+    let stream_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
+            .bind(sid)
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(false);
 
     if !stream_exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Stream not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Stream not found"})),
+        )
+            .into_response();
     }
 
-    let file_rows: Vec<(i64, Option<String>, Option<i32>, Option<i64>)> = sqlx::query_as(
+    let file_rows: Vec<(i32, Option<String>, Option<i32>, Option<i64>)> = sqlx::query_as(
         "SELECT id, filename, file_index, size FROM stream_file WHERE stream_id = $1 ORDER BY filename ASC",
     )
     .bind(sid)
@@ -759,7 +887,11 @@ pub async fn get_stream_files_for_annotation(
     .unwrap_or_default();
 
     if file_rows.is_empty() {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "No files found for this stream"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "No files found for this stream"})),
+        )
+            .into_response();
     }
 
     let mut files = Vec::new();
@@ -773,7 +905,8 @@ pub async fn get_stream_files_for_annotation(
         .await
         .unwrap_or(None);
 
-        let display_name = filename.unwrap_or_else(|| format!("File {}", file_index.unwrap_or(file_id as i32)));
+        let display_name =
+            filename.unwrap_or_else(|| format!("File {}", file_index.unwrap_or(file_id)));
 
         files.push(json!({
             "file_id": file_id,
@@ -789,6 +922,7 @@ pub async fn get_stream_files_for_annotation(
 }
 
 /// GET /api/v1/stream-links/needs-annotation  (moderator)
+#[allow(clippy::type_complexity)]
 pub async fn get_streams_needing_annotation(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -796,79 +930,98 @@ pub async fn get_streams_needing_annotation(
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool_ro, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
     let page = params.page.max(1);
     let per_page = params.per_page.clamp(1, 100);
     let offset = (page - 1) * per_page;
 
-    // Simplified annotation queue — streams with files lacking FileMediaLink entries,
-    // linked to SERIES media, and not yet dismissed.
-    let mut search_condition = String::new();
-    if let Some(ref search) = params.search {
-        let esc = search.replace('\'', "''");
-        search_condition = format!(
-            "AND (s.name ILIKE '%{esc}%' OR m.title ILIKE '%{esc}%')"
-        );
-    }
+    // $3: optional ILIKE pattern — NULL disables the filter (avoids SQL injection via format!).
+    let search_pattern: Option<String> = params.search.map(|s| format!("%{}%", s));
 
-    let sql = format!(
-        r#"WITH unmapped AS (
-            SELECT DISTINCT sf.stream_id, sml.media_id
-            FROM stream_file sf
-            INNER JOIN stream s ON s.id = sf.stream_id
-            INNER JOIN stream_media_link sml ON sml.stream_id = sf.stream_id
+    // Start from stream_media_link (one row per stream-media pair — no DISTINCT needed).
+    // EXISTS/NOT EXISTS terminate early and use existing indexes:
+    //   idx_stream_file_stream, ix_file_media_link_file_id, unique(stream_id,media_id) on dismissal.
+    let rows: Vec<(
+        i32,
+        Option<String>,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+        DateTime<Utc>,
+        Option<String>,
+        i32,
+        String,
+        Option<i32>,
+        String,
+        Option<String>,
+        i64,
+    )> = sqlx::query_as(
+        r#"SELECT
+                s.id,
+                s.name,
+                s.source,
+                ts.total_size,
+                s.resolution,
+                s.created_at,
+                ts.info_hash,
+                m.id,
+                m.title,
+                m.year,
+                m.type::text,
+                img.url,
+                COUNT(*) OVER() AS total_count
+            FROM stream_media_link sml
+            INNER JOIN stream s ON s.id = sml.stream_id
+                AND s.is_active = true
+                AND s.is_blocked = false
             INNER JOIN media m ON m.id = sml.media_id
-            LEFT JOIN file_media_link fml ON fml.file_id = sf.id
-            LEFT JOIN annotation_request_dismissal ard
-              ON ard.stream_id = sf.stream_id AND ard.media_id = sml.media_id
-            WHERE s.is_active = true
-              AND s.is_blocked = false
-              AND m.type = 'SERIES'
-              AND fml.id IS NULL
-              AND ard.id IS NULL
-              {search_condition}
-        )
-        SELECT
-            s.id as stream_id,
-            s.name as stream_name,
-            s.source,
-            ts.total_size as size,
-            s.resolution,
-            s.created_at,
-            ts.info_hash,
-            m.id as media_id,
-            m.title as media_title,
-            m.year as media_year,
-            m.type::text as media_type,
-            img.url as media_poster,
-            COUNT(*) OVER() as total_count
-        FROM unmapped up
-        INNER JOIN stream s ON s.id = up.stream_id
-        LEFT JOIN torrent_stream ts ON ts.stream_id = s.id
-        INNER JOIN media m ON m.id = up.media_id
-        LEFT JOIN LATERAL (
-            SELECT mi.url FROM media_image mi
-            WHERE mi.media_id = m.id AND mi.image_type = 'poster'
-            ORDER BY mi.is_primary DESC, mi.display_order ASC LIMIT 1
-        ) img ON true
-        ORDER BY s.created_at DESC
-        LIMIT $1 OFFSET $2"#
-    );
-
-    let rows: Vec<(i64, Option<String>, Option<String>, Option<i64>, Option<String>, DateTime<Utc>, Option<String>, i64, String, Option<i32>, String, Option<String>, i64)> =
-        sqlx::query_as(&sql)
-            .bind(per_page)
-            .bind(offset)
-            .fetch_all(&state.pool_ro)
-            .await
-            .unwrap_or_default();
+                AND m.type = 'SERIES'
+            LEFT JOIN torrent_stream ts ON ts.stream_id = s.id
+            LEFT JOIN LATERAL (
+                SELECT mi.url FROM media_image mi
+                WHERE mi.media_id = m.id AND mi.image_type = 'poster'
+                ORDER BY mi.is_primary DESC, mi.display_order ASC LIMIT 1
+            ) img ON true
+            WHERE EXISTS (
+                SELECT 1 FROM stream_file sf
+                WHERE sf.stream_id = sml.stream_id
+                  AND NOT EXISTS (
+                      SELECT 1 FROM file_media_link fml WHERE fml.file_id = sf.id
+                  )
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM annotation_request_dismissal ard
+                WHERE ard.stream_id = sml.stream_id AND ard.media_id = sml.media_id
+            )
+            AND ($3::text IS NULL OR s.name ILIKE $3 OR m.title ILIKE $3)
+            ORDER BY s.created_at DESC
+            LIMIT $1 OFFSET $2"#,
+    )
+    .bind(per_page)
+    .bind(offset)
+    .bind(&search_pattern)
+    .fetch_all(&state.pool_ro)
+    .await
+    .unwrap_or_default();
 
     if rows.is_empty() {
         return Json(json!({
@@ -882,29 +1035,49 @@ pub async fn get_streams_needing_annotation(
     }
 
     let total = rows.first().map(|r| r.12).unwrap_or(0);
-    let pages = if total > 0 { (total + per_page - 1) / per_page } else { 1 };
+    let pages = if total > 0 {
+        (total + per_page - 1) / per_page
+    } else {
+        1
+    };
 
     let items: Vec<serde_json::Value> = rows
         .into_iter()
-        .map(|(sid, sname, source, size, resolution, created_at, info_hash, media_id, media_title, media_year, media_type, media_poster, _)| {
-            json!({
-                "stream_id": sid,
-                "stream_name": sname,
-                "source": source,
-                "size": size,
-                "resolution": resolution,
-                "info_hash": info_hash,
-                "file_count": null,
-                "unmapped_count": null,
-                "created_at": created_at.to_rfc3339(),
-                "media_id": media_id,
-                "media_title": media_title,
-                "media_year": media_year,
-                "media_type": media_type.to_lowercase(),
-                "media_external_id": null,
-                "media_poster": media_poster,
-            })
-        })
+        .map(
+            |(
+                sid,
+                sname,
+                source,
+                size,
+                resolution,
+                created_at,
+                info_hash,
+                media_id,
+                media_title,
+                media_year,
+                media_type,
+                media_poster,
+                _,
+            )| {
+                json!({
+                    "stream_id": sid,
+                    "stream_name": sname,
+                    "source": source,
+                    "size": size,
+                    "resolution": resolution,
+                    "info_hash": info_hash,
+                    "file_count": null,
+                    "unmapped_count": null,
+                    "created_at": created_at.to_rfc3339(),
+                    "media_id": media_id,
+                    "media_title": media_title,
+                    "media_year": media_year,
+                    "media_type": media_type.to_lowercase(),
+                    "media_external_id": null,
+                    "media_poster": media_poster,
+                })
+            },
+        )
         .collect();
 
     Json(json!({
@@ -921,27 +1094,44 @@ pub async fn get_streams_needing_annotation(
 pub async fn dismiss_annotation_request(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path((stream_id, media_id)): Path<(i64, i64)>,
+    Path((stream_id, media_id)): Path<(i32, i32)>,
     Json(body): Json<DismissRequest>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response()
+        }
     };
 
-    let role = get_user_role(&state.pool, user_id).await.unwrap_or_default();
+    let role = get_user_role(&state.pool, user_id)
+        .await
+        .unwrap_or_default();
     if !is_mod_or_admin(&role) {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Moderator role required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Moderator role required"})),
+        )
+            .into_response();
     }
 
-    let stream_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
-        .bind(stream_id)
-        .fetch_one(&state.pool)
-        .await
-        .unwrap_or(false);
+    let stream_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream WHERE id = $1)")
+            .bind(stream_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(false);
 
     if !stream_exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Stream not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Stream not found"})),
+        )
+            .into_response();
     }
 
     let media_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)")
@@ -951,10 +1141,18 @@ pub async fn dismiss_annotation_request(
         .unwrap_or(false);
 
     if !media_exists {
-        return (StatusCode::NOT_FOUND, Json(json!({"detail": "Media not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Media not found"})),
+        )
+            .into_response();
     }
 
-    let reason = body.reason.as_ref().map(|r| r.trim().to_string()).filter(|r| !r.is_empty());
+    let reason = body
+        .reason
+        .as_ref()
+        .map(|r| r.trim().to_string())
+        .filter(|r| !r.is_empty());
 
     let dismissed_at: DateTime<Utc> = match sqlx::query_scalar(
         r#"INSERT INTO annotation_request_dismissal

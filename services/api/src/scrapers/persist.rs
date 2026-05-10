@@ -4,29 +4,18 @@
 ///   1. Skip if info_hash already in torrent_stream (update seeders only).
 ///   2. Otherwise: insert stream → torrent_stream → stream_file → file_media_link
 ///      (series) or stream_media_link (movie).
-///
-/// After all inserts, encode the full stream list as a Python-compatible
-/// \x01MFsc1 + zlib blob and write it to the Redis stream_data key so future
-/// warm-path requests skip the cold path entirely.
-use serde_json::json;
 use sqlx::PgPool;
 use tracing::{debug, warn};
 
-use crate::{
-    cache::{codec, stream_cache},
-    scrapers::{ScrapedStream, ScrapedTelegramStream, ScrapedUsenetStream, SearchMeta},
-};
+use crate::scrapers::{ScrapedStream, ScrapedTelegramStream, ScrapedUsenetStream, SearchMeta};
 
-#[allow(clippy::too_many_arguments)]
 pub async fn write_back(
     streams: &[ScrapedStream],
     pool: &PgPool,
-    redis: &fred::clients::Client,
     meta: &SearchMeta,
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-    scope: &str,
 ) {
     if streams.is_empty() {
         return;
@@ -53,25 +42,6 @@ pub async fn write_back(
         streams.len() - persisted_hashes.len(),
         meta.media_id
     );
-
-    // Write Redis blob for the primary media_id so future warm-path requests hit cache.
-    let key = redis_key(meta.media_id, media_type, season, episode, scope);
-    let blob_json = json!({
-        "torrents": streams.iter().map(|s| {
-            json!({
-                "name": s.name,
-                "info_hash": s.info_hash,
-                "quality": s.parsed.quality,
-                "resolution": s.parsed.resolution,
-                "is_public": true
-            })
-        }).collect::<Vec<_>>()
-    });
-    if let Some(blob) = codec::encode_blob(&blob_json) {
-        if let Err(e) = stream_cache::set_with_ttl(redis, &key, blob, 900).await {
-            warn!("persist: redis write failed for {key}: {e}");
-        }
-    }
 }
 
 // ─── DB upsert ────────────────────────────────────────────────────────────────
@@ -114,6 +84,7 @@ async fn upsert_stream(
             stream_type, name, source,
             resolution, codec, quality,
             is_proper, is_repack, is_extended, is_complete, is_dubbed,
+            is_subbed, is_remastered, is_upscaled,
             release_group,
             is_active, is_blocked, is_public, playback_count,
             created_at
@@ -121,7 +92,8 @@ async fn upsert_stream(
             'TORRENT'::streamtype, $1, $2,
             $3, $4, $5,
             $6, $7, $8, $9, $10,
-            $11,
+            $11, $12, $13,
+            $14,
             true, false, true, 0,
             NOW()
         )
@@ -138,6 +110,9 @@ async fn upsert_stream(
     .bind(s.parsed.is_extended)
     .bind(s.parsed.is_complete)
     .bind(s.parsed.is_dubbed)
+    .bind(s.parsed.is_subbed)
+    .bind(s.parsed.is_remastered)
+    .bind(s.parsed.is_upscaled)
     .bind(&s.parsed.release_group)
     .fetch_one(pool)
     .await?;
@@ -327,6 +302,7 @@ async fn upsert_usenet_stream(
             stream_type, name, source,
             resolution, codec, quality,
             is_proper, is_repack, is_extended, is_complete, is_dubbed,
+            is_subbed, is_remastered, is_upscaled,
             release_group,
             is_active, is_blocked, is_public, playback_count,
             created_at
@@ -334,7 +310,8 @@ async fn upsert_usenet_stream(
             'USENET'::streamtype, $1, $2,
             $3, $4, $5,
             $6, $7, $8, $9, $10,
-            $11,
+            $11, $12, $13,
+            $14,
             true, false, true, 0,
             NOW()
         )
@@ -351,6 +328,9 @@ async fn upsert_usenet_stream(
     .bind(s.parsed.is_extended)
     .bind(s.parsed.is_complete)
     .bind(s.parsed.is_dubbed)
+    .bind(s.parsed.is_subbed)
+    .bind(s.parsed.is_remastered)
+    .bind(s.parsed.is_upscaled)
     .bind(&s.parsed.release_group)
     .fetch_one(pool)
     .await?;
@@ -544,6 +524,7 @@ async fn upsert_telegram_stream(
             stream_type, name, source,
             resolution, codec, quality,
             is_proper, is_repack, is_extended, is_complete, is_dubbed,
+            is_subbed, is_remastered, is_upscaled,
             release_group,
             is_active, is_blocked, is_public, playback_count,
             created_at
@@ -551,7 +532,8 @@ async fn upsert_telegram_stream(
             'TELEGRAM'::streamtype, $1, 'Telegram',
             $2, $3, $4,
             $5, $6, $7, $8, $9,
-            $10,
+            $10, $11, $12,
+            $13,
             true, false, true, 0,
             NOW()
         )
@@ -567,6 +549,9 @@ async fn upsert_telegram_stream(
     .bind(s.parsed.is_extended)
     .bind(s.parsed.is_complete)
     .bind(s.parsed.is_dubbed)
+    .bind(s.parsed.is_subbed)
+    .bind(s.parsed.is_remastered)
+    .bind(s.parsed.is_upscaled)
     .bind(&s.parsed.release_group)
     .fetch_one(pool)
     .await?;
@@ -622,19 +607,4 @@ async fn upsert_telegram_stream(
     .ok();
 
     Ok(true)
-}
-
-fn redis_key(
-    media_id: i64,
-    media_type: &str,
-    season: Option<i32>,
-    episode: Option<i32>,
-    scope: &str,
-) -> String {
-    match (media_type, season, episode) {
-        ("series", Some(s), Some(e)) => {
-            format!("stream_data:series:{media_id}:{s}:{e}:{scope}")
-        }
-        _ => format!("stream_data:movie:{media_id}:{scope}"),
-    }
 }

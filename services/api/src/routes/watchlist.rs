@@ -79,35 +79,34 @@ pub async fn get_providers(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ProvidersQuery>,
 ) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
-        Some(id) => id,
-        None => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"})))
-                .into_response()
-        }
-    };
+    // Auth is optional — unauthenticated requests return an empty provider list.
+    let user_id = validate_token(&headers, &state.config.secret_key_raw);
 
     // Fetch the profile config (with secrets decrypted), including the actual profile id.
     type ProfileRecord = (i32, Option<serde_json::Value>, Option<String>);
-    let row: Option<ProfileRecord> = if let Some(pid) = params.profile_id {
-        sqlx::query_as::<_, ProfileRecord>(
-            "SELECT id, config, encrypted_secrets FROM user_profiles WHERE id = $1 AND user_id = $2",
-        )
-        .bind(pid)
-        .bind(user_id as i32)
-        .fetch_optional(&state.pool_ro)
-        .await
-        .ok()
-        .flatten()
+    let row: Option<ProfileRecord> = if let Some(uid) = user_id {
+        if let Some(pid) = params.profile_id {
+            sqlx::query_as::<_, ProfileRecord>(
+                "SELECT id, config, encrypted_secrets FROM user_profiles WHERE id = $1 AND user_id = $2",
+            )
+            .bind(pid)
+            .bind(uid as i32)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .ok()
+            .flatten()
+        } else {
+            sqlx::query_as::<_, ProfileRecord>(
+                "SELECT id, config, encrypted_secrets FROM user_profiles WHERE user_id = $1 AND is_default = true",
+            )
+            .bind(uid as i32)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .ok()
+            .flatten()
+        }
     } else {
-        sqlx::query_as::<_, ProfileRecord>(
-            "SELECT id, config, encrypted_secrets FROM user_profiles WHERE user_id = $1 AND is_default = true",
-        )
-        .bind(user_id as i32)
-        .fetch_optional(&state.pool_ro)
-        .await
-        .ok()
-        .flatten()
+        None
     };
 
     let (profile_id, config, encrypted_secrets) = match row {
@@ -123,12 +122,12 @@ pub async fn get_providers(
     }
 
     let providers = extract_watchlist_providers(&full_config);
-    Json(json!({"providers": providers, "profile_id": profile_id}))
-        .into_response()
+    Json(json!({"providers": providers, "profile_id": profile_id})).into_response()
 }
 
 fn get_str<'a>(obj: &'a serde_json::Value, keys: &[&str]) -> Option<&'a str> {
-    keys.iter().find_map(|k| obj.get(*k).and_then(|v| v.as_str()))
+    keys.iter()
+        .find_map(|k| obj.get(*k).and_then(|v| v.as_str()))
 }
 
 fn get_bool_default_true(obj: &serde_json::Value, keys: &[&str]) -> bool {
@@ -160,8 +159,8 @@ fn extract_watchlist_providers(config: &serde_json::Value) -> Vec<serde_json::Va
             // ewc (enable_watchlist_catalogs) defaults to true when key absent
             let ewc = get_bool_default_true(sp, &["ewc", "enable_watchlist_catalogs"]);
             if enabled && ewc {
-                let display_name = get_str(sp, &["n", "name"])
-                    .unwrap_or_else(|| provider_display_name(service));
+                let display_name =
+                    get_str(sp, &["n", "name"]).unwrap_or_else(|| provider_display_name(service));
                 result.push(json!({
                     "service": service,
                     "name": display_name,
@@ -173,15 +172,17 @@ fn extract_watchlist_providers(config: &serde_json::Value) -> Vec<serde_json::Va
 
     // Legacy single provider — supports "streaming_provider" and "sp" aliases.
     if result.is_empty() {
-        let sp = config.get("sp").or_else(|| config.get("streaming_provider"));
+        let sp = config
+            .get("sp")
+            .or_else(|| config.get("streaming_provider"));
         if let Some(sp) = sp {
             let service = match get_str(sp, &["sv", "service"]) {
                 Some(s) if !s.is_empty() => s,
                 _ => return result,
             };
             if WATCHLIST_PROVIDERS.contains(&service) {
-                let display_name = get_str(sp, &["n", "name"])
-                    .unwrap_or_else(|| provider_display_name(service));
+                let display_name =
+                    get_str(sp, &["n", "name"]).unwrap_or_else(|| provider_display_name(service));
                 result.push(json!({
                     "service": service,
                     "name": display_name,
@@ -224,7 +225,6 @@ fn deep_merge(base: &mut serde_json::Value, overlay: serde_json::Value) {
 #[derive(Deserialize)]
 pub struct WatchlistQuery {
     profile_id: Option<i32>,
-    #[allow(dead_code)]
     media_type: Option<String>,
     page: Option<u32>,
     page_size: Option<u32>,
@@ -239,13 +239,17 @@ pub async fn get_watchlist(
     let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Unauthorized"})))
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
                 .into_response()
         }
     };
 
     let page = params.page.unwrap_or(1).max(1);
     let page_size = params.page_size.unwrap_or(25).clamp(1, 100);
+    let _media_type = params.media_type;
     let _ = params.profile_id;
 
     // Provider-specific watchlist fetching is not yet implemented.
@@ -296,14 +300,26 @@ async fn dispatch(state: &AppState, secret_str: &str) -> Result<(), providers::P
     })?;
 
     match provider.service.as_str() {
-        "realdebrid" => providers::realdebrid::delete_all_torrents(&state.http, token).await,
-        "alldebrid" => providers::alldebrid::delete_all_torrents(&state.http, token).await,
-        "premiumize" => providers::premiumize::delete_all_torrents(&state.http, token).await,
-        "debridlink" => providers::debridlink::delete_all_torrents(&state.http, token).await,
-        "torbox" => providers::torbox::delete_all_torrents(&state.http, token).await,
-        "stremthru" => providers::stremthru::delete_all_torrents(&state.http, token).await,
-        "offcloud" => providers::offcloud::delete_all_torrents(&state.http, token).await,
-        "easydebrid" => providers::easydebrid::delete_all_torrents(&state.http, token).await,
+        "realdebrid" => {
+            providers::torrents::realdebrid::delete_all_torrents(&state.http, token).await
+        }
+        "alldebrid" => {
+            providers::torrents::alldebrid::delete_all_torrents(&state.http, token).await
+        }
+        "premiumize" => {
+            providers::torrents::premiumize::delete_all_torrents(&state.http, token).await
+        }
+        "debridlink" => {
+            providers::torrents::debridlink::delete_all_torrents(&state.http, token).await
+        }
+        "torbox" => providers::torrents::torbox::delete_all_torrents(&state.http, token).await,
+        "stremthru" => {
+            providers::torrents::stremthru::delete_all_torrents(&state.http, token).await
+        }
+        "offcloud" => providers::torrents::offcloud::delete_all_torrents(&state.http, token).await,
+        "easydebrid" => {
+            providers::torrents::easydebrid::delete_all_torrents(&state.http, token).await
+        }
         other => Err(providers::ProviderError::api(
             format!("Provider '{other}' does not support delete-all-watchlist"),
             "provider_error.mp4",
@@ -321,9 +337,5 @@ fn redirect(url: String) -> Response {
 }
 
 fn error_video_url(state: &AppState, video_file: &str) -> String {
-    if let Some(python_url) = &state.config.python_proxy_url {
-        format!("{python_url}/static/exceptions/{video_file}")
-    } else {
-        format!("{}/static/exceptions/{video_file}", state.config.host_url)
-    }
+    format!("{}/static/exceptions/{video_file}", state.config.host_url)
 }

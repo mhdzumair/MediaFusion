@@ -148,4 +148,4 @@ SCRAPLING_REAL_CHROME = settings.scrapling_real_chrome
 SCRAPLING_CLOUDFLARE_CACHE_DURATION = settings.scrapling_cloudflare_cache_duration
 SCRAPLING_CLOUDFLARE_MAX_ATTEMPTS = settings.scrapling_cloudflare_max_attempts
 
-CLOSESPIDER_TIMEOUT_NO_ITEM = max(1, int(os.getenv("SCRAPY_CLOSESPIDER_TIMEOUT_NO_ITEM", "600")))  # 10 minutes
+CLOSESPIDER_TIMEOUT_NO_ITEM = max(1, int(os.getenv("SCRAPY_CLOSESPIDER_TIMEOUT_NO_ITEM", "1800")))  # 30 minutes

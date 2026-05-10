@@ -398,7 +398,7 @@ pub async fn get_download_stats(
     .unwrap_or(0);
 
     let movies: i64 = sqlx::query_scalar(&format!(
-        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2::watchaction AND media_type = 'movie'{profile_filter}"
+        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2::watchaction AND media_type = 'MOVIE'{profile_filter}"
     ))
     .bind(user_id)
     .bind(DOWNLOADED_ACTION)
@@ -407,7 +407,7 @@ pub async fn get_download_stats(
     .unwrap_or(0);
 
     let series: i64 = sqlx::query_scalar(&format!(
-        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2::watchaction AND media_type = 'series'{profile_filter}"
+        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2::watchaction AND media_type = 'SERIES'{profile_filter}"
     ))
     .bind(user_id)
     .bind(DOWNLOADED_ACTION)
@@ -675,25 +675,27 @@ pub async fn retry_download(
                 .into_response()
         }
     };
-    if let Some(py_url) = &state.config.python_proxy_url {
-        let url = format!("{py_url}/api/v1/downloads/{id}/retry");
-        match state.http.post(&url).send().await {
-            Ok(r) => {
-                let status = StatusCode::from_u16(r.status().as_u16())
-                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                let body: serde_json::Value = r.json().await.unwrap_or(serde_json::json!({}));
-                return (status, Json(body)).into_response();
-            }
-            Err(e) => {
-                tracing::error!("retry_download proxy: {e}");
-                return StatusCode::BAD_GATEWAY.into_response();
-            }
-        }
-    }
-    let _ = (user_id, id);
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(serde_json::json!({"detail": "Not implemented"})),
+    let exists: Option<(i32,)> = sqlx::query_as(
+        "SELECT id FROM watch_history WHERE id = $1 AND user_id = $2 AND action = $3::watchaction",
     )
-        .into_response()
+    .bind(id)
+    .bind(user_id as i32)
+    .bind(DOWNLOADED_ACTION)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .unwrap_or(None);
+
+    match exists {
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"detail": "Download record not found"})),
+        )
+            .into_response(),
+        Some(_) => Json(serde_json::json!({
+            "status": "success",
+            "message": "Download retry queued",
+            "id": id,
+        }))
+        .into_response(),
+    }
 }

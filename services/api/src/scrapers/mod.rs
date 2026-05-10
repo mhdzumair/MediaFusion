@@ -1,12 +1,15 @@
 pub mod easynews;
+pub mod fetcher;
 pub mod jackett;
 pub mod mediafusion;
 pub mod newznab;
 pub mod orchestrator;
 pub mod persist;
 pub mod prowlarr;
+pub mod public_indexer_registry;
 pub mod public_indexers;
 pub mod public_usenet;
+pub mod rss;
 pub mod telegram;
 pub mod torbox_search;
 pub mod torrentio;

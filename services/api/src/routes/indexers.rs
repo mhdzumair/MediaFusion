@@ -663,97 +663,64 @@ pub async fn test_newznab_indexer(
 
 // ─── CRUD stubs for mod.rs compatibility ─────────────────────────────────────
 
-async fn indexer_proxy(
-    state: &AppState,
-    method: reqwest::Method,
-    path: &str,
-    body: Option<serde_json::Value>,
-) -> Response {
-    let Some(py_url) = &state.config.python_proxy_url else {
-        return Json(serde_json::json!({"detail": "Unavailable"})).into_response();
-    };
-    let url = format!("{py_url}{path}");
-    let mut req = state.http.request(method, &url);
-    if let Some(b) = body {
-        req = req.json(&b);
-    }
-    match req.send().await {
-        Ok(r) => {
-            let status = axum::http::StatusCode::from_u16(r.status().as_u16())
-                .unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
-            let resp: serde_json::Value = r.json().await.unwrap_or(serde_json::json!({}));
-            (status, Json(resp)).into_response()
-        }
-        Err(e) => Json(serde_json::json!({"detail": e.to_string()})).into_response(),
-    }
+fn indexer_not_found() -> Response {
+    (
+        axum::http::StatusCode::NOT_FOUND,
+        Json(serde_json::json!({"detail": "Use user profile settings to configure indexers"})),
+    )
+        .into_response()
 }
 
 pub async fn list_indexers(State(state): State<Arc<AppState>>) -> Response {
-    indexer_proxy(&state, reqwest::Method::GET, "/api/v1/indexers", None).await
+    let prowlarr_available =
+        state.config.prowlarr_url.is_some() && state.config.prowlarr_api_key.is_some();
+    let jackett_available = state.config.jackett_url.is_some();
+    let zilean_available = !state.config.zilean_url.is_empty();
+    let torrentio_available = !state.config.torrentio_url.is_empty();
+    let mediafusion_available = !state.config.mediafusion_url.is_empty();
+
+    Json(serde_json::json!({
+        "prowlarr_available": prowlarr_available,
+        "jackett_available": jackett_available,
+        "zilean_available": zilean_available,
+        "torrentio_available": torrentio_available,
+        "mediafusion_available": mediafusion_available,
+    }))
+    .into_response()
 }
 
 pub async fn create_indexer(
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<serde_json::Value>,
+    State(_state): State<Arc<AppState>>,
+    Json(_body): Json<serde_json::Value>,
 ) -> Response {
-    indexer_proxy(
-        &state,
-        reqwest::Method::POST,
-        "/api/v1/indexers",
-        Some(body),
-    )
-    .await
+    indexer_not_found()
 }
 
 pub async fn get_indexer(
-    State(state): State<Arc<AppState>>,
-    axum::extract::Path(id): axum::extract::Path<i64>,
+    State(_state): State<Arc<AppState>>,
+    axum::extract::Path(_id): axum::extract::Path<i64>,
 ) -> Response {
-    indexer_proxy(
-        &state,
-        reqwest::Method::GET,
-        &format!("/api/v1/indexers/{id}"),
-        None,
-    )
-    .await
+    indexer_not_found()
 }
 
 pub async fn update_indexer(
-    State(state): State<Arc<AppState>>,
-    axum::extract::Path(id): axum::extract::Path<i64>,
-    Json(body): Json<serde_json::Value>,
+    State(_state): State<Arc<AppState>>,
+    axum::extract::Path(_id): axum::extract::Path<i64>,
+    Json(_body): Json<serde_json::Value>,
 ) -> Response {
-    indexer_proxy(
-        &state,
-        reqwest::Method::PUT,
-        &format!("/api/v1/indexers/{id}"),
-        Some(body),
-    )
-    .await
+    indexer_not_found()
 }
 
 pub async fn delete_indexer(
-    State(state): State<Arc<AppState>>,
-    axum::extract::Path(id): axum::extract::Path<i64>,
+    State(_state): State<Arc<AppState>>,
+    axum::extract::Path(_id): axum::extract::Path<i64>,
 ) -> Response {
-    indexer_proxy(
-        &state,
-        reqwest::Method::DELETE,
-        &format!("/api/v1/indexers/{id}"),
-        None,
-    )
-    .await
+    indexer_not_found()
 }
 
 pub async fn test_indexer(
-    State(state): State<Arc<AppState>>,
-    axum::extract::Path(id): axum::extract::Path<i64>,
+    State(_state): State<Arc<AppState>>,
+    axum::extract::Path(_id): axum::extract::Path<i64>,
 ) -> Response {
-    indexer_proxy(
-        &state,
-        reqwest::Method::POST,
-        &format!("/api/v1/indexers/{id}/test"),
-        None,
-    )
-    .await
+    indexer_not_found()
 }

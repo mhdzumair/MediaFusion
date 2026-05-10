@@ -25,7 +25,10 @@ use fred::prelude::{Expiration, KeysInterface};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::{crypto, db, models::user_data::UserData, providers, state::AppState};
+use crate::{
+    crypto, db, models::user_data::UserData, providers,
+    providers::torrents::metadata_update::ProviderFile, state::AppState,
+};
 
 const URL_CACHE_TTL: i64 = 3600;
 
@@ -205,17 +208,36 @@ async fn resolve(
     }
 
     // 4. Fetch stream info from DB (announce list, file_index, filename hint)
-    let stream_info = db::fetch_stream_playback_info(&state.pool_ro, info_hash)
+    let stream_info = db::fetch_stream_playback_info(&state.pool_ro, info_hash, season, episode)
         .await
         .ok_or_else(|| providers::ProviderError::api("Stream not found", "stream_not_found.mp4"))?;
 
     let resolved_filename = filename.or(stream_info.filename.as_deref());
+    let no_file_metadata = stream_info.has_no_files;
 
-    // 5. Dispatch to provider
-    macro_rules! call_provider {
+    // 5. Dispatch to provider — realdebrid returns (url, files); others just url.
+    macro_rules! call_provider_simple {
         ($module:path) => {{
             use $module as p;
-            p::get_video_url(
+            let url = p::get_video_url(
+                &state.http,
+                token,
+                info_hash,
+                &stream_info.announce_list,
+                resolved_filename,
+                stream_info.file_index,
+                season,
+                episode,
+                None,
+            )
+            .await?;
+            (url, Vec::<ProviderFile>::new())
+        }};
+    }
+
+    let (video_url, provider_files): (String, Vec<ProviderFile>) = match provider.service.as_str() {
+        "realdebrid" => {
+            providers::torrents::realdebrid::get_video_url(
                 &state.http,
                 token,
                 info_hash,
@@ -227,20 +249,16 @@ async fn resolve(
                 None,
             )
             .await?
-        }};
-    }
-
-    let video_url = match provider.service.as_str() {
-        "realdebrid" => call_provider!(providers::realdebrid),
-        "alldebrid" => call_provider!(providers::alldebrid),
-        "premiumize" => call_provider!(providers::premiumize),
-        "debridlink" => call_provider!(providers::debridlink),
-        "torbox" => call_provider!(providers::torbox),
-        "stremthru" => call_provider!(providers::stremthru),
-        "offcloud" => call_provider!(providers::offcloud),
-        "easydebrid" => call_provider!(providers::easydebrid),
-        "seedr" => call_provider!(providers::seedr),
-        "pikpak" => call_provider!(providers::pikpak),
+        }
+        "alldebrid" => call_provider_simple!(providers::torrents::alldebrid),
+        "premiumize" => call_provider_simple!(providers::torrents::premiumize),
+        "debridlink" => call_provider_simple!(providers::torrents::debridlink),
+        "torbox" => call_provider_simple!(providers::torrents::torbox),
+        "stremthru" => call_provider_simple!(providers::torrents::stremthru),
+        "offcloud" => call_provider_simple!(providers::torrents::offcloud),
+        "easydebrid" => call_provider_simple!(providers::torrents::easydebrid),
+        "seedr" => call_provider_simple!(providers::torrents::seedr),
+        "pikpak" => call_provider_simple!(providers::torrents::pikpak),
         other => {
             return Err(providers::ProviderError::api(
                 format!("Provider '{other}' is not yet supported in the Rust service"),
@@ -249,7 +267,18 @@ async fn resolve(
         }
     };
 
-    // 6. Cache result
+    // 6. If no file metadata in DB, store it in the background (future users benefit).
+    if no_file_metadata && !provider_files.is_empty() {
+        let pool = state.pool.clone();
+        let hash = info_hash.to_string();
+        let files = provider_files;
+        let s = season;
+        tokio::spawn(async move {
+            providers::torrents::metadata_update::update_metadata(&pool, &hash, &files, s).await;
+        });
+    }
+
+    // 7. Cache result
     let _ = state
         .redis
         .set::<(), _, _>(
@@ -284,11 +313,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 fn error_video_url(state: &AppState, video_file: &str) -> String {
-    if let Some(python_url) = &state.config.python_proxy_url {
-        format!("{python_url}/static/exceptions/{video_file}")
-    } else {
-        format!("{}/static/exceptions/{video_file}", state.config.host_url)
-    }
+    format!("{}/static/exceptions/{video_file}", state.config.host_url)
 }
 
 fn redirect(url: String) -> Response {

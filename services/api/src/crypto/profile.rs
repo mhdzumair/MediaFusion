@@ -1,9 +1,10 @@
-use fred::prelude::KeysInterface;
+use fred::prelude::{Expiration, KeysInterface};
 use serde_json::Value;
 use sqlx::PgPool;
 use tracing::warn;
 
 const REDIS_KEY_PREFIX: &str = "user_profile:";
+const UUID_CACHE_TTL: u64 = 2_592_000; // 30 days, matches Python
 
 /// Lookup a U-prefixed profile UUID.
 /// Checks Redis first (`user_profile:{uuid}`), falls back to Postgres.
@@ -19,8 +20,8 @@ pub async fn lookup(
     if let Some(v) = lookup_redis(redis, key, uuid).await {
         return Some(v);
     }
-    // 2. Fall back to Postgres
-    lookup_postgres(pool, uuid).await
+    // 2. Fall back to Postgres, then write back to Redis
+    lookup_postgres(redis, pool, key, uuid).await
 }
 
 async fn lookup_redis(redis: &fred::clients::Client, key: &[u8; 32], uuid: &str) -> Option<Value> {
@@ -65,23 +66,60 @@ async fn lookup_redis(redis: &fred::clients::Client, key: &[u8; 32], uuid: &str)
     Some(config)
 }
 
-async fn lookup_postgres(pool: &PgPool, uuid: &str) -> Option<Value> {
-    let row: Option<(serde_json::Value, i32)> =
-        sqlx::query_as("SELECT config, user_id FROM user_profiles WHERE uuid = $1 LIMIT 1")
-            .bind(uuid)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or_else(|e| {
-                warn!("profile postgres lookup uuid={uuid}: {e}");
-                None
-            });
+async fn lookup_postgres(
+    redis: &fred::clients::Client,
+    pool: &PgPool,
+    key: &[u8; 32],
+    uuid: &str,
+) -> Option<Value> {
+    let row: Option<(serde_json::Value, i32, i32, Option<String>)> = sqlx::query_as(
+        "SELECT config, id, user_id, encrypted_secrets FROM user_profiles WHERE uuid = $1 LIMIT 1",
+    )
+    .bind(uuid)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or_else(|e| {
+        warn!("profile postgres lookup uuid={uuid}: {e}");
+        None
+    });
 
-    row.map(|(mut config, user_id)| {
-        if let Some(obj) = config.as_object_mut() {
-            obj.insert("uid".into(), serde_json::json!(user_id as i64));
+    let (config, profile_id, user_id, encrypted_secrets) = row?;
+
+    // Write back to Redis: store config + encrypted_secrets as-is (AES-encrypted),
+    // never plaintext api_password — secrets are decrypted per-request by lookup_redis.
+    if let Ok(payload) = serde_json::to_string(&serde_json::json!({
+        "config": config,
+        "encrypted_secrets": encrypted_secrets,
+        "user_id": user_id,
+        "profile_id": profile_id,
+        "profile_uuid": uuid,
+    })) {
+        let cache_key = format!("{REDIS_KEY_PREFIX}{uuid}");
+        if let Err(e) = redis
+            .set::<(), _, _>(
+                &cache_key,
+                payload,
+                Some(Expiration::EX(UUID_CACHE_TTL as i64)),
+                None,
+                false,
+            )
+            .await
+        {
+            warn!("profile redis write-back uuid={uuid}: {e}");
         }
-        config
-    })
+    }
+
+    // Decrypt secrets and build the full config to return
+    let mut full_config = config;
+    if let Some(enc) = encrypted_secrets.as_deref().filter(|s| !s.is_empty()) {
+        let secrets = decrypt_secrets(enc, key);
+        merge_secrets(&mut full_config, &secrets);
+    }
+    if let Some(obj) = full_config.as_object_mut() {
+        obj.insert("uid".into(), serde_json::json!(user_id as i64));
+        obj.insert("pid".into(), serde_json::json!(profile_id as i64));
+    }
+    Some(full_config)
 }
 
 /// Merge decrypted secrets back into config — mirrors Python's `merge_secrets`.
@@ -94,7 +132,7 @@ async fn lookup_postgres(pool: &PgPool, uuid: &str) -> Option<Value> {
 ///   "ap": "..."
 /// }
 /// ```
-fn merge_secrets(config: &mut Value, secrets: &Value) {
+pub fn merge_secrets(config: &mut Value, secrets: &Value) {
     let Some(secrets_obj) = secrets.as_object() else {
         return;
     };
@@ -170,12 +208,16 @@ fn merge_secrets(config: &mut Value, secrets: &Value) {
         }
     }
 
-    // Top-level api_password
-    for ap_key in ["ap", "api_password"] {
-        if let Some(ap) = secrets_obj.get(ap_key) {
-            if !ap.is_null() {
-                config_obj.insert(ap_key.into(), ap.clone());
-                break;
+    // Top-level api_password — only fill in if not already present in config.
+    // Always stored under the canonical short key "ap" to avoid the serde alias
+    // "api_password" appearing alongside "ap" and triggering a duplicate-field error.
+    if !config_obj.contains_key("ap") && !config_obj.contains_key("api_password") {
+        for ap_key in ["ap", "api_password"] {
+            if let Some(ap) = secrets_obj.get(ap_key) {
+                if !ap.is_null() {
+                    config_obj.insert("ap".into(), ap.clone());
+                    break;
+                }
             }
         }
     }

@@ -1,8 +1,11 @@
+pub mod api_key_middleware;
 pub mod cache;
 pub mod config;
 pub mod crypto;
 pub mod db;
+pub mod demagnetize;
 pub mod error;
+pub mod exception_tracker;
 pub mod metrics;
 pub mod metrics_middleware;
 pub mod models;
@@ -13,4 +16,6 @@ pub mod ptt;
 pub mod routes;
 pub mod scrapers;
 pub mod state;
+pub mod stremio_auth_middleware;
+pub mod template;
 pub mod util;

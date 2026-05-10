@@ -4,7 +4,7 @@
 use serde_json::Value;
 use std::sync::OnceLock;
 
-use super::ProviderError;
+use crate::providers::ProviderError;
 
 const BASE_URL: &str = "https://offcloud.com";
 
@@ -482,6 +482,26 @@ pub async fn get_video_url(
     })
 }
 
+/// Delete the cloud download matching `info_hash` from OffCloud.
+/// Returns `true` if found and deleted, `false` if not found.
+pub async fn delete_torrent_by_hash(
+    http: &reqwest::Client,
+    token: &str,
+    info_hash: &str,
+) -> Result<bool, ProviderError> {
+    match find_in_history(http, token, info_hash).await? {
+        None => Ok(false),
+        Some(item) => {
+            if let Some(request_id) = item.get("requestId").and_then(|v| v.as_str()) {
+                oc_get(http, token, &format!("/cloud/remove/{request_id}"))
+                    .await
+                    .ok();
+            }
+            Ok(true)
+        }
+    }
+}
+
 /// Delete ALL cloud downloads from the user's OffCloud account.
 pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     let body = oc_get(http, token, "/api/cloud/history").await?;
@@ -501,4 +521,41 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
     }
 
     Ok(())
+}
+
+// ─── Debrid cache check ───────────────────────────────────────────────────────
+
+/// Check which hashes are cached on OffCloud (form-encoded POST /api/cache).
+pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]) -> Vec<String> {
+    let url = "https://offcloud.com/api/cache";
+    let form: Vec<(&str, &str)> = hashes.iter().map(|h| ("hashes", h.as_str())).collect();
+    let resp = match http
+        .post(url)
+        .bearer_auth(token)
+        .query(&[("key", token)])
+        .form(&form)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("offcloud cache: {e}");
+            return vec![];
+        }
+    };
+    let body: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("offcloud cache json: {e}");
+            return vec![];
+        }
+    };
+    body.get("cachedItems")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
 }

@@ -35,7 +35,7 @@ MAX_TOKENS ?= 4096
 SUBREDDIT ?= MediaFusion
 REDDIT_POST_TITLE ?= "MediaFusion $(VERSION_NEW) Update - What's New?"
 
-.PHONY: build tag push prompt update-version generate-notes generate-reddit-post frontend-install frontend-build frontend-dev dev backend-dev rust-build rust-dev rust-test rust-fmt rust-lint
+.PHONY: build tag push prompt update-version generate-notes generate-reddit-post frontend-install frontend-build frontend-dev frontend-lint frontend-fmt dev backend-dev python-lint python-fmt python-test rust-build rust-dev rust-test rust-fmt rust-lint lint fmt test
 
 build:
 	docker build --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE) -f deployment/Dockerfile .
@@ -215,6 +215,22 @@ frontend-build: frontend-install
 frontend-dev:
 	cd clients/frontend && npm run dev
 
+frontend-lint:
+	cd clients/frontend && npm run lint
+
+frontend-fmt:
+	cd clients/frontend && npm run format:check
+
+# Python targets
+python-lint:
+	uv run ruff check .
+
+python-fmt:
+	uv run ruff format --check .
+
+python-test:
+	uv run pytest
+
 # Development targets
 backend-dev:
 	uvicorn api.main:app --reload --port 8000
@@ -225,10 +241,10 @@ dev:
 
 # Rust targets
 rust-build:
-	cd services/api && cargo build --release
+	cd services/api && cargo build --release --bin mediafusion-api
 
 rust-dev:
-	cargo run --manifest-path services/api/Cargo.toml
+	cargo run --manifest-path services/api/Cargo.toml --bin mediafusion-api
 
 rust-test:
 	cd services/api && cargo test
@@ -238,5 +254,12 @@ rust-fmt:
 
 rust-lint:
 	cd services/api && cargo clippy --all-targets -- -D warnings
+
+# Aggregate targets
+lint: python-lint rust-lint frontend-lint
+
+fmt: python-fmt rust-fmt frontend-fmt
+
+test: python-test rust-test
 
 all: build-multi

@@ -23,6 +23,7 @@ use fred::prelude::*;
 use fred::types::InfoKind;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value as JsonValue};
 use sha2::Sha256;
 
 use crate::state::AppState;
@@ -143,21 +144,7 @@ fn parse_scan_value(value: Value) -> (String, Vec<String>) {
 
 // ─── Response types ───────────────────────────────────────────────────────────
 
-#[derive(Serialize)]
-pub struct CacheStatsResponse {
-    pub used_memory: String,
-    pub connected_clients: String,
-    pub total_commands: String,
-    pub hit_ratio: f64,
-    pub total_keys: i64,
-}
-
-#[derive(Serialize)]
-pub struct CacheKeysResponse {
-    pub keys: Vec<String>,
-    pub cursor: String,
-    pub has_more: bool,
-}
+// CacheStatsResponse, CacheKeysResponse defined inline as json! below
 
 #[derive(Serialize)]
 pub struct CacheDeleteResponse {
@@ -174,36 +161,43 @@ pub struct CacheClearResponse {
 #[derive(Serialize)]
 pub struct DbStatsResponse {
     pub version: String,
-    pub database: String,
-    pub size: String,
-    pub active_connections: i64,
-    pub torrent_streams: i64,
-    pub movies: i64,
-    pub series: i64,
-    pub usenet_streams: i64,
-    pub telegram_streams: i64,
-    pub users: i64,
+    pub database_name: String,
+    pub size_human: String,
+    pub total_size_bytes: i64,
+    pub connection_count: i64,
+    pub max_connections: i64,
+    pub cache_hit_ratio: f64,
+    pub uptime_seconds: i64,
+    pub active_queries: i64,
+    pub deadlocks: i64,
+    pub transactions_committed: i64,
+    pub transactions_rolled_back: i64,
 }
 
 #[derive(Serialize)]
 pub struct TableInfo {
-    pub schema: String,
-    pub table: String,
-    pub size: String,
-    pub row_estimate: i64,
+    pub name: String,
+    pub schema_name: String,
+    pub row_count: i64,
+    pub size_human: String,
+    pub size_bytes: i64,
+    pub index_size_human: String,
+    pub index_size_bytes: i64,
+    pub last_vacuum: Option<String>,
+    pub last_analyze: Option<String>,
+    pub last_autovacuum: Option<String>,
+    pub last_autoanalyze: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct TablesListResponse {
+    pub tables: Vec<TableInfo>,
+    pub total_count: usize,
+    pub total_size_human: String,
+    pub total_size_bytes: i64,
 }
 
 // ─── Query param types ────────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-pub struct CacheKeysParams {
-    #[serde(default = "default_pattern")]
-    pub pattern: String,
-    #[serde(default = "default_count")]
-    pub count: i64,
-    #[serde(default = "default_cursor")]
-    pub cursor: String,
-}
 
 fn default_pattern() -> String {
     "*".to_string()
@@ -221,9 +215,103 @@ fn default_cursor() -> String {
 pub struct CacheClearRequest {
     pub pattern: Option<String>,
     pub cache_type: Option<String>,
+    // frontend sends `type` — accept as alias
+    #[serde(rename = "type")]
+    pub type_field: Option<String>,
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
+
+// Cache type name → list of glob patterns to count
+const CACHE_PATTERNS: &[(&str, &str, &[&str])] = &[
+    (
+        "scrapers",
+        "Scraper status tracking (sorted sets)",
+        &[
+            "rss_scraper",
+            "zilean",
+            "yts",
+            "torrentio",
+            "prowlarr",
+            "mediafusion",
+            "jackett",
+            "bt4g",
+            "telegram_scraper",
+            "public_indexers",
+            "easynews",
+            "torbox_search",
+            "newznab",
+            "torznab:*",
+            "newznab:*",
+            "jackett:*",
+            "prowlarr:*",
+        ],
+    ),
+    (
+        "metadata",
+        "Metadata existence checks and scraper meta cache",
+        &[
+            "movie_exists:*",
+            "series_exists:*",
+            "tv_exists:*",
+            "meta_cache:*",
+        ],
+    ),
+    ("catalog", "Catalog metadata cache", &["catalog:*", "mf:*"]),
+    (
+        "streams",
+        "Torrent stream data and raw list cache",
+        &["torrent_streams:*", "stream:*", "stream_data:*"],
+    ),
+    ("debrid", "Debrid availability cache", &["debrid_cache:*"]),
+    ("profiles", "User profile cache", &["profile_enc:*"]),
+    ("events", "Live events cache", &["events:*", "dlhd:*"]),
+    ("genres", "Genre lists cache", &["genres:*"]),
+    (
+        "lookup",
+        "ID lookup cache (catalog, language, announce)",
+        &["lang:*", "announce:*"],
+    ),
+    (
+        "scheduler",
+        "Scheduler job states and history",
+        &["scheduler:*", "apscheduler*"],
+    ),
+    (
+        "streaming",
+        "Streaming provider caches",
+        &[
+            "streaming_provider_*",
+            "pikpak:*",
+            "setup_code:*",
+            "manifest:*",
+        ],
+    ),
+    ("images", "Cached images/posters", &["poster_src:*"]),
+    (
+        "rate_limit",
+        "Rate limiting counters",
+        &["rate_limit:*", "ratelimit:*"],
+    ),
+];
+
+async fn scan_all_keys(redis: &fred::clients::Client, pattern: &str) -> Vec<String> {
+    let mut all_keys: Vec<String> = Vec::new();
+    let mut cursor = "0".to_string();
+    loop {
+        let (next_cursor, keys) = redis_scan_page(redis, &cursor, pattern, 500).await;
+        all_keys.extend(keys);
+        if next_cursor == "0" {
+            break;
+        }
+        cursor = next_cursor;
+    }
+    all_keys
+}
+
+async fn count_pattern(redis: &fred::clients::Client, pattern: &str) -> i64 {
+    scan_all_keys(redis, pattern).await.len() as i64
+}
 
 pub async fn cache_stats(
     headers: HeaderMap,
@@ -233,80 +321,167 @@ pub async fn cache_stats(
         return forbidden().into_response();
     }
 
-    // Fetch Redis INFO
-    let info_result: Result<String, _> = state.redis.info(Some(InfoKind::All)).await;
-    let info_str = match info_result {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!("Redis INFO error: {e}");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": "Redis error"})),
-            )
-                .into_response();
-        }
-    };
-
-    // Parse key:value pairs from INFO output
-    let mut used_memory = "unknown".to_string();
-    let mut connected_clients = "0".to_string();
-    let mut total_commands = "0".to_string();
-    let mut keyspace_hits: f64 = 0.0;
-    let mut keyspace_misses: f64 = 0.0;
-
+    let info_str: String = state
+        .redis
+        .info(Some(InfoKind::All))
+        .await
+        .unwrap_or_default();
+    let mut info: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
     for line in info_str.lines() {
-        if let Some((key, value)) = line.split_once(':') {
-            let key = key.trim();
-            let value = value.trim();
-            match key {
-                "used_memory_human" => used_memory = value.to_string(),
-                "connected_clients" => connected_clients = value.to_string(),
-                "total_commands_processed" => total_commands = value.to_string(),
-                "keyspace_hits" => keyspace_hits = value.parse().unwrap_or(0.0),
-                "keyspace_misses" => keyspace_misses = value.parse().unwrap_or(0.0),
-                _ => {}
-            }
+        if let Some((k, v)) = line.split_once(':') {
+            info.insert(k.trim(), v.trim());
         }
     }
 
-    // DBSIZE
-    let total_keys: i64 = state.redis.dbsize().await.unwrap_or(0);
+    let parse_i64 = |k: &str| -> i64 { info.get(k).and_then(|v| v.parse().ok()).unwrap_or(0) };
+    let _parse_f64 = |k: &str| -> f64 { info.get(k).and_then(|v| v.parse().ok()).unwrap_or(0.0) };
 
-    let hit_ratio = if keyspace_hits + keyspace_misses > 0.0 {
-        keyspace_hits / (keyspace_hits + keyspace_misses)
+    let hits = parse_i64("keyspace_hits");
+    let misses = parse_i64("keyspace_misses");
+    let hit_rate: Option<f64> = if hits + misses > 0 {
+        Some(((hits as f64 / (hits + misses) as f64) * 10000.0).round() / 100.0)
     } else {
-        0.0
+        None
     };
 
-    Json(CacheStatsResponse {
-        used_memory,
-        connected_clients,
-        total_commands,
-        hit_ratio,
-        total_keys,
-    })
+    let total_keys: i64 = state.redis.dbsize().await.unwrap_or(0);
+
+    let redis_info = json!({
+        "connected": true,
+        "version": info.get("redis_version"),
+        "memory_used": info.get("used_memory_human").unwrap_or(&"—"),
+        "memory_peak": info.get("used_memory_peak_human"),
+        "total_keys": total_keys,
+        "connected_clients": parse_i64("connected_clients"),
+        "uptime_days": parse_i64("uptime_in_days"),
+        "hit_rate": hit_rate,
+        "ops_per_sec": parse_i64("instantaneous_ops_per_sec"),
+    });
+
+    // Count keys for each cache type (run concurrently per category)
+    let mut cache_types: Vec<JsonValue> = Vec::new();
+    for (name, description, patterns) in CACHE_PATTERNS {
+        let mut total: i64 = 0;
+        for &pattern in *patterns {
+            total += count_pattern(&state.redis, pattern).await;
+        }
+        let count_note: Option<&str> = if *name == "scrapers" {
+            Some("This total is sorted-set members (cooldown entries), not Redis keys.")
+        } else {
+            None
+        };
+        cache_types.push(json!({
+            "name": name,
+            "description": description,
+            "keys_count": total,
+            "memory_bytes": null,
+            "count_note": count_note,
+        }));
+    }
+
+    Json(json!({
+        "redis": redis_info,
+        "cache_types": cache_types,
+    }))
     .into_response()
+}
+
+#[derive(Deserialize)]
+pub struct CacheKeysParamsExt {
+    #[serde(default = "default_pattern")]
+    pub pattern: String,
+    #[serde(default = "default_count")]
+    pub count: i64,
+    #[serde(default = "default_cursor")]
+    pub cursor: String,
+    pub cache_category: Option<String>,
+    pub type_filter: Option<String>,
+}
+
+async fn key_info(redis: &fred::clients::Client, key: &str) -> JsonValue {
+    let key_type: String = redis
+        .r#type::<String, _>(key)
+        .await
+        .unwrap_or_else(|_| "string".to_string());
+    let ttl: i64 = redis.ttl(key).await.unwrap_or(-1);
+    json!({"key": key, "type": key_type, "ttl": ttl, "size": null})
 }
 
 pub async fn cache_keys(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Query(params): Query<CacheKeysParams>,
+    Query(params): Query<CacheKeysParamsExt>,
 ) -> impl IntoResponse {
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden().into_response();
     }
 
-    let count = params.count.clamp(1, 200) as u32;
-    let (next_cursor, keys) =
-        redis_scan_page(&state.redis, &params.cursor, &params.pattern, count).await;
+    let count = params.count.clamp(1, 200) as usize;
 
+    // When cache_category is set, collect all keys for that category's patterns
+    if let Some(ref cat) = params.cache_category {
+        let patterns = CACHE_PATTERNS
+            .iter()
+            .find(|(name, _, _)| *name == cat.as_str())
+            .map(|(_, _, pats)| *pats);
+
+        if let Some(pats) = patterns {
+            let mut all_keys: Vec<String> = Vec::new();
+            for &pat in pats {
+                let mut ks = scan_all_keys(&state.redis, pat).await;
+                all_keys.append(&mut ks);
+            }
+            all_keys.sort();
+            all_keys.dedup();
+
+            let offset: usize = params.cursor.parse().unwrap_or(0);
+            let slice: Vec<String> = all_keys.iter().skip(offset).take(count).cloned().collect();
+            let total = all_keys.len();
+            let has_more = offset + slice.len() < total;
+            let next_cursor = if has_more {
+                (offset + slice.len()).to_string()
+            } else {
+                "0".to_string()
+            };
+
+            let mut keys_info: Vec<JsonValue> = Vec::new();
+            for k in &slice {
+                keys_info.push(key_info(&state.redis, k).await);
+            }
+
+            return Json(json!({
+                "keys": keys_info,
+                "total": total,
+                "cursor": next_cursor,
+                "has_more": has_more,
+            }))
+            .into_response();
+        }
+    }
+
+    // Default: SCAN with pattern
+    let (next_cursor, raw_keys) =
+        redis_scan_page(&state.redis, &params.cursor, &params.pattern, count as u32).await;
+
+    let mut keys_info: Vec<JsonValue> = Vec::new();
+    for k in &raw_keys {
+        let info = key_info(&state.redis, k).await;
+        if let Some(ref tf) = params.type_filter {
+            if info.get("type").and_then(|v| v.as_str()) != Some(tf.as_str()) {
+                continue;
+            }
+        }
+        keys_info.push(info);
+    }
+
+    let total = keys_info.len();
     let has_more = next_cursor != "0";
-    Json(CacheKeysResponse {
-        keys,
-        cursor: next_cursor,
-        has_more,
-    })
+    Json(json!({
+        "keys": keys_info,
+        "total": total,
+        "cursor": next_cursor,
+        "has_more": has_more,
+    }))
     .into_response()
 }
 
@@ -327,6 +502,111 @@ pub async fn cache_key_delete(
     .into_response()
 }
 
+pub async fn cache_key_get(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(key): Path<String>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return forbidden().into_response();
+    }
+
+    let key_type: String = state
+        .redis
+        .r#type::<String, _>(&key)
+        .await
+        .unwrap_or_else(|_| "string".to_string());
+    let ttl: i64 = state.redis.ttl(&key).await.unwrap_or(-1);
+
+    if key_type == "none" {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": format!("Key '{}' not found", key)})),
+        )
+            .into_response();
+    }
+
+    let (value, is_binary): (JsonValue, bool) = match key_type.as_str() {
+        "string" => {
+            let raw: Option<Vec<u8>> = state.redis.get(&key).await.unwrap_or(None);
+            match raw {
+                None => (json!(null), false),
+                Some(b) => match std::str::from_utf8(&b) {
+                    Ok(s) => match serde_json::from_str::<JsonValue>(s) {
+                        Ok(v) => (v, false),
+                        Err(_) => (json!(s), false),
+                    },
+                    Err(_) => {
+                        use base64::{engine::general_purpose::STANDARD, Engine as _};
+                        (json!(STANDARD.encode(&b)), true)
+                    }
+                },
+            }
+        }
+        "hash" => {
+            let map: std::collections::HashMap<String, String> =
+                state.redis.hgetall(&key).await.unwrap_or_default();
+            (json!(map), false)
+        }
+        "list" => {
+            let items: Vec<String> = state.redis.lrange(&key, 0, -1).await.unwrap_or_default();
+            (json!(items), false)
+        }
+        "set" => {
+            use fred::prelude::SetsInterface;
+            let members: std::collections::HashSet<String> =
+                state.redis.smembers(&key).await.unwrap_or_default();
+            let mut v: Vec<String> = members.into_iter().collect();
+            v.sort();
+            (json!(v), false)
+        }
+        "zset" => {
+            use fred::prelude::SortedSetsInterface;
+            // zrange with withscores=true returns alternating member/score strings
+            let raw: Vec<String> = state
+                .redis
+                .zrange(&key, 0i64, -1i64, None, false, None, true)
+                .await
+                .unwrap_or_default();
+            let items: Vec<JsonValue> = raw
+                .chunks(2)
+                .filter_map(|c| c.first().zip(c.get(1)))
+                .map(|(member, score)| {
+                    let s: f64 = score.parse().unwrap_or(0.0);
+                    json!({"member": member, "score": s})
+                })
+                .collect();
+            (json!(items), false)
+        }
+        other => (
+            json!({"_info": format!("Unsupported type: {other}")}),
+            false,
+        ),
+    };
+
+    Json(json!({
+        "key": key,
+        "type": key_type,
+        "ttl": ttl,
+        "value": value,
+        "size": 0,
+        "is_binary": is_binary,
+    }))
+    .into_response()
+}
+
+pub async fn cache_image_get(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(key): Path<String>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return forbidden().into_response();
+    }
+    let value: Option<String> = state.redis.get(&key).await.unwrap_or(None);
+    Json(serde_json::json!({"key": key, "value": value})).into_response()
+}
+
 pub async fn cache_clear(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
@@ -336,9 +616,30 @@ pub async fn cache_clear(
         return forbidden().into_response();
     }
 
-    // Resolve pattern
+    // Resolve pattern — frontend sends `type` field; legacy callers may send `cache_type`/`pattern`
+    let type_val = body.type_field.as_deref().unwrap_or("");
     let pattern = if let Some(p) = body.pattern.filter(|s| !s.is_empty()) {
         p
+    } else if type_val == "all" {
+        "*".to_string()
+    } else if type_val == "pattern" {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "pattern field required when type=pattern"})),
+        )
+            .into_response();
+    } else if !type_val.is_empty() {
+        // treat as cache_type name
+        match cache_type_to_pattern(type_val) {
+            Some(p) => p.to_string(),
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({"error": format!("Unknown cache type: {type_val}")})),
+                )
+                    .into_response();
+            }
+        }
     } else if let Some(ct) = body.cache_type.as_deref() {
         match cache_type_to_pattern(ct) {
             Some(p) => p.to_string(),
@@ -387,42 +688,64 @@ pub async fn db_stats(headers: HeaderMap, State(state): State<Arc<AppState>>) ->
         return forbidden().into_response();
     }
 
-    let (version, database, size, active_conn, torrents, movies, series, usenets, telegrams, users) = tokio::join!(
-        fetch_scalar_str(&state.pool_ro, "SELECT version()"),
-        fetch_scalar_str(&state.pool_ro, "SELECT current_database()"),
-        fetch_scalar_str(
-            &state.pool_ro,
-            "SELECT pg_size_pretty(pg_database_size(current_database()))"
-        ),
-        fetch_scalar_i64(
-            &state.pool_ro,
-            "SELECT count(*) FROM pg_stat_activity WHERE state = 'active'"
-        ),
-        fetch_scalar_i64(&state.pool_ro, "SELECT COUNT(*) FROM torrent_stream"),
-        fetch_scalar_i64(
-            &state.pool_ro,
-            "SELECT COUNT(*) FROM media WHERE media_type = 'movie'"
-        ),
-        fetch_scalar_i64(
-            &state.pool_ro,
-            "SELECT COUNT(*) FROM media WHERE media_type = 'series'"
-        ),
-        fetch_scalar_i64(&state.pool_ro, "SELECT COUNT(*) FROM usenet_stream"),
-        fetch_scalar_i64(&state.pool_ro, "SELECT COUNT(*) FROM telegram_stream"),
-        fetch_scalar_i64(&state.pool_ro, "SELECT COUNT(*) FROM users"),
-    );
+    let (version, db_name, size_pretty, total_bytes, active_conn, max_conn, deadlocks, commits, rollbacks) =
+        tokio::join!(
+            fetch_scalar_str(&state.pool_ro, "SELECT version()"),
+            fetch_scalar_str(&state.pool_ro, "SELECT current_database()"),
+            fetch_scalar_str(
+                &state.pool_ro,
+                "SELECT pg_size_pretty(pg_database_size(current_database()))"
+            ),
+            fetch_scalar_i64(&state.pool_ro, "SELECT pg_database_size(current_database())"),
+            fetch_scalar_i64(
+                &state.pool_ro,
+                "SELECT count(*)::bigint FROM pg_stat_activity WHERE state = 'active'"
+            ),
+            fetch_scalar_i64(
+                &state.pool_ro,
+                "SELECT current_setting('max_connections')::int"
+            ),
+            fetch_scalar_i64(
+                &state.pool_ro,
+                "SELECT COALESCE(deadlocks, 0) FROM pg_stat_database WHERE datname = current_database()"
+            ),
+            fetch_scalar_i64(
+                &state.pool_ro,
+                "SELECT COALESCE(xact_commit, 0) FROM pg_stat_database WHERE datname = current_database()"
+            ),
+            fetch_scalar_i64(
+                &state.pool_ro,
+                "SELECT COALESCE(xact_rollback, 0) FROM pg_stat_database WHERE datname = current_database()"
+            ),
+        );
+
+    let cache_hit = sqlx::query_scalar::<_, f64>(
+        "SELECT CASE WHEN (blks_hit + blks_read) > 0 \
+         THEN round(blks_hit::numeric / (blks_hit + blks_read) * 100, 2) \
+         ELSE 0.0 END \
+         FROM pg_stat_database WHERE datname = current_database()",
+    )
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(0.0);
 
     Json(DbStatsResponse {
         version,
-        database,
-        size,
-        active_connections: active_conn,
-        torrent_streams: torrents,
-        movies,
-        series,
-        usenet_streams: usenets,
-        telegram_streams: telegrams,
-        users,
+        database_name: db_name,
+        size_human: size_pretty,
+        total_size_bytes: total_bytes,
+        connection_count: active_conn,
+        max_connections: max_conn,
+        cache_hit_ratio: cache_hit,
+        uptime_seconds: fetch_scalar_i64(
+            &state.pool_ro,
+            "SELECT EXTRACT(EPOCH FROM (now() - pg_postmaster_start_time()))::bigint",
+        )
+        .await,
+        active_queries: active_conn,
+        deadlocks,
+        transactions_committed: commits,
+        transactions_rolled_back: rollbacks,
     })
     .into_response()
 }
@@ -435,16 +758,41 @@ pub async fn db_tables(
         return forbidden().into_response();
     }
 
-    let rows = sqlx::query_as::<_, (String, String, String, i64)>(
+    type TableRow = (
+        String,
+        String,
+        i64,
+        String,
+        i64,
+        String,
+        i64,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    );
+
+    let rows = sqlx::query_as::<_, TableRow>(
         r#"
         SELECT
-            schemaname,
-            relname as tablename,
-            pg_size_pretty(pg_total_relation_size(schemaname||'.'||relname)) as size,
-            n_live_tup as row_estimate
-        FROM pg_stat_user_tables
-        ORDER BY pg_total_relation_size(schemaname||'.'||relname) DESC
-        LIMIT 50
+            t.relname::text                                                          AS name,
+            n.nspname::text                                                          AS schema_name,
+            COALESCE(s.n_live_tup, 0)::bigint                                       AS row_count,
+            pg_size_pretty(pg_total_relation_size(t.oid))                           AS size_human,
+            pg_total_relation_size(t.oid)::bigint                                   AS size_bytes,
+            pg_size_pretty(pg_indexes_size(t.oid))                                  AS index_size_human,
+            pg_indexes_size(t.oid)::bigint                                          AS index_size_bytes,
+            to_char(s.last_vacuum,     'YYYY-MM-DD"T"HH24:MI:SS"Z"')               AS last_vacuum,
+            to_char(s.last_analyze,    'YYYY-MM-DD"T"HH24:MI:SS"Z"')               AS last_analyze,
+            to_char(s.last_autovacuum, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')               AS last_autovacuum,
+            to_char(s.last_autoanalyze,'YYYY-MM-DD"T"HH24:MI:SS"Z"')               AS last_autoanalyze
+        FROM pg_class t
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        LEFT JOIN pg_stat_user_tables s ON s.relid = t.oid
+        WHERE t.relkind = 'r'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+        ORDER BY pg_total_relation_size(t.oid) DESC
+        LIMIT 200
         "#,
     )
     .fetch_all(&state.pool_ro)
@@ -452,16 +800,47 @@ pub async fn db_tables(
 
     match rows {
         Ok(rows) => {
+            let total_bytes: i64 = rows.iter().map(|r| r.4).sum();
+            let total_count = rows.len();
             let tables: Vec<TableInfo> = rows
                 .into_iter()
-                .map(|(schema, table, size, row_estimate)| TableInfo {
-                    schema,
-                    table,
-                    size,
-                    row_estimate,
-                })
+                .map(
+                    |(
+                        name,
+                        schema_name,
+                        row_count,
+                        size_human,
+                        size_bytes,
+                        index_size_human,
+                        index_size_bytes,
+                        last_vacuum,
+                        last_analyze,
+                        last_autovacuum,
+                        last_autoanalyze,
+                    )| {
+                        TableInfo {
+                            name,
+                            schema_name,
+                            row_count,
+                            size_human,
+                            size_bytes,
+                            index_size_human,
+                            index_size_bytes,
+                            last_vacuum,
+                            last_analyze,
+                            last_autovacuum,
+                            last_autoanalyze,
+                        }
+                    },
+                )
                 .collect();
-            Json(tables).into_response()
+            Json(TablesListResponse {
+                total_count,
+                total_size_bytes: total_bytes,
+                total_size_human: format_bytes(total_bytes),
+                tables,
+            })
+            .into_response()
         }
         Err(e) => {
             tracing::error!("DB tables query error: {e}");
@@ -471,6 +850,18 @@ pub async fn db_tables(
             )
                 .into_response()
         }
+    }
+}
+
+fn format_bytes(bytes: i64) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
 

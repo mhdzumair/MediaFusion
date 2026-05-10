@@ -20,7 +20,6 @@ struct IndexerInfo {
     #[serde(default)]
     priority: i64,
     #[serde(default)]
-    #[allow(dead_code)]
     privacy: String,
     #[serde(default)]
     capabilities: IndexerCaps,
@@ -30,7 +29,6 @@ struct IndexerInfo {
 #[serde(rename_all = "camelCase")]
 struct IndexerCaps {
     #[serde(default)]
-    #[allow(dead_code)]
     search_params: Vec<String>,
     #[serde(default)]
     tv_search_params: Vec<String>,
@@ -72,14 +70,12 @@ struct SearchResult {
     #[serde(default)]
     title: Option<String>,
     #[serde(default)]
-    #[allow(dead_code)]
     indexer: Option<String>,
     #[serde(default)]
     seeders: Option<i32>,
     #[serde(default)]
     size: Option<i64>,
     #[serde(default)]
-    #[allow(dead_code)]
     categories: Vec<Value>,
 }
 
@@ -90,13 +86,16 @@ struct Indexer {
     id: i64,
     name: String,
     priority: i64,
+    is_public: bool,
     categories: Vec<i64>,
     supports_imdb_movie: bool,
     supports_imdb_tv: bool,
+    supports_basic_search: bool,
 }
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 pub async fn scrape(
     client: &Client,
     base_url: &str,
@@ -105,6 +104,9 @@ pub async fn scrape(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    max_process: usize,
+    max_process_time: std::time::Duration,
+    query_timeout: std::time::Duration,
 ) -> Vec<ScrapedStream> {
     let indexers = match fetch_indexers(client, base_url, api_key).await {
         Ok(v) if !v.is_empty() => v,
@@ -121,58 +123,76 @@ pub async fn scrape(
     let imdb_id = meta.imdb_id.as_deref().unwrap_or("");
     let is_series = media_type == "series";
 
-    let mut results: Vec<ScrapedStream> = Vec::new();
-    let mut consecutive_failures: u32 = 0;
+    let results = {
+        let mut results: Vec<ScrapedStream> = Vec::new();
+        let mut consecutive_failures: u32 = 0;
+        let deadline = tokio::time::Instant::now() + max_process_time;
 
-    for idx in &indexers {
-        // Simple per-session circuit breaker: stop after 3 consecutive failures
-        if consecutive_failures >= 3 {
-            tracing::debug!("prowlarr: stopping after 3 consecutive failures");
-            break;
-        }
+        for idx in &indexers {
+            if tokio::time::Instant::now() >= deadline {
+                tracing::debug!(
+                    "prowlarr: max_process_time exceeded after processing some indexers"
+                );
+                break;
+            }
 
-        // Check if this indexer supports the required search type
-        let (search_type, categories) = if is_series && idx.supports_imdb_tv {
-            ("tvsearch", movie_tv_categories(idx, true))
-        } else if !is_series && idx.supports_imdb_movie {
-            ("movie", movie_tv_categories(idx, false))
-        } else if idx.supports_imdb_movie || idx.supports_imdb_tv {
-            ("search", idx.categories.clone())
-        } else {
-            continue;
-        };
+            // Simple per-session circuit breaker: stop after 3 consecutive failures
+            if consecutive_failures >= 3 {
+                tracing::debug!("prowlarr: stopping after 3 consecutive failures");
+                break;
+            }
 
-        let query = if !imdb_id.is_empty() && (search_type == "movie" || search_type == "tvsearch")
-        {
-            format!("{{IMDbId:{imdb_id}}}")
-        } else {
-            meta.title.clone()
-        };
+            // Check if this indexer supports the required search type
+            let (search_type, categories) = if is_series && idx.supports_imdb_tv {
+                ("tvsearch", movie_tv_categories(idx, true))
+            } else if !is_series && idx.supports_imdb_movie {
+                ("movie", movie_tv_categories(idx, false))
+            } else if idx.supports_imdb_movie || idx.supports_imdb_tv {
+                // Has IMDB capability for the other media type; fall back to generic search
+                ("search", idx.categories.clone())
+            } else if idx.supports_basic_search {
+                // No IMDB params but supports basic q= query
+                ("search", idx.categories.clone())
+            } else {
+                continue;
+            };
 
-        let mut params = vec![
-            ("query".to_string(), query),
-            ("type".to_string(), search_type.to_string()),
-            ("indexerIds".to_string(), idx.id.to_string()),
-        ];
-        for cat in &categories {
-            params.push(("categories".to_string(), cat.to_string()));
-        }
+            let query =
+                if !imdb_id.is_empty() && (search_type == "movie" || search_type == "tvsearch") {
+                    format!("{{IMDbId:{imdb_id}}}")
+                } else {
+                    meta.title.clone()
+                };
 
-        match search_indexer(client, base_url, api_key, &params).await {
-            Ok(items) => {
-                consecutive_failures = 0;
-                for item in items {
-                    if let Some(s) = parse_result(item, &idx.name, media_type, season, episode) {
-                        results.push(s);
+            let mut params = vec![
+                ("query".to_string(), query),
+                ("type".to_string(), search_type.to_string()),
+                ("indexerIds".to_string(), idx.id.to_string()),
+            ];
+            for cat in &categories {
+                params.push(("categories".to_string(), cat.to_string()));
+            }
+
+            match search_indexer(client, base_url, api_key, &params, query_timeout).await {
+                Ok(mut items) => {
+                    consecutive_failures = 0;
+                    items.truncate(max_process);
+                    for item in items {
+                        if let Some(s) = parse_result(item, &idx.name, media_type, season, episode)
+                        {
+                            results.push(s);
+                        }
                     }
                 }
-            }
-            Err(e) => {
-                consecutive_failures += 1;
-                tracing::debug!("prowlarr: indexer {} failed: {e}", idx.name);
+                Err(e) => {
+                    consecutive_failures += 1;
+                    tracing::debug!("prowlarr: indexer {} failed: {e}", idx.name);
+                }
             }
         }
-    }
+
+        results
+    };
 
     results
 }
@@ -243,18 +263,28 @@ async fn fetch_indexers(
                     .iter()
                     .any(|p| p.to_lowercase() == "imdbid");
 
+            let supports_basic_search = !i.capabilities.search_params.is_empty();
+            let is_public = i.privacy.to_lowercase() == "public";
+
             Indexer {
                 id: i.id,
                 name: i.name,
                 priority: i.priority,
+                is_public,
                 categories: cats,
                 supports_imdb_movie,
                 supports_imdb_tv,
+                supports_basic_search,
             }
         })
         .collect();
 
-    result.sort_by_key(|i| i.priority);
+    // Sort by priority ascending; among equal priorities prefer public indexers
+    result.sort_by(|a, b| {
+        a.priority
+            .cmp(&b.priority)
+            .then_with(|| b.is_public.cmp(&a.is_public))
+    });
     Ok(result)
 }
 
@@ -278,12 +308,13 @@ async fn search_indexer(
     base_url: &str,
     api_key: &str,
     params: &[(String, String)],
+    query_timeout: std::time::Duration,
 ) -> Result<Vec<SearchResult>, Box<dyn std::error::Error + Send + Sync>> {
     let resp = client
         .get(format!("{base_url}/api/v1/search"))
         .header("X-Api-Key", api_key)
         .query(params)
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(query_timeout)
         .send()
         .await?;
 
@@ -302,6 +333,21 @@ fn parse_result(
     let title = item.title.as_deref().unwrap_or("").trim().to_string();
     if title.is_empty() {
         return None;
+    }
+
+    // Filter out results whose categories are all non-video (skip e.g. audio/books/games)
+    // Video ranges: 2000–2999 (movies), 5000–5999 (TV/video)
+    if !item.categories.is_empty() {
+        let has_video = item.categories.iter().any(|c| {
+            let id = c
+                .get("id")
+                .and_then(|v| v.as_i64())
+                .unwrap_or_else(|| c.as_i64().unwrap_or(-1));
+            (2000..3000).contains(&id) || (5000..6000).contains(&id)
+        });
+        if !has_video {
+            return None;
+        }
     }
 
     // Resolve info_hash: direct field or magnet URL
@@ -325,10 +371,16 @@ fn parse_result(
         vec![]
     };
 
+    // Prefer the indexer name reported by the result itself over the local name
+    let source = item
+        .indexer
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| indexer_name.to_string());
+
     Some(ScrapedStream {
         info_hash,
         name: title,
-        source: indexer_name.to_string(),
+        source,
         seeders: item.seeders,
         size: item.size,
         parsed,

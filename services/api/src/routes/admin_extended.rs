@@ -129,48 +129,6 @@ fn forbidden() -> axum::response::Response {
     (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response()
 }
 
-// ─── Proxy helper ─────────────────────────────────────────────────────────────
-
-async fn proxy_to_python(
-    state: &AppState,
-    method: reqwest::Method,
-    path: &str,
-    headers: &HeaderMap,
-    body: Option<Value>,
-) -> axum::response::Response {
-    let py_url = match &state.config.python_proxy_url {
-        Some(u) => u.clone(),
-        None => {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"detail": "Background service unavailable"})),
-            )
-                .into_response();
-        }
-    };
-    let url = format!("{py_url}{path}");
-    let mut req = state.http.request(method, &url);
-    if let Some(auth) = headers.get("authorization") {
-        req = req.header("authorization", auth);
-    }
-    if let Some(b) = body {
-        req = req.json(&b);
-    }
-    match req.send().await {
-        Ok(r) => {
-            let status = StatusCode::from_u16(r.status().as_u16())
-                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-            let body: Value = r.json().await.unwrap_or(json!({}));
-            (status, Json(body)).into_response()
-        }
-        Err(e) => (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({"detail": e.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
 // ─── admin.py endpoints ───────────────────────────────────────────────────────
 
 #[derive(Deserialize, Serialize)]
@@ -196,8 +154,23 @@ pub async fn delete_metadata(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    let path = format!("/api/v1/admin/metadata/{media_id}");
-    proxy_to_python(&state, reqwest::Method::DELETE, &path, &headers, None).await
+    match sqlx::query("DELETE FROM media WHERE id = $1")
+        .bind(media_id as i32)
+        .execute(&state.pool)
+        .await
+    {
+        Ok(r) if r.rows_affected() == 0 => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Media not found"})),
+        )
+            .into_response(),
+        Ok(_) => Json(json!({"message": "Metadata and associated streams deleted successfully"}))
+            .into_response(),
+        Err(e) => {
+            tracing::error!("delete_metadata: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }
 
 /// POST /api/v1/admin/metadata/{media_id}/block
@@ -207,18 +180,44 @@ pub async fn block_media(
     Path(media_id): Path<i64>,
     Json(body): Json<BlockMediaRequest>,
 ) -> impl IntoResponse {
-    if validate_moderator_or_admin(&headers, &state.config.secret_key_raw).is_none() {
-        return forbidden();
-    }
-    let path = format!("/api/v1/admin/metadata/{media_id}/block");
-    proxy_to_python(
-        &state,
-        reqwest::Method::POST,
-        &path,
-        &headers,
-        Some(serde_json::to_value(body).unwrap_or(json!({}))),
+    let user_id = match validate_moderator_or_admin(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => return forbidden(),
+    };
+    match sqlx::query(
+        r#"UPDATE media
+           SET is_blocked = true,
+               blocked_at = NOW(),
+               blocked_by_user_id = $1,
+               block_reason = $2
+           WHERE id = $3"#,
     )
+    .bind(user_id as i32)
+    .bind(&body.reason)
+    .bind(media_id as i32)
+    .execute(&state.pool)
     .await
+    {
+        Ok(r) if r.rows_affected() == 0 => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Media not found"})),
+        )
+            .into_response(),
+        Ok(_) => {
+            let blocked_at = Utc::now();
+            Json(json!({
+                "media_id": media_id,
+                "is_blocked": true,
+                "blocked_at": blocked_at,
+                "message": "Media blocked successfully",
+            }))
+            .into_response()
+        }
+        Err(e) => {
+            tracing::error!("block_media: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }
 
 /// POST /api/v1/admin/metadata/{media_id}/unblock
@@ -230,8 +229,34 @@ pub async fn unblock_media(
     if validate_moderator_or_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    let path = format!("/api/v1/admin/metadata/{media_id}/unblock");
-    proxy_to_python(&state, reqwest::Method::POST, &path, &headers, None).await
+    match sqlx::query(
+        r#"UPDATE media
+           SET is_blocked = false,
+               blocked_at = NULL,
+               blocked_by_user_id = NULL,
+               block_reason = NULL
+           WHERE id = $1"#,
+    )
+    .bind(media_id as i32)
+    .execute(&state.pool)
+    .await
+    {
+        Ok(r) if r.rows_affected() == 0 => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Media not found"})),
+        )
+            .into_response(),
+        Ok(_) => Json(json!({
+            "media_id": media_id,
+            "is_blocked": false,
+            "message": "Media unblocked successfully",
+        }))
+        .into_response(),
+        Err(e) => {
+            tracing::error!("unblock_media: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }
 
 /// GET /api/v1/admin/media/blocked
@@ -243,27 +268,88 @@ pub async fn list_blocked_media(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    let mut path = "/api/v1/admin/media/blocked?".to_string();
-    if let Some(p) = params.page {
-        path.push_str(&format!("page={p}&"));
-    }
-    if let Some(ps) = params.page_size {
-        path.push_str(&format!("page_size={ps}&"));
-    }
-    if let Some(ref mt) = params.media_type {
-        path.push_str(&format!("type={mt}&"));
+
+    let page = params.page.unwrap_or(1).max(1);
+    let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
+    let offset = (page - 1) * page_size;
+
+    // Build optional filter conditions
+    let mut conditions: Vec<String> = vec!["is_blocked = true".to_string()];
+    if let Some(ref t) = params.media_type {
+        let t_upper = t.to_uppercase().replace('\'', "''");
+        conditions.push(format!("type = '{t_upper}'::mediatype"));
     }
     if let Some(ref s) = params.search {
-        path.push_str(&format!("search={}&", urlencoding::encode(s)));
+        let escaped = s.replace('\'', "''");
+        conditions.push(format!("title ILIKE '%{escaped}%'"));
     }
-    proxy_to_python(
-        &state,
-        reqwest::Method::GET,
-        path.trim_end_matches('&'),
-        &headers,
-        None,
-    )
-    .await
+    let where_clause = format!("WHERE {}", conditions.join(" AND "));
+
+    // Total count
+    let count_sql = format!("SELECT COUNT(*) FROM media {where_clause}");
+    let total: i64 = sqlx::query_scalar(&count_sql)
+        .fetch_one(&state.pool_ro)
+        .await
+        .unwrap_or(0);
+
+    // Paged results
+    type BlockedRow = (
+        i32,
+        String,
+        String,
+        Option<i32>,
+        bool,
+        Option<chrono::DateTime<chrono::Utc>>,
+        Option<i32>,
+        Option<String>,
+    );
+
+    let list_sql = format!(
+        "SELECT id, title, type::text, year, is_blocked, blocked_at, \
+                blocked_by_user_id, block_reason \
+         FROM media {where_clause} \
+         ORDER BY blocked_at DESC NULLS LAST \
+         LIMIT {page_size} OFFSET {offset}"
+    );
+
+    match sqlx::query_as::<_, BlockedRow>(&list_sql)
+        .fetch_all(&state.pool_ro)
+        .await
+    {
+        Ok(rows) => {
+            let items: Vec<Value> = rows
+                .into_iter()
+                .map(
+                    |(id, title, media_type, year, is_blocked, blocked_at, blocked_by, reason)| {
+                        json!({
+                            "id": id,
+                            "title": title,
+                            "type": media_type.to_lowercase(),
+                            "year": year,
+                            "is_blocked": is_blocked,
+                            "blocked_at": blocked_at,
+                            "blocked_by_user_id": blocked_by,
+                            "block_reason": reason,
+                        })
+                    },
+                )
+                .collect();
+
+            let has_more = offset + page_size < total;
+            Json(json!({
+                "items": items,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "has_more": has_more,
+            }))
+            .into_response()
+        }
+        Err(e) => {
+            tracing::error!("list_blocked_media: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }
 
 /// POST /api/v1/admin/torrent-streams/{stream_id}/block
@@ -275,8 +361,27 @@ pub async fn block_torrent_stream(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    let path = format!("/api/v1/admin/torrent-streams/{stream_id}/block");
-    proxy_to_python(&state, reqwest::Method::POST, &path, &headers, None).await
+    match sqlx::query("UPDATE stream SET is_blocked = true WHERE id = $1")
+        .bind(stream_id as i32)
+        .execute(&state.pool)
+        .await
+    {
+        Ok(r) if r.rows_affected() == 0 => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Stream not found"})),
+        )
+            .into_response(),
+        Ok(_) => Json(json!({
+            "stream_id": stream_id,
+            "is_blocked": true,
+            "message": "Stream blocked",
+        }))
+        .into_response(),
+        Err(e) => {
+            tracing::error!("block_torrent_stream: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }
 
 // ─── contribution_settings.py endpoints ──────────────────────────────────────
@@ -530,10 +635,7 @@ pub async fn reset_contribution_settings(
     Json(json!({"detail": "Contribution settings reset to defaults"})).into_response()
 }
 
-// ─── exceptions.py endpoints ─────────────────────────────────────────────────
-
-const EXCEPTION_KEY_PREFIX: &str = "exception:";
-const EXCEPTION_INDEX_KEY: &str = "exceptions:index";
+// ─── Exception tracking endpoints ────────────────────────────────────────────
 
 #[derive(Deserialize)]
 pub struct ExceptionListQuery {
@@ -547,20 +649,19 @@ pub async fn get_exception_status(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
+    use fred::prelude::SortedSetsInterface;
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-
     let total: i64 = state
         .redis
-        .llen::<i64, _>(EXCEPTION_INDEX_KEY)
+        .zcard(crate::exception_tracker::INDEX_KEY)
         .await
         .unwrap_or(0);
-
     Json(json!({
-        "enabled": true,
-        "ttl_seconds": 86400,
-        "max_entries": 1000,
+        "enabled": state.config.enable_exception_tracking,
+        "ttl_seconds": state.config.exception_tracking_ttl,
+        "max_entries": state.config.exception_tracking_max_entries,
         "total_tracked": total,
     }))
     .into_response()
@@ -575,52 +676,16 @@ pub async fn list_exceptions(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
-
-    let all_keys: Vec<String> = state
-        .redis
-        .lrange::<Vec<String>, _>(EXCEPTION_INDEX_KEY, 0, -1)
-        .await
-        .unwrap_or_default();
-
-    let mut items: Vec<Value> = Vec::new();
-    for key in &all_keys {
-        let data: Option<String> = state
-            .redis
-            .get::<Option<String>, _>(format!("{EXCEPTION_KEY_PREFIX}{key}"))
-            .await
-            .unwrap_or(None);
-        if let Some(raw) = data {
-            if let Ok(v) = serde_json::from_str::<Value>(&raw) {
-                if let Some(ref et) = params.exception_type {
-                    if v.get("type").and_then(|t| t.as_str()) != Some(et.as_str()) {
-                        continue;
-                    }
-                }
-                items.push(v);
-            }
-        }
-    }
-
-    let total = items.len() as i64;
-    let pages = (total + per_page - 1) / per_page;
-    let offset = ((page - 1) * per_page) as usize;
-    let page_items: Vec<Value> = items
-        .into_iter()
-        .skip(offset)
-        .take(per_page as usize)
-        .collect();
-
-    Json(json!({
-        "items": page_items,
-        "total": total,
-        "page": page,
-        "per_page": per_page,
-        "pages": pages,
-    }))
-    .into_response()
+    let result = crate::exception_tracker::query_list(
+        &state.redis,
+        page,
+        per_page,
+        params.exception_type.as_deref(),
+    )
+    .await;
+    Json(result).into_response()
 }
 
 /// GET /api/v1/admin/exceptions/{fingerprint}
@@ -632,18 +697,8 @@ pub async fn get_exception(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-
-    let data: Option<String> = state
-        .redis
-        .get::<Option<String>, _>(format!("{EXCEPTION_KEY_PREFIX}{fingerprint}"))
-        .await
-        .unwrap_or(None);
-
-    match data {
-        Some(raw) => match serde_json::from_str::<Value>(&raw) {
-            Ok(v) => Json(v).into_response(),
-            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        },
+    match crate::exception_tracker::query_detail(&state.redis, &fingerprint).await {
+        Some(v) => Json(v).into_response(),
         None => (
             StatusCode::NOT_FOUND,
             Json(json!({"detail": "Exception not found. It may have expired."})),
@@ -660,22 +715,7 @@ pub async fn clear_all_exceptions(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-
-    let all_keys: Vec<String> = state
-        .redis
-        .lrange::<Vec<String>, _>(EXCEPTION_INDEX_KEY, 0, -1)
-        .await
-        .unwrap_or_default();
-
-    let count = all_keys.len() as i64;
-    for key in &all_keys {
-        let _ = state
-            .redis
-            .del::<i64, _>(format!("{EXCEPTION_KEY_PREFIX}{key}"))
-            .await;
-    }
-    let _ = state.redis.del::<i64, _>(EXCEPTION_INDEX_KEY).await;
-
+    let count = crate::exception_tracker::clear_all(&state.redis).await;
     Json(json!({
         "cleared": count,
         "message": format!("Cleared {count} tracked exception(s)."),
@@ -692,32 +732,15 @@ pub async fn clear_single_exception(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-
-    let deleted: i64 = state
-        .redis
-        .del::<i64, _>(format!("{EXCEPTION_KEY_PREFIX}{fingerprint}"))
-        .await
-        .unwrap_or(0);
-
-    if deleted == 0 {
-        return (
+    if crate::exception_tracker::clear_one(&state.redis, &fingerprint).await {
+        Json(json!({"cleared": 1, "message": "Exception cleared successfully."})).into_response()
+    } else {
+        (
             StatusCode::NOT_FOUND,
             Json(json!({"detail": "Exception not found. It may have already expired."})),
         )
-            .into_response();
+            .into_response()
     }
-
-    // Remove from index
-    let _ = state
-        .redis
-        .lrem::<i64, _, _>(EXCEPTION_INDEX_KEY, 0, fingerprint.as_str())
-        .await;
-
-    Json(json!({
-        "cleared": 1,
-        "message": "Exception cleared successfully.",
-    }))
-    .into_response()
 }
 
 // ─── request_metrics.py endpoints ────────────────────────────────────────────
@@ -976,13 +999,15 @@ pub async fn get_source_health(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    // Proxy to Python which has the PUBLIC_INDEXER_DEFINITIONS and health logic
-    proxy_to_python(
-        &state,
-        reqwest::Method::GET,
-        "/api/v1/admin/public-indexers/source-health",
-        &headers,
-        None,
-    )
-    .await
+    // Source health counters are written by the Python scrapy workers into Redis.
+    // In Rust-only mode these Redis keys are never populated, so return empty.
+    Json(json!({
+        "gate": {},
+        "total_sources": 0,
+        "allowed": 0,
+        "blocked": 0,
+        "warming": 0,
+        "sources": []
+    }))
+    .into_response()
 }

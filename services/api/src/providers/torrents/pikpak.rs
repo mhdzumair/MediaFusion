@@ -12,7 +12,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use super::ProviderError;
+use crate::providers::ProviderError;
 
 const API_HOST: &str = "api-drive.mypikpak.com";
 const USER_HOST: &str = "user.mypikpak.com";
@@ -682,4 +682,66 @@ pub async fn get_video_url(
         "Torrent is still downloading in PikPak. Please try again in a few minutes.",
         "torrent_not_downloaded.mp4",
     ))
+}
+
+/// Delete ALL items in the PikPak My Pack folder.
+pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), ProviderError> {
+    let mut tokens = decode_token(token)?;
+    let my_pack_id = get_my_pack_folder_id(http, &mut tokens).await?;
+
+    let filters =
+        serde_json::to_string(&serde_json::json!({"trashed": {"eq": false}})).unwrap_or_default();
+    let data = api_get(
+        http,
+        &mut tokens,
+        "/drive/v1/files",
+        &[
+            ("parent_id", my_pack_id.as_str()),
+            ("limit", "1000"),
+            ("filters", &filters),
+        ],
+    )
+    .await?;
+
+    let ids: Vec<String> = data["files"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|f| f["id"].as_str().map(str::to_string))
+        .collect();
+
+    if !ids.is_empty() {
+        let body = serde_json::json!({ "ids": ids });
+        api_post(http, &mut tokens, "/drive/v1/files/trash", &body)
+            .await
+            .ok();
+    }
+    Ok(())
+}
+
+/// Delete the item matching `info_hash` from PikPak My Pack folder.
+/// Returns `true` if found and trashed, `false` if not found.
+pub async fn delete_torrent_by_hash(
+    http: &Client,
+    token: &str,
+    info_hash: &str,
+) -> Result<bool, ProviderError> {
+    let mut tokens = decode_token(token)?;
+    let hash = info_hash.to_lowercase();
+    let my_pack_id = get_my_pack_folder_id(http, &mut tokens).await?;
+    let item = find_torrent_item(http, &mut tokens, &my_pack_id, &hash).await?;
+
+    match item {
+        None => Ok(false),
+        Some(item) => {
+            let file_id = item["id"].as_str().unwrap_or("").to_string();
+            if !file_id.is_empty() {
+                let body = serde_json::json!({ "ids": [file_id] });
+                api_post(http, &mut tokens, "/drive/v1/files/trash", &body)
+                    .await
+                    .ok();
+            }
+            Ok(true)
+        }
+    }
 }

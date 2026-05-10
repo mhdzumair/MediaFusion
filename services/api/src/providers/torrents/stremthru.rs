@@ -9,7 +9,7 @@
 use serde_json::Value;
 use std::sync::OnceLock;
 
-use super::ProviderError;
+use crate::providers::ProviderError;
 
 const DEFAULT_BASE_URL: &str = "https://stremthru.432hz.dev";
 const USER_AGENT: &str = "mediafusion";
@@ -438,4 +438,54 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
     }
 
     Ok(())
+}
+
+// ─── Debrid cache check ───────────────────────────────────────────────────────
+
+/// Check which hashes are cached in the user's StremThru store.
+pub async fn check_cached(
+    http: &reqwest::Client,
+    token: &str,
+    hashes: &[String],
+    media_id: i32,
+) -> Vec<String> {
+    let cfg = parse_config(token);
+    let magnet_list = hashes.join(",");
+    let url = format!("{}/v0/store/magnets/check", cfg.base_url);
+    let req = http.get(&url).header("User-Agent", USER_AGENT).query(&[
+        ("magnet", magnet_list.as_str()),
+        ("sid", &media_id.to_string()),
+    ]);
+    let req = apply_auth(req, &cfg.auth);
+    let body: serde_json::Value = match req.send().await {
+        Ok(r) => match r.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("stremthru magnets/check json: {e}");
+                return vec![];
+            }
+        },
+        Err(e) => {
+            tracing::warn!("stremthru magnets/check: {e}");
+            return vec![];
+        }
+    };
+    body.get("data")
+        .and_then(|d| d.get("items"))
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    if item.get("status").and_then(|v| v.as_str()) == Some("cached") {
+                        item.get("hash")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }

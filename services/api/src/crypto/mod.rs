@@ -3,6 +3,22 @@ pub mod profile;
 
 pub use decrypt::decrypt_user_data;
 
+/// Decode a plain base64url-encoded UserData JSON value (no encryption, no compression).
+///
+/// This is the format used by the `encoded_user_data` HTTP header:
+///   `base64url(json_bytes_of_UserData_object)`
+pub fn decode_encoded_user_data(header_val: &str) -> Option<serde_json::Value> {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    // Add padding if needed before stripping — we strip after adding to be safe.
+    let padded = match header_val.len() % 4 {
+        2 => format!("{}==", header_val),
+        3 => format!("{}=", header_val),
+        _ => header_val.to_string(),
+    };
+    let bytes = URL_SAFE_NO_PAD.decode(padded.trim_end_matches('=')).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
 /// Encrypt a JSON string into a MediaFusion D-prefixed secret.
 ///
 /// Mirrors Python `CryptoUtils._compress_and_encrypt`:

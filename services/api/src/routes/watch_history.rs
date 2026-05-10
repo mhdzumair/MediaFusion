@@ -127,16 +127,16 @@ pub struct TrackAction {
 // ─── DB row ──────────────────────────────────────────────────────────────────
 
 struct WatchRow {
-    id: i64,
-    user_id: i64,
-    profile_id: i64,
-    media_id: i64,
+    id: i32,
+    user_id: i32,
+    profile_id: i32,
+    media_id: i32,
     title: String,
     media_type: String,
     season: Option<i32>,
     episode: Option<i32>,
-    duration: Option<i64>,
-    progress: i64,
+    duration: Option<i32>,
+    progress: i32,
     watched_at: DateTime<Utc>,
     action: Option<String>,
     source: Option<String>,
@@ -145,9 +145,9 @@ struct WatchRow {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-async fn get_external_ids(pool: &sqlx::PgPool, media_id: i64) -> serde_json::Value {
+async fn get_external_ids(pool: &sqlx::PgPool, media_id: i32) -> serde_json::Value {
     let rows: Vec<(String, String)> =
-        sqlx::query_as("SELECT source, external_id FROM media_external_id WHERE media_id = $1")
+        sqlx::query_as("SELECT provider, external_id FROM media_external_id WHERE media_id = $1")
             .bind(media_id)
             .fetch_all(pool)
             .await
@@ -195,20 +195,20 @@ async fn row_to_response(pool: &sqlx::PgPool, row: &WatchRow) -> serde_json::Val
 #[allow(dead_code, clippy::type_complexity)]
 async fn fetch_watch_row(
     pool: &sqlx::PgPool,
-    id: i64,
-    user_id: i64,
+    id: i32,
+    user_id: i32,
 ) -> Result<Option<WatchRow>, sqlx::Error> {
     let row: Option<(
-        i64,
-        i64,
-        i64,
-        i64,
+        i32,
+        i32,
+        i32,
+        i32,
         String,
         String,
         Option<i32>,
         Option<i32>,
-        Option<i64>,
-        i64,
+        Option<i32>,
+        i32,
         DateTime<Utc>,
         Option<String>,
         Option<String>,
@@ -216,7 +216,7 @@ async fn fetch_watch_row(
     )> = sqlx::query_as(
         r#"SELECT id, user_id, profile_id, media_id, title, media_type,
                       season, episode, duration, progress, watched_at,
-                      action, source, stream_info
+                      action::text, source::text, stream_info
                FROM watch_history
                WHERE id = $1 AND user_id = $2"#,
     )
@@ -264,16 +264,16 @@ async fn fetch_watch_row(
 #[allow(clippy::type_complexity)]
 fn map_watch_row(
     r: (
-        i64,
-        i64,
-        i64,
-        i64,
+        i32,
+        i32,
+        i32,
+        i32,
         String,
         String,
         Option<i32>,
         Option<i32>,
-        Option<i64>,
-        i64,
+        Option<i32>,
+        i32,
         DateTime<Utc>,
         Option<String>,
         Option<String>,
@@ -341,7 +341,7 @@ pub async fn list_watch_history(
             idx += 1;
         }
         let _ = idx; // suppress unused_assignments: idx is only needed while building the SQL string
-        let mut q = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id);
+        let mut q = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id as i32);
         if let Some(pid) = params.profile_id {
             q = q.bind(pid);
         }
@@ -361,16 +361,16 @@ pub async fn list_watch_history(
     };
 
     let rows: Vec<(
-        i64,
-        i64,
-        i64,
-        i64,
+        i32,
+        i32,
+        i32,
+        i32,
         String,
         String,
         Option<i32>,
         Option<i32>,
-        Option<i64>,
-        i64,
+        Option<i32>,
+        i32,
         DateTime<Utc>,
         Option<String>,
         Option<String>,
@@ -379,7 +379,7 @@ pub async fn list_watch_history(
         let mut sql = String::from(
             r#"SELECT id, user_id, profile_id, media_id, title, media_type,
                       season, episode, duration, progress, watched_at,
-                      action, source, stream_info
+                      action::text, source::text, stream_info
                FROM watch_history WHERE user_id = $1"#,
         );
         let mut idx = 2i32;
@@ -402,25 +402,25 @@ pub async fn list_watch_history(
         let mut q = sqlx::query_as::<
             _,
             (
-                i64,
-                i64,
-                i64,
-                i64,
+                i32,
+                i32,
+                i32,
+                i32,
                 String,
                 String,
                 Option<i32>,
                 Option<i32>,
-                Option<i64>,
-                i64,
+                Option<i32>,
+                i32,
                 DateTime<Utc>,
                 Option<String>,
                 Option<String>,
                 Option<serde_json::Value>,
             ),
         >(&sql)
-        .bind(user_id);
+        .bind(user_id as i32);
         if let Some(pid) = params.profile_id {
-            q = q.bind(pid);
+            q = q.bind(pid as i32);
         }
         if let Some(ref mt) = params.media_type {
             q = q.bind(mt.clone());
@@ -480,7 +480,7 @@ pub async fn continue_watching(
         format!(
             r#"SELECT id, user_id, profile_id, media_id, title, media_type,
                       season, episode, duration, progress, watched_at,
-                      action, source, stream_info
+                      action::text, source::text, stream_info
                FROM watch_history
                WHERE user_id = $1 AND profile_id = $2 AND progress > 0
                ORDER BY watched_at DESC
@@ -491,7 +491,7 @@ pub async fn continue_watching(
         format!(
             r#"SELECT id, user_id, profile_id, media_id, title, media_type,
                       season, episode, duration, progress, watched_at,
-                      action, source, stream_info
+                      action::text, source::text, stream_info
                FROM watch_history
                WHERE user_id = $1 AND progress > 0
                ORDER BY watched_at DESC
@@ -501,24 +501,24 @@ pub async fn continue_watching(
     };
 
     let rows: Vec<(
-        i64,
-        i64,
-        i64,
-        i64,
+        i32,
+        i32,
+        i32,
+        i32,
         String,
         String,
         Option<i32>,
         Option<i32>,
-        Option<i64>,
-        i64,
+        Option<i32>,
+        i32,
         DateTime<Utc>,
         Option<String>,
         Option<String>,
         Option<serde_json::Value>,
     )> = if let Some(pid) = params.profile_id {
         match sqlx::query_as(&sql)
-            .bind(user_id)
-            .bind(pid)
+            .bind(user_id as i32)
+            .bind(pid as i32)
             .fetch_all(&state.pool_ro)
             .await
         {
@@ -530,7 +530,7 @@ pub async fn continue_watching(
         }
     } else {
         match sqlx::query_as(&sql)
-            .bind(user_id)
+            .bind(user_id as i32)
             .fetch_all(&state.pool_ro)
             .await
         {
@@ -585,7 +585,7 @@ pub async fn create_watch_history(
         "SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2",
     )
     .bind(body.profile_id)
-    .bind(user_id)
+    .bind(user_id as i32)
     .fetch_optional(&state.pool)
     .await
     {
@@ -636,7 +636,7 @@ pub async fn create_watch_history(
                  AND season IS NOT DISTINCT FROM $4 AND episode IS NOT DISTINCT FROM $5
                LIMIT 1"#,
         )
-        .bind(user_id)
+        .bind(user_id as i32)
         .bind(body.profile_id)
         .bind(body.media_id)
         .bind(body.season)
@@ -650,7 +650,7 @@ pub async fn create_watch_history(
                WHERE user_id = $1 AND profile_id = $2 AND media_id = $3
                LIMIT 1"#,
         )
-        .bind(user_id)
+        .bind(user_id as i32)
         .bind(body.profile_id)
         .bind(body.media_id)
         .fetch_optional(&state.pool)
@@ -659,16 +659,16 @@ pub async fn create_watch_history(
     };
 
     let row: (
-        i64,
-        i64,
-        i64,
-        i64,
+        i32,
+        i32,
+        i32,
+        i32,
         String,
         String,
         Option<i32>,
         Option<i32>,
-        Option<i64>,
-        i64,
+        Option<i32>,
+        i32,
         DateTime<Utc>,
         Option<String>,
         Option<String>,
@@ -680,7 +680,7 @@ pub async fn create_watch_history(
                WHERE id = $4
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
-                         action, source, stream_info"#,
+                         action::text, source::text, stream_info"#,
         )
         .bind(body.progress)
         .bind(body.duration)
@@ -703,9 +703,9 @@ pub async fn create_watch_history(
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), 'WATCHED', 'mediafusion')
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
-                         action, source, stream_info"#,
+                         action::text, source::text, stream_info"#,
         )
-        .bind(user_id)
+        .bind(user_id as i32)
         .bind(body.profile_id)
         .bind(body.media_id)
         .bind(&body.title)
@@ -750,16 +750,16 @@ pub async fn update_progress(
     };
 
     let row: Option<(
-        i64,
-        i64,
-        i64,
-        i64,
+        i32,
+        i32,
+        i32,
+        i32,
         String,
         String,
         Option<i32>,
         Option<i32>,
-        Option<i64>,
-        i64,
+        Option<i32>,
+        i32,
         DateTime<Utc>,
         Option<String>,
         Option<String>,
@@ -770,12 +770,12 @@ pub async fn update_progress(
                WHERE id = $3 AND user_id = $4
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
-                         action, source, stream_info"#,
+                         action::text, source::text, stream_info"#,
     )
-    .bind(body.progress)
-    .bind(body.duration)
-    .bind(id)
-    .bind(user_id)
+    .bind(body.progress as i32)
+    .bind(body.duration.map(|d| d as i32))
+    .bind(id as i32)
+    .bind(user_id as i32)
     .fetch_optional(&state.pool)
     .await
     {
@@ -818,7 +818,7 @@ pub async fn delete_entry(
 
     let result = sqlx::query("DELETE FROM watch_history WHERE id = $1 AND user_id = $2")
         .bind(id)
-        .bind(user_id)
+        .bind(user_id as i32)
         .execute(&state.pool)
         .await;
 
@@ -859,7 +859,7 @@ pub async fn clear_history(
             "SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2",
         )
         .bind(profile_id)
-        .bind(user_id)
+        .bind(user_id as i32)
         .fetch_optional(&state.pool)
         .await
         {
@@ -880,7 +880,7 @@ pub async fn clear_history(
         }
 
         match sqlx::query("DELETE FROM watch_history WHERE user_id = $1 AND profile_id = $2")
-            .bind(user_id)
+            .bind(user_id as i32)
             .bind(profile_id)
             .execute(&state.pool)
             .await
@@ -893,7 +893,7 @@ pub async fn clear_history(
         }
     } else {
         match sqlx::query("DELETE FROM watch_history WHERE user_id = $1")
-            .bind(user_id)
+            .bind(user_id as i32)
             .execute(&state.pool)
             .await
         {
@@ -951,7 +951,7 @@ pub async fn track_action(
     let profile_id: Option<i64> = sqlx::query_scalar(
         "SELECT id FROM user_profiles WHERE user_id = $1 AND is_default = true LIMIT 1",
     )
-    .bind(user_id)
+    .bind(user_id as i32)
     .fetch_optional(&state.pool)
     .await
     .unwrap_or(None);
@@ -963,7 +963,7 @@ pub async fn track_action(
         match sqlx::query_scalar::<_, i64>(
             "SELECT id FROM user_profiles WHERE user_id = $1 LIMIT 1",
         )
-        .bind(user_id)
+        .bind(user_id as i32)
         .fetch_optional(&state.pool)
         .await
         {
@@ -990,7 +990,7 @@ pub async fn track_action(
                  AND season IS NOT DISTINCT FROM $4 AND episode IS NOT DISTINCT FROM $5
                LIMIT 1"#,
         )
-        .bind(user_id)
+        .bind(user_id as i32)
         .bind(profile_id)
         .bind(body.media_id)
         .bind(body.season)
@@ -1004,7 +1004,7 @@ pub async fn track_action(
                WHERE user_id = $1 AND profile_id = $2 AND media_id = $3
                LIMIT 1"#,
         )
-        .bind(user_id)
+        .bind(user_id as i32)
         .bind(profile_id)
         .bind(body.media_id)
         .fetch_optional(&state.pool)
@@ -1013,16 +1013,16 @@ pub async fn track_action(
     };
 
     let row: (
-        i64,
-        i64,
-        i64,
-        i64,
+        i32,
+        i32,
+        i32,
+        i32,
         String,
         String,
         Option<i32>,
         Option<i32>,
-        Option<i64>,
-        i64,
+        Option<i32>,
+        i32,
         DateTime<Utc>,
         Option<String>,
         Option<String>,
@@ -1034,7 +1034,7 @@ pub async fn track_action(
                WHERE id = $4
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
-                         action, source, stream_info"#,
+                         action::text, source::text, stream_info"#,
         )
         .bind(&body.action)
         .bind(&body.stream_info)
@@ -1057,9 +1057,9 @@ pub async fn track_action(
                VALUES ($1, $2, $3, $4, $5, $6, $7, 0, NOW(), $8, 'mediafusion', $9)
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
-                         action, source, stream_info"#,
+                         action::text, source::text, stream_info"#,
         )
-        .bind(user_id)
+        .bind(user_id as i32)
         .bind(profile_id)
         .bind(body.media_id)
         .bind(&body.title)

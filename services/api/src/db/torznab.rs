@@ -145,8 +145,8 @@ pub async fn search_by_title(
 
 fn media_type_sql(mt: Option<&str>) -> &'static str {
     match mt {
-        Some("movie") => "\n  AND m.type = 'movie'::mediatype",
-        Some("series") => "\n  AND m.type = 'series'::mediatype",
+        Some("movie") => "\n  AND m.type = 'MOVIE'::mediatype",
+        Some("series") => "\n  AND m.type = 'SERIES'::mediatype",
         _ => "",
     }
 }

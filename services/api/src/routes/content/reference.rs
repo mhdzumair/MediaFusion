@@ -9,52 +9,13 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Query, State},
-    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use chrono::Utc;
-use hmac::{Hmac, Mac};
 use serde::Deserialize;
 use serde_json::json;
-use sha2::Sha256;
 
 use crate::state::AppState;
-
-// ─── Auth ─────────────────────────────────────────────────────────────────────
-
-fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string)?;
-    let dot = token.rfind('.')?;
-    let (payload_str, sig) = token.split_at(dot);
-    let sig = &sig[1..];
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).ok()?;
-    mac.update(payload_str.as_bytes());
-    let expected: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if expected != sig {
-        return None;
-    }
-    let decoded = URL_SAFE_NO_PAD.decode(payload_str).ok()?;
-    let data: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
-    let exp = data["exp"].as_f64()?;
-    if exp < Utc::now().timestamp() as f64 {
-        return None;
-    }
-    if data["type"].as_str() != Some("access") {
-        return None;
-    }
-    data["sub"].as_str()?.parse().ok()
-}
 
 // ─── Query ────────────────────────────────────────────────────────────────────
 
@@ -78,18 +39,9 @@ fn default_per_page() -> i64 {
 
 /// GET /api/v1/metadata/reference/genres
 pub async fn list_genres(
-    headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Query(params): Query<RefQuery>,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
-
     let page = params.page.max(1);
     let per_page = params.per_page.clamp(1, 100);
     let offset = (page - 1) * per_page;
@@ -169,18 +121,9 @@ pub async fn list_genres(
 
 /// GET /api/v1/metadata/reference/catalogs
 pub async fn list_catalogs(
-    headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Query(params): Query<RefQuery>,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
-
     let page = params.page.max(1);
     let per_page = params.per_page.clamp(1, 100);
     let offset = (page - 1) * per_page;
@@ -256,18 +199,9 @@ pub async fn list_catalogs(
 
 /// GET /api/v1/metadata/reference/stars
 pub async fn list_stars(
-    headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Query(params): Query<RefQuery>,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
-
     let page = params.page.max(1);
     let per_page = params.per_page.clamp(1, 100);
     let offset = (page - 1) * per_page;
@@ -343,18 +277,9 @@ pub async fn list_stars(
 
 /// GET /api/v1/metadata/reference/parental-certificates
 pub async fn list_parental_certificates(
-    headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Query(params): Query<RefQuery>,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
-
     let page = params.page.max(1);
     let per_page = params.per_page.clamp(1, 100);
     let offset = (page - 1) * per_page;

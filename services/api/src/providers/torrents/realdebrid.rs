@@ -7,7 +7,7 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::ProviderError;
+use crate::providers::ProviderError;
 
 const BASE_URL: &str = "https://api.real-debrid.com/rest/1.0";
 const OAUTH_URL: &str = "https://api.real-debrid.com/oauth/v2";
@@ -306,6 +306,33 @@ async fn delete_torrent(
         &format!("{BASE_URL}/torrents/delete/{torrent_id}"),
     )
     .await
+}
+
+/// Find and delete a single torrent by info_hash. Returns `true` if found and deleted, `false` if not found.
+pub async fn delete_torrent_by_hash(
+    http: &reqwest::Client,
+    token: &str,
+    info_hash: &str,
+) -> Result<bool, ProviderError> {
+    let bearer = match decode_token(token) {
+        TokenKind::Private(t) => t,
+        TokenKind::OAuth {
+            client_id,
+            client_secret,
+            code,
+        } => get_access_token(http, &client_id, &client_secret, &code, None).await?,
+    };
+    match find_torrent_by_hash(http, &bearer, info_hash).await? {
+        Some(t) => {
+            if let Some(id) = t.get("id").and_then(|v| v.as_str()) {
+                delete_torrent(http, &bearer, id).await?;
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        }
+        None => Ok(false),
+    }
 }
 
 /// Delete ALL torrents from the user's Real-Debrid account (implements delete-all-watchlist).
@@ -668,6 +695,9 @@ async fn create_download_link(
 
 /// Resolve a direct video URL from Real-Debrid for the given torrent.
 ///
+/// Returns `(video_url, files)` — the file list is provided so the caller can
+/// persist file metadata on first play (see `metadata_update`).
+///
 /// `announce_list` items are the tracker URLs (from the DB stream row).
 #[allow(clippy::too_many_arguments)]
 pub async fn get_video_url(
@@ -680,7 +710,13 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     user_ip: Option<&str>,
-) -> Result<String, ProviderError> {
+) -> Result<
+    (
+        String,
+        Vec<crate::providers::torrents::metadata_update::ProviderFile>,
+    ),
+    ProviderError,
+> {
     const MAX_RETRIES: u32 = 5;
     const RETRY_INTERVAL: u64 = 5;
 
@@ -780,7 +816,26 @@ pub async fn get_video_url(
         torrent_info
     };
 
-    create_download_link(
+    // Extract file list before consuming torrent_info
+    let provider_files: Vec<crate::providers::torrents::metadata_update::ProviderFile> =
+        torrent_info
+            .get("files")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .enumerate()
+                    .filter_map(|(i, f)| {
+                        Some(crate::providers::torrents::metadata_update::ProviderFile {
+                            file_index: i as i32,
+                            path: f.get("path").and_then(|v| v.as_str())?.to_string(),
+                            bytes: f.get("bytes").and_then(|v| v.as_i64()).unwrap_or(0),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+    let url = create_download_link(
         http,
         &bearer,
         &magnet,
@@ -793,5 +848,165 @@ pub async fn get_video_url(
         MAX_RETRIES,
         RETRY_INTERVAL,
     )
-    .await
+    .await?;
+
+    Ok((url, provider_files))
+}
+
+// ─── List all downloaded torrents ────────────────────────────────────────────
+
+/// A torrent that has been fully downloaded in the user's debrid account.
+#[derive(Debug, Clone)]
+pub struct DownloadedTorrent {
+    pub info_hash: String,
+    pub name: String,
+    pub size: i64,
+}
+
+/// Return all fully-downloaded torrents in the user's RD account with name and size.
+pub async fn list_downloaded_torrents(
+    http: &reqwest::Client,
+    token: &str,
+) -> Result<Vec<DownloadedTorrent>, ProviderError> {
+    let bearer = match decode_token(token) {
+        TokenKind::Private(t) => t,
+        TokenKind::OAuth {
+            client_id,
+            client_secret,
+            code,
+        } => get_access_token(http, &client_id, &client_secret, &code, None).await?,
+    };
+
+    const PAGE_SIZE: u32 = 100;
+    const MAX_PAGES: u32 = 100;
+    let mut result = Vec::new();
+
+    for page in 1..=MAX_PAGES {
+        let list = get_torrent_list(http, &bearer, page, PAGE_SIZE).await?;
+        if list.is_empty() {
+            break;
+        }
+        for t in &list {
+            if t.get("status").and_then(|v| v.as_str()) == Some("downloaded") {
+                let hash = match t.get("hash").and_then(|v| v.as_str()) {
+                    Some(h) => h.to_lowercase(),
+                    None => continue,
+                };
+                let name = t
+                    .get("filename")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&hash)
+                    .to_string();
+                let size = t.get("bytes").and_then(|v| v.as_i64()).unwrap_or(0);
+                result.push(DownloadedTorrent {
+                    info_hash: hash,
+                    name,
+                    size,
+                });
+            }
+        }
+        if list.len() < PAGE_SIZE as usize {
+            break;
+        }
+    }
+    Ok(result)
+}
+
+// ─── List all downloaded hashes ──────────────────────────────────────────────
+
+/// Return all info_hashes that are fully downloaded in the user's RD account.
+pub async fn list_downloaded_hashes(
+    http: &reqwest::Client,
+    token: &str,
+) -> Result<Vec<String>, ProviderError> {
+    let bearer = match decode_token(token) {
+        TokenKind::Private(t) => t,
+        TokenKind::OAuth {
+            client_id,
+            client_secret,
+            code,
+        } => get_access_token(http, &client_id, &client_secret, &code, None).await?,
+    };
+
+    const PAGE_SIZE: u32 = 100;
+    const MAX_PAGES: u32 = 100;
+    let mut result = Vec::new();
+
+    for page in 1..=MAX_PAGES {
+        let list = get_torrent_list(http, &bearer, page, PAGE_SIZE).await?;
+        if list.is_empty() {
+            break;
+        }
+        for t in &list {
+            if t.get("status").and_then(|v| v.as_str()) == Some("downloaded") {
+                if let Some(h) = t.get("hash").and_then(|v| v.as_str()) {
+                    result.push(h.to_lowercase());
+                }
+            }
+        }
+        if list.len() < PAGE_SIZE as usize {
+            break;
+        }
+    }
+    Ok(result)
+}
+
+// ─── Debrid cache check ───────────────────────────────────────────────────────
+
+/// Check which hashes are downloaded in the user's Real-Debrid account.
+pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]) -> Vec<String> {
+    use std::collections::HashSet;
+    const PAGE_SIZE: u32 = 100;
+    const MAX_PAGES: u32 = 50;
+
+    let bearer = match decode_token(token) {
+        TokenKind::Private(t) => t,
+        TokenKind::OAuth {
+            client_id,
+            client_secret,
+            code,
+        } => match get_access_token(http, &client_id, &client_secret, &code, None).await {
+            Ok(t) => t,
+            Err(_) => return vec![],
+        },
+    };
+
+    let hash_set: HashSet<String> = hashes.iter().map(|h| h.to_lowercase()).collect();
+    let mut found = Vec::new();
+
+    for page in 1..=MAX_PAGES {
+        let url = format!("{BASE_URL}/torrents?page={page}&limit={PAGE_SIZE}");
+        let resp = match http.get(&url).bearer_auth(&bearer).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("realdebrid torrents page {page}: {e}");
+                break;
+            }
+        };
+        let body: serde_json::Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("realdebrid torrents json page {page}: {e}");
+                break;
+            }
+        };
+        let arr = match body.as_array() {
+            Some(a) if !a.is_empty() => a.clone(),
+            _ => break,
+        };
+        for t in &arr {
+            if t.get("status").and_then(|v| v.as_str()) == Some("downloaded") {
+                if let Some(h) = t.get("hash").and_then(|v| v.as_str()) {
+                    let lower = h.to_lowercase();
+                    if hash_set.contains(&lower) {
+                        found.push(lower);
+                    }
+                }
+            }
+        }
+        if found.len() >= hashes.len() || arr.len() < PAGE_SIZE as usize {
+            break;
+        }
+    }
+    found
 }

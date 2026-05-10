@@ -5,6 +5,17 @@
 ///   POST /api/v1/import/torrent/analyze  → analyze_torrent
 ///   POST /api/v1/import/magnet           → import_magnet
 ///   POST /api/v1/import/torrent          → import_torrent
+///
+/// The import flow:
+///   1. Authenticate user
+///   2. Check adult-content filter (regex on torrent name)
+///   3. Enforce upload permissions (rate limit + account restriction)
+///   4. Resolve uploader identity (anonymous vs. named)
+///   5. Determine auto-approval (mods/admins + active non-anonymous users)
+///   6. Insert stream to DB
+///   7. Create contribution record
+///   8. If auto-approved: award contribution points
+///   9. If pending: notify moderators via Telegram
 use std::sync::{Arc, OnceLock};
 
 use axum::{
@@ -57,6 +68,11 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
     }
     data["sub"].as_str()?.parse().ok()
 }
+
+use super::import_helpers::{
+    award_contribution_points, create_contribution_record, enforce_upload_permissions,
+    fetch_user_info, is_adult_content, notify_pending_contribution, resolve_uploader_identity,
+};
 
 // ─── Magnet URI helpers ───────────────────────────────────────────────────────
 
@@ -117,7 +133,7 @@ fn base32_to_hex(s: &str) -> Option<String> {
 
 // ─── Media search helper ──────────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct MediaMatch {
     media_id: i64,
     title: String,
@@ -193,6 +209,123 @@ async fn resolve_media_id(
     .unwrap_or(None);
 
     row.map(|(id,)| id as i64)
+}
+
+// ─── Tracker / language / file DB helpers ────────────────────────────────────
+
+/// Extract tracker URLs from a magnet URI.
+fn extract_trackers_from_magnet(magnet: &str) -> Vec<String> {
+    magnet
+        .split('&')
+        .filter_map(|part| {
+            let part = part.trim_start_matches("magnet:?");
+            if let Some(val) = part.strip_prefix("tr=") {
+                urlencoding::decode(val)
+                    .ok()
+                    .map(|s| s.into_owned())
+                    .filter(|s| !s.is_empty())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Upsert tracker URLs and link them to the torrent stream row.
+async fn insert_trackers(
+    pool: &sqlx::PgPool,
+    torrent_stream_id: i32,
+    tracker_urls: &[String],
+) -> Result<(), sqlx::Error> {
+    for url in tracker_urls {
+        let tracker_id: Option<i32> = sqlx::query_scalar(
+            "INSERT INTO tracker(url) VALUES($1) ON CONFLICT(url) DO UPDATE SET url = EXCLUDED.url RETURNING id",
+        )
+        .bind(url)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some(tid) = tracker_id {
+            sqlx::query(
+                "INSERT INTO torrent_tracker_link(torrent_id, tracker_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
+            )
+            .bind(torrent_stream_id)
+            .bind(tid)
+            .execute(pool)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Insert audio language links for a stream.
+async fn insert_languages(
+    pool: &sqlx::PgPool,
+    stream_id: i64,
+    languages: &[String],
+) -> Result<(), sqlx::Error> {
+    for lang in languages {
+        if lang.is_empty() {
+            continue;
+        }
+        let lang_id: Option<i32> = sqlx::query_scalar(
+            "INSERT INTO language(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
+        )
+        .bind(lang)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some(lid) = lang_id {
+            sqlx::query(
+                "INSERT INTO stream_language_link(stream_id, language_id, language_type) VALUES($1, $2, 'audio') ON CONFLICT DO NOTHING",
+            )
+            .bind(stream_id as i32)
+            .bind(lid)
+            .execute(pool)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Insert per-file metadata (stream_file + file_media_link) for a stream.
+async fn insert_file_data(
+    pool: &sqlx::PgPool,
+    stream_id: i64,
+    media_id: Option<i64>,
+    files: &[FileEntry],
+) -> Result<(), sqlx::Error> {
+    for f in files {
+        let file_id: Option<i32> = sqlx::query_scalar(
+            r#"INSERT INTO stream_file(stream_id, file_index, filename, size, file_type)
+               VALUES($1, $2, $3, $4, 'video')
+               ON CONFLICT DO NOTHING
+               RETURNING id"#,
+        )
+        .bind(stream_id as i32)
+        .bind(f.index)
+        .bind(&f.filename)
+        .bind(f.size)
+        .fetch_optional(pool)
+        .await?;
+
+        if let (Some(fid), Some(mid), Some(s), Some(e)) =
+            (file_id, media_id, f.season_number, f.episode_number)
+        {
+            sqlx::query(
+                r#"INSERT INTO file_media_link(file_id, media_id, season_number, episode_number)
+                   VALUES($1, $2, $3, $4)
+                   ON CONFLICT DO NOTHING"#,
+            )
+            .bind(fid)
+            .bind(mid as i32)
+            .bind(s)
+            .bind(e)
+            .execute(pool)
+            .await?;
+        }
+    }
+    Ok(())
 }
 
 // ─── DB insert helper ─────────────────────────────────────────────────────────
@@ -297,14 +430,28 @@ async fn insert_torrent_stream(
 
 // ─── Request / response shapes ────────────────────────────────────────────────
 
+/// Per-file metadata passed from the UI after torrent analysis.
+#[derive(Deserialize, Clone)]
+pub struct FileEntry {
+    pub index: i32,
+    pub filename: String,
+    pub size: i64,
+    pub season_number: Option<i32>,
+    pub episode_number: Option<i32>,
+}
+
 #[derive(Deserialize)]
 pub struct MagnetAnalyzeRequest {
     magnet_link: String,
     meta_type: Option<String>,
-    #[allow(dead_code)]
     meta_id: Option<String>,
-    #[allow(dead_code)]
     title: Option<String>,
+    /// If true, contact DHT peers to fetch the full file list via BEP-9.
+    /// Adds latency (up to `resolve_timeout_secs`); omit for fast analysis.
+    #[serde(default)]
+    resolve_files: bool,
+    /// Max seconds for DHT resolution (default 30, clamped 5–60).
+    resolve_timeout_secs: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -313,17 +460,18 @@ pub struct MagnetImportRequest {
     meta_type: Option<String>,
     meta_id: Option<String>,
     title: Option<String>,
-    #[allow(dead_code)]
     catalogs: Option<Vec<String>>,
-    #[allow(dead_code)]
     languages: Option<Vec<String>>,
-    #[allow(dead_code)]
     resolution: Option<String>,
-    #[allow(dead_code)]
     quality: Option<String>,
-    #[allow(dead_code)]
     codec: Option<String>,
     force_import: Option<bool>,
+    /// Per-file metadata (index, filename, size, optional season/episode)
+    file_data: Option<Vec<FileEntry>>,
+    /// Contribute anonymously (hides username from contribution record).
+    is_anonymous: Option<bool>,
+    /// Custom display name when contributing anonymously.
+    anonymous_display_name: Option<String>,
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -359,12 +507,49 @@ pub async fn analyze_magnet(
             .await
             .unwrap_or(false);
 
-    let torrent_name = extract_dn(&body.magnet_link).unwrap_or_default();
+    let torrent_name = extract_dn(&body.magnet_link)
+        .or_else(|| body.title.clone())
+        .unwrap_or_default();
     let parsed = parser::parse_title(&torrent_name);
 
     let meta_type = body.meta_type.as_deref().unwrap_or("movie");
     let search_title = parsed.title.as_deref().unwrap_or(&torrent_name);
     let matches = search_media(&state.pool, search_title, meta_type).await;
+
+    // When caller provides meta_id, resolve and return the specific media match
+    let meta_match: Option<MediaMatch> = if let Some(ref mid) = body.meta_id {
+        if !mid.is_empty() {
+            resolve_media_id(&state.pool, mid, meta_type, search_title, parsed.year)
+                .await
+                .and_then(|id| matches.iter().find(|m| m.media_id == id).cloned())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Optional: contact DHT to fetch the full file list via BEP-9.
+    // Only triggered when the caller explicitly requests it.
+    let resolved_files: Option<serde_json::Value> = if body.resolve_files {
+        let secs = body.resolve_timeout_secs.unwrap_or(30).clamp(5, 60);
+        match crate::demagnetize::resolve(&info_hash, std::time::Duration::from_secs(secs)).await {
+            Ok(meta) => Some(json!({
+                "name":       meta.name,
+                "total_size": meta.total_size,
+                "num_files":  meta.files.len(),
+                "files": meta.files.iter()
+                    .map(|f| json!({"path": f.path, "size": f.size}))
+                    .collect::<Vec<_>>(),
+            })),
+            Err(e) => {
+                tracing::warn!("demagnetize {info_hash}: {e}");
+                Some(json!({"error": e.to_string()}))
+            }
+        }
+    } else {
+        None
+    };
 
     (
         StatusCode::OK,
@@ -385,6 +570,8 @@ pub async fn analyze_magnet(
                 "languages": parsed.languages,
             },
             "matches": matches,
+            "meta_match": meta_match,
+            "resolved": resolved_files,
         })),
     )
         .into_response()
@@ -508,13 +695,27 @@ pub async fn import_magnet(
     headers: HeaderMap,
     Json(body): Json<MagnetImportRequest>,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
+
+    let user = match fetch_user_info(&state.pool_ro, user_id).await {
+        Some(u) => u,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "User not found"})),
+            )
+                .into_response();
+        }
+    };
 
     let info_hash = match extract_info_hash_from_magnet(&body.magnet_link) {
         Some(h) => h,
@@ -526,6 +727,37 @@ pub async fn import_magnet(
                 .into_response();
         }
     };
+
+    let torrent_name = extract_dn(&body.magnet_link)
+        .or_else(|| body.title.clone())
+        .unwrap_or_default();
+    let name_for_parse = if torrent_name.is_empty() {
+        body.title.as_deref().unwrap_or(&info_hash).to_string()
+    } else {
+        torrent_name.clone()
+    };
+
+    // Adult content filter
+    if is_adult_content(&name_for_parse) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"detail": "Adult content is not allowed"})),
+        )
+            .into_response();
+    }
+
+    // Upload permission guard
+    if let Err((status, msg)) = enforce_upload_permissions(
+        &state.pool_ro,
+        &state.redis,
+        user_id,
+        user.uploads_restricted,
+        &user.role,
+    )
+    .await
+    {
+        return (status, Json(json!({"detail": msg}))).into_response();
+    }
 
     let force_import = body.force_import.unwrap_or(false);
 
@@ -552,16 +784,23 @@ pub async fn import_magnet(
         }
     }
 
-    let torrent_name = extract_dn(&body.magnet_link)
-        .or_else(|| body.title.clone())
-        .unwrap_or_default();
-    let name_for_parse = if torrent_name.is_empty() {
-        body.title.as_deref().unwrap_or(&info_hash).to_string()
-    } else {
-        torrent_name.clone()
-    };
-    let parsed = parser::parse_title(&name_for_parse);
-
+    let mut parsed = parser::parse_title(&name_for_parse);
+    // Allow caller to override parser-detected values
+    if let Some(ref r) = body.resolution {
+        if !r.is_empty() {
+            parsed.resolution = Some(r.clone());
+        }
+    }
+    if let Some(ref q) = body.quality {
+        if !q.is_empty() {
+            parsed.quality = Some(q.clone());
+        }
+    }
+    if let Some(ref c) = body.codec {
+        if !c.is_empty() {
+            parsed.codec = Some(c.clone());
+        }
+    }
     let meta_type = body.meta_type.as_deref().unwrap_or("movie");
 
     let media_id = if let Some(mid) = &body.meta_id {
@@ -581,39 +820,152 @@ pub async fn import_magnet(
         None
     };
 
-    let source = body.meta_id.as_deref().unwrap_or("manual").to_string();
+    // Resolve uploader identity
+    let resolved_is_anonymous = body.is_anonymous.unwrap_or(user.contribute_anonymously);
+    let (uploader_name, uploader_user_id) = resolve_uploader_identity(
+        resolved_is_anonymous,
+        body.anonymous_display_name.as_deref(),
+        &user.username,
+        user_id,
+    );
 
-    match insert_torrent_stream(
+    // Determine auto-approval: mods/admins always; active users unless anonymous
+    let is_privileged = matches!(user.role.as_str(), "moderator" | "admin");
+    let auto_approve = is_privileged || !resolved_is_anonymous;
+
+    let source = body.meta_id.as_deref().unwrap_or("manual").to_string();
+    let file_count = body.file_data.as_ref().map(|f| f.len() as i32).unwrap_or(1);
+
+    let stream_id = match insert_torrent_stream(
         &state.pool,
         &info_hash,
         &torrent_name,
         &source,
         None,
         None,
-        1,
+        file_count,
         &parsed,
         media_id,
     )
     .await
     {
-        Ok(stream_id) => (
-            StatusCode::CREATED,
-            Json(json!({
-                "status": "success",
-                "message": "Stream imported successfully",
-                "import_id": stream_id,
-            })),
-        )
-            .into_response(),
+        Ok(sid) => sid,
         Err(e) => {
             tracing::error!("import_magnet DB error: {e}");
-            (
+            return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"detail": "Database error"})),
             )
-                .into_response()
+                .into_response();
+        }
+    };
+
+    // Insert trackers from magnet URI
+    let trackers = extract_trackers_from_magnet(&body.magnet_link);
+    if !trackers.is_empty() {
+        let ts_id: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM torrent_stream WHERE stream_id = $1 LIMIT 1")
+                .bind(stream_id as i32)
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None);
+        if let Some(tsid) = ts_id {
+            insert_trackers(&state.pool, tsid, &trackers).await.ok();
         }
     }
+
+    // Insert language links
+    if let Some(langs) = &body.languages {
+        insert_languages(&state.pool, stream_id, langs).await.ok();
+    }
+
+    // Insert per-file metadata
+    if let Some(files) = &body.file_data {
+        insert_file_data(&state.pool, stream_id, media_id, files)
+            .await
+            .ok();
+    }
+
+    // Link media to caller-specified catalogs
+    if let (Some(catalogs), Some(mid)) = (&body.catalogs, media_id) {
+        for cat_name in catalogs {
+            if cat_name.is_empty() {
+                continue;
+            }
+            let cat_id: Option<i32> = sqlx::query_scalar(
+                "INSERT INTO catalog(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
+            )
+            .bind(cat_name)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
+            if let Some(cid) = cat_id {
+                let _ = sqlx::query(
+                    "INSERT INTO media_catalog_link(media_id, catalog_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
+                )
+                .bind(mid as i32)
+                .bind(cid)
+                .execute(&state.pool)
+                .await;
+            }
+        }
+    }
+
+    // Create contribution record
+    let contribution_data = json!({
+        "info_hash": info_hash,
+        "name": torrent_name,
+        "meta_type": meta_type,
+        "uploader_name": uploader_name,
+        "is_anonymous": resolved_is_anonymous,
+        "is_public": auto_approve,
+    });
+    if let Ok(contrib_id) = create_contribution_record(
+        &state.pool,
+        uploader_user_id,
+        "torrent",
+        body.meta_id.as_deref(),
+        &contribution_data,
+        auto_approve,
+        is_privileged,
+    )
+    .await
+    {
+        if auto_approve {
+            if let Some(uid) = uploader_user_id {
+                award_contribution_points(&state.pool, uid).await;
+            }
+        } else {
+            // Notify moderators of pending contribution
+            if let (Some(bot_token), Some(chat_id)) = (
+                &state.config.telegram_bot_token,
+                &state.config.telegram_chat_id,
+            ) {
+                notify_pending_contribution(
+                    &state.http,
+                    bot_token,
+                    chat_id,
+                    &state.config.host_url,
+                    "torrent",
+                    &uploader_name,
+                    &contribution_data,
+                )
+                .await;
+            }
+        }
+        tracing::debug!("contribution created: {contrib_id}");
+    }
+
+    (
+        StatusCode::CREATED,
+        Json(json!({
+            "status": "success",
+            "message": "Stream imported successfully",
+            "import_id": stream_id,
+            "auto_approved": auto_approve,
+        })),
+    )
+        .into_response()
 }
 
 pub async fn import_torrent(
@@ -621,19 +973,37 @@ pub async fn import_torrent(
     headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
+
+    let user = match fetch_user_info(&state.pool_ro, user_id).await {
+        Some(u) => u,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "User not found"})),
+            )
+                .into_response();
+        }
+    };
 
     let mut file_bytes: Option<Bytes> = None;
     let mut meta_type = String::from("movie");
     let mut meta_id: Option<String> = None;
     let mut title: Option<String> = None;
     let mut force_import = false;
+    let mut languages: Vec<String> = Vec::new();
+    let mut file_data: Vec<FileEntry> = Vec::new();
+    let mut is_anonymous_field: Option<bool> = None;
+    let mut anonymous_display_name: Option<String> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
@@ -656,6 +1026,25 @@ pub async fn import_torrent(
                     .ok()
                     .map(|v| v == "true" || v == "1")
                     .unwrap_or(false);
+            }
+            Some("languages") => {
+                if let Ok(raw) = field.text().await {
+                    languages =
+                        serde_json::from_str::<Vec<String>>(&raw).unwrap_or_else(|_| vec![raw]);
+                }
+            }
+            Some("file_data") => {
+                if let Ok(raw) = field.text().await {
+                    file_data = serde_json::from_str::<Vec<FileEntry>>(&raw).unwrap_or_default();
+                }
+            }
+            Some("is_anonymous") => {
+                if let Ok(raw) = field.text().await {
+                    is_anonymous_field = Some(raw == "true" || raw == "1");
+                }
+            }
+            Some("anonymous_display_name") => {
+                anonymous_display_name = field.text().await.ok().filter(|s| !s.is_empty());
             }
             _ => {}
         }
@@ -697,6 +1086,28 @@ pub async fn import_torrent(
         .map(|f: &Vec<lava_torrent::torrent::v1::File>| f.len())
         .unwrap_or(1) as i32;
 
+    // Adult content filter
+    if is_adult_content(&torrent_name) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"detail": "Adult content is not allowed"})),
+        )
+            .into_response();
+    }
+
+    // Upload permission guard
+    if let Err((status, msg)) = enforce_upload_permissions(
+        &state.pool_ro,
+        &state.redis,
+        user_id,
+        user.uploads_restricted,
+        &user.role,
+    )
+    .await
+    {
+        return (status, Json(json!({"detail": msg}))).into_response();
+    }
+
     // Check duplicate
     let existing_id: Option<i64> = sqlx::query_scalar(
         "SELECT ts.stream_id FROM torrent_stream ts WHERE ts.info_hash = $1 LIMIT 1",
@@ -735,9 +1146,38 @@ pub async fn import_torrent(
         None
     };
 
+    // Resolve uploader identity
+    let resolved_is_anonymous = is_anonymous_field.unwrap_or(user.contribute_anonymously);
+    let (uploader_name, uploader_user_id) = resolve_uploader_identity(
+        resolved_is_anonymous,
+        anonymous_display_name.as_deref(),
+        &user.username,
+        user_id,
+    );
+
+    let is_privileged = matches!(user.role.as_str(), "moderator" | "admin");
+    let auto_approve = is_privileged || !resolved_is_anonymous;
+
     let source = meta_id.as_deref().unwrap_or("manual").to_string();
 
-    match insert_torrent_stream(
+    // Extract trackers from .torrent announce fields
+    let mut tracker_urls: Vec<String> = Vec::new();
+    if let Some(announce) = &torrent.announce {
+        if !announce.is_empty() {
+            tracker_urls.push(announce.clone());
+        }
+    }
+    if let Some(list) = &torrent.announce_list {
+        for tier in list {
+            for url in tier {
+                if !url.is_empty() && !tracker_urls.contains(url) {
+                    tracker_urls.push(url.clone());
+                }
+            }
+        }
+    }
+
+    let stream_id = match insert_torrent_stream(
         &state.pool,
         &info_hash,
         &torrent_name,
@@ -754,22 +1194,118 @@ pub async fn import_torrent(
     )
     .await
     {
-        Ok(stream_id) => (
-            StatusCode::CREATED,
-            Json(json!({
-                "status": "success",
-                "message": "Stream imported successfully",
-                "import_id": stream_id,
-            })),
-        )
-            .into_response(),
+        Ok(sid) => sid,
         Err(e) => {
             tracing::error!("import_torrent DB error: {e}");
-            (
+            return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"detail": "Database error"})),
             )
-                .into_response()
+                .into_response();
+        }
+    };
+
+    // Insert trackers
+    if !tracker_urls.is_empty() {
+        let ts_id: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM torrent_stream WHERE stream_id = $1 LIMIT 1")
+                .bind(stream_id as i32)
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None);
+        if let Some(tsid) = ts_id {
+            insert_trackers(&state.pool, tsid, &tracker_urls).await.ok();
         }
     }
+
+    // Insert language links
+    if !languages.is_empty() {
+        insert_languages(&state.pool, stream_id, &languages)
+            .await
+            .ok();
+    }
+
+    // Insert per-file metadata (provided by UI) or auto-detect from .torrent file list
+    let effective_files: Vec<FileEntry> = if !file_data.is_empty() {
+        file_data
+    } else if let Some(fs) = &torrent.files {
+        fs.iter()
+            .enumerate()
+            .filter_map(|(i, f)| {
+                let filename = f.path.file_name()?.to_string_lossy().into_owned();
+                if crate::parser::episode_detector::is_video_file(&filename) {
+                    Some(FileEntry {
+                        index: i as i32,
+                        filename,
+                        size: f.length,
+                        season_number: None,
+                        episode_number: None,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    if !effective_files.is_empty() {
+        insert_file_data(&state.pool, stream_id, media_id, &effective_files)
+            .await
+            .ok();
+    }
+
+    // Create contribution record
+    let contribution_data = json!({
+        "info_hash": info_hash,
+        "name": torrent_name,
+        "meta_type": meta_type,
+        "uploader_name": uploader_name,
+        "is_anonymous": resolved_is_anonymous,
+        "is_public": auto_approve,
+    });
+    if let Ok(contrib_id) = create_contribution_record(
+        &state.pool,
+        uploader_user_id,
+        "torrent",
+        meta_id.as_deref(),
+        &contribution_data,
+        auto_approve,
+        is_privileged,
+    )
+    .await
+    {
+        if auto_approve {
+            if let Some(uid) = uploader_user_id {
+                award_contribution_points(&state.pool, uid).await;
+            }
+        } else if let (Some(bot_token), Some(chat_id)) = (
+            &state.config.telegram_bot_token,
+            &state.config.telegram_chat_id,
+        ) {
+            notify_pending_contribution(
+                &state.http,
+                bot_token,
+                chat_id,
+                &state.config.host_url,
+                "torrent",
+                &uploader_name,
+                &contribution_data,
+            )
+            .await;
+        }
+        tracing::debug!("contribution created: {contrib_id}");
+    }
+
+    (
+        StatusCode::CREATED,
+        Json(json!({
+            "status": "success",
+            "message": "Stream imported successfully",
+            "import_id": stream_id,
+            "auto_approved": auto_approve,
+        })),
+    )
+        .into_response()
 }

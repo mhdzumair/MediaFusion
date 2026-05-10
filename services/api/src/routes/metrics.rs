@@ -64,11 +64,11 @@ pub async fn handler(State(state): State<Arc<AppState>>) -> Response {
         ),
         fetch_count(
             &state.pool_ro,
-            "SELECT COUNT(*) FROM media WHERE media_type = 'movie'"
+            "SELECT COUNT(*) FROM media WHERE media_type = 'MOVIE'"
         ),
         fetch_count(
             &state.pool_ro,
-            "SELECT COUNT(*) FROM media WHERE media_type = 'series'"
+            "SELECT COUNT(*) FROM media WHERE media_type = 'SERIES'"
         ),
         fetch_count(
             &state.pool_ro,

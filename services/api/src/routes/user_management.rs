@@ -27,7 +27,7 @@ use crate::state::AppState;
 
 // ─── Auth helper ─────────────────────────────────────────────────────────────
 
-fn validate_admin(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
+fn validate_admin(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -62,18 +62,10 @@ fn validate_admin(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
     data["sub"].as_str()?.parse().ok()
 }
 
-#[allow(dead_code)]
 fn unauthorized() -> impl IntoResponse {
     (
         StatusCode::UNAUTHORIZED,
         Json(serde_json::json!({"error": "Unauthorized"})),
-    )
-}
-
-fn forbidden() -> impl IntoResponse {
-    (
-        StatusCode::FORBIDDEN,
-        Json(serde_json::json!({"error": "Forbidden"})),
     )
 }
 
@@ -83,7 +75,7 @@ fn forbidden() -> impl IntoResponse {
 /// (id, uuid, email, username, role, is_verified, is_active, created_at,
 ///  last_login, contribution_points, contribution_level, uploads_restricted)
 type UserRow = (
-    i64,
+    i32, // id is integer (INT4) in DB
     String,
     String,
     Option<String>,
@@ -92,7 +84,7 @@ type UserRow = (
     bool,
     DateTime<Utc>,
     Option<DateTime<Utc>>,
-    i64,
+    i32, // contribution_points is INT4 in DB
     String,
     bool,
 );
@@ -115,7 +107,7 @@ pub struct UserResponse {
 
 fn row_to_response(r: UserRow) -> UserResponse {
     UserResponse {
-        id: r.0,
+        id: r.0 as i64,
         uuid: r.1,
         email: r.2,
         username: r.3,
@@ -124,7 +116,7 @@ fn row_to_response(r: UserRow) -> UserResponse {
         is_active: r.6,
         created_at: r.7,
         last_login: r.8,
-        contribution_points: r.9,
+        contribution_points: r.9 as i64,
         contribution_level: r.10,
         uploads_restricted: r.11,
     }
@@ -190,7 +182,7 @@ pub async fn list_users(
     Query(params): Query<ListUsersQuery>,
 ) -> Response {
     let Some(_admin_id) = validate_admin(&headers, &state.config.secret_key_raw) else {
-        return forbidden().into_response();
+        return unauthorized().into_response();
     };
 
     // Validate role filter
@@ -207,7 +199,7 @@ pub async fn list_users(
     // Validate sort_by
     let order_expr = match params.sort_by.as_str() {
         "user" => "LOWER(COALESCE(username, email))".to_string(),
-        "role" => "CASE role WHEN 'user' THEN 1 WHEN 'paid_user' THEN 2 WHEN 'moderator' THEN 3 WHEN 'admin' THEN 4 ELSE 0 END".to_string(),
+        "role" => "CASE role WHEN 'USER' THEN 1 WHEN 'PAID_USER' THEN 2 WHEN 'MODERATOR' THEN 3 WHEN 'ADMIN' THEN 4 ELSE 0 END".to_string(),
         "contribution" => "contribution_points".to_string(),
         "status" => "CASE WHEN is_active THEN 2 ELSE 0 END + CASE WHEN is_verified THEN 1 ELSE 0 END".to_string(),
         _ => "created_at".to_string(), // "joined" is default
@@ -308,10 +300,10 @@ pub async fn list_users(
 pub async fn get_user(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(user_id): Path<i64>,
+    Path(user_id): Path<i32>,
 ) -> Response {
     let Some(_admin_id) = validate_admin(&headers, &state.config.secret_key_raw) else {
-        return forbidden().into_response();
+        return unauthorized().into_response();
     };
 
     let row = sqlx::query_as::<_, UserRow>(
@@ -345,15 +337,15 @@ pub async fn get_user(
 pub async fn update_user(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(user_id): Path<i64>,
+    Path(user_id): Path<i32>,
     Json(body): Json<UpdateUserRequest>,
 ) -> Response {
     let Some(_admin_id) = validate_admin(&headers, &state.config.secret_key_raw) else {
-        return forbidden().into_response();
+        return unauthorized().into_response();
     };
 
     // Confirm user exists
-    let exists: Option<(i64,)> = match sqlx::query_as("SELECT id FROM users WHERE id = $1")
+    let exists: Option<(i32,)> = match sqlx::query_as("SELECT id FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(&state.pool)
         .await
@@ -378,7 +370,7 @@ pub async fn update_user(
 
     // Check username uniqueness if username is being changed
     if let Some(ref new_username) = body.username {
-        let conflict: Option<(i64,)> = match sqlx::query_as(
+        let conflict: Option<(i32,)> = match sqlx::query_as(
             "SELECT id FROM users WHERE LOWER(username) = LOWER($1) AND id != $2",
         )
         .bind(new_username)
@@ -467,11 +459,11 @@ pub async fn update_user(
 pub async fn update_user_role(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(user_id): Path<i64>,
+    Path(user_id): Path<i32>,
     Json(body): Json<RoleUpdateRequest>,
 ) -> Response {
     let Some(admin_id) = validate_admin(&headers, &state.config.secret_key_raw) else {
-        return forbidden().into_response();
+        return unauthorized().into_response();
     };
 
     // Validate role value
@@ -486,7 +478,7 @@ pub async fn update_user_role(
     }
 
     // Confirm user exists
-    let exists: Option<(i64,)> = match sqlx::query_as("SELECT id FROM users WHERE id = $1")
+    let exists: Option<(i32,)> = match sqlx::query_as("SELECT id FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(&state.pool)
         .await
@@ -539,10 +531,10 @@ pub async fn update_user_role(
 pub async fn delete_user(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(user_id): Path<i64>,
+    Path(user_id): Path<i32>,
 ) -> Response {
     let Some(admin_id) = validate_admin(&headers, &state.config.secret_key_raw) else {
-        return forbidden().into_response();
+        return unauthorized().into_response();
     };
 
     if user_id == admin_id {
@@ -553,7 +545,7 @@ pub async fn delete_user(
             .into_response();
     }
 
-    let exists: Option<(i64,)> = match sqlx::query_as("SELECT id FROM users WHERE id = $1")
+    let exists: Option<(i32,)> = match sqlx::query_as("SELECT id FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(&state.pool)
         .await
@@ -600,11 +592,11 @@ pub async fn delete_user(
 pub async fn send_upload_warning(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(user_id): Path<i64>,
+    Path(user_id): Path<i32>,
     Json(body): Json<SendUploadWarningRequest>,
 ) -> Response {
     let Some(_admin_id) = validate_admin(&headers, &state.config.secret_key_raw) else {
-        return forbidden().into_response();
+        return unauthorized().into_response();
     };
 
     // Fetch user email
@@ -718,7 +710,7 @@ async fn send_email(
     Ok(())
 }
 
-async fn get_user_by_id_response(pool: &sqlx::PgPool, user_id: i64) -> Response {
+async fn get_user_by_id_response(pool: &sqlx::PgPool, user_id: i32) -> Response {
     let row = sqlx::query_as::<_, UserRow>(
         r#"SELECT id, uuid, email, username, role::text, is_verified, is_active,
                   created_at, last_login, contribution_points, contribution_level, uploads_restricted

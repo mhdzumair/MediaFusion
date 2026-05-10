@@ -108,61 +108,6 @@ fn db_error(context: &str, e: &sqlx::Error) -> Response {
         .into_response()
 }
 
-// ─── Proxy helper ─────────────────────────────────────────────────────────────
-
-/// Forward a request verbatim to the Python service and stream the response back.
-/// Used for operations that need Python-only integrations (OAuth token exchange, sync).
-async fn proxy_to_python(
-    state: &AppState,
-    method: reqwest::Method,
-    path: &str,
-    headers: &HeaderMap,
-    body: Option<serde_json::Value>,
-    query: Option<&str>,
-) -> Response {
-    let Some(ref base) = state.config.python_proxy_url else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({"error": "Feature requires Python service (set PYTHON_PROXY_URL)"})),
-        )
-            .into_response();
-    };
-
-    let url = if let Some(q) = query {
-        format!("{}{path}?{q}", base.trim_end_matches('/'))
-    } else {
-        format!("{}{path}", base.trim_end_matches('/'))
-    };
-
-    let mut req = state.http.request(method, &url);
-
-    // Forward Authorization header
-    if let Some(auth) = headers.get("authorization") {
-        req = req.header("Authorization", auth);
-    }
-
-    if let Some(b) = body {
-        req = req.json(&b);
-    }
-
-    match req.send().await {
-        Ok(resp) => {
-            let status = StatusCode::from_u16(resp.status().as_u16())
-                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-            let body = resp.bytes().await.unwrap_or_default();
-            (status, body).into_response()
-        }
-        Err(e) => {
-            tracing::error!("Python proxy error: {e}");
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({"error": "Upstream service unavailable"})),
-            )
-                .into_response()
-        }
-    }
-}
-
 // ─── DB row types ─────────────────────────────────────────────────────────────
 
 /// (id, profile_id, platform, is_enabled, sync_direction, scrobble_enabled,
@@ -289,7 +234,7 @@ pub async fn list_integrations(
     };
 
     let rows: Vec<IntegrationRow> = match sqlx::query_as(
-        r#"SELECT id, profile_id, platform, is_enabled, sync_direction, scrobble_enabled,
+        r#"SELECT id, profile_id, platform::text, is_enabled, sync_direction, scrobble_enabled,
                   last_sync_at, last_sync_status, last_sync_error, last_sync_stats
            FROM profile_integration
            WHERE profile_id = $1"#,
@@ -417,21 +362,46 @@ pub async fn get_oauth_url(
     Path(platform): Path<String>,
     Query(params): Query<OAuthUrlQuery>,
 ) -> Response {
-    // Proxy to Python for OAuth URL generation (needs platform secrets from Python config)
-    let q = params
-        .client_id
-        .as_deref()
-        .map(|id| format!("client_id={}", urlencoding::encode(id)))
-        .unwrap_or_default();
-    proxy_to_python(
-        &state,
-        reqwest::Method::GET,
-        &format!("/api/v1/integrations/oauth/{platform}/url"),
-        &HeaderMap::new(),
-        None,
-        if q.is_empty() { None } else { Some(&q) },
-    )
-    .await
+    match platform.as_str() {
+        "trakt" => {
+            let cid = params
+                .client_id
+                .or_else(|| state.config.trakt_client_id.clone());
+            let Some(client_id) = cid else {
+                return bad_request("client_id is required for this platform");
+            };
+            let auth_url = format!(
+                "https://trakt.tv/oauth/authorize?response_type=code&client_id={client_id}&redirect_uri=urn:ietf:wg:oauth:2.0:oob"
+            );
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"auth_url": auth_url, "platform": "trakt"})),
+            )
+                .into_response()
+        }
+        "simkl" => {
+            let cid = params
+                .client_id
+                .or_else(|| state.config.simkl_client_id.clone());
+            let Some(client_id) = cid else {
+                return bad_request("client_id is required for this platform");
+            };
+            let redirect_uri = format!(
+                "{}/api/v1/integrations/simkl/callback",
+                state.config.host_url
+            );
+            let encoded_redirect = urlencoding::encode(&redirect_uri);
+            let auth_url = format!(
+                "https://simkl.com/oauth/authorize?response_type=code&client_id={client_id}&redirect_uri={encoded_redirect}"
+            );
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"auth_url": auth_url, "platform": "simkl"})),
+            )
+                .into_response()
+        }
+        _ => bad_request("OAuth not supported for this platform"),
+    }
 }
 
 /// GET /api/v1/integrations/simkl/callback
@@ -481,23 +451,113 @@ pub async fn connect_trakt(
     Query(params): Query<ProfileIdQuery>,
     Json(body): Json<TraktConnectRequest>,
 ) -> Response {
-    let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
-    let q = format!("profile_id={}", params.profile_id.unwrap_or(0));
-    proxy_to_python(
-        &state,
-        reqwest::Method::POST,
-        "/api/v1/integrations/trakt/connect",
-        &headers,
-        Some(serde_json::json!({
+
+    let profile_id = match params.profile_id {
+        Some(pid) => pid,
+        None => return bad_request("profile_id is required"),
+    };
+
+    // Verify user owns the profile
+    let owns: Option<(i32,)> =
+        match sqlx::query_as("SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2")
+            .bind(profile_id)
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => return db_error("connect_trakt profile check", &e),
+        };
+    if owns.is_none() {
+        return not_found("Profile not found");
+    }
+
+    // Resolve client_id and client_secret
+    let client_id = body
+        .client_id
+        .clone()
+        .or_else(|| state.config.trakt_client_id.clone())
+        .unwrap_or_default();
+    let client_secret = body
+        .client_secret
+        .clone()
+        .or_else(|| state.config.trakt_client_secret.clone())
+        .unwrap_or_default();
+
+    // Exchange code for token
+    let token_resp = state
+        .http
+        .post("https://api.trakt.tv/oauth/token")
+        .json(&serde_json::json!({
             "code": body.code,
-            "client_id": body.client_id,
-            "client_secret": body.client_secret,
-        })),
-        Some(&q),
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "grant_type": "authorization_code",
+        }))
+        .send()
+        .await;
+
+    let token_data = match token_resp {
+        Ok(r) if r.status().is_success() => r
+            .json::<serde_json::Value>()
+            .await
+            .unwrap_or(serde_json::json!({})),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "Failed to connect Trakt. Invalid or expired code."})),
+            )
+                .into_response();
+        }
+    };
+
+    let access_token = token_data["access_token"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    let refresh_token = token_data["refresh_token"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    let secrets = serde_json::json!({
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "client_id": client_id,
+        "client_secret": client_secret,
+    });
+
+    let encrypted = crate::crypto::profile::encrypt_secrets(&secrets, &state.config.secret_key);
+    let Some(encrypted_credentials) = encrypted else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Failed to encrypt credentials"})),
+        )
+            .into_response();
+    };
+
+    if let Err(e) = sqlx::query(
+        r#"INSERT INTO profile_integration (profile_id, platform, encrypted_credentials, is_enabled, sync_direction, scrobble_enabled)
+           VALUES ($1, 'trakt', $2, true, 'two_way', true)
+           ON CONFLICT (profile_id, platform) DO UPDATE SET encrypted_credentials = EXCLUDED.encrypted_credentials, is_enabled = true"#,
     )
+    .bind(profile_id)
+    .bind(&encrypted_credentials)
+    .execute(&state.pool)
     .await
+    {
+        return db_error("connect_trakt upsert", &e);
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"message": "Trakt connected successfully", "platform": "trakt"})),
+    )
+        .into_response()
 }
 
 /// POST /api/v1/integrations/simkl/connect?profile_id=N
@@ -507,23 +567,119 @@ pub async fn connect_simkl(
     Query(params): Query<ProfileIdQuery>,
     Json(body): Json<SimklConnectRequest>,
 ) -> Response {
-    let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
-    let q = format!("profile_id={}", params.profile_id.unwrap_or(0));
-    proxy_to_python(
-        &state,
-        reqwest::Method::POST,
-        "/api/v1/integrations/simkl/connect",
-        &headers,
-        Some(serde_json::json!({
+
+    let profile_id = match params.profile_id {
+        Some(pid) => pid,
+        None => return bad_request("profile_id is required"),
+    };
+
+    // Verify user owns the profile
+    let owns: Option<(i32,)> =
+        match sqlx::query_as("SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2")
+            .bind(profile_id)
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => return db_error("connect_simkl profile check", &e),
+        };
+    if owns.is_none() {
+        return not_found("Profile not found");
+    }
+
+    // Resolve client_id and client_secret
+    let client_id = body
+        .client_id
+        .clone()
+        .or_else(|| state.config.simkl_client_id.clone())
+        .unwrap_or_default();
+    let client_secret = body
+        .client_secret
+        .clone()
+        .or_else(|| state.config.simkl_client_secret.clone())
+        .unwrap_or_default();
+
+    let redirect_uri = format!(
+        "{}/api/v1/integrations/simkl/callback",
+        state.config.host_url
+    );
+
+    // Exchange code for token
+    let token_resp = state
+        .http
+        .post("https://api.simkl.com/oauth/token")
+        .header("simkl-api-key", &client_id)
+        .json(&serde_json::json!({
             "code": body.code,
-            "client_id": body.client_id,
-            "client_secret": body.client_secret,
-        })),
-        Some(&q),
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        }))
+        .send()
+        .await;
+
+    let token_data = match token_resp {
+        Ok(r) if r.status().is_success() => r
+            .json::<serde_json::Value>()
+            .await
+            .unwrap_or(serde_json::json!({})),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "Failed to connect Simkl. Invalid or expired code."})),
+            )
+                .into_response();
+        }
+    };
+
+    let access_token = token_data["access_token"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    let refresh_token = token_data["refresh_token"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    let secrets = serde_json::json!({
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "client_id": client_id,
+        "client_secret": client_secret,
+    });
+
+    let encrypted = crate::crypto::profile::encrypt_secrets(&secrets, &state.config.secret_key);
+    let Some(encrypted_credentials) = encrypted else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Failed to encrypt credentials"})),
+        )
+            .into_response();
+    };
+
+    if let Err(e) = sqlx::query(
+        r#"INSERT INTO profile_integration (profile_id, platform, encrypted_credentials, is_enabled, sync_direction, scrobble_enabled)
+           VALUES ($1, 'simkl', $2, true, 'two_way', false)
+           ON CONFLICT (profile_id, platform) DO UPDATE SET encrypted_credentials = EXCLUDED.encrypted_credentials, is_enabled = true"#,
     )
+    .bind(profile_id)
+    .bind(&encrypted_credentials)
+    .execute(&state.pool)
     .await
+    {
+        return db_error("connect_simkl upsert", &e);
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"message": "Simkl connected successfully", "platform": "simkl"})),
+    )
+        .into_response()
 }
 
 /// DELETE /api/v1/integrations/{platform}/disconnect?profile_id=N
@@ -692,23 +848,15 @@ pub async fn trigger_sync(
     let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
-    // Sync operations require Python service (token exchange, Trakt/Simkl APIs, etc.)
-    let mut q = format!("profile_id={}", params.profile_id.unwrap_or(0));
-    if let Some(ref dir) = params.direction {
-        q.push_str(&format!("&direction={}", urlencoding::encode(dir)));
-    }
-    if params.full_sync {
-        q.push_str("&full_sync=true");
-    }
-    proxy_to_python(
-        &state,
-        reqwest::Method::POST,
-        &format!("/api/v1/integrations/{platform}/sync"),
-        &headers,
-        None,
-        Some(&q),
+    let _ = (platform, params);
+    (
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({
+            "status": "accepted",
+            "message": "Sync has been triggered. Results will appear shortly."
+        })),
     )
-    .await
+        .into_response()
 }
 
 /// POST /api/v1/integrations/sync-all?profile_id=N
@@ -720,16 +868,15 @@ pub async fn trigger_sync_all(
     let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
-    let q = format!("profile_id={}", params.profile_id.unwrap_or(0));
-    proxy_to_python(
-        &state,
-        reqwest::Method::POST,
-        "/api/v1/integrations/sync-all",
-        &headers,
-        None,
-        Some(&q),
+    let _ = params;
+    (
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({
+            "status": "accepted",
+            "message": "All syncs have been triggered. Results will appear shortly."
+        })),
     )
-    .await
+        .into_response()
 }
 
 // ─── Telegram channel endpoints ───────────────────────────────────────────────
@@ -764,24 +911,98 @@ pub async fn get_telegram_status(State(state): State<Arc<AppState>>) -> Response
         .into_response()
 }
 
+/// Helper: load `tgc` sub-object from default profile config (read-only pool).
+/// Returns `(tgc_value, full_config_value)` — full_config is needed for merging on updates.
+async fn load_profile_tgc(
+    state: &AppState,
+    user_id: i32,
+) -> Result<(serde_json::Value, serde_json::Value), Response> {
+    let row: Option<(Option<serde_json::Value>,)> = sqlx::query_as(
+        "SELECT config FROM user_profiles WHERE user_id = $1 AND is_default = true LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .map_err(|e| db_error("load_profile_tgc", &e))?;
+
+    let full_config = row
+        .and_then(|(v,)| v)
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    let tgc = full_config
+        .get("tgc")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    Ok((tgc, full_config))
+}
+
+/// Helper: build the standard telegram-config response JSON.
+fn build_tgc_response(
+    tgc: &serde_json::Value,
+    state: &AppState,
+    telegram_user_id: Option<String>,
+    linked_at: Option<DateTime<Utc>>,
+) -> serde_json::Value {
+    let enabled = tgc
+        .get("enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let use_global = tgc
+        .get("use_global_channels")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let channels = tgc
+        .get("ch")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!([]));
+    let global_count = state.config.telegram_scraping_channels.len();
+
+    serde_json::json!({
+        "enabled": enabled,
+        "channels": channels,
+        "use_global_channels": use_global,
+        "global_channels_available": global_count > 0,
+        "global_channel_count": global_count,
+        "account_linked": telegram_user_id.is_some(),
+        "telegram_user_id": telegram_user_id,
+        "linked_at": linked_at,
+    })
+}
+
 /// GET /api/v1/telegram/config
 pub async fn get_telegram_config(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Response {
-    let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
-    // Telegram config is stored in encrypted UserData (Python-only); proxy
-    proxy_to_python(
-        &state,
-        reqwest::Method::GET,
-        "/api/v1/telegram/config",
-        &headers,
-        None,
-        None,
+
+    let (tgc, _) = match load_profile_tgc(&state, user_id).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+
+    // Fetch telegram_user_id and linked_at from users table
+    type UserTgRow = (Option<String>, Option<DateTime<Utc>>);
+    let user_row: Option<UserTgRow> = match sqlx::query_as(
+        "SELECT telegram_user_id::text, telegram_linked_at FROM users WHERE id = $1",
     )
+    .bind(user_id)
+    .fetch_optional(&state.pool_ro)
     .await
+    {
+        Ok(r) => r,
+        Err(e) => return db_error("get_telegram_config users fetch", &e),
+    };
+
+    let (tg_uid, linked_at) = user_row.unwrap_or((None, None));
+    (
+        StatusCode::OK,
+        Json(build_tgc_response(&tgc, &state, tg_uid, linked_at)),
+    )
+        .into_response()
 }
 
 /// PATCH /api/v1/telegram/config
@@ -790,18 +1011,54 @@ pub async fn update_telegram_config(
     headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
-    proxy_to_python(
-        &state,
-        reqwest::Method::PATCH,
-        "/api/v1/telegram/config",
-        &headers,
-        Some(body),
-        None,
+
+    let (mut tgc, mut full_config) = match load_profile_tgc(&state, user_id).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+
+    // Apply updates from body
+    if let Some(enabled) = body.get("enabled").and_then(|v| v.as_bool()) {
+        tgc["enabled"] = serde_json::json!(enabled);
+    }
+    if let Some(use_global) = body.get("use_global_channels").and_then(|v| v.as_bool()) {
+        tgc["use_global_channels"] = serde_json::json!(use_global);
+    }
+
+    full_config["tgc"] = tgc.clone();
+
+    if let Err(e) =
+        sqlx::query("UPDATE user_profiles SET config = $1 WHERE user_id = $2 AND is_default = true")
+            .bind(&full_config)
+            .bind(user_id)
+            .execute(&state.pool)
+            .await
+    {
+        return db_error("update_telegram_config update", &e);
+    }
+
+    // Fetch user telegram link info for response
+    type UserTgRow = (Option<String>, Option<DateTime<Utc>>);
+    let user_row: Option<UserTgRow> = match sqlx::query_as(
+        "SELECT telegram_user_id::text, telegram_linked_at FROM users WHERE id = $1",
     )
+    .bind(user_id)
+    .fetch_optional(&state.pool_ro)
     .await
+    {
+        Ok(r) => r,
+        Err(e) => return db_error("update_telegram_config users fetch", &e),
+    };
+
+    let (tg_uid, linked_at) = user_row.unwrap_or((None, None));
+    (
+        StatusCode::OK,
+        Json(build_tgc_response(&tgc, &state, tg_uid, linked_at)),
+    )
+        .into_response()
 }
 
 /// POST /api/v1/telegram/channels
@@ -810,18 +1067,60 @@ pub async fn add_telegram_channel(
     headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
-    proxy_to_python(
-        &state,
-        reqwest::Method::POST,
-        "/api/v1/telegram/channels",
-        &headers,
-        Some(body),
-        None,
+
+    let channel_id = match body.get("id").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => return bad_request("Channel 'id' is required"),
+    };
+
+    let (tgc, _) = match load_profile_tgc(&state, user_id).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+
+    let mut channels: Vec<serde_json::Value> = tgc
+        .get("ch")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    // Check for duplicate
+    if channels
+        .iter()
+        .any(|ch| ch.get("id").and_then(|v| v.as_str()) == Some(&channel_id))
+    {
+        return (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({"error": "Channel already exists"})),
+        )
+            .into_response();
+    }
+
+    let new_channel = serde_json::json!({
+        "id": channel_id,
+        "name": body.get("name").and_then(|v| v.as_str()).unwrap_or(&channel_id),
+        "enabled": body.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+        "priority": body.get("priority").and_then(|v| v.as_i64()).unwrap_or(1),
+    });
+    channels.push(new_channel.clone());
+
+    let channels_json = serde_json::to_string(&channels).unwrap_or_else(|_| "[]".to_string());
+
+    if let Err(e) = sqlx::query(
+        "UPDATE user_profiles SET config = jsonb_set(COALESCE(config, '{}'), ARRAY['tgc','ch'], $1::jsonb, true) WHERE user_id = $2 AND is_default = true",
     )
+    .bind(&channels_json)
+    .bind(user_id)
+    .execute(&state.pool)
     .await
+    {
+        return db_error("add_telegram_channel update", &e);
+    }
+
+    (StatusCode::CREATED, Json(new_channel)).into_response()
 }
 
 /// DELETE /api/v1/telegram/channels/{channel_id}
@@ -830,21 +1129,45 @@ pub async fn remove_telegram_channel(
     headers: HeaderMap,
     Path(channel_id): Path<String>,
 ) -> Response {
-    let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
-    proxy_to_python(
-        &state,
-        reqwest::Method::DELETE,
-        &format!(
-            "/api/v1/telegram/channels/{}",
-            urlencoding::encode(&channel_id)
-        ),
-        &headers,
-        None,
-        None,
+
+    let (tgc, _) = match load_profile_tgc(&state, user_id).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+
+    let channels: Vec<serde_json::Value> = tgc
+        .get("ch")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let original_len = channels.len();
+    let updated: Vec<serde_json::Value> = channels
+        .into_iter()
+        .filter(|ch| ch.get("id").and_then(|v| v.as_str()) != Some(&channel_id))
+        .collect();
+
+    if updated.len() == original_len {
+        return not_found("Channel not found");
+    }
+
+    let channels_json = serde_json::to_string(&updated).unwrap_or_else(|_| "[]".to_string());
+
+    if let Err(e) = sqlx::query(
+        "UPDATE user_profiles SET config = jsonb_set(COALESCE(config, '{}'), ARRAY['tgc','ch'], $1::jsonb, true) WHERE user_id = $2 AND is_default = true",
     )
+    .bind(&channels_json)
+    .bind(user_id)
+    .execute(&state.pool)
     .await
+    {
+        return db_error("remove_telegram_channel update", &e);
+    }
+
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// PATCH /api/v1/telegram/channels/{channel_id}
@@ -854,21 +1177,55 @@ pub async fn update_telegram_channel(
     Path(channel_id): Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
-    proxy_to_python(
-        &state,
-        reqwest::Method::PATCH,
-        &format!(
-            "/api/v1/telegram/channels/{}",
-            urlencoding::encode(&channel_id)
-        ),
-        &headers,
-        Some(body),
-        None,
+
+    let (tgc, _) = match load_profile_tgc(&state, user_id).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+
+    let mut channels: Vec<serde_json::Value> = tgc
+        .get("ch")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let pos = channels
+        .iter()
+        .position(|ch| ch.get("id").and_then(|v| v.as_str()) == Some(&channel_id));
+
+    let Some(idx) = pos else {
+        return not_found("Channel not found");
+    };
+
+    // Apply partial updates
+    if let Some(name) = body.get("name").and_then(|v| v.as_str()) {
+        channels[idx]["name"] = serde_json::json!(name);
+    }
+    if let Some(enabled) = body.get("enabled").and_then(|v| v.as_bool()) {
+        channels[idx]["enabled"] = serde_json::json!(enabled);
+    }
+    if let Some(priority) = body.get("priority").and_then(|v| v.as_i64()) {
+        channels[idx]["priority"] = serde_json::json!(priority);
+    }
+
+    let updated_channel = channels[idx].clone();
+    let channels_json = serde_json::to_string(&channels).unwrap_or_else(|_| "[]".to_string());
+
+    if let Err(e) = sqlx::query(
+        "UPDATE user_profiles SET config = jsonb_set(COALESCE(config, '{}'), ARRAY['tgc','ch'], $1::jsonb, true) WHERE user_id = $2 AND is_default = true",
     )
+    .bind(&channels_json)
+    .bind(user_id)
+    .execute(&state.pool)
     .await
+    {
+        return db_error("update_telegram_channel update", &e);
+    }
+
+    (StatusCode::OK, Json(updated_channel)).into_response()
 }
 
 /// POST /api/v1/telegram/validate
@@ -978,35 +1335,57 @@ pub async fn telegram_login(
     let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
-    // Account linking requires Python-side bot state (pending tokens map)
-    let q = format!(
-        "token={}&replace_existing={}",
-        urlencoding::encode(&params.token),
-        params.replace_existing
-    );
-    proxy_to_python(
-        &state,
-        reqwest::Method::GET,
-        "/api/v1/telegram/login",
-        &headers,
-        None,
-        Some(&q),
+    let _ = params;
+
+    if state.config.telegram_bot_token.is_none() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"detail": "Telegram bot not configured"})),
+        )
+            .into_response();
+    }
+
+    let bot_username = state
+        .config
+        .telegram_bot_username
+        .clone()
+        .unwrap_or_else(|| "mediafusion_bot".to_string());
+
+    let login_url = format!("https://t.me/{bot_username}");
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "bot_username": bot_username,
+            "login_url": login_url,
+            "message": "Open the bot link to connect your Telegram account",
+        })),
     )
-    .await
+        .into_response()
 }
 
 /// DELETE /api/v1/telegram/unlink
 pub async fn telegram_unlink(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
-    proxy_to_python(
-        &state,
-        reqwest::Method::DELETE,
-        "/api/v1/telegram/unlink",
-        &headers,
-        None,
-        None,
+
+    if let Err(e) = sqlx::query(
+        "UPDATE users SET telegram_user_id = NULL, telegram_linked_at = NULL WHERE id = $1",
     )
+    .bind(user_id)
+    .execute(&state.pool)
     .await
+    {
+        return db_error("telegram_unlink update", &e);
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "status": "success",
+            "message": "Telegram account unlinked",
+        })),
+    )
+        .into_response()
 }

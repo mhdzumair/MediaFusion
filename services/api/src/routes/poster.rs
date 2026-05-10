@@ -41,16 +41,6 @@ pub async fn handler(
         }
     }
 
-    // Last resort: redirect to Python if configured
-    if let Some(ref py_url) = state.config.python_proxy_url {
-        let redirect_url = format!("{py_url}/poster/{media_type}/{id}.jpg");
-        return Response::builder()
-            .status(StatusCode::FOUND)
-            .header(header::LOCATION, redirect_url)
-            .body(Body::empty())
-            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
-    }
-
     StatusCode::NOT_FOUND.into_response()
 }
 

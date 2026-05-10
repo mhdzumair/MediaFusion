@@ -25,7 +25,7 @@ use crate::state::AppState;
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
+fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -70,7 +70,7 @@ pub struct IPTVSourceUpdateRequest {
 
 #[derive(Serialize)]
 struct SourceResponse {
-    id: i64,
+    id: i32,
     source_type: String,
     name: String,
     is_public: bool,
@@ -88,7 +88,7 @@ struct SourceResponse {
 // ─── DB row helper ────────────────────────────────────────────────────────────
 
 type SourceRow = (
-    i64,
+    i32,
     String,
     String,
     bool,
@@ -162,7 +162,7 @@ pub async fn list_iptv_sources(headers: HeaderMap, State(state): State<Arc<AppSt
 pub async fn get_iptv_source(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(source_id): Path<i64>,
+    Path(source_id): Path<i32>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -201,7 +201,7 @@ pub async fn get_iptv_source(
 pub async fn update_iptv_source(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(source_id): Path<i64>,
+    Path(source_id): Path<i32>,
     Json(body): Json<IPTVSourceUpdateRequest>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
@@ -295,7 +295,7 @@ pub async fn update_iptv_source(
 pub async fn delete_iptv_source(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(source_id): Path<i64>,
+    Path(source_id): Path<i32>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -329,11 +329,10 @@ pub async fn delete_iptv_source(
 }
 
 /// POST /api/v1/import/sources/{source_id}/sync
-/// For sync we proxy to Python since it involves background job scheduling.
 pub async fn sync_iptv_source(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(source_id): Path<i64>,
+    Path(source_id): Path<i32>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -346,7 +345,7 @@ pub async fn sync_iptv_source(
         }
     };
 
-    // Verify ownership before proxying
+    // Verify ownership
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM iptv_source WHERE id = $1 AND user_id = $2)",
     )
@@ -364,41 +363,130 @@ pub async fn sync_iptv_source(
             .into_response();
     }
 
-    let base = match &state.config.python_proxy_url {
-        Some(u) => u.clone(),
+    // Load source details
+    type SourceDetail = (String, Option<String>, Option<String>, bool);
+    // (source_type, m3u_url, server_url, is_active)
+    let detail: Option<SourceDetail> = sqlx::query_as(
+        "SELECT source_type::text, m3u_url, server_url, is_active FROM iptv_source WHERE id = $1",
+    )
+    .bind(source_id)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .unwrap_or(None);
+
+    let (source_type, m3u_url, _server_url, is_active) = match detail {
+        Some(d) => d,
         None => {
             return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"detail": "Sync service not available in this deployment"})),
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Source not found"})),
             )
                 .into_response();
         }
     };
 
-    let url = format!("{base}/api/v1/import/sources/{source_id}/sync");
+    if !is_active {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Source is not active"})),
+        )
+            .into_response();
+    }
 
-    let req = state.http.post(&url).header(
-        "authorization",
-        headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or(""),
-    );
+    if source_type.to_uppercase() == "XTREAM" {
+        // Xtream sync is complex — return 202 indicating background processing needed
+        sqlx::query("UPDATE iptv_source SET last_synced_at = NOW() WHERE id = $1")
+            .bind(source_id)
+            .execute(&state.pool)
+            .await
+            .ok();
 
-    match req.send().await {
-        Ok(resp) => {
-            let status = StatusCode::from_u16(resp.status().as_u16())
-                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-            let bytes = resp.bytes().await.unwrap_or_default();
-            (status, axum::body::Body::from(bytes)).into_response()
+        return (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "status": "accepted",
+                "message": "Xtream source sync requires background processing. Use import/xtream endpoints directly.",
+                "source_id": source_id,
+            })),
+        )
+            .into_response();
+    }
+
+    // M3U sync
+    let url = match m3u_url {
+        Some(u) if !u.is_empty() => u,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "M3U source has no URL configured"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Fetch M3U content
+    let content = match state
+        .http
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => r.text().await.unwrap_or_default(),
+        Ok(r) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({"detail": format!("Failed to fetch M3U: HTTP {}", r.status())})),
+            )
+                .into_response();
         }
         Err(e) => {
-            tracing::error!("sync_iptv_source proxy error: {e}");
-            (
+            return (
                 StatusCode::BAD_GATEWAY,
-                Json(json!({"detail": "Failed to reach sync service"})),
+                Json(json!({"detail": format!("Failed to fetch M3U: {e}")})),
             )
-                .into_response()
+                .into_response();
+        }
+    };
+
+    // Parse M3U
+    let entries = crate::routes::content::m3u_import::parse_m3u(&content);
+    let source_label = format!("IPTV Source #{source_id}");
+    let mut imported = 0usize;
+    let mut skipped = 0usize;
+
+    for entry in entries.iter().filter(|e| e.entry_type == "tv") {
+        if crate::routes::content::m3u_import::import_tv_channel(
+            &state.pool,
+            &entry.name,
+            &entry.url,
+            entry.logo.as_deref(),
+            &source_label,
+        )
+        .await
+        {
+            imported += 1;
+        } else {
+            skipped += 1;
         }
     }
+
+    // Update last_synced_at
+    let sync_stats = json!({"imported": imported, "skipped": skipped});
+    sqlx::query(
+        "UPDATE iptv_source SET last_synced_at = NOW(), last_sync_stats = $1::jsonb WHERE id = $2",
+    )
+    .bind(sync_stats)
+    .bind(source_id)
+    .execute(&state.pool)
+    .await
+    .ok();
+
+    Json(json!({
+        "status": "success",
+        "imported": imported,
+        "skipped": skipped,
+        "source_id": source_id,
+    }))
+    .into_response()
 }

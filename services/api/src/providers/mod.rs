@@ -1,16 +1,9 @@
-pub mod alldebrid;
-pub mod debridlink;
-pub mod easydebrid;
-pub mod offcloud;
-pub mod pikpak;
-pub mod premiumize;
-pub mod realdebrid;
-pub mod seedr;
-pub mod stremthru;
-pub mod torbox;
+pub mod torrents;
+pub mod usenet;
 
 use thiserror::Error;
 
+/// Shared error type used by both torrent and usenet provider modules.
 #[derive(Debug, Error)]
 pub enum ProviderError {
     #[error("{message}")]

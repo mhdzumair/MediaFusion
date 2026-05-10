@@ -29,7 +29,7 @@ use crate::state::AppState;
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
+fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -114,16 +114,17 @@ fn default_page_size() -> i64 {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Check if a user is a moderator or admin (role stored as TEXT in DB).
-async fn is_moderator(pool: &sqlx::PgPool, user_id: i64) -> bool {
-    let role: Option<String> = sqlx::query_scalar("SELECT role::text FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None);
+async fn is_moderator(pool: &sqlx::PgPool, user_id: i32) -> bool {
+    let role: Option<String> =
+        sqlx::query_scalar("SELECT LOWER(role::text) FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
     matches!(role.as_deref(), Some("moderator") | Some("admin"))
 }
 
-async fn get_username(pool: &sqlx::PgPool, user_id: i64) -> Option<String> {
+async fn get_username(pool: &sqlx::PgPool, user_id: i32) -> Option<String> {
     sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(pool)
@@ -136,8 +137,8 @@ async fn build_suggestion_json(
     pool: &sqlx::PgPool,
     row: &(
         String,
-        i64,
-        i64,
+        i32,
+        i32,
         String,
         Option<String>,
         String,
@@ -168,7 +169,7 @@ async fn build_suggestion_json(
 
     let username = get_username(pool, *user_id).await;
     let reviewer_name = if let Some(rb) = reviewed_by.as_deref() {
-        if let Ok(rid) = rb.parse::<i64>() {
+        if let Ok(rid) = rb.parse::<i32>() {
             get_username(pool, rid).await
         } else {
             None
@@ -226,7 +227,7 @@ async fn build_suggestion_json(
 pub async fn create_suggestion(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<i32>,
     Json(body): Json<SuggestionCreateRequest>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
@@ -422,8 +423,8 @@ pub async fn list_my_suggestions(
 
         let rows: Vec<(
             String,
-            i64,
-            i64,
+            i32,
+            i32,
             String,
             Option<String>,
             String,
@@ -462,8 +463,8 @@ pub async fn list_my_suggestions(
 
         let rows: Vec<(
             String,
-            i64,
-            i64,
+            i32,
+            i32,
             String,
             Option<String>,
             String,
@@ -602,8 +603,8 @@ pub async fn list_pending_suggestions(
         i64,
         Vec<(
             String,
-            i64,
-            i64,
+            i32,
+            i32,
             String,
             Option<String>,
             String,
@@ -887,8 +888,8 @@ pub async fn get_suggestion(
 
     let row: Option<(
         String,
-        i64,
-        i64,
+        i32,
+        i32,
         String,
         Option<String>,
         String,
@@ -1062,8 +1063,8 @@ pub async fn review_suggestion(
 
     let updated_row: Option<(
         String,
-        i64,
-        i64,
+        i32,
+        i32,
         String,
         Option<String>,
         String,

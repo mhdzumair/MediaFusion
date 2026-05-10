@@ -368,6 +368,14 @@ class Settings(BaseSettings):
     # If > 0, skip caching when the stored blob (after compression) would exceed this size
     stream_raw_redis_cache_max_stored_bytes: int = Field(default=0, ge=0)
 
+    # API profiling / metrics endpoint / rate limiting (used by the deprecated Python API layer)
+    enable_profiler: bool = False
+    enable_metrics_endpoint: bool = True
+    metrics_bearer_token: str | None = None
+    enable_rate_limit: bool = True
+    enable_iptv_import: bool = True
+    enable_nzb_file_import: bool = True
+
     # Exception Tracking
     enable_exception_tracking: bool = False
     exception_tracking_ttl: int = 259200  # 3 days in seconds

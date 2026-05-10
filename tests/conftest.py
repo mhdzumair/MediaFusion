@@ -2,9 +2,24 @@
 Pytest configuration and shared fixtures for MediaFusion tests.
 """
 
+import importlib.util as _ilu
+import sys
 from datetime import date
+from pathlib import Path
 
 import pytest
+
+# Map the deprecated Python API directory as the `reference` package so that
+# existing tests that import `from reference.routers.*` continue to work after
+# the root-level `reference` symlink was removed.
+_deprecated_api_path = Path(__file__).parent.parent / "services" / "api-py-deprecated"
+_spec = _ilu.spec_from_file_location(
+    "reference",
+    _deprecated_api_path / "__init__.py",
+    submodule_search_locations=[str(_deprecated_api_path)],
+)
+_mod = _ilu.module_from_spec(_spec)
+sys.modules.setdefault("reference", _mod)
 
 
 @pytest.fixture

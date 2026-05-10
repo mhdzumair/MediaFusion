@@ -31,7 +31,9 @@ use hmac::{Hmac, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
 
-use crate::state::AppState;
+use serde_json::json;
+
+use crate::{db, state::AppState};
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -114,9 +116,9 @@ fn default_watchlist_page_size() -> i64 {
 
 // ─── Helper: fetch external IDs for a media item ──────────────────────────────
 
-async fn get_external_ids(pool: &sqlx::PgPool, media_id: i64) -> serde_json::Value {
+async fn get_external_ids(pool: &sqlx::PgPool, media_id: i32) -> serde_json::Value {
     let rows: Vec<(String, String)> =
-        sqlx::query_as("SELECT source, external_id FROM media_external_id WHERE media_id = $1")
+        sqlx::query_as("SELECT provider, external_id FROM media_external_id WHERE media_id = $1")
             .bind(media_id)
             .fetch_all(pool)
             .await
@@ -135,10 +137,11 @@ async fn get_external_ids_batch(
     if media_ids.is_empty() {
         return std::collections::HashMap::new();
     }
-    let rows: Vec<(i64, String, String)> = sqlx::query_as(
-        "SELECT media_id, source, external_id FROM media_external_id WHERE media_id = ANY($1)",
+    let media_ids_i32: Vec<i32> = media_ids.iter().map(|&x| x as i32).collect();
+    let rows: Vec<(i32, String, String)> = sqlx::query_as(
+        "SELECT media_id, provider, external_id FROM media_external_id WHERE media_id = ANY($1)",
     )
-    .bind(media_ids)
+    .bind(&media_ids_i32)
     .fetch_all(pool)
     .await
     .unwrap_or_default();
@@ -146,7 +149,7 @@ async fn get_external_ids_batch(
     let mut map: std::collections::HashMap<i64, serde_json::Map<String, serde_json::Value>> =
         std::collections::HashMap::new();
     for (mid, source, id) in rows {
-        map.entry(mid)
+        map.entry(mid as i64)
             .or_default()
             .insert(source, serde_json::Value::String(id));
     }
@@ -217,8 +220,8 @@ pub async fn get_library(
     let offset = (page - 1) * page_size;
 
     // Resolve external_id filter to a media_id if provided
-    let external_id_media: Option<i64> = if let Some(ref eid) = params.external_id {
-        match sqlx::query_scalar::<_, i64>(
+    let external_id_media: Option<i32> = if let Some(ref eid) = params.external_id {
+        match sqlx::query_scalar::<_, i32>(
             "SELECT media_id FROM media_external_id WHERE external_id = $1 LIMIT 1",
         )
         .bind(eid)
@@ -266,7 +269,7 @@ pub async fn get_library(
     let _ = idx;
 
     let total: i64 = {
-        let mut q = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id);
+        let mut q = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id as i32);
         if let Some(ref ct) = params.catalog_type {
             q = q.bind(ct.clone());
         }
@@ -310,10 +313,10 @@ pub async fn get_library(
     }
     sql.push_str(&format!(" LIMIT ${idx} OFFSET ${}", idx + 1));
 
-    let rows: Vec<(i64, i64, String, String, Option<String>, DateTime<Utc>)> = {
+    let rows: Vec<(i32, i32, String, String, Option<String>, DateTime<Utc>)> = {
         let mut q =
-            sqlx::query_as::<_, (i64, i64, String, String, Option<String>, DateTime<Utc>)>(&sql)
-                .bind(user_id);
+            sqlx::query_as::<_, (i32, i32, String, String, Option<String>, DateTime<Utc>)>(&sql)
+                .bind(user_id as i32);
         if let Some(ref ct) = params.catalog_type {
             q = q.bind(ct.clone());
         }
@@ -333,19 +336,19 @@ pub async fn get_library(
         }
     };
 
-    let media_ids: Vec<i64> = rows.iter().map(|r| r.1).collect();
+    let media_ids: Vec<i64> = rows.iter().map(|r| r.1 as i64).collect();
     let ext_map = get_external_ids_batch(&state.pool_ro, &media_ids).await;
 
     let items: Vec<serde_json::Value> = rows
         .iter()
         .map(|(id, mid, ct, title, poster, added_at)| {
             let ext = ext_map
-                .get(mid)
+                .get(&(*mid as i64))
                 .cloned()
                 .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
             build_library_item(
-                *id,
-                *mid,
+                *id as i64,
+                *mid as i64,
                 ct,
                 title,
                 poster.as_deref(),
@@ -382,31 +385,31 @@ pub async fn get_library_stats(headers: HeaderMap, State(state): State<Arc<AppSt
 
     let total: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM user_library_item WHERE user_id = $1")
-            .bind(user_id)
+            .bind(user_id as i32)
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
 
     let movies: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM user_library_item WHERE user_id = $1 AND catalog_type = 'movie'",
+        "SELECT COUNT(*) FROM user_library_item WHERE user_id = $1 AND catalog_type = 'MOVIE'",
     )
-    .bind(user_id)
+    .bind(user_id as i32)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
 
     let series: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM user_library_item WHERE user_id = $1 AND catalog_type = 'series'",
+        "SELECT COUNT(*) FROM user_library_item WHERE user_id = $1 AND catalog_type = 'SERIES'",
     )
-    .bind(user_id)
+    .bind(user_id as i32)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
 
     let tv: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM user_library_item WHERE user_id = $1 AND catalog_type = 'tv'",
+        "SELECT COUNT(*) FROM user_library_item WHERE user_id = $1 AND catalog_type = 'TV'",
     )
-    .bind(user_id)
+    .bind(user_id as i32)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
@@ -466,7 +469,7 @@ pub async fn add_to_library(
     let existing: Option<i64> = sqlx::query_scalar(
         "SELECT id FROM user_library_item WHERE user_id = $1 AND media_id = $2 LIMIT 1",
     )
-    .bind(user_id)
+    .bind(user_id as i32)
     .bind(body.media_id)
     .fetch_optional(&state.pool)
     .await
@@ -496,7 +499,7 @@ pub async fn add_to_library(
                VALUES ($1, $2, $3, $4, $5, NOW())
                RETURNING id, media_id, catalog_type, title_cached, poster_cached, added_at"#,
         )
-        .bind(user_id)
+        .bind(user_id as i32)
         .bind(body.media_id)
         .bind(&body.catalog_type)
         .bind(&media_title)
@@ -511,7 +514,7 @@ pub async fn add_to_library(
             }
         };
 
-    let ext = get_external_ids(&state.pool, body.media_id).await;
+    let ext = get_external_ids(&state.pool, body.media_id as i32).await;
     let item = build_library_item(
         row.0,
         row.1,
@@ -549,7 +552,7 @@ pub async fn get_library_item(
              FROM user_library_item WHERE id = $1 AND user_id = $2",
         )
         .bind(item_id)
-        .bind(user_id)
+        .bind(user_id as i32)
         .fetch_optional(&state.pool_ro)
         .await
         {
@@ -567,7 +570,7 @@ pub async fn get_library_item(
         )
             .into_response(),
         Some((id, mid, ct, title, poster, added_at)) => {
-            let ext = get_external_ids(&state.pool_ro, mid).await;
+            let ext = get_external_ids(&state.pool_ro, mid as i32).await;
             Json(build_library_item(
                 id,
                 mid,
@@ -604,7 +607,7 @@ pub async fn check_in_library(
         "SELECT id FROM user_library_item WHERE media_id = $1 AND user_id = $2 LIMIT 1",
     )
     .bind(media_id)
-    .bind(user_id)
+    .bind(user_id as i32)
     .fetch_optional(&state.pool_ro)
     .await
     .unwrap_or(None);
@@ -635,7 +638,7 @@ pub async fn remove_from_library(
 
     let result = sqlx::query("DELETE FROM user_library_item WHERE id = $1 AND user_id = $2")
         .bind(item_id)
-        .bind(user_id)
+        .bind(user_id as i32)
         .execute(&state.pool)
         .await;
 
@@ -672,7 +675,7 @@ pub async fn remove_from_library_by_media_id(
 
     let result = sqlx::query("DELETE FROM user_library_item WHERE media_id = $1 AND user_id = $2")
         .bind(media_id)
-        .bind(user_id)
+        .bind(user_id as i32)
         .execute(&state.pool)
         .await;
 
@@ -697,89 +700,73 @@ pub async fn remove_from_library_by_media_id(
 // Python layer or return appropriate responses for the cases we can serve
 // entirely from the database.
 
-/// GET /api/v1/watchlist/providers
-pub async fn get_watchlist_providers(
-    headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<serde_json::Value>,
-) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
-            )
-                .into_response();
-        }
-    };
+/// Extract all enabled streaming providers from a profile config (both `sps`/`streaming_providers`
+/// multi-array and legacy `sp`/`streaming_provider` single-object forms).
+pub fn extract_streaming_providers(config: &serde_json::Value) -> Vec<serde_json::Value> {
+    let mut result = Vec::new();
 
-    let profile_id: Option<i64> = params.get("profile_id").and_then(|v| v.as_i64());
+    let arr = config
+        .get("sps")
+        .or_else(|| config.get("streaming_providers"))
+        .and_then(|v| v.as_array());
 
-    // Find the profile — prefer explicit profile_id, fall back to default
-    let profile: Option<(i32, serde_json::Value, Option<String>)> = if let Some(pid) = profile_id {
-        match sqlx::query_as(
-            "SELECT id, config, encrypted_secrets FROM user_profiles WHERE id = $1 AND user_id = $2",
-        )
-        .bind(pid as i32)
-        .bind(user_id)
-        .fetch_optional(&state.pool_ro)
-        .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!("get_watchlist_providers profile fetch: {e}");
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    if let Some(sps) = arr {
+        for sp in sps {
+            let service = match sp
+                .get("sv")
+                .or_else(|| sp.get("service"))
+                .and_then(|v| v.as_str())
+            {
+                Some(s) if !s.is_empty() => s,
+                _ => continue,
+            };
+            let enabled = sp
+                .get("en")
+                .or_else(|| sp.get("enabled"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            if enabled {
+                let display_name = sp
+                    .get("n")
+                    .or_else(|| sp.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(service);
+                result.push(serde_json::json!({
+                    "service": service,
+                    "name": display_name,
+                    "enabled": true,
+                }));
             }
         }
-    } else {
-        match sqlx::query_as(
-            "SELECT id, config, encrypted_secrets FROM user_profiles WHERE user_id = $1 AND is_default = true LIMIT 1",
-        )
-        .bind(user_id)
-        .fetch_optional(&state.pool_ro)
-        .await
+        return result;
+    }
+
+    // Legacy single-provider fallback
+    if let Some(sp) = config
+        .get("sp")
+        .or_else(|| config.get("streaming_provider"))
+    {
+        let service = match sp
+            .get("sv")
+            .or_else(|| sp.get("service"))
+            .and_then(|v| v.as_str())
         {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!("get_watchlist_providers default profile fetch: {e}");
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            }
-        }
-    };
+            Some(s) if !s.is_empty() => s,
+            _ => return result,
+        };
+        let display_name = sp
+            .get("n")
+            .or_else(|| sp.get("name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or(service);
+        result.push(serde_json::json!({
+            "service": service,
+            "name": display_name,
+            "enabled": true,
+        }));
+    }
 
-    let (profile_id_val, config) = match profile {
-        None => {
-            return Json(serde_json::json!({"providers": [], "profile_id": 0})).into_response();
-        }
-        Some((pid, cfg, _enc)) => (pid, cfg),
-    };
-
-    // Extract providers from the config that have watchlist_providers field
-    let watchlist_providers = config
-        .get("watchlist_providers")
-        .or_else(|| config.get("wp"))
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-
-    let providers: Vec<serde_json::Value> = watchlist_providers
-        .iter()
-        .filter_map(|p| {
-            let service = p.get("service").or_else(|| p.get("sv"))?.as_str()?;
-            Some(serde_json::json!({
-                "service": service,
-                "name": p.get("name").or_else(|| p.get("n")).and_then(|v| v.as_str()),
-                "supports_watchlist": true,
-            }))
-        })
-        .collect();
-
-    Json(serde_json::json!({
-        "providers": providers,
-        "profile_id": profile_id_val,
-    }))
-    .into_response()
+    result
 }
 
 /// GET /api/v1/watchlist/{provider}
@@ -800,57 +787,7 @@ pub async fn get_watchlist(
         }
     };
 
-    // This endpoint requires the Python debrid provider integration to fetch
-    // the user's downloaded info hashes. Proxy to Python if available.
-    if let Some(ref python_url) = state.config.python_proxy_url {
-        let auth = headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
-        let mut url = format!("{python_url}/api/v1/watchlist/{provider}");
-        let mut query_parts = Vec::new();
-        if let Some(pid) = params.profile_id {
-            query_parts.push(format!("profile_id={pid}"));
-        }
-        if let Some(ref mt) = params.media_type {
-            query_parts.push(format!("media_type={mt}"));
-        }
-        query_parts.push(format!("page={}", params.page));
-        query_parts.push(format!("page_size={}", params.page_size));
-        if !query_parts.is_empty() {
-            url.push('?');
-            url.push_str(&query_parts.join("&"));
-        }
-        match state
-            .http
-            .get(&url)
-            .header("Authorization", auth)
-            .send()
-            .await
-        {
-            Ok(resp) => {
-                let status = StatusCode::from_u16(resp.status().as_u16())
-                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                let body = resp.bytes().await.unwrap_or_default();
-                return (
-                    status,
-                    axum::response::AppendHeaders([(
-                        axum::http::header::CONTENT_TYPE,
-                        "application/json",
-                    )]),
-                    body,
-                )
-                    .into_response();
-            }
-            Err(e) => {
-                tracing::error!("get_watchlist proxy: {e}");
-                return StatusCode::BAD_GATEWAY.into_response();
-            }
-        }
-    }
-
-    // No Python proxy — return empty response with explanation
+    // Return empty response — watchlist fetching not yet implemented natively
     Json(serde_json::json!({
         "items": [],
         "total": 0,
@@ -863,32 +800,288 @@ pub async fn get_watchlist(
     .into_response()
 }
 
+// ─── Helpers for watchlist / debrid import ───────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct MissingQuery {
+    profile_id: Option<i32>,
+}
+
+/// Fetch the decrypted profile config for the given user and optional profile_id.
+async fn get_profile_config(
+    pool: &sqlx::PgPool,
+    user_id: i64,
+    profile_id: Option<i32>,
+    secret_key: &[u8; 32],
+) -> Option<serde_json::Value> {
+    type Row = (Option<serde_json::Value>, Option<String>);
+    let row: Option<Row> = if let Some(pid) = profile_id {
+        sqlx::query_as::<_, Row>(
+            "SELECT config, encrypted_secrets FROM user_profiles WHERE id = $1 AND user_id = $2",
+        )
+        .bind(pid)
+        .bind(user_id as i32)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+    } else {
+        sqlx::query_as::<_, Row>(
+            "SELECT config, encrypted_secrets FROM user_profiles WHERE user_id = $1 AND is_default = true",
+        )
+        .bind(user_id as i32)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+    };
+
+    let (config, encrypted_secrets) = row?;
+    let mut full_config: serde_json::Value = config.unwrap_or_else(|| json!({}));
+    if let Some(enc) = encrypted_secrets {
+        let secrets = crate::crypto::profile::decrypt_secrets(&enc, secret_key);
+        deep_merge_cfg(&mut full_config, secrets);
+    }
+    Some(full_config)
+}
+
+fn deep_merge_cfg(base: &mut serde_json::Value, overlay: serde_json::Value) {
+    match (base, overlay) {
+        (serde_json::Value::Object(b), serde_json::Value::Object(o)) => {
+            for (k, v) in o {
+                deep_merge_cfg(b.entry(k).or_insert(serde_json::Value::Null), v);
+            }
+        }
+        (base, overlay) => *base = overlay,
+    }
+}
+
+/// Extract the token for a named provider from a decrypted profile config.
+fn extract_provider_token(config: &serde_json::Value, provider: &str) -> Option<String> {
+    let sps = config
+        .get("sps")
+        .or_else(|| config.get("streaming_providers"))
+        .and_then(|v| v.as_array());
+
+    if let Some(arr) = sps {
+        for sp in arr {
+            let svc = sp
+                .get("sv")
+                .or_else(|| sp.get("service"))
+                .and_then(|v| v.as_str())?;
+            if svc == provider {
+                return sp
+                    .get("tk")
+                    .or_else(|| sp.get("token"))
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
+            }
+        }
+    }
+
+    // Legacy single-provider
+    let sp = config
+        .get("sp")
+        .or_else(|| config.get("streaming_provider"))?;
+    let svc = sp
+        .get("sv")
+        .or_else(|| sp.get("service"))
+        .and_then(|v| v.as_str())?;
+    if svc == provider {
+        return sp
+            .get("tk")
+            .or_else(|| sp.get("token"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+    }
+    None
+}
+
+// ─── Debrid import DB helper ──────────────────────────────────────────────────
+
+/// Insert a single torrent stream row; returns true if newly inserted, false if already existed.
+async fn upsert_debrid_torrent(
+    pool: &sqlx::PgPool,
+    info_hash: &str,
+    name: &str,
+    source: &str,
+    size: i64,
+) -> Result<bool, sqlx::Error> {
+    // Check for existing entry first to avoid unnecessary inserts
+    let exists: Option<i64> =
+        sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
+            .bind(info_hash)
+            .fetch_optional(pool)
+            .await?;
+    if exists.is_some() {
+        return Ok(false);
+    }
+
+    let parsed = crate::parser::parse_title(name);
+    let mut txn = pool.begin().await?;
+
+    let stream_id: i64 = sqlx::query_scalar(
+        r#"INSERT INTO stream(
+               stream_type, name, source, resolution, codec, quality,
+               is_proper, is_repack, is_extended, is_complete, is_dubbed, release_group,
+               is_active, is_blocked, is_public, playback_count, created_at
+           ) VALUES(
+               'TORRENT'::streamtype, $1, $2, $3, $4, $5,
+               $6, $7, $8, $9, $10, $11,
+               true, false, true, 0, NOW()
+           ) RETURNING id"#,
+    )
+    .bind(name)
+    .bind(source)
+    .bind(parsed.resolution.as_deref())
+    .bind(parsed.codec.as_deref())
+    .bind(parsed.quality.as_deref())
+    .bind(parsed.is_proper)
+    .bind(parsed.is_repack)
+    .bind(parsed.is_extended)
+    .bind(parsed.is_complete)
+    .bind(parsed.is_dubbed)
+    .bind(parsed.release_group.as_deref())
+    .fetch_one(&mut *txn)
+    .await?;
+
+    let inserted = sqlx::query(
+        r#"INSERT INTO torrent_stream(stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at)
+           VALUES($1, $2, $3, NULL, 'PUBLIC'::torrenttype, 0, NOW())
+           ON CONFLICT (info_hash) DO NOTHING"#,
+    )
+    .bind(stream_id as i32)
+    .bind(info_hash)
+    .bind(size)
+    .execute(&mut *txn)
+    .await?
+    .rows_affected()
+        > 0;
+
+    if !inserted {
+        sqlx::query("DELETE FROM stream WHERE id = $1")
+            .bind(stream_id as i32)
+            .execute(&mut *txn)
+            .await
+            .ok();
+    }
+
+    txn.commit().await?;
+    Ok(inserted)
+}
+
+// ─── Import body shapes ───────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ImportBody {
+    items: Vec<ImportItem>,
+}
+
+#[derive(Deserialize)]
+pub struct ImportItem {
+    info_hash: String,
+    name: String,
+    #[serde(default)]
+    size: i64,
+}
+
+// ─── Handlers ─────────────────────────────────────────────────────────────────
+
 /// GET /api/v1/watchlist/{provider}/missing
 pub async fn get_missing_torrents(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Path(provider): Path<String>,
-    Query(params): Query<serde_json::Value>,
+    Query(params): Query<MissingQuery>,
 ) -> Response {
-    let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
             return (
                 StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
+                Json(json!({"detail": "Unauthorized"})),
             )
                 .into_response();
         }
     };
 
-    proxy_or_stub(
-        &state,
-        &headers,
-        &format!("/api/v1/watchlist/{provider}/missing"),
-        &params,
-        || serde_json::json!({"items": [], "total": 0, "provider": provider}),
+    let config = match get_profile_config(
+        &state.pool_ro,
+        user_id,
+        params.profile_id,
+        &state.config.secret_key,
     )
     .await
+    {
+        Some(c) => c,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Profile not found"})),
+            )
+                .into_response();
+        }
+    };
+
+    let token = match extract_provider_token(&config, &provider) {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(
+                    json!({"detail": format!("Provider '{}' not configured in profile", provider)}),
+                ),
+            )
+                .into_response();
+        }
+    };
+
+    // Only Real-Debrid is implemented; others fall back to empty list
+    let all_torrents = match provider.as_str() {
+        "realdebrid" => {
+            match crate::providers::torrents::realdebrid::list_downloaded_torrents(
+                &state.http,
+                &token,
+            )
+            .await
+            {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::warn!("get_missing_torrents realdebrid: {e}");
+                    return (
+                        StatusCode::BAD_GATEWAY,
+                        Json(json!({"detail": format!("Provider error: {e}")})),
+                    )
+                        .into_response();
+                }
+            }
+        }
+        _ => {
+            return Json(json!({"items": [], "total": 0, "provider": provider})).into_response();
+        }
+    };
+
+    let all_hashes: Vec<String> = all_torrents.iter().map(|t| t.info_hash.clone()).collect();
+    let existing: std::collections::HashSet<String> =
+        db::filter_existing_hashes(&state.pool_ro, &all_hashes)
+            .await
+            .into_iter()
+            .collect();
+
+    let missing: Vec<serde_json::Value> = all_torrents
+        .into_iter()
+        .filter(|t| !existing.contains(&t.info_hash))
+        .map(|t| {
+            json!({
+                "info_hash": t.info_hash,
+                "name": t.name,
+                "size": t.size,
+            })
+        })
+        .collect();
+
+    let total = missing.len();
+    Json(json!({"items": missing, "total": total, "provider": provider})).into_response()
 }
 
 /// POST /api/v1/watchlist/{provider}/import
@@ -896,55 +1089,224 @@ pub async fn import_torrents(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Path(provider): Path<String>,
-    body: axum::body::Bytes,
+    Json(body): Json<ImportBody>,
 ) -> Response {
     let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
             return (
                 StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
+                Json(json!({"detail": "Unauthorized"})),
             )
                 .into_response();
         }
     };
 
-    proxy_post_or_stub(
-        &state,
-        &headers,
-        &format!("/api/v1/watchlist/{provider}/import"),
-        body,
-        || serde_json::json!({"imported": 0, "failed": 0, "skipped": 0, "details": []}),
-    )
-    .await
+    let mut imported = 0u32;
+    let mut skipped = 0u32;
+    let mut failed = 0u32;
+    let mut details: Vec<serde_json::Value> = Vec::new();
+
+    for item in body.items {
+        let hash = item.info_hash.to_lowercase();
+        match upsert_debrid_torrent(&state.pool, &hash, &item.name, &provider, item.size).await {
+            Ok(true) => {
+                imported += 1;
+                details.push(json!({"info_hash": hash, "status": "imported"}));
+            }
+            Ok(false) => {
+                skipped += 1;
+                details.push(json!({"info_hash": hash, "status": "skipped"}));
+            }
+            Err(e) => {
+                failed += 1;
+                tracing::warn!("import_torrents upsert {hash}: {e}");
+                details
+                    .push(json!({"info_hash": hash, "status": "failed", "error": e.to_string()}));
+            }
+        }
+    }
+
+    Json(json!({
+        "imported": imported,
+        "skipped": skipped,
+        "failed": failed,
+        "details": details,
+    }))
+    .into_response()
 }
+
+// ─── Advanced import body shapes ─────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct AdvancedImportFileEntry {
+    pub index: i32,
+    pub filename: String,
+    pub size: i64,
+    pub season_number: Option<i32>,
+    pub episode_number: Option<i32>,
+}
+
+#[derive(Deserialize)]
+pub struct AdvancedImportItem {
+    pub info_hash: String,
+    pub name: String,
+    #[serde(default)]
+    pub size: i64,
+    pub languages: Option<Vec<String>>,
+    pub file_data: Option<Vec<AdvancedImportFileEntry>>,
+}
+
+#[derive(Deserialize)]
+pub struct AdvancedImportBody {
+    pub items: Vec<AdvancedImportItem>,
+}
+
+// ─── Remove / clear-all body shapes ─────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct RemoveTorrentBody {
+    pub info_hash: String,
+    pub profile_id: Option<i32>,
+}
+
+#[derive(Deserialize)]
+pub struct ClearAllBody {
+    pub profile_id: Option<i32>,
+}
+
+// ─── Handlers ─────────────────────────────────────────────────────────────────
 
 /// POST /api/v1/watchlist/{provider}/import/advanced
 pub async fn advanced_import_torrents(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Path(provider): Path<String>,
-    body: axum::body::Bytes,
+    Json(body): Json<AdvancedImportBody>,
 ) -> Response {
     let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
             return (
                 StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
+                Json(json!({"detail": "Unauthorized"})),
             )
                 .into_response();
         }
     };
 
-    proxy_post_or_stub(
-        &state,
-        &headers,
-        &format!("/api/v1/watchlist/{provider}/import/advanced"),
-        body,
-        || serde_json::json!({"imported": 0, "failed": 0, "skipped": 0, "details": []}),
-    )
-    .await
+    let mut imported = 0u32;
+    let mut skipped = 0u32;
+    let mut failed = 0u32;
+    let mut details: Vec<serde_json::Value> = Vec::new();
+
+    for item in body.items {
+        let hash = item.info_hash.to_lowercase();
+
+        match upsert_debrid_torrent(&state.pool, &hash, &item.name, &provider, item.size).await {
+            Ok(newly_inserted) => {
+                if newly_inserted {
+                    // Insert languages
+                    if let Some(langs) = &item.languages {
+                        for lang in langs {
+                            if lang.is_empty() {
+                                continue;
+                            }
+                            let lid: Option<i32> = sqlx::query_scalar(
+                                "INSERT INTO language(name) VALUES($1) \
+                                 ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
+                            )
+                            .bind(lang)
+                            .fetch_optional(&state.pool)
+                            .await
+                            .unwrap_or(None);
+                            if let Some(lid) = lid {
+                                sqlx::query(
+                                    "INSERT INTO stream_language_link(stream_id, language_id, language_type) \
+                                     VALUES((SELECT stream_id FROM torrent_stream WHERE info_hash = $1 LIMIT 1), $2, 'audio') \
+                                     ON CONFLICT DO NOTHING",
+                                )
+                                .bind(&hash)
+                                .bind(lid)
+                                .execute(&state.pool)
+                                .await
+                                .ok();
+                            }
+                        }
+                    }
+
+                    // Insert per-file metadata
+                    if let Some(files) = &item.file_data {
+                        // Look up stream_id for this hash
+                        let stream_id: Option<i64> = sqlx::query_scalar(
+                            "SELECT stream_id FROM torrent_stream WHERE info_hash = $1 LIMIT 1",
+                        )
+                        .bind(&hash)
+                        .fetch_optional(&state.pool)
+                        .await
+                        .unwrap_or(None);
+
+                        if let Some(sid) = stream_id {
+                            for f in files {
+                                let fid: Option<i32> = sqlx::query_scalar(
+                                    r#"INSERT INTO stream_file(stream_id, file_index, filename, size, file_type)
+                                       VALUES($1, $2, $3, $4, 'video')
+                                       ON CONFLICT DO NOTHING RETURNING id"#,
+                                )
+                                .bind(sid as i32)
+                                .bind(f.index)
+                                .bind(&f.filename)
+                                .bind(f.size)
+                                .fetch_optional(&state.pool)
+                                .await
+                                .unwrap_or(None);
+
+                                if let (Some(fid), Some(s), Some(e)) =
+                                    (fid, f.season_number, f.episode_number)
+                                {
+                                    sqlx::query(
+                                        r#"INSERT INTO file_media_link(file_id, media_id, season_number, episode_number)
+                                           SELECT $1,
+                                                  (SELECT media_id FROM stream_media_link WHERE stream_id = $2 LIMIT 1),
+                                                  $3, $4
+                                           WHERE (SELECT media_id FROM stream_media_link WHERE stream_id = $2 LIMIT 1) IS NOT NULL
+                                           ON CONFLICT DO NOTHING"#,
+                                    )
+                                    .bind(fid)
+                                    .bind(sid as i32)
+                                    .bind(s)
+                                    .bind(e)
+                                    .execute(&state.pool)
+                                    .await
+                                    .ok();
+                                }
+                            }
+                        }
+                    }
+
+                    imported += 1;
+                    details.push(json!({"info_hash": hash, "status": "imported"}));
+                } else {
+                    skipped += 1;
+                    details.push(json!({"info_hash": hash, "status": "skipped"}));
+                }
+            }
+            Err(e) => {
+                failed += 1;
+                tracing::warn!("advanced_import_torrents upsert {hash}: {e}");
+                details
+                    .push(json!({"info_hash": hash, "status": "failed", "error": e.to_string()}));
+            }
+        }
+    }
+
+    Json(json!({
+        "imported": imported,
+        "skipped": skipped,
+        "failed": failed,
+        "details": details,
+    }))
+    .into_response()
 }
 
 /// POST /api/v1/watchlist/{provider}/remove
@@ -952,27 +1314,98 @@ pub async fn remove_torrent_from_debrid(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Path(provider): Path<String>,
-    body: axum::body::Bytes,
+    Json(body): Json<RemoveTorrentBody>,
 ) -> Response {
-    let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
             return (
                 StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
+                Json(json!({"detail": "Unauthorized"})),
             )
                 .into_response();
         }
     };
 
-    proxy_post_or_stub(
-        &state,
-        &headers,
-        &format!("/api/v1/watchlist/{provider}/remove"),
-        body,
-        || serde_json::json!({"success": false, "message": "Not implemented in Rust layer"}),
+    let config = match get_profile_config(
+        &state.pool_ro,
+        user_id,
+        body.profile_id,
+        &state.config.secret_key,
     )
     .await
+    {
+        Some(c) => c,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Profile not found"})),
+            )
+                .into_response();
+        }
+    };
+
+    let token = match extract_provider_token(&config, &provider) {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(
+                    json!({"detail": format!("Provider '{}' not configured in profile", provider)}),
+                ),
+            )
+                .into_response();
+        }
+    };
+
+    let info_hash = body.info_hash.to_lowercase();
+
+    use crate::providers::torrents;
+
+    let result = match provider.as_str() {
+        "realdebrid" => {
+            torrents::realdebrid::delete_torrent_by_hash(&state.http, &token, &info_hash).await
+        }
+        "alldebrid" => {
+            torrents::alldebrid::delete_torrent_by_hash(&state.http, &token, &info_hash).await
+        }
+        "debridlink" => {
+            torrents::debridlink::delete_torrent_by_hash(&state.http, &token, &info_hash).await
+        }
+        "torbox" => torrents::torbox::delete_torrent_by_hash(&state.http, &token, &info_hash).await,
+        "offcloud" => {
+            torrents::offcloud::delete_torrent_by_hash(&state.http, &token, &info_hash).await
+        }
+        "premiumize" => {
+            torrents::premiumize::delete_torrent_by_hash(&state.http, &token, &info_hash).await
+        }
+        "seedr" => torrents::seedr::delete_torrent_by_hash(&state.http, &token, &info_hash).await,
+        "pikpak" => torrents::pikpak::delete_torrent_by_hash(&state.http, &token, &info_hash).await,
+        other => {
+            return (
+                StatusCode::NOT_IMPLEMENTED,
+                Json(json!({"success": false, "detail": format!("Single-torrent removal not supported for '{other}'")})),
+            )
+                .into_response();
+        }
+    };
+
+    match result {
+        Ok(true) => Json(json!({"success": true, "info_hash": info_hash})).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"success": false, "detail": "Torrent not found in provider account"})),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::warn!("remove_torrent_from_debrid {provider}: {e}");
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({"success": false, "detail": format!("Provider error: {e}")})),
+            )
+                .into_response()
+        }
+    }
 }
 
 /// POST /api/v1/watchlist/{provider}/clear-all
@@ -980,119 +1413,83 @@ pub async fn clear_all_torrents_from_debrid(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Path(provider): Path<String>,
-    body: axum::body::Bytes,
+    Json(body): Json<ClearAllBody>,
 ) -> Response {
-    let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
             return (
                 StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
+                Json(json!({"detail": "Unauthorized"})),
             )
                 .into_response();
         }
     };
 
-    proxy_post_or_stub(
-        &state,
-        &headers,
-        &format!("/api/v1/watchlist/{provider}/clear-all"),
-        body,
-        || serde_json::json!({"success": false, "message": "Not implemented in Rust layer"}),
+    let config = match get_profile_config(
+        &state.pool_ro,
+        user_id,
+        body.profile_id,
+        &state.config.secret_key,
     )
     .await
-}
+    {
+        Some(c) => c,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Profile not found"})),
+            )
+                .into_response();
+        }
+    };
 
-// ─── Proxy helpers ────────────────────────────────────────────────────────────
+    let token = match extract_provider_token(&config, &provider) {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(
+                    json!({"detail": format!("Provider '{}' not configured in profile", provider)}),
+                ),
+            )
+                .into_response();
+        }
+    };
 
-async fn proxy_or_stub(
-    state: &AppState,
-    headers: &HeaderMap,
-    path: &str,
-    _params: &serde_json::Value,
-    stub: impl Fn() -> serde_json::Value,
-) -> Response {
-    if let Some(ref python_url) = state.config.python_proxy_url {
-        let auth = headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
-        let url = format!("{python_url}{path}");
-        match state
-            .http
-            .get(&url)
-            .header("Authorization", auth)
-            .send()
-            .await
-        {
-            Ok(resp) => {
-                let status = StatusCode::from_u16(resp.status().as_u16())
-                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                let body = resp.bytes().await.unwrap_or_default();
-                return (
-                    status,
-                    axum::response::AppendHeaders([(
-                        axum::http::header::CONTENT_TYPE,
-                        "application/json",
-                    )]),
-                    body,
-                )
-                    .into_response();
-            }
-            Err(e) => {
-                tracing::error!("proxy GET {path}: {e}");
-                return StatusCode::BAD_GATEWAY.into_response();
-            }
+    use crate::providers::torrents;
+
+    let result = match provider.as_str() {
+        "realdebrid" => torrents::realdebrid::delete_all_torrents(&state.http, &token).await,
+        "alldebrid" => torrents::alldebrid::delete_all_torrents(&state.http, &token).await,
+        "premiumize" => torrents::premiumize::delete_all_torrents(&state.http, &token).await,
+        "debridlink" => torrents::debridlink::delete_all_torrents(&state.http, &token).await,
+        "torbox" => torrents::torbox::delete_all_torrents(&state.http, &token).await,
+        "stremthru" => torrents::stremthru::delete_all_torrents(&state.http, &token).await,
+        "offcloud" => torrents::offcloud::delete_all_torrents(&state.http, &token).await,
+        "easydebrid" => torrents::easydebrid::delete_all_torrents(&state.http, &token).await,
+        "seedr" => torrents::seedr::delete_all_torrents(&state.http, &token).await,
+        "pikpak" => torrents::pikpak::delete_all_torrents(&state.http, &token).await,
+        other => {
+            return (
+                StatusCode::NOT_IMPLEMENTED,
+                Json(json!({"success": false, "detail": format!("Clear-all not supported for '{other}'")})),
+            )
+                .into_response();
+        }
+    };
+
+    match result {
+        Ok(()) => Json(json!({"success": true, "provider": provider})).into_response(),
+        Err(e) => {
+            tracing::warn!("clear_all_torrents_from_debrid {provider}: {e}");
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({"success": false, "detail": format!("Provider error: {e}")})),
+            )
+                .into_response()
         }
     }
-    Json(stub()).into_response()
-}
-
-async fn proxy_post_or_stub(
-    state: &AppState,
-    headers: &HeaderMap,
-    path: &str,
-    body: axum::body::Bytes,
-    stub: impl Fn() -> serde_json::Value,
-) -> Response {
-    if let Some(ref python_url) = state.config.python_proxy_url {
-        let auth = headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
-        let url = format!("{python_url}{path}");
-        match state
-            .http
-            .post(&url)
-            .header("Authorization", auth)
-            .header("Content-Type", "application/json")
-            .body(body)
-            .send()
-            .await
-        {
-            Ok(resp) => {
-                let status = StatusCode::from_u16(resp.status().as_u16())
-                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                let resp_body = resp.bytes().await.unwrap_or_default();
-                return (
-                    status,
-                    axum::response::AppendHeaders([(
-                        axum::http::header::CONTENT_TYPE,
-                        "application/json",
-                    )]),
-                    resp_body,
-                )
-                    .into_response();
-            }
-            Err(e) => {
-                tracing::error!("proxy POST {path}: {e}");
-                return StatusCode::BAD_GATEWAY.into_response();
-            }
-        }
-    }
-    Json(stub()).into_response()
 }
 
 // ─── Aliases for mod.rs compatibility ────────────────────────────────────────
@@ -1115,25 +1512,84 @@ pub async fn bulk_library_operation(
                 .into_response()
         }
     };
-    if let Some(py_url) = &state.config.python_proxy_url {
-        let url = format!("{py_url}/api/v1/library/bulk");
-        match state.http.post(&url).json(&body).send().await {
-            Ok(r) => {
-                let status = StatusCode::from_u16(r.status().as_u16())
-                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                let resp_body: serde_json::Value = r.json().await.unwrap_or(serde_json::json!({}));
-                return (status, Json(resp_body)).into_response();
-            }
-            Err(e) => {
-                tracing::error!("bulk_library_operation proxy: {e}");
-                return StatusCode::BAD_GATEWAY.into_response();
-            }
+    let operation = match body.get("operation").and_then(|v| v.as_str()) {
+        Some(op) => op.to_string(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"detail": "Missing 'operation' field"})),
+            )
+                .into_response()
         }
+    };
+
+    let items = match body.get("items").and_then(|v| v.as_array()) {
+        Some(arr) => arr.clone(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"detail": "Missing or invalid 'items' field"})),
+            )
+                .into_response()
+        }
+    };
+
+    let mut count: usize = 0;
+    match operation.as_str() {
+        "add" => {
+            for item in &items {
+                let media_id = match item.get("media_id").and_then(|v| v.as_i64()) {
+                    Some(id) => id,
+                    None => continue,
+                };
+                let result = sqlx::query(
+                    "INSERT INTO user_library_item (user_id, media_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                )
+                .bind(user_id as i32)
+                .bind(media_id as i32)
+                .execute(&state.pool)
+                .await;
+                if result.is_ok() {
+                    count += 1;
+                }
+            }
+            Json(serde_json::json!({
+                "status": "success",
+                "operation": "add",
+                "count": count,
+                "message": format!("{count} item(s) added to library"),
+            }))
+            .into_response()
+        }
+        "remove" => {
+            for item in &items {
+                let media_id = match item.get("media_id").and_then(|v| v.as_i64()) {
+                    Some(id) => id,
+                    None => continue,
+                };
+                let result = sqlx::query(
+                    "DELETE FROM user_library_item WHERE user_id = $1 AND media_id = $2",
+                )
+                .bind(user_id as i32)
+                .bind(media_id as i32)
+                .execute(&state.pool)
+                .await;
+                if let Ok(r) = result {
+                    count += r.rows_affected() as usize;
+                }
+            }
+            Json(serde_json::json!({
+                "status": "success",
+                "operation": "remove",
+                "count": count,
+                "message": format!("{count} item(s) removed from library"),
+            }))
+            .into_response()
+        }
+        _ => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"detail": "Invalid operation. Must be 'add' or 'remove'"})),
+        )
+            .into_response(),
     }
-    let _ = user_id;
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(serde_json::json!({"detail": "Not implemented"})),
-    )
-        .into_response()
 }

@@ -20,7 +20,7 @@ use crate::state::AppState;
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-fn validate_moderator_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
+fn validate_moderator_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -61,7 +61,7 @@ fn validate_moderator_token(headers: &HeaderMap, secret_key: &str) -> Option<i64
 pub async fn delete_stream(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Path(stream_id): Path<i64>,
+    Path(stream_id): Path<i32>,
 ) -> Response {
     // 1. Validate moderator token
     let _user_id = match validate_moderator_token(&headers, &state.config.secret_key_raw) {
@@ -75,7 +75,7 @@ pub async fn delete_stream(
         }
     };
 
-    let stream_id_i32 = stream_id as i32;
+    let stream_id_i32 = stream_id;
 
     // 2. Check stream exists and get stream_type
     let stream_type: Option<String> =

@@ -17,6 +17,7 @@ class MediaGenreLink(SQLModel, table=True):
     """Link between media and genres."""
 
     __tablename__ = "media_genre_link"
+    __table_args__ = (Index("idx_media_genre_link_media_id", "media_id"),)
 
     media_id: int = Field(foreign_key="media.id", primary_key=True, ondelete="CASCADE")
     genre_id: int = Field(foreign_key="genre.id", primary_key=True, index=True, ondelete="CASCADE")
@@ -26,6 +27,7 @@ class MediaCatalogLink(SQLModel, table=True):
     """Link between media and catalogs."""
 
     __tablename__ = "media_catalog_link"
+    __table_args__ = (Index("idx_media_catalog_link_media_id", "media_id"),)
 
     media_id: int = Field(foreign_key="media.id", primary_key=True, ondelete="CASCADE")
     catalog_id: int = Field(foreign_key="catalog.id", primary_key=True, index=True, ondelete="CASCADE")
