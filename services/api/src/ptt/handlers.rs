@@ -1589,8 +1589,10 @@ pub fn add_defaults(p: &mut Parser) {
         array(arc(tr_integer)),
         Opts::defaults().with_remove(true),
     );
-    p.add("episodes", rei(r"(?<!(?:seasons?|[Сс]езони?)\W{0,10})(?:[ .([-]|^)(\d{1,3}(?:[ .]?[,&+~][ .]?\d{1,3})+)(?:[ .)\]-]|$)"), arc(tr_range_func), Opts::defaults());
-    p.add("episodes", rei(r"(?<!(?:seasons?|[Сс]езони?)\W{0,10})(?:[ .([-]|^)(\d{1,3}(?:-\d{1,3})+)(?:[ .)(\]]|-\D|$)"), arc(tr_range_func), Opts::defaults());
+    // PCRE2 <10.40 requires fixed-length lookbehind alternatives; expand
+    // seasons?/[Сс]езони? and \W{0,10} into individual fixed-length assertions.
+    p.add("episodes", rei(r"(?<!season)(?<!seasons)(?<!сезон)(?<!сезони)(?<!season\W)(?<!seasons\W)(?<!сезон\W)(?<!сезони\W)(?<!season\W\W)(?<!seasons\W\W)(?<!сезон\W\W)(?<!сезони\W\W)(?<!season\W\W\W)(?<!seasons\W\W\W)(?<!сезон\W\W\W)(?<!сезони\W\W\W)(?<!season\W\W\W\W)(?<!seasons\W\W\W\W)(?<!сезон\W\W\W\W)(?<!сезони\W\W\W\W)(?:[ .([-]|^)(\d{1,3}(?:[ .]?[,&+~][ .]?\d{1,3})+)(?:[ .)\]-]|$)"), arc(tr_range_func), Opts::defaults());
+    p.add("episodes", rei(r"(?<!season)(?<!seasons)(?<!сезон)(?<!сезони)(?<!season\W)(?<!seasons\W)(?<!сезон\W)(?<!сезони\W)(?<!season\W\W)(?<!seasons\W\W)(?<!сезон\W\W)(?<!сезони\W\W)(?<!season\W\W\W)(?<!seasons\W\W\W)(?<!сезон\W\W\W)(?<!сезони\W\W\W)(?<!season\W\W\W\W)(?<!seasons\W\W\W\W)(?<!сезон\W\W\W\W)(?<!сезони\W\W\W\W)(?:[ .([-]|^)(\d{1,3}(?:-\d{1,3})+)(?:[ .)(\]]|-\D|$)"), arc(tr_range_func), Opts::defaults());
     p.add(
         "episodes",
         rei(r"\bEp(?:isode)?\W+\d{1,2}\.(\d{1,3})\b"),

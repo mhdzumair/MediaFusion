@@ -1920,15 +1920,11 @@ pub struct ImportFromExternalRequest {
 
 fn validate_external_id(provider: &str, external_id: &str) -> Result<(), String> {
     match provider {
-        "imdb" => {
-            if !external_id.starts_with("tt") {
-                return Err("IMDB external_id must start with 'tt'".to_string());
-            }
+        "imdb" if !external_id.starts_with("tt") => {
+            return Err("IMDB external_id must start with 'tt'".to_string());
         }
-        "tmdb" | "tvdb" => {
-            if external_id.parse::<i64>().is_err() {
-                return Err(format!("{} external_id must be numeric", provider));
-            }
+        "tmdb" | "tvdb" if external_id.parse::<i64>().is_err() => {
+            return Err(format!("{} external_id must be numeric", provider));
         }
         _ => {}
     }

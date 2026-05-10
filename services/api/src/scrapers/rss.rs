@@ -70,19 +70,17 @@ pub fn parse_rss_xml(xml: &str) -> Vec<RssItem> {
                     }
                 }
             }
-            Ok(Event::Empty(ref e)) => {
-                if current.is_some() {
-                    let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
-                    if name == "enclosure" {
-                        if let Some(item) = current.as_mut() {
-                            for attr in e.attributes().flatten() {
-                                let k = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
-                                let v = String::from_utf8_lossy(&attr.value).to_string();
-                                match k.as_str() {
-                                    "url" => item.enclosure_url = Some(v),
-                                    "length" => item.enclosure_length = v.parse().ok(),
-                                    _ => {}
-                                }
+            Ok(Event::Empty(ref e)) if current.is_some() => {
+                let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
+                if name == "enclosure" {
+                    if let Some(item) = current.as_mut() {
+                        for attr in e.attributes().flatten() {
+                            let k = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
+                            let v = String::from_utf8_lossy(&attr.value).to_string();
+                            match k.as_str() {
+                                "url" => item.enclosure_url = Some(v),
+                                "length" => item.enclosure_length = v.parse().ok(),
+                                _ => {}
                             }
                         }
                     }
