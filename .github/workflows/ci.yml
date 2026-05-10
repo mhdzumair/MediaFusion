@@ -163,13 +163,12 @@ jobs:
     name: Rust Format
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: services/api
     steps:
       - uses: actions/checkout@v4
-
 
       - name: Rustfmt check
         run: cargo fmt --check
@@ -178,12 +177,15 @@ jobs:
     name: Rust Lint
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: services/api
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install PCRE2 dev library
+        run: sudo apt-get install -y libpcre2-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -195,7 +197,6 @@ jobs:
         with:
           workspaces: services/api
 
-
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
@@ -203,12 +204,15 @@ jobs:
     name: Rust Build
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: services/api
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install PCRE2 dev library
+        run: sudo apt-get install -y libpcre2-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -217,7 +221,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: services/api
-
 
       - name: Build (release)
         run: cargo build --release

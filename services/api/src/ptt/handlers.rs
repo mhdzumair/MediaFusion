@@ -1589,10 +1589,8 @@ pub fn add_defaults(p: &mut Parser) {
         array(arc(tr_integer)),
         Opts::defaults().with_remove(true),
     );
-    // PCRE2 <10.40 requires fixed-length lookbehind alternatives; expand
-    // seasons?/[Сс]езони? and \W{0,10} into individual fixed-length assertions.
-    p.add("episodes", rei(r"(?<!season)(?<!seasons)(?<!сезон)(?<!сезони)(?<!season\W)(?<!seasons\W)(?<!сезон\W)(?<!сезони\W)(?<!season\W\W)(?<!seasons\W\W)(?<!сезон\W\W)(?<!сезони\W\W)(?<!season\W\W\W)(?<!seasons\W\W\W)(?<!сезон\W\W\W)(?<!сезони\W\W\W)(?<!season\W\W\W\W)(?<!seasons\W\W\W\W)(?<!сезон\W\W\W\W)(?<!сезони\W\W\W\W)(?:[ .([-]|^)(\d{1,3}(?:[ .]?[,&+~][ .]?\d{1,3})+)(?:[ .)\]-]|$)"), arc(tr_range_func), Opts::defaults());
-    p.add("episodes", rei(r"(?<!season)(?<!seasons)(?<!сезон)(?<!сезони)(?<!season\W)(?<!seasons\W)(?<!сезон\W)(?<!сезони\W)(?<!season\W\W)(?<!seasons\W\W)(?<!сезон\W\W)(?<!сезони\W\W)(?<!season\W\W\W)(?<!seasons\W\W\W)(?<!сезон\W\W\W)(?<!сезони\W\W\W)(?<!season\W\W\W\W)(?<!seasons\W\W\W\W)(?<!сезон\W\W\W\W)(?<!сезони\W\W\W\W)(?:[ .([-]|^)(\d{1,3}(?:-\d{1,3})+)(?:[ .)(\]]|-\D|$)"), arc(tr_range_func), Opts::defaults());
+    p.add("episodes", rei(r"(?<!(?:seasons?|[Сс]езони?)\W{0,10})(?:[ .([-]|^)(\d{1,3}(?:[ .]?[,&+~][ .]?\d{1,3})+)(?:[ .)\]-]|$)"), arc(tr_range_func), Opts::defaults());
+    p.add("episodes", rei(r"(?<!(?:seasons?|[Сс]езони?)\W{0,10})(?:[ .([-]|^)(\d{1,3}(?:-\d{1,3})+)(?:[ .)(\]]|-\D|$)"), arc(tr_range_func), Opts::defaults());
     p.add(
         "episodes",
         rei(r"\bEp(?:isode)?\W+\d{1,2}\.(\d{1,3})\b"),
@@ -1751,7 +1749,7 @@ pub fn add_defaults(p: &mut Parser) {
         static MID_RE: OnceCell<Regex> = OnceCell::new();
         static DIGIT_RE: OnceCell<Regex> = OnceCell::new();
         let beg_re = BEG_RE.get_or_init(|| compile_i(
-            r"(?<!movie)(?<!movie\W)(?<!movie\W\W)(?<!movie\W\W\W)(?<!movie\W\W\W\W)(?<!movie\W\W\W\W\W)(?<!film)(?<!film\W)(?<!film\W\W)(?<!film\W\W\W)(?<!film\W\W\W\W)(?<!film\W\W\W\W\W)(?:[ .]+-[ .]+|[(\[][ .]*)(\d{1,4})(?:a|b|v\d|\.\d)?(?:\W|$)(?!movie|film|\d+)(?<!\[(?:480|720|1080)\])"
+            r"(?<!movie\W{0,5}|film\W{0,5})(?:[ .]+-[ .]+|[(\[][ .]*)(\d{1,4})(?:a|b|v\d|\.\d)?(?:\W|$)(?!movie|film|\d+)(?<!\[(?:480|720|1080)\])"
         ));
         let mid_re = MID_RE.get_or_init(|| compile_i(
             r"^(?:[(\[-][ .]?)?(\d{1,4})(?:a|b|v\d)?(?:\W|$)(?!movie|film)(?!\[(480|720|1080)\])"
@@ -1938,7 +1936,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "languages",
-        rei(r"(?<!shang)(?<!shang-)\bCH(?:I|T)\b"),
+        rei(r"(?<!shang-?)\bCH(?:I|T)\b"),
         uniq_concat(value("zh")),
         lo(false, true),
     );
@@ -2120,7 +2118,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "languages",
-        re(r"\b(?<!www\.\w\.)(?<!www\.\w{2}\.)(?<!www\.\w{3}\.)(?<!www\.\w{4}\.)(?<!www\.\w{5}\.)(?<!www\.\w{6}\.)(?<!www\.\w{7}\.)(?<!www\.\w{8}\.)(?<!www\.\w{9}\.)(?<!www\.\w{10}\.)(?<!www\.\w{11}\.)(?<!www\.\w{12}\.)(?<!www\.\w{13}\.)(?<!www\.\w{14}\.)(?<!www\.\w{15}\.)(?<!www\.\w{16}\.)(?<!www\.\w{17}\.)(?<!www\.\w{18}\.)(?<!www\.\w{19}\.)(?<!www\.\w{20}\.)IT(?=[ .,/-]+(?:[a-zA-Z]{2}[ .,/-]+){2,})\b"),
+        re(r"\b(?<!w{3}\.\w{1,30}\.)IT(?=[ .,/-]+(?:[a-zA-Z]{2}[ .,/-]+){2,})\b"),
         uniq_concat(value("it")),
         lo(false, true),
     );
@@ -2214,7 +2212,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "languages",
-        rei(r"\b(?:(?<!www\.\w\.)(?<!www\.\w{2}\.)(?<!www\.\w{3}\.)(?<!www\.\w{4}\.)(?<!www\.\w{5}\.)(?<!www\.\w{6}\.)(?<!www\.\w{7}\.)(?<!www\.\w{8}\.)(?<!www\.\w{9}\.)(?<!www\.\w{10}\.)(?<!www\.\w{11}\.)(?<!www\.\w{12}\.)(?<!www\.\w{13}\.)(?<!www\.\w{14}\.)(?<!www\.\w{15}\.)(?<!www\.\w{16}\.)(?<!www\.\w{17}\.)(?<!www\.\w{18}\.)(?<!www\.\w{19}\.)(?<!www\.\w{20}\.)tel(?!\W*aviv)|telugu)\b"),
+        rei(r"\b(?:(?<!w{3}\.\w{1,30}\.)tel(?!\W*aviv)|telugu)\b"),
         uniq_concat(value("te")),
         lo(true, false),
     );
@@ -2226,37 +2224,37 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "languages",
-        rei(r"\b(?:(?<!www\.\w\.)(?<!www\.\w{2}\.)(?<!www\.\w{3}\.)(?<!www\.\w{4}\.)(?<!www\.\w{5}\.)(?<!www\.\w{6}\.)(?<!www\.\w{7}\.)(?<!www\.\w{8}\.)(?<!www\.\w{9}\.)(?<!www\.\w{10}\.)(?<!www\.\w{11}\.)(?<!www\.\w{12}\.)(?<!www\.\w{13}\.)(?<!www\.\w{14}\.)(?<!www\.\w{15}\.)(?<!www\.\w{16}\.)(?<!www\.\w{17}\.)(?<!www\.\w{18}\.)(?<!www\.\w{19}\.)(?<!www\.\w{20}\.)MAL(?:ay)?|malayalam)\b"),
+        rei(r"\b(?:(?<!w{3}\.\w{1,30}\.)MAL(?:ay)?|malayalam)\b"),
         uniq_concat(value("ml")),
         lof(true, false, true),
     );
     p.add(
         "languages",
-        rei(r"\b(?:(?<!www\.\w\.)(?<!www\.\w{2}\.)(?<!www\.\w{3}\.)(?<!www\.\w{4}\.)(?<!www\.\w{5}\.)(?<!www\.\w{6}\.)(?<!www\.\w{7}\.)(?<!www\.\w{8}\.)(?<!www\.\w{9}\.)(?<!www\.\w{10}\.)(?<!www\.\w{11}\.)(?<!www\.\w{12}\.)(?<!www\.\w{13}\.)(?<!www\.\w{14}\.)(?<!www\.\w{15}\.)(?<!www\.\w{16}\.)(?<!www\.\w{17}\.)(?<!www\.\w{18}\.)(?<!www\.\w{19}\.)(?<!www\.\w{20}\.)KAN(?:nada)?|kannada)\b"),
+        rei(r"\b(?:(?<!w{3}\.\w{1,30}\.)KAN(?:nada)?|kannada)\b"),
         uniq_concat(value("kn")),
         lo(true, false),
     );
     p.add(
         "languages",
-        rei(r"\b(?:(?<!www\.\w\.)(?<!www\.\w{2}\.)(?<!www\.\w{3}\.)(?<!www\.\w{4}\.)(?<!www\.\w{5}\.)(?<!www\.\w{6}\.)(?<!www\.\w{7}\.)(?<!www\.\w{8}\.)(?<!www\.\w{9}\.)(?<!www\.\w{10}\.)(?<!www\.\w{11}\.)(?<!www\.\w{12}\.)(?<!www\.\w{13}\.)(?<!www\.\w{14}\.)(?<!www\.\w{15}\.)(?<!www\.\w{16}\.)(?<!www\.\w{17}\.)(?<!www\.\w{18}\.)(?<!www\.\w{19}\.)(?<!www\.\w{20}\.)MAR(?:a(?:thi)?)?|marathi)\b"),
+        rei(r"\b(?:(?<!w{3}\.\w{1,30}\.)MAR(?:a(?:thi)?)?|marathi)\b"),
         uniq_concat(value("mr")),
         lo(false, false),
     );
     p.add(
         "languages",
-        rei(r"\b(?:(?<!www\.\w\.)(?<!www\.\w{2}\.)(?<!www\.\w{3}\.)(?<!www\.\w{4}\.)(?<!www\.\w{5}\.)(?<!www\.\w{6}\.)(?<!www\.\w{7}\.)(?<!www\.\w{8}\.)(?<!www\.\w{9}\.)(?<!www\.\w{10}\.)(?<!www\.\w{11}\.)(?<!www\.\w{12}\.)(?<!www\.\w{13}\.)(?<!www\.\w{14}\.)(?<!www\.\w{15}\.)(?<!www\.\w{16}\.)(?<!www\.\w{17}\.)(?<!www\.\w{18}\.)(?<!www\.\w{19}\.)(?<!www\.\w{20}\.)GUJ(?:arati)?|gujarati)\b"),
+        rei(r"\b(?:(?<!w{3}\.\w{1,30}\.)GUJ(?:arati)?|gujarati)\b"),
         uniq_concat(value("gu")),
         lo(false, false),
     );
     p.add(
         "languages",
-        rei(r"\b(?:(?<!www\.\w\.)(?<!www\.\w{2}\.)(?<!www\.\w{3}\.)(?<!www\.\w{4}\.)(?<!www\.\w{5}\.)(?<!www\.\w{6}\.)(?<!www\.\w{7}\.)(?<!www\.\w{8}\.)(?<!www\.\w{9}\.)(?<!www\.\w{10}\.)(?<!www\.\w{11}\.)(?<!www\.\w{12}\.)(?<!www\.\w{13}\.)(?<!www\.\w{14}\.)(?<!www\.\w{15}\.)(?<!www\.\w{16}\.)(?<!www\.\w{17}\.)(?<!www\.\w{18}\.)(?<!www\.\w{19}\.)(?<!www\.\w{20}\.)PUN(?:jabi)?|punjabi)\b"),
+        rei(r"\b(?:(?<!w{3}\.\w{1,30}\.)PUN(?:jabi)?|punjabi)\b"),
         uniq_concat(value("pa")),
         lo(false, false),
     );
     p.add(
         "languages",
-        rei(r"\b(?:(?<!www\.\w\.)(?<!www\.\w{2}\.)(?<!www\.\w{3}\.)(?<!www\.\w{4}\.)(?<!www\.\w{5}\.)(?<!www\.\w{6}\.)(?<!www\.\w{7}\.)(?<!www\.\w{8}\.)(?<!www\.\w{9}\.)(?<!www\.\w{10}\.)(?<!www\.\w{11}\.)(?<!www\.\w{12}\.)(?<!www\.\w{13}\.)(?<!www\.\w{14}\.)(?<!www\.\w{15}\.)(?<!www\.\w{16}\.)(?<!www\.\w{17}\.)(?<!www\.\w{18}\.)(?<!www\.\w{19}\.)(?<!www\.\w{20}\.)BEN(?!.\bThe|and|of\b)(?:gali)?|bengali)\b"),
+        rei(r"\b(?:(?<!w{3}\.\w{1,30}\.)BEN(?!.\bThe|and|of\b)(?:gali)?|bengali)\b"),
         uniq_concat(value("bn")),
         lof(false, false, true),
     );
@@ -2287,7 +2285,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "languages",
-        rei(r"\b(?:(?<!www\.\w\.)(?<!www\.\w{2}\.)(?<!www\.\w{3}\.)(?<!www\.\w{4}\.)(?<!www\.\w{5}\.)(?<!www\.\w{6}\.)(?<!www\.\w{7}\.)(?<!www\.\w{8}\.)(?<!www\.\w{9}\.)(?<!www\.\w{10}\.)(?<!www\.\w{11}\.)(?<!www\.\w{12}\.)(?<!www\.\w{13}\.)(?<!www\.\w{14}\.)(?<!www\.\w{15}\.)(?<!www\.\w{16}\.)(?<!www\.\w{17}\.)(?<!www\.\w{18}\.)(?<!www\.\w{19}\.)(?<!www\.\w{20}\.)PL|pol)\b"),
+        rei(r"\b(?:(?<!w{3}\.\w{1,30}\.)PL|pol)\b"),
         uniq_concat(value("pl")),
         lo(false, false),
     );
@@ -2378,7 +2376,7 @@ pub fn add_defaults(p: &mut Parser) {
     // Dutch / Scandinavian
     p.add(
         "languages",
-        rei(r"\b(?:(?<!www\.\w\.)(?<!www\.\w{2}\.)(?<!www\.\w{3}\.)(?<!www\.\w{4}\.)(?<!www\.\w{5}\.)(?<!www\.\w{6}\.)(?<!www\.\w{7}\.)(?<!www\.\w{8}\.)(?<!www\.\w{9}\.)(?<!www\.\w{10}\.)(?<!www\.\w{11}\.)(?<!www\.\w{12}\.)(?<!www\.\w{13}\.)(?<!www\.\w{14}\.)(?<!www\.\w{15}\.)(?<!www\.\w{16}\.)(?<!www\.\w{17}\.)(?<!www\.\w{18}\.)(?<!www\.\w{19}\.)(?<!www\.\w{20}\.)NL|dut|holand[eê]s)\b"),
+        rei(r"\b(?:(?<!w{3}\.\w{1,30}\.)NL|dut|holand[eê]s)\b"),
         uniq_concat(value("nl")),
         lo(false, false),
     );
@@ -2414,7 +2412,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "languages",
-        rei(r"\b(?:(?<!Sci-)(?<!www\.\w\.)(?<!www\.\w{2}\.)(?<!www\.\w{3}\.)(?<!www\.\w{4}\.)(?<!www\.\w{5}\.)(?<!www\.\w{6}\.)(?<!www\.\w{7}\.)(?<!www\.\w{8}\.)(?<!www\.\w{9}\.)(?<!www\.\w{10}\.)(?<!www\.\w{11}\.)(?<!www\.\w{12}\.)(?<!www\.\w{13}\.)(?<!www\.\w{14}\.)(?<!www\.\w{15}\.)(?<!www\.\w{16}\.)(?<!www\.\w{17}\.)(?<!www\.\w{18}\.)(?<!www\.\w{19}\.)(?<!www\.\w{20}\.)FI|finsk|finsub|nordic)\b"),
+        rei(r"\b(?:(?<!Sci-)(?<!w{3}\.\w{1,30}\.)FI|finsk|finsub|nordic)\b"),
         uniq_concat(value("fi")),
         lo(false, false),
     );
@@ -2426,7 +2424,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "languages",
-        rei(r"\b(?:(?<!www\.\w\.)(?<!www\.\w{2}\.)(?<!www\.\w{3}\.)(?<!www\.\w{4}\.)(?<!www\.\w{5}\.)(?<!www\.\w{6}\.)(?<!www\.\w{7}\.)(?<!www\.\w{8}\.)(?<!www\.\w{9}\.)(?<!www\.\w{10}\.)(?<!www\.\w{11}\.)(?<!www\.\w{12}\.)(?<!www\.\w{13}\.)(?<!www\.\w{14}\.)(?<!www\.\w{15}\.)(?<!www\.\w{16}\.)(?<!www\.\w{17}\.)(?<!www\.\w{18}\.)(?<!www\.\w{19}\.)(?<!www\.\w{20}\.)SE|swe|swesubs?|sv(?:ensk)?|nordic)\b"),
+        rei(r"\b(?:(?<!w{3}\.\w{1,30}\.)SE|swe|swesubs?|sv(?:ensk)?|nordic)\b"),
         uniq_concat(value("sv")),
         lo(false, false),
     );
