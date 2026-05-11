@@ -8,6 +8,7 @@
 ///   DELETE /{id}                 → delete_entry
 ///   DELETE /                     → clear_history
 ///   POST   /track                → track_action
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
@@ -157,6 +158,66 @@ async fn get_external_ids(pool: &sqlx::PgPool, media_id: i32) -> serde_json::Val
         map.insert(source, serde_json::Value::String(id));
     }
     serde_json::Value::Object(map)
+}
+
+/// Batch-fetch external IDs for a slice of media_ids in a single query.
+/// Returns a map from media_id → {provider: external_id, ...}.
+async fn get_external_ids_batch(
+    pool: &sqlx::PgPool,
+    media_ids: &[i32],
+) -> HashMap<i32, serde_json::Value> {
+    if media_ids.is_empty() {
+        return HashMap::new();
+    }
+    let rows: Vec<(i32, String, String)> = sqlx::query_as(
+        "SELECT media_id, provider, external_id FROM media_external_id WHERE media_id = ANY($1)",
+    )
+    .bind(media_ids)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+    let mut by_media: HashMap<i32, serde_json::Map<String, serde_json::Value>> = HashMap::new();
+    for (media_id, source, id) in rows {
+        by_media
+            .entry(media_id)
+            .or_default()
+            .insert(source, serde_json::Value::String(id));
+    }
+    by_media
+        .into_iter()
+        .map(|(k, v)| (k, serde_json::Value::Object(v)))
+        .collect()
+}
+
+fn build_watch_response(row: &WatchRow, ext: &serde_json::Value) -> serde_json::Value {
+    let imdb_id = ext
+        .get("imdb")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let poster_id = if imdb_id.is_empty() {
+        format!("mf{}", row.media_id)
+    } else {
+        imdb_id
+    };
+    serde_json::json!({
+        "id": row.id,
+        "user_id": row.user_id,
+        "profile_id": row.profile_id,
+        "media_id": row.media_id,
+        "external_ids": ext,
+        "title": row.title,
+        "media_type": row.media_type,
+        "season": row.season,
+        "episode": row.episode,
+        "duration": row.duration,
+        "progress": row.progress,
+        "watched_at": row.watched_at.to_rfc3339(),
+        "poster": format!("/poster/{}/{}.jpg", row.media_type, poster_id),
+        "action": row.action.as_deref().unwrap_or("WATCHED"),
+        "source": row.source.as_deref().unwrap_or("mediafusion"),
+        "stream_info": row.stream_info,
+    })
 }
 
 async fn row_to_response(pool: &sqlx::PgPool, row: &WatchRow) -> serde_json::Value {
@@ -341,7 +402,7 @@ pub async fn list_watch_history(
             idx += 1;
         }
         let _ = idx; // suppress unused_assignments: idx is only needed while building the SQL string
-        let mut q = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id as i32);
+        let mut q = sqlx::query_scalar::<_, i32>(&count_sql).bind(user_id as i32);
         if let Some(pid) = params.profile_id {
             q = q.bind(pid);
         }
@@ -352,7 +413,7 @@ pub async fn list_watch_history(
             q = q.bind(act.clone());
         }
         match q.fetch_one(&state.pool_ro).await {
-            Ok(c) => c,
+            Ok(c) => c.into(),
             Err(e) => {
                 tracing::error!("list_watch_history count: {e}");
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -438,11 +499,14 @@ pub async fn list_watch_history(
         }
     };
 
-    let mut items = Vec::with_capacity(rows.len());
-    for r in &rows {
-        let watch_row = map_watch_row(r.clone());
-        items.push(row_to_response(&state.pool_ro, &watch_row).await);
-    }
+    let watch_rows: Vec<WatchRow> = rows.into_iter().map(map_watch_row).collect();
+    let media_ids: Vec<i32> = watch_rows.iter().map(|r| r.media_id).collect();
+    let ext_map = get_external_ids_batch(&state.pool_ro, &media_ids).await;
+    let empty_ext = serde_json::Value::Object(serde_json::Map::new());
+    let items: Vec<serde_json::Value> = watch_rows
+        .iter()
+        .map(|r| build_watch_response(r, ext_map.get(&r.media_id).unwrap_or(&empty_ext)))
+        .collect();
 
     let has_more = offset + page_size < total;
     Json(serde_json::json!({
@@ -542,22 +606,25 @@ pub async fn continue_watching(
         }
     };
 
-    let mut items = Vec::new();
-    for r in &rows {
-        let watch_row = map_watch_row(r.clone());
-        // Filter: only include if 1 <= progress_percent < 90
-        if let Some(duration) = watch_row.duration {
-            if duration > 0 {
-                let pct = watch_row.progress * 100 / duration;
-                if (1..90).contains(&pct) {
-                    items.push(row_to_response(&state.pool_ro, &watch_row).await);
-                    if items.len() >= limit as usize {
-                        break;
-                    }
-                }
-            }
-        }
-    }
+    // Filter rows before fetching external IDs — avoids fetching IDs for discarded rows.
+    let filtered_rows: Vec<WatchRow> = rows
+        .into_iter()
+        .map(map_watch_row)
+        .filter(|r| {
+            r.duration
+                .map(|d| d > 0 && (1..90).contains(&(r.progress * 100 / d)))
+                .unwrap_or(false)
+        })
+        .take(limit as usize)
+        .collect();
+
+    let media_ids: Vec<i32> = filtered_rows.iter().map(|r| r.media_id).collect();
+    let ext_map = get_external_ids_batch(&state.pool_ro, &media_ids).await;
+    let empty_ext = serde_json::Value::Object(serde_json::Map::new());
+    let items: Vec<serde_json::Value> = filtered_rows
+        .iter()
+        .map(|r| build_watch_response(r, ext_map.get(&r.media_id).unwrap_or(&empty_ext)))
+        .collect();
 
     Json(serde_json::json!(items)).into_response()
 }
@@ -581,7 +648,7 @@ pub async fn create_watch_history(
     };
 
     // Verify profile belongs to user
-    let profile_exists: bool = match sqlx::query_scalar::<_, i64>(
+    let profile_exists: bool = match sqlx::query_scalar::<_, i32>(
         "SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2",
     )
     .bind(body.profile_id)
@@ -607,7 +674,7 @@ pub async fn create_watch_history(
 
     // Check media exists
     let media_exists: bool =
-        match sqlx::query_scalar::<_, i64>("SELECT id FROM media WHERE id = $1")
+        match sqlx::query_scalar::<_, i32>("SELECT id FROM media WHERE id = $1")
             .bind(body.media_id)
             .fetch_optional(&state.pool)
             .await
@@ -700,7 +767,7 @@ pub async fn create_watch_history(
             r#"INSERT INTO watch_history
                    (user_id, profile_id, media_id, title, media_type, season, episode,
                     duration, progress, watched_at, action, source)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), 'WATCHED', 'mediafusion')
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), 'WATCHED'::watchaction, 'MEDIAFUSION'::historysource)
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
                          action::text, source::text, stream_info"#,
@@ -855,7 +922,7 @@ pub async fn clear_history(
 
     if let Some(profile_id) = params.profile_id {
         // Verify profile ownership
-        let profile_exists: bool = match sqlx::query_scalar::<_, i64>(
+        let profile_exists: bool = match sqlx::query_scalar::<_, i32>(
             "SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2",
         )
         .bind(profile_id)
@@ -924,9 +991,23 @@ pub async fn track_action(
         }
     };
 
+    // Normalize action to the watchaction enum values (client may send lowercase/short form).
+    let action = match body.action.to_uppercase().as_str() {
+        "WATCH" | "WATCHED" => "WATCHED",
+        "DOWNLOAD" | "DOWNLOADED" => "DOWNLOADED",
+        "QUEUE" | "QUEUED" => "QUEUED",
+        other => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"detail": format!("Invalid action: {other}")})),
+            )
+                .into_response();
+        }
+    };
+
     // Check media exists
     let media_exists: bool =
-        match sqlx::query_scalar::<_, i64>("SELECT id FROM media WHERE id = $1")
+        match sqlx::query_scalar::<_, i32>("SELECT id FROM media WHERE id = $1")
             .bind(body.media_id)
             .fetch_optional(&state.pool)
             .await
@@ -960,14 +1041,14 @@ pub async fn track_action(
         pid
     } else {
         // Fallback: any profile
-        match sqlx::query_scalar::<_, i64>(
+        match sqlx::query_scalar::<_, i32>(
             "SELECT id FROM user_profiles WHERE user_id = $1 LIMIT 1",
         )
         .bind(user_id as i32)
         .fetch_optional(&state.pool)
         .await
         {
-            Ok(Some(pid)) => pid,
+            Ok(Some(pid)) => pid.into(),
             Ok(None) => {
                 return (
                     StatusCode::BAD_REQUEST,
@@ -1030,13 +1111,13 @@ pub async fn track_action(
     ) = if let Some(eid) = existing_id {
         match sqlx::query_as(
             r#"UPDATE watch_history
-               SET action = $1, stream_info = COALESCE($2, stream_info), watched_at = NOW(), title = $3
+               SET action = $1::watchaction, stream_info = COALESCE($2, stream_info), watched_at = NOW(), title = $3
                WHERE id = $4
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
                          action::text, source::text, stream_info"#,
         )
-        .bind(&body.action)
+        .bind(action)
         .bind(&body.stream_info)
         .bind(&body.title)
         .bind(eid)
@@ -1054,7 +1135,7 @@ pub async fn track_action(
             r#"INSERT INTO watch_history
                    (user_id, profile_id, media_id, title, media_type, season, episode,
                     progress, watched_at, action, source, stream_info)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, 0, NOW(), $8, 'mediafusion', $9)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, 0, NOW(), $8::watchaction, 'MEDIAFUSION'::historysource, $9)
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
                          action::text, source::text, stream_info"#,
@@ -1066,7 +1147,7 @@ pub async fn track_action(
         .bind(&body.catalog_type)
         .bind(body.season)
         .bind(body.episode)
-        .bind(&body.action)
+        .bind(action)
         .bind(&body.stream_info)
         .fetch_one(&state.pool)
         .await

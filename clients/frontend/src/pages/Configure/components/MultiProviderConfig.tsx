@@ -713,9 +713,29 @@ function SingleProviderEditor({
           {selectedProvider?.value === 'seedr' && (
             <Alert>
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Pick one authentication method: authorize via OAuth, paste an API token, or enter your Seedr email and
-                password. OAuth is recommended for long-lived access.
+              <AlertDescription className="space-y-2">
+                <p>
+                  Seedr requires a Personal Access Token (PAT). Create one at the{' '}
+                  <a
+                    href="https://v2.seedr.cc/api/v0.1/console/tokens"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    Seedr API Console
+                  </a>
+                  .
+                </p>
+                <p className="text-xs">
+                  When creating the token, enable these scopes:{' '}
+                  <code className="bg-muted px-1 rounded text-xs">profile</code>,{' '}
+                  <code className="bg-muted px-1 rounded text-xs">account.read</code>,{' '}
+                  <code className="bg-muted px-1 rounded text-xs">files.read</code>,{' '}
+                  <code className="bg-muted px-1 rounded text-xs">files.write</code>,{' '}
+                  <code className="bg-muted px-1 rounded text-xs">tasks.read</code>,{' '}
+                  <code className="bg-muted px-1 rounded text-xs">tasks.write</code>,{' '}
+                  <code className="bg-muted px-1 rounded text-xs">media.read</code>
+                </p>
               </AlertDescription>
             </Alert>
           )}
@@ -723,14 +743,18 @@ function SingleProviderEditor({
           {/* Token Input */}
           {selectedProvider?.needsToken && (
             <div className="space-y-2">
-              <Label>API Token</Label>
+              <Label>{selectedProvider?.value === 'seedr' ? 'Personal Access Token (PAT)' : 'API Token'}</Label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Input
                     type={showToken ? 'text' : 'password'}
                     value={provider.tk || ''}
                     onChange={(e) => onUpdate({ tk: e.target.value })}
-                    placeholder="Enter your API token"
+                    placeholder={
+                      selectedProvider?.value === 'seedr'
+                        ? 'Paste your Seedr Personal Access Token'
+                        : 'Enter your API token'
+                    }
                   />
                   <Button
                     type="button"

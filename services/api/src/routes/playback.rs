@@ -257,7 +257,23 @@ async fn resolve(
         "stremthru" => call_provider_simple!(providers::torrents::stremthru),
         "offcloud" => call_provider_simple!(providers::torrents::offcloud),
         "easydebrid" => call_provider_simple!(providers::torrents::easydebrid),
-        "seedr" => call_provider_simple!(providers::torrents::seedr),
+        "seedr" => {
+            use providers::torrents::seedr as p;
+            let url = p::get_video_url(
+                &state.http,
+                token,
+                info_hash,
+                &stream_info.announce_list,
+                resolved_filename,
+                stream_info.file_index,
+                season,
+                episode,
+                stream_info.size_bytes,
+                None,
+            )
+            .await?;
+            (url, Vec::<ProviderFile>::new())
+        }
         "pikpak" => call_provider_simple!(providers::torrents::pikpak),
         other => {
             return Err(providers::ProviderError::api(

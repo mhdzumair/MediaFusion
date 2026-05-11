@@ -17,6 +17,7 @@ use crate::{
         prowlarr::build_series_files,
         public_indexer_registry::{get_indexers_for_media, HandlerType, IndexerDef},
         rss::parse_rss_xml,
+        source_health::{self, HealthGateConfig},
         ScrapedStream, SearchMeta,
     },
 };
@@ -52,6 +53,7 @@ pub async fn scrape(
     episode: Option<i32>,
     byparr_url: Option<&str>,
     enabled_sites: Option<&str>,
+    health_gate: Option<&HealthGateConfig>,
 ) -> Vec<ScrapedStream> {
     let byparr_available = byparr_url.is_some();
     let indexers = get_indexers_for_media(media_type, enabled_sites, byparr_available);
@@ -65,10 +67,73 @@ pub async fn scrape(
             tracing::debug!("public_indexers: budget exhausted, stopping early");
             break;
         }
-        let streams = scrape_indexer(
-            client, indexer, meta, media_type, season, episode, byparr_url,
-        )
-        .await;
+
+        // Health gate: skip sources that are consistently failing
+        if let Some(hg) = health_gate {
+            if hg.enabled {
+                let within_budget = source_health::is_source_within_budget(
+                    &hg.redis,
+                    indexer.key,
+                    hg.min_samples,
+                    hg.min_success_rate,
+                    hg.max_timeout_rate,
+                    media_type,
+                    &hg.scope_mode,
+                    &hg.scope_override,
+                )
+                .await;
+                if !within_budget {
+                    let snapshot = source_health::get_source_health(
+                        &hg.redis,
+                        indexer.key,
+                        media_type,
+                        &hg.scope_mode,
+                        &hg.scope_override,
+                    )
+                    .await;
+                    // Recovery: let sources with enough consecutive successes through
+                    let recovery_streak = hg.recovery_success_streak;
+                    if recovery_streak > 0 && snapshot.consecutive_success >= recovery_streak {
+                        tracing::debug!(
+                            "public_indexers: health gate recovery admission for {}",
+                            indexer.key
+                        );
+                    } else {
+                        tracing::debug!(
+                            "public_indexers: health gate blocked {} (success_rate={:.2}, timeout_rate={:.2})",
+                            indexer.key,
+                            snapshot.success_rate(),
+                            snapshot.timeout_rate(),
+                        );
+                        continue;
+                    }
+                }
+            }
+        }
+
+        let (streams, request_ok) =
+            scrape_indexer(client, indexer, meta, media_type, season, episode, byparr_url).await;
+
+        // Record outcome for health tracking
+        if let Some(hg) = health_gate {
+            if hg.enabled {
+                source_health::record_source_outcome(
+                    &hg.redis,
+                    indexer.key,
+                    !streams.is_empty() || request_ok,
+                    false, // timed_out — not tracked at this granularity yet
+                    false, // challenge_solved
+                    media_type,
+                    &hg.scope_mode,
+                    &hg.scope_override,
+                    hg.counter_soft_cap,
+                    hg.decay_factor,
+                    hg.metrics_ttl_seconds,
+                )
+                .await;
+            }
+        }
+
         for s in streams {
             if seen.insert(s.info_hash.clone()) {
                 results.push(s);
@@ -87,7 +152,7 @@ async fn scrape_indexer(
     season: Option<i32>,
     episode: Option<i32>,
     byparr_url: Option<&str>,
-) -> Vec<ScrapedStream> {
+) -> (Vec<ScrapedStream>, bool) {
     match indexer.handler {
         HandlerType::Rss => scrape_rss(client, indexer, meta, media_type, season, episode).await,
         HandlerType::SubsPleaseJson => {
@@ -140,7 +205,7 @@ async fn scrape_rss(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-) -> Vec<ScrapedStream> {
+) -> (Vec<ScrapedStream>, bool) {
     let queries = build_queries(meta, media_type, season, episode);
     let sim_min = if media_type == "movie" {
         MOVIE_SIMILARITY_MIN
@@ -149,6 +214,7 @@ async fn scrape_rss(
     };
     let mut results = Vec::new();
     let mut seen = std::collections::HashSet::new();
+    let mut had_http_success = false;
 
     for query in &queries {
         let url = indexer.query_url_templates[0].replace("{query}", &urlencoding::encode(query));
@@ -158,13 +224,16 @@ async fn scrape_rss(
             .send()
             .await
         {
-            Ok(r) if r.status().is_success() => match r.text().await {
-                Ok(t) => t,
-                Err(e) => {
-                    tracing::debug!("{}: rss body: {e}", indexer.key);
-                    continue;
+            Ok(r) if r.status().is_success() => {
+                had_http_success = true;
+                match r.text().await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        tracing::debug!("{}: rss body: {e}", indexer.key);
+                        continue;
+                    }
                 }
-            },
+            }
             Ok(r) => {
                 tracing::debug!("{}: rss HTTP {}", indexer.key, r.status());
                 continue;
@@ -228,7 +297,7 @@ async fn scrape_rss(
             });
         }
     }
-    results
+    (results, had_http_success)
 }
 
 // ─── SubsPlease JSON handler ──────────────────────────────────────────────────
@@ -239,7 +308,7 @@ async fn scrape_subsplease(
     meta: &SearchMeta,
     season: Option<i32>,
     episode: Option<i32>,
-) -> Vec<ScrapedStream> {
+) -> (Vec<ScrapedStream>, bool) {
     let url = indexer.query_url_templates[0].replace("{query}", &urlencoding::encode(&meta.title));
 
     let json: serde_json::Value = match client
@@ -252,22 +321,22 @@ async fn scrape_subsplease(
             Ok(v) => v,
             Err(e) => {
                 tracing::debug!("subsplease json parse: {e}");
-                return vec![];
+                return (vec![], true); // got 2xx but couldn't parse — still counts as http ok
             }
         },
         Ok(r) => {
             tracing::debug!("subsplease HTTP {}", r.status());
-            return vec![];
+            return (vec![], false);
         }
         Err(e) => {
             tracing::debug!("subsplease fetch: {e}");
-            return vec![];
+            return (vec![], false);
         }
     };
 
     let obj = match json.as_object() {
         Some(o) => o,
-        None => return vec![],
+        None => return (vec![], false),
     };
 
     let mut results = Vec::new();
@@ -324,7 +393,7 @@ async fn scrape_subsplease(
             });
         }
     }
-    results
+    (results, true) // got a successful HTTP response
 }
 
 // ─── HTML handler ─────────────────────────────────────────────────────────────
@@ -369,7 +438,7 @@ async fn scrape_html(
     season: Option<i32>,
     episode: Option<i32>,
     byparr_url: Option<&str>,
-) -> Vec<ScrapedStream> {
+) -> (Vec<ScrapedStream>, bool) {
     let queries = build_queries(meta, media_type, season, episode);
     let sim_min = if media_type == "movie" {
         MOVIE_SIMILARITY_MIN
@@ -378,6 +447,7 @@ async fn scrape_html(
     };
     let mut results = Vec::new();
     let mut seen = std::collections::HashSet::new();
+    let mut had_http_success = false;
 
     'outer: for query in &queries {
         let encoded = urlencoding::encode(query).to_string();
@@ -397,7 +467,10 @@ async fn scrape_html(
                 )
                 .await
                 {
-                    Some(r) => r,
+                    Some(r) => {
+                        had_http_success = true;
+                        r
+                    }
                     None => {
                         tracing::debug!("{}: fetch failed for {url}", indexer.key);
                         continue 'templates;
@@ -438,7 +511,7 @@ async fn scrape_html(
             }
         }
     }
-    results
+    (results, had_http_success)
 }
 
 #[allow(clippy::too_many_arguments)]

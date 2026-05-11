@@ -116,6 +116,7 @@ pub async fn live_check(
         "alldebrid" => super::alldebrid::check_cached(http, token, hashes).await,
         "realdebrid" => super::realdebrid::check_cached(http, token, hashes).await,
         "debridlink" => super::debridlink::check_cached(http, token, hashes).await,
+        "seedr" => super::seedr::check_cached(http, token, hashes).await,
         _ => {
             mark_check_done(redis, service, token, media_id).await;
             return hashes.iter().map(|h| (h.clone(), false)).collect();

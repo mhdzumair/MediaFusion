@@ -38,6 +38,7 @@ export interface StreamFilterState {
   resolutionFilter: string[]
   sourceFilter: string[]
   codecFilter: string[]
+  languageFilter: string[]
   cachedFilter: CachedFilter
   streamTypeFilter: StreamType[]
   minSizeGB: number | null
@@ -56,6 +57,7 @@ interface StreamFiltersProps {
   availableResolutions?: string[]
   availableQualities?: string[]
   availableCodecs?: string[]
+  availableLanguages?: string[]
   availableStreamTypes?: StreamType[]
   totalStreams: number
   filteredCount: number
@@ -70,6 +72,7 @@ export function StreamFilters({
   availableResolutions = [],
   availableQualities = [],
   availableCodecs = [],
+  availableLanguages = [],
   availableStreamTypes: _availableStreamTypes = [], // Currently showing all types, may use for filtering later
   totalStreams,
   filteredCount,
@@ -96,7 +99,7 @@ export function StreamFilters({
   }
 
   const toggleArrayFilter = (
-    key: 'qualityFilter' | 'resolutionFilter' | 'sourceFilter' | 'codecFilter',
+    key: 'qualityFilter' | 'resolutionFilter' | 'sourceFilter' | 'codecFilter' | 'languageFilter',
     value: string,
   ) => {
     const current = filters[key]
@@ -117,6 +120,7 @@ export function StreamFilters({
       resolutionFilter: [],
       sourceFilter: [],
       codecFilter: [],
+      languageFilter: [],
       cachedFilter: 'all',
       streamTypeFilter: [],
       minSizeGB: null,
@@ -130,6 +134,7 @@ export function StreamFilters({
     filters.resolutionFilter.length > 0 ||
     filters.sourceFilter.length > 0 ||
     filters.codecFilter.length > 0 ||
+    filters.languageFilter.length > 0 ||
     filters.cachedFilter !== 'all' ||
     filters.streamTypeFilter.length > 0 ||
     filters.minSizeGB !== null ||
@@ -141,6 +146,7 @@ export function StreamFilters({
     filters.resolutionFilter.length +
     filters.sourceFilter.length +
     filters.codecFilter.length +
+    filters.languageFilter.length +
     (filters.cachedFilter !== 'all' ? 1 : 0) +
     filters.streamTypeFilter.length +
     (filters.minSizeGB !== null ? 1 : 0) +
@@ -367,6 +373,27 @@ export function StreamFilters({
                   </div>
                 </div>
 
+                {/* Language Filter */}
+                {availableLanguages.length > 0 && (
+                  <div className="space-y-2.5">
+                    <Label className="text-xs sm:text-sm font-medium">Language</Label>
+                    <ScrollArea className="max-h-28">
+                      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                        {availableLanguages.map((lang) => (
+                          <Badge
+                            key={lang}
+                            variant={filters.languageFilter.includes(lang) ? 'default' : 'outline'}
+                            className="cursor-pointer py-1 sm:py-1.5 px-2 sm:px-3 text-[11px] sm:text-xs hover:bg-primary/10"
+                            onClick={() => toggleArrayFilter('languageFilter', lang)}
+                          >
+                            {lang}
+                          </Badge>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
+
                 <Separator />
 
                 {/* Size Filter */}
@@ -457,6 +484,16 @@ export function StreamFilters({
               </Badge>
             ),
           )}
+          {filters.languageFilter.map((lang) => (
+            <Badge key={lang} variant="secondary" className="text-[10px] sm:text-xs gap-1 py-0.5 px-1.5 sm:px-2">
+              <Globe className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+              {lang}
+              <X
+                className="h-2.5 w-2.5 sm:h-3 sm:w-3 cursor-pointer"
+                onClick={() => toggleArrayFilter('languageFilter', lang)}
+              />
+            </Badge>
+          ))}
           {filters.cachedFilter !== 'all' && (
             <Badge variant="secondary" className="text-[10px] sm:text-xs gap-1 py-0.5 px-1.5 sm:px-2">
               {filters.cachedFilter === 'cached' ? (
@@ -528,6 +565,7 @@ export const defaultStreamFilters: StreamFilterState = {
   resolutionFilter: [],
   sourceFilter: [],
   codecFilter: [],
+  languageFilter: [],
   cachedFilter: 'all',
   streamTypeFilter: [],
   minSizeGB: null,

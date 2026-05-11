@@ -46,7 +46,8 @@ function getHdrFormatsString(stream: CatalogStreamInfo): string | undefined {
 
 // Helper to format audio formats array as string
 function getAudioFormatsString(stream: CatalogStreamInfo): string | undefined {
-  return stream.audio_formats || undefined
+  if (!stream.audio_formats) return undefined
+  return Array.isArray(stream.audio_formats) ? stream.audio_formats.join('|') : stream.audio_formats
 }
 
 export function StreamCard({

@@ -355,6 +355,8 @@ fn build_profile_response(
 // ─── Config split/merge helpers ───────────────────────────────────────────────
 
 /// Extract sensitive fields from a provider object into a secrets dict entry.
+/// The `_index` field is included so `crypto::profile::merge_secrets` can locate
+/// the right provider when re-injecting secrets during stream UUID lookups.
 /// Returns (clean provider obj, secrets entry).
 fn extract_provider_secrets(
     provider: &serde_json::Map<String, Value>,
@@ -365,6 +367,7 @@ fn extract_provider_secrets(
 ) {
     let mut clean = provider.clone();
     let mut secrets_entry: serde_json::Map<String, Value> = serde_json::Map::new();
+    secrets_entry.insert("_index".to_string(), serde_json::json!(index));
     let sensitive_fields = ["token", "tk", "password", "pw", "email", "em"];
     for f in &sensitive_fields {
         if let Some(v) = clean.remove(*f) {
@@ -434,7 +437,6 @@ fn extract_provider_secrets(
             }
         }
     }
-    let _ = index; // used for key naming if needed in future
     (clean, secrets_entry)
 }
 
@@ -457,21 +459,22 @@ pub fn split_config(config: &Value, key: &[u8; 32]) -> (Value, Option<String>) {
             if let Value::Object(obj) = provider {
                 let (clean_obj, secrets_entry) = extract_provider_secrets(&obj, i);
                 clean_providers.push(Value::Object(clean_obj));
-                if !secrets_entry.is_empty() {
-                    secrets_list.push(Value::Object(secrets_entry));
-                } else {
-                    secrets_list.push(Value::Object(serde_json::Map::new()));
-                }
+                // Always push the entry — it carries at minimum `_index` so merge_secrets
+                // can locate the right provider slot during stream UUID lookups.
+                secrets_list.push(Value::Object(secrets_entry));
             } else {
                 clean_providers.push(provider);
-                secrets_list.push(Value::Object(serde_json::Map::new()));
+                secrets_list.push(serde_json::json!({"_index": i}));
             }
         }
         *providers = clean_providers;
-        if secrets_list
-            .iter()
-            .any(|s| !s.as_object().map(|o| o.is_empty()).unwrap_or(true))
-        {
+        // Only persist secrets when at least one provider has real credentials
+        // (more keys than just `_index`).
+        if secrets_list.iter().any(|s| {
+            s.as_object()
+                .map(|o| o.len() > 1)
+                .unwrap_or(false)
+        }) {
             all_secrets.insert(sps_key.to_string(), Value::Array(secrets_list));
         }
     }
@@ -964,14 +967,13 @@ pub async fn update_profile(
 
     let name = body.name.as_deref().unwrap_or(&profile.name).to_string();
 
-    // Merge new config on top of existing full config
+    // Restore masked sentinel values from existing full config, then use new_cfg as-is.
+    // Do NOT deep_merge with existing_full as base — that would preserve removed providers.
     let merged_config = if let Some(new_cfg) = body.config {
         let existing_full = get_full_config(&profile, &state.config.secret_key);
         let mut new_cfg = new_cfg;
         restore_masked(&mut new_cfg, &existing_full);
-        let mut base = existing_full;
-        deep_merge(&mut base, new_cfg);
-        base
+        new_cfg
     } else {
         get_full_config(&profile, &state.config.secret_key)
     };
@@ -1031,7 +1033,7 @@ pub async fn update_profile(
 
     let updated_profile = ProfileRow {
         id: row.0,
-        uuid: row.1,
+        uuid: row.1.clone(),
         user_id: row.2,
         name: row.3,
         config: row.4,
@@ -1039,6 +1041,12 @@ pub async fn update_profile(
         is_default: row.6,
         created_at: row.7,
     };
+
+    // Invalidate the Redis profile cache so stream lookups pick up the new config.
+    let cache_key = format!("user_profile:{}", row.1);
+    if let Err(e) = fred::prelude::KeysInterface::del::<(), _>(&state.redis, &cache_key).await {
+        tracing::warn!("update_profile redis invalidate {cache_key}: {e}");
+    }
 
     Json(build_profile_response(
         &updated_profile,
@@ -1110,35 +1118,24 @@ pub async fn delete_profile(
         }
     };
 
-    // If deleting the default, promote another profile
+    // If deleting the default, promote the oldest remaining profile.
     if profile.is_default {
         if let Err(e) = sqlx::query(
             r#"UPDATE user_profiles SET is_default = true
-               WHERE user_id = $1 AND id != $2
-               ORDER BY created_at ASC
-               LIMIT 1"#,
+               WHERE id = (
+                   SELECT id FROM user_profiles
+                   WHERE user_id = $1 AND id != $2
+                   ORDER BY created_at ASC
+                   LIMIT 1
+               )"#,
         )
         .bind(user_id)
         .bind(id)
         .execute(&mut *tx)
         .await
         {
-            // PostgreSQL doesn't support ORDER BY/LIMIT in UPDATE directly, use a subquery
-            tracing::warn!("delete_profile promote default (direct): {e}");
-            // Try with subquery approach
-            let _ = sqlx::query(
-                r#"UPDATE user_profiles SET is_default = true
-                   WHERE id = (
-                       SELECT id FROM user_profiles
-                       WHERE user_id = $1 AND id != $2
-                       ORDER BY created_at ASC
-                       LIMIT 1
-                   )"#,
-            )
-            .bind(user_id)
-            .bind(id)
-            .execute(&mut *tx)
-            .await;
+            tracing::error!("delete_profile promote default: {e}");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     }
 

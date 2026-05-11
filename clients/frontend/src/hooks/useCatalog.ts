@@ -86,10 +86,11 @@ export function useCatalogStreams(
   profileId?: number,
   provider?: string,
   options?: { enabled?: boolean },
+  profileUuid?: string,
 ) {
   return useQuery({
     queryKey: catalogKeys.streams(catalogType, mediaId.toString(), season, episode, profileId, provider),
-    queryFn: () => catalogApi.getStreams(catalogType, mediaId, season, episode, profileId, provider),
+    queryFn: () => catalogApi.getStreams(catalogType, mediaId, season, episode, profileId, provider, profileUuid),
     // Require profileId and provider to be set to avoid unnecessary API calls
     // Movie and TV channels don't need season/episode, series does
     enabled:

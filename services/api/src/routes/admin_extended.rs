@@ -991,23 +991,124 @@ pub async fn clear_request_metrics(
 
 // ─── source_health.py endpoint ────────────────────────────────────────────────
 
+#[derive(Deserialize)]
+pub struct SourceHealthQuery {
+    pub anime_only: Option<bool>,
+    pub bucket: Option<String>,
+}
+
 /// GET /api/v1/admin/public-indexers/source-health
 pub async fn get_source_health(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
+    Query(params): Query<SourceHealthQuery>,
 ) -> impl IntoResponse {
+    use crate::scrapers::{
+        public_indexer_registry::ALL_INDEXERS,
+        source_health,
+    };
+
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    // Source health counters are written by the Python scrapy workers into Redis.
-    // In Rust-only mode these Redis keys are never populated, so return empty.
+
+    let cfg = &state.config;
+    let scope_mode = &cfg.public_indexers_source_health_scope_mode;
+    let scope_override = &cfg.public_indexers_source_health_scope;
+    let min_samples = cfg.public_indexers_source_health_min_samples;
+    let min_success_rate = cfg.public_indexers_source_min_success_rate;
+    let max_timeout_rate = cfg.public_indexers_source_max_timeout_rate;
+
+    let anime_only = params.anime_only.unwrap_or(false);
+
+    // Resolve the scope key the same way source_health.rs does
+    let scope_key_display = source_health::metrics_key("__scope_probe__", "general", scope_mode, scope_override)
+        .strip_prefix("public_indexer_source_health:")
+        .and_then(|s| s.strip_suffix(":general:__scope_probe__"))
+        .map(|s| s.to_string());
+
+    let gate = json!({
+        "enabled": cfg.public_indexers_source_health_gates_enabled,
+        "scope_mode": scope_mode,
+        "scope_key": scope_key_display,
+        "min_samples": min_samples,
+        "min_success_rate": min_success_rate,
+        "max_timeout_rate": max_timeout_rate,
+    });
+
+    // Determine the health bucket(s) to query
+    let buckets_to_query: Vec<&str> = if let Some(b) = params.bucket.as_deref() {
+        vec![b]
+    } else if anime_only {
+        vec!["anime"]
+    } else {
+        vec!["movie", "series"]
+    };
+
+    let mut sources: Vec<Value> = Vec::new();
+    let mut allowed = 0usize;
+    let mut blocked = 0usize;
+    let mut warming = 0usize;
+
+    for def in ALL_INDEXERS.iter() {
+        if anime_only && !def.supports_anime {
+            continue;
+        }
+
+        // Pick the most relevant bucket for this indexer's capabilities
+        let bucket = if buckets_to_query.contains(&"anime") && def.supports_anime {
+            "anime"
+        } else if buckets_to_query.contains(&"series") && def.supports_series {
+            "series"
+        } else if buckets_to_query.contains(&"movie") && def.supports_movie {
+            "movie"
+        } else {
+            "general"
+        };
+
+        let snapshot = source_health::get_source_health(
+            &state.redis,
+            def.key,
+            bucket,
+            scope_mode,
+            scope_override,
+        )
+        .await;
+
+        let status = snapshot.gate_status(min_samples, min_success_rate, max_timeout_rate);
+        match status {
+            "allowed" => allowed += 1,
+            "blocked" => blocked += 1,
+            _ => warming += 1,
+        }
+
+        sources.push(json!({
+            "source_key": def.key,
+            "source_name": def.source_name,
+            "supports_movie": def.supports_movie,
+            "supports_series": def.supports_series,
+            "supports_anime": def.supports_anime,
+            "health_bucket": bucket,
+            "samples": snapshot.total,
+            "success": snapshot.success,
+            "timeout": snapshot.timeout,
+            "challenge_solved": snapshot.challenge_solved,
+            "consecutive_success": snapshot.consecutive_success,
+            "success_rate": snapshot.success_rate(),
+            "timeout_rate": snapshot.timeout_rate(),
+            "challenge_solve_rate": snapshot.challenge_solve_rate(),
+            "gate_status": status,
+            "gate_enforced_now": cfg.public_indexers_source_health_gates_enabled && status == "blocked",
+        }));
+    }
+
     Json(json!({
-        "gate": {},
-        "total_sources": 0,
-        "allowed": 0,
-        "blocked": 0,
-        "warming": 0,
-        "sources": []
+        "gate": gate,
+        "total_sources": sources.len(),
+        "allowed": allowed,
+        "blocked": blocked,
+        "warming": warming,
+        "sources": sources,
     }))
     .into_response()
 }

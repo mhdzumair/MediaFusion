@@ -160,8 +160,6 @@ pub fn router(state: Arc<AppState>) -> Router {
         // ── Streaming provider OAuth / device-code auth ───────────────────────
         .route("/streaming_provider/realdebrid/get-device-code", get(streaming_provider::realdebrid_get_device_code))
         .route("/streaming_provider/realdebrid/authorize", post(streaming_provider::realdebrid_authorize))
-        .route("/streaming_provider/seedr/get-device-code", get(streaming_provider::seedr_get_device_code))
-        .route("/streaming_provider/seedr/authorize", post(streaming_provider::seedr_authorize))
         .route("/streaming_provider/debridlink/get-device-code", get(streaming_provider::debridlink_get_device_code))
         .route("/streaming_provider/debridlink/authorize", post(streaming_provider::debridlink_authorize))
         .route("/streaming_provider/premiumize/authorize", get(streaming_provider::premiumize_authorize))
@@ -697,4 +695,5 @@ pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .merge(api_router)
         .nest_service("/static", ServeDir::new(resources_dir))
+        .layer(CorsLayer::permissive())
 }

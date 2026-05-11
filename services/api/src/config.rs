@@ -181,6 +181,18 @@ pub struct AppConfig {
     /// When unset, all indexers matching the media type are used.
     pub public_indexers_live_search_sites: Option<String>,
 
+    // ── Public indexer source health gates ───────────────────────────────────
+    pub public_indexers_source_health_gates_enabled: bool,
+    pub public_indexers_source_health_min_samples: i64,
+    pub public_indexers_source_min_success_rate: f64,
+    pub public_indexers_source_max_timeout_rate: f64,
+    pub public_indexers_source_health_counter_soft_cap: i64,
+    pub public_indexers_source_health_decay_factor: f64,
+    pub public_indexers_source_health_recovery_success_streak: i64,
+    pub public_indexers_source_health_scope_mode: String,
+    pub public_indexers_source_health_scope: String,
+    pub public_indexers_source_health_metrics_ttl_seconds: i64,
+
     // ── Provider restrictions ─────────────────────────────────────
     /// Mirrors Python's `disabled_providers`. JSON array of provider service names to
     /// block globally, e.g. `'["p2p","realdebrid"]'`. "p2p" disables WebTorrent fallback.
@@ -257,7 +269,7 @@ impl AppConfig {
                 .to_string(),
             addon_name: env("ADDON_NAME")
                 .unwrap_or_else(|_| "MediaFusion".into()),
-            addon_version: env("ADDON_VERSION")
+            addon_version: env("VERSION")
                 .unwrap_or_else(|_| "1.0.0".into()),
             addon_description: env("ADDON_DESCRIPTION").unwrap_or_else(|_| {
                 "MediaFusion — universal torrent & debrid streaming addon for Stremio".into()
@@ -414,6 +426,26 @@ impl AppConfig {
                 .map(|u| u.trim_end_matches('/').to_string()),
             public_indexers_live_search_sites: env("PUBLIC_INDEXERS_LIVE_SEARCH_SITES")
                 .ok().filter(|s| !s.is_empty()),
+            public_indexers_source_health_gates_enabled: env("PUBLIC_INDEXERS_SOURCE_HEALTH_GATES_ENABLED")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            public_indexers_source_health_min_samples: env("PUBLIC_INDEXERS_SOURCE_HEALTH_MIN_SAMPLES")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(10),
+            public_indexers_source_min_success_rate: env("PUBLIC_INDEXERS_SOURCE_MIN_SUCCESS_RATE")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(0.35),
+            public_indexers_source_max_timeout_rate: env("PUBLIC_INDEXERS_SOURCE_MAX_TIMEOUT_RATE")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(0.35),
+            public_indexers_source_health_counter_soft_cap: env("PUBLIC_INDEXERS_SOURCE_HEALTH_COUNTER_SOFT_CAP")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(120),
+            public_indexers_source_health_decay_factor: env("PUBLIC_INDEXERS_SOURCE_HEALTH_DECAY_FACTOR")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5),
+            public_indexers_source_health_recovery_success_streak: env("PUBLIC_INDEXERS_SOURCE_HEALTH_RECOVERY_SUCCESS_STREAK")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(2),
+            public_indexers_source_health_scope_mode: env("PUBLIC_INDEXERS_SOURCE_HEALTH_SCOPE_MODE")
+                .unwrap_or_else(|_| "pod".into()),
+            public_indexers_source_health_scope: env("PUBLIC_INDEXERS_SOURCE_HEALTH_SCOPE")
+                .unwrap_or_else(|_| String::new()),
+            public_indexers_source_health_metrics_ttl_seconds: env("PUBLIC_INDEXERS_SOURCE_HEALTH_METRICS_TTL_SECONDS")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(86400),
             disabled_providers: env("DISABLED_PROVIDERS")
                 .ok().and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
                 .unwrap_or_default(),

@@ -172,7 +172,7 @@ export interface StreamInfo {
   bit_depth?: string
 
   // Normalized quality attributes (formatted as joined strings for display)
-  audio_formats?: string // Formatted audio string (e.g., "Atmos|DTS")
+  audio_formats?: string[] // Audio codec names (e.g., ["Atmos", "DTS"])
   channels?: string // Formatted channels string (e.g., "5.1|7.1")
   hdr_formats?: string // Formatted HDR string (e.g., "DV|HDR10")
 
@@ -298,12 +298,14 @@ export const catalogApi = {
     episode?: number,
     profileId?: number,
     provider?: string,
+    profileUuid?: string,
   ): Promise<StreamListResponse> => {
     const searchParams = new URLSearchParams()
 
     if (season !== undefined) searchParams.set('season', season.toString())
     if (episode !== undefined) searchParams.set('episode', episode.toString())
     if (profileId !== undefined) searchParams.set('profile_id', profileId.toString())
+    if (profileUuid) searchParams.set('profile_uuid', profileUuid)
     if (provider !== undefined) searchParams.set('provider', provider)
 
     const queryString = searchParams.toString()

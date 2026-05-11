@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrono::Utc;
 use fred::prelude::*;
 use tokio::task::JoinSet;
 
@@ -7,6 +8,7 @@ use crate::{
     models::user_data::UserData,
     scrapers::{
         easynews, jackett, mediafusion, newznab, persist, prowlarr, public_indexers, public_usenet,
+        source_health::{self, HealthGateConfig},
         telegram, torbox_search, torrentio, torznab, zilean, ScrapedStream, ScrapedUsenetStream,
         SearchMeta,
     },
@@ -57,10 +59,12 @@ pub async fn run(
         .filter(|s| seen.insert(s.info_hash.clone()))
         .collect();
 
-    // Persist to DB, then invalidate the stream cache so the next request
-    // cold-paths through DB and gets a complete, fully-populated blob.
+    // Persist scraped results to DB. Do NOT invalidate the stream cache here —
+    // invalidating on every scrape forces the next request to cold-path through
+    // DB and re-run scrapers, turning every "warm" request into a slow one.
+    // The lock TTL (300s) serves as the cooldown window; the cache is refreshed
+    // naturally when the next cold-path request repopulates it.
     persist::write_back(&deduped, &state.pool, meta, media_type, season, episode).await;
-    invalidate_stream_cache(&state.redis, meta, media_type, season, episode, scope).await;
 
     // ── Telegram live scraper (Phase 2c) ─────────────────────────────────────
     if let Some(ref tg_client) = state.telegram {
@@ -88,8 +92,9 @@ pub async fn run(
         .await;
     }
 
-    // Release lock.
-    let _: Result<(), _> = state.redis.del(&lock_key).await;
+    // Do NOT delete the lock — let it expire after 300s. This gives a 5-minute
+    // cooldown before scrapers run again for the same item, preventing every
+    // warm request from paying the full scraping cost.
 
     deduped
 }
@@ -137,6 +142,7 @@ pub async fn run_forced(
         .collect();
 
     persist::write_back(&deduped, &state.pool, meta, media_type, season, episode).await;
+    // Forced scrape explicitly invalidates the cache so the caller sees fresh results.
     invalidate_stream_cache(&state.redis, meta, media_type, season, episode, scope).await;
 
     if let Some(ref tg_client) = state.telegram {
@@ -163,6 +169,7 @@ pub async fn run_forced(
         .await;
     }
 
+    // Release the lock so a subsequent forced scrape can run immediately.
     let _: Result<(), _> = state.redis.del(&lock_key).await;
     deduped
 }
@@ -362,7 +369,24 @@ async fn fan_out(
         }
     };
 
-    let mut set: JoinSet<(&'static str, Vec<ScrapedStream>)> = JoinSet::new();
+    // Health gate config for public indexers
+    let health_gate = HealthGateConfig {
+        redis: redis.clone(),
+        enabled: cfg.public_indexers_source_health_gates_enabled,
+        min_samples: cfg.public_indexers_source_health_min_samples,
+        min_success_rate: cfg.public_indexers_source_min_success_rate,
+        max_timeout_rate: cfg.public_indexers_source_max_timeout_rate,
+        counter_soft_cap: cfg.public_indexers_source_health_counter_soft_cap,
+        decay_factor: cfg.public_indexers_source_health_decay_factor,
+        recovery_success_streak: cfg.public_indexers_source_health_recovery_success_streak,
+        scope_mode: cfg.public_indexers_source_health_scope_mode.clone(),
+        scope_override: cfg.public_indexers_source_health_scope.clone(),
+        metrics_ttl_seconds: cfg.public_indexers_source_health_metrics_ttl_seconds,
+    };
+
+    // JoinSet returns (scraper_id, streams, start_ts, duration_secs)
+    let mut set: JoinSet<(&'static str, Vec<ScrapedStream>, chrono::DateTime<Utc>, f64)> =
+        JoinSet::new();
     let mut spawned_scrapers: Vec<&'static str> = Vec::new();
 
     // ── Torrentio ──────────────────────────────────────────────────────────────
@@ -372,10 +396,10 @@ async fn fan_out(
         let meta = meta.clone();
         let mt = media_type.to_string();
         set.spawn(async move {
-            (
-                "torrentio",
-                torrentio::scrape(&http, &url, &meta, &mt, season, episode).await,
-            )
+            let start = Utc::now();
+            let t = std::time::Instant::now();
+            let streams = torrentio::scrape(&http, &url, &meta, &mt, season, episode).await;
+            ("torrentio", streams, start, t.elapsed().as_secs_f64())
         });
         spawned_scrapers.push("torrentio");
     }
@@ -410,22 +434,14 @@ async fn fan_out(
                 std::time::Duration::from_secs(cfg.prowlarr_immediate_max_process_time);
             let query_timeout = std::time::Duration::from_secs(cfg.prowlarr_search_query_timeout);
             set.spawn(async move {
-                (
-                    "prowlarr",
-                    prowlarr::scrape(
-                        &http,
-                        &url,
-                        &key,
-                        &meta,
-                        &mt,
-                        season,
-                        episode,
-                        max_process,
-                        max_process_time,
-                        query_timeout,
-                    )
-                    .await,
+                let start = Utc::now();
+                let t = std::time::Instant::now();
+                let streams = prowlarr::scrape(
+                    &http, &url, &key, &meta, &mt, season, episode,
+                    max_process, max_process_time, query_timeout,
                 )
+                .await;
+                ("prowlarr", streams, start, t.elapsed().as_secs_f64())
             });
             spawned_scrapers.push("prowlarr");
         }
@@ -458,22 +474,14 @@ async fn fan_out(
                 std::time::Duration::from_secs(cfg.jackett_immediate_max_process_time);
             let query_timeout = std::time::Duration::from_secs(cfg.jackett_search_query_timeout);
             set.spawn(async move {
-                (
-                    "jackett",
-                    jackett::scrape(
-                        &http,
-                        &url,
-                        &key,
-                        &meta,
-                        &mt,
-                        season,
-                        episode,
-                        max_process,
-                        max_process_time,
-                        query_timeout,
-                    )
-                    .await,
+                let start = Utc::now();
+                let t = std::time::Instant::now();
+                let streams = jackett::scrape(
+                    &http, &url, &key, &meta, &mt, season, episode,
+                    max_process, max_process_time, query_timeout,
                 )
+                .await;
+                ("jackett", streams, start, t.elapsed().as_secs_f64())
             });
             spawned_scrapers.push("jackett");
         }
@@ -486,10 +494,10 @@ async fn fan_out(
         let meta = meta.clone();
         let mt = media_type.to_string();
         set.spawn(async move {
-            (
-                "zilean",
-                zilean::scrape(&http, &url, &meta, &mt, season, episode).await,
-            )
+            let start = Utc::now();
+            let t = std::time::Instant::now();
+            let streams = zilean::scrape(&http, &url, &meta, &mt, season, episode).await;
+            ("zilean", streams, start, t.elapsed().as_secs_f64())
         });
         spawned_scrapers.push("zilean");
     }
@@ -506,10 +514,11 @@ async fn fan_out(
             let meta = meta.clone();
             let mt = media_type.to_string();
             set.spawn(async move {
-                (
-                    "torznab",
-                    torznab::scrape(&http, &torznab_eps, &meta, &mt, season, episode).await,
-                )
+                let start = Utc::now();
+                let t = std::time::Instant::now();
+                let streams =
+                    torznab::scrape(&http, &torznab_eps, &meta, &mt, season, episode).await;
+                ("torznab", streams, start, t.elapsed().as_secs_f64())
             });
             spawned_scrapers.push("torznab");
         }
@@ -528,10 +537,11 @@ async fn fan_out(
             let meta = meta.clone();
             let mt = media_type.to_string();
             set.spawn(async move {
-                (
-                    "newznab",
-                    newznab::scrape(&http, &newznab_idxs, &meta, &mt, season, episode).await,
-                )
+                let start = Utc::now();
+                let t = std::time::Instant::now();
+                let streams =
+                    newznab::scrape(&http, &newznab_idxs, &meta, &mt, season, episode).await;
+                ("newznab", streams, start, t.elapsed().as_secs_f64())
             });
             spawned_scrapers.push("newznab");
         }
@@ -545,19 +555,13 @@ async fn fan_out(
         let meta = meta.clone();
         let mt = media_type.to_string();
         set.spawn(async move {
-            (
-                "mediafusion",
-                mediafusion::scrape(
-                    &http,
-                    &url,
-                    &meta,
-                    &mt,
-                    season,
-                    episode,
-                    secret_str.as_deref(),
-                )
-                .await,
+            let start = Utc::now();
+            let t = std::time::Instant::now();
+            let streams = mediafusion::scrape(
+                &http, &url, &meta, &mt, season, episode, secret_str.as_deref(),
             )
+            .await;
+            ("mediafusion", streams, start, t.elapsed().as_secs_f64())
         });
         spawned_scrapers.push("mediafusion");
     }
@@ -569,10 +573,11 @@ async fn fan_out(
         let mt = media_type.to_string();
         let ud = user_data.clone();
         set.spawn(async move {
-            (
-                "torbox_search",
-                torbox_search::scrape(&http, &ud, &meta, &mt, season, episode).await,
-            )
+            let start = Utc::now();
+            let t = std::time::Instant::now();
+            let streams =
+                torbox_search::scrape(&http, &ud, &meta, &mt, season, episode).await;
+            ("torbox_search", streams, start, t.elapsed().as_secs_f64())
         });
         spawned_scrapers.push("torbox_search");
     }
@@ -586,20 +591,22 @@ async fn fan_out(
         let mt = media_type.to_string();
         let byparr = cfg.byparr_url.clone();
         let sites = cfg.public_indexers_live_search_sites.clone();
+        let hg = health_gate.clone();
         set.spawn(async move {
-            (
-                "public_indexers",
-                public_indexers::scrape(
-                    &http,
-                    &meta,
-                    &mt,
-                    season,
-                    episode,
-                    byparr.as_deref(),
-                    sites.as_deref(),
-                )
-                .await,
+            let start = Utc::now();
+            let t = std::time::Instant::now();
+            let streams = public_indexers::scrape(
+                &http,
+                &meta,
+                &mt,
+                season,
+                episode,
+                byparr.as_deref(),
+                sites.as_deref(),
+                Some(&hg),
             )
+            .await;
+            ("public_indexers", streams, start, t.elapsed().as_secs_f64())
         });
         spawned_scrapers.push("public_indexers");
     }
@@ -607,9 +614,36 @@ async fn fan_out(
     let mut all: Vec<ScrapedStream> = Vec::new();
     while let Some(res) = set.join_next().await {
         match res {
-            Ok((id, streams)) => {
+            Ok((id, streams, start_ts, duration_secs)) => {
                 tracing::info!("scraper {id}: {} streams for {}", streams.len(), cache_key);
+                let end_ts = Utc::now();
+                let count = streams.len();
                 all.extend(streams);
+
+                // Save run metrics to Redis so the admin dashboard shows Rust scraper activity
+                let redis_clone = redis.clone();
+                let meta_clone = meta.clone();
+                let id_owned = id.to_string();
+                let dur = duration_secs;
+                tokio::spawn(async move {
+                    source_health::save_scraper_run_metrics(
+                        &redis_clone,
+                        &id_owned,
+                        meta_clone.imdb_id.as_deref(),
+                        &meta_clone.title,
+                        season,
+                        episode,
+                        count,
+                        count,
+                        0,
+                        0,
+                        &std::collections::HashMap::new(),
+                        &start_ts,
+                        &end_ts,
+                    )
+                    .await;
+                    let _ = dur; // ensure it's used
+                });
             }
             Err(e) => tracing::warn!("orchestrator: scraper task panicked: {e}"),
         }

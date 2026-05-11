@@ -1,4 +1,5 @@
 pub mod easynews;
+pub mod source_health;
 pub mod fetcher;
 pub mod jackett;
 pub mod mediafusion;

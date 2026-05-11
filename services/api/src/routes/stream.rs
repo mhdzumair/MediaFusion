@@ -25,7 +25,7 @@ use urlencoding;
 // ─── Provider capability constants ────────────────────────────────────────────
 
 /// Providers that can generate /playback URLs for torrent streams
-const TORRENT_CAPABLE: &[&str] = &[
+pub(crate) const TORRENT_CAPABLE: &[&str] = &[
     "alldebrid",
     "debridlink",
     "offcloud",
@@ -39,7 +39,7 @@ const TORRENT_CAPABLE: &[&str] = &[
     "debrider",
 ];
 /// Providers that can handle usenet NZB playback
-const USENET_CAPABLE: &[&str] = &[
+pub(crate) const USENET_CAPABLE: &[&str] = &[
     "torbox",
     "debrider",
     "sabnzbd",
@@ -52,7 +52,7 @@ const USENET_CAPABLE: &[&str] = &[
 // ─── Sort constants ────────────────────────────────────────────────────────────
 
 /// Maps Python's `const.QUALITY_GROUPS` — group name → member quality strings.
-static QUALITY_GROUPS: &[(&str, &[&str])] = &[
+pub(crate) static QUALITY_GROUPS: &[(&str, &[&str])] = &[
     (
         "BluRay/UHD",
         &[
@@ -1599,7 +1599,7 @@ fn format_unified_pool(
 
 // ─── Stream sorting ───────────────────────────────────────────────────────────
 
-fn quality_rank(quality: Option<&str>, quality_filter: &[String]) -> f64 {
+pub(crate) fn quality_rank(quality: Option<&str>, quality_filter: &[String]) -> f64 {
     let q = quality.unwrap_or("");
     if let Some(idx) = quality_filter.iter().position(|qf| qf == q) {
         return idx as f64;
@@ -1618,7 +1618,7 @@ fn quality_rank(quality: Option<&str>, quality_filter: &[String]) -> f64 {
     quality_filter.len() as f64
 }
 
-fn parse_created_at_ts(v: &Value) -> f64 {
+pub(crate) fn parse_created_at_ts(v: &Value) -> f64 {
     if let Some(s) = v.as_str() {
         if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
             return dt.timestamp() as f64;
@@ -1638,7 +1638,7 @@ fn parse_created_at_ts(v: &Value) -> f64 {
     f64::NEG_INFINITY
 }
 
-fn torrent_sort_key(
+pub(crate) fn torrent_sort_key(
     t: &Value,
     priority: &[SortingOption],
     selected_resolutions: &[Option<String>],

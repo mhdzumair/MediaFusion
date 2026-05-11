@@ -536,6 +536,8 @@ pub struct StreamPlaybackInfo {
     pub filename: Option<String>,
     /// True when no stream_file rows exist at all (metadata not yet stored).
     pub has_no_files: bool,
+    /// Total torrent size in bytes (from torrent_stream.total_size), if known.
+    pub size_bytes: Option<i64>,
 }
 
 /// Fetch stream playback info for the given info_hash.
@@ -554,6 +556,7 @@ pub async fn fetch_stream_playback_info(
         Option<i32>,
         Option<String>,
         Option<i64>,
+        Option<i64>,
     ) = match (season, episode) {
         (Some(s), Some(e)) => {
             sqlx::query_as(
@@ -563,7 +566,8 @@ pub async fn fetch_stream_playback_info(
                     ARRAY_AGG(DISTINCT t.url) FILTER (WHERE t.url IS NOT NULL) AS announce_list,
                     sf.file_index,
                     sf.filename,
-                    COUNT(sf2.id) AS total_files
+                    COUNT(sf2.id) AS total_files,
+                    ts.total_size
                 FROM torrent_stream ts
                 JOIN stream st ON st.id = ts.stream_id
                 LEFT JOIN torrent_tracker_link ttl ON ttl.torrent_id = ts.id
@@ -577,7 +581,7 @@ pub async fn fetch_stream_playback_info(
                     LIMIT 1
                 ) sf ON sf.stream_id = st.id
                 WHERE ts.info_hash = $1
-                GROUP BY st.id, st.name, sf.file_index, sf.filename
+                GROUP BY st.id, st.name, sf.file_index, sf.filename, ts.total_size
                 "#,
             )
             .bind(info_hash)
@@ -603,13 +607,14 @@ pub async fn fetch_stream_playback_info(
                      WHERE sf.stream_id = st.id
                      ORDER BY sf.file_index ASC NULLS LAST
                      LIMIT 1) AS filename,
-                    (SELECT COUNT(*) FROM stream_file sf WHERE sf.stream_id = st.id) AS total_files
+                    (SELECT COUNT(*) FROM stream_file sf WHERE sf.stream_id = st.id) AS total_files,
+                    ts.total_size
                 FROM torrent_stream ts
                 JOIN stream st ON st.id = ts.stream_id
                 LEFT JOIN torrent_tracker_link ttl ON ttl.torrent_id = ts.id
                 LEFT JOIN tracker t ON t.id = ttl.tracker_id
                 WHERE ts.info_hash = $1
-                GROUP BY st.id, st.name
+                GROUP BY st.id, st.name, ts.total_size
                 "#,
             )
             .bind(info_hash)
@@ -627,6 +632,7 @@ pub async fn fetch_stream_playback_info(
         file_index: row.2,
         filename: row.3,
         has_no_files: total_files == 0,
+        size_bytes: row.5.filter(|&s| s > 0),
     })
 }
 

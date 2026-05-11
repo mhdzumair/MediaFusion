@@ -49,8 +49,7 @@ pub async fn get_bytes(client: &RedisClient, key: &str) -> Option<Vec<u8>> {
 /// Check debrid cache status for a list of info hashes.
 ///
 /// Reads from the `debrid_cache:{service}` Redis hash where each field is an
-/// info_hash and the value is a Unix-second expiry timestamp. Mirrors Python's
-/// `get_cached_status` (Redis-only path, no MediaFusion federation).
+/// info_hash and the value is a Unix-second expiry timestamp.
 pub async fn get_debrid_cache_status(
     client: &RedisClient,
     service: &str,

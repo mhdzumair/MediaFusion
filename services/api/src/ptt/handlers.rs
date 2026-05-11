@@ -1740,8 +1740,8 @@ pub fn add_defaults(p: &mut Parser) {
         let start_index = start_indexes.iter().copied().min().unwrap_or(0);
         let end_index = end_indexes.iter().copied().min().unwrap_or(ctx.title.len());
 
-        let safe_end = end_index.min(ctx.title.len());
-        let safe_start = start_index.min(safe_end);
+        let safe_end = ctx.title.floor_char_boundary(end_index.min(ctx.title.len()));
+        let safe_start = ctx.title.floor_char_boundary(start_index.min(safe_end));
         let beginning = &ctx.title[..safe_end];
         let middle = &ctx.title[safe_start..safe_end];
 

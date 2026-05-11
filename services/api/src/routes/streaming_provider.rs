@@ -27,7 +27,6 @@ const EXPIRY_DAYS_SECS: i64 = 7 * 86400;
 
 const REALDEBRID_CLIENT_ID: &str = "X245A4XAIBGVM";
 const DEBRIDLINK_CLIENT_ID: &str = "RyrV22FOg30DsxjYPziRKA";
-const SEEDR_CLIENT_ID: &str = "seedr_chrome";
 
 #[derive(Deserialize)]
 pub struct CacheStatusRequest {
@@ -240,106 +239,6 @@ pub async fn realdebrid_authorize(
             (
                 StatusCode::BAD_GATEWAY,
                 Json(serde_json::json!({"detail": "Failed to contact Real-Debrid"})),
-            )
-                .into_response()
-        }
-    }
-}
-
-/// GET /streaming_provider/seedr/get-device-code
-pub async fn seedr_get_device_code(State(state): State<Arc<AppState>>) -> Response {
-    let url = "https://www.seedr.cc/oauth_test/device_code";
-    let form = [
-        ("response_type", "device_code"),
-        ("client_id", SEEDR_CLIENT_ID),
-    ];
-    match state.http.post(url).form(&form).send().await {
-        Ok(resp) => {
-            let status = resp.status();
-            match resp.json::<Value>().await {
-                Ok(body) => (
-                    StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK),
-                    Json(body),
-                )
-                    .into_response(),
-                Err(e) => {
-                    tracing::error!("seedr_get_device_code: parse error: {e}");
-                    (
-                        StatusCode::BAD_GATEWAY,
-                        Json(serde_json::json!({"detail": "Invalid response from Seedr"})),
-                    )
-                        .into_response()
-                }
-            }
-        }
-        Err(e) => {
-            tracing::error!("seedr_get_device_code: request error: {e}");
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({"detail": "Failed to contact Seedr"})),
-            )
-                .into_response()
-        }
-    }
-}
-
-/// POST /streaming_provider/seedr/authorize
-pub async fn seedr_authorize(
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<Value>,
-) -> Response {
-    let device_code = match body.get("device_code").and_then(|v| v.as_str()) {
-        Some(c) => c.to_string(),
-        None => {
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(serde_json::json!({"detail": "Missing device_code"})),
-            )
-                .into_response();
-        }
-    };
-
-    let url = "https://www.seedr.cc/oauth_test/token";
-    let form = [
-        ("grant_type", "device_code"),
-        ("code", &device_code),
-        ("client_id", SEEDR_CLIENT_ID),
-    ];
-    match state.http.post(url).form(&form).send().await {
-        Ok(resp) => {
-            let status = resp.status();
-            match resp.json::<Value>().await {
-                Ok(json_body) => {
-                    if status.is_success() {
-                        // base64-url-no-pad encode the entire JSON response body
-                        let json_str = json_body.to_string();
-                        let encoded = URL_SAFE_NO_PAD.encode(json_str.as_bytes());
-                        (StatusCode::OK, Json(serde_json::json!({"token": encoded})))
-                            .into_response()
-                    } else {
-                        (
-                            StatusCode::from_u16(status.as_u16())
-                                .unwrap_or(StatusCode::BAD_GATEWAY),
-                            Json(json_body),
-                        )
-                            .into_response()
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("seedr_authorize: parse error: {e}");
-                    (
-                        StatusCode::BAD_GATEWAY,
-                        Json(serde_json::json!({"detail": "Invalid response from Seedr"})),
-                    )
-                        .into_response()
-                }
-            }
-        }
-        Err(e) => {
-            tracing::error!("seedr_authorize: request error: {e}");
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({"detail": "Failed to contact Seedr"})),
             )
                 .into_response()
         }

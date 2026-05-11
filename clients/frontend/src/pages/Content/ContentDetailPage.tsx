@@ -457,7 +457,9 @@ function StreamActionDialog({
                         resolution: stream.resolution,
                         quality: stream.quality,
                         codec: stream.codec,
-                        audio_formats: stream.audio_formats,
+                        audio_formats: Array.isArray(stream.audio_formats)
+                          ? stream.audio_formats.join('|')
+                          : stream.audio_formats,
                         hdr_formats: stream.hdr_formats,
                         source: stream.source,
                         languages: stream.languages,
@@ -468,7 +470,11 @@ function StreamActionDialog({
                       streamId={stream.id!}
                       streamName={stream.stream_name || stream.name}
                       currentQuality={stream.quality || stream.resolution}
-                      currentLanguage={stream.audio_formats}
+                      currentLanguage={
+                        Array.isArray(stream.audio_formats)
+                          ? stream.audio_formats.join('|')
+                          : stream.audio_formats
+                      }
                     />
                     {/* File Annotation for Series */}
                     {catalogType === 'series' && stream.episode_links && stream.episode_links.length > 0 && (
@@ -969,6 +975,7 @@ export function ContentDetailPage() {
 
   // Profile and provider selection for streams
   const [selectedProfileId, setSelectedProfileId] = useState<number | undefined>()
+  const [selectedProfileUuid, setSelectedProfileUuid] = useState<string | undefined>()
   const [selectedProvider, setSelectedProvider] = useState<string | undefined>()
 
   // Fetch user profiles
@@ -981,6 +988,7 @@ export function ContentDetailPage() {
   if (profiles && profiles.length > 0 && selectedProfileId === undefined) {
     const defaultProfile = profiles.find((p) => p.is_default) || profiles[0]
     setSelectedProfileId(defaultProfile.id)
+    setSelectedProfileUuid(defaultProfile.uuid)
     const primaryService =
       defaultProfile.streaming_providers?.primary_service || defaultProfile.streaming_providers?.providers?.[0]?.service
     // Default to 'p2p' when no streaming provider is configured so streams still load
@@ -997,15 +1005,24 @@ export function ContentDetailPage() {
     data: streamsData,
     isLoading: streamsLoading,
     refetch: refetchStreams,
-  } = useCatalogStreams(catalogType, mediaId, selectedSeason, selectedEpisode, selectedProfileId, selectedProvider, {
-    enabled:
-      isAuthenticated &&
-      selectedProfileId !== undefined && // Wait for profile to be selected
-      selectedProvider !== undefined && // Wait for provider to be selected
-      (catalogType === 'movie' ||
-        catalogType === 'tv' ||
-        (selectedSeason !== undefined && selectedEpisode !== undefined)),
-  })
+  } = useCatalogStreams(
+    catalogType,
+    mediaId,
+    selectedSeason,
+    selectedEpisode,
+    selectedProfileId,
+    selectedProvider,
+    {
+      enabled:
+        isAuthenticated &&
+        selectedProfileId !== undefined && // Wait for profile to be selected
+        selectedProvider !== undefined && // Wait for provider to be selected
+        (catalogType === 'movie' ||
+          catalogType === 'tv' ||
+          (selectedSeason !== undefined && selectedEpisode !== undefined)),
+    },
+    selectedProfileUuid,
+  )
 
   // Get available providers from the streams response (memoized to avoid unstable deps)
   const availableProviders = useMemo(() => streamsData?.streaming_providers || [], [streamsData?.streaming_providers])
@@ -1129,6 +1146,7 @@ export function ContentDetailPage() {
       resolutionFilter,
       sourceFilter,
       codecFilter,
+      languageFilter,
       cachedFilter,
       streamTypeFilter,
       sortBy,
@@ -1145,6 +1163,10 @@ export function ContentDetailPage() {
 
     if (sourceFilter.length > 0) {
       result = result.filter((s) => matchesFilter(s.source, sourceFilter))
+    }
+
+    if (languageFilter.length > 0) {
+      result = result.filter((s) => s.languages?.some((lang) => languageFilter.includes(lang)) ?? false)
     }
 
     if (codecFilter.length > 0) {
@@ -1270,6 +1292,12 @@ export function ContentDetailPage() {
     if (!streamsData?.streams) return []
     const codecs = new Set(streamsData.streams.map((s) => s.codec).filter(Boolean))
     return Array.from(codecs).sort() as string[]
+  }, [streamsData])
+
+  const availableLanguages = useMemo(() => {
+    if (!streamsData?.streams) return []
+    const langs = new Set(streamsData.streams.flatMap((s) => s.languages ?? []).filter(Boolean))
+    return Array.from(langs).sort() as string[]
   }, [streamsData])
 
   const availableStreamTypes = useMemo(() => {
@@ -1777,6 +1805,7 @@ export function ContentDetailPage() {
                         const newProfileId = parseInt(value, 10)
                         const newProfile = profiles.find((p) => p.id === newProfileId)
                         setSelectedProfileId(newProfileId)
+                        setSelectedProfileUuid(newProfile?.uuid)
                         // Set the primary provider from the new profile
                         setSelectedProvider(newProfile?.streaming_providers?.primary_service || undefined)
                       }}
@@ -1860,6 +1889,7 @@ export function ContentDetailPage() {
                   availableResolutions={availableResolutions}
                   availableQualities={availableQualities}
                   availableCodecs={availableCodecs}
+                  availableLanguages={availableLanguages}
                   availableStreamTypes={availableStreamTypes}
                   totalStreams={streamsData?.streams?.length || 0}
                   filteredCount={filteredStreams.length}
@@ -1995,7 +2025,9 @@ export function ContentDetailPage() {
             size: playerStream.size,
             source: playerStream.source,
             codec: playerStream.codec,
-            audio: playerStream.audio_formats,
+            audio: Array.isArray(playerStream.audio_formats)
+              ? playerStream.audio_formats.join('|')
+              : playerStream.audio_formats,
             behaviorHints: playerStream.behavior_hints,
           }}
           externalStreamUrl={playerExternalStreamUrl || playerStreamUrl}

@@ -144,7 +144,11 @@ async fn list_tasks(http: &Client, token: &str) -> Result<Vec<Value>, ProviderEr
 }
 
 fn task_info_hash(task: &Value) -> Option<String> {
-    // Direct hash field
+    // v2: hash is nested inside torrent_payload
+    if let Some(h) = task["torrent_payload"]["hash"].as_str().filter(|s| !s.is_empty()) {
+        return Some(h.to_lowercase());
+    }
+    // fallback: direct hash field (older API shape)
     if let Some(h) = task["hash"].as_str().filter(|s| !s.is_empty()) {
         return Some(h.to_lowercase());
     }
@@ -160,12 +164,20 @@ fn task_info_hash(task: &Value) -> Option<String> {
 }
 
 fn task_is_complete(task: &Value) -> bool {
-    let status = task["status"].as_str().unwrap_or("");
-    // Seedr statuses: "seeding" = complete+seeding, "stopped" = paused, "queued", "downloading"
-    if matches!(status, "seeding" | "stopped" | "idle" | "finished") {
+    // v2 uses "state"; older API used "status"
+    let s = task["state"]
+        .as_str()
+        .or_else(|| task["status"].as_str())
+        .unwrap_or("");
+    if matches!(s, "finished" | "seeding" | "stopped" | "idle") {
         return true;
     }
-    // Some API versions use progress 0.0-1.0
+    // v2 progress is 0-100 integer; older API used 0.0-1.0 float
+    if let Some(p) = task["progress"].as_i64() {
+        if p >= 100 {
+            return true;
+        }
+    }
     if let Some(p) = task["progress"].as_f64() {
         if p >= 1.0 {
             return true;
@@ -175,11 +187,11 @@ fn task_is_complete(task: &Value) -> bool {
 }
 
 fn task_is_downloading(task: &Value) -> bool {
-    let status = task["status"].as_str().unwrap_or("");
-    matches!(
-        status,
-        "downloading" | "queued" | "active" | "pending" | "waiting"
-    )
+    let s = task["state"]
+        .as_str()
+        .or_else(|| task["status"].as_str())
+        .unwrap_or("");
+    matches!(s, "downloading" | "queued" | "active" | "pending" | "waiting")
 }
 
 // ─── File collection ──────────────────────────────────────────────────────────
@@ -202,17 +214,6 @@ fn collect_files(v: &Value, out: &mut Vec<(String, i64, i64)>) {
             collect_files(folder, out);
         }
     }
-}
-
-async fn task_files(
-    http: &Client,
-    token: &str,
-    task_id: i64,
-) -> Result<Vec<(String, i64, i64)>, ProviderError> {
-    let resp = api_get(http, token, &format!("/tasks/{task_id}/contents")).await?;
-    let mut files = Vec::new();
-    collect_files(&resp, &mut files);
-    Ok(files)
 }
 
 async fn folder_files_recursive(
@@ -321,25 +322,6 @@ async fn file_url(http: &Client, token: &str, file_id: i64) -> Result<String, Pr
 
 // ─── Internal resolution ──────────────────────────────────────────────────────
 
-async fn resolve_from_task(
-    http: &Client,
-    token: &str,
-    task_id: i64,
-    filename: Option<&str>,
-    file_index: Option<i32>,
-    season: Option<i32>,
-    episode: Option<i32>,
-) -> Result<String, ProviderError> {
-    let files = task_files(http, token, task_id).await?;
-    let sel = select_video(&files, filename, file_index, season, episode).ok_or_else(|| {
-        ProviderError::api(
-            "No matching video file found in Seedr torrent.",
-            "no_matching_file.mp4",
-        )
-    })?;
-    file_url(http, token, sel.2).await
-}
-
 async fn resolve_from_folder(
     http: &Client,
     token: &str,
@@ -359,6 +341,267 @@ async fn resolve_from_folder(
     file_url(http, token, sel.2).await
 }
 
+// ─── Folder-per-hash helpers ──────────────────────────────────────────────────
+
+enum TorrentStatus {
+    NotFound,
+    Downloading,
+    /// ID of the content sub-folder placed inside the hash-named folder by Seedr.
+    Completed(i64),
+}
+
+/// Find the root-level folder whose `path` matches `hash`.
+/// Returns `(hash_folder_id, Option<content_subfolder_id>)` — the sub-folder is
+/// populated once Seedr finishes placing the downloaded content there.
+async fn find_hash_folder(
+    http: &Client,
+    token: &str,
+    hash: &str,
+) -> Result<Option<(i64, Option<i64>)>, ProviderError> {
+    let root = api_get(http, token, "/fs/root/contents").await?;
+    let Some(folders) = root["folders"].as_array() else {
+        return Ok(None);
+    };
+    for folder in folders {
+        // Root folders use the `path` field as their display name (no separate `name` field).
+        let path = folder["path"].as_str().unwrap_or("").to_lowercase();
+        if path != hash {
+            continue;
+        }
+        let Some(folder_id) = folder["id"].as_i64() else {
+            continue;
+        };
+        let contents =
+            api_get(http, token, &format!("/fs/folder/{folder_id}/contents")).await?;
+        let sub_id = contents["folders"]
+            .as_array()
+            .and_then(|sf| sf.first())
+            .and_then(|sf| sf["id"].as_i64());
+        return Ok(Some((folder_id, sub_id)));
+    }
+    Ok(None)
+}
+
+/// Determine the current status of the torrent identified by `hash`.
+///
+/// - Active tasks  → `Downloading`
+/// - Hash folder with a content sub-folder → `Completed(sub_folder_id)`
+/// - Hash folder empty + no task → orphaned, deletes folder → `NotFound`
+/// - Nothing found → `NotFound`
+async fn check_status(
+    http: &Client,
+    token: &str,
+    hash: &str,
+) -> Result<TorrentStatus, ProviderError> {
+    // The v2 /tasks endpoint retains completed tasks, so we must check state explicitly.
+    let tasks = list_tasks(http, token).await.unwrap_or_default();
+
+    let hash_task = tasks.iter().find(|t| task_info_hash(t).as_deref() == Some(hash));
+
+    if let Some(task) = hash_task {
+        if task_is_downloading(task) {
+            return Ok(TorrentStatus::Downloading);
+        }
+        if task_is_complete(task) {
+            if let Some(content_id) = task["folder_created_id"].as_i64() {
+                return Ok(TorrentStatus::Completed(content_id));
+            }
+        }
+    }
+
+    // Scan root filesystem for a hash-named folder.
+    match find_hash_folder(http, token, hash).await? {
+        Some((_, Some(content_id))) => Ok(TorrentStatus::Completed(content_id)),
+        Some((folder_id, None)) => {
+            if hash_task.is_none() {
+                // Orphaned: folder exists but no content and no active task — clean up.
+                tracing::info!("Seedr: removing orphaned empty folder for hash {hash}");
+                api_delete(http, token, &format!("/fs/folder/{folder_id}"))
+                    .await
+                    .ok();
+                Ok(TorrentStatus::NotFound)
+            } else {
+                Ok(TorrentStatus::Downloading)
+            }
+        }
+        None => Ok(TorrentStatus::NotFound),
+    }
+}
+
+/// Create (or reuse) a root-level folder named with `hash`. Returns its folder ID.
+///
+/// Uses `POST /fs/folder` with form-encoded `parent_id=0&name=<hash>`.
+/// The API returns `{"success": true, "id": "<string_id>", "path": "<hash>"}`.
+/// On conflict (folder already exists) falls back to `find_hash_folder`.
+async fn ensure_hash_folder(
+    http: &Client,
+    token: &str,
+    hash: &str,
+) -> Result<i64, ProviderError> {
+    let url = format!("{BASE_URL}/fs/folder");
+    let resp = http
+        .post(&url)
+        .bearer_auth(token)
+        .form(&[("parent_id", "0"), ("name", hash)])
+        .send()
+        .await?;
+
+    let status = resp.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(ProviderError::api(
+            "Seedr token is expired or invalid. Please reconnect your Seedr account.",
+            "invalid_token.mp4",
+        ));
+    }
+
+    if status.is_success() {
+        let body: serde_json::Value = resp.json().await.unwrap_or_default();
+        // The API returns `id` as a string (e.g. "1419838690").
+        let id = body["id"]
+            .as_str()
+            .and_then(|s| s.parse::<i64>().ok())
+            .or_else(|| body["id"].as_i64());
+        if let Some(id) = id {
+            return Ok(id);
+        }
+    }
+
+    // Folder may already exist (409) or ID was missing — look it up.
+    match find_hash_folder(http, token, hash).await? {
+        Some((id, _)) => Ok(id),
+        None => Err(ProviderError::api(
+            "Failed to create or locate Seedr folder for this torrent.",
+            "api_error.mp4",
+        )),
+    }
+}
+
+/// Submit a magnet link to Seedr, directing the download into `folder_id`.
+///
+/// Uses `POST /tasks` with `{"torrent_magnet": magnet, "folder_id": folder_id}`.
+/// Returns the new task ID.
+async fn add_torrent_to_folder(
+    http: &Client,
+    token: &str,
+    magnet: &str,
+    folder_id: i64,
+) -> Result<i64, ProviderError> {
+    let add_resp = api_post(
+        http,
+        token,
+        "/tasks",
+        &json!({"torrent_magnet": magnet, "folder_id": folder_id}),
+    )
+    .await
+    .map_err(|e| {
+        ProviderError::api(
+            format!("Failed to add torrent to Seedr: {e}"),
+            "transfer_error.mp4",
+        )
+    })?;
+
+    // The API uses `reason_phrase` for soft errors (added to wishlist) and `error` for hard errors.
+    let error_code = add_resp["reason_phrase"]
+        .as_str()
+        .or_else(|| add_resp["error"].as_str())
+        .unwrap_or("");
+    match error_code {
+        "not_enough_space" | "not_enough_space_added_to_wishlist" => {
+            return Err(ProviderError::api(
+                "Not enough storage space in your Seedr account.",
+                "not_enough_space.mp4",
+            ))
+        }
+        "queue_full" | "queue_full_added_to_wishlist" => {
+            return Err(ProviderError::api(
+                "Seedr download queue is full. Please wait for current downloads to finish.",
+                "queue_full.mp4",
+            ))
+        }
+        "" => {}
+        other => {
+            return Err(ProviderError::api(
+                format!("Seedr rejected the torrent: {other}"),
+                "transfer_error.mp4",
+            ))
+        }
+    }
+
+    add_resp["user_torrent_id"]
+        .as_i64()
+        .or_else(|| add_resp["id"].as_i64())
+        .or_else(|| add_resp["task"]["id"].as_i64())
+        .ok_or_else(|| {
+            ProviderError::api(
+                "Seedr did not return a task ID after adding torrent.",
+                "transfer_error.mp4",
+            )
+        })
+}
+
+// ─── Storage management ───────────────────────────────────────────────────────
+
+/// Ensure at least `required_bytes` are free in the Seedr account.
+/// Fetches root contents (which includes space_max / space_used) in one call,
+/// then deletes hash-named folders from largest to smallest until enough space is freed.
+/// `required_bytes` = 0 uses a 1 GiB safety minimum.
+/// Non-fatal: on any API failure, logs a warning and returns without blocking the download.
+async fn ensure_enough_space(http: &Client, token: &str, required_bytes: i64) {
+    let minimum = if required_bytes > 0 {
+        required_bytes
+    } else {
+        1_073_741_824 // 1 GiB
+    };
+
+    let root = match api_get(http, token, "/fs/root/contents").await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("Seedr: could not fetch root contents for space check: {e}");
+            return;
+        }
+    };
+
+    // space_max and space_used are top-level fields in the root contents response.
+    let space_max = root["space_max"].as_i64().unwrap_or(0);
+    let space_used = root["space_used"].as_i64().unwrap_or(0);
+    let free = (space_max - space_used).max(0);
+
+    if space_max == 0 {
+        tracing::warn!("Seedr: could not read storage quota from root contents; skipping space check");
+        return;
+    }
+
+    if free >= minimum {
+        return;
+    }
+
+    tracing::info!("Seedr: only {free} bytes free, need {minimum} — cleaning up old downloads");
+
+    // Delete ALL root folders sorted largest-first until we have enough space.
+    // Root only contains user downloads so it's safe to clear anything here.
+    let mut candidates: Vec<(i64, i64)> = root["folders"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|f| {
+            let id = f["id"].as_i64()?;
+            let size = f["size"].as_i64().unwrap_or(0);
+            Some((size, id))
+        })
+        .collect();
+    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+
+    let mut freed = 0i64;
+    for (size, id) in candidates {
+        if free + freed >= minimum {
+            break;
+        }
+        tracing::info!("Seedr: deleting folder {id} ({size} bytes) to free space");
+        api_delete(http, token, &format!("/fs/folder/{id}")).await.ok();
+        freed += size;
+    }
+}
+
 // ─── Public entry point ───────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
@@ -371,163 +614,213 @@ pub async fn get_video_url(
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
+    size_bytes: Option<i64>,
     _user_ip: Option<&str>,
 ) -> Result<String, ProviderError> {
     let token = resolve_token(token);
     let hash = info_hash.to_lowercase();
     let magnet = build_magnet(&hash, announce_list);
 
-    // 1. Check active/completed tasks
-    let tasks = list_tasks(http, &token).await?;
-
-    for task in &tasks {
-        if task_info_hash(task).as_deref() != Some(hash.as_str()) {
-            continue;
-        }
-        if task_is_downloading(task) {
+    let content_folder_id = match check_status(http, &token, &hash).await? {
+        TorrentStatus::Downloading => {
             return Err(ProviderError::api(
                 "Torrent is still downloading in Seedr. Please try again later.",
                 "torrent_not_downloaded.mp4",
             ));
         }
-        if task_is_complete(task) {
-            let task_id = task["id"]
-                .as_i64()
-                .ok_or_else(|| ProviderError::api("Invalid task ID from Seedr", "api_error.mp4"))?;
-            return resolve_from_task(http, &token, task_id, filename, file_index, season, episode)
-                .await;
+        TorrentStatus::Completed(id) => id,
+        TorrentStatus::NotFound => {
+            // Ensure there is enough space, freeing old downloads if necessary.
+            ensure_enough_space(http, &token, size_bytes.unwrap_or(0)).await;
+
+            // Create a named folder for tracking, then submit the torrent into it.
+            let folder_id = ensure_hash_folder(http, &token, &hash).await?;
+            let task_id = add_torrent_to_folder(http, &token, &magnet, folder_id).await?;
+
+            // Poll until the content sub-folder appears inside the hash folder.
+            let mut content_id: Option<i64> = None;
+            for _ in 0..MAX_RETRIES {
+                tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_SECS)).await;
+
+                // Check task for fatal errors.
+                if let Ok(full_resp) =
+                    api_get(http, &token, &format!("/tasks/{task_id}")).await
+                {
+                    let task_resp = if full_resp["task"].is_object() {
+                        full_resp["task"].clone()
+                    } else {
+                        full_resp
+                    };
+                    let state = task_resp["state"]
+                        .as_str()
+                        .or_else(|| task_resp["status"].as_str())
+                        .unwrap_or("");
+                    if matches!(state, "error" | "failed" | "dead") {
+                        return Err(ProviderError::api(
+                            "Seedr failed to download this torrent.",
+                            "torrent_error.mp4",
+                        ));
+                    }
+                    // Use folder_created_id directly when task is complete.
+                    if task_is_complete(&task_resp) {
+                        if let Some(fcid) = task_resp["folder_created_id"].as_i64() {
+                            content_id = Some(fcid);
+                            break;
+                        }
+                    }
+                }
+
+                // Fallback: check whether the content sub-folder has appeared in the hash folder.
+                if let Ok(Some((_, Some(id)))) = find_hash_folder(http, &token, &hash).await {
+                    content_id = Some(id);
+                    break;
+                }
+            }
+
+            content_id.ok_or_else(|| {
+                ProviderError::api(
+                    "Torrent is still downloading in Seedr. Please try again in a few minutes.",
+                    "torrent_not_downloaded.mp4",
+                )
+            })?
+        }
+    };
+
+    resolve_from_folder(
+        http,
+        &token,
+        content_folder_id,
+        filename,
+        file_index,
+        season,
+        episode,
+    )
+    .await
+}
+
+// ─── Cache check ──────────────────────────────────────────────────────────────
+
+/// Check which of the given info hashes are already downloaded in the user's Seedr account.
+///
+/// A hash is considered cached when its hash-named root folder exists and has a non-empty
+/// content subfolder (size > 0), OR when a completed task for that hash has a `folder_created_id`.
+pub async fn check_cached(
+    http: &reqwest::Client,
+    token: &str,
+    hashes: &[String],
+) -> Vec<String> {
+    use std::collections::HashSet;
+
+    let bearer = resolve_token(token);
+    let hash_set: HashSet<String> = hashes.iter().map(|h| h.to_lowercase()).collect();
+    let mut cached: Vec<String> = Vec::new();
+
+    // Root contents gives us both storage info and all folders in one call.
+    let root = match api_get(http, &bearer, "/fs/root/contents").await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("Seedr check_cached: failed to fetch root contents: {e}");
+            return cached;
+        }
+    };
+
+    // Hash-named folder with size > 0 means content is already inside it.
+    let folders = root["folders"].as_array().cloned().unwrap_or_default();
+    let mut found: HashSet<String> = HashSet::new();
+    for folder in &folders {
+        let path = folder["path"].as_str().unwrap_or("").to_lowercase();
+        if !hash_set.contains(&path) {
+            continue;
+        }
+        let size = folder["size"].as_i64().unwrap_or(0);
+        if size > 0 {
+            cached.push(path.clone());
+            found.insert(path);
         }
     }
 
-    // 2. Check filesystem: folder named with info_hash (completed downloads may not stay in tasks)
-    if let Ok(root) = api_get(http, &token, "/fs/root/contents").await {
-        if let Some(folders) = root["folders"].as_array() {
-            for folder in folders {
-                let name = folder["name"].as_str().unwrap_or("").to_lowercase();
-                if name == hash {
-                    let folder_id = folder["id"].as_i64().ok_or_else(|| {
-                        ProviderError::api("Invalid folder ID from Seedr", "api_error.mp4")
-                    })?;
-                    return resolve_from_folder(
-                        http, &token, folder_id, filename, file_index, season, episode,
-                    )
-                    .await;
+    // For remaining hashes, check completed tasks with a folder_created_id.
+    let remaining: Vec<String> = hash_set
+        .iter()
+        .filter(|h| !found.contains(*h))
+        .cloned()
+        .collect();
+    if !remaining.is_empty() {
+        if let Ok(tasks_resp) = api_get(http, &bearer, "/tasks").await {
+            for task in tasks_resp["tasks"].as_array().cloned().unwrap_or_default() {
+                if !task_is_complete(&task) {
+                    continue;
+                }
+                if task["folder_created_id"].as_i64().is_none() {
+                    continue;
+                }
+                if let Some(hash) = task_info_hash(&task) {
+                    if remaining.contains(&hash) {
+                        cached.push(hash);
+                    }
                 }
             }
         }
     }
 
-    // 3. Add new torrent task
-    let add_resp = api_post(
-        http,
-        &token,
-        "/tasks",
-        &json!({"url": magnet, "name": hash}),
-    )
-    .await
-    .map_err(|e| {
-        ProviderError::api(
-            format!("Failed to add torrent to Seedr: {e}"),
-            "transfer_error.mp4",
-        )
-    })?;
-
-    // Handle space/queue errors
-    if let Some(err) = add_resp["error"].as_str() {
-        let msg =
-            match err {
-                "not_enough_space" | "not_enough_space_added_to_wishlist" => {
-                    return Err(ProviderError::api(
-                        "Not enough storage space in your Seedr account.",
-                        "not_enough_space.mp4",
-                    ))
-                }
-                "queue_full" | "queue_full_added_to_wishlist" => return Err(ProviderError::api(
-                    "Seedr download queue is full. Please wait for current downloads to finish.",
-                    "queue_full.mp4",
-                )),
-                _ => format!("Seedr rejected the torrent: {err}"),
-            };
-        return Err(ProviderError::api(msg, "transfer_error.mp4"));
-    }
-
-    let task_id = add_resp["id"]
-        .as_i64()
-        .or_else(|| add_resp["task"]["id"].as_i64())
-        .or_else(|| add_resp["data"]["id"].as_i64())
-        .ok_or_else(|| {
-            ProviderError::api(
-                "Seedr did not return a task ID after adding torrent.",
-                "transfer_error.mp4",
-            )
-        })?;
-
-    // 4. Poll for completion
-    for _ in 0..MAX_RETRIES {
-        tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_SECS)).await;
-
-        let task_resp = api_get(http, &token, &format!("/tasks/{task_id}"))
-            .await
-            .unwrap_or_default();
-
-        let status = task_resp["status"].as_str().unwrap_or("");
-        if matches!(status, "error" | "failed" | "dead") {
-            return Err(ProviderError::api(
-                "Seedr failed to download this torrent.",
-                "torrent_error.mp4",
-            ));
-        }
-        if task_is_complete(&task_resp) {
-            return resolve_from_task(http, &token, task_id, filename, file_index, season, episode)
-                .await;
-        }
-    }
-
-    Err(ProviderError::api(
-        "Torrent is still downloading in Seedr. Please try again in a few minutes.",
-        "torrent_not_downloaded.mp4",
-    ))
+    cached
 }
 
-/// Delete ALL tasks from the Seedr account.
+/// Delete ALL active tasks and hash-named folders from the Seedr account.
 pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), ProviderError> {
     let bearer = resolve_token(token);
-    let tasks = list_tasks(http, &bearer).await?;
+
+    let tasks = list_tasks(http, &bearer).await.unwrap_or_default();
     for task in &tasks {
         if let Some(id) = task["id"].as_i64() {
-            api_delete(http, &bearer, &format!("/tasks/{id}"))
-                .await
-                .ok();
+            api_delete(http, &bearer, &format!("/tasks/{id}")).await.ok();
         }
     }
+
+    // Delete root folders whose path looks like an info hash (40-char SHA-1 or 32-char MD5).
+    if let Ok(root) = api_get(http, &bearer, "/fs/root/contents").await {
+        if let Some(folders) = root["folders"].as_array() {
+            for folder in folders {
+                let path = folder["path"].as_str().unwrap_or("").to_lowercase();
+                if path.len() == 40 || path.len() == 32 {
+                    if let Some(id) = folder["id"].as_i64() {
+                        api_delete(http, &bearer, &format!("/fs/folder/{id}"))
+                            .await
+                            .ok();
+                    }
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
-/// Delete the task matching `info_hash` from Seedr.
-/// Returns `true` if found and deleted, `false` if not found.
+/// Delete the active task and hash-named folder for `info_hash`.
+/// Returns `true` if anything was deleted.
 pub async fn delete_torrent_by_hash(
     http: &Client,
     token: &str,
     info_hash: &str,
 ) -> Result<bool, ProviderError> {
     let bearer = resolve_token(token);
-    let tasks = list_tasks(http, &bearer).await?;
     let hash_lower = info_hash.to_lowercase();
+    let mut deleted = false;
 
-    let task_id = tasks.iter().find_map(|t| {
-        let h = task_info_hash(t)?;
-        if h == hash_lower {
-            t["id"].as_i64()
-        } else {
-            None
-        }
-    });
-
-    match task_id {
-        None => Ok(false),
-        Some(id) => {
-            api_delete(http, &bearer, &format!("/tasks/{id}")).await?;
-            Ok(true)
+    let tasks = list_tasks(http, &bearer).await.unwrap_or_default();
+    for task in &tasks {
+        if task_info_hash(task).as_deref() == Some(hash_lower.as_str()) {
+            if let Some(id) = task["id"].as_i64() {
+                api_delete(http, &bearer, &format!("/tasks/{id}")).await?;
+                deleted = true;
+            }
         }
     }
+
+    if let Some((folder_id, _)) = find_hash_folder(http, &bearer, &hash_lower).await? {
+        api_delete(http, &bearer, &format!("/fs/folder/{folder_id}")).await?;
+        deleted = true;
+    }
+
+    Ok(deleted)
 }

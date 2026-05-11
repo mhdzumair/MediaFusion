@@ -41,6 +41,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
+use crate::cache;
 use crate::state::AppState;
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
@@ -897,6 +898,11 @@ pub async fn get_system_overview(
         return forbidden();
     }
 
+    const CACHE_KEY: &str = "admin:system:overview";
+    if let Some(cached) = cache::get_json(&state.redis, CACHE_KEY).await {
+        return Json(cached).into_response();
+    }
+
     let now = Utc::now();
 
     // Stream counts by type
@@ -979,7 +985,7 @@ pub async fn get_system_overview(
         total_streams.to_string()
     };
 
-    Json(json!({
+    let result = json!({
         "timestamp": now.to_rfc3339(),
         "streams": {
             "total": total_streams,
@@ -999,8 +1005,9 @@ pub async fn get_system_overview(
         "moderation": {
             "pending_contributions": pending_contributions,
         },
-    }))
-    .into_response()
+    });
+    cache::set_json(&state.redis, CACHE_KEY, &result, 30).await;
+    Json(result).into_response()
 }
 
 /// GET /api/v1/admin/metrics/scraper/latest

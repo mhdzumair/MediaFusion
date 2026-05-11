@@ -23,7 +23,12 @@ use serde::Deserialize;
 use serde_json::json;
 use sha2::Sha256;
 
-use crate::{cache, routes::user_library::extract_streaming_providers, state::AppState};
+use crate::{
+    cache,
+    models::user_data::{SortingOption, UserData},
+    routes::{stream::torrent_sort_key, user_library::extract_streaming_providers},
+    state::AppState,
+};
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -129,6 +134,7 @@ struct StreamRow {
     is_complete: bool,
     is_dubbed: bool,
     is_subbed: bool,
+    created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 // ─── Query param structs ──────────────────────────────────────────────────────
@@ -163,6 +169,7 @@ pub struct StreamsQuery {
     pub season: Option<i32>,
     pub episode: Option<i32>,
     pub profile_id: Option<i32>,
+    pub profile_uuid: Option<String>,
     pub provider: Option<String>,
 }
 
@@ -170,6 +177,13 @@ pub struct StreamsQuery {
 
 /// GET /api/v1/catalog/available
 pub async fn get_available_catalogs(State(state): State<Arc<AppState>>) -> Response {
+    const CACHE_KEY: &str = "catalog:available";
+    const CACHE_TTL: u64 = 600; // 10 minutes
+
+    if let Some(cached) = cache::get_json(&state.redis, CACHE_KEY).await {
+        return Json(cached).into_response();
+    }
+
     let rows: Vec<(String, String, String)> = sqlx::query_as(
         r#"SELECT DISTINCT c.name, COALESCE(c.display_name, c.name) as display_name, m.type::text as media_type
            FROM catalog c
@@ -197,13 +211,14 @@ pub async fn get_available_catalogs(State(state): State<Arc<AppState>>) -> Respo
         }
     }
 
-    Json(json!({
+    let result = json!({
         "movies": movies,
         "series": series,
         "tv": tv,
         "sports": sports,
-    }))
-    .into_response()
+    });
+    cache::set_json(&state.redis, CACHE_KEY, &result, CACHE_TTL).await;
+    Json(result).into_response()
 }
 
 /// GET /api/v1/catalog/genres
@@ -330,6 +345,22 @@ pub async fn browse_catalog(
 
     let page = params.page.unwrap_or(1).max(1);
     let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
+
+    // Full-response cache (2 min TTL) — browse pages rarely change within a session
+    let browse_cache_key = format!(
+        "catalog:browse:{}:{}:{}:{}:{}:{}:{}:{}",
+        catalog_type,
+        params.sort.as_deref().unwrap_or("latest"),
+        params.sort_dir.as_deref().unwrap_or("desc"),
+        page,
+        page_size,
+        params.genre.as_deref().unwrap_or(""),
+        params.catalog.as_deref().unwrap_or(""),
+        params.has_streams.unwrap_or(true),
+    );
+    if let Some(cached) = cache::get_json(&state.redis, &browse_cache_key).await {
+        return Json(cached).into_response();
+    }
     let offset = (page - 1) * page_size;
 
     // Build ORDER BY clause matching Python's sort logic exactly
@@ -422,19 +453,36 @@ pub async fn browse_catalog(
            LIMIT ${limit_idx} OFFSET ${offset_idx}"#
     );
 
-    // Build and execute count query
-    let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
-    if let Some(ref v) = catalog_name_bind {
-        count_q = count_q.bind(v.clone());
-    }
-    if let Some(ref v) = genre_name_bind {
-        count_q = count_q.bind(v.clone());
-    }
-    if let Some(ref v) = search_bind {
-        count_q = count_q.bind(v.clone());
-    }
+    // COUNT result cache — keyed on the full filter tuple (changes rarely)
+    let count_cache_key = format!(
+        "catalog:count:{}:{}:{}:{}:{}",
+        catalog_type,
+        genre_name_bind.as_deref().unwrap_or(""),
+        catalog_name_bind.as_deref().unwrap_or(""),
+        search_bind.as_deref().unwrap_or(""),
+        params.has_streams.unwrap_or(true),
+    );
 
-    let total: i64 = count_q.fetch_one(&state.pool_ro).await.unwrap_or(0);
+    let total: i64 = if let Some(cached_count) = cache::get_json(&state.redis, &count_cache_key).await
+        .and_then(|v| v.as_i64())
+    {
+        cached_count
+    } else {
+        let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
+        if let Some(ref v) = catalog_name_bind {
+            count_q = count_q.bind(v.clone());
+        }
+        if let Some(ref v) = genre_name_bind {
+            count_q = count_q.bind(v.clone());
+        }
+        if let Some(ref v) = search_bind {
+            count_q = count_q.bind(v.clone());
+        }
+        let n = count_q.fetch_one(&state.pool_ro).await.unwrap_or(0);
+        // Cache count for 5 minutes — counts change slowly
+        cache::set_json(&state.redis, &count_cache_key, &serde_json::Value::Number(n.into()), 300).await;
+        n
+    };
 
     // Build and execute list query
     let mut list_q = sqlx::query_as::<
@@ -465,14 +513,15 @@ pub async fn browse_catalog(
     let rows = list_q.fetch_all(&state.pool_ro).await.unwrap_or_default();
 
     if rows.is_empty() {
-        return Json(json!({
+        let empty_val = json!({
             "items": [],
             "total": total,
             "page": page,
             "page_size": page_size,
             "has_more": false,
-        }))
-        .into_response();
+        });
+        cache::set_json(&state.redis, &browse_cache_key, &empty_val, 120).await;
+        return Json(empty_val).into_response();
     }
 
     // Load genres and external_ids for all fetched items in one batch each
@@ -548,14 +597,15 @@ pub async fn browse_catalog(
         )
         .collect();
 
-    Json(json!({
+    let response_val = json!({
         "items": items,
         "total": total,
         "page": page,
         "page_size": page_size,
         "has_more": (offset + page_size) < total,
-    }))
-    .into_response()
+    });
+    cache::set_json(&state.redis, &browse_cache_key, &response_val, 120).await;
+    Json(response_val).into_response()
 }
 
 /// GET /api/v1/catalog/{catalog_type}/{media_id}
@@ -846,6 +896,8 @@ pub async fn get_media_streams(
     let default_title_tmpl = "{addon.name} {if stream.type = torrent}🧲 {service.shortName} {if service.cached}⚡️{else}⏳{/if}{elif stream.type = usenet}📰 {service.shortName}{elif stream.type = telegram}📱{elif stream.type = youtube}▶️{elif stream.type = http}🌐{else}🔗{/if} {if stream.resolution}{stream.resolution}{/if}";
     let default_desc_tmpl = "{if stream.hdr_formats}🎨 {stream.hdr_formats|join('|')} {/if}{if stream.quality}📺 {stream.quality} {/if}{if stream.codec}🎞️ {stream.codec} {/if}{if stream.audio_formats}🎵 {stream.audio_formats|join('|')} {/if}{if stream.channels}🔊 {stream.channels|join(' ')}{/if}\n{if stream.size > 0}📦 {stream.size|bytes} {/if}{if stream.seeders > 0}👤 {stream.seeders}{/if}\n{if stream.languages}🌐 {stream.languages|join(' + ')}{/if}\n🔗 {stream.source}{if stream.uploader} | 🧑‍💻 {stream.uploader}{/if}";
 
+    let mut profile_user_data: Option<UserData> = None;
+
     let (
         profile_id_val,
         streaming_providers,
@@ -861,6 +913,7 @@ pub async fn get_media_streams(
                 crate::crypto::profile::decrypt_secrets(enc_str, &state.config.secret_key);
             crate::crypto::profile::merge_secrets(&mut config, &secrets);
         }
+        profile_user_data = serde_json::from_value::<UserData>(config.clone()).ok();
         let providers = extract_streaming_providers(&config);
         tracing::debug!(
             "get_media_streams profile={pid} providers_count={}",
@@ -931,6 +984,30 @@ pub async fn get_media_streams(
         )
     };
 
+    // Build the Stremio-compatible secret_str from the UUID supplied by the frontend.
+    // Format is "U-{uuid}" — same as the manifest URL route uses.
+    let secret_str: String = params
+        .profile_uuid
+        .as_deref()
+        .filter(|u| !u.is_empty())
+        .map(|u| format!("U-{u}"))
+        .unwrap_or_default();
+
+    // Extract sort preferences from profile UserData (or use defaults)
+    let ud = profile_user_data.unwrap_or_default();
+    let sorting_priority: Vec<SortingOption> = ud
+        .torrent_sorting_priority
+        .iter()
+        .filter_map(|v| serde_json::from_value(v.clone()).ok())
+        .collect();
+    let language_sorting: Vec<String> = ud
+        .language_sorting
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_string))
+        .collect();
+    let selected_resolutions = ud.selected_resolutions;
+    let quality_filter = ud.quality_filter;
+
     tracing::debug!("get_media_streams: fetching streams for {catalog_type}/{media_id}");
 
     let stream_rows: Vec<StreamRow> = sqlx::query_as(
@@ -969,16 +1046,15 @@ pub async fn get_media_streams(
             s.is_extended,
             s.is_complete,
             s.is_dubbed,
-            s.is_subbed
+            s.is_subbed,
+            ts.created_at
            FROM stream s
            JOIN stream_media_link sml ON sml.stream_id = s.id
            LEFT JOIN torrent_stream ts ON ts.stream_id = s.id
            LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
            WHERE sml.media_id = $1
              AND s.is_active = true
-             AND s.is_blocked = false
-           ORDER BY ts.seeders DESC NULLS LAST
-           LIMIT 100"#,
+             AND s.is_blocked = false"#,
     )
     .bind(media_id)
     .fetch_all(&state.pool_ro)
@@ -993,7 +1069,7 @@ pub async fn get_media_streams(
         stream_rows.len()
     );
 
-    // Step 1: check Redis debrid_cache:{service}
+    // Step 1: check Redis debrid_cache:{service} (global per service)
     let mut cached_hashes: HashMap<String, bool> = if let Some(ref svc) = selected_provider {
         let hashes: Vec<String> = stream_rows
             .iter()
@@ -1054,14 +1130,14 @@ pub async fn get_media_streams(
         .copied()
         .unwrap_or("P2P");
 
-    let streams: Vec<serde_json::Value> = stream_rows
+    // Build (sort_ctx, output_json) pairs so we can sort before returning
+    let mut stream_pairs: Vec<(serde_json::Value, serde_json::Value)> = stream_rows
         .into_iter()
         .map(|r| {
             let is_cached = r.info_hash.as_deref()
                 .and_then(|h| cached_hashes.get(h).copied())
                 .unwrap_or(false);
 
-            // Build template context matching Python's stream_context
             let audio_arr: Vec<serde_json::Value> = r.audio_formats.as_deref()
                 .map(|s| s.split('|').map(|x| json!(x)).collect())
                 .unwrap_or_default();
@@ -1079,6 +1155,18 @@ pub async fn get_media_streams(
             let file_size_val = r.file_size.unwrap_or(0);
             let seeders_val = r.seeders.unwrap_or(0);
 
+            // Sort context: fields torrent_sort_key reads (size as numeric, resolution original case)
+            let sort_ctx = json!({
+                "resolution": r.resolution,
+                "quality": r.quality,
+                "size": file_size_val,
+                "seeders": seeders_val,
+                "languages": lang_arr_vals,
+                "cached": is_cached,
+                "created_at": r.created_at.map(|dt| dt.to_rfc3339()),
+            });
+
+            // Template context for name/description rendering
             let stream_ctx = json!({
                 "name": r.name,
                 "filename": r.filename,
@@ -1123,11 +1211,42 @@ pub async fn get_media_streams(
             let hdr_out = if hdr_arr.is_empty() { json!(null) } else { json!(hdr_arr) };
             let lang_out = if lang_arr_vals.is_empty() { json!([]) } else { json!(lang_arr_vals) };
 
-            json!({
+            // Build playback URL for torrent streams when a provider is configured
+            let playback_url = if !secret_str.is_empty() {
+                if let (Some(ref svc), Some(ref hash)) = (&selected_provider, &r.info_hash) {
+                    if r.stream_type == "torrent" {
+                        let filename = r.filename.as_deref().unwrap_or("");
+                        let base = match (params.season, params.episode) {
+                            (Some(s), Some(e)) => format!(
+                                "{}/streaming_provider/{}/playback/{}/{}/{}/{}",
+                                state.config.host_url, secret_str, svc, hash, s, e
+                            ),
+                            _ => format!(
+                                "{}/streaming_provider/{}/playback/{}/{}",
+                                state.config.host_url, secret_str, svc, hash
+                            ),
+                        };
+                        if filename.is_empty() {
+                            Some(base)
+                        } else {
+                            Some(format!("{}/{}", base, urlencoding::encode(filename)))
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let output = json!({
                 "id": r.id,
                 "info_hash": r.info_hash,
                 "yt_id": r.yt_id,
                 "ytId": r.yt_id,
+                "url": playback_url,
                 "name": display_name,
                 "description": description,
                 "stream_name": r.name,
@@ -1159,8 +1278,70 @@ pub async fn get_media_streams(
                 "duration_seconds": serde_json::Value::Null,
                 "votes": serde_json::Value::Null,
                 "episode_links": serde_json::Value::Null,
-            })
+            });
+
+            (sort_ctx, output)
         })
+        .collect();
+
+    // Filter by what the selected provider can actually handle.
+    // Rules:
+    //   torrent  → only if provider is torrent-capable or p2p (no provider)
+    //   usenet   → only if provider is usenet-capable
+    //   other    → always shown (http, telegram, youtube, acestream, etc.)
+    let svc = selected_provider.as_deref().unwrap_or("p2p");
+    let can_torrent = svc == "p2p"
+        || crate::routes::stream::TORRENT_CAPABLE.contains(&svc);
+    let can_usenet = crate::routes::stream::USENET_CAPABLE.contains(&svc);
+
+    if !can_torrent || !can_usenet {
+        stream_pairs.retain(|(_, out)| {
+            match out
+                .get("stream_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+            {
+                "torrent" => can_torrent,
+                "usenet" => can_usenet,
+                _ => true,
+            }
+        });
+    }
+
+    // Sort using the same pipeline as the Stremio endpoint
+    if !sorting_priority.is_empty() {
+        stream_pairs.sort_by(|(a, _), (b, _)| {
+            let ka = torrent_sort_key(
+                a,
+                &sorting_priority,
+                &selected_resolutions,
+                &quality_filter,
+                &language_sorting,
+                &cached_hashes,
+            );
+            let kb = torrent_sort_key(
+                b,
+                &sorting_priority,
+                &selected_resolutions,
+                &quality_filter,
+                &language_sorting,
+                &cached_hashes,
+            );
+            for (va, vb) in ka.iter().zip(kb.iter()) {
+                match va.partial_cmp(vb) {
+                    Some(std::cmp::Ordering::Equal) | None => continue,
+                    Some(ord) => return ord,
+                }
+            }
+            std::cmp::Ordering::Equal
+        });
+    }
+
+    const MAX_STREAMS: usize = 200;
+    let streams: Vec<serde_json::Value> = stream_pairs
+        .into_iter()
+        .take(MAX_STREAMS)
+        .map(|(_, out)| out)
         .collect();
 
     Json(json!({
