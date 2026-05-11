@@ -881,6 +881,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cron"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f8c3e73077b4b4a6ab1ea5047c37c57aee77657bc8ecd6f29b0af082d0b0c07"
+dependencies = [
+ "chrono",
+ "nom 7.1.3",
+ "once_cell",
+]
+
+[[package]]
 name = "crossbeam-channel"
 version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2828,7 +2839,7 @@ checksum = "ae960838283323069879657ca3de837e9f7bbb4c7bf6ea7f1b290d5e9476d2e0"
 
 [[package]]
 name = "mediafusion-api"
-version = "6.0.0-beta.4"
+version = "6.0.0-beta.5"
 dependencies = [
  "ab_glyph",
  "aes 0.9.0",
@@ -2838,6 +2849,7 @@ dependencies = [
  "cbc",
  "chrono",
  "criterion",
+ "cron",
  "dotenvy",
  "fancy-regex",
  "flate2",

@@ -72,6 +72,9 @@ governor = "0.10"
 # Scraper retries
 backon = "1"
 
+# Cron expression parsing for the Rust scheduler
+cron = "0.12"
+
 # Config from env
 dotenvy = "0.15"
 urlencoding = "2"

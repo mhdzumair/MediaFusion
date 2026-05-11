@@ -1332,10 +1332,11 @@ pub async fn telegram_login(
     headers: HeaderMap,
     Query(params): Query<TelegramLoginQuery>,
 ) -> Response {
-    let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    use fred::prelude::{Expiration, KeysInterface};
+
+    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
-    let _ = params;
 
     if state.config.telegram_bot_token.is_none() {
         return (
@@ -1345,20 +1346,153 @@ pub async fn telegram_login(
             .into_response();
     }
 
-    let bot_username = state
-        .config
-        .telegram_bot_username
-        .clone()
-        .unwrap_or_else(|| "mediafusion_bot".to_string());
+    // Look up login token stored by the Telegram bot
+    let token_key = format!("telegram:login_token:{}", params.token);
+    let raw: Option<String> = match state.redis.get(&token_key).await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("telegram_login redis get: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"detail": "Internal error"})),
+            )
+                .into_response();
+        }
+    };
 
-    let login_url = format!("https://t.me/{bot_username}");
+    let Some(raw) = raw else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false,
+                "message": "Invalid or expired login token",
+                "requires_confirmation": false
+            })),
+        )
+            .into_response();
+    };
+
+    let login_data: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"detail": "Invalid token data"})),
+            )
+                .into_response();
+        }
+    };
+
+    // telegram_user_id may be integer or string in the stored JSON
+    let telegram_user_id = match login_data["telegram_user_id"]
+        .as_i64()
+        .map(|v| v.to_string())
+        .or_else(|| login_data["telegram_user_id"].as_str().map(str::to_string))
+    {
+        Some(v) => v,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"detail": "Invalid token data: missing telegram_user_id"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Remember old mapping so we can remove a stale cache entry if the user switches accounts
+    let current_telegram_id: Option<String> =
+        sqlx::query_scalar("SELECT telegram_user_id FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None)
+            .flatten();
+
+    // Check for a conflict: another user already owns this Telegram account
+    let conflicting_user_id: Option<i32> = sqlx::query_scalar(
+        "SELECT id FROM users WHERE telegram_user_id = $1 AND id != $2 LIMIT 1",
+    )
+    .bind(&telegram_user_id)
+    .bind(user_id)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .unwrap_or(None);
+
+    if conflicting_user_id.is_some() && !params.replace_existing {
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": false,
+                "message": "This Telegram account is already linked to another MediaFusion account. Do you want to replace the existing link and continue?",
+                "requires_confirmation": true
+            })),
+        )
+            .into_response();
+    }
+
+    // Clear the conflicting user's link before taking ownership
+    if let Some(conflicting_id) = conflicting_user_id {
+        if let Err(e) = sqlx::query(
+            "UPDATE users SET telegram_user_id = NULL, telegram_linked_at = NULL WHERE id = $1",
+        )
+        .bind(conflicting_id)
+        .execute(&state.pool)
+        .await
+        {
+            tracing::warn!("telegram_login clear conflict user {conflicting_id}: {e}");
+        }
+    }
+
+    // Link the Telegram account to the authenticated user
+    if let Err(e) = sqlx::query(
+        "UPDATE users SET telegram_user_id = $1, telegram_linked_at = NOW() WHERE id = $2",
+    )
+    .bind(&telegram_user_id)
+    .bind(user_id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::error!("telegram_login update user {user_id}: {e}");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"detail": "Failed to link Telegram account"})),
+        )
+            .into_response();
+    }
+
+    // Refresh the user-mapping cache entry (1-hour TTL, shared with the Python bot)
+    let mapping_key = format!("telegram:user_mapping:{telegram_user_id}");
+    if let Err(e) = state
+        .redis
+        .set::<String, _, _>(
+            &mapping_key,
+            user_id.to_string().as_str(),
+            Some(Expiration::EX(3600)),
+            None,
+            false,
+        )
+        .await
+    {
+        tracing::debug!("telegram_login set user mapping: {e}");
+    }
+
+    // Remove the stale cache entry if the user was previously linked to a different account
+    if let Some(old_tg_id) = &current_telegram_id {
+        if old_tg_id != &telegram_user_id {
+            let stale_key = format!("telegram:user_mapping:{old_tg_id}");
+            let _: Result<i64, _> = state.redis.del(&stale_key).await;
+        }
+    }
+
+    // Consume the one-time login token
+    let _: Result<i64, _> = state.redis.del(&token_key).await;
 
     (
         StatusCode::OK,
         Json(serde_json::json!({
-            "bot_username": bot_username,
-            "login_url": login_url,
-            "message": "Open the bot link to connect your Telegram account",
+            "success": true,
+            "message": "✅ Telegram account linked successfully!\n\nYour uploaded content will now be stored with your MediaFusion account.",
+            "requires_confirmation": false
         })),
     )
         .into_response()
@@ -1366,9 +1500,20 @@ pub async fn telegram_login(
 
 /// DELETE /api/v1/telegram/unlink
 pub async fn telegram_unlink(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    use fred::prelude::KeysInterface;
+
     let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
         return unauthorized();
     };
+
+    // Capture the telegram_user_id before clearing so we can remove the Redis cache
+    let telegram_user_id: Option<String> =
+        sqlx::query_scalar("SELECT telegram_user_id FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None)
+            .flatten();
 
     if let Err(e) = sqlx::query(
         "UPDATE users SET telegram_user_id = NULL, telegram_linked_at = NULL WHERE id = $1",
@@ -1380,11 +1525,17 @@ pub async fn telegram_unlink(State(state): State<Arc<AppState>>, headers: Header
         return db_error("telegram_unlink update", &e);
     }
 
+    // Remove the user-mapping cache entry shared with the Python bot
+    if let Some(tg_id) = telegram_user_id {
+        let mapping_key = format!("telegram:user_mapping:{tg_id}");
+        let _: Result<i64, _> = state.redis.del(&mapping_key).await;
+    }
+
     (
         StatusCode::OK,
         Json(serde_json::json!({
-            "status": "success",
-            "message": "Telegram account unlinked",
+            "success": true,
+            "message": "Telegram account unlinked successfully.",
         })),
     )
         .into_response()

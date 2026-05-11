@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use mediafusion_api::{config::AppConfig, exception_tracker, routes, state::AppState};
 use tracing::info;
 
@@ -33,6 +35,9 @@ async fn main() {
             max_entries,
         ));
     }
+
+    // Start background scheduler (enqueues taskiq tasks via Redis Streams)
+    mediafusion_api::scheduler::start(Arc::clone(&state));
 
     let app = routes::router(state);
 

@@ -1,6 +1,7 @@
 pub mod api_key_middleware;
 pub mod cache;
 pub mod config;
+pub mod scheduler;
 pub mod crypto;
 pub mod db;
 pub mod demagnetize;

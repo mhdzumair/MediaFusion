@@ -138,9 +138,91 @@ pub struct AppConfig {
     pub simkl_client_id: Option<String>,
     pub simkl_client_secret: Option<String>,
 
-    // ── RSS feed scheduler ───────────────────────────────────────────────────
+    // ── Scheduler (global) ───────────────────────────────────────────────────
+    /// When true all scheduler jobs are suppressed regardless of individual flags.
+    pub disable_all_scheduler: bool,
+
+    // ── Scheduler: Scrapy spiders ────────────────────────────────────────────
+    pub tamilmv_scheduler_crontab: String,
+    pub disable_tamilmv_scheduler: bool,
+    pub tamil_blasters_scheduler_crontab: String,
+    pub disable_tamil_blasters_scheduler: bool,
+    pub formula_ext_scheduler_crontab: String,
+    pub disable_formula_ext_scheduler: bool,
+    pub motogp_ext_scheduler_crontab: String,
+    pub disable_motogp_ext_scheduler: bool,
+    pub wwe_ext_scheduler_crontab: String,
+    pub disable_wwe_ext_scheduler: bool,
+    pub ufc_ext_scheduler_crontab: String,
+    pub disable_ufc_ext_scheduler: bool,
+    pub movies_tv_ext_scheduler_crontab: String,
+    pub disable_movies_tv_ext_scheduler: bool,
+    pub nowmetv_scheduler_crontab: String,
+    pub disable_nowmetv_scheduler: bool,
+    pub nowsports_scheduler_crontab: String,
+    pub disable_nowsports_scheduler: bool,
+    pub tamilultra_scheduler_crontab: String,
+    pub disable_tamilultra_scheduler: bool,
+    pub sport_video_scheduler_crontab: String,
+    pub disable_sport_video_scheduler: bool,
+    pub dlhd_scheduler_crontab: String,
+    pub disable_dlhd_scheduler: bool,
+    pub arab_torrents_scheduler_crontab: String,
+    pub disable_arab_torrents_scheduler: bool,
+    pub x1337_scheduler_crontab: String,
+    pub disable_x1337_scheduler: bool,
+    pub thepiratebay_scheduler_crontab: String,
+    pub disable_thepiratebay_scheduler: bool,
+    pub rutor_scheduler_crontab: String,
+    pub disable_rutor_scheduler: bool,
+    pub limetorrents_scheduler_crontab: String,
+    pub disable_limetorrents_scheduler: bool,
+    pub yts_scheduler_crontab: String,
+    pub disable_yts_scheduler: bool,
+    pub bt4g_scheduler_crontab: String,
+    pub disable_bt4g_scheduler: bool,
+    pub nyaa_scheduler_crontab: String,
+    pub disable_nyaa_scheduler: bool,
+    pub animetosho_scheduler_crontab: String,
+    pub disable_animetosho_scheduler: bool,
+    pub subsplease_scheduler_crontab: String,
+    pub disable_subsplease_scheduler: bool,
+    pub animepahe_scheduler_crontab: String,
+    pub disable_animepahe_scheduler: bool,
+    pub bt52_scheduler_crontab: String,
+    pub disable_bt52_scheduler: bool,
+    pub uindex_scheduler_crontab: String,
+    pub disable_uindex_scheduler: bool,
+    pub eztv_rss_scheduler_crontab: String,
+    pub disable_eztv_rss_scheduler: bool,
+
+    // ── Scheduler: Feed scrapers ─────────────────────────────────────────────
+    pub prowlarr_feed_scraper_crontab: String,
+    pub disable_prowlarr_feed_scraper: bool,
+    pub jackett_feed_scraper_crontab: String,
+    pub disable_jackett_feed_scraper: bool,
     pub rss_feed_scraper_crontab: String,
     pub disable_rss_feed_scraper: bool,
+
+    // ── Scheduler: Background scrapers ───────────────────────────────────────
+    pub dmm_hashlist_scraper_crontab: String,
+    pub youtube_background_scraper_crontab: String,
+    pub disable_youtube_background_scraper: bool,
+    pub acestream_background_scraper_crontab: String,
+    pub disable_acestream_background_scraper: bool,
+    pub telegram_background_scraper_crontab: String,
+    pub disable_telegram_background_scraper: bool,
+
+    // ── Scheduler: Maintenance tasks ─────────────────────────────────────────
+    pub validate_tv_streams_in_db_crontab: String,
+    pub disable_validate_tv_streams_in_db: bool,
+    pub update_seeders_crontab: String,
+    pub disable_update_seeders: bool,
+    pub cleanup_expired_scraper_task_crontab: String,
+    pub cleanup_expired_cache_task_crontab: String,
+    pub background_search_crontab: String,
+    pub integration_sync_crontab: String,
+    pub disable_integration_sync_scheduler: bool,
 
     // ── Discover / TMDB ───────────────────────────────────────────
     /// TMDB API key (server-level fallback for discover endpoints).
@@ -386,9 +468,155 @@ impl AppConfig {
             trakt_client_secret: env("TRAKT_CLIENT_SECRET").ok().filter(|s| !s.is_empty()),
             simkl_client_id: env("SIMKL_CLIENT_ID").ok().filter(|s| !s.is_empty()),
             simkl_client_secret: env("SIMKL_CLIENT_SECRET").ok().filter(|s| !s.is_empty()),
+            disable_all_scheduler: env("DISABLE_ALL_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            tamilmv_scheduler_crontab: env("TAMILMV_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 */3 * * *".into()),
+            disable_tamilmv_scheduler: env("DISABLE_TAMILMV_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            tamil_blasters_scheduler_crontab: env("TAMIL_BLASTERS_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 */6 * * *".into()),
+            disable_tamil_blasters_scheduler: env("DISABLE_TAMIL_BLASTERS_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            formula_ext_scheduler_crontab: env("FORMULA_EXT_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "*/30 * * * *".into()),
+            disable_formula_ext_scheduler: env("DISABLE_FORMULA_EXT_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            motogp_ext_scheduler_crontab: env("MOTOGP_EXT_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 5 * * *".into()),
+            disable_motogp_ext_scheduler: env("DISABLE_MOTOGP_EXT_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            wwe_ext_scheduler_crontab: env("WWE_EXT_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "10 */3 * * *".into()),
+            disable_wwe_ext_scheduler: env("DISABLE_WWE_EXT_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            ufc_ext_scheduler_crontab: env("UFC_EXT_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "30 */3 * * *".into()),
+            disable_ufc_ext_scheduler: env("DISABLE_UFC_EXT_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            movies_tv_ext_scheduler_crontab: env("MOVIES_TV_EXT_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 * * * *".into()),
+            disable_movies_tv_ext_scheduler: env("DISABLE_MOVIES_TV_EXT_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            nowmetv_scheduler_crontab: env("NOWMETV_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 0 * * 5".into()),
+            disable_nowmetv_scheduler: env("DISABLE_NOWMETV_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            nowsports_scheduler_crontab: env("NOWSPORTS_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 10 * * 5".into()),
+            disable_nowsports_scheduler: env("DISABLE_NOWSPORTS_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            tamilultra_scheduler_crontab: env("TAMILULTRA_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 8 * * 5".into()),
+            disable_tamilultra_scheduler: env("DISABLE_TAMILULTRA_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            sport_video_scheduler_crontab: env("SPORT_VIDEO_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "*/20 * * * *".into()),
+            disable_sport_video_scheduler: env("DISABLE_SPORT_VIDEO_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            dlhd_scheduler_crontab: env("DLHD_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 0 * * 1".into()),
+            disable_dlhd_scheduler: env("DISABLE_DLHD_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            arab_torrents_scheduler_crontab: env("ARAB_TORRENTS_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 0 * * *".into()),
+            disable_arab_torrents_scheduler: env("DISABLE_ARAB_TORRENTS_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            x1337_scheduler_crontab: env("X1337_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 */6 * * *".into()),
+            disable_x1337_scheduler: env("DISABLE_X1337_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            thepiratebay_scheduler_crontab: env("THEPIRATEBAY_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "30 */6 * * *".into()),
+            disable_thepiratebay_scheduler: env("DISABLE_THEPIRATEBAY_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            rutor_scheduler_crontab: env("RUTOR_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "45 */6 * * *".into()),
+            disable_rutor_scheduler: env("DISABLE_RUTOR_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            limetorrents_scheduler_crontab: env("LIMETORRENTS_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 */8 * * *".into()),
+            disable_limetorrents_scheduler: env("DISABLE_LIMETORRENTS_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            yts_scheduler_crontab: env("YTS_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 */12 * * *".into()),
+            disable_yts_scheduler: env("DISABLE_YTS_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            bt4g_scheduler_crontab: env("BT4G_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "15 */8 * * *".into()),
+            disable_bt4g_scheduler: env("DISABLE_BT4G_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            nyaa_scheduler_crontab: env("NYAA_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "15 */3 * * *".into()),
+            disable_nyaa_scheduler: env("DISABLE_NYAA_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            animetosho_scheduler_crontab: env("ANIMETOSHO_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "30 */4 * * *".into()),
+            disable_animetosho_scheduler: env("DISABLE_ANIMETOSHO_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            subsplease_scheduler_crontab: env("SUBSPLEASE_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "45 */4 * * *".into()),
+            disable_subsplease_scheduler: env("DISABLE_SUBSPLEASE_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            animepahe_scheduler_crontab: env("ANIMEPAHE_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 */6 * * *".into()),
+            disable_animepahe_scheduler: env("DISABLE_ANIMEPAHE_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            bt52_scheduler_crontab: env("BT52_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "30 */6 * * *".into()),
+            disable_bt52_scheduler: env("DISABLE_BT52_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            uindex_scheduler_crontab: env("UINDEX_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 */4 * * *".into()),
+            disable_uindex_scheduler: env("DISABLE_UINDEX_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            eztv_rss_scheduler_crontab: env("EZTV_RSS_SCHEDULER_CRONTAB")
+                .unwrap_or_else(|_| "0 */2 * * *".into()),
+            disable_eztv_rss_scheduler: env("DISABLE_EZTV_RSS_SCHEDULER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            prowlarr_feed_scraper_crontab: env("PROWLARR_FEED_SCRAPER_CRONTAB")
+                .unwrap_or_else(|_| "0 */3 * * *".into()),
+            disable_prowlarr_feed_scraper: env("DISABLE_PROWLARR_FEED_SCRAPER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            jackett_feed_scraper_crontab: env("JACKETT_FEED_SCRAPER_CRONTAB")
+                .unwrap_or_else(|_| "0 */3 * * *".into()),
+            disable_jackett_feed_scraper: env("DISABLE_JACKETT_FEED_SCRAPER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
             rss_feed_scraper_crontab: env("RSS_FEED_SCRAPER_CRONTAB")
                 .unwrap_or_else(|_| "0 */3 * * *".into()),
             disable_rss_feed_scraper: env("DISABLE_RSS_FEED_SCRAPER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            dmm_hashlist_scraper_crontab: env("DMM_HASHLIST_SCRAPER_CRONTAB")
+                .unwrap_or_else(|_| "0 * * * *".into()),
+            youtube_background_scraper_crontab: env("YOUTUBE_BACKGROUND_SCRAPER_CRONTAB")
+                .unwrap_or_else(|_| "20 */6 * * *".into()),
+            disable_youtube_background_scraper: env("DISABLE_YOUTUBE_BACKGROUND_SCRAPER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            acestream_background_scraper_crontab: env("ACESTREAM_BACKGROUND_SCRAPER_CRONTAB")
+                .unwrap_or_else(|_| "40 */6 * * *".into()),
+            disable_acestream_background_scraper: env("DISABLE_ACESTREAM_BACKGROUND_SCRAPER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            telegram_background_scraper_crontab: env("TELEGRAM_BACKGROUND_SCRAPER_CRONTAB")
+                .unwrap_or_else(|_| "10 */6 * * *".into()),
+            disable_telegram_background_scraper: env("DISABLE_TELEGRAM_BACKGROUND_SCRAPER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            validate_tv_streams_in_db_crontab: env("VALIDATE_TV_STREAMS_IN_DB_CRONTAB")
+                .unwrap_or_else(|_| "0 0 * * 4".into()),
+            disable_validate_tv_streams_in_db: env("DISABLE_VALIDATE_TV_STREAMS_IN_DB")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            update_seeders_crontab: env("UPDATE_SEEDERS_CRONTAB")
+                .unwrap_or_else(|_| "0 0 * * 3".into()),
+            disable_update_seeders: env("DISABLE_UPDATE_SEEDERS")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            cleanup_expired_scraper_task_crontab: env("CLEANUP_EXPIRED_SCRAPER_TASK_CRONTAB")
+                .unwrap_or_else(|_| "0 * * * *".into()),
+            cleanup_expired_cache_task_crontab: env("CLEANUP_EXPIRED_CACHE_TASK_CRONTAB")
+                .unwrap_or_else(|_| "0 0 * * *".into()),
+            background_search_crontab: env("BACKGROUND_SEARCH_CRONTAB")
+                .unwrap_or_else(|_| "*/3 * * * *".into()),
+            integration_sync_crontab: env("INTEGRATION_SYNC_CRONTAB")
+                .unwrap_or_else(|_| "0 */6 * * *".into()),
+            disable_integration_sync_scheduler: env("DISABLE_INTEGRATION_SYNC_SCHEDULER")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
             tmdb_api_key: env("TMDB_API_KEY").ok().filter(|s| !s.is_empty()),
             discover_enabled: env("DISCOVER_ENABLED")
