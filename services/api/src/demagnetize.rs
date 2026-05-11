@@ -11,7 +11,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use futures::stream;
-use rand::Rng;
+use rand::RngExt;
 use sha1::{Digest, Sha1};
 use thiserror::Error;
 use tokio::{
@@ -279,7 +279,7 @@ fn build_handshake(hash: &[u8; 20], peer_id: &[u8; 20]) -> [u8; 68] {
 fn random_peer_id() -> [u8; 20] {
     let mut id = [0u8; 20];
     id[..8].copy_from_slice(b"-MF0001-"); // MediaFusion client prefix
-    rand::thread_rng().fill(&mut id[8..]);
+    rand::rng().fill(&mut id[8..]);
     id
 }
 

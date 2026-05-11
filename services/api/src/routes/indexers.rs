@@ -149,7 +149,7 @@ fn parse_caps_xml(
                 // Capture title text for the last indexer pushed
                 if let Some(last) = indexers.last_mut() {
                     if last.1.is_empty() {
-                        if let Ok(text) = e.unescape() {
+                        if let Ok(text) = e.decode() {
                             let s = text.trim().to_string();
                             if !s.is_empty() {
                                 last.1 = s;

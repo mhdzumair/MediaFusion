@@ -4,7 +4,7 @@ use axum::{
     extract::{Path, State},
     response::{IntoResponse, Json},
 };
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde_json::{json, Value};
 use sha2::Sha256;
 

@@ -14,7 +14,7 @@ path = "src/main.rs"
 [dependencies]
 # Async runtime + HTTP server
 axum = { version = "0.8", features = ["macros", "multipart"] }
-lava_torrent = "0.10"
+lava_torrent = "0.11"
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 tower = "0.5"
@@ -25,10 +25,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # XML parsing (Torznab / Newznab scrapers)
-quick-xml = { version = "0.36", features = ["serde"] }
+quick-xml = { version = "0.39", features = ["serde"] }
 
 # HTTP client (live scrapers)
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "http2", "json", "multipart"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "gzip", "brotli", "http2", "json", "multipart", "form", "query"] }
 
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "json", "chrono"] }
@@ -40,24 +40,24 @@ chrono = { version = "0.4", features = ["serde"] }
 fred = { version = "10", features = ["tokio-rustls"] }
 
 # AES-256-CBC decryption (matches Python PyCryptodome AES.MODE_CBC)
-aes = "0.8"
-cbc = { version = "0.1", features = ["std"] }
+aes = "0.9"
+cbc = { version = "0.2", features = ["alloc"] }
 base64 = "0.22"
 
 # Hashing (manifest cache key HMAC-SHA256)
-hmac = { version = "0.12", features = [] }
-sha2 = "0.10"
+hmac = { version = "0.13", features = [] }
+sha2 = "0.11"
 
 # Compression
 flate2 = "1"
 
 # Random bytes for AES IV generation + sports poster selection
-rand_core = { version = "0.6", features = ["getrandom"] }
-rand = { version = "0.8", features = ["small_rng"] }
+rand_core = "0.10"
+rand = { version = "0.10", features = ["std", "thread_rng"] }
 
 # Poster annotation (Phase 1d)
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
-imageproc = "0.25"
+imageproc = "0.26"
 ab_glyph = "0.2"
 
 # In-process LRU cache (imdb_id → media_id)
@@ -67,7 +67,7 @@ moka = { version = "0.12", features = ["future"] }
 thiserror = "2"
 
 # Scraper rate-limiting
-governor = "0.8"
+governor = "0.10"
 
 # Scraper retries
 backon = "1"
@@ -80,7 +80,7 @@ urlencoding = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # Prometheus metrics
-prometheus-client = "0.22"
+prometheus-client = "0.24"
 
 # Email (SMTP) for auth flows
 lettre = { version = "0.11", default-features = false, features = ["tokio1-native-tls", "smtp-transport", "builder"] }
@@ -91,10 +91,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Magnet → torrent metadata resolution (BEP-9 / BEP-10)
 mainline = "6"
-sha1 = "0.10"
+sha1 = "0.11"
 regex = "1.12.3"
-pcre2 = "0.2"
-scraper = "0.21"
+fancy-regex = "0.18"
+scraper = "0.26"
 once_cell = "1"
 
 # Telegram MTProto live scraper (Phase 2c)
@@ -104,7 +104,7 @@ grammers-session = { version = "0.9", default-features = false }
 [dev-dependencies]
 wiremock = "0.6"
 insta = { version = "1", features = ["json"] }
-criterion = { version = "0.5", features = ["async_tokio"] }
+criterion = { version = "0.8", features = ["async_tokio"] }
 tokio = { version = "1", features = ["full"] }
 
 [[bench]]

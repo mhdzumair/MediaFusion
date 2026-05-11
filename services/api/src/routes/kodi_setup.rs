@@ -71,9 +71,9 @@ pub async fn generate_setup_code(
 
     // Generate 6-char hex code
     let code = {
+        use rand_core::Rng;
         let mut bytes = [0u8; 3];
-        use rand_core::{OsRng, RngCore};
-        OsRng.fill_bytes(&mut bytes);
+        rand::rng().fill_bytes(&mut bytes);
         bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
     };
 

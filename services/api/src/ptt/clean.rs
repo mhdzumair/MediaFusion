@@ -1,6 +1,6 @@
+use fancy_regex::{Regex, RegexBuilder};
 /// Mirrors `clean_title()` from PTT/parse.py exactly.
 use once_cell::sync::Lazy;
-use pcre2::bytes::{Regex, RegexBuilder};
 
 // Non-English character ranges (same as NON_ENGLISH_CHARS in parse.py).
 // Regular Rust string — \u{XXXX} are real Unicode chars embedded in the char class.
@@ -9,27 +9,21 @@ const NON_EN: &str = "\u{3040}-\u{30ff}\u{3400}-\u{4dbf}\u{4e00}-\u{9fff}\u{f900
      \u{0c80}-\u{0cff}\u{0d00}-\u{0d7f}\u{0e00}-\u{0e7f}";
 
 fn c(p: &str) -> Regex {
-    RegexBuilder::new()
-        .ucp(true)
-        .utf(true)
-        .build(p)
-        .unwrap_or_else(|e| panic!("bad clean regex `{p}`: {e}"))
+    Regex::new(p).unwrap_or_else(|e| panic!("bad clean regex `{p}`: {e}"))
 }
 
 fn ci(p: &str) -> Regex {
-    RegexBuilder::new()
-        .caseless(true)
-        .ucp(true)
-        .utf(true)
-        .build(p)
+    RegexBuilder::new(p)
+        .case_insensitive(true)
+        .build()
         .unwrap_or_else(|e| panic!("bad clean regex (i) `{p}`: {e}"))
 }
 
-static MOVIE_RE: Lazy<Regex> = Lazy::new(|| ci(r"[[(]movie[)\]]"));
+static MOVIE_RE: Lazy<Regex> = Lazy::new(|| ci(r"[\[(]movie[)\u{005D}]"));
 
 static RUSSIAN_CAST_RE: Lazy<Regex> = Lazy::new(|| {
     // second branch: bounded lookbehind (max 200 chars) — PCRE2 10.40+
-    c(r"\([^)]*[\x{0400}-\x{04ff}][^)]*\)$|(?<=\/[^(]{0,200})\(.*\)$")
+    c(r"\([^)]*[\u{0400}-\u{04ff}][^)]*\)$|(?<=\/[^(]{0,200})\(.*\)$")
 });
 
 static ALT_TITLES_RE: Lazy<Regex> = Lazy::new(|| {
@@ -52,7 +46,7 @@ static NOT_ONLY_NON_EN_RE: Lazy<Regex> = Lazy::new(|| {
 static NOT_ALLOWED_START_END: Lazy<Regex> = Lazy::new(|| {
     // \x{{300b}} in format! → \x{300b} in the pattern (PCRE2 Unicode hex escape)
     let p = format!(
-        r"^[^\w{ne}#\[\x{{300b}}\x{{2605}}]+|[ \-:/\\[|\{{(#$&^]+$",
+        r"^[^\w{ne}#\[\u{{300b}}\u{{2605}}]+|[ \-:/\\\[|\{{(#$&^]+$",
         ne = NON_EN
     );
     c(&p)
@@ -69,16 +63,16 @@ static PARENS_NO_CONTENT: Lazy<Regex> = Lazy::new(|| c(r"\(\W*\)|\[\W*\]|\{\W*\}
 
 // \x{300a} = 《  \x{2605} = ★  \x{300b} = 》
 static STAR1_RE: Lazy<Regex> =
-    Lazy::new(|| c(r"^[[\x{300a}\x{2605}].*[\]\x{300b}\x{2605}][ .]?(.+)"));
+    Lazy::new(|| c(r"^[\[\u{300a}\u{2605}].*[\u{005D}\u{300b}\u{2605}][ .]?(.+)"));
 
 static STAR2_RE: Lazy<Regex> =
-    Lazy::new(|| c(r"(.+)[ .]?[[\x{300a}\x{2605}].*[\]\x{300b}\x{2605}]$"));
+    Lazy::new(|| c(r"(.+)[ .]?[\[\u{300a}\u{2605}].*[\u{005D}\u{300b}\u{2605}]$"));
 
 static MP3_RE: Lazy<Regex> = Lazy::new(|| ci(r"\bmp3$"));
 
 static SPACING_RE: Lazy<Regex> = Lazy::new(|| c(r"\s+"));
 
-static SPECIAL_CHAR_SPACING: Lazy<Regex> = Lazy::new(|| c(r"[-+_\{\}\[\]]\W{2,}"));
+static SPECIAL_CHAR_SPACING: Lazy<Regex> = Lazy::new(|| c(r"[-+_\{\}\[\u{005D}]\W{2,}"));
 
 static DOT_RE: Lazy<Regex> = Lazy::new(|| c(r"\."));
 
@@ -86,25 +80,24 @@ static EMPTY_BRACKETS_RE: Lazy<Regex> = Lazy::new(|| c(r"\(\s*\)|\[\s*\]|\{\s*\}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn apply(re: &Regex, src: &str, replacement: &[u8]) -> String {
-    let haystack = src.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(haystack.len());
+fn apply(re: &Regex, src: &str, replacement: &str) -> String {
+    let mut out = String::with_capacity(src.len());
     let mut last_end = 0;
-    for m in re.find_iter(haystack).filter_map(|r| r.ok()) {
-        out.extend_from_slice(&haystack[last_end..m.start()]);
-        out.extend_from_slice(replacement);
+    for m in re.find_iter(src).filter_map(|r| r.ok()) {
+        out.push_str(&src[last_end..m.start()]);
+        out.push_str(replacement);
         last_end = m.end();
     }
-    out.extend_from_slice(&haystack[last_end..]);
-    String::from_utf8_lossy(&out).into_owned()
+    out.push_str(&src[last_end..]);
+    out
 }
 
 fn apply_cap1(re: &Regex, src: &str) -> String {
-    re.captures(src.as_bytes())
+    re.captures(src)
         .ok()
         .flatten()
         .and_then(|caps| caps.get(1))
-        .map(|m| String::from_utf8_lossy(m.as_bytes()).into_owned())
+        .map(|m| m.as_str().to_string())
         .unwrap_or_else(|| src.to_string())
 }
 
@@ -113,24 +106,24 @@ fn apply_cap1(re: &Regex, src: &str) -> String {
 pub fn clean_title(raw: &str) -> String {
     let mut s = raw.replace('_', " ");
 
-    s = apply(&MOVIE_RE, &s, b"");
-    s = apply(&NOT_ALLOWED_START_END, &s, b"");
-    s = apply(&RUSSIAN_CAST_RE, &s, b"");
+    s = apply(&MOVIE_RE, &s, "");
+    s = apply(&NOT_ALLOWED_START_END, &s, "");
+    s = apply(&RUSSIAN_CAST_RE, &s, "");
 
-    if STAR1_RE.is_match(s.as_bytes()).unwrap_or(false) {
+    if STAR1_RE.is_match(&s).unwrap_or(false) {
         s = apply_cap1(&STAR1_RE, &s);
     }
-    if STAR2_RE.is_match(s.as_bytes()).unwrap_or(false) {
+    if STAR2_RE.is_match(&s).unwrap_or(false) {
         s = apply_cap1(&STAR2_RE, &s);
     }
 
-    s = apply(&ALT_TITLES_RE, &s, b"");
-    s = apply(&NOT_ONLY_NON_EN_RE, &s, b"");
-    s = apply(&REMAINING_NOT_ALLOWED, &s, b"");
-    s = apply(&EMPTY_BRACKETS_RE, &s, b"");
-    s = apply(&MP3_RE, &s, b"");
-    s = apply(&PARENS_NO_CONTENT, &s, b"");
-    s = apply(&SPECIAL_CHAR_SPACING, &s, b"");
+    s = apply(&ALT_TITLES_RE, &s, "");
+    s = apply(&NOT_ONLY_NON_EN_RE, &s, "");
+    s = apply(&REMAINING_NOT_ALLOWED, &s, "");
+    s = apply(&EMPTY_BRACKETS_RE, &s, "");
+    s = apply(&MP3_RE, &s, "");
+    s = apply(&PARENS_NO_CONTENT, &s, "");
+    s = apply(&SPECIAL_CHAR_SPACING, &s, "");
 
     // Remove brackets if unbalanced
     for (open, close) in [('(', ')'), ('[', ']'), ('{', '}')] {
@@ -143,10 +136,10 @@ pub fn clean_title(raw: &str) -> String {
 
     // If no spaces but has dots, replace dots with spaces
     if !s.contains(' ') && s.contains('.') {
-        s = apply(&DOT_RE, &s, b" ");
+        s = apply(&DOT_RE, &s, " ");
     }
 
-    s = apply(&REDUNDANT_END, &s, b"");
-    s = apply(&SPACING_RE, &s, b" ");
+    s = apply(&REDUNDANT_END, &s, "");
+    s = apply(&SPACING_RE, &s, " ");
     s.trim().to_string()
 }

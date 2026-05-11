@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 use serde_json::Value;
 
 static SPORTS_ARTIFACTS: OnceLock<Value> = OnceLock::new();
@@ -19,7 +19,7 @@ fn artifacts() -> &'static Value {
 pub fn random_sports_poster(genres: &[String]) -> Option<String> {
     let artifacts = artifacts();
     let obj = artifacts.as_object()?;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for genre in genres {
         // Exact match

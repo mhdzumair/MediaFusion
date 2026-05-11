@@ -27,7 +27,7 @@ use axum::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use sqlx::PgPool;
@@ -210,9 +210,9 @@ fn hex_encode(bytes: &[u8]) -> String {
 // ─── Password helpers ─────────────────────────────────────────────────────────
 
 fn hash_password(password: &str) -> String {
-    use rand_core::{OsRng, RngCore};
+    use rand_core::Rng;
     let mut salt_bytes = [0u8; 16];
-    OsRng.fill_bytes(&mut salt_bytes);
+    rand::rng().fill_bytes(&mut salt_bytes);
     let salt = hex_encode(&salt_bytes);
     let digest = sha256_hex(&format!("{}{}", password, salt));
     format!("{salt}${digest}")

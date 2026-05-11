@@ -13,7 +13,7 @@ Python equivalent:
 
 use aes::Aes256;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+use cbc::cipher::{block_padding::Pkcs7, BlockModeDecrypt, KeyIvInit};
 use serde_json::Value;
 
 type Aes256CbcDec = cbc::Decryptor<Aes256>;
@@ -40,7 +40,7 @@ pub fn decrypt_user_data(
 
         let mut buf = encrypted.to_vec();
         let decrypted = Aes256CbcDec::new(key.into(), &iv.into())
-            .decrypt_padded_mut::<Pkcs7>(&mut buf)
+            .decrypt_padded::<Pkcs7>(&mut buf)
             .map_err(|e| format!("AES decrypt: {e}"))?;
 
         let json_str = if decrypted.starts_with(b"\x78")

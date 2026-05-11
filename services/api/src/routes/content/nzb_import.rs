@@ -17,7 +17,7 @@ use axum::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::Utc;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use quick_xml::{events::Event, Reader};
 use serde::Deserialize;
 use serde_json::json;

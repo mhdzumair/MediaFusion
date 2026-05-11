@@ -1,9 +1,9 @@
+use fancy_regex::Regex;
 /// Mirrors add_defaults() from PTT/handlers.py
 ///
 /// Handlers are added in the exact same order as the Python source so that
 /// the "first match wins" / skipIfAlreadyFound semantics are preserved.
 use once_cell::sync::OnceCell;
-use pcre2::bytes::Regex;
 
 use super::engine::{compile, compile_i, Ctx, FieldValue, HandlerReturn, MatchInfo, Opts, Parser};
 use super::transformers::{
@@ -68,7 +68,7 @@ pub fn add_defaults(p: &mut Parser) {
     // ── Container ─────────────────────────────────────────────────────────
     p.add(
         "container",
-        rei(r"\.?[\[(]?\b(MKV|AVI|MP4|WMV|MPG|MPEG)\b[\])]?"),
+        rei(r"\.?[\[(]?\b(MKV|AVI|MP4|WMV|MPG|MPEG)\b[\u{005D})]?"),
         arc(tr_lowercase),
         Opts::defaults(),
     );
@@ -203,25 +203,25 @@ pub fn add_defaults(p: &mut Parser) {
     // ── Resolution ────────────────────────────────────────────────────────
     p.add(
         "resolution",
-        rei(r"\[?\]?3840x\d{4}[\])?]?"),
+        rei(r"\[?\]?3840x\d{4}[\u{005D})?]?"),
         value("2160p"),
         Opts::defaults().with_remove(true),
     );
     p.add(
         "resolution",
-        rei(r"\[?\]?1920x\d{3,4}[\])?]?"),
+        rei(r"\[?\]?1920x\d{3,4}[\u{005D})?]?"),
         value("1080p"),
         Opts::defaults().with_remove(true),
     );
     p.add(
         "resolution",
-        rei(r"\[?\]?1280x\d{3}[\])?]?"),
+        rei(r"\[?\]?1280x\d{3}[\u{005D})?]?"),
         value("720p"),
         Opts::defaults().with_remove(true),
     );
     p.add(
         "resolution",
-        rei(r"\[?\]?(\d{3,4}x\d{3,4})[\])?]?p?"),
+        rei(r"\[?\]?(\d{3,4}x\d{3,4})[\u{005D})?]?p?"),
         value("$1p"),
         Opts::defaults().with_remove(true),
     );
@@ -295,13 +295,13 @@ pub fn add_defaults(p: &mut Parser) {
     // ── Episode code ──────────────────────────────────────────────────────
     p.add(
         "episode_code",
-        re(r"[\[\(]([A-Fa-f0-9]{8})[\]\)]"),
+        re(r"[\[\(]([A-Fa-f0-9]{8})[\u{005D}\)]"),
         arc(tr_uppercase),
         Opts::defaults().with_remove(true),
     );
     p.add(
         "episode_code",
-        re(r"[\[\(]([0-9]{8})[\]\)]"),
+        re(r"[\[\(]([0-9]{8})[\u{005D}\)]"),
         arc(tr_uppercase),
         Opts {
             skip_if_already_found: true,
@@ -387,7 +387,7 @@ pub fn add_defaults(p: &mut Parser) {
     // ── Date ──────────────────────────────────────────────────────────────
     // (We store as string "YYYY-MM-DD"; arrow-equivalent parsing via chrono)
     p.add("date",
-        re(r"(?:\W|^)([\[(]?(?:19[6-9]|20[012])[0-9]([. \-/\\])(?:0[1-9]|1[012])\2(?:0[1-9]|[12][0-9]|3[01])[\])]?)(?:\W|$)"),
+        re(r"(?:\W|^)([\[(]?(?:19[6-9]|20[012])[0-9]([. \-/\\])(?:0[1-9]|1[012])\2(?:0[1-9]|[12][0-9]|3[01])[\u{005D})]?)(?:\W|$)"),
         arc(tr_none), Opts::defaults().with_remove(true));
 
     // ── Complete ──────────────────────────────────────────────────────────
@@ -399,7 +399,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "complete",
-        re(r"[(\[][ .]?((?:19\d|20[012])\d[ .]?-[ .]?\d{2})[ .]?[)\]]"),
+        re(r"[(\[][ .]?((?:19\d|20[012])\d[ .]?-[ .]?\d{2})[ .]?[)\u{005D}]"),
         arc(tr_boolean),
         Opts::defaults().with_remove(true),
     );
@@ -421,13 +421,13 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "year",
-        re(r"[^SE][(\[]?(?!^)(?<!\d)((?:19\d|20[012])\d)(?!\d|kbps)[)\]]?"),
+        re(r"[^SE][(\[]?(?!^)(?<!\d)((?:19\d|20[012])\d)(?!\d|kbps)[)\u{005D}]?"),
         arc(tr_integer),
         Opts::defaults().with_remove(true),
     );
     p.add(
         "year",
-        rei(r"(?!^\w{4})^[(\[]?((?:19\d|20[012])\d)(?!\d|kbps)[)\]]?"),
+        rei(r"(?!^\w{4})^[(\[]?((?:19\d|20[012])\d)(?!\d|kbps)[)\u{005D}]?"),
         arc(tr_integer),
         Opts::defaults().with_remove(true),
     );
@@ -681,7 +681,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "quality",
-        rei(r"\bBD[ .-]*Rip\b|\bBDR\b|\bBD-RM\b|[[(]BD[\]) .,-]"),
+        rei(r"\bBD[ .-]*Rip\b|\bBDR\b|\bBD-RM\b|(?:\[|\()BD(?:\]|\)|[ .,-])"),
         value("BDRip"),
         Opts::defaults().with_remove(true),
     );
@@ -771,7 +771,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "quality",
-        rei(r"\b(?<!\w.)WEB\b|\bWEB(?!([ \.\-\(\],]+\d))\b"),
+        rei(r"\b(?<!\w.)WEB\b|\bWEB(?!([ \.\-\(\u{005D},]+\d))\b"),
         value("WEB"),
         Opts::defaults()
             .with_remove(true)
@@ -1153,7 +1153,7 @@ pub fn add_defaults(p: &mut Parser) {
 
     // ── Group (first pass) ─────────────────────────────────────────────────
     p.add("group",
-        rei(r"- ?(?!\d+$|S\d+|\d+x|ep?\d+|[^[]+]$)([^\-. []+[^\-. [)\]\d][^\-. [)\]]*)(?:\[[\w.-]+])?(?=\.\w{2,4}$|$)"),
+        rei(r"- ?(?!\d+$|S\d+|\d+x|ep?\d+|[^\[]+]$)([^\-. \[]+[^\-. \[)\u{005D}\d][^\-. \[)\u{005D}]*)(?:\[[\w.-]+])?(?=\.\w{2,4}$|$)"),
         arc(tr_none), Opts::defaults().with_remove(false));
 
     // ── Volumes ───────────────────────────────────────────────────────────
@@ -1173,12 +1173,12 @@ pub fn add_defaults(p: &mut Parser) {
         // never split a multi-byte character (e.g. Cyrillic, CJK).
         let safe_idx = ctx.title.floor_char_boundary(raw_idx.min(ctx.title.len()));
         let search_str = &ctx.title[safe_idx..];
-        if let Ok(Some(caps)) = re.captures(search_str.as_bytes()) {
+        if let Ok(Some(caps)) = re.captures(search_str) {
             if let Some(g1) = caps.get(1) {
-                let n_str = String::from_utf8_lossy(g1.as_bytes());
+                let n_str = g1.as_str();
                 if let Ok(n) = n_str.parse::<i32>() {
                     let g0 = caps.get(0).unwrap();
-                    let raw = String::from_utf8_lossy(g0.as_bytes()).into_owned();
+                    let raw = g0.as_str().to_owned();
                     let idx = g0.start() + safe_idx;
                     ctx.matched.insert(
                         "volumes".into(),
@@ -1354,13 +1354,13 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "seasons",
-        rei(r"(?:complete\W|seasons?\W|\W|^)[(\[]?(s\d{2,}-\d{2,}\b)[)\]]?"),
+        rei(r"(?:complete\W|seasons?\W|\W|^)[(\[]?(s\d{2,}-\d{2,}\b)[)\u{005D}]?"),
         arc(tr_range_func),
         Opts::defaults().with_remove(true),
     );
     p.add(
         "seasons",
-        rei(r"(?:complete\W|seasons?\W|\W|^)[(\[]?(s[1-9]-[2-9])[)\]]?"),
+        rei(r"(?:complete\W|seasons?\W|\W|^)[(\[]?(s[1-9]-[2-9])[)\u{005D}]?"),
         arc(tr_range_func),
         Opts::defaults().with_remove(true),
     );
@@ -1370,9 +1370,9 @@ pub fn add_defaults(p: &mut Parser) {
         arc(tr_range_func),
         Opts::defaults().with_remove(true),
     );
-    p.add("seasons", rei(r"(?:(?:\bthe\W)?\bcomplete\W)?(?:seasons?|[Сс]езони?|temporadas?)[. ]?[-:]?[. ]?[(\[]?((?:\d{1,2}[., /\\&]+)+\d{1,2}\b)[)\]]?"), arc(tr_range_func), Opts::defaults().with_remove(true));
-    p.add("seasons", rei(r"(?:(?:\bthe\W)?\bcomplete\W)?(?:seasons?|[Сс]езони?|temporadas?)[. ]?[-:]?[. ]?[(\[]?((?:\d{1,2}[.-]+)+[1-9]\d?\b)[)\]]?"), arc(tr_range_func), Opts::defaults().with_remove(true));
-    p.add("seasons", rei(r"(?:(?:\bthe\W)?\bcomplete\W)?season[. ]?[(\[]?((?:\d{1,2}[. -]+)+[1-9]\d?\b)[)\]]?(?!.*\.\w{2,4}$)"), arc(tr_range_func), Opts::defaults().with_remove(true));
+    p.add("seasons", rei(r"(?:(?:\bthe\W)?\bcomplete\W)?(?:seasons?|[Сс]езони?|temporadas?)[. ]?[-:]?[. ]?[(\[]?((?:\d{1,2}[., /\\&]+)+\d{1,2}\b)[)\u{005D}]?"), arc(tr_range_func), Opts::defaults().with_remove(true));
+    p.add("seasons", rei(r"(?:(?:\bthe\W)?\bcomplete\W)?(?:seasons?|[Сс]езони?|temporadas?)[. ]?[-:]?[. ]?[(\[]?((?:\d{1,2}[.-]+)+[1-9]\d?\b)[)\u{005D}]?"), arc(tr_range_func), Opts::defaults().with_remove(true));
+    p.add("seasons", rei(r"(?:(?:\bthe\W)?\bcomplete\W)?season[. ]?[(\[]?((?:\d{1,2}[. -]+)+[1-9]\d?\b)[)\u{005D}]?(?!.*\.\w{2,4}$)"), arc(tr_range_func), Opts::defaults().with_remove(true));
     p.add("seasons", rei(r"(?:(?:\bthe\W)?\bcomplete\W)?\bseasons?\b[. -]?(\d{1,2}[. -]?(?:to|thru|and|\+|:)[. -]?\d{1,2})\b"), arc(tr_range_func), Opts::defaults().with_remove(true));
     p.add("seasons", rei(r"(?:(?:\bthe\W)?\bcomplete\W)?(?:saison|seizoen|season|series|temp(?:orada)?):?[. ]?(\d{1,2})\b"), array(arc(tr_integer)), Opts::defaults());
     p.add(
@@ -1435,7 +1435,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "seasons",
-        re(r"[[(](\d{1,2})\.\d{1,3}[)\]]"),
+        re(r"[\[(](\d{1,2})\.\d{1,3}[)\u{005D}]"),
         array(arc(tr_integer)),
         Opts::defaults(),
     );
@@ -1526,7 +1526,7 @@ pub fn add_defaults(p: &mut Parser) {
     p.add("episodes", rei(r"(?:[\W\d]|^)(?:episodes?|[Сс]ерии:?)[ .]?[(\[]?(\d{1,3}(?:[ .+]*[&+][ .]?\d{1,3})+)(?:\W|$)"), arc(tr_range_func), Opts::defaults());
     p.add(
         "episodes",
-        rei(r"[(\[]?(?:\D|^)(\d{1,3}[ .]?ao[ .]?\d{1,3})[)\]]?(?:\W|$)"),
+        rei(r"[(\[]?(?:\D|^)(\d{1,3}[ .]?ao[ .]?\d{1,3})[)\u{005D}]?(?:\W|$)"),
         arc(tr_range_func),
         Opts::defaults(),
     );
@@ -1585,12 +1585,12 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "episodes",
-        rei(r"^\[[^\]]+\](?:[^\-]|-(?!\s))+[. ]+-[. ]+(\d{1,4})[. ]+(?=\W)"),
+        rei(r"^\[[^\u{005D}]+\](?:[^\-]|-(?!\s))+[. ]+-[. ]+(\d{1,4})[. ]+(?=\W)"),
         array(arc(tr_integer)),
         Opts::defaults().with_remove(true),
     );
-    p.add("episodes", rei(r"(?<!(?:seasons?|[Сс]езони?)\W{0,10})(?:[ .([-]|^)(\d{1,3}(?:[ .]?[,&+~][ .]?\d{1,3})+)(?:[ .)\]-]|$)"), arc(tr_range_func), Opts::defaults());
-    p.add("episodes", rei(r"(?<!(?:seasons?|[Сс]езони?)\W{0,10})(?:[ .([-]|^)(\d{1,3}(?:-\d{1,3})+)(?:[ .)(\]]|-\D|$)"), arc(tr_range_func), Opts::defaults());
+    p.add("episodes", rei(r"(?<!(?:seasons?|[Сс]езони?)\W{0,10})(?:[ .(\[-]|^)(\d{1,3}(?:[ .]?[,&+~][ .]?\d{1,3})+)(?:[ .)\u{005D}-]|$)"), arc(tr_range_func), Opts::defaults());
+    p.add("episodes", rei(r"(?<!(?:seasons?|[Сс]езони?)\W{0,10})(?:[ .(\[-]|^)(\d{1,3}(?:-\d{1,3})+)(?:[ .)(\u{005D}]|-\D|$)"), arc(tr_range_func), Opts::defaults());
     p.add(
         "episodes",
         rei(r"\bEp(?:isode)?\W+\d{1,2}\.(\d{1,3})\b"),
@@ -1624,7 +1624,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "episodes",
-        re(r"[[(]\d{1,2}\.(\d{1,3})[)\]]"),
+        re(r"[\[(]\d{1,2}\.(\d{1,3})[)\u{005D}]"),
         array(arc(tr_integer)),
         Opts::defaults(),
     );
@@ -1648,7 +1648,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "episodes",
-        rei(r"(?<=\D|^)(\d{1,3})[. ]?(?:of|из|iz)[. ]?\d{1,3}(?=\D|$)"),
+        rei(r"(?<!\d)(\d{1,3})[. ]?(?:of|из|iz)[. ]?\d{1,3}(?=\D|$)"),
         array(arc(tr_integer)),
         Opts::defaults(),
     );
@@ -1756,25 +1756,21 @@ pub fn add_defaults(p: &mut Parser) {
         ));
         let digit_re = DIGIT_RE.get_or_init(|| compile(r"\d+"));
 
-        let beg_caps = beg_re.captures(beginning.as_bytes()).ok().flatten();
+        let beg_caps = beg_re.captures(beginning).ok().flatten();
         let mid_caps = if beg_caps.is_none() {
-            mid_re.captures(middle.as_bytes()).ok().flatten()
+            mid_re.captures(middle).ok().flatten()
         } else {
             None
         };
         let caps_opt = beg_caps.or(mid_caps);
 
         if let Some(caps) = caps_opt {
-            let g1 = caps.get(1)
-                .map(|m| String::from_utf8_lossy(m.as_bytes()).into_owned())
-                .unwrap_or_default();
-            let full = caps.get(0)
-                .map(|m| String::from_utf8_lossy(m.as_bytes()).into_owned())
-                .unwrap_or_default();
+            let g1 = caps.get(1).map(|m| m.as_str().to_owned()).unwrap_or_default();
+            let full = caps.get(0).map(|m| m.as_str().to_owned()).unwrap_or_default();
             let nums: Vec<i32> = digit_re
-                .find_iter(g1.as_bytes())
+                .find_iter(&g1)
                 .filter_map(|r| r.ok())
-                .filter_map(|m| std::str::from_utf8(m.as_bytes()).ok().and_then(|s| s.parse().ok()))
+                .filter_map(|m| m.as_str().parse().ok())
                 .collect();
             if !nums.is_empty() {
                 let idx = ctx.title.find(full.as_str()).unwrap_or(0);
@@ -1805,15 +1801,15 @@ pub fn add_defaults(p: &mut Parser) {
         static EP_RE: OnceCell<Regex> = OnceCell::new();
         let anime_re = ANIME_RE.get_or_init(|| compile(r"One.*?Piece|Bleach|Naruto"));
         let ep_re = EP_RE.get_or_init(|| compile(r"\b\d{1,4}\b"));
-        if anime_re.is_match(ctx.title.as_bytes()).unwrap_or(false) {
-            if let Ok(Some(m)) = ep_re.find(ctx.title.as_bytes()) {
-                let s = String::from_utf8_lossy(m.as_bytes());
+        if anime_re.is_match(&ctx.title).unwrap_or(false) {
+            if let Ok(Some(m)) = ep_re.find(&ctx.title) {
+                let s = m.as_str().to_owned();
                 if let Ok(n) = s.parse::<i32>() {
                     let idx = m.start();
                     ctx.result
                         .insert("episodes".into(), FieldValue::Ints(vec![n]));
                     return Some(HandlerReturn {
-                        raw_match: s.into_owned(),
+                        raw_match: s,
                         match_index: idx,
                         remove: false,
                         skip_from_title: false,
@@ -2050,7 +2046,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "languages",
-        rei(r"\b[\.\s\[]?Sp[\.\s\]]?\b"),
+        rei(r"\b[\.\s\[]?Sp[\.\s\u{005D}]?\b"),
         uniq_concat(value("es")),
         lo(true, false),
     );
@@ -2315,7 +2311,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "languages",
-        rei(r"\bslo(?:vak|vakian|subs|[\]_)]?\.\w{2,4}$)\b"),
+        rei(r"\bslo(?:vak|vakian|subs|[\u{005D}_)]?\.\w{2,4}$)\b"),
         uniq_concat(value("sk")),
         lo(false, true),
     );
@@ -2442,7 +2438,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "languages",
-        rei(r"\b(norwegian|noruegu[eê]s|bokm[aå]l|nob|nor(?=[\]_)]?\.\w{2,4}$))\b"),
+        rei(r"\b(norwegian|noruegu[eê]s|bokm[aå]l|nob|nor(?=[\u{005D}_)]?\.\w{2,4}$))\b"),
         uniq_concat(value("no")),
         lo(false, true),
     );
@@ -2479,7 +2475,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "languages",
-        rei(r"\bvietnamese\b|\bvie(?=[\]_)]?\.\w{2,4}$)"),
+        rei(r"\bvietnamese\b|\bvie(?=[\u{005D}_)]?\.\w{2,4}$)"),
         uniq_concat(value("vi")),
         lo(false, true),
     );
@@ -2503,7 +2499,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "languages",
-        rei(r"\b(?:malay|may(?=[\]_)]?\.\w{2,4}$)|(?<=subs?\([a-z,]{1,50})may)\b"),
+        rei(r"\b(?:malay|may(?=[\u{005D}_)]?\.\w{2,4}$)|(?<=subs?\([a-z,]{1,50})may)\b"),
         uniq_concat(value("ms")),
         lof(false, false, true),
     );
@@ -2629,8 +2625,8 @@ pub fn add_defaults(p: &mut Parser) {
             static DUB_RE: OnceCell<Regex> = OnceCell::new();
             let capitulo = CAP_RE.get_or_init(|| compile_i(r"capitulo|ao"));
             let dublado = DUB_RE.get_or_init(|| compile_i(r"dublado"));
-            if capitulo.is_match(ep_raw.as_bytes()).unwrap_or(false)
-                || dublado.is_match(ctx.title.as_bytes()).unwrap_or(false)
+            if capitulo.is_match(ep_raw).unwrap_or(false)
+                || dublado.is_match(&ctx.title).unwrap_or(false)
             {
                 let mut langs: Vec<String> = match ctx.result.get("languages") {
                     Some(FieldValue::Strs(v)) => v.clone(),
@@ -2787,7 +2783,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "site",
-        rei(r"\[(\[^\]]+\.[^\]]+)\](?=\.\w{2,4}$|\s)"),
+        rei(r"\[(\[^\]]+\.[^\u{005D}]+)\](?=\.\w{2,4}$|\s)"),
         value("$1"),
         Opts::defaults().with_remove(true),
     );

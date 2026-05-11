@@ -29,10 +29,10 @@ pub fn encrypt_user_data(
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     use aes::Aes256;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-    use cbc::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
+    use cbc::cipher::{block_padding::Pkcs7, BlockModeEncrypt, KeyIvInit};
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
-    use rand_core::{OsRng, RngCore};
+
     use std::io::Write;
 
     type Aes256CbcEnc = cbc::Encryptor<Aes256>;
@@ -45,7 +45,10 @@ pub fn encrypt_user_data(
     }
 
     let mut iv = [0u8; 16];
-    OsRng.fill_bytes(&mut iv);
+    {
+        use rand_core::Rng;
+        rand::rng().fill_bytes(&mut iv);
+    }
 
     // Allocate buffer with space for PKCS7 padding (always adds 1–16 bytes)
     let padded_len = (compressed.len() / 16 + 1) * 16;
@@ -53,7 +56,7 @@ pub fn encrypt_user_data(
     buf[..compressed.len()].copy_from_slice(&compressed);
 
     let ciphertext = Aes256CbcEnc::new(key.into(), &iv.into())
-        .encrypt_padded_mut::<Pkcs7>(&mut buf, compressed.len())
+        .encrypt_padded::<Pkcs7>(&mut buf, compressed.len())
         .map_err(|e| format!("AES encrypt: {e}"))?
         .to_vec();
 

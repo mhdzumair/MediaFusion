@@ -59,7 +59,7 @@ fn parse_hrefs(xml: &str) -> Result<Vec<String>, ProviderError> {
                 in_href = true;
             }
             Ok(Event::Text(ref e)) if in_href => {
-                if let Ok(text) = e.unescape() {
+                if let Ok(text) = e.decode() {
                     let s = text.trim().to_string();
                     if !s.is_empty() {
                         hrefs.push(s);

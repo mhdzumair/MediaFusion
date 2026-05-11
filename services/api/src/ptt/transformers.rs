@@ -1,6 +1,6 @@
+use fancy_regex::Regex;
 /// Mirrors PTT/transformers.py
 use once_cell::sync::OnceCell;
-use pcre2::bytes::Regex;
 
 use super::engine::{FieldValue, Transformer};
 
@@ -30,11 +30,10 @@ pub fn tr_integer(input: &str, _: Option<&FieldValue>) -> Option<FieldValue> {
 pub fn tr_first_integer(input: &str, _: Option<&FieldValue>) -> Option<FieldValue> {
     static RE: OnceCell<Regex> = OnceCell::new();
     let re = RE.get_or_init(|| Regex::new(r"\d+").unwrap());
-    re.find(input.as_bytes())
+    re.find(input)
         .ok()
         .flatten()
-        .and_then(|m| std::str::from_utf8(m.as_bytes()).ok())
-        .and_then(|s| s.parse::<i32>().ok())
+        .and_then(|m| m.as_str().parse::<i32>().ok())
         .map(FieldValue::Int)
 }
 
@@ -46,13 +45,9 @@ pub fn tr_range_func(input: &str, _: Option<&FieldValue>) -> Option<FieldValue> 
     static RE: OnceCell<Regex> = OnceCell::new();
     let re = RE.get_or_init(|| Regex::new(r"\d+").unwrap());
     let nums: Vec<i32> = re
-        .find_iter(input.as_bytes())
+        .find_iter(input)
         .filter_map(|r| r.ok())
-        .filter_map(|m| {
-            std::str::from_utf8(m.as_bytes())
-                .ok()
-                .and_then(|s| s.parse().ok())
-        })
+        .filter_map(|m| m.as_str().parse().ok())
         .collect();
 
     match nums.len() {
@@ -69,13 +64,9 @@ pub fn tr_range_x_of_y(input: &str, _: Option<&FieldValue>) -> Option<FieldValue
     static RE: OnceCell<Regex> = OnceCell::new();
     let re = RE.get_or_init(|| Regex::new(r"\d+").unwrap());
     let nums: Vec<i32> = re
-        .find_iter(input.as_bytes())
+        .find_iter(input)
         .filter_map(|r| r.ok())
-        .filter_map(|m| {
-            std::str::from_utf8(m.as_bytes())
-                .ok()
-                .and_then(|s| s.parse().ok())
-        })
+        .filter_map(|m| m.as_str().parse().ok())
         .collect();
     if nums.len() != 1 {
         return None;

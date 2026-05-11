@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use fancy_regex::{Captures, Regex, RegexBuilder};
 use once_cell::sync::OnceCell;
-use pcre2::bytes::{Captures, Regex, RegexBuilder};
 
 // ── Value types stored in the result map ─────────────────────────────────────
 
@@ -85,30 +85,23 @@ pub type Handler = Box<dyn Fn(&mut Ctx) -> Option<HandlerReturn> + Send + Sync>;
 
 // ── PCRE2 regex builder helpers ───────────────────────────────────────────────
 
-/// Compile a PCRE2 regex (panics at startup if pattern is invalid).
+/// Compile a regex (panics at startup if pattern is invalid).
 pub fn compile(pattern: &str) -> Regex {
-    RegexBuilder::new()
-        .ucp(true) // Unicode character properties for \w, \d, etc.
-        .utf(true)
-        .build(pattern)
-        .unwrap_or_else(|e| panic!("bad regex `{pattern}`: {e}"))
+    Regex::new(pattern).unwrap_or_else(|e| panic!("bad regex `{pattern}`: {e}"))
 }
 
-/// Compile a case-insensitive PCRE2 regex.
+/// Compile a case-insensitive regex.
 pub fn compile_i(pattern: &str) -> Regex {
-    RegexBuilder::new()
-        .caseless(true)
-        .ucp(true)
-        .utf(true)
-        .build(pattern)
+    RegexBuilder::new(pattern)
+        .case_insensitive(true)
+        .build()
         .unwrap_or_else(|e| panic!("bad regex (i) `{pattern}`: {e}"))
 }
 
 // ── Helper: extract text from a PCRE2 match ──────────────────────────────────
 
 fn caps_to_str(caps: &Captures, index: usize) -> Option<String> {
-    caps.get(index)
-        .map(|m| String::from_utf8_lossy(m.as_bytes()).into_owned())
+    caps.get(index).map(|m| m.as_str().to_string())
 }
 
 // ── Regex used to detect "before-title" bracket content ──────────────────────
@@ -131,9 +124,7 @@ pub fn regex_handler(
             return None;
         }
 
-        let title_bytes = ctx.title.as_bytes();
-
-        let caps = re.captures(title_bytes).ok()??;
+        let caps = re.captures(&ctx.title).ok()??;
         let full = caps_to_str(&caps, 0)?;
         let raw_match = full.clone();
         let match_start = caps.get(0).map(|m| m.start()).unwrap_or(0);
@@ -163,9 +154,8 @@ pub fn regex_handler(
         ctx.result.insert(name.to_string(), transformed);
 
         // is_before_title: match sits inside the leading `[...]`
-        let title_bytes = ctx.title.as_bytes();
         let is_before_title = before_title_re()
-            .captures(title_bytes)
+            .captures(&ctx.title)
             .ok()
             .flatten()
             .and_then(|caps| caps_to_str(&caps, 1))

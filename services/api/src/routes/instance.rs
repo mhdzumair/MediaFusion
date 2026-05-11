@@ -213,9 +213,9 @@ pub async fn create_initial_admin(
 
     // Hash password using SHA-256 + random salt (same scheme as auth.rs)
     let salt = {
-        use rand_core::{OsRng, RngCore};
+        use rand_core::Rng;
         let mut b = [0u8; 16];
-        OsRng.fill_bytes(&mut b);
+        rand::rng().fill_bytes(&mut b);
         b.iter().map(|x| format!("{x:02x}")).collect::<String>()
     };
     use sha2::{Digest, Sha256};

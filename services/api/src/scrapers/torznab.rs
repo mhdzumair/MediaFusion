@@ -246,7 +246,7 @@ fn parse_xml(
             }
             Ok(Event::Text(e)) => {
                 if let Some(field) = current_text_field.take() {
-                    let text = e.unescape().unwrap_or_default().into_owned();
+                    let text = e.decode().unwrap_or_default().into_owned();
                     match field {
                         "title" => current.title = Some(text),
                         "link" => current.link = Some(text),

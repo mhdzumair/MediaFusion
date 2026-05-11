@@ -27,7 +27,7 @@ use axum::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::Utc;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use lava_torrent::torrent::v1::Torrent as LavaTorrent;
 use serde::{Deserialize, Serialize};
 use serde_json::json;

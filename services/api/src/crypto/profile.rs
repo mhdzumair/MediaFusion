@@ -228,7 +228,7 @@ pub fn merge_secrets(config: &mut Value, secrets: &Value) {
 pub fn decrypt_secrets(encrypted: &str, key: &[u8; 32]) -> serde_json::Value {
     use aes::Aes256;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-    use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+    use cbc::cipher::{block_padding::Pkcs7, BlockModeDecrypt, KeyIvInit};
     type Dec = cbc::Decryptor<Aes256>;
 
     // Strip base64 padding that Python's urlsafe_b64encode adds (=) so we can
@@ -240,7 +240,7 @@ pub fn decrypt_secrets(encrypted: &str, key: &[u8; 32]) -> serde_json::Value {
     };
     let iv: [u8; 16] = raw[..16].try_into().unwrap();
     let mut buf = raw[16..].to_vec();
-    let decrypted = match Dec::new(key.into(), &iv.into()).decrypt_padded_mut::<Pkcs7>(&mut buf) {
+    let decrypted = match Dec::new(key.into(), &iv.into()).decrypt_padded::<Pkcs7>(&mut buf) {
         Ok(d) => d.to_vec(),
         Err(_) => return serde_json::Value::Object(Default::default()),
     };
@@ -260,19 +260,22 @@ pub fn encrypt_secrets(secrets: &serde_json::Value, key: &[u8; 32]) -> Option<St
     }
     use aes::Aes256;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-    use cbc::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
-    use rand_core::{OsRng, RngCore};
+    use cbc::cipher::{block_padding::Pkcs7, BlockModeEncrypt, KeyIvInit};
+
     type Enc = cbc::Encryptor<Aes256>;
 
     let json = serde_json::to_string(secrets).ok()?;
     let bytes = json.as_bytes();
     let mut iv = [0u8; 16];
-    OsRng.fill_bytes(&mut iv);
+    {
+        use rand_core::Rng;
+        rand::rng().fill_bytes(&mut iv);
+    }
     let padded_len = (bytes.len() / 16 + 1) * 16;
     let mut buf = vec![0u8; padded_len];
     buf[..bytes.len()].copy_from_slice(bytes);
     let ct = Enc::new(key.into(), &iv.into())
-        .encrypt_padded_mut::<Pkcs7>(&mut buf, bytes.len())
+        .encrypt_padded::<Pkcs7>(&mut buf, bytes.len())
         .ok()?
         .to_vec();
     let mut combined = Vec::with_capacity(16 + ct.len());

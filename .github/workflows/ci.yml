@@ -163,7 +163,7 @@ jobs:
     name: Rust Format
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: services/api
@@ -177,15 +177,12 @@ jobs:
     name: Rust Lint
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: services/api
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install PCRE2 dev library
-        run: sudo apt-get install -y libpcre2-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -204,15 +201,12 @@ jobs:
     name: Rust Build
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: services/api
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install PCRE2 dev library
-        run: sudo apt-get install -y libpcre2-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

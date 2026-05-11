@@ -88,7 +88,7 @@ pub fn parse_rss_xml(xml: &str) -> Vec<RssItem> {
             }
             Ok(Event::Text(ref e)) => {
                 if let Some(item) = current.as_mut() {
-                    let text = e.unescape().unwrap_or_default().to_string();
+                    let text = e.decode().unwrap_or_default().to_string();
                     if !text.trim().is_empty() {
                         match current_tag.as_str() {
                             "title" => item.title = Some(text.clone()),
