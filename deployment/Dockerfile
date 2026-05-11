@@ -7,7 +7,7 @@ COPY clients/frontend/ ./
 RUN npm run build
 
 # Rust build stage
-FROM rust:1.88-slim-bookworm AS rust-builder
+FROM rust:1.95-slim-bookworm AS rust-builder
 WORKDIR /build
 
 # Install build dependencies
