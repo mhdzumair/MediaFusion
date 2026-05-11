@@ -12,7 +12,7 @@ ARG TARGETARCH
 COPY --chmod=755 rust-dist/${TARGETARCH}/mediafusion-api /mediafusion-api
 
 # Python builder stage
-FROM python:3.13-slim-bookworm AS builder
+FROM python:3.13-slim-noble AS runtime
 
 WORKDIR /mediafusion
 
