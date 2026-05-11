@@ -6,27 +6,10 @@ RUN npm ci
 COPY clients/frontend/ ./
 RUN npm run build
 
-# Rust build stage
-FROM rust:1.95-slim-bookworm AS rust-builder
-WORKDIR /build
-
-# Install build dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends pkg-config libssl-dev && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Cache dependencies by building a dummy project first
-COPY services/api/Cargo.toml services/api/Cargo.lock ./services/api/
-RUN mkdir -p services/api/src && echo "fn main(){}" > services/api/src/main.rs && \
-    echo "// placeholder" > services/api/src/lib.rs && \
-    cd services/api && cargo build --release --bin mediafusion-api 2>/dev/null || true && \
-    rm -rf services/api/src
-
-# Build the real binary
-COPY services/api/ ./services/api/
-COPY resources/ ./resources/
-RUN cd services/api && cargo build --release --bin mediafusion-api
+# Pre-built Rust binary stage (built natively in CI, passed via rust-dist/<arch>/)
+FROM scratch AS rust-builder
+ARG TARGETARCH
+COPY --chmod=755 rust-dist/${TARGETARCH}/mediafusion-api /mediafusion-api
 
 # Python builder stage
 FROM python:3.13-slim-bookworm AS builder
@@ -77,7 +60,7 @@ RUN groupadd -r mediafusion && \
 
 # Copy the Rust binary from the rust-builder stage
 COPY --from=rust-builder --chown=mediafusion:mediafusion \
-    /build/services/api/target/release/mediafusion-api \
+    /mediafusion-api \
     /usr/local/bin/mediafusion-api
 
 # Copy the Python environment and other necessary files from the builder stage
