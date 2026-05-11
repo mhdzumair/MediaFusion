@@ -594,7 +594,7 @@ async fn ensure_enough_space(http: &Client, token: &str, required_bytes: i64) {
             Some((size, id))
         })
         .collect();
-    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+    candidates.sort_by_key(|b| std::cmp::Reverse(b.0));
 
     let mut freed = 0i64;
     for (size, id) in candidates {
