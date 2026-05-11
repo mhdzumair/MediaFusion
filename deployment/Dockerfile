@@ -25,6 +25,7 @@ RUN mkdir -p services/api/src && echo "fn main(){}" > services/api/src/main.rs &
 
 # Build the real binary
 COPY services/api/ ./services/api/
+COPY resources/ ./resources/
 RUN cd services/api && cargo build --release --bin mediafusion-api
 
 # Python builder stage
