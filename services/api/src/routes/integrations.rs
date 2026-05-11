@@ -1409,14 +1409,13 @@ pub async fn telegram_login(
             .flatten();
 
     // Check for a conflict: another user already owns this Telegram account
-    let conflicting_user_id: Option<i32> = sqlx::query_scalar(
-        "SELECT id FROM users WHERE telegram_user_id = $1 AND id != $2 LIMIT 1",
-    )
-    .bind(&telegram_user_id)
-    .bind(user_id)
-    .fetch_optional(&state.pool_ro)
-    .await
-    .unwrap_or(None);
+    let conflicting_user_id: Option<i32> =
+        sqlx::query_scalar("SELECT id FROM users WHERE telegram_user_id = $1 AND id != $2 LIMIT 1")
+            .bind(&telegram_user_id)
+            .bind(user_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None);
 
     if conflicting_user_id.is_some() && !params.replace_existing {
         return (

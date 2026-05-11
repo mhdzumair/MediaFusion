@@ -1,7 +1,6 @@
 pub mod api_key_middleware;
 pub mod cache;
 pub mod config;
-pub mod scheduler;
 pub mod crypto;
 pub mod db;
 pub mod demagnetize;
@@ -15,6 +14,7 @@ pub mod poster;
 pub mod providers;
 pub mod ptt;
 pub mod routes;
+pub mod scheduler;
 pub mod scrapers;
 pub mod state;
 pub mod stremio_auth_middleware;
