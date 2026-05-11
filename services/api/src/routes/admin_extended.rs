@@ -1003,10 +1003,7 @@ pub async fn get_source_health(
     State(state): State<Arc<AppState>>,
     Query(params): Query<SourceHealthQuery>,
 ) -> impl IntoResponse {
-    use crate::scrapers::{
-        public_indexer_registry::ALL_INDEXERS,
-        source_health,
-    };
+    use crate::scrapers::{public_indexer_registry::ALL_INDEXERS, source_health};
 
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
@@ -1022,10 +1019,11 @@ pub async fn get_source_health(
     let anime_only = params.anime_only.unwrap_or(false);
 
     // Resolve the scope key the same way source_health.rs does
-    let scope_key_display = source_health::metrics_key("__scope_probe__", "general", scope_mode, scope_override)
-        .strip_prefix("public_indexer_source_health:")
-        .and_then(|s| s.strip_suffix(":general:__scope_probe__"))
-        .map(|s| s.to_string());
+    let scope_key_display =
+        source_health::metrics_key("__scope_probe__", "general", scope_mode, scope_override)
+            .strip_prefix("public_indexer_source_health:")
+            .and_then(|s| s.strip_suffix(":general:__scope_probe__"))
+            .map(|s| s.to_string());
 
     let gate = json!({
         "enabled": cfg.public_indexers_source_health_gates_enabled,

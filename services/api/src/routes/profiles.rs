@@ -470,11 +470,10 @@ pub fn split_config(config: &Value, key: &[u8; 32]) -> (Value, Option<String>) {
         *providers = clean_providers;
         // Only persist secrets when at least one provider has real credentials
         // (more keys than just `_index`).
-        if secrets_list.iter().any(|s| {
-            s.as_object()
-                .map(|o| o.len() > 1)
-                .unwrap_or(false)
-        }) {
+        if secrets_list
+            .iter()
+            .any(|s| s.as_object().map(|o| o.len() > 1).unwrap_or(false))
+        {
             all_secrets.insert(sps_key.to_string(), Value::Array(secrets_list));
         }
     }

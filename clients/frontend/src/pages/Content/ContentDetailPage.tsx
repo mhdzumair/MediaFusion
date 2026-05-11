@@ -471,9 +471,7 @@ function StreamActionDialog({
                       streamName={stream.stream_name || stream.name}
                       currentQuality={stream.quality || stream.resolution}
                       currentLanguage={
-                        Array.isArray(stream.audio_formats)
-                          ? stream.audio_formats.join('|')
-                          : stream.audio_formats
+                        Array.isArray(stream.audio_formats) ? stream.audio_formats.join('|') : stream.audio_formats
                       }
                     />
                     {/* File Annotation for Series */}

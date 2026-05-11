@@ -45,6 +45,7 @@ const SCRAPE_BUDGET: Duration = Duration::from_secs(25);
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 pub async fn scrape(
     client: &Client,
     meta: &SearchMeta,
@@ -111,8 +112,10 @@ pub async fn scrape(
             }
         }
 
-        let (streams, request_ok) =
-            scrape_indexer(client, indexer, meta, media_type, season, episode, byparr_url).await;
+        let (streams, request_ok) = scrape_indexer(
+            client, indexer, meta, media_type, season, episode, byparr_url,
+        )
+        .await;
 
         // Record outcome for health tracking
         if let Some(hg) = health_gate {

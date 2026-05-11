@@ -463,7 +463,8 @@ pub async fn browse_catalog(
         params.has_streams.unwrap_or(true),
     );
 
-    let total: i64 = if let Some(cached_count) = cache::get_json(&state.redis, &count_cache_key).await
+    let total: i64 = if let Some(cached_count) = cache::get_json(&state.redis, &count_cache_key)
+        .await
         .and_then(|v| v.as_i64())
     {
         cached_count
@@ -480,7 +481,13 @@ pub async fn browse_catalog(
         }
         let n = count_q.fetch_one(&state.pool_ro).await.unwrap_or(0);
         // Cache count for 5 minutes — counts change slowly
-        cache::set_json(&state.redis, &count_cache_key, &serde_json::Value::Number(n.into()), 300).await;
+        cache::set_json(
+            &state.redis,
+            &count_cache_key,
+            &serde_json::Value::Number(n.into()),
+            300,
+        )
+        .await;
         n
     };
 
@@ -1290,8 +1297,7 @@ pub async fn get_media_streams(
     //   usenet   → only if provider is usenet-capable
     //   other    → always shown (http, telegram, youtube, acestream, etc.)
     let svc = selected_provider.as_deref().unwrap_or("p2p");
-    let can_torrent = svc == "p2p"
-        || crate::routes::stream::TORRENT_CAPABLE.contains(&svc);
+    let can_torrent = svc == "p2p" || crate::routes::stream::TORRENT_CAPABLE.contains(&svc);
     let can_usenet = crate::routes::stream::USENET_CAPABLE.contains(&svc);
 
     if !can_torrent || !can_usenet {

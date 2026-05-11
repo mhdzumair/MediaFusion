@@ -145,7 +145,10 @@ async fn list_tasks(http: &Client, token: &str) -> Result<Vec<Value>, ProviderEr
 
 fn task_info_hash(task: &Value) -> Option<String> {
     // v2: hash is nested inside torrent_payload
-    if let Some(h) = task["torrent_payload"]["hash"].as_str().filter(|s| !s.is_empty()) {
+    if let Some(h) = task["torrent_payload"]["hash"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+    {
         return Some(h.to_lowercase());
     }
     // fallback: direct hash field (older API shape)
@@ -191,7 +194,10 @@ fn task_is_downloading(task: &Value) -> bool {
         .as_str()
         .or_else(|| task["status"].as_str())
         .unwrap_or("");
-    matches!(s, "downloading" | "queued" | "active" | "pending" | "waiting")
+    matches!(
+        s,
+        "downloading" | "queued" | "active" | "pending" | "waiting"
+    )
 }
 
 // ─── File collection ──────────────────────────────────────────────────────────
@@ -371,8 +377,7 @@ async fn find_hash_folder(
         let Some(folder_id) = folder["id"].as_i64() else {
             continue;
         };
-        let contents =
-            api_get(http, token, &format!("/fs/folder/{folder_id}/contents")).await?;
+        let contents = api_get(http, token, &format!("/fs/folder/{folder_id}/contents")).await?;
         let sub_id = contents["folders"]
             .as_array()
             .and_then(|sf| sf.first())
@@ -396,7 +401,9 @@ async fn check_status(
     // The v2 /tasks endpoint retains completed tasks, so we must check state explicitly.
     let tasks = list_tasks(http, token).await.unwrap_or_default();
 
-    let hash_task = tasks.iter().find(|t| task_info_hash(t).as_deref() == Some(hash));
+    let hash_task = tasks
+        .iter()
+        .find(|t| task_info_hash(t).as_deref() == Some(hash));
 
     if let Some(task) = hash_task {
         if task_is_downloading(task) {
@@ -433,11 +440,7 @@ async fn check_status(
 /// Uses `POST /fs/folder` with form-encoded `parent_id=0&name=<hash>`.
 /// The API returns `{"success": true, "id": "<string_id>", "path": "<hash>"}`.
 /// On conflict (folder already exists) falls back to `find_hash_folder`.
-async fn ensure_hash_folder(
-    http: &Client,
-    token: &str,
-    hash: &str,
-) -> Result<i64, ProviderError> {
+async fn ensure_hash_folder(http: &Client, token: &str, hash: &str) -> Result<i64, ProviderError> {
     let url = format!("{BASE_URL}/fs/folder");
     let resp = http
         .post(&url)
@@ -567,7 +570,9 @@ async fn ensure_enough_space(http: &Client, token: &str, required_bytes: i64) {
     let free = (space_max - space_used).max(0);
 
     if space_max == 0 {
-        tracing::warn!("Seedr: could not read storage quota from root contents; skipping space check");
+        tracing::warn!(
+            "Seedr: could not read storage quota from root contents; skipping space check"
+        );
         return;
     }
 
@@ -597,7 +602,9 @@ async fn ensure_enough_space(http: &Client, token: &str, required_bytes: i64) {
             break;
         }
         tracing::info!("Seedr: deleting folder {id} ({size} bytes) to free space");
-        api_delete(http, token, &format!("/fs/folder/{id}")).await.ok();
+        api_delete(http, token, &format!("/fs/folder/{id}"))
+            .await
+            .ok();
         freed += size;
     }
 }
@@ -643,9 +650,7 @@ pub async fn get_video_url(
                 tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_SECS)).await;
 
                 // Check task for fatal errors.
-                if let Ok(full_resp) =
-                    api_get(http, &token, &format!("/tasks/{task_id}")).await
-                {
+                if let Ok(full_resp) = api_get(http, &token, &format!("/tasks/{task_id}")).await {
                     let task_resp = if full_resp["task"].is_object() {
                         full_resp["task"].clone()
                     } else {
@@ -704,11 +709,7 @@ pub async fn get_video_url(
 ///
 /// A hash is considered cached when its hash-named root folder exists and has a non-empty
 /// content subfolder (size > 0), OR when a completed task for that hash has a `folder_created_id`.
-pub async fn check_cached(
-    http: &reqwest::Client,
-    token: &str,
-    hashes: &[String],
-) -> Vec<String> {
+pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]) -> Vec<String> {
     use std::collections::HashSet;
 
     let bearer = resolve_token(token);
@@ -773,7 +774,9 @@ pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), Provi
     let tasks = list_tasks(http, &bearer).await.unwrap_or_default();
     for task in &tasks {
         if let Some(id) = task["id"].as_i64() {
-            api_delete(http, &bearer, &format!("/tasks/{id}")).await.ok();
+            api_delete(http, &bearer, &format!("/tasks/{id}"))
+                .await
+                .ok();
         }
     }
 

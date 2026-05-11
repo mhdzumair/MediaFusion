@@ -1,5 +1,4 @@
 pub mod easynews;
-pub mod source_health;
 pub mod fetcher;
 pub mod jackett;
 pub mod mediafusion;
@@ -11,6 +10,7 @@ pub mod public_indexer_registry;
 pub mod public_indexers;
 pub mod public_usenet;
 pub mod rss;
+pub mod source_health;
 pub mod telegram;
 pub mod torbox_search;
 pub mod torrentio;

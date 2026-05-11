@@ -26,7 +26,7 @@ pub async fn run(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-    scope: &str,
+    _scope: &str,
 ) -> Vec<ScrapedStream> {
     // Acquire SETNX lock to prevent stampede from concurrent requests.
     let lock_key = lock_key(meta, season, episode);
@@ -437,8 +437,16 @@ async fn fan_out(
                 let start = Utc::now();
                 let t = std::time::Instant::now();
                 let streams = prowlarr::scrape(
-                    &http, &url, &key, &meta, &mt, season, episode,
-                    max_process, max_process_time, query_timeout,
+                    &http,
+                    &url,
+                    &key,
+                    &meta,
+                    &mt,
+                    season,
+                    episode,
+                    max_process,
+                    max_process_time,
+                    query_timeout,
                 )
                 .await;
                 ("prowlarr", streams, start, t.elapsed().as_secs_f64())
@@ -477,8 +485,16 @@ async fn fan_out(
                 let start = Utc::now();
                 let t = std::time::Instant::now();
                 let streams = jackett::scrape(
-                    &http, &url, &key, &meta, &mt, season, episode,
-                    max_process, max_process_time, query_timeout,
+                    &http,
+                    &url,
+                    &key,
+                    &meta,
+                    &mt,
+                    season,
+                    episode,
+                    max_process,
+                    max_process_time,
+                    query_timeout,
                 )
                 .await;
                 ("jackett", streams, start, t.elapsed().as_secs_f64())
@@ -558,7 +574,13 @@ async fn fan_out(
             let start = Utc::now();
             let t = std::time::Instant::now();
             let streams = mediafusion::scrape(
-                &http, &url, &meta, &mt, season, episode, secret_str.as_deref(),
+                &http,
+                &url,
+                &meta,
+                &mt,
+                season,
+                episode,
+                secret_str.as_deref(),
             )
             .await;
             ("mediafusion", streams, start, t.elapsed().as_secs_f64())
@@ -575,8 +597,7 @@ async fn fan_out(
         set.spawn(async move {
             let start = Utc::now();
             let t = std::time::Instant::now();
-            let streams =
-                torbox_search::scrape(&http, &ud, &meta, &mt, season, episode).await;
+            let streams = torbox_search::scrape(&http, &ud, &meta, &mt, season, episode).await;
             ("torbox_search", streams, start, t.elapsed().as_secs_f64())
         });
         spawned_scrapers.push("torbox_search");

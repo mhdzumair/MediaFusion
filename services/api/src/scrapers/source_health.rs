@@ -154,11 +154,7 @@ pub async fn get_source_health(
 ) -> SourceHealthSnapshot {
     let key = metrics_key(source_key, health_bucket, scope_mode, scope_override);
     let raw: HashMap<String, String> = redis.hgetall(&key).await.unwrap_or_default();
-    let get = |field: &str| -> i64 {
-        raw.get(field)
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0)
-    };
+    let get = |field: &str| -> i64 { raw.get(field).and_then(|v| v.parse().ok()).unwrap_or(0) };
     if raw.is_empty() {
         return SourceHealthSnapshot {
             source_key: source_key.to_string(),
@@ -179,6 +175,7 @@ pub async fn get_source_health(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn record_source_outcome(
     redis: &fred::clients::Client,
     source_key: &str,
@@ -221,11 +218,7 @@ pub async fn record_source_outcome(
     let _: Result<bool, _> = redis.expire(&key, ttl_seconds, None).await;
 }
 
-async fn decay_source_counters(
-    redis: &fred::clients::Client,
-    key: &str,
-    decay_factor: f64,
-) {
+async fn decay_source_counters(redis: &fred::clients::Client, key: &str, decay_factor: f64) {
     let raw: HashMap<String, String> = match redis.hgetall(key).await {
         Ok(m) => m,
         Err(_) => return,
@@ -233,33 +226,39 @@ async fn decay_source_counters(
     if raw.is_empty() {
         return;
     }
-    let get = |field: &str| -> i64 {
-        raw.get(field)
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0)
-    };
+    let get = |field: &str| -> i64 { raw.get(field).and_then(|v| v.parse().ok()).unwrap_or(0) };
     let current_total = get("total");
     if current_total <= 0 {
         return;
     }
     let decayed_total = ((current_total as f64 * decay_factor).max(1.0)) as i64;
-    let decayed_success =
-        ((get("success") as f64 * decay_factor) as i64).min(decayed_total).max(0);
-    let decayed_timeout =
-        ((get("timeout") as f64 * decay_factor) as i64).min(decayed_total).max(0);
-    let decayed_challenge =
-        ((get("challenge_solved") as f64 * decay_factor) as i64).min(decayed_total).max(0);
+    let decayed_success = ((get("success") as f64 * decay_factor) as i64)
+        .min(decayed_total)
+        .max(0);
+    let decayed_timeout = ((get("timeout") as f64 * decay_factor) as i64)
+        .min(decayed_total)
+        .max(0);
+    let decayed_challenge = ((get("challenge_solved") as f64 * decay_factor) as i64)
+        .min(decayed_total)
+        .max(0);
     let decayed_streak = get("consecutive_success").min(decayed_total).max(0);
 
     let mut fields = HashMap::new();
     fields.insert("total".to_string(), decayed_total.to_string());
     fields.insert("success".to_string(), decayed_success.to_string());
     fields.insert("timeout".to_string(), decayed_timeout.to_string());
-    fields.insert("challenge_solved".to_string(), decayed_challenge.to_string());
-    fields.insert("consecutive_success".to_string(), decayed_streak.to_string());
+    fields.insert(
+        "challenge_solved".to_string(),
+        decayed_challenge.to_string(),
+    );
+    fields.insert(
+        "consecutive_success".to_string(),
+        decayed_streak.to_string(),
+    );
     let _: Result<i64, _> = redis.hset(key, fields).await;
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn is_source_within_budget(
     redis: &fred::clients::Client,
     source_key: &str,
@@ -270,7 +269,8 @@ pub async fn is_source_within_budget(
     scope_mode: &str,
     scope_override: &str,
 ) -> bool {
-    let snapshot = get_source_health(redis, source_key, health_bucket, scope_mode, scope_override).await;
+    let snapshot =
+        get_source_health(redis, source_key, health_bucket, scope_mode, scope_override).await;
     if snapshot.total < min_samples.max(1) {
         return true; // not enough samples yet → allow
     }
@@ -283,6 +283,7 @@ pub async fn is_source_within_budget(
 /// "Recent Media Search Runs" page shows Rust-server scrape activity.
 ///
 /// Matches the JSON schema that Python's `ScraperMetrics.save_to_redis()` writes.
+#[allow(clippy::too_many_arguments)]
 pub async fn save_scraper_run_metrics(
     redis: &fred::clients::Client,
     scraper_name: &str,
@@ -363,7 +364,13 @@ pub async fn save_scraper_run_metrics(
     // Save latest
     let latest_key = format!("{SCRAPER_METRICS_LATEST_KEY}{scraper_name}");
     let _: Result<(), _> = redis
-        .set(&latest_key, json_str.clone(), Some(fred::types::Expiration::EX(SCRAPER_METRICS_TTL)), None, false)
+        .set(
+            &latest_key,
+            json_str.clone(),
+            Some(fred::types::Expiration::EX(SCRAPER_METRICS_TTL)),
+            None,
+            false,
+        )
         .await;
 
     // Prepend to history list, cap at SCRAPER_METRICS_HISTORY_MAX
