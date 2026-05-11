@@ -1,7 +1,7 @@
 services:
   # ── Primary API (Rust) ────────────────────────────────────────────────────
   mediafusion-api:
-    image: mhdzumair/mediafusion:6.0.0-beta.4
+    image: mhdzumair/mediafusion:6.0.0-beta.5
     entrypoint: ["/usr/local/bin/mediafusion-api"]
     ports:
       - "8000:8000"
@@ -32,7 +32,7 @@ services:
 
   # ── Background Scheduler (Python APScheduler) ─────────────────────────────
   mediafusion-scheduler:
-    image: mhdzumair/mediafusion:6.0.0-beta.4
+    image: mhdzumair/mediafusion:6.0.0-beta.5
     command: ["python", "-m", "workers.run_scheduler"]
     env_file: .env
     environment:
@@ -56,7 +56,7 @@ services:
 
   # ── Background Worker (default queue) ────────────────────────────────────
   taskiq-worker-default:
-    image: mhdzumair/mediafusion:6.0.0-beta.4
+    image: mhdzumair/mediafusion:6.0.0-beta.5
     command: ["taskiq", "worker", "workers.taskiq_worker:broker_default", "--workers", "1", "--max-async-tasks", "8", "--ack-type", "when_executed"]
     env_file: .env
     environment:
