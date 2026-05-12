@@ -12,7 +12,7 @@ ARG TARGETARCH
 COPY --chmod=755 rust-dist/${TARGETARCH}/mediafusion-api /mediafusion-api
 
 # Python builder stage
-FROM python:3.13-slim-bookworm AS builder
+FROM python:3.13-slim-noble AS builder
 
 WORKDIR /mediafusion
 
@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=/mediafusion/.cache/uv \
     uv sync --frozen --no-install-project --compile-bytecode
 
 # Runtime stage
-FROM python:3.13-slim-bookworm AS runtime
+FROM python:3.13-slim-noble AS runtime
 
 WORKDIR /mediafusion
 
