@@ -454,25 +454,7 @@ pub struct MagnetAnalyzeRequest {
     resolve_timeout_secs: Option<u64>,
 }
 
-#[derive(Deserialize)]
-pub struct MagnetImportRequest {
-    magnet_link: String,
-    meta_type: Option<String>,
-    meta_id: Option<String>,
-    title: Option<String>,
-    catalogs: Option<Vec<String>>,
-    languages: Option<Vec<String>>,
-    resolution: Option<String>,
-    quality: Option<String>,
-    codec: Option<String>,
-    force_import: Option<bool>,
-    /// Per-file metadata (index, filename, size, optional season/episode)
-    file_data: Option<Vec<FileEntry>>,
-    /// Contribute anonymously (hides username from contribution record).
-    is_anonymous: Option<bool>,
-    /// Custom display name when contributing anonymously.
-    anonymous_display_name: Option<String>,
-}
+// MagnetImportRequest was replaced by multipart form parsing in import_magnet.
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -510,6 +492,16 @@ pub async fn analyze_magnet(
     let torrent_name = extract_dn(&body.magnet_link)
         .or_else(|| body.title.clone())
         .unwrap_or_default();
+
+    // Adult content filter — block at analyze time so the UI never proceeds
+    if !torrent_name.is_empty() && is_adult_content(&torrent_name) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"status": "error", "error": "Adult content is not allowed"})),
+        )
+            .into_response();
+    }
+
     let parsed = parser::parse_title(&torrent_name);
 
     let meta_type = body.meta_type.as_deref().unwrap_or("movie");
@@ -554,21 +546,16 @@ pub async fn analyze_magnet(
     (
         StatusCode::OK,
         Json(json!({
+            "status": "success",
             "info_hash": info_hash,
             "torrent_name": torrent_name,
             "already_exists": already_exists,
-            "parsed_title": {
-                "title": parsed.title,
-                "year": parsed.year,
-                "resolution": parsed.resolution,
-                "quality": parsed.quality,
-                "codec": parsed.codec,
-                "seasons": parsed.seasons,
-                "episodes": parsed.episodes,
-                "is_proper": parsed.is_proper,
-                "is_repack": parsed.is_repack,
-                "languages": parsed.languages,
-            },
+            "parsed_title": parsed.title,
+            "year": parsed.year,
+            "resolution": parsed.resolution,
+            "quality": parsed.quality,
+            "codec": parsed.codec,
+            "languages": parsed.languages,
             "matches": matches,
             "meta_match": meta_match,
             "resolved": resolved_files,
@@ -595,7 +582,7 @@ pub async fn analyze_torrent(
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
-            Some("file") => {
+            Some("torrent_file") | Some("file") => {
                 file_bytes = field.bytes().await.ok();
             }
             Some("meta_type") => {
@@ -610,7 +597,7 @@ pub async fn analyze_torrent(
         None => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(json!({"detail": "Missing 'file' field"})),
+                Json(json!({"detail": "Missing 'torrent_file' field"})),
             )
                 .into_response();
         }
@@ -659,6 +646,15 @@ pub async fn analyze_torrent(
             .await
             .unwrap_or(false);
 
+    // Adult content filter — block at analyze time so the UI never proceeds
+    if is_adult_content(&name) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"status": "error", "error": "Adult content is not allowed"})),
+        )
+            .into_response();
+    }
+
     let parsed = parser::parse_title(&name);
     let search_title = parsed.title.as_deref().unwrap_or(&name);
     let matches = search_media(&state.pool, search_title, &meta_type).await;
@@ -666,24 +662,19 @@ pub async fn analyze_torrent(
     (
         StatusCode::OK,
         Json(json!({
+            "status": "success",
             "info_hash": info_hash,
             "torrent_name": name,
             "already_exists": already_exists,
             "file_count": file_count,
             "total_size": total_size,
             "files": files,
-            "parsed_title": {
-                "title": parsed.title,
-                "year": parsed.year,
-                "resolution": parsed.resolution,
-                "quality": parsed.quality,
-                "codec": parsed.codec,
-                "seasons": parsed.seasons,
-                "episodes": parsed.episodes,
-                "is_proper": parsed.is_proper,
-                "is_repack": parsed.is_repack,
-                "languages": parsed.languages,
-            },
+            "parsed_title": parsed.title,
+            "year": parsed.year,
+            "resolution": parsed.resolution,
+            "quality": parsed.quality,
+            "codec": parsed.codec,
+            "languages": parsed.languages,
             "matches": matches,
         })),
     )
@@ -693,7 +684,7 @@ pub async fn analyze_torrent(
 pub async fn import_magnet(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Json(body): Json<MagnetImportRequest>,
+    mut multipart: Multipart,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -717,7 +708,98 @@ pub async fn import_magnet(
         }
     };
 
-    let info_hash = match extract_info_hash_from_magnet(&body.magnet_link) {
+    // ── Parse multipart fields ────────────────────────────────────────────────
+    let mut magnet_link = String::new();
+    let mut meta_type = String::from("movie");
+    let mut meta_id: Option<String> = None;
+    let mut title: Option<String> = None;
+    let mut resolution: Option<String> = None;
+    let mut quality: Option<String> = None;
+    let mut codec: Option<String> = None;
+    let mut languages: Vec<String> = Vec::new();
+    let mut catalogs: Vec<String> = Vec::new();
+    let mut force_import = false;
+    let mut file_data: Vec<FileEntry> = Vec::new();
+    let mut is_anonymous_field: Option<bool> = None;
+    let mut anonymous_display_name: Option<String> = None;
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        match field.name() {
+            Some("magnet_link") => {
+                magnet_link = field.text().await.unwrap_or_default();
+            }
+            Some("meta_type") => {
+                meta_type = field.text().await.unwrap_or_else(|_| "movie".into());
+            }
+            Some("meta_id") => {
+                meta_id = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("title") => {
+                title = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("resolution") => {
+                resolution = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("quality") => {
+                quality = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("codec") => {
+                codec = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("languages") => {
+                if let Ok(raw) = field.text().await {
+                    languages = raw
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                }
+            }
+            Some("catalogs") => {
+                if let Ok(raw) = field.text().await {
+                    catalogs = raw
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                }
+            }
+            Some("force_import") => {
+                force_import = field
+                    .text()
+                    .await
+                    .ok()
+                    .map(|v| v == "true" || v == "1")
+                    .unwrap_or(false);
+            }
+            Some("file_data") => {
+                if let Ok(raw) = field.text().await {
+                    file_data =
+                        serde_json::from_str::<Vec<FileEntry>>(&raw).unwrap_or_default();
+                }
+            }
+            Some("is_anonymous") => {
+                if let Ok(raw) = field.text().await {
+                    is_anonymous_field = Some(raw == "true" || raw == "1");
+                }
+            }
+            Some("anonymous_display_name") => {
+                anonymous_display_name =
+                    field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            _ => {}
+        }
+    }
+
+    if magnet_link.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "Missing magnet_link field"})),
+        )
+            .into_response();
+    }
+
+    let info_hash = match extract_info_hash_from_magnet(&magnet_link) {
         Some(h) => h,
         None => {
             return (
@@ -728,11 +810,11 @@ pub async fn import_magnet(
         }
     };
 
-    let torrent_name = extract_dn(&body.magnet_link)
-        .or_else(|| body.title.clone())
+    let torrent_name = extract_dn(&magnet_link)
+        .or_else(|| title.clone())
         .unwrap_or_default();
     let name_for_parse = if torrent_name.is_empty() {
-        body.title.as_deref().unwrap_or(&info_hash).to_string()
+        title.as_deref().unwrap_or(&info_hash).to_string()
     } else {
         torrent_name.clone()
     };
@@ -759,8 +841,6 @@ pub async fn import_magnet(
         return (status, Json(json!({"detail": msg}))).into_response();
     }
 
-    let force_import = body.force_import.unwrap_or(false);
-
     // Check duplicate
     let existing_id: Option<i64> = sqlx::query_scalar(
         "SELECT ts.stream_id FROM torrent_stream ts WHERE ts.info_hash = $1 LIMIT 1",
@@ -786,29 +866,28 @@ pub async fn import_magnet(
 
     let mut parsed = parser::parse_title(&name_for_parse);
     // Allow caller to override parser-detected values
-    if let Some(ref r) = body.resolution {
+    if let Some(ref r) = resolution {
         if !r.is_empty() {
             parsed.resolution = Some(r.clone());
         }
     }
-    if let Some(ref q) = body.quality {
+    if let Some(ref q) = quality {
         if !q.is_empty() {
             parsed.quality = Some(q.clone());
         }
     }
-    if let Some(ref c) = body.codec {
+    if let Some(ref c) = codec {
         if !c.is_empty() {
             parsed.codec = Some(c.clone());
         }
     }
-    let meta_type = body.meta_type.as_deref().unwrap_or("movie");
 
-    let media_id = if let Some(mid) = &body.meta_id {
+    let media_id = if let Some(ref mid) = meta_id {
         if !mid.is_empty() {
             resolve_media_id(
                 &state.pool,
                 mid,
-                meta_type,
+                &meta_type,
                 parsed.title.as_deref().unwrap_or(&name_for_parse),
                 parsed.year,
             )
@@ -821,20 +900,23 @@ pub async fn import_magnet(
     };
 
     // Resolve uploader identity
-    let resolved_is_anonymous = body.is_anonymous.unwrap_or(user.contribute_anonymously);
+    let resolved_is_anonymous = is_anonymous_field.unwrap_or(user.contribute_anonymously);
     let (uploader_name, uploader_user_id) = resolve_uploader_identity(
         resolved_is_anonymous,
-        body.anonymous_display_name.as_deref(),
+        anonymous_display_name.as_deref(),
         &user.username,
         user_id,
     );
 
-    // Determine auto-approval: mods/admins always; active users unless anonymous
     let is_privileged = matches!(user.role.as_str(), "moderator" | "admin");
     let auto_approve = is_privileged || !resolved_is_anonymous;
 
-    let source = body.meta_id.as_deref().unwrap_or("manual").to_string();
-    let file_count = body.file_data.as_ref().map(|f| f.len() as i32).unwrap_or(1);
+    let source = meta_id.as_deref().unwrap_or("manual").to_string();
+    let file_count = if !file_data.is_empty() {
+        file_data.len() as i32
+    } else {
+        1
+    };
 
     let stream_id = match insert_torrent_stream(
         &state.pool,
@@ -861,7 +943,7 @@ pub async fn import_magnet(
     };
 
     // Insert trackers from magnet URI
-    let trackers = extract_trackers_from_magnet(&body.magnet_link);
+    let trackers = extract_trackers_from_magnet(&magnet_link);
     if !trackers.is_empty() {
         let ts_id: Option<i32> =
             sqlx::query_scalar("SELECT id FROM torrent_stream WHERE stream_id = $1 LIMIT 1")
@@ -875,20 +957,20 @@ pub async fn import_magnet(
     }
 
     // Insert language links
-    if let Some(langs) = &body.languages {
-        insert_languages(&state.pool, stream_id, langs).await.ok();
+    if !languages.is_empty() {
+        insert_languages(&state.pool, stream_id, &languages).await.ok();
     }
 
     // Insert per-file metadata
-    if let Some(files) = &body.file_data {
-        insert_file_data(&state.pool, stream_id, media_id, files)
+    if !file_data.is_empty() {
+        insert_file_data(&state.pool, stream_id, media_id, &file_data)
             .await
             .ok();
     }
 
     // Link media to caller-specified catalogs
-    if let (Some(catalogs), Some(mid)) = (&body.catalogs, media_id) {
-        for cat_name in catalogs {
+    if let Some(mid) = media_id {
+        for cat_name in &catalogs {
             if cat_name.is_empty() {
                 continue;
             }
@@ -924,7 +1006,7 @@ pub async fn import_magnet(
         &state.pool,
         uploader_user_id,
         "torrent",
-        body.meta_id.as_deref(),
+        meta_id.as_deref(),
         &contribution_data,
         auto_approve,
         is_privileged,
@@ -936,7 +1018,6 @@ pub async fn import_magnet(
                 award_contribution_points(&state.pool, uid).await;
             }
         } else {
-            // Notify moderators of pending contribution
             if let (Some(bot_token), Some(chat_id)) = (
                 &state.config.telegram_bot_token,
                 &state.config.telegram_chat_id,
@@ -999,15 +1080,19 @@ pub async fn import_torrent(
     let mut meta_type = String::from("movie");
     let mut meta_id: Option<String> = None;
     let mut title: Option<String> = None;
-    let mut force_import = false;
+    let mut resolution: Option<String> = None;
+    let mut quality: Option<String> = None;
+    let mut codec: Option<String> = None;
     let mut languages: Vec<String> = Vec::new();
+    let mut catalogs: Vec<String> = Vec::new();
+    let mut force_import = false;
     let mut file_data: Vec<FileEntry> = Vec::new();
     let mut is_anonymous_field: Option<bool> = None;
     let mut anonymous_display_name: Option<String> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
-            Some("file") => {
+            Some("torrent_file") | Some("file") => {
                 file_bytes = field.bytes().await.ok();
             }
             Some("meta_type") => {
@@ -1019,6 +1104,15 @@ pub async fn import_torrent(
             Some("title") => {
                 title = field.text().await.ok().filter(|s| !s.is_empty());
             }
+            Some("resolution") => {
+                resolution = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("quality") => {
+                quality = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("codec") => {
+                codec = field.text().await.ok().filter(|s| !s.is_empty());
+            }
             Some("force_import") => {
                 force_import = field
                     .text()
@@ -1029,8 +1123,20 @@ pub async fn import_torrent(
             }
             Some("languages") => {
                 if let Ok(raw) = field.text().await {
-                    languages =
-                        serde_json::from_str::<Vec<String>>(&raw).unwrap_or_else(|_| vec![raw]);
+                    languages = raw
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                }
+            }
+            Some("catalogs") => {
+                if let Ok(raw) = field.text().await {
+                    catalogs = raw
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
                 }
             }
             Some("file_data") => {
@@ -1131,7 +1237,23 @@ pub async fn import_torrent(
         }
     }
 
-    let parsed = parser::parse_title(&torrent_name);
+    let mut parsed = parser::parse_title(&torrent_name);
+    // Allow caller to override parser-detected values
+    if let Some(ref r) = resolution {
+        if !r.is_empty() {
+            parsed.resolution = Some(r.clone());
+        }
+    }
+    if let Some(ref q) = quality {
+        if !q.is_empty() {
+            parsed.quality = Some(q.clone());
+        }
+    }
+    if let Some(ref c) = codec {
+        if !c.is_empty() {
+            parsed.codec = Some(c.clone());
+        }
+    }
 
     let media_id = if let Some(mid) = &meta_id {
         resolve_media_id(
@@ -1254,6 +1376,31 @@ pub async fn import_torrent(
         insert_file_data(&state.pool, stream_id, media_id, &effective_files)
             .await
             .ok();
+    }
+
+    // Link media to caller-specified catalogs
+    if let Some(mid) = media_id {
+        for cat_name in &catalogs {
+            if cat_name.is_empty() {
+                continue;
+            }
+            let cat_id: Option<i32> = sqlx::query_scalar(
+                "INSERT INTO catalog(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
+            )
+            .bind(cat_name)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
+            if let Some(cid) = cat_id {
+                let _ = sqlx::query(
+                    "INSERT INTO media_catalog_link(media_id, catalog_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
+                )
+                .bind(mid as i32)
+                .bind(cid)
+                .execute(&state.pool)
+                .await;
+            }
+        }
     }
 
     // Create contribution record

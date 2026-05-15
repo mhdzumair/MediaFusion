@@ -45,6 +45,7 @@ use tower_http::{
     compression::CompressionLayer, cors::CorsLayer, services::ServeDir, timeout::TimeoutLayer,
 };
 
+use crate::api_error_middleware::api_error_middleware;
 use crate::api_key_middleware::api_key_middleware;
 use crate::make_trace_layer;
 use crate::metrics_middleware::metrics_middleware;
@@ -683,6 +684,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             Arc::clone(&state),
             metrics_middleware,
         ))
+        .layer(axum::middleware::from_fn(api_error_middleware))
         .layer(CompressionLayer::new())
         .layer(TimeoutLayer::with_status_code(
             axum::http::StatusCode::GATEWAY_TIMEOUT,

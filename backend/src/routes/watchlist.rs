@@ -34,6 +34,8 @@ const WATCHLIST_PROVIDERS: &[&str] = &[
     "stremthru",
     "offcloud",
     "easydebrid",
+    "seedr",
+    "pikpak",
 ];
 
 fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {

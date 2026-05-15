@@ -1,3 +1,4 @@
+pub mod api_error_middleware;
 pub mod api_key_middleware;
 pub mod cache;
 pub mod config;
