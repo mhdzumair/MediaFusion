@@ -195,7 +195,7 @@ jobs:
           build-args: VERSION=${{ github.ref_name }}
           tags: |
             mhdzumair/mediafusion:${{ github.ref_name }}
-            mhdzumair/mediafusion:${{ github.event.release.prerelease && 'beta' || 'latest' }}
+            mhdzumair/mediafusion:${{ contains(github.ref_name, 'beta') && 'beta' || 'latest' }}
 
       - name: Image digest
         run: echo "${{ steps.docker_build.outputs.digest }}"
