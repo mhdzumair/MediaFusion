@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE jobs SET status = 'pending', started_at = NULL, worker_id = NULL\n            WHERE queue = $1\n              AND status = 'running'\n              AND started_at < now() - ($2 * interval '1 minute')\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2c9ddad5ef53a0cd1137fcc4594e940fb0b4579439e9845bfc8e83a56745c287"
+}

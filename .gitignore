@@ -148,4 +148,4 @@ kodi/*.zip
 *.tar
 *.nzb
 perf/
-.sqlx/
+# .sqlx/ tracked for offline sqlx query verification in CI
