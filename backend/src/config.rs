@@ -331,10 +331,15 @@ impl AppConfig {
         AppConfig {
             secret_key: key,
             secret_key_raw: raw,
-            postgres_uri: env("POSTGRES_URI").unwrap_or_else(|_| {
-                "postgresql://mediafusion:mediafusion@127.0.0.1:5432/mediafusion".into()
-            }),
-            postgres_ro_uri: env("POSTGRES_RO_URI").ok().filter(|s| !s.is_empty()),
+            postgres_uri: env("POSTGRES_URI")
+                .unwrap_or_else(|_| {
+                    "postgresql://mediafusion:mediafusion@127.0.0.1:5432/mediafusion".into()
+                })
+                .replace("postgresql+asyncpg://", "postgresql://"),
+            postgres_ro_uri: env("POSTGRES_READ_URI")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.replace("postgresql+asyncpg://", "postgresql://")),
             redis_url: env("REDIS_URL")
                 .unwrap_or_else(|_| "redis://127.0.0.1:6379".into()),
             port: env("STREAM_RS_PORT")
