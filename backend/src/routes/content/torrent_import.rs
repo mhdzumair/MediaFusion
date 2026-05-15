@@ -74,58 +74,6 @@ use super::import_helpers::{
     fetch_user_info, is_adult_content, notify_pending_contribution, resolve_uploader_identity,
 };
 
-// ─── Analyze token ────────────────────────────────────────────────────────────
-//
-// After a successful /analyze call the server issues a short-lived signed token
-// that the /import endpoint must present.  This prevents importing arbitrary
-// info_hashes that were never verified through the analyze step.
-//
-// Token format:  "<info_hash>.<expiry_unix_ts>.<hex_hmac_sha256>"
-
-const ANALYZE_TOKEN_TTL_SECS: i64 = 3600; // 1 hour
-
-fn generate_analyze_token(info_hash: &str, secret_key: &[u8; 32]) -> String {
-    let exp = Utc::now().timestamp() + ANALYZE_TOKEN_TTL_SECS;
-    let payload = format!("{info_hash}.{exp}");
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key).expect("HMAC key");
-    mac.update(payload.as_bytes());
-    let sig: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    format!("{payload}.{sig}")
-}
-
-fn verify_analyze_token(token: &str, expected_hash: &str, secret_key: &[u8; 32]) -> bool {
-    let parts: Vec<&str> = token.splitn(3, '.').collect();
-    if parts.len() != 3 {
-        return false;
-    }
-    let (hash, exp_str, sig) = (parts[0], parts[1], parts[2]);
-    if hash != expected_hash {
-        return false;
-    }
-    let exp: i64 = match exp_str.parse() {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
-    if exp < Utc::now().timestamp() {
-        return false;
-    }
-    let payload = format!("{hash}.{exp_str}");
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key).expect("HMAC key");
-    mac.update(payload.as_bytes());
-    let expected_sig: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    expected_sig == sig
-}
-
 // ─── Magnet URI helpers ───────────────────────────────────────────────────────
 
 fn extract_info_hash_from_magnet(magnet: &str) -> Option<String> {
@@ -597,9 +545,6 @@ pub async fn analyze_magnet(
         None
     };
 
-    let analyze_token =
-        generate_analyze_token(&info_hash, &state.config.secret_key);
-
     (
         StatusCode::OK,
         Json(json!({
@@ -616,7 +561,6 @@ pub async fn analyze_magnet(
             "matches": matches,
             "meta_match": meta_match,
             "resolved": resolved_files,
-            "analyze_token": analyze_token,
         })),
     )
         .into_response()
@@ -717,8 +661,6 @@ pub async fn analyze_torrent(
     let search_title = parsed.title.as_deref().unwrap_or(&name);
     let matches = search_media(&state.pool, search_title, &meta_type).await;
 
-    let analyze_token = generate_analyze_token(&info_hash, &state.config.secret_key);
-
     (
         StatusCode::OK,
         Json(json!({
@@ -736,7 +678,6 @@ pub async fn analyze_torrent(
             "codec": parsed.codec,
             "languages": parsed.languages,
             "matches": matches,
-            "analyze_token": analyze_token,
         })),
     )
         .into_response()
@@ -783,15 +724,11 @@ pub async fn import_magnet(
     let mut file_data: Vec<FileEntry> = Vec::new();
     let mut is_anonymous_field: Option<bool> = None;
     let mut anonymous_display_name: Option<String> = None;
-    let mut analyze_token: Option<String> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
             Some("magnet_link") => {
                 magnet_link = field.text().await.unwrap_or_default();
-            }
-            Some("analyze_token") => {
-                analyze_token = field.text().await.ok().filter(|s| !s.is_empty());
             }
             Some("meta_type") => {
                 meta_type = field.text().await.unwrap_or_else(|_| "movie".into());
@@ -891,18 +828,6 @@ pub async fn import_magnet(
             Json(json!({"detail": "Adult content is not allowed"})),
         )
             .into_response();
-    }
-
-    // Require a valid analyze token — proves the info_hash passed through /analyze
-    match analyze_token.as_deref() {
-        Some(tok) if verify_analyze_token(tok, &info_hash, &state.config.secret_key) => {}
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"detail": "Missing or invalid analyze_token. Call /analyze first."})),
-            )
-                .into_response();
-        }
     }
 
     // Upload permission guard
@@ -1166,15 +1091,11 @@ pub async fn import_torrent(
     let mut file_data: Vec<FileEntry> = Vec::new();
     let mut is_anonymous_field: Option<bool> = None;
     let mut anonymous_display_name: Option<String> = None;
-    let mut analyze_token: Option<String> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
             Some("torrent_file") | Some("file") => {
                 file_bytes = field.bytes().await.ok();
-            }
-            Some("analyze_token") => {
-                analyze_token = field.text().await.ok().filter(|s| !s.is_empty());
             }
             Some("meta_type") => {
                 meta_type = field.text().await.unwrap_or_else(|_| "movie".into());
@@ -1280,18 +1201,6 @@ pub async fn import_torrent(
             Json(json!({"detail": "Adult content is not allowed"})),
         )
             .into_response();
-    }
-
-    // Require a valid analyze token — proves the info_hash passed through /analyze
-    match analyze_token.as_deref() {
-        Some(tok) if verify_analyze_token(tok, &info_hash, &state.config.secret_key) => {}
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"detail": "Missing or invalid analyze_token. Call /analyze first."})),
-            )
-                .into_response();
-        }
     }
 
     // Upload permission guard

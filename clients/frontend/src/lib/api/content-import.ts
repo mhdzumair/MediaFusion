@@ -54,8 +54,6 @@ export interface TorrentAnalyzeResponse {
   sports_event_date?: string
   matches?: TorrentMatch[]
   error?: string
-  // Token issued by the analyze endpoint — must be forwarded to /import
-  analyze_token?: string
   // Validation error details
   errors?: Array<{
     type: string
@@ -157,9 +155,6 @@ export interface TorrentImportRequest {
 
   // Sports category
   sports_category?: string
-
-  // Token returned by /analyze — required by the server to prevent arbitrary imports
-  analyze_token?: string
 }
 
 // ============================================
@@ -541,7 +536,6 @@ export const contentImportApi = {
     if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
     if (data.file_data) formData.append('file_data', data.file_data)
     if (data.sports_category) formData.append('sports_category', data.sports_category)
-    if (data.analyze_token) formData.append('analyze_token', data.analyze_token)
     return apiClient.upload<ImportResponse>('/import/magnet', formData)
   },
 
@@ -574,7 +568,6 @@ export const contentImportApi = {
     if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
     if (data.file_data) formData.append('file_data', data.file_data)
     if (data.sports_category) formData.append('sports_category', data.sports_category)
-    if (data.analyze_token) formData.append('analyze_token', data.analyze_token)
     return apiClient.upload<ImportResponse>('/import/torrent', formData)
   },
 
