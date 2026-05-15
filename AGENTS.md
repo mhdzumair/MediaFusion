@@ -1,0 +1,143 @@
+## Project Overview
+
+MediaFusion is a Rust-based Stremio and Kodi addon that aggregates streaming content from multiple sources (torrents, HTTP streams, YouTube, Telegram, debrid services, etc.). Version 6 is a full Rust rewrite of a previously Python-based backend.
+
+## Commands
+
+### Backend (Rust)
+
+```bash
+# Development server with auto-reload
+make rust-dev
+# OR: cargo run --manifest-path backend/Cargo.toml --bin mediafusion-api
+
+# Background worker (scraping jobs, separate process)
+cargo run --manifest-path backend/Cargo.toml --bin mediafusion-worker
+
+# Release build
+make rust-build
+# OR: cd backend && cargo build --release --bin mediafusion-api --bin mediafusion-worker
+
+# Tests
+make rust-test
+# OR: cd backend && cargo test
+
+# Run a single test file
+cd backend && cargo test --test jobs_validate_tv
+
+# Lint
+make rust-lint
+# OR: cd backend && cargo clippy --all-targets -- -D warnings
+
+# Format check
+make rust-fmt
+# OR: cd backend && cargo fmt --check
+```
+
+### Frontend (React + TypeScript)
+
+```bash
+make frontend-install     # cd clients/frontend && npm ci
+make frontend-dev         # cd clients/frontend && npm run dev
+make frontend-build       # cd clients/frontend && npm run build
+make frontend-lint        # cd clients/frontend && npm run lint
+make frontend-fmt         # cd clients/frontend && npm run format:check
+```
+
+### Local Development Setup
+
+```bash
+# Start only PostgreSQL and Redis (minimal Docker)
+cd deployment/docker-compose && docker compose -f docker-compose-minimal.yml up -d
+
+# Migrations run automatically on API startup — no manual step needed
+make rust-dev
+```
+
+### Docker Builds
+
+```bash
+make build VERSION=6.0.0          # Single-platform
+make build-multi VERSION=6.0.0    # Multi-platform (amd64 + arm64)
+```
+
+### Run All Checks
+
+```bash
+make lint    # All linting
+make fmt     # All format checks
+make test    # All tests
+```
+
+## Deprecated Python Server & Workers (`python-deprecated/`)
+
+Everything in this directory has been fully replaced by Rust equivalents. It is kept **for parity checking only** — do not run or deploy it. The FastAPI server, taskiq workers, APScheduler jobs, and Scrapy scrapers all have corresponding implementations in `backend/`. The Alembic migrations in `python-deprecated/migrations/` represent the v5 schema history; v6 uses sqlx migrations in `backend/migrations/`.
+
+## Architecture
+
+### Services
+
+- **`mediafusion-api`** (Rust, Axum): HTTP server on port 8000. Handles Stremio addon manifest, catalog, stream, and user profile endpoints.
+- **`mediafusion-worker`** (Rust): Long-running background job processor. Scrapes Prowlarr, RSS feeds, Telegram, YouTube, etc. Runs scheduled jobs.
+- **PostgreSQL**: Primary data store. Migrations live in `backend/migrations/` as `NNNN_description.{up|down}.sql` and are applied automatically on startup via sqlx.
+- **Redis**: Session cache, rate limiting, stream cache, job queue coordination.
+- **Frontend** (`clients/frontend`): React 19 config UI. Built with Vite, TailwindCSS 4, Radix UI, React Query.
+- **Kodi addon** (`clients/kodi`): Python-based Kodi client.
+
+### Key Architectural Decisions
+
+- **Unified stream table**: A base `Stream` table with type-specific sub-tables (`TorrentStream`, `HTTPStream`, `YouTubeStream`, etc.) linked by ID.
+- **`StreamMediaLink`**: Many-to-many table that links streams to media, supporting specific file granularity within multi-file torrents.
+- **sqlx over ORMs**: All SQL queries are compile-time validated. Query cache lives in `backend/.sqlx/`. Run `cargo sqlx prepare` after changing queries.
+- **No ORM magic**: Schema changes require explicit migration files; `sqlx::query!` macros validate against the live DB at compile time.
+- **Multi-provider metadata**: Movies/series can have IDs from TMDB, TVDB, IMDb, MAL, Kitsu simultaneously.
+- **Explicit quality columns**: Stream quality (resolution, codec, audio, HDR) stored as typed columns, not JSONB.
+
+### Directory Layout
+
+```
+backend/          # Rust workspace (api + worker binaries, shared lib)
+  src/            # Library code shared between binaries
+  migrations/     # sqlx SQL migrations (run automatically on startup)
+  tests/          # Integration tests
+clients/
+  frontend/       # React TypeScript web UI
+  kodi/           # Kodi addon (Python)
+deployment/
+  docker-compose/ # Compose files for full-stack, minimal dev, HA, perf testing
+  k8s/            # Kubernetes manifests
+  Dockerfile
+docs/             # env-reference.md, database-erd.md, performance.md
+scripts/          # Build and release utilities
+```
+
+## Database Migrations
+
+Migrations are in `backend/migrations/` with the format `NNNN_description.{up|down}.sql`. They run automatically when the API or worker starts. To check migration status or roll back:
+
+```bash
+MEDIAFUSION_MIGRATE=status ./mediafusion-api
+MEDIAFUSION_MIGRATE_ROLLBACK_TO=4 ./mediafusion-api  # Roll back to migration 4
+```
+
+After adding or changing `sqlx::query!` macros, regenerate the query cache:
+
+```bash
+cd backend && cargo sqlx prepare
+```
+
+## Required Environment Variables
+
+Only 5 are required; all others have defaults. See `docs/env-reference.md` for the full 291-variable reference.
+
+```env
+HOST_URL=http://127.0.0.1:8000
+SECRET_KEY=<random-hex>
+API_PASSWORD=<your-password>
+POSTGRES_URI=postgresql://user:password@host:5432/mediafusion
+REDIS_URL=redis://host:6379
+```
+
+## Release Process
+
+Releases are triggered by creating a GitHub release. The CI pipeline (`main.yml`) extracts the version from the release body, updates `Cargo.toml`/`pyproject.toml`, builds musl static binaries via `cargo-zigbuild`, pushes multi-platform Docker images, and deploys the Kodi addon to GitHub Pages.
