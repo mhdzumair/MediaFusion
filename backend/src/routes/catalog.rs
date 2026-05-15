@@ -104,6 +104,13 @@ async fn handle_catalog(
 
     let (sort, sort_dir) = user_data.catalog_sort(&catalog_id);
     let nudity_excludes = user_data.nudity_filter.clone();
+    // Strip the "Disable" sentinel; an empty slice means no filter.
+    let cert_excludes: Vec<String> = user_data
+        .certification_filter
+        .iter()
+        .filter(|s| s.as_str() != "Disable")
+        .cloned()
+        .collect();
 
     // Build cache key: user-scoped for personal catalogs, shared for public ones.
     let is_personal = catalog_id.starts_with("my_library_");
@@ -118,9 +125,10 @@ async fn handle_catalog(
         let genre_part = extra.genre.as_deref().unwrap_or("");
         let search_part = extra.search.as_deref().unwrap_or("");
         let nudity_part = nudity_excludes.join(",");
+        let cert_part = cert_excludes.join(",");
         Some(format!(
-            "catalog:{media_type}:{catalog_id}:{}:{}:{}:{}:{}:{}",
-            extra.skip, genre_part, search_part, nudity_part, sort, sort_dir,
+            "catalog:{media_type}:{catalog_id}:{}:{}:{}:{}:{}:{}:{}",
+            extra.skip, genre_part, search_part, nudity_part, cert_part, sort, sort_dir,
         ))
     };
 
@@ -132,8 +140,15 @@ async fn handle_catalog(
     }
 
     let rows = if let Some(ref q) = extra.search {
-        db_catalog::search_metadata(&state.pool_ro, media_type, q, extra.skip, &nudity_excludes)
-            .await
+        db_catalog::search_metadata(
+            &state.pool_ro,
+            media_type,
+            q,
+            extra.skip,
+            &nudity_excludes,
+            &cert_excludes,
+        )
+        .await
     } else {
         db_catalog::get_catalog_items(
             &state.pool_ro,
@@ -143,6 +158,7 @@ async fn handle_catalog(
                 skip: extra.skip,
                 genre: extra.genre.as_deref(),
                 nudity_excludes: &nudity_excludes,
+                cert_excludes: &cert_excludes,
                 sort: &sort,
                 sort_dir: &sort_dir,
                 user_id: user_data.user_id,

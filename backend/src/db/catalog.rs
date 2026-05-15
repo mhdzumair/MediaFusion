@@ -31,6 +31,8 @@ pub struct CatalogQuery<'a> {
     pub skip: i64,
     pub genre: Option<&'a str>,
     pub nudity_excludes: &'a [String],
+    /// Parental certificate names to exclude (e.g. ["Adults+"]). Empty = no filter.
+    pub cert_excludes: &'a [String],
     pub sort: &'a str,
     pub sort_dir: &'a str,
     /// Set for my_library_* catalogs; filters by user_library_item.user_id.
@@ -44,6 +46,7 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
         skip,
         genre,
         nudity_excludes,
+        cert_excludes,
         sort,
         sort_dir,
         user_id,
@@ -51,7 +54,15 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
 
     // my_library_* catalogs join through user_library_item instead of catalog/media_catalog_link.
     if catalog_id.starts_with("my_library_") {
-        return get_library_items(pool, media_type, skip, nudity_excludes, user_id).await;
+        return get_library_items(
+            pool,
+            media_type,
+            skip,
+            nudity_excludes,
+            cert_excludes,
+            user_id,
+        )
+        .await;
     }
 
     let ord = order_clause(sort, sort_dir);
@@ -83,6 +94,11 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
               WHERE mgl.media_id = m.id AND g.name = $4
           ))
           AND (ARRAY_LENGTH($5::text[], 1) IS NULL OR m.nudity_status::text <> ALL($5))
+          AND (ARRAY_LENGTH($6::text[], 1) IS NULL OR NOT EXISTS (
+              SELECT 1 FROM media_parental_certificate_link mpcl
+              JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
+              WHERE mpcl.media_id = m.id AND pc.name = ANY($6)
+          ))
         ORDER BY {ord}
         LIMIT {LIMIT} OFFSET $3
         "#
@@ -94,6 +110,7 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
         .bind(skip) // $3
         .bind(genre) // $4 - Option<&str> → NULL when None
         .bind(nudity_excludes) // $5 - &[String] → text[]
+        .bind(cert_excludes) // $6 - &[String] → text[]
         .fetch_all(pool)
         .await
         .unwrap_or_else(|e| {
@@ -107,6 +124,7 @@ async fn get_library_items(
     media_type: &str,
     skip: i64,
     nudity_excludes: &[String],
+    cert_excludes: &[String],
     user_id: Option<i64>,
 ) -> Vec<CatalogRow> {
     let Some(uid) = user_id else {
@@ -134,6 +152,11 @@ async fn get_library_items(
           AND m.type = upper($2)::mediatype
           AND NOT m.is_blocked
           AND (ARRAY_LENGTH($3::text[], 1) IS NULL OR m.nudity_status::text <> ALL($3))
+          AND (ARRAY_LENGTH($5::text[], 1) IS NULL OR NOT EXISTS (
+              SELECT 1 FROM media_parental_certificate_link mpcl
+              JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
+              WHERE mpcl.media_id = m.id AND pc.name = ANY($5)
+          ))
         ORDER BY uli.added_at DESC
         LIMIT 100 OFFSET $4
         "#,
@@ -142,6 +165,7 @@ async fn get_library_items(
     .bind(media_type) // $2
     .bind(nudity_excludes) // $3
     .bind(skip) // $4
+    .bind(cert_excludes) // $5
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {
@@ -156,6 +180,7 @@ pub async fn search_metadata(
     query: &str,
     skip: i64,
     nudity_excludes: &[String],
+    cert_excludes: &[String],
 ) -> Vec<CatalogRow> {
     sqlx::query_as::<_, CatalogRow>(
         r#"
@@ -178,6 +203,11 @@ pub async fn search_metadata(
           AND m.total_streams > 0
           AND NOT m.is_blocked
           AND (ARRAY_LENGTH($3::text[], 1) IS NULL OR m.nudity_status::text <> ALL($3))
+          AND (ARRAY_LENGTH($5::text[], 1) IS NULL OR NOT EXISTS (
+              SELECT 1 FROM media_parental_certificate_link mpcl
+              JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
+              WHERE mpcl.media_id = m.id AND pc.name = ANY($5)
+          ))
           AND m.id IN (
               -- Phase 1: FTS on main title (uses GIN index)
               SELECT m2.id FROM media m2
@@ -203,6 +233,7 @@ pub async fn search_metadata(
     .bind(query) // $2
     .bind(nudity_excludes) // $3
     .bind(skip) // $4
+    .bind(cert_excludes) // $5
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {

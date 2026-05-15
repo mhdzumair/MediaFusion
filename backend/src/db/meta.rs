@@ -1,6 +1,16 @@
 use sqlx::PgPool;
 use tracing::warn;
 
+const ADULT_GENRES: &[&str] = &[
+    "adult",
+    "18+",
+    "xxx",
+    "erotic",
+    "erotica",
+    "pornography",
+    "porn",
+];
+
 #[derive(sqlx::FromRow, Debug)]
 pub struct MediaMetaRow {
     pub media_id: i64,
@@ -128,10 +138,12 @@ pub async fn get_genres(pool: &PgPool, media_id: i64) -> Vec<String> {
         FROM genre g
         JOIN media_genre_link mgl ON mgl.genre_id = g.id
         WHERE mgl.media_id = $1
+          AND lower(g.name) <> ALL($2)
         ORDER BY g.name
         "#,
     )
     .bind(media_id as i32)
+    .bind(ADULT_GENRES)
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {

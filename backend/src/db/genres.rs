@@ -3,7 +3,15 @@ use std::collections::HashMap;
 use sqlx::PgPool;
 use tracing::warn;
 
-const ADULT_GENRES: &[&str] = &["adult", "18+", "xxx", "erotic", "erotica", "pornography"];
+const ADULT_GENRES: &[&str] = &[
+    "adult",
+    "18+",
+    "xxx",
+    "erotic",
+    "erotica",
+    "pornography",
+    "porn",
+];
 
 pub async fn get_all_genres_by_type(pool: &PgPool) -> HashMap<String, Vec<String>> {
     let rows: Vec<(String, String)> = sqlx::query_as(
