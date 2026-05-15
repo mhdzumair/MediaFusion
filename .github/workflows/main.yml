@@ -18,7 +18,6 @@ jobs:
       - name: Extract versions
         id: extract_versions
         run: |
-          # Extract current version from release body using here-document to avoid command substitution
           BODY=$(cat << 'EOF'
           ${{ github.event.release.body }}
           EOF
@@ -58,17 +57,17 @@ jobs:
           git push origin HEAD:main
 
   rust-build:
-    name: Build Rust Binary (${{ matrix.artifact }})
+    name: Build Rust Binaries (${{ matrix.docker_arch }})
     needs: update_version
     strategy:
       matrix:
         include:
           - runner: ubuntu-24.04
-            artifact: mediafusion-api-amd64
             docker_arch: amd64
+            musl_target: x86_64-unknown-linux-musl
           - runner: ubuntu-24.04-arm
-            artifact: mediafusion-api-arm64
             docker_arch: arm64
+            musl_target: aarch64-unknown-linux-musl
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
@@ -76,28 +75,68 @@ jobs:
         with:
           ref: main
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends pkg-config libssl-dev
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.musl_target }}
+
+      - name: Install Zig (for cargo-zigbuild)
+        uses: mlugg/setup-zig@v2
+
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild --locked
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: services/api
+          workspaces: backend
 
-      - name: Build release binary
-        run: cd services/api && cargo build --release --bin mediafusion-api
+      - name: Build static binaries (musl)
+        run: |
+          cd backend
+          cargo zigbuild --release \
+            --target ${{ matrix.musl_target }} \
+            --bin mediafusion-api \
+            --bin mediafusion-worker
 
-      - name: Upload binary artifact
+      - name: Stage artifacts
+        run: |
+          ARCH=${{ matrix.docker_arch }}
+          TARGET=${{ matrix.musl_target }}
+          mkdir -p dist
+          cp backend/target/$TARGET/release/mediafusion-api    dist/mediafusion-api-linux-$ARCH
+          cp backend/target/$TARGET/release/mediafusion-worker dist/mediafusion-worker-linux-$ARCH
+          chmod +x dist/*
+
+      - name: Upload binaries artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: services/api/target/release/mediafusion-api
+          name: rust-dist-${{ matrix.docker_arch }}
+          path: dist/
           retention-days: 1
+
+  upload_release_assets:
+    name: Upload Binary Release Assets
+    needs: rust-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download amd64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-dist-amd64
+          path: dist/
+
+      - name: Download arm64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-dist-arm64
+          path: dist/
+
+      - name: Upload binaries to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   mediafusion_docker_build:
     needs: [update_version, rust-build]
@@ -107,22 +146,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: main  # Use main branch with updated versions
+          ref: main
 
-      - name: Download amd64 binary
+      - name: Download amd64 binaries
         uses: actions/download-artifact@v4
         with:
-          name: mediafusion-api-amd64
+          name: rust-dist-amd64
           path: rust-dist/amd64/
 
-      - name: Download arm64 binary
+      - name: Download arm64 binaries
         uses: actions/download-artifact@v4
         with:
-          name: mediafusion-api-arm64
+          name: rust-dist-arm64
           path: rust-dist/arm64/
 
-      - name: Make binaries executable
-        run: chmod +x rust-dist/amd64/mediafusion-api rust-dist/arm64/mediafusion-api
+      - name: Rename artifacts to match Dockerfile expectations
+        run: |
+          mv rust-dist/amd64/mediafusion-api-linux-amd64    rust-dist/amd64/mediafusion-api
+          mv rust-dist/amd64/mediafusion-worker-linux-amd64 rust-dist/amd64/mediafusion-worker
+          mv rust-dist/arm64/mediafusion-api-linux-arm64    rust-dist/arm64/mediafusion-api
+          mv rust-dist/arm64/mediafusion-worker-linux-arm64 rust-dist/arm64/mediafusion-worker
+          chmod +x rust-dist/amd64/* rust-dist/arm64/*
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -136,7 +180,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push image
         id: docker_build
         uses: docker/build-push-action@v5
         env:
@@ -154,7 +198,7 @@ jobs:
             mhdzumair/mediafusion:${{ github.event.release.prerelease && 'beta' || 'latest' }}
 
       - name: Image digest
-        run: echo ${{ steps.docker_build.outputs.digest }}
+        run: echo "${{ steps.docker_build.outputs.digest }}"
 
   kodi_build:
     needs: update_version
@@ -164,7 +208,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: main  # Use main branch with updated versions
+          ref: main
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -182,7 +226,6 @@ jobs:
       - name: Build addon and repository
         run: |
           make -C clients/kodi
-          # Validate build artifacts
           for file in clients/kodi/dist/plugin.video.mediafusion/plugin.video.mediafusion-*.zip clients/kodi/dist/repository.mediafusion/repository.mediafusion-*.zip; do
             if [ ! -f "$file" ]; then
               echo "Error: Build artifact $file not found"

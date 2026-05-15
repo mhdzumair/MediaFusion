@@ -12,7 +12,6 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      python: ${{ steps.filter.outputs.python }}
       rust: ${{ steps.filter.outputs.rust }}
       frontend: ${{ steps.filter.outputs.frontend }}
     steps:
@@ -21,69 +20,10 @@ jobs:
         id: filter
         with:
           filters: |
-            python:
-              - '**/*.py'
-              - 'pyproject.toml'
-              - 'uv.lock'
             rust:
-              - 'services/api/**'
+              - 'backend/**'
             frontend:
               - 'clients/frontend/**'
-
-  # ── Python ────────────────────────────────────────────────────────────────
-  python-lint:
-    name: Python Lint
-    needs: changes
-    if: needs.changes.outputs.python == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Ruff check
-        run: uv run --only-group dev ruff check .
-
-  python-format:
-    name: Python Format
-    needs: changes
-    if: needs.changes.outputs.python == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Ruff format check
-        run: uv run --only-group dev ruff format --check .
-
-  env-config-sync:
-    name: Env Config Sync
-    needs: changes
-    if: needs.changes.outputs.python == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Validate env docs/deploy sync
-        run: python scripts/check_env_sync.py
 
   # ── Frontend ──────────────────────────────────────────────────────────────
   frontend-lint:
@@ -166,9 +106,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: services/api
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
 
       - name: Rustfmt check
         run: cargo fmt --check
@@ -180,7 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: services/api
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
 
@@ -192,7 +137,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: services/api
+          workspaces: backend
 
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
@@ -204,7 +149,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: services/api
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
 
@@ -214,10 +159,10 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: services/api
+          workspaces: backend
 
       - name: Build (release)
-        run: cargo build --release
+        run: cargo build --release --bin mediafusion-api --bin mediafusion-worker
 
       - name: Test
         run: cargo test

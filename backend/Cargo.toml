@@ -1,0 +1,140 @@
+[package]
+name = "mediafusion-api"
+version = "6.0.0-beta.5"
+edition = "2021"
+
+[lib]
+name = "mediafusion_api"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mediafusion-api"
+path = "src/main.rs"
+
+[[bin]]
+name = "mediafusion-worker"
+path = "src/bin/worker.rs"
+
+[dependencies]
+# Async trait support
+async-trait = "0.1"
+
+# Async runtime + HTTP server
+axum = { version = "0.8", features = ["macros", "multipart"] }
+lava_torrent = "0.11"
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "compression-full", "timeout", "cors", "fs"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# XML parsing (Torznab / Newznab scrapers)
+quick-xml = { version = "0.39", features = ["serde"] }
+
+# HTTP client (live scrapers)
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "gzip", "brotli", "http2", "json", "multipart", "form", "query"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "json", "chrono", "migrate"] }
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Redis
+fred = { version = "10", features = ["tokio-rustls"] }
+
+# AES-256-CBC decryption (matches Python PyCryptodome AES.MODE_CBC)
+aes = "0.9"
+cbc = { version = "0.2", features = ["alloc"] }
+base64 = "0.22"
+
+# Hashing (manifest cache key HMAC-SHA256)
+hmac = { version = "0.13", features = [] }
+sha2 = "0.11"
+
+# Compression
+flate2 = "1"
+
+# Random bytes for AES IV generation + sports poster selection
+rand_core = "0.10"
+rand = { version = "0.10", features = ["std", "thread_rng"] }
+
+# Poster annotation (Phase 1d)
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+imageproc = "0.26"
+ab_glyph = "0.2"
+
+# In-process LRU cache (imdb_id → media_id)
+moka = { version = "0.12", features = ["future"] }
+
+# Typed errors
+thiserror = "2"
+
+# Scraper rate-limiting
+governor = "0.10"
+
+# Scraper retries
+backon = "1"
+
+# Cron expression parsing for the Rust scheduler
+cron = "0.12"
+
+# Background job cancellation tokens
+tokio-util = { version = "0.7", features = ["rt"] }
+
+# lz-string decompression (DMM hashlist scraper)
+lz-str = "0.2"
+
+# Fuzzy string matching (DLHD / TV poster matching)
+strsim = "0.11"
+
+# Headless browser (sport_video spider)
+chromiumoxide = { version = "0.7", default-features = false, features = ["tokio-runtime"] }
+
+# Config from env
+dotenvy = "0.15"
+urlencoding = "2"
+url = "2"
+
+# UUID generation for user registration
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Prometheus metrics
+prometheus-client = "0.24"
+
+# Email (SMTP) for auth flows
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }
+
+# Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Magnet → torrent metadata resolution (BEP-9 / BEP-10)
+mainline = "6"
+sha1 = "0.11"
+regex = "1.12.3"
+fancy-regex = "0.18"
+scraper = "0.26"
+once_cell = "1"
+
+# Telegram MTProto live scraper (Phase 2c)
+grammers-client = { version = "0.9", default-features = false }
+grammers-session = { version = "0.9", default-features = false }
+
+[dev-dependencies]
+wiremock = "0.6"
+insta = { version = "1", features = ["json"] }
+criterion = { version = "0.8", features = ["async_tokio"] }
+tokio = { version = "1", features = ["full"] }
+
+[[bench]]
+name = "stream_warm"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

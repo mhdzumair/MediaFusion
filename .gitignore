@@ -148,3 +148,4 @@ kodi/*.zip
 *.tar
 *.nzb
 perf/
+.sqlx/

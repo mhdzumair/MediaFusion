@@ -6,7 +6,7 @@ VERSION ?= latest
 # Builder name
 BUILDER_NAME ?= mediafusion-builder
 
-# Docker image name
+# Docker image name (single image — worker runs via CMD override)
 IMAGE_NAME = mediafusion
 
 # Docker repository
@@ -35,7 +35,7 @@ MAX_TOKENS ?= 4096
 SUBREDDIT ?= MediaFusion
 REDDIT_POST_TITLE ?= "MediaFusion $(VERSION_NEW) Update - What's New?"
 
-.PHONY: build tag push prompt update-version generate-notes generate-reddit-post frontend-install frontend-build frontend-dev frontend-lint frontend-fmt dev backend-dev python-lint python-fmt python-test rust-build rust-dev rust-test rust-fmt rust-lint lint fmt test
+.PHONY: build build-multi tag push prompt update-version generate-notes generate-reddit-post generate-baseline frontend-install frontend-build frontend-dev frontend-lint frontend-fmt dev backend-dev python-lint python-fmt python-test rust-build rust-dev rust-test rust-fmt rust-lint lint fmt test
 
 build:
 	docker build --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE) -f deployment/Dockerfile .
@@ -50,7 +50,7 @@ endif
 	@sed -i -e "/<addon\s*id=\"plugin\.video\.mediafusion\"/s/version=\"[^\"]*\"/version=\"$(VERSION_NEW)\"/" clients/kodi/plugin.video.mediafusion/addon.xml
 	# Update repository addon.xml
 	@sed -i -e "/<addon\s*id=\"repository\.mediafusion\"/s/version=\"[^\"]*\"/version=\"$(VERSION_NEW)\"/" clients/kodi/repository.mediafusion/addon.xml
-	# Update deployment manifests that reference the docker image
+	# Update deployment manifests that reference the docker images
 	@for file in \
 		deployment/docker-compose/docker-compose.yml \
 		deployment/docker-compose/docker-compose-minimal.yml \
@@ -63,7 +63,7 @@ endif
 	# Update pyproject.toml
 	@sed -i -e "s/^version = \"[^\"]*\"/version = \"$(VERSION_NEW)\"/" pyproject.toml
 	# Update Rust Cargo.toml
-	@sed -i -e "s/^version = \"[^\"]*\"/version = \"$(VERSION_NEW)\"/" services/api/Cargo.toml
+	@sed -i -e "s/^version = \"[^\"]*\"/version = \"$(VERSION_NEW)\"/" backend/Cargo.toml
 	# Refresh uv.lock so project and lock versions stay in sync
 	@uv lock
 	@echo "Version updated to $(VERSION_NEW) in all files"
@@ -205,6 +205,10 @@ endif
 	echo "$$RESULT"; \
 	rm $$temp_file
 
+generate-baseline:
+	@echo "Generating backend/migrations/0001_baseline.up.sql from Alembic revision d826df80371b..."
+	./scripts/generate_sqlx_baseline.sh
+
 # Frontend build targets
 frontend-install:
 	cd clients/frontend && npm ci
@@ -241,19 +245,19 @@ dev:
 
 # Rust targets
 rust-build:
-	cd services/api && cargo build --release --bin mediafusion-api
+	cd backend && cargo build --release --bin mediafusion-api --bin mediafusion-worker
 
 rust-dev:
-	cargo run --manifest-path services/api/Cargo.toml --bin mediafusion-api
+	cargo run --manifest-path backend/Cargo.toml --bin mediafusion-api
 
 rust-test:
-	cd services/api && cargo test
+	cd backend && cargo test
 
 rust-fmt:
-	cd services/api && cargo fmt --check
+	cd backend && cargo fmt --check
 
 rust-lint:
-	cd services/api && cargo clippy --all-targets -- -D warnings
+	cd backend && cargo clippy --all-targets -- -D warnings
 
 # Aggregate targets
 lint: python-lint rust-lint frontend-lint

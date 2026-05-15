@@ -1,6 +1,11 @@
 # MediaFusion Deployment Guide 🚀
 
-Welcome to the deployment guide for MediaFusion! This document will help you navigate through the different deployment methods available for MediaFusion. Depending on your preference or environment constraints, you can choose between Kubernetes-based deployment, Docker Compose, or local development with partial Docker.
+Welcome to the deployment guide for MediaFusion! This document will help you navigate through the different deployment methods available for MediaFusion. Depending on your preference or environment constraints, you can choose between Kubernetes-based deployment, Docker Compose, direct binary deployment, or local development with partial Docker.
+
+> [!IMPORTANT]
+> **Always pin a specific version tag in production** (e.g. `mhdzumair/mediafusion:6.0.0-beta.5`). Never use `latest` or `beta` for production deployments.
+> - `latest` — tracks the most recent **stable** release
+> - `beta` — tracks the most recent **beta** release
 
 ## Deployment Options 🛠️
 
@@ -8,9 +13,62 @@ MediaFusion supports multiple deployment strategies to cater to different infras
 
 | Method | Best For |
 |--------|----------|
+| [Direct Binary](#direct-binary-deployment-) | Minimal footprint, no Docker required |
 | [Local Development](#local-development-) | Active development with hot-reload |
 | [Docker Compose](./docker-compose/README.md) | Simple deployments & testing |
 | [Kubernetes](./k8s/README.md) | Production & scalable environments |
+
+---
+
+## Direct Binary Deployment ⚡
+
+Run MediaFusion with zero container overhead. The API server and worker are distributed as **statically compiled musl binaries** — no Docker, no system libraries, no runtime dependencies required. You only need PostgreSQL and Redis.
+
+### Download
+
+Binaries are published as GitHub Release assets. Grab the right pair for your architecture:
+
+| Binary | amd64 | arm64 |
+|--------|-------|-------|
+| API server | `mediafusion-api-linux-amd64` | `mediafusion-api-linux-arm64` |
+| Background worker | `mediafusion-worker-linux-amd64` | `mediafusion-worker-linux-arm64` |
+
+```bash
+# Example: download amd64 binaries for a specific release
+RELEASE=6.0.0-beta.5
+ARCH=amd64   # or arm64
+
+curl -Lo mediafusion-api \
+  "https://github.com/mhdzumair/MediaFusion/releases/download/${RELEASE}/mediafusion-api-linux-${ARCH}"
+
+curl -Lo mediafusion-worker \
+  "https://github.com/mhdzumair/MediaFusion/releases/download/${RELEASE}/mediafusion-worker-linux-${ARCH}"
+
+chmod +x mediafusion-api mediafusion-worker
+```
+
+### Running
+
+1. Make sure PostgreSQL and Redis are reachable and set your environment variables (see [Configuration Guide](/docs/env-reference.md)).
+2. Start the API server — **database migrations run automatically at startup**:
+
+```bash
+./mediafusion-api
+```
+
+3. In a second terminal (or as a service), start the background worker:
+
+```bash
+./mediafusion-worker
+```
+
+> [!TIP]
+> Both binaries read the same environment variables as the Docker image. A minimal `.env` file (sourced with `export $(cat .env | xargs)` or a process manager like `systemd`) is sufficient.
+
+> [!NOTE]
+> See the [Migration Management](#migration-management-) section for how to check migration status or roll back before downgrading to an older release.
+
+---
 
 ## Local Development 💻
 
@@ -21,8 +79,6 @@ This section covers running MediaFusion locally with **partial Docker** (databas
 Ensure the following tools are installed:
 
 - **Rust 1.88+**: Required for the API server. [Installation guide](https://rustup.rs/)
-- **Python 3.12+**: Required for running background workers and migrations
-- **uv**: Fast Python package installer. [Installation guide](https://docs.astral.sh/uv/getting-started/installation/)
 - **Docker & Docker Compose**: For running databases. [Installation guide](https://docs.docker.com/get-docker/)
 
 ### Step 1: Clone & Setup
@@ -31,9 +87,6 @@ Ensure the following tools are installed:
 # Clone the repository
 git clone https://github.com/mhdzumair/MediaFusion
 cd MediaFusion
-
-# Install Python dependencies (workers + migrations)
-uv sync
 ```
 
 ### Step 2: Start Database Services
@@ -86,22 +139,16 @@ EOF
 > [!TIP]
 > See [Configuration Guide](/docs/env-reference.md) for all available options.
 
-### Step 4: Run Database Migrations
+### Step 4: Start the Rust API Server
 
-```bash
-# Run Alembic migrations for PostgreSQL
-uv run alembic upgrade head
-```
-
-### Step 5: Start the Rust API Server
+Database migrations run automatically when the server starts — no separate migration step needed.
 
 ```bash
 # Development build with auto-reload via cargo-watch (install once: cargo install cargo-watch)
-cd services/api
-cargo watch -x run
+cargo watch --manifest-path backend/Cargo.toml -x 'run --bin mediafusion-api'
 
 # Or run directly without hot-reload
-cargo run
+cargo run --manifest-path backend/Cargo.toml --bin mediafusion-api
 
 # Or use the Makefile shortcut from the repo root
 make rust-dev
@@ -110,38 +157,23 @@ make rust-dev
 The server will be available at **http://127.0.0.1:8000** 🎉
 
 > [!TIP]
-> For a release build (faster, closer to production): `cargo run --release`
+> For a release build (faster, closer to production): `cargo run --manifest-path backend/Cargo.toml --bin mediafusion-api --release`
 
 ### Running Background Workers (Optional)
 
-For testing scrapers and background tasks, run Taskiq workers in separate terminals from the **repo root**:
+For testing scrapers and background tasks, run the Rust worker in a separate terminal from the **repo root**:
 
 ```bash
-uv run taskiq worker workers.taskiq_worker:broker_default --workers 1 --max-async-tasks 8 --ack-type when_executed
-uv run taskiq worker workers.taskiq_worker:broker_scrapy --workers 1 --max-async-tasks 1 --ack-type when_executed
-uv run taskiq worker workers.taskiq_worker:broker_import --workers 1 --max-async-tasks 4 --ack-type when_executed
-uv run taskiq worker workers.taskiq_worker:broker_priority --workers 1 --max-async-tasks 4 --ack-type when_executed
-```
-
-If you want a single worker to consume all queues (including Scrapy), set:
-
-```bash
-TASKIQ_SINGLE_WORKER_MODE=true
-```
-
-Then run only one worker:
-
-```bash
-uv run taskiq worker workers.taskiq_worker:broker_default --workers 1 --max-async-tasks 8 --ack-type when_executed
+cargo run --manifest-path backend/Cargo.toml --bin mediafusion-worker
 ```
 
 ### Local Development Tips
 
-- **Hot Reload**: Install `cargo-watch` (`cargo install cargo-watch`) and use `cargo watch -x run` for auto-restart on file changes
-- **Debug Logging**: Set `LOGGING_LEVEL=DEBUG` for verbose Python worker output; the Rust server uses `RUST_LOG=debug`
+- **Hot Reload**: Install `cargo-watch` (`cargo install cargo-watch`) and use `cargo watch --manifest-path backend/Cargo.toml -x 'run --bin mediafusion-api'` for auto-restart on file changes
+- **Debug Logging**: Set `RUST_LOG=mediafusion_api=debug,tower_http=debug` for verbose Rust output
 - **Disable Schedulers**: Set `DISABLE_ALL_SCHEDULER=true` to prevent background tasks from running
 - **Local Config**: Set `USE_CONFIG_SOURCE=local` to use local scraper configuration files
-- **Rust Logs**: `RUST_LOG=mediafusion_api=debug,tower_http=debug cargo run`
+- **Rust Logs**: `RUST_LOG=mediafusion_api=debug,tower_http=debug cargo run --manifest-path backend/Cargo.toml --bin mediafusion-api`
 
 ### Stopping Services
 
@@ -177,14 +209,61 @@ Before proceeding with any deployment method, make sure you have the required to
 - Docker and Docker Compose for container management and orchestration.
 - Kubernetes CLI (kubectl) if you are deploying with Kubernetes.
 - Rust 1.88+ for building the API server locally (`rustup update stable`).
-- Python 3.12 or higher for background workers and migrations.
-- uv (recommended) or pip for Python package management.
 
 ## Configuration 📝
 
 All deployment methods require you to configure environment variables that are crucial for the operation of MediaFusion. These variables include API keys, database URIs, and other sensitive information which should be kept secure.
 
 See the [Configuration Guide](/docs/env-reference.md) for detailed information on all available options.
+
+---
+
+## Migration Management 🗄️
+
+### How migrations work
+
+Database migrations are managed with **sqlx** and apply automatically at API or worker startup. There is no separate migration command to run — simply start the binary and the database will be brought up to date.
+
+### Checking migration status
+
+Set the `MEDIAFUSION_MIGRATE` environment variable to `status` and run either binary. It will print the current migration table and exit without starting the server:
+
+```bash
+MEDIAFUSION_MIGRATE=status ./mediafusion-api
+# or with Docker:
+docker run --rm --env-file .env -e MEDIAFUSION_MIGRATE=status mhdzumair/mediafusion:6.0.0-beta.5
+```
+
+### Rolling back migrations
+
+Set `MEDIAFUSION_MIGRATE_ROLLBACK_TO=<version>` and run either binary. It will roll the database back to the specified version and exit:
+
+```bash
+# Roll back to version 4 before downgrading the Docker image
+MEDIAFUSION_MIGRATE_ROLLBACK_TO=4 ./mediafusion-api
+# or with Docker (run the current/newer image to roll back):
+docker run --rm --env-file .env \
+  -e MEDIAFUSION_MIGRATE_ROLLBACK_TO=4 \
+  mhdzumair/mediafusion:6.0.0-beta.5
+```
+
+> [!WARNING]
+> If you ran a beta that applied new migrations, you **must** roll back before downgrading to an older image or binary. The older binary will refuse to start if it finds schema versions it does not recognise.
+
+### Downgrading from 6.x beta to 5.x
+
+5.x used **Alembic** for migrations, not sqlx. After rolling back with the 6.x beta binary, you also need to restore the Alembic version marker so that 5.x knows the schema state:
+
+1. Roll back with the 6.x binary as described above.
+2. Connect to PostgreSQL and run:
+
+```sql
+UPDATE alembic_version SET version_num = 'd826df80371b';
+```
+
+3. Start the 5.x binary or Docker image — it will see the correct Alembic revision and start normally.
+
+---
 
 ## Support and Contributions 💡
 

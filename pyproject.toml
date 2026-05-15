@@ -91,6 +91,7 @@ demagnetize = {git = "git+https://github.com/mhdzumair/demagnetize.git"}
 [tool.ruff]
 target-version = "py312"
 line-length = 120
+exclude = ["python-deprecated"]
 
 [tool.ruff.lint]
 select = [
