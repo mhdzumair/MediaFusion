@@ -1,0 +1,5 @@
+[
+  {"id":"bbc-news.uk","name":"BBC News","country":"GB","logo":"https://iptv-org.example.com/bbc-news.png","alt_names":["BBC News UK","BBC World News"]},
+  {"id":"cnn.us","name":"CNN","country":"US","logo":"https://iptv-org.example.com/cnn.png","alt_names":["CNN International"]},
+  {"id":"sky-news.uk","name":"Sky News","country":"GB","logo":"https://iptv-org.example.com/sky-news.png","alt_names":[]}
+]

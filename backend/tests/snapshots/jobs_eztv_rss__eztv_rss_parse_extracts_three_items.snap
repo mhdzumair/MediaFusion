@@ -1,0 +1,22 @@
+---
+source: tests/jobs_eztv_rss.rs
+assertion_line: 38
+expression: snapshot
+---
+[
+  {
+    "info_hash": "aabbccddeeff00112233445566778899aabbccdd",
+    "seeders": 142,
+    "title": "The.Penguin.S01E01.720p.WEB.h264-ETHEL"
+  },
+  {
+    "info_hash": "1122334455667788990011223344556677889900",
+    "seeders": 89,
+    "title": "Dune.Part.Two.2024.1080p.BluRay.x264-GROUP"
+  },
+  {
+    "info_hash": "aabbccdd11223344556677889900aabbccdd1122",
+    "seeders": 217,
+    "title": "House.of.the.Dragon.S02E08.1080p.AMZN.WEB-DL-GROUP"
+  }
+]

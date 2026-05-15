@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:torrent="https://eztv.re/torrent-rss.dtd">
+<channel>
+  <title>EZTV RSS Feed</title>
+  <item>
+    <title>The.Penguin.S01E01.720p.WEB.h264-ETHEL</title>
+    <enclosure url="magnet:?xt=urn:btih:aabbccddeeff00112233445566778899aabbccdd&amp;dn=The.Penguin&amp;tr=udp://tracker.opentrackr.org:1337" length="1073741824" type="application/x-bittorrent"/>
+    <torrent:infoHash>aabbccddeeff00112233445566778899aabbccdd</torrent:infoHash>
+    <torrent:seeds>142</torrent:seeds>
+  </item>
+  <item>
+    <title>Dune.Part.Two.2024.1080p.BluRay.x264-GROUP</title>
+    <enclosure url="magnet:?xt=urn:btih:1122334455667788990011223344556677889900&amp;dn=Dune&amp;tr=udp://tracker.opentrackr.org:1337" length="8589934592" type="application/x-bittorrent"/>
+    <torrent:infoHash>1122334455667788990011223344556677889900</torrent:infoHash>
+    <torrent:seeds>89</torrent:seeds>
+  </item>
+  <item>
+    <title>House.of.the.Dragon.S02E08.1080p.AMZN.WEB-DL-GROUP</title>
+    <enclosure url="magnet:?xt=urn:btih:aabbccdd11223344556677889900aabbccdd1122&amp;dn=HotD&amp;tr=udp://tracker.opentrackr.org:1337" length="2147483648" type="application/x-bittorrent"/>
+    <torrent:infoHash>aabbccdd11223344556677889900aabbccdd1122</torrent:infoHash>
+    <torrent:seeds>217</torrent:seeds>
+  </item>
+</channel>
+</rss>
