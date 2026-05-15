@@ -210,7 +210,7 @@ async fn fetch_contrib_row(pool: &sqlx::PgPool, id: &str) -> Option<ContribRow> 
                       admin_review_requested, admin_review_requested_by,
                       admin_review_requested_at, admin_review_reason,
                       created_at, updated_at
-               FROM contribution WHERE id = $1"#,
+               FROM contributions WHERE id = $1"#,
     )
     .bind(id)
     .fetch_optional(pool)
@@ -314,14 +314,14 @@ pub async fn list_contributions(
     let page_size = params.page_size.clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    let mut count_sql = String::from("SELECT COUNT(*) FROM contribution WHERE 1=1");
+    let mut count_sql = String::from("SELECT COUNT(*) FROM contributions WHERE 1=1");
     let mut fetch_sql = String::from(
         r#"SELECT id, user_id, contribution_type, target_id, data, status,
                   reviewed_by, reviewed_at, review_notes,
                   admin_review_requested, admin_review_requested_by,
                   admin_review_requested_at, admin_review_reason,
                   created_at, updated_at
-           FROM contribution WHERE 1=1"#,
+           FROM contributions WHERE 1=1"#,
     );
 
     let mut bind_values: Vec<serde_json::Value> = Vec::new();
@@ -433,14 +433,14 @@ pub async fn get_contribution_stats(
         }
     };
 
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contribution WHERE user_id = $1")
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contributions WHERE user_id = $1")
         .bind(user_id)
         .fetch_one(&state.pool_ro)
         .await
         .unwrap_or(0);
 
     let pending: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM contribution WHERE user_id = $1 AND status = 'PENDING'",
+        "SELECT COUNT(*) FROM contributions WHERE user_id = $1 AND status = 'PENDING'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
@@ -448,7 +448,7 @@ pub async fn get_contribution_stats(
     .unwrap_or(0);
 
     let approved: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM contribution WHERE user_id = $1 AND status = 'APPROVED'",
+        "SELECT COUNT(*) FROM contributions WHERE user_id = $1 AND status = 'APPROVED'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
@@ -456,7 +456,7 @@ pub async fn get_contribution_stats(
     .unwrap_or(0);
 
     let rejected: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM contribution WHERE user_id = $1 AND status = 'REJECTED'",
+        "SELECT COUNT(*) FROM contributions WHERE user_id = $1 AND status = 'REJECTED'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
@@ -507,7 +507,7 @@ pub async fn get_contribution_stats(
     let mut by_type = serde_json::Map::new();
     for ct in contribution_types {
         let cnt: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM contribution WHERE user_id = $1 AND contribution_type = $2",
+            "SELECT COUNT(*) FROM contributions WHERE user_id = $1 AND contribution_type = $2",
         )
         .bind(user_id)
         .bind(ct)
@@ -565,7 +565,7 @@ pub async fn list_contribution_contributors(
                   COUNT(*) FILTER (WHERE c.status = 'PENDING') as pending,
                   COUNT(*) FILTER (WHERE c.status = 'APPROVED') as approved,
                   COUNT(*) FILTER (WHERE c.status = 'REJECTED') as rejected
-           FROM contribution c
+           FROM contributions c
            JOIN users u ON u.id = c.user_id
            WHERE c.user_id IS NOT NULL"#,
     );
@@ -649,14 +649,14 @@ pub async fn list_pending_contributions(
     let page_size = params.page_size.clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    let mut count_sql = String::from("SELECT COUNT(*) FROM contribution WHERE status = 'PENDING'");
+    let mut count_sql = String::from("SELECT COUNT(*) FROM contributions WHERE status = 'PENDING'");
     let mut fetch_sql = String::from(
         r#"SELECT id, user_id, contribution_type, target_id, data, status,
                   reviewed_by, reviewed_at, review_notes,
                   admin_review_requested, admin_review_requested_by,
                   admin_review_requested_at, admin_review_reason,
                   created_at, updated_at
-           FROM contribution WHERE status = 'PENDING'"#,
+           FROM contributions WHERE status = 'PENDING'"#,
     );
 
     if let Some(ref ct) = params.contribution_type {
@@ -756,22 +756,22 @@ pub async fn get_all_contribution_stats(
             .into_response();
     }
 
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contribution")
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contributions")
         .fetch_one(&state.pool_ro)
         .await
         .unwrap_or(0);
     let pending: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM contribution WHERE status = 'PENDING'")
+        sqlx::query_scalar("SELECT COUNT(*) FROM contributions WHERE status = 'PENDING'")
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
     let approved: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM contribution WHERE status = 'APPROVED'")
+        sqlx::query_scalar("SELECT COUNT(*) FROM contributions WHERE status = 'APPROVED'")
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
     let rejected: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM contribution WHERE status = 'REJECTED'")
+        sqlx::query_scalar("SELECT COUNT(*) FROM contributions WHERE status = 'REJECTED'")
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
@@ -810,7 +810,7 @@ pub async fn get_all_contribution_stats(
     let mut by_type = serde_json::Map::new();
     for ct in contribution_types {
         let cnt: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM contribution WHERE contribution_type = $1")
+            sqlx::query_scalar("SELECT COUNT(*) FROM contributions WHERE contribution_type = $1")
                 .bind(ct)
                 .fetch_one(&state.pool_ro)
                 .await
@@ -931,7 +931,7 @@ pub async fn create_contribution(
     let stored_user_id: Option<i64> = if is_anonymous { None } else { Some(user_id) };
 
     match sqlx::query(
-        r#"INSERT INTO contribution (id, user_id, contribution_type, target_id, data, status,
+        r#"INSERT INTO contributions (id, user_id, contribution_type, target_id, data, status,
                                     reviewed_by, reviewed_at, review_notes,
                                     admin_review_requested, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7,
@@ -1010,7 +1010,7 @@ pub async fn delete_contribution(
             .into_response();
     }
 
-    if let Err(e) = sqlx::query("DELETE FROM contribution WHERE id = $1")
+    if let Err(e) = sqlx::query("DELETE FROM contributions WHERE id = $1")
         .bind(&contribution_id)
         .execute(&state.pool)
         .await
@@ -1083,7 +1083,7 @@ pub async fn review_contribution(
     };
 
     if let Err(e) = sqlx::query(
-        "UPDATE contribution SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3 WHERE id = $4",
+        "UPDATE contributions SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3 WHERE id = $4",
     )
     .bind(new_status)
     .bind(user_id.to_string())
@@ -1154,7 +1154,7 @@ pub async fn flag_contribution_for_admin_review(
     let reason = body.reason.as_ref().map(|r| r.trim().to_string());
 
     if let Err(e) = sqlx::query(
-        r#"UPDATE contribution
+        r#"UPDATE contributions
            SET admin_review_requested = true,
                admin_review_requested_by = $1,
                admin_review_requested_at = NOW(),
@@ -1241,7 +1241,7 @@ pub async fn reject_approved_contribution(
     }
 
     if let Err(e) = sqlx::query(
-        r#"UPDATE contribution
+        r#"UPDATE contributions
            SET status = 'REJECTED',
                reviewed_by = $1,
                reviewed_at = NOW(),
@@ -1306,7 +1306,7 @@ pub async fn bulk_review_contributions(
         }
     };
 
-    let mut fetch_sql = String::from("SELECT id FROM contribution WHERE status = 'PENDING'");
+    let mut fetch_sql = String::from("SELECT id FROM contributions WHERE status = 'PENDING'");
 
     if let Some(ref ct) = body.contribution_type {
         let esc = ct.replace('\'', "''");
@@ -1333,7 +1333,7 @@ pub async fn bulk_review_contributions(
         }
 
         let result = sqlx::query(
-            "UPDATE contribution SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3 WHERE id = $4 AND status = 'PENDING'",
+            "UPDATE contributions SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3 WHERE id = $4 AND status = 'PENDING'",
         )
         .bind(new_status)
         .bind(user_id.to_string())

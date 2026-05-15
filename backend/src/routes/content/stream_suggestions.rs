@@ -189,7 +189,7 @@ async fn fetch_suggestion(pool: &sqlx::PgPool, id: &str) -> Option<SuggestionRow
                       current_value, suggested_value, reason, status,
                       reviewed_by, reviewed_at, review_notes,
                       issue_triage_status, issue_triage_note, created_at
-               FROM stream_suggestion WHERE id = $1"#,
+               FROM stream_suggestions WHERE id = $1"#,
     )
     .bind(id)
     .fetch_optional(pool)
@@ -410,7 +410,7 @@ pub async fn create_stream_suggestion(
     };
 
     if let Err(e) = sqlx::query(
-        r#"INSERT INTO stream_suggestion
+        r#"INSERT INTO stream_suggestions
                (id, user_id, stream_id, suggestion_type, field_name,
                 current_value, suggested_value, reason, status,
                 reviewed_by, reviewed_at, review_notes, created_at)
@@ -479,7 +479,7 @@ async fn apply_stream_field_change(
         .unwrap_or(10);
 
         let report_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM stream_suggestion WHERE stream_id = $1 AND suggestion_type = 'report_broken' AND status IN ('approved', 'auto_approved')",
+            "SELECT COUNT(*) FROM stream_suggestions WHERE stream_id = $1 AND suggestion_type = 'report_broken' AND status IN ('approved', 'auto_approved')",
         )
         .bind(stream_id)
         .fetch_one(pool)
@@ -573,8 +573,8 @@ pub async fn list_my_stream_suggestions(
     let page_size = params.page_size.clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    let mut count_sql = String::from("SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1");
-    let mut fetch_sql = String::from("SELECT id FROM stream_suggestion WHERE user_id = $1");
+    let mut count_sql = String::from("SELECT COUNT(*) FROM stream_suggestions WHERE user_id = $1");
+    let mut fetch_sql = String::from("SELECT id FROM stream_suggestions WHERE user_id = $1");
     let mut extra_binds: Vec<String> = Vec::new();
     let mut next_idx = 2i32;
 
@@ -649,39 +649,39 @@ pub async fn get_stream_suggestion_stats(
 
     let (total, pending, approved, auto_approved, rejected, approved_today, rejected_today) =
         if is_moderator {
-            let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion")
+            let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestions")
                 .fetch_one(&state.pool_ro)
                 .await
                 .unwrap_or(0);
             let pending: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM stream_suggestion WHERE status = 'pending'",
+                "SELECT COUNT(*) FROM stream_suggestions WHERE status = 'pending'",
             )
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
             let approved: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM stream_suggestion WHERE status = 'approved'",
+                "SELECT COUNT(*) FROM stream_suggestions WHERE status = 'approved'",
             )
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
             let auto_approved: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM stream_suggestion WHERE status = 'auto_approved'",
+                "SELECT COUNT(*) FROM stream_suggestions WHERE status = 'auto_approved'",
             )
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
             let rejected: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM stream_suggestion WHERE status = 'rejected'",
+                "SELECT COUNT(*) FROM stream_suggestions WHERE status = 'rejected'",
             )
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
             let at: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM stream_suggestion WHERE status IN ('approved', 'auto_approved') AND reviewed_at >= CURRENT_DATE",
+                "SELECT COUNT(*) FROM stream_suggestions WHERE status IN ('approved', 'auto_approved') AND reviewed_at >= CURRENT_DATE",
             ).fetch_one(&state.pool_ro).await.unwrap_or(0);
             let rt: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM stream_suggestion WHERE status = 'rejected' AND reviewed_at >= CURRENT_DATE",
+                "SELECT COUNT(*) FROM stream_suggestions WHERE status = 'rejected' AND reviewed_at >= CURRENT_DATE",
             ).fetch_one(&state.pool_ro).await.unwrap_or(0);
             (total, pending, approved, auto_approved, rejected, at, rt)
         } else {
@@ -689,28 +689,28 @@ pub async fn get_stream_suggestion_stats(
         };
 
     let user_pending: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'pending'",
+        "SELECT COUNT(*) FROM stream_suggestions WHERE user_id = $1 AND status = 'pending'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
     let user_approved: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'approved'",
+        "SELECT COUNT(*) FROM stream_suggestions WHERE user_id = $1 AND status = 'approved'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
     let user_auto_approved: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'auto_approved'",
+        "SELECT COUNT(*) FROM stream_suggestions WHERE user_id = $1 AND status = 'auto_approved'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
     let user_rejected: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'rejected'",
+        "SELECT COUNT(*) FROM stream_suggestions WHERE user_id = $1 AND status = 'rejected'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
@@ -766,8 +766,8 @@ pub async fn list_pending_stream_suggestions(
     let offset = (page - 1) * page_size;
 
     let mut count_sql =
-        String::from("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'pending'");
-    let mut fetch_sql = String::from("SELECT id FROM stream_suggestion WHERE status = 'pending'");
+        String::from("SELECT COUNT(*) FROM stream_suggestions WHERE status = 'pending'");
+    let mut fetch_sql = String::from("SELECT id FROM stream_suggestions WHERE status = 'pending'");
     let mut extra_binds: Vec<String> = Vec::new();
     let mut next_idx = 1i32;
 
@@ -880,7 +880,7 @@ pub async fn bulk_review_stream_suggestions(
         }
 
         if let Err(e) = sqlx::query(
-            "UPDATE stream_suggestion SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3 WHERE id = $4",
+            "UPDATE stream_suggestions SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3 WHERE id = $4",
         )
         .bind(new_status)
         .bind(user_id.to_string())
@@ -1007,7 +1007,7 @@ pub async fn delete_stream_suggestion(
             .into_response();
     }
 
-    if let Err(e) = sqlx::query("DELETE FROM stream_suggestion WHERE id = $1")
+    if let Err(e) = sqlx::query("DELETE FROM stream_suggestions WHERE id = $1")
         .bind(&suggestion_id)
         .execute(&state.pool)
         .await
@@ -1080,7 +1080,7 @@ pub async fn review_stream_suggestion(
     };
 
     if let Err(e) = sqlx::query(
-        "UPDATE stream_suggestion SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3 WHERE id = $4",
+        "UPDATE stream_suggestions SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3 WHERE id = $4",
     )
     .bind(new_status)
     .bind(user_id.to_string())
@@ -1158,7 +1158,7 @@ pub async fn triage_stream_suggestion(
     }
 
     let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream_suggestion WHERE id = $1)")
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stream_suggestions WHERE id = $1)")
             .bind(&suggestion_id)
             .fetch_one(&state.pool)
             .await
@@ -1173,7 +1173,7 @@ pub async fn triage_stream_suggestion(
     }
 
     if let Err(e) = sqlx::query(
-        "UPDATE stream_suggestion SET issue_triage_status = $1, issue_triage_note = $2 WHERE id = $3",
+        "UPDATE stream_suggestions SET issue_triage_status = $1, issue_triage_note = $2 WHERE id = $3",
     )
     .bind(&body.issue_triage_status)
     .bind(&body.issue_triage_note)
@@ -1276,7 +1276,7 @@ pub async fn get_stream_signals(
     let is_blocked = stream_row.map(|(b,)| b).unwrap_or(false);
 
     let issue_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestion WHERE stream_id = $1 AND suggestion_type = 'report_broken' AND status IN ('approved', 'auto_approved', 'pending')",
+        "SELECT COUNT(*) FROM stream_suggestions WHERE stream_id = $1 AND suggestion_type = 'report_broken' AND status IN ('approved', 'auto_approved', 'pending')",
     )
     .bind(stream_id)
     .fetch_one(&state.pool_ro)
@@ -1314,7 +1314,7 @@ pub async fn get_stream_signals(
 
     let user_has_issue_report = if let Some(uid) = user_id {
         let has: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM stream_suggestion WHERE stream_id = $1 AND user_id = $2 AND suggestion_type = 'report_broken')",
+            "SELECT EXISTS(SELECT 1 FROM stream_suggestions WHERE stream_id = $1 AND user_id = $2 AND suggestion_type = 'report_broken')",
         )
         .bind(stream_id)
         .bind(uid)
@@ -1380,14 +1380,14 @@ pub async fn list_stream_suggestions(
     let offset = (page - 1) * page_size;
 
     let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE stream_id = $1")
+        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestions WHERE stream_id = $1")
             .bind(stream_id)
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
 
     let ids: Vec<(String,)> = sqlx::query_as(
-        "SELECT id FROM stream_suggestion WHERE stream_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+        "SELECT id FROM stream_suggestions WHERE stream_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
     )
     .bind(stream_id)
     .bind(page_size)
@@ -1437,7 +1437,7 @@ pub async fn get_stream_broken_status(
 
     let is_blocked = row.map(|(b,)| b).unwrap_or(false);
     let broken_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestion WHERE stream_id = $1 AND suggestion_type = 'report_broken' AND status IN ('approved', 'auto_approved', 'pending')",
+        "SELECT COUNT(*) FROM stream_suggestions WHERE stream_id = $1 AND suggestion_type = 'report_broken' AND status IN ('approved', 'auto_approved', 'pending')",
     )
     .bind(stream_id)
     .fetch_one(&state.pool_ro)
@@ -1546,7 +1546,7 @@ pub async fn bulk_stream_signals(
 
     for stream_id in &stream_ids {
         let issue_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM stream_suggestion WHERE stream_id = $1 AND suggestion_type = 'report_broken' AND status IN ('approved', 'auto_approved', 'pending')",
+            "SELECT COUNT(*) FROM stream_suggestions WHERE stream_id = $1 AND suggestion_type = 'report_broken' AND status IN ('approved', 'auto_approved', 'pending')",
         )
         .bind(stream_id)
         .fetch_one(&state.pool_ro)
@@ -1582,7 +1582,7 @@ pub async fn bulk_stream_signals(
 
         let user_has_issue_report = if let Some(uid) = user_id {
             let has: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM stream_suggestion WHERE stream_id = $1 AND user_id = $2 AND suggestion_type = 'report_broken')",
+                "SELECT EXISTS(SELECT 1 FROM stream_suggestions WHERE stream_id = $1 AND user_id = $2 AND suggestion_type = 'report_broken')",
             )
             .bind(stream_id)
             .bind(uid)

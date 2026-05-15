@@ -298,7 +298,7 @@ pub async fn create_suggestion(
 
     // Check pending limit (default 10)
     let pending_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1 AND status = 'pending'",
+        "SELECT COUNT(*) FROM metadata_suggestions WHERE user_id = $1 AND status = 'pending'",
     )
     .bind(user_id)
     .fetch_one(&state.pool)
@@ -314,7 +314,7 @@ pub async fn create_suggestion(
 
     // Check for duplicate pending suggestion
     let existing: Option<String> = sqlx::query_scalar(
-        r#"SELECT id::text FROM metadata_suggestion
+        r#"SELECT id::text FROM metadata_suggestions
            WHERE user_id = $1 AND media_id = $2 AND field_name = $3 AND status = 'pending'
            LIMIT 1"#,
     )
@@ -341,7 +341,7 @@ pub async fn create_suggestion(
     };
 
     let suggestion_id: String = sqlx::query_scalar(
-        r#"INSERT INTO metadata_suggestion
+        r#"INSERT INTO metadata_suggestions
                (user_id, media_id, field_name, current_value, suggested_value, reason, status, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
            RETURNING id::text"#,
@@ -413,7 +413,7 @@ pub async fn list_my_suggestions(
 
     let (total, rows) = if let Some(ref st) = params.status {
         let total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1 AND status = $2",
+            "SELECT COUNT(*) FROM metadata_suggestions WHERE user_id = $1 AND status = $2",
         )
         .bind(user_id)
         .bind(st)
@@ -439,7 +439,7 @@ pub async fn list_my_suggestions(
             r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
                           reason, status, reviewed_by, review_notes, NULL::text,
                           created_at, reviewed_at
-                   FROM metadata_suggestion
+                   FROM metadata_suggestions
                    WHERE user_id = $1 AND status = $2
                    ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC
                    LIMIT $3 OFFSET $4"#,
@@ -455,7 +455,7 @@ pub async fn list_my_suggestions(
         (total, rows)
     } else {
         let total: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1")
+            sqlx::query_scalar("SELECT COUNT(*) FROM metadata_suggestions WHERE user_id = $1")
                 .bind(user_id)
                 .fetch_one(&state.pool_ro)
                 .await
@@ -479,7 +479,7 @@ pub async fn list_my_suggestions(
             r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
                           reason, status, reviewed_by, review_notes, NULL::text,
                           created_at, reviewed_at
-                   FROM metadata_suggestion
+                   FROM metadata_suggestions
                    WHERE user_id = $1
                    ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC
                    LIMIT $2 OFFSET $3"#,
@@ -589,13 +589,13 @@ pub async fn list_pending_suggestions(
 
     let (total_sql, list_sql) = if status_filter == "all" {
         (
-            "SELECT COUNT(*) FROM metadata_suggestion WHERE ($1::text IS NULL OR field_name = $1)".to_string(),
-            "SELECT id::text, user_id, media_id, field_name, current_value, suggested_value, reason, status, reviewed_by, review_notes, NULL::text, created_at, reviewed_at FROM metadata_suggestion WHERE ($1::text IS NULL OR field_name = $1) ORDER BY created_at DESC LIMIT $2 OFFSET $3".to_string(),
+            "SELECT COUNT(*) FROM metadata_suggestions WHERE ($1::text IS NULL OR field_name = $1)".to_string(),
+            "SELECT id::text, user_id, media_id, field_name, current_value, suggested_value, reason, status, reviewed_by, review_notes, NULL::text, created_at, reviewed_at FROM metadata_suggestions WHERE ($1::text IS NULL OR field_name = $1) ORDER BY created_at DESC LIMIT $2 OFFSET $3".to_string(),
         )
     } else {
         (
-            "SELECT COUNT(*) FROM metadata_suggestion WHERE status = $2 AND ($1::text IS NULL OR field_name = $1)".to_string(),
-            "SELECT id::text, user_id, media_id, field_name, current_value, suggested_value, reason, status, reviewed_by, review_notes, NULL::text, created_at, reviewed_at FROM metadata_suggestion WHERE status = $2 AND ($1::text IS NULL OR field_name = $1) ORDER BY created_at DESC LIMIT $3 OFFSET $4".to_string(),
+            "SELECT COUNT(*) FROM metadata_suggestions WHERE status = $2 AND ($1::text IS NULL OR field_name = $1)".to_string(),
+            "SELECT id::text, user_id, media_id, field_name, current_value, suggested_value, reason, status, reviewed_by, review_notes, NULL::text, created_at, reviewed_at FROM metadata_suggestions WHERE status = $2 AND ($1::text IS NULL OR field_name = $1) ORDER BY created_at DESC LIMIT $3 OFFSET $4".to_string(),
         )
     };
 
@@ -704,7 +704,7 @@ pub async fn bulk_review_suggestions(
 
     for sid in &suggestion_ids {
         let current_status: Option<String> =
-            sqlx::query_scalar("SELECT status FROM metadata_suggestion WHERE id = $1::uuid")
+            sqlx::query_scalar("SELECT status FROM metadata_suggestions WHERE id = $1::uuid")
                 .bind(sid)
                 .fetch_optional(&state.pool)
                 .await
@@ -719,7 +719,7 @@ pub async fn bulk_review_suggestions(
         }
 
         let result = sqlx::query(
-            r#"UPDATE metadata_suggestion
+            r#"UPDATE metadata_suggestions
                SET status = $1, reviewed_by = $2::text, reviewed_at = NOW(), review_notes = $3, updated_at = NOW()
                WHERE id = $4::uuid AND status = 'pending'"#,
         )
@@ -767,39 +767,39 @@ pub async fn get_suggestion_stats(
 
     let (total, pending, approved, auto_approved, rejected, approved_today, rejected_today) =
         if is_mod {
-            let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM metadata_suggestion")
+            let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM metadata_suggestions")
                 .fetch_one(&state.pool_ro)
                 .await
                 .unwrap_or(0);
             let pending: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'pending'",
+                "SELECT COUNT(*) FROM metadata_suggestions WHERE status = 'pending'",
             )
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
             let approved: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'approved'",
+                "SELECT COUNT(*) FROM metadata_suggestions WHERE status = 'approved'",
             )
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
             let auto_approved: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'auto_approved'",
+                "SELECT COUNT(*) FROM metadata_suggestions WHERE status = 'auto_approved'",
             )
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
             let rejected: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'rejected'",
+                "SELECT COUNT(*) FROM metadata_suggestions WHERE status = 'rejected'",
             )
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
             let approved_today: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM metadata_suggestion WHERE status IN ('approved','auto_approved') AND reviewed_at >= NOW()::date",
+            "SELECT COUNT(*) FROM metadata_suggestions WHERE status IN ('approved','auto_approved') AND reviewed_at >= NOW()::date",
         ).fetch_one(&state.pool_ro).await.unwrap_or(0);
             let rejected_today: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM metadata_suggestion WHERE status = 'rejected' AND reviewed_at >= NOW()::date",
+            "SELECT COUNT(*) FROM metadata_suggestions WHERE status = 'rejected' AND reviewed_at >= NOW()::date",
         ).fetch_one(&state.pool_ro).await.unwrap_or(0);
             (
                 total,
@@ -815,28 +815,28 @@ pub async fn get_suggestion_stats(
         };
 
     let user_pending: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1 AND status = 'pending'",
+        "SELECT COUNT(*) FROM metadata_suggestions WHERE user_id = $1 AND status = 'pending'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
     let user_approved: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1 AND status = 'approved'",
+        "SELECT COUNT(*) FROM metadata_suggestions WHERE user_id = $1 AND status = 'approved'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
     let user_auto_approved: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1 AND status = 'auto_approved'",
+        "SELECT COUNT(*) FROM metadata_suggestions WHERE user_id = $1 AND status = 'auto_approved'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
     let user_rejected: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM metadata_suggestion WHERE user_id = $1 AND status = 'rejected'",
+        "SELECT COUNT(*) FROM metadata_suggestions WHERE user_id = $1 AND status = 'rejected'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
@@ -903,7 +903,7 @@ pub async fn get_suggestion(
     )> = sqlx::query_as(
         r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
                       reason, status, reviewed_by, review_notes, NULL::text, created_at, reviewed_at
-               FROM metadata_suggestion WHERE id = $1::uuid"#,
+               FROM metadata_suggestions WHERE id = $1::uuid"#,
     )
     .bind(&suggestion_id)
     .fetch_optional(&state.pool_ro)
@@ -952,7 +952,7 @@ pub async fn delete_suggestion(
     };
 
     let row: Option<(String,)> = sqlx::query_as(
-        "SELECT status FROM metadata_suggestion WHERE id = $1::uuid AND user_id = $2",
+        "SELECT status FROM metadata_suggestions WHERE id = $1::uuid AND user_id = $2",
     )
     .bind(&suggestion_id)
     .bind(user_id)
@@ -978,7 +978,7 @@ pub async fn delete_suggestion(
         _ => {}
     }
 
-    sqlx::query("DELETE FROM metadata_suggestion WHERE id = $1::uuid AND user_id = $2")
+    sqlx::query("DELETE FROM metadata_suggestions WHERE id = $1::uuid AND user_id = $2")
         .bind(&suggestion_id)
         .bind(user_id)
         .execute(&state.pool)
@@ -1024,7 +1024,7 @@ pub async fn review_suggestion(
     };
 
     let row: Option<(String,)> =
-        sqlx::query_as("SELECT status FROM metadata_suggestion WHERE id = $1::uuid")
+        sqlx::query_as("SELECT status FROM metadata_suggestions WHERE id = $1::uuid")
             .bind(&suggestion_id)
             .fetch_optional(&state.pool)
             .await
@@ -1049,7 +1049,7 @@ pub async fn review_suggestion(
     }
 
     sqlx::query(
-        r#"UPDATE metadata_suggestion
+        r#"UPDATE metadata_suggestions
            SET status = $1, reviewed_by = $2::text, reviewed_at = NOW(), review_notes = $3, updated_at = NOW()
            WHERE id = $4::uuid"#,
     )
@@ -1078,7 +1078,7 @@ pub async fn review_suggestion(
     )> = sqlx::query_as(
         r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
                       reason, status, reviewed_by, review_notes, NULL::text, created_at, reviewed_at
-               FROM metadata_suggestion WHERE id = $1::uuid"#,
+               FROM metadata_suggestions WHERE id = $1::uuid"#,
     )
     .bind(&suggestion_id)
     .fetch_optional(&state.pool)
