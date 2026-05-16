@@ -95,7 +95,9 @@ fn extract_dn(magnet: &str) -> Option<String> {
     static DN_RE: OnceLock<regex::Regex> = OnceLock::new();
     let re = DN_RE.get_or_init(|| regex::Regex::new(r"[?&]dn=([^&]+)").unwrap());
     re.captures(magnet).and_then(|c| c.get(1)).map(|m| {
-        urlencoding::decode(m.as_str())
+        // Replace + with space before percent-decoding (magnet dn uses + for spaces)
+        let plus_decoded = m.as_str().replace('+', "%20");
+        urlencoding::decode(&plus_decoded)
             .unwrap_or_default()
             .into_owned()
     })
