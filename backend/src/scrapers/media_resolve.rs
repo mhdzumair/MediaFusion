@@ -64,9 +64,11 @@ pub async fn find_or_create_media(
     }
 
     // 2. Fuzzy pg_trgm match.
+    // Use the `%` similarity operator (not the function) so the query planner
+    // can use the GIN trigram index — the function form causes a seq-scan.
     let fuzzy: Option<(i32, String, Option<i32>)> = sqlx::query_as(
         "SELECT id, title, year FROM media \
-         WHERE type::text = $1 AND similarity(title, $2) > 0.4 \
+         WHERE type::text = $1 AND title % $2 \
          ORDER BY similarity(title, $2) DESC LIMIT 1",
     )
     .bind(media_type)

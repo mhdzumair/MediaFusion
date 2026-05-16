@@ -1,5 +1,7 @@
 use tracing::debug;
 
+const MIN_TITLE_SIMILARITY: u32 = 40;
+
 /// Result of an external metadata search.
 #[derive(Debug, Clone)]
 pub struct MetadataMatch {
@@ -117,6 +119,12 @@ async fn tmdb_search(
         .as_str()
         .map(|p| format!("https://image.tmdb.org/t/p/w500{p}"));
 
+    let sim = crate::parser::similarity_ratio(title, &title_str);
+    if sim < MIN_TITLE_SIMILARITY {
+        debug!("metadata: TMDB match '{title_str}' rejected (sim={sim}) for query '{title}'");
+        return None;
+    }
+
     debug!("metadata: TMDB match '{title_str}' ({item_year:?}) for query '{title}'");
 
     Some(MetadataMatch {
@@ -165,6 +173,12 @@ async fn cinemeta_search(
         .and_then(|y| y.split('-').next()?.parse::<i32>().ok())
         .or_else(|| best["year"].as_i64().map(|y| y as i32));
     let poster_url = best["poster"].as_str().map(|s| s.to_string());
+
+    let sim = crate::parser::similarity_ratio(title, &title_str);
+    if sim < MIN_TITLE_SIMILARITY {
+        debug!("metadata: Cinemeta match '{title_str}' rejected (sim={sim}) for query '{title}'");
+        return None;
+    }
 
     debug!("metadata: Cinemeta match '{title_str}' ({item_year:?}) for query '{title}'");
 

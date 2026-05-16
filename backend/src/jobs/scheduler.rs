@@ -72,11 +72,16 @@ async fn tick_loop(
             }
         }
     }
-    // Explicit unlock before returning the connection to the pool.
-    let _ = sqlx::query("SELECT pg_advisory_unlock($1)")
-        .bind(ADVISORY_LOCK_KEY)
-        .execute(&mut *lock_conn)
-        .await;
+    // Explicit unlock — only if the connection still owns the lock.
+    // If still_holds_lock() already returned false the backend PID changed
+    // (connection recycled), meaning the lock is already gone; calling
+    // pg_advisory_unlock on a different PID produces a noisy warning.
+    if still_holds_lock(&mut lock_conn).await {
+        let _ = sqlx::query("SELECT pg_advisory_unlock($1)")
+            .bind(ADVISORY_LOCK_KEY)
+            .execute(&mut *lock_conn)
+            .await;
+    }
 }
 
 async fn still_holds_lock(conn: &mut PoolConnection<Postgres>) -> bool {
