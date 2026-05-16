@@ -3,7 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Magnet, Loader2, ArrowRight, Info } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Magnet, Loader2, ArrowRight, Info, Network } from 'lucide-react'
 import { useAnalyzeMagnet } from '@/hooks'
 import type { TorrentAnalyzeResponse, TorrentMetaType } from '@/lib/api'
 import type { ContentType } from '@/lib/constants'
@@ -31,6 +32,7 @@ export function MagnetTab({
 }: MagnetTabProps) {
   const [magnetLink, setMagnetLink] = useState(initialMagnet || '')
   const [hasAutoAnalyzed, setHasAutoAnalyzed] = useState(false)
+  const [resolveFiles, setResolveFiles] = useState(true)
   const analyzeMagnet = useAnalyzeMagnet()
 
   const handleAnalyze = useCallback(
@@ -42,6 +44,8 @@ export function MagnetTab({
         const result = await analyzeMagnet.mutateAsync({
           magnet_link: linkToAnalyze,
           meta_type: toTorrentMetaType(contentType),
+          resolve_files: resolveFiles,
+          resolve_timeout_secs: 30,
         })
         if (result.status === 'success' || result.matches) {
           onAnalysisComplete(result, linkToAnalyze)
@@ -52,7 +56,7 @@ export function MagnetTab({
         onError('Failed to analyze magnet link')
       }
     },
-    [magnetLink, contentType, analyzeMagnet, onAnalysisComplete, onError],
+    [magnetLink, contentType, resolveFiles, analyzeMagnet, onAnalysisComplete, onError],
   )
 
   // Set hasAutoAnalyzed when we should auto-analyze (during render, not in effect)
@@ -101,6 +105,18 @@ export function MagnetTab({
               Analyze
             </Button>
           </div>
+        </div>
+        <div className="flex items-center justify-between p-3 rounded-xl bg-muted/50">
+          <div className="flex items-center gap-2">
+            <Network className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <p className="text-sm font-medium">Resolve file list via DHT</p>
+              <p className="text-xs text-muted-foreground">
+                Fetches the full file list from the torrent network (~5–30s). Disable for faster analysis.
+              </p>
+            </div>
+          </div>
+          <Switch checked={resolveFiles} onCheckedChange={setResolveFiles} />
         </div>
         <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50">
           <Info className="h-4 w-4 text-muted-foreground mt-0.5" />

@@ -54,6 +54,13 @@ export interface TorrentAnalyzeResponse {
   sports_event_date?: string
   matches?: TorrentMatch[]
   error?: string
+  // DHT-resolved file list (only present when resolve_files=true was requested)
+  resolved?: {
+    name: string
+    total_size: number
+    num_files: number
+    files: Array<{ path: string; size: number }>
+  }
   // Validation error details
   errors?: Array<{
     type: string
@@ -73,6 +80,8 @@ export interface MagnetAnalyzeRequest {
   meta_type: TorrentMetaType
   meta_id?: string
   title?: string
+  resolve_files?: boolean
+  resolve_timeout_secs?: number
 }
 
 export interface ImportResponse {
@@ -155,6 +164,9 @@ export interface TorrentImportRequest {
 
   // Sports category
   sports_category?: string
+
+  // Total size in bytes (from DHT resolution for magnet imports)
+  total_size?: number
 }
 
 // ============================================
@@ -536,6 +548,7 @@ export const contentImportApi = {
     if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
     if (data.file_data) formData.append('file_data', data.file_data)
     if (data.sports_category) formData.append('sports_category', data.sports_category)
+    if (data.total_size != null) formData.append('total_size', String(data.total_size))
     return apiClient.upload<ImportResponse>('/import/magnet', formData)
   },
 

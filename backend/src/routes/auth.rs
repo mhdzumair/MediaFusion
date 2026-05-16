@@ -457,8 +457,10 @@ pub async fn register(
     let user_uuid = Uuid::new_v4().to_string();
 
     let insert: Option<(i32,)> = sqlx::query_as(
-        r#"INSERT INTO users (uuid, email, username, password_hash, role, is_verified, is_active, last_login, created_at)
-           VALUES ($1, $2, $3, $4, 'user', $5, true, $6, NOW())
+        r#"INSERT INTO users (uuid, email, username, password_hash, role, is_verified, is_active, last_login, created_at,
+                              contribution_points, metadata_edits_approved, stream_edits_approved,
+                              contribution_level, contribute_anonymously, uploads_restricted)
+           VALUES ($1, $2, $3, $4, 'USER'::userrole, $5, true, $6, NOW(), 0, 0, 0, 'beginner', false, false)
            RETURNING id"#,
     )
     .bind(&user_uuid)

@@ -387,6 +387,7 @@ export function ContentImportPage() {
           anonymous_display_name: formData.anonymousDisplayName,
           file_data: formData.fileData ? JSON.stringify(formData.fileData) : undefined,
           sports_category: formData.sportsCategory,
+          total_size: torrentAnalysis?.resolved?.total_size,
         }
 
         let result: ImportResponse

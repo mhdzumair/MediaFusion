@@ -724,6 +724,7 @@ pub async fn import_magnet(
     let mut languages: Vec<String> = Vec::new();
     let mut catalogs: Vec<String> = Vec::new();
     let mut force_import = false;
+    let mut total_size: Option<i64> = None;
     let mut file_data: Vec<FileEntry> = Vec::new();
     let mut is_anonymous_field: Option<bool> = None;
     let mut anonymous_display_name: Option<String> = None;
@@ -776,6 +777,11 @@ pub async fn import_magnet(
                     .ok()
                     .map(|v| v == "true" || v == "1")
                     .unwrap_or(false);
+            }
+            Some("total_size") => {
+                if let Ok(raw) = field.text().await {
+                    total_size = raw.parse::<i64>().ok();
+                }
             }
             Some("file_data") => {
                 if let Ok(raw) = field.text().await {
@@ -928,7 +934,7 @@ pub async fn import_magnet(
         &info_hash,
         &torrent_name,
         &source,
-        None,
+        total_size,
         None,
         file_count,
         &parsed,

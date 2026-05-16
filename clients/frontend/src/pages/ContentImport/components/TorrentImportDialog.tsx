@@ -42,6 +42,14 @@ import {
   saveAnonymousDisplayName,
 } from '@/lib/anonymousDisplayName'
 
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`
+}
+
 type ImportStep = 'review' | 'metadata' | 'confirm'
 
 interface TorrentImportDialogProps {
@@ -206,7 +214,26 @@ export function TorrentImportDialog({
     setForceImport(prefills.forceImport ?? false)
     setIsAnonymous(prefills.isAnonymous ?? user?.contribute_anonymously ?? false)
     setAnonymousDisplayName(prefills.anonymousDisplayName || getStoredAnonymousDisplayName())
-    setFileAnnotations(prefills.fileData || [])
+    // Auto-populate file annotations from DHT-resolved data when no prefills provided
+    if (prefills.fileData) {
+      setFileAnnotations(prefills.fileData)
+    } else if (analysis.resolved?.files) {
+      const VIDEO_EXTS = /\.(mkv|mp4|avi|mov|wmv|m4v|ts|m2ts|webm|flv|divx|xvid)$/i
+      setFileAnnotations(
+        analysis.resolved.files
+          .filter((f) => VIDEO_EXTS.test(f.path))
+          .map((f, idx) => ({
+            index: idx,
+            filename: f.path.split('/').pop() ?? f.path,
+            size: f.size,
+            season_number: null,
+            episode_number: null,
+            included: true,
+          })),
+      )
+    } else {
+      setFileAnnotations([])
+    }
     setPoster(prefills.poster || '')
     setBackground(prefills.background || '')
     setReleaseDate(
@@ -595,11 +622,18 @@ export function TorrentImportDialog({
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                       <div>
                         <Label className="text-xs text-muted-foreground">Size</Label>
-                        <p className="font-medium">{analysis.total_size_readable || 'Unknown'}</p>
+                        <p className="font-medium">
+                          {analysis.total_size_readable ||
+                            (analysis.resolved?.total_size
+                              ? formatBytes(analysis.resolved.total_size)
+                              : 'Unknown')}
+                        </p>
                       </div>
                       <div>
                         <Label className="text-xs text-muted-foreground">Files</Label>
-                        <p className="font-medium">{analysis.file_count || 0}</p>
+                        <p className="font-medium">
+                          {analysis.file_count || analysis.resolved?.num_files || 0}
+                        </p>
                       </div>
                       <div>
                         <Label className="text-xs text-muted-foreground">Quality</Label>
