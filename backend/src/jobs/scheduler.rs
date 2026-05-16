@@ -123,7 +123,9 @@ async fn tick_once(pool: &PgPool) -> Result<(), sqlx::Error> {
             }
         };
 
-        let last = job.last_enqueued_at.unwrap_or(chrono::DateTime::UNIX_EPOCH);
+        // Treat NULL as "now": fire at the *next* scheduled time rather than
+        // immediately (avoids surprise runs on first startup or after DB reset).
+        let last = job.last_enqueued_at.unwrap_or_else(Utc::now);
         let Some(next) = schedule.after(&last).next() else {
             continue;
         };
@@ -161,6 +163,15 @@ async fn tick_once(pool: &PgPool) -> Result<(), sqlx::Error> {
             }
             Ok(None) => {
                 debug!(name = job.name, "skipped (dedupe)");
+                // Still stamp last_enqueued_at so that if the earlier UPDATE
+                // failed silently, the next minute's different dedupe key
+                // doesn't re-fire the job.
+                let _ = sqlx::query!(
+                    "UPDATE cron_jobs SET last_enqueued_at = now() WHERE name = $1",
+                    job.name
+                )
+                .execute(pool)
+                .await;
             }
             Err(e) => warn!(name = job.name, "enqueue error: {e}"),
         }

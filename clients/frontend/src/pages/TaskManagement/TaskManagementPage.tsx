@@ -183,10 +183,13 @@ export function TaskManagementPage() {
   const totalTaskPages = Math.max(1, Math.ceil(totalTasks / TASKS_PAGE_SIZE))
 
   useEffect(() => {
-    if (taskPage > totalTaskPages - 1) {
+    // Only clamp once real data has loaded — listQuery.data is undefined while
+    // fetching a new page, which makes totalTaskPages temporarily 1 and would
+    // reset the page the user just navigated to.
+    if (listQuery.data && taskPage > totalTaskPages - 1) {
       setTaskPage(Math.max(totalTaskPages - 1, 0))
     }
-  }, [taskPage, totalTaskPages])
+  }, [taskPage, totalTaskPages, listQuery.data])
 
   const handleRefreshAll = () => {
     overviewQuery.refetch()

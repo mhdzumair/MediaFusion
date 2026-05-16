@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { taskManagementApi, type TaskListParams, type TaskStreamParams } from '@/lib/api'
 
 export const taskManagementKeys = {
@@ -24,6 +24,7 @@ export function useTaskList(params: TaskListParams) {
     queryFn: () => taskManagementApi.listTasks(params),
     staleTime: 10 * 1000,
     refetchInterval: 20 * 1000,
+    placeholderData: keepPreviousData,
   })
 }
 
