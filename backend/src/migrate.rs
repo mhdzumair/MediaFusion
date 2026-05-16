@@ -104,6 +104,12 @@ pub async fn run(pool: &PgPool) -> Result<(), MigrateError> {
         }
     }
 
+    // Repair checksums: if a migration was applied under a previous binary
+    // whose SQL differed only in pg_dump header lines (transaction_timeout,
+    // search_path), the stored checksum won't match.  Update it in-place so
+    // the server doesn't crash on startup after an upgrade.
+    repair_checksums(pool, &migrator).await?;
+
     migrator.run(pool).await?;
     info!("database migrations complete");
     Ok(())
@@ -299,6 +305,44 @@ async fn bridge_alembic(
             description = %migration.description,
             "fake-applied sqlx migration row (alembic bridge)"
         );
+    }
+    Ok(())
+}
+
+/// Fix stored checksums that no longer match the compiled migrations.
+///
+/// This handles the case where a migration file was edited after it had
+/// already been applied (e.g. removing pg_dump header lines).  Only updates
+/// rows whose checksum doesn't match — leaves everything else untouched.
+async fn repair_checksums(
+    pool: &PgPool,
+    migrator: &sqlx::migrate::Migrator,
+) -> Result<(), sqlx::Error> {
+    let stored: Vec<(i64, Vec<u8>)> =
+        sqlx::query_as("SELECT version, checksum FROM _sqlx_migrations ORDER BY version")
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+    for (version, stored_checksum) in stored {
+        let Some(migration) = migrator
+            .iter()
+            .find(|m| m.version == version && !m.migration_type.is_down_migration())
+        else {
+            continue;
+        };
+        if migration.checksum.as_ref() != stored_checksum.as_slice() {
+            sqlx::query("UPDATE _sqlx_migrations SET checksum = $1 WHERE version = $2")
+                .bind(migration.checksum.as_ref())
+                .bind(version)
+                .execute(pool)
+                .await?;
+            warn!(
+                version,
+                description = %migration.description,
+                "repaired checksum mismatch in _sqlx_migrations (migration file was edited)"
+            );
+        }
     }
     Ok(())
 }
