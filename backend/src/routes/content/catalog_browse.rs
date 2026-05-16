@@ -1314,6 +1314,25 @@ pub async fn get_media_streams(
         });
     }
 
+    // Drop torrent streams that RealDebrid would block based on filename patterns.
+    if svc == "realdebrid" {
+        stream_pairs.retain(|(_, out)| {
+            if out.get("stream_type").and_then(|v| v.as_str()).unwrap_or("") != "torrent" {
+                return true;
+            }
+            let check = out
+                .get("filename")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| {
+                    out.get("stream_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                });
+            !crate::routes::stream::is_rd_blocked_filename(check)
+        });
+    }
+
     // Sort using the same pipeline as the Stremio endpoint
     if !sorting_priority.is_empty() {
         stream_pairs.sort_by(|(a, _), (b, _)| {

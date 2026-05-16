@@ -385,6 +385,26 @@ pub async fn resolve(
             .collect()
     };
 
+    // Drop torrent pairs that RealDebrid would block based on filename patterns.
+    let torrent_pairs: Vec<(Value, usize)> = torrent_pairs
+        .into_iter()
+        .filter(|(t, pi)| {
+            let svc = torrent_providers_refs
+                .get(*pi)
+                .map(|pr| pr.service.as_str())
+                .unwrap_or("");
+            if svc != "realdebrid" {
+                return true;
+            }
+            let check = t
+                .get("filename")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| t.get("name").and_then(|v| v.as_str()).unwrap_or(""));
+            !is_rd_blocked_filename(check)
+        })
+        .collect();
+
     let tpl = p.user_data.stream_template.as_ref();
 
     // ── MIXED type grouping: unified sort across all types before formatting ─────
@@ -1770,6 +1790,44 @@ fn sort_and_cap_torrents(
         }
     }
     capped
+}
+
+// ─── RealDebrid filename block list ──────────────────────────────────────────
+
+/// Returns true if `filename` matches any of RealDebrid's blocked filename
+/// patterns (causes RD to report the content as infringing and refuse to serve
+/// it). Should be checked against the torrent filename, falling back to the
+/// release name when no filename is stored.
+///
+/// Rule 1 – substring match (case-insensitive):
+///   web-dl, webrip, bdrip, hdrip, dvdrip
+///
+/// Rule 2 – dot-adjacent source.codec pair (case-insensitive):
+///   BluRay.x264, HDTV.x264, HDTV.XviD, WEB.x264, WEB.h264
+pub(crate) fn is_rd_blocked_filename(filename: &str) -> bool {
+    let lower = filename.to_lowercase();
+
+    const BLOCKED_SUBSTRINGS: &[&str] = &["web-dl", "webrip", "bdrip", "hdrip", "dvdrip"];
+    for pat in BLOCKED_SUBSTRINGS {
+        if lower.contains(pat) {
+            return true;
+        }
+    }
+
+    const BLOCKED_DOT_PAIRS: &[&str] = &[
+        "bluray.x264",
+        "hdtv.x264",
+        "hdtv.xvid",
+        "web.x264",
+        "web.h264",
+    ];
+    for pat in BLOCKED_DOT_PAIRS {
+        if lower.contains(pat) {
+            return true;
+        }
+    }
+
+    false
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
