@@ -704,7 +704,7 @@ pub async fn bulk_review_suggestions(
 
     for sid in &suggestion_ids {
         let current_status: Option<String> =
-            sqlx::query_scalar("SELECT status FROM metadata_suggestions WHERE id = $1::uuid")
+            sqlx::query_scalar("SELECT status FROM metadata_suggestions WHERE id = $1")
                 .bind(sid)
                 .fetch_optional(&state.pool)
                 .await
@@ -721,7 +721,7 @@ pub async fn bulk_review_suggestions(
         let result = sqlx::query(
             r#"UPDATE metadata_suggestions
                SET status = $1, reviewed_by = $2::text, reviewed_at = NOW(), review_notes = $3, updated_at = NOW()
-               WHERE id = $4::uuid AND status = 'pending'"#,
+               WHERE id = $4 AND status = 'pending'"#,
         )
         .bind(new_status)
         .bind(user_id.to_string())
@@ -903,7 +903,7 @@ pub async fn get_suggestion(
     )> = sqlx::query_as(
         r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
                       reason, status, reviewed_by, review_notes, NULL::text, created_at, reviewed_at
-               FROM metadata_suggestions WHERE id = $1::uuid"#,
+               FROM metadata_suggestions WHERE id = $1"#,
     )
     .bind(&suggestion_id)
     .fetch_optional(&state.pool_ro)
@@ -951,14 +951,13 @@ pub async fn delete_suggestion(
         }
     };
 
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT status FROM metadata_suggestions WHERE id = $1::uuid AND user_id = $2",
-    )
-    .bind(&suggestion_id)
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None);
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT status FROM metadata_suggestions WHERE id = $1 AND user_id = $2")
+            .bind(&suggestion_id)
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
 
     match row {
         None => {
@@ -978,7 +977,7 @@ pub async fn delete_suggestion(
         _ => {}
     }
 
-    sqlx::query("DELETE FROM metadata_suggestions WHERE id = $1::uuid AND user_id = $2")
+    sqlx::query("DELETE FROM metadata_suggestions WHERE id = $1 AND user_id = $2")
         .bind(&suggestion_id)
         .bind(user_id)
         .execute(&state.pool)
@@ -1024,7 +1023,7 @@ pub async fn review_suggestion(
     };
 
     let row: Option<(String,)> =
-        sqlx::query_as("SELECT status FROM metadata_suggestions WHERE id = $1::uuid")
+        sqlx::query_as("SELECT status FROM metadata_suggestions WHERE id = $1")
             .bind(&suggestion_id)
             .fetch_optional(&state.pool)
             .await
@@ -1051,7 +1050,7 @@ pub async fn review_suggestion(
     sqlx::query(
         r#"UPDATE metadata_suggestions
            SET status = $1, reviewed_by = $2::text, reviewed_at = NOW(), review_notes = $3, updated_at = NOW()
-           WHERE id = $4::uuid"#,
+           WHERE id = $4"#,
     )
     .bind(new_status)
     .bind(user_id.to_string())
@@ -1078,7 +1077,7 @@ pub async fn review_suggestion(
     )> = sqlx::query_as(
         r#"SELECT id::text, user_id, media_id, field_name, current_value, suggested_value,
                       reason, status, reviewed_by, review_notes, NULL::text, created_at, reviewed_at
-               FROM metadata_suggestions WHERE id = $1::uuid"#,
+               FROM metadata_suggestions WHERE id = $1"#,
     )
     .bind(&suggestion_id)
     .fetch_optional(&state.pool)

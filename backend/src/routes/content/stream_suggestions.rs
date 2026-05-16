@@ -33,7 +33,7 @@ use crate::state::AppState;
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
+fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -65,11 +65,11 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
     data["sub"].as_str()?.parse().ok()
 }
 
-fn validate_token_optional(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
+fn validate_token_optional(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     validate_token(headers, secret_key)
 }
 
-async fn get_user_role(pool: &sqlx::PgPool, user_id: i64) -> Option<String> {
+async fn get_user_role(pool: &sqlx::PgPool, user_id: i32) -> Option<String> {
     sqlx::query_scalar::<_, String>("SELECT LOWER(role::text) FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(pool)
@@ -151,7 +151,7 @@ pub struct BulkReviewBody {
 struct SuggestionRow {
     id: String,
     user_id: i32,
-    stream_id: i64,
+    stream_id: i32,
     suggestion_type: String,
     field_name: Option<String>,
     current_value: Option<String>,
@@ -170,7 +170,7 @@ async fn fetch_suggestion(pool: &sqlx::PgPool, id: &str) -> Option<SuggestionRow
     type R = (
         String,
         i32,
-        i64,
+        i32,
         String,
         Option<String>,
         Option<String>,
@@ -312,7 +312,7 @@ async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_j
 pub async fn create_stream_suggestion(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(stream_id): Path<i64>,
+    Path(stream_id): Path<i32>,
     Json(body): Json<StreamSuggestionCreateRequest>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
@@ -463,7 +463,7 @@ pub async fn create_stream_suggestion(
 /// Apply a stream field change
 async fn apply_stream_field_change(
     pool: &sqlx::PgPool,
-    stream_id: i64,
+    stream_id: i32,
     suggestion_type: &str,
     field_name: Option<&str>,
     value: Option<&str>,
@@ -952,7 +952,7 @@ pub async fn get_stream_suggestion(
     let role = get_user_role(&state.pool_ro, user_id)
         .await
         .unwrap_or_default();
-    if row.user_id as i64 != user_id && !is_mod_or_admin(&role) {
+    if row.user_id != user_id && !is_mod_or_admin(&role) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Access denied"})),
@@ -991,7 +991,7 @@ pub async fn delete_stream_suggestion(
         Some(r) => r,
     };
 
-    if row.user_id as i64 != user_id {
+    if row.user_id != user_id {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({"detail": "Suggestion not found"})),

@@ -41,7 +41,7 @@ use crate::state::AppState;
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
+fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -73,7 +73,7 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
     data["sub"].as_str()?.parse().ok()
 }
 
-async fn get_user_role(pool: &sqlx::PgPool, user_id: i64) -> Option<String> {
+async fn get_user_role(pool: &sqlx::PgPool, user_id: i32) -> Option<String> {
     sqlx::query_scalar::<_, String>("SELECT LOWER(role::text) FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(pool)
@@ -170,7 +170,7 @@ fn default_limit() -> i64 {
 
 struct ContribRow {
     id: String,
-    user_id: Option<i64>,
+    user_id: Option<i32>,
     contribution_type: String,
     target_id: Option<String>,
     data: serde_json::Value,
@@ -189,7 +189,7 @@ struct ContribRow {
 async fn fetch_contrib_row(pool: &sqlx::PgPool, id: &str) -> Option<ContribRow> {
     type RowTuple = (
         String,
-        Option<i64>,
+        Option<i32>,
         String,
         Option<String>,
         serde_json::Value,
@@ -361,7 +361,7 @@ pub async fn list_contributions(
     // Build and execute fetch query
     type ContribTuple = (
         String,
-        Option<i64>,
+        Option<i32>,
         String,
         Option<String>,
         serde_json::Value,
@@ -590,7 +590,7 @@ pub async fn list_contribution_contributors(
         " GROUP BY c.user_id, u.username ORDER BY total DESC, u.username ASC LIMIT {limit}"
     ));
 
-    let rows: Vec<(Option<i64>, Option<String>, i64, i64, i64, i64)> = sqlx::query_as(&sql)
+    let rows: Vec<(Option<i32>, Option<String>, i64, i64, i64, i64)> = sqlx::query_as(&sql)
         .fetch_all(&state.pool_ro)
         .await
         .unwrap_or_default();
@@ -674,7 +674,7 @@ pub async fn list_pending_contributions(
 
     type ContribTuple = (
         String,
-        Option<i64>,
+        Option<i32>,
         String,
         Option<String>,
         serde_json::Value,
@@ -928,7 +928,7 @@ pub async fn create_contribution(
     };
 
     let contrib_id = Uuid::new_v4().to_string();
-    let stored_user_id: Option<i64> = if is_anonymous { None } else { Some(user_id) };
+    let stored_user_id: Option<i32> = if is_anonymous { None } else { Some(user_id) };
 
     match sqlx::query(
         r#"INSERT INTO contributions (id, user_id, contribution_type, target_id, data, status,

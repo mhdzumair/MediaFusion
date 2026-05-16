@@ -617,14 +617,22 @@ pub async fn migrate_media(
     if from_ids.is_empty() {
         return Json(json!({
             "status": "success",
-            "migrated_count": 0,
-            "source_ids_migrated": [],
-            "target_media_id": to_id
+            "message": "No source media IDs provided.",
+            "from_media_ids": [],
+            "migrated_sources_count": 0,
+            "migrated_sources": [],
+            "to_media_id": to_id,
+            "stream_links_migrated": 0,
+            "stream_links_deleted_as_duplicates": 0,
+            "file_links_migrated": 0,
+            "file_links_deleted_as_duplicates": 0
         }))
         .into_response();
     }
 
-    let mut migrated_ids: Vec<i64> = Vec::new();
+    let mut migrated_sources: Vec<serde_json::Value> = Vec::new();
+    let mut total_stream_links: u64 = 0;
+
     for from_id in &from_ids {
         let res = sqlx::query(
             "UPDATE stream_media_link SET media_id = $1 WHERE media_id = $2 ON CONFLICT DO NOTHING",
@@ -634,7 +642,17 @@ pub async fn migrate_media(
         .execute(&state.pool)
         .await;
         match res {
-            Ok(_) => migrated_ids.push(*from_id),
+            Ok(r) => {
+                let links = r.rows_affected();
+                total_stream_links += links;
+                migrated_sources.push(json!({
+                    "from_media_id": from_id,
+                    "stream_links_migrated": links,
+                    "stream_links_deleted_as_duplicates": 0,
+                    "file_links_migrated": 0,
+                    "file_links_deleted_as_duplicates": 0
+                }));
+            }
             Err(e) => {
                 tracing::error!("migrate_media stream_media_link error for id {from_id}: {e}");
             }
@@ -650,11 +668,18 @@ pub async fn migrate_media(
         tracing::error!("migrate_media DELETE media error: {e}");
     }
 
+    let migrated_sources_count = migrated_sources.len();
     Json(json!({
         "status": "success",
-        "migrated_count": migrated_ids.len(),
-        "source_ids_migrated": migrated_ids,
-        "target_media_id": to_id
+        "message": format!("Migrated {} source(s) to media #{to_id}.", migrated_sources_count),
+        "from_media_ids": from_ids,
+        "migrated_sources_count": migrated_sources_count,
+        "migrated_sources": migrated_sources,
+        "to_media_id": to_id,
+        "stream_links_migrated": total_stream_links,
+        "stream_links_deleted_as_duplicates": 0,
+        "file_links_migrated": 0,
+        "file_links_deleted_as_duplicates": 0
     }))
     .into_response()
 }

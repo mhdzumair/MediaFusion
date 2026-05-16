@@ -31,7 +31,7 @@ use crate::state::AppState;
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
+fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -63,7 +63,7 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
     data["sub"].as_str()?.parse().ok()
 }
 
-async fn get_user_role(pool: &sqlx::PgPool, user_id: i64) -> Option<String> {
+async fn get_user_role(pool: &sqlx::PgPool, user_id: i32) -> Option<String> {
     sqlx::query_scalar::<_, String>("SELECT LOWER(role::text) FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(pool)
