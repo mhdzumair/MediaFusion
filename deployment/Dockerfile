@@ -1,10 +1,11 @@
 # Frontend build stage
 FROM node:20-alpine AS frontend-builder
+RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app/frontend
-COPY clients/frontend/package*.json ./
-RUN npm ci
+COPY clients/frontend/package.json clients/frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY clients/frontend/ ./
-RUN npm run build
+RUN pnpm run build
 
 # Pre-built Rust binaries (built natively in CI, passed via rust-dist/<arch>/)
 FROM scratch AS rust-builder
