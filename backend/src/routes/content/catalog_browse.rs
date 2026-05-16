@@ -1317,7 +1317,12 @@ pub async fn get_media_streams(
     // Drop torrent streams that RealDebrid would block based on filename patterns.
     if svc == "realdebrid" {
         stream_pairs.retain(|(_, out)| {
-            if out.get("stream_type").and_then(|v| v.as_str()).unwrap_or("") != "torrent" {
+            if out
+                .get("stream_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                != "torrent"
+            {
                 return true;
             }
             let check = out
