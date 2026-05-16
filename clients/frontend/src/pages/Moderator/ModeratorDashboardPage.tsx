@@ -166,16 +166,16 @@ export function ModeratorDashboardPage() {
         <p className="text-muted-foreground mt-1">Review and manage user-submitted metadata corrections</p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <Card className="glass border-border/50">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-orange-500/10">
+              <div className="p-2 rounded-xl bg-orange-500/10 shrink-0">
                 <Magnet className="h-4 w-4 text-orange-500" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{pendingContributionsCount}</p>
-                <p className="text-xs text-muted-foreground">Content Imports</p>
+              <div className="min-w-0">
+                <p className="text-xl font-bold leading-tight">{pendingContributionsCount}</p>
+                <p className="text-xs text-muted-foreground leading-tight">Content Imports</p>
               </div>
             </div>
           </CardContent>
@@ -183,12 +183,12 @@ export function ModeratorDashboardPage() {
         <Card className="glass border-border/50">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-cyan-500/10">
+              <div className="p-2 rounded-xl bg-cyan-500/10 shrink-0">
                 <FileVideo className="h-4 w-4 text-cyan-500" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{annotationCount}</p>
-                <p className="text-xs text-muted-foreground">Annotations</p>
+              <div className="min-w-0">
+                <p className="text-xl font-bold leading-tight">{annotationCount}</p>
+                <p className="text-xs text-muted-foreground leading-tight">Annotations</p>
               </div>
             </div>
           </CardContent>
@@ -196,12 +196,12 @@ export function ModeratorDashboardPage() {
         <Card className="glass border-border/50">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-primary/10">
+              <div className="p-2 rounded-xl bg-primary/10 shrink-0">
                 <Clock className="h-4 w-4 text-primary" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{pendingCount + streamPendingCount}</p>
-                <p className="text-xs text-muted-foreground">Stream/Meta Edits</p>
+              <div className="min-w-0">
+                <p className="text-xl font-bold leading-tight">{pendingCount + streamPendingCount}</p>
+                <p className="text-xs text-muted-foreground leading-tight">Stream/Meta Edits</p>
               </div>
             </div>
           </CardContent>
@@ -209,25 +209,25 @@ export function ModeratorDashboardPage() {
         <Card className="glass border-border/50">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-emerald-500/10">
+              <div className="p-2 rounded-xl bg-emerald-500/10 shrink-0">
                 <ThumbsUp className="h-4 w-4 text-emerald-500" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{approvedToday}</p>
-                <p className="text-xs text-muted-foreground">Approved Today</p>
+              <div className="min-w-0">
+                <p className="text-xl font-bold leading-tight">{approvedToday}</p>
+                <p className="text-xs text-muted-foreground leading-tight">Approved Today</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="glass border-border/50">
+        <Card className="glass border-border/50 col-span-2 sm:col-span-1">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-red-500/10">
+              <div className="p-2 rounded-xl bg-red-500/10 shrink-0">
                 <ThumbsDown className="h-4 w-4 text-red-500" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{rejectedToday}</p>
-                <p className="text-xs text-muted-foreground">Rejected Today</p>
+              <div className="min-w-0">
+                <p className="text-xl font-bold leading-tight">{rejectedToday}</p>
+                <p className="text-xs text-muted-foreground leading-tight">Rejected Today</p>
               </div>
             </div>
           </CardContent>
@@ -235,14 +235,10 @@ export function ModeratorDashboardPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList
-          className={`h-auto p-1.5 bg-muted/50 rounded-xl grid grid-cols-2 ${
-            user?.role === 'admin' ? 'sm:grid-cols-6' : 'sm:grid-cols-5'
-          } gap-1 w-full`}
-        >
+        <TabsList className="h-auto p-1.5 bg-muted/50 rounded-xl flex flex-wrap gap-1 w-full">
           <TabsTrigger
             value="contributions"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-shrink-0"
           >
             <Magnet className="mr-1.5 h-4 w-4" />
             Content Imports
@@ -254,7 +250,7 @@ export function ModeratorDashboardPage() {
           </TabsTrigger>
           <TabsTrigger
             value="annotations"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-shrink-0"
           >
             <FileVideo className="mr-1.5 h-4 w-4" />
             File Annotations
@@ -266,7 +262,7 @@ export function ModeratorDashboardPage() {
           </TabsTrigger>
           <TabsTrigger
             value="streams"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-shrink-0"
           >
             <Film className="mr-1.5 h-4 w-4" />
             Streams
@@ -278,7 +274,7 @@ export function ModeratorDashboardPage() {
           </TabsTrigger>
           <TabsTrigger
             value="pending"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-shrink-0"
           >
             <Clock className="mr-1.5 h-4 w-4" />
             Metadata
@@ -290,7 +286,7 @@ export function ModeratorDashboardPage() {
           </TabsTrigger>
           <TabsTrigger
             value="migration"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-shrink-0"
           >
             <ArrowRightLeft className="mr-1.5 h-4 w-4" />
             Migration
@@ -298,7 +294,7 @@ export function ModeratorDashboardPage() {
           {user?.role === 'admin' && (
             <TabsTrigger
               value="settings"
-              className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm"
+              className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-shrink-0"
             >
               <Settings className="mr-1.5 h-4 w-4" />
               Settings
