@@ -587,66 +587,60 @@ pub async fn list_pending_suggestions(
     // Default to pending if no status given
     let status_filter = params.status.as_deref().unwrap_or("pending");
 
-    let (total_sql, list_sql) = if status_filter == "all" {
-        (
-            "SELECT COUNT(*) FROM metadata_suggestions WHERE ($1::text IS NULL OR field_name = $1)".to_string(),
-            "SELECT id::text, user_id, media_id, field_name, current_value, suggested_value, reason, status, reviewed_by, review_notes, NULL::text, created_at, reviewed_at FROM metadata_suggestions WHERE ($1::text IS NULL OR field_name = $1) ORDER BY created_at DESC LIMIT $2 OFFSET $3".to_string(),
-        )
-    } else {
-        (
-            "SELECT COUNT(*) FROM metadata_suggestions WHERE status = $2 AND ($1::text IS NULL OR field_name = $1)".to_string(),
-            "SELECT id::text, user_id, media_id, field_name, current_value, suggested_value, reason, status, reviewed_by, review_notes, NULL::text, created_at, reviewed_at FROM metadata_suggestions WHERE status = $2 AND ($1::text IS NULL OR field_name = $1) ORDER BY created_at DESC LIMIT $3 OFFSET $4".to_string(),
-        )
-    };
+    type SuggestionRow = (
+        String,
+        i32,
+        i32,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<Utc>,
+        Option<chrono::DateTime<Utc>>,
+    );
 
-    let (total, rows): (
-        i64,
-        Vec<(
-            String,
-            i32,
-            i32,
-            String,
-            Option<String>,
-            String,
-            Option<String>,
-            String,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            chrono::DateTime<Utc>,
-            Option<chrono::DateTime<Utc>>,
-        )>,
-    ) = if status_filter == "all" {
-        let t: i64 = sqlx::query_scalar(&total_sql)
-            .bind(params.field_name.as_deref())
-            .fetch_one(&state.pool_ro)
-            .await
-            .unwrap_or(0);
-        let r = sqlx::query_as(&list_sql)
-            .bind(params.field_name.as_deref())
-            .bind(page_size)
-            .bind(offset)
-            .fetch_all(&state.pool_ro)
-            .await
-            .unwrap_or_default();
-        (t, r)
-    } else {
-        let t: i64 = sqlx::query_scalar(&total_sql)
-            .bind(params.field_name.as_deref())
-            .bind(status_filter)
-            .fetch_one(&state.pool_ro)
-            .await
-            .unwrap_or(0);
-        let r = sqlx::query_as(&list_sql)
-            .bind(params.field_name.as_deref())
-            .bind(status_filter)
-            .bind(page_size)
-            .bind(offset)
-            .fetch_all(&state.pool_ro)
-            .await
-            .unwrap_or_default();
-        (t, r)
-    };
+    let mut count_sql = String::from("SELECT COUNT(*) FROM metadata_suggestions WHERE 1=1");
+    let mut list_sql = String::from(
+        "SELECT id::text, user_id, media_id, field_name, current_value, suggested_value, reason, status, reviewed_by, review_notes, NULL::text, created_at, reviewed_at FROM metadata_suggestions WHERE 1=1",
+    );
+    let mut extra_binds: Vec<String> = Vec::new();
+    let mut next_idx = 1i32;
+
+    if status_filter != "all" {
+        count_sql.push_str(&format!(" AND status = ${next_idx}"));
+        list_sql.push_str(&format!(" AND status = ${next_idx}"));
+        extra_binds.push(status_filter.to_string());
+        next_idx += 1;
+    }
+
+    if let Some(ref fn_filter) = params.field_name {
+        count_sql.push_str(&format!(" AND field_name = ${next_idx}"));
+        list_sql.push_str(&format!(" AND field_name = ${next_idx}"));
+        extra_binds.push(fn_filter.clone());
+        next_idx += 1;
+    }
+
+    list_sql.push_str(&format!(
+        " ORDER BY created_at DESC LIMIT ${next_idx} OFFSET ${}",
+        next_idx + 1
+    ));
+
+    let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
+    for v in &extra_binds {
+        cq = cq.bind(v.clone());
+    }
+    let total: i64 = cq.fetch_one(&state.pool_ro).await.unwrap_or(0);
+
+    let mut fq = sqlx::query_as::<_, SuggestionRow>(&list_sql);
+    for v in &extra_binds {
+        fq = fq.bind(v.clone());
+    }
+    fq = fq.bind(page_size).bind(offset);
+    let rows: Vec<SuggestionRow> = fq.fetch_all(&state.pool_ro).await.unwrap_or_default();
 
     let mut suggestions = Vec::with_capacity(rows.len());
     for row in &rows {

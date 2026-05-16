@@ -132,6 +132,7 @@ fn default_page_size() -> i64 {
 
 #[derive(Deserialize)]
 pub struct PendingQuery {
+    pub status: Option<String>,
     pub suggestion_type: Option<String>,
     #[serde(default = "default_page")]
     pub page: i64,
@@ -765,11 +766,19 @@ pub async fn list_pending_stream_suggestions(
     let page_size = params.page_size.clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    let mut count_sql =
-        String::from("SELECT COUNT(*) FROM stream_suggestions WHERE status = 'pending'");
-    let mut fetch_sql = String::from("SELECT id FROM stream_suggestions WHERE status = 'pending'");
+    let status_filter = params.status.as_deref().unwrap_or("pending");
+
+    let mut count_sql = String::from("SELECT COUNT(*) FROM stream_suggestions WHERE 1=1");
+    let mut fetch_sql = String::from("SELECT id FROM stream_suggestions WHERE 1=1");
     let mut extra_binds: Vec<String> = Vec::new();
     let mut next_idx = 1i32;
+
+    if status_filter != "all" {
+        count_sql.push_str(&format!(" AND status = ${next_idx}"));
+        fetch_sql.push_str(&format!(" AND status = ${next_idx}"));
+        extra_binds.push(status_filter.to_string());
+        next_idx += 1;
+    }
 
     if let Some(ref st) = params.suggestion_type {
         count_sql.push_str(&format!(" AND suggestion_type = ${next_idx}"));

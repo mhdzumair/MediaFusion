@@ -235,12 +235,12 @@ export function ModeratorDashboardPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="h-auto p-1.5 bg-muted/50 rounded-xl flex flex-wrap gap-1 w-full">
+        <TabsList className="h-auto p-1.5 bg-muted/50 rounded-xl flex flex-wrap gap-1 w-full justify-start">
           <TabsTrigger
             value="contributions"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-shrink-0"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-1 min-w-fit"
           >
-            <Magnet className="mr-1.5 h-4 w-4" />
+            <Magnet className="mr-1.5 h-4 w-4 shrink-0" />
             Content Imports
             {pendingContributionsCount > 0 && (
               <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-xs bg-orange-500/20 text-orange-600">
@@ -250,9 +250,9 @@ export function ModeratorDashboardPage() {
           </TabsTrigger>
           <TabsTrigger
             value="annotations"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-shrink-0"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-1 min-w-fit"
           >
-            <FileVideo className="mr-1.5 h-4 w-4" />
+            <FileVideo className="mr-1.5 h-4 w-4 shrink-0" />
             File Annotations
             {annotationCount > 0 && (
               <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-xs bg-cyan-500/20 text-cyan-600">
@@ -262,9 +262,9 @@ export function ModeratorDashboardPage() {
           </TabsTrigger>
           <TabsTrigger
             value="streams"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-shrink-0"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-1 min-w-fit"
           >
-            <Film className="mr-1.5 h-4 w-4" />
+            <Film className="mr-1.5 h-4 w-4 shrink-0" />
             Streams
             {streamPendingCount > 0 && (
               <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-xs bg-blue-500/20 text-blue-600">
@@ -274,9 +274,9 @@ export function ModeratorDashboardPage() {
           </TabsTrigger>
           <TabsTrigger
             value="pending"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-shrink-0"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-1 min-w-fit"
           >
-            <Clock className="mr-1.5 h-4 w-4" />
+            <Clock className="mr-1.5 h-4 w-4 shrink-0" />
             Metadata
             {pendingCount > 0 && (
               <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-xs bg-primary/20 text-primary">
@@ -286,17 +286,17 @@ export function ModeratorDashboardPage() {
           </TabsTrigger>
           <TabsTrigger
             value="migration"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-shrink-0"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-1 min-w-fit"
           >
-            <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+            <ArrowRightLeft className="mr-1.5 h-4 w-4 shrink-0" />
             Migration
           </TabsTrigger>
           {user?.role === 'admin' && (
             <TabsTrigger
               value="settings"
-              className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-shrink-0"
+              className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-1 min-w-fit"
             >
-              <Settings className="mr-1.5 h-4 w-4" />
+              <Settings className="mr-1.5 h-4 w-4 shrink-0" />
               Settings
             </TabsTrigger>
           )}

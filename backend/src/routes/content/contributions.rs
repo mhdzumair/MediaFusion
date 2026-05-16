@@ -205,7 +205,7 @@ async fn fetch_contrib_row(pool: &sqlx::PgPool, id: &str) -> Option<ContribRow> 
         Option<DateTime<Utc>>,
     );
     let row = sqlx::query_as::<_, RowTuple>(
-        r#"SELECT id, user_id, contribution_type, target_id, data, status,
+        r#"SELECT id, user_id, contribution_type, target_id, data::jsonb, status::text,
                       reviewed_by, reviewed_at, review_notes,
                       admin_review_requested, admin_review_requested_by,
                       admin_review_requested_at, admin_review_reason,
@@ -316,7 +316,7 @@ pub async fn list_contributions(
 
     let mut count_sql = String::from("SELECT COUNT(*) FROM contributions WHERE 1=1");
     let mut fetch_sql = String::from(
-        r#"SELECT id, user_id, contribution_type, target_id, data, status,
+        r#"SELECT id, user_id, contribution_type, target_id, data::jsonb, status::text,
                   reviewed_by, reviewed_at, review_notes,
                   admin_review_requested, admin_review_requested_by,
                   admin_review_requested_at, admin_review_reason,
@@ -651,7 +651,7 @@ pub async fn list_pending_contributions(
 
     let mut count_sql = String::from("SELECT COUNT(*) FROM contributions WHERE status = 'PENDING'");
     let mut fetch_sql = String::from(
-        r#"SELECT id, user_id, contribution_type, target_id, data, status,
+        r#"SELECT id, user_id, contribution_type, target_id, data::jsonb, status::text,
                   reviewed_by, reviewed_at, review_notes,
                   admin_review_requested, admin_review_requested_by,
                   admin_review_requested_at, admin_review_reason,
