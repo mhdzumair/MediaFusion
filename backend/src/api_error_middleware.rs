@@ -30,7 +30,10 @@ pub async fn api_error_middleware(request: Request, next: Next) -> Response {
         Ok(b) => b,
         Err(_) => {
             return error_response(
-                status.canonical_reason().unwrap_or("unknown error").to_string(),
+                status
+                    .canonical_reason()
+                    .unwrap_or("unknown error")
+                    .to_string(),
                 status_code,
             );
         }

@@ -785,8 +785,7 @@ pub async fn import_magnet(
             }
             Some("file_data") => {
                 if let Ok(raw) = field.text().await {
-                    file_data =
-                        serde_json::from_str::<Vec<FileEntry>>(&raw).unwrap_or_default();
+                    file_data = serde_json::from_str::<Vec<FileEntry>>(&raw).unwrap_or_default();
                 }
             }
             Some("is_anonymous") => {
@@ -795,8 +794,7 @@ pub async fn import_magnet(
                 }
             }
             Some("anonymous_display_name") => {
-                anonymous_display_name =
-                    field.text().await.ok().filter(|s| !s.is_empty());
+                anonymous_display_name = field.text().await.ok().filter(|s| !s.is_empty());
             }
             _ => {}
         }
@@ -969,7 +967,9 @@ pub async fn import_magnet(
 
     // Insert language links
     if !languages.is_empty() {
-        insert_languages(&state.pool, stream_id, &languages).await.ok();
+        insert_languages(&state.pool, stream_id, &languages)
+            .await
+            .ok();
     }
 
     // Insert per-file metadata

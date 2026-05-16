@@ -624,16 +624,12 @@ export function TorrentImportDialog({
                         <Label className="text-xs text-muted-foreground">Size</Label>
                         <p className="font-medium">
                           {analysis.total_size_readable ||
-                            (analysis.resolved?.total_size
-                              ? formatBytes(analysis.resolved.total_size)
-                              : 'Unknown')}
+                            (analysis.resolved?.total_size ? formatBytes(analysis.resolved.total_size) : 'Unknown')}
                         </p>
                       </div>
                       <div>
                         <Label className="text-xs text-muted-foreground">Files</Label>
-                        <p className="font-medium">
-                          {analysis.file_count || analysis.resolved?.num_files || 0}
-                        </p>
+                        <p className="font-medium">{analysis.file_count || analysis.resolved?.num_files || 0}</p>
                       </div>
                       <div>
                         <Label className="text-xs text-muted-foreground">Quality</Label>
