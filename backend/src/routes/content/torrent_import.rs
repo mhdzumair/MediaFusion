@@ -261,7 +261,7 @@ async fn insert_trackers(
 /// Insert audio language links for a stream.
 async fn insert_languages(
     pool: &sqlx::PgPool,
-    stream_id: i64,
+    stream_id: i32,
     languages: &[String],
 ) -> Result<(), sqlx::Error> {
     for lang in languages {
@@ -279,7 +279,7 @@ async fn insert_languages(
             sqlx::query(
                 "INSERT INTO stream_language_link(stream_id, language_id, language_type) VALUES($1, $2, 'audio') ON CONFLICT DO NOTHING",
             )
-            .bind(stream_id as i32)
+            .bind(stream_id)
             .bind(lid)
             .execute(pool)
             .await?;
@@ -291,7 +291,7 @@ async fn insert_languages(
 /// Insert per-file metadata (stream_file + file_media_link) for a stream.
 async fn insert_file_data(
     pool: &sqlx::PgPool,
-    stream_id: i64,
+    stream_id: i32,
     media_id: Option<i64>,
     files: &[FileEntry],
 ) -> Result<(), sqlx::Error> {
@@ -302,7 +302,7 @@ async fn insert_file_data(
                ON CONFLICT DO NOTHING
                RETURNING id"#,
         )
-        .bind(stream_id as i32)
+        .bind(stream_id)
         .bind(f.index)
         .bind(&f.filename)
         .bind(f.size)
@@ -341,17 +341,17 @@ async fn insert_torrent_stream(
     file_count: i32,
     parsed: &parser::ParsedTitle,
     media_id: Option<i64>,
-) -> Result<i64, sqlx::Error> {
+) -> Result<i32, sqlx::Error> {
     let mut txn = pool.begin().await?;
 
-    let stream_id: i64 = sqlx::query_scalar(
+    let stream_id: i32 = sqlx::query_scalar(
         r#"INSERT INTO stream(
                stream_type, name, source, resolution, codec, quality,
-               is_proper, is_repack, is_remastered, is_upscaled, is_extended, is_complete, is_dubbed, release_group,
+               is_proper, is_repack, is_remastered, is_upscaled, is_extended, is_complete, is_dubbed, is_subbed, release_group,
                is_active, is_blocked, is_public, playback_count, created_at
            ) VALUES(
                'TORRENT'::streamtype, $1, $2, $3, $4, $5,
-               $6, $7, $8, $9, $10, $11, $12, $13,
+               $6, $7, $8, $9, $10, $11, $12, $13, $14,
                true, false, true, 0, NOW()
            )
            RETURNING id"#,
@@ -368,6 +368,7 @@ async fn insert_torrent_stream(
     .bind(parsed.is_extended)
     .bind(parsed.is_complete)
     .bind(parsed.is_dubbed)
+    .bind(parsed.is_subbed)
     .bind(parsed.release_group.as_deref())
     .fetch_one(&mut *txn)
     .await?;
@@ -379,7 +380,7 @@ async fn insert_torrent_stream(
     )
     .bind(stream_id as i32)
     .bind(info_hash)
-    .bind(size)
+    .bind(size.unwrap_or(0_i64))
     .bind(seeders)
     .bind(file_count)
     .execute(&mut *txn)
@@ -394,7 +395,7 @@ async fn insert_torrent_stream(
                 .ok();
             txn.commit().await?;
             // Return the existing stream_id
-            let existing: i64 =
+            let existing: i32 =
                 sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
                     .bind(info_hash)
                     .fetch_one(pool)
@@ -844,7 +845,7 @@ pub async fn import_magnet(
     }
 
     // Check duplicate
-    let existing_id: Option<i64> = sqlx::query_scalar(
+    let existing_id: Option<i32> = sqlx::query_scalar(
         "SELECT ts.stream_id FROM torrent_stream ts WHERE ts.info_hash = $1 LIMIT 1",
     )
     .bind(&info_hash)
@@ -1217,7 +1218,7 @@ pub async fn import_torrent(
     }
 
     // Check duplicate
-    let existing_id: Option<i64> = sqlx::query_scalar(
+    let existing_id: Option<i32> = sqlx::query_scalar(
         "SELECT ts.stream_id FROM torrent_stream ts WHERE ts.info_hash = $1 LIMIT 1",
     )
     .bind(&info_hash)
