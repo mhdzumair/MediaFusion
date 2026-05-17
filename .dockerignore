@@ -56,3 +56,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Node
+**/node_modules/
+clients/frontend/src/
+clients/frontend/public/

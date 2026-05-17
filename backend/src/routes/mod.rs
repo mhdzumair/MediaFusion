@@ -39,11 +39,17 @@ pub mod watchlist;
 use std::sync::Arc;
 
 use axum::{
+    body::Body,
+    http::{header, HeaderValue, StatusCode},
+    response::{IntoResponse, Response},
     routing::{delete, get, patch, post, put},
     Router,
 };
 use tower_http::{
-    compression::CompressionLayer, cors::CorsLayer, services::ServeDir, timeout::TimeoutLayer,
+    compression::CompressionLayer,
+    cors::CorsLayer,
+    services::{ServeDir, ServeFile},
+    timeout::TimeoutLayer,
 };
 
 use crate::api_error_middleware::api_error_middleware;
@@ -52,6 +58,34 @@ use crate::make_trace_layer;
 use crate::metrics_middleware::metrics_middleware;
 use crate::state::AppState;
 use crate::stremio_auth_middleware::stremio_auth_middleware;
+
+async fn root_redirect() -> impl IntoResponse {
+    Response::builder()
+        .status(StatusCode::FOUND)
+        .header(header::LOCATION, "/app")
+        .body(Body::empty())
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// Sets `Cache-Control: no-cache` on HTML responses so browsers always revalidate
+/// `index.html` after a deploy. Hashed asset files are left alone (immutable by
+/// default via their content-addressed filenames).
+async fn spa_cache_headers(response: Response) -> Response {
+    let mut response = response;
+    let is_html = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.contains("text/html"))
+        .unwrap_or(false);
+    if is_html {
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-cache, no-store, must-revalidate"),
+        );
+    }
+    response
+}
 
 pub fn router(state: Arc<AppState>) -> Router {
     let resources_dir = state.config.resources_dir.clone();
@@ -699,10 +733,24 @@ pub fn router(state: Arc<AppState>) -> Router {
         ))
         .layer(make_trace_layer!())
         .layer(CorsLayer::permissive())
-        .with_state(state);
+        .with_state(state.clone());
+
+    let frontend_dist_dir = state.config.frontend_dist_dir.clone();
+    let index_html = std::path::Path::new(&frontend_dist_dir)
+        .join("index.html")
+        .to_string_lossy()
+        .into_owned();
+
+    // ServeDir serves real files (assets, etc.) directly; unmatched paths fall
+    // back to index.html so React Router handles client-side navigation.
+    let spa_service = ServeDir::new(&frontend_dist_dir)
+        .fallback(ServeFile::new(&index_html));
 
     Router::new()
+        .route("/", get(root_redirect))
         .merge(api_router)
+        .nest_service("/app", spa_service)
         .nest_service("/static", ServeDir::new(resources_dir))
+        .layer(axum::middleware::map_response(spa_cache_headers))
         .layer(CorsLayer::permissive())
 }

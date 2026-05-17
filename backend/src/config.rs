@@ -249,6 +249,9 @@ pub struct AppConfig {
     /// Root of the resources/ tree served at /static (mirrors Python's StaticFiles mount).
     /// Defaults to resources/ (relative to working directory, correct for Docker WORKDIR=/mediafusion).
     pub resources_dir: String,
+    /// Path to the built React SPA dist/ directory served at /app.
+    /// Defaults to clients/frontend/dist (matches Docker COPY destination).
+    pub frontend_dist_dir: String,
 
     // ── Request timeouts ──────────────────────────────────────────
     /// Timeout for /stream/ routes in seconds. Live search scrapes run inline so
@@ -638,6 +641,8 @@ impl AppConfig {
             exception_tracking_max_entries: env("EXCEPTION_TRACKING_MAX_ENTRIES")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(500),
             resources_dir: env("RESOURCES_DIR").unwrap_or_else(|_| "resources".into()),
+            frontend_dist_dir: env("FRONTEND_DIST_DIR")
+                .unwrap_or_else(|_| "clients/frontend/dist".into()),
             request_timeout: env("REQUEST_TIMEOUT")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(120),
             prowlarr_search_query_timeout: env("PROWLARR_SEARCH_QUERY_TIMEOUT")
