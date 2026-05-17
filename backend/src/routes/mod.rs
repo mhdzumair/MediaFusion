@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod admin_database;
 pub mod admin_extended;
+pub mod admin_keyword_filters;
 pub mod admin_metrics;
 pub mod admin_scrapers;
 pub mod auth;
@@ -456,6 +457,12 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/contribution-settings", get(admin_extended::get_contribution_settings).put(admin_extended::update_contribution_settings))
         .route("/api/v1/admin/contribution-levels", get(admin_extended::get_contribution_levels))
         .route("/api/v1/admin/contribution-settings/reset", post(admin_extended::reset_contribution_settings))
+        // ── Admin keyword filters ─────────────────────────────────────────────
+        .route("/api/v1/admin/keyword-filters", get(admin_keyword_filters::list_keyword_filters).post(admin_keyword_filters::add_keyword_filter))
+        .route("/api/v1/admin/keyword-filters/reload", post(admin_keyword_filters::reload_keyword_cache))
+        .route("/api/v1/admin/keyword-filters/{id}", patch(admin_keyword_filters::toggle_keyword_filter).delete(admin_keyword_filters::delete_keyword_filter))
+        .route("/api/v1/admin/keyword-whitelist", get(admin_keyword_filters::list_keyword_whitelist).post(admin_keyword_filters::add_whitelist_phrase))
+        .route("/api/v1/admin/keyword-whitelist/{id}", delete(admin_keyword_filters::delete_whitelist_phrase))
         .route("/api/v1/admin/exceptions/status", get(admin_extended::get_exception_status))
         .route("/api/v1/admin/exceptions", get(admin_extended::list_exceptions).delete(admin_extended::clear_all_exceptions))
         .route("/api/v1/admin/exceptions/{fingerprint}", get(admin_extended::get_exception).delete(admin_extended::clear_single_exception))

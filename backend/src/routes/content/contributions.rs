@@ -1266,13 +1266,27 @@ pub async fn reject_approved_contribution(
     Json(contrib_row_to_json(&state.pool, &updated).await).into_response()
 }
 
-fn is_adult_contribution(data: &serde_json::Value) -> bool {
-    use crate::parser::contains_adult_keywords;
+fn is_adult_contribution(
+    data: &serde_json::Value,
+    cache: &crate::state::KeywordFilterCache,
+) -> bool {
+    let check_text = |text: &str| -> bool {
+        if text.is_empty() {
+            return false;
+        }
+        let lower = text.to_lowercase();
+        // whitelist check first
+        if cache.whitelist.iter().any(|p| lower.contains(p.as_str())) {
+            return false;
+        }
+        // keyword check
+        cache.keywords.iter().any(|kw| lower.contains(kw.as_str()))
+    };
 
     // Check top-level name and title fields (torrent_name, display name, resolved title)
     for key in &["name", "title"] {
         if let Some(text) = data.get(key).and_then(|v| v.as_str()) {
-            if !text.is_empty() && contains_adult_keywords(text) {
+            if check_text(text) {
                 return true;
             }
         }
@@ -1283,7 +1297,7 @@ fn is_adult_contribution(data: &serde_json::Value) -> bool {
         for file in files {
             for key in &["filename", "meta_title", "episode_title", "title"] {
                 if let Some(text) = file.get(key).and_then(|v| v.as_str()) {
-                    if !text.is_empty() && contains_adult_keywords(text) {
+                    if check_text(text) {
                         return true;
                     }
                 }
@@ -1372,7 +1386,12 @@ pub async fn bulk_review_contributions(
 
         // When approving, skip adult content
         if new_status == "APPROVED" {
-            let is_adult = is_adult_contribution(&data);
+            let cache = state
+                .keyword_filters
+                .read()
+                .unwrap_or_else(|e| e.into_inner());
+            let is_adult = is_adult_contribution(&data, &cache);
+            drop(cache);
             if is_adult {
                 skipped += 1;
                 continue;

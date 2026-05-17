@@ -228,6 +228,19 @@ export {
   contributionSettingsKeys,
 } from './useContributionSettings'
 
+// Keyword Filter hooks (Admin)
+export {
+  useKeywordFilters,
+  useKeywordWhitelist,
+  useAddKeyword,
+  useToggleKeyword,
+  useDeleteKeyword,
+  useAddWhitelistPhrase,
+  useDeleteWhitelistPhrase,
+  useReloadKeywordCache,
+  keywordFilterKeys,
+} from './useKeywordFilters'
+
 // Scheduler Management hooks (Admin)
 export {
   useSchedulerJobs,

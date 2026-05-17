@@ -297,6 +297,14 @@ export {
 } from './admin'
 export { moderatorApi } from './moderator'
 export {
+  keywordFiltersApi,
+  type KeywordFilter,
+  type WhitelistPhrase,
+  type KeywordFilterListResponse,
+  type WhitelistListResponse,
+  type KeywordCacheStats,
+} from './keyword-filters'
+export {
   contributionSettingsApi,
   type ContributionSettings,
   type ContributionSettingsUpdate,
