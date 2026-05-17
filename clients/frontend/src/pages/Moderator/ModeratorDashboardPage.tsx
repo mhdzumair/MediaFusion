@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
-import { ArrowRightLeft, Ban, Clock, FileVideo, Film, Magnet, Settings, Shield, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { ArrowRightLeft, Clock, FileVideo, Film, Magnet, Settings, Shield, ThumbsDown, ThumbsUp } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -18,7 +18,6 @@ import {
   AnnotationRequestsTab,
   ContributionsTab,
   ContributionSettingsTab,
-  KeywordFiltersTab,
   MediaMigrationTab,
   PendingSuggestionsTab,
   StreamSuggestionsTab,
@@ -68,7 +67,7 @@ export function ModeratorDashboardPage() {
     tabParam === 'pending' ||
     tabParam === 'migration'
       ? tabParam
-      : (tabParam === 'settings' || tabParam === 'keyword-filters') && isAdmin
+      : tabParam === 'settings' && isAdmin
         ? tabParam
         : 'contributions'
 
@@ -137,7 +136,7 @@ export function ModeratorDashboardPage() {
       value === 'streams' ||
       value === 'pending' ||
       value === 'migration' ||
-      ((value === 'settings' || value === 'keyword-filters') && isAdmin)
+      (value === 'settings' && isAdmin)
         ? (value as ModeratorTab)
         : 'contributions'
     updateModeratorParam('tab', nextTab, 'contributions')
@@ -301,15 +300,6 @@ export function ModeratorDashboardPage() {
               Settings
             </TabsTrigger>
           )}
-          {user?.role === 'admin' && (
-            <TabsTrigger
-              value="keyword-filters"
-              className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm flex-1 min-w-fit"
-            >
-              <Ban className="mr-1.5 h-4 w-4 shrink-0" />
-              Filters
-            </TabsTrigger>
-          )}
         </TabsList>
 
         <TabsContent value="contributions">
@@ -379,11 +369,6 @@ export function ModeratorDashboardPage() {
         {user?.role === 'admin' && (
           <TabsContent value="settings">
             <ContributionSettingsTab />
-          </TabsContent>
-        )}
-        {user?.role === 'admin' && (
-          <TabsContent value="keyword-filters">
-            <KeywordFiltersTab />
           </TabsContent>
         )}
       </Tabs>

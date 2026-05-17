@@ -40,6 +40,7 @@ import { RequestMetricsPage } from '@/pages/RequestMetrics'
 import { MetadataCreatorPage } from '@/pages/MetadataCreator'
 import { SettingsPage } from '@/pages/Settings'
 import { TaskManagementPage } from '@/pages/TaskManagement'
+import { KeywordFiltersPage } from '@/pages/KeywordFilters'
 import { PrivacyPolicyPage, TermsOfServicePage, DMCAPage } from '@/pages/Legal'
 import { ReleaseNotesPage } from '@/pages/ReleaseNotes'
 
@@ -301,6 +302,14 @@ function AppRoutes() {
           element={
             <RoleGuard requiredRole="admin">
               <RequestMetricsPage />
+            </RoleGuard>
+          }
+        />
+        <Route
+          path="keyword-filters"
+          element={
+            <RoleGuard requiredRole="admin">
+              <KeywordFiltersPage />
             </RoleGuard>
           }
         />
