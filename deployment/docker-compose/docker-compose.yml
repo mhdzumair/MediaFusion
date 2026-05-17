@@ -37,11 +37,17 @@ services:
     environment:
       - POSTGRES_URI=postgresql://mediafusion:mediafusion@postgres:5432/mediafusion
       - REDIS_URL=redis://redis:6379
+      - BROWSERLESS_URL=http://browserless:3000
+      - BYPARR_URL=http://byparr:8191
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      browserless:
+        condition: service_started
+      byparr:
+        condition: service_started
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -167,13 +173,27 @@ services:
     networks:
       - mediafusion-network
 
+  # ── Browserless v2 (Chrome automation for JS-challenge sites) ────────────
   browserless:
-    image: browserless/chrome:latest
+    image: ghcr.io/browserless/chromium:latest
     environment:
-      - ENABLE_DEBUGGER=false
-      - PREBOOT_CHROME=true
-      - MAX_CONCURRENT_SESSIONS=4
-      - CONNECTION_TIMEOUT=60000
+      - CONCURRENT=4
+      - TIMEOUT=120000
+      - ENABLE_CORS=true
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mediafusion-network
+
+  # ── Byparr (FlareSolverr-compatible CF bypass for public indexers) ────────
+  byparr:
+    image: ghcr.io/thephaseless/byparr:latest
+    environment:
+      - LOG_LEVEL=info
     restart: unless-stopped
     logging:
       driver: "json-file"

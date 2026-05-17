@@ -266,6 +266,146 @@ pub async fn link_to_catalogs(pool: &PgPool, media_id: i32, catalog_ids: &[&str]
     }
 }
 
+/// Find or create a minimal media stub for a sports event, skipping any external
+/// metadata lookup. Sports event titles (match replays, highlight clips) are not
+/// on TMDB/IMDb, so a remote lookup would be wasted latency.
+///
+/// Sets `is_add_title_to_poster = true` on newly-created stubs so the poster
+/// endpoint auto-selects a genre-matched poster from the bundled sports artifacts.
+pub async fn find_or_create_sports_stub(
+    pool: &PgPool,
+    title: &str,
+    year: Option<i32>,
+    genre_name: &str,
+    poster_url: Option<&str>,
+) -> Option<i32> {
+    // 1. Exact title match (case-insensitive).
+    let row: Option<(i32,)> = if let Some(y) = year {
+        sqlx::query_as(
+            "SELECT id FROM media WHERE LOWER(title) = LOWER($1) \
+             AND type = 'MOVIE'::mediatype AND (year = $2 OR year IS NULL) LIMIT 1",
+        )
+        .bind(title)
+        .bind(y)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+    } else {
+        sqlx::query_as(
+            "SELECT id FROM media WHERE LOWER(title) = LOWER($1) \
+             AND type = 'MOVIE'::mediatype LIMIT 1",
+        )
+        .bind(title)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+    };
+
+    if let Some((id,)) = row {
+        link_genre(pool, id, genre_name).await;
+        return Some(id);
+    }
+
+    // 2. Fuzzy pg_trgm match (same threshold as find_or_create_media).
+    let fuzzy: Option<(i32, String)> = sqlx::query_as(
+        "SELECT id, title FROM media WHERE type = 'MOVIE'::mediatype AND title % $1 \
+         ORDER BY similarity(title, $1) DESC LIMIT 1",
+    )
+    .bind(title)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    if let Some((id, existing_title)) = fuzzy {
+        if crate::parser::similarity_ratio(title, &existing_title) >= 70 {
+            link_genre(pool, id, genre_name).await;
+            return Some(id);
+        }
+    }
+
+    // 3. Create stub with is_add_title_to_poster = true.
+    let insert: Option<(i32,)> = sqlx::query_as(
+        r#"
+        INSERT INTO media (
+            type, title, year,
+            adult, is_blocked, is_public, is_user_created,
+            is_add_title_to_poster, total_streams, created_at
+        )
+        VALUES ('MOVIE'::mediatype, $1, $2, false, false, true, false, true, 0, NOW())
+        ON CONFLICT DO NOTHING
+        RETURNING id
+        "#,
+    )
+    .bind(title)
+    .bind(year)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    // Race: another worker may have inserted in between — fall back to SELECT.
+    let media_id = match insert {
+        Some((id,)) => id,
+        None => sqlx::query_scalar::<_, i32>(
+            "SELECT id FROM media WHERE LOWER(title) = LOWER($1) \
+             AND type = 'MOVIE'::mediatype LIMIT 1",
+        )
+        .bind(title)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()?,
+    };
+
+    // Store the scraped poster (only if no primary poster already stored).
+    if let Some(url) = poster_url {
+        let _ = sqlx::query(
+            "INSERT INTO media_image \
+             (media_id, provider_id, image_type, url, is_primary, display_order) \
+             VALUES ($1, 1, 'poster', $2, true, 0) \
+             ON CONFLICT (media_id, provider_id, image_type, url) DO NOTHING",
+        )
+        .bind(media_id)
+        .bind(url)
+        .execute(pool)
+        .await;
+    }
+
+    link_genre(pool, media_id, genre_name).await;
+
+    debug!("media_resolve: created sports stub {media_id} for '{title}'");
+    Some(media_id)
+}
+
+/// Find or insert a genre row by name, then link it to the media item.
+pub async fn link_genre(pool: &PgPool, media_id: i32, genre_name: &str) {
+    // Upsert the genre row (unique index on name).
+    let genre_id: Option<i32> = sqlx::query_scalar(
+        "INSERT INTO genre (name) VALUES ($1) \
+         ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name \
+         RETURNING id",
+    )
+    .bind(genre_name)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    if let Some(gid) = genre_id {
+        let _ = sqlx::query(
+            "INSERT INTO media_genre_link (media_id, genre_id) VALUES ($1, $2) \
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(media_id)
+        .bind(gid)
+        .execute(pool)
+        .await;
+    }
+}
+
 fn md5_short(s: &str) -> u32 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();

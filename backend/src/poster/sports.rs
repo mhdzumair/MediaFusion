@@ -13,9 +13,9 @@ fn artifacts() -> &'static Value {
     })
 }
 
-/// Return a random poster URL for one of the given genre names.
-/// Tries each genre against the artifacts keys (case-insensitive), then
-/// falls back to "Other Sports" / "Sports".
+/// Return a random poster URL for one of the given genre names, with an
+/// unconditional "Other Sports"/"Sports" fallback when no genre matches.
+/// Used when `is_add_title_to_poster = true`.
 pub fn random_sports_poster(genres: &[String]) -> Option<String> {
     let artifacts = artifacts();
     let obj = artifacts.as_object()?;
@@ -57,6 +57,42 @@ pub fn random_sports_poster(genres: &[String]) -> Option<String> {
             let urls: Vec<&str> = posters.iter().filter_map(|v| v.as_str()).collect();
             if let Some(url) = urls.choose(&mut rng) {
                 return Some((*url).to_string());
+            }
+        }
+    }
+
+    None
+}
+
+/// Return a random poster URL only when a genre explicitly matches a sports
+/// artifact key. Unlike `random_sports_poster`, this function does NOT fall
+/// back to "Other Sports"/"Sports" — returning `None` for non-sports items so
+/// the poster endpoint can still serve 404 for unrelated content.
+pub fn random_sports_poster_strict(genres: &[String]) -> Option<String> {
+    let artifacts = artifacts();
+    let obj = artifacts.as_object()?;
+    let mut rng = rand::rng();
+
+    for genre in genres {
+        if let Some(posters) = obj
+            .get(genre)
+            .and_then(|v| v.get("poster"))
+            .and_then(|v| v.as_array())
+        {
+            let urls: Vec<&str> = posters.iter().filter_map(|v| v.as_str()).collect();
+            if let Some(url) = urls.choose(&mut rng) {
+                return Some((*url).to_string());
+            }
+        }
+        let lower = genre.to_lowercase();
+        for (key, val) in obj {
+            if key.to_lowercase() == lower {
+                if let Some(posters) = val.get("poster").and_then(|v| v.as_array()) {
+                    let urls: Vec<&str> = posters.iter().filter_map(|v| v.as_str()).collect();
+                    if let Some(url) = urls.choose(&mut rng) {
+                        return Some((*url).to_string());
+                    }
+                }
             }
         }
     }

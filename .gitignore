@@ -149,3 +149,4 @@ kodi/*.zip
 *.nzb
 perf/
 # .sqlx/ tracked for offline sqlx query verification in CI
+!backend/migrations/*.sql

@@ -8,6 +8,9 @@ use reqwest::Client;
 pub struct FetchResult {
     pub html: String,
     pub final_url: String,
+    /// Cookies returned by the server (or by Byparr after solving a CF challenge).
+    /// Each entry is `(name, value)`.
+    pub cookies: Vec<(String, String)>,
 }
 
 static CF_MARKERS: &[&str] = &[
@@ -52,7 +55,7 @@ pub async fn fetch_plain(client: &Client, url: &str) -> Option<FetchResult> {
         tracing::debug!("fetch_plain: CF challenge detected for {url}");
         return None;
     }
-    Some(FetchResult { html, final_url })
+    Some(FetchResult { html, final_url, cookies: vec![] })
 }
 
 pub async fn fetch_byparr(client: &Client, byparr_url: &str, url: &str) -> Option<FetchResult> {
@@ -81,21 +84,36 @@ pub async fn fetch_byparr(client: &Client, byparr_url: &str, url: &str) -> Optio
         .await
         .ok()?;
 
-    let html = resp
-        .get("solution")
-        .and_then(|s| s.get("response"))
+    let solution = resp.get("solution")?;
+
+    let html = solution
+        .get("response")
         .and_then(|r| r.as_str())
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())?;
 
-    let final_url = resp
-        .get("solution")
-        .and_then(|s| s.get("url"))
+    let final_url = solution
+        .get("url")
         .and_then(|u| u.as_str())
         .unwrap_or(url)
         .to_string();
 
-    Some(FetchResult { html, final_url })
+    // Extract cookies so callers can reuse the CF clearance token for direct requests.
+    let cookies: Vec<(String, String)> = solution
+        .get("cookies")
+        .and_then(|c| c.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|c| {
+                    let name = c.get("name")?.as_str()?.to_string();
+                    let value = c.get("value")?.as_str()?.to_string();
+                    Some((name, value))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Some(FetchResult { html, final_url, cookies })
 }
 
 /// Fetch a page with CF bypass logic.

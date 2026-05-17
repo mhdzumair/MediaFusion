@@ -38,8 +38,57 @@ use mediafusion_api::{
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
+// ─── CLI helpers ──────────────────────────────────────────────────────────────
+
+struct CliArgs {
+    /// `--run-job <queue>` — run a single job inline and exit.
+    run_job: Option<String>,
+    /// `--args <json>` — JSON payload for --run-job (default: null).
+    args: serde_json::Value,
+    /// `--list-jobs` — print all registered queue names and exit.
+    list_jobs: bool,
+}
+
+fn parse_args() -> CliArgs {
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    let mut run_job = None;
+    let mut args = serde_json::Value::Null;
+    let mut list_jobs = false;
+    let mut i = 0;
+
+    while i < raw.len() {
+        match raw[i].as_str() {
+            "--list-jobs" => {
+                list_jobs = true;
+            }
+            "--run-job" => {
+                i += 1;
+                run_job = raw.get(i).cloned();
+            }
+            "--args" => {
+                i += 1;
+                if let Some(s) = raw.get(i) {
+                    args = serde_json::from_str(s).unwrap_or_else(|e| {
+                        eprintln!("--args: invalid JSON — {e}");
+                        std::process::exit(1);
+                    });
+                }
+            }
+            other => {
+                eprintln!("unknown argument '{other}'");
+                eprintln!("usage: mediafusion-worker [--run-job <queue>] [--args <json>] [--list-jobs]");
+                std::process::exit(1);
+            }
+        }
+        i += 1;
+    }
+
+    CliArgs { run_job, args, list_jobs }
+}
+
 #[tokio::main]
 async fn main() {
+    let cli = parse_args();
     let config = AppConfig::from_env();
 
     mediafusion_api::util::telemetry::init(None);
@@ -140,6 +189,27 @@ async fn main() {
     reg.register(Arc::new(UfcExtCrawl));
     reg.register(Arc::new(MoviesExtCrawl));
     reg.register(Arc::new(SportVideoCrawl));
+
+    // ── CLI one-shot modes ────────────────────────────────────────────────────
+
+    if cli.list_jobs {
+        reg.list_queues();
+        return;
+    }
+
+    if let Some(ref queue) = cli.run_job {
+        info!(queue, args = %cli.args, "running job once (inline)");
+        match reg.run_once(queue, cli.args, cancel).await {
+            Ok(()) => info!(queue, "job completed successfully"),
+            Err(e) => {
+                tracing::error!(queue, "{e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    // ── Normal worker mode ────────────────────────────────────────────────────
 
     info!("mediafusion-worker starting");
     reg.start(job_metrics, cancel).await;

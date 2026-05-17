@@ -35,7 +35,11 @@ MAX_TOKENS ?= 4096
 SUBREDDIT ?= MediaFusion
 REDDIT_POST_TITLE ?= "MediaFusion $(VERSION_NEW) Update - What's New?"
 
-.PHONY: build build-multi tag push prompt update-version generate-notes generate-reddit-post generate-baseline frontend-install frontend-build frontend-dev frontend-lint frontend-fmt dev backend-dev python-lint python-fmt python-test rust-build rust-dev rust-test rust-fmt rust-lint lint fmt test
+# Worker job variables
+JOB ?=
+JOB_ARGS ?=
+
+.PHONY: build build-multi tag push prompt update-version generate-notes generate-reddit-post generate-baseline frontend-install frontend-build frontend-dev frontend-lint frontend-fmt dev backend-dev python-lint python-fmt python-test rust-build rust-dev rust-test rust-fmt rust-lint lint fmt test worker-list-jobs worker-run-job worker-run-sport-video
 
 build:
 	docker build --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE) -f deployment/Dockerfile .
@@ -242,6 +246,21 @@ backend-dev:
 dev:
 	@echo "Starting backend and frontend in development mode..."
 	@echo "Run 'make backend-dev' in one terminal and 'make frontend-dev' in another"
+
+# Worker job targets
+worker-list-jobs:
+	cd backend && cargo run --bin mediafusion-worker -- --list-jobs
+
+worker-run-job:
+ifndef JOB
+	@echo "Error: JOB is not set. Usage: make worker-run-job JOB=spider_sport_video"
+	@echo "       Optionally pass args: make worker-run-job JOB=spider_registry_crawl JOB_ARGS='{\"indexer\":\"nyaa\"}'"
+	@exit 1
+endif
+	cd backend && cargo run --bin mediafusion-worker -- --run-job $(JOB) $(if $(JOB_ARGS),--args '$(JOB_ARGS)',)
+
+worker-run-sport-video:
+	cd backend && cargo run --bin mediafusion-worker -- --run-job spider_sport_video
 
 # Rust targets
 rust-build:

@@ -91,9 +91,6 @@ lz-str = "0.2"
 # Fuzzy string matching (DLHD / TV poster matching)
 strsim = "0.11"
 
-# Headless browser (sport_video spider)
-chromiumoxide = { version = "0.7", default-features = false, features = ["tokio-runtime"] }
-
 # Config from env
 dotenvy = "0.15"
 urlencoding = "2"

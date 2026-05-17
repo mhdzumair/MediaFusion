@@ -34,6 +34,31 @@ pub async fn wait(key: &str, rps: u32) {
     limiter.until_ready().await;
 }
 
+/// Get-or-create a rate limiter capped at `rpm` requests per minute.
+pub async fn get_limiter_rpm(key: &str, rpm: u32) -> Limiter {
+    let rpm_key = format!("{key}::rpm");
+    {
+        let guard = LIMITERS.read().await;
+        if let Some(l) = guard.get(&rpm_key) {
+            return Arc::clone(l);
+        }
+    }
+    let mut guard = LIMITERS.write().await;
+    guard
+        .entry(rpm_key)
+        .or_insert_with(|| {
+            let quota = Quota::per_minute(NonZeroU32::new(rpm.max(1)).unwrap());
+            Arc::new(RateLimiter::direct(quota))
+        })
+        .clone()
+}
+
+/// Wait until the rate limiter grants a token (rpm-based, async, no spin).
+pub async fn wait_rpm(key: &str, rpm: u32) {
+    let limiter = get_limiter_rpm(key, rpm).await;
+    limiter.until_ready().await;
+}
+
 /// Extract a domain from a URL for use as a limiter key.
 pub fn domain_key(url: &str) -> String {
     url::Url::parse(url)

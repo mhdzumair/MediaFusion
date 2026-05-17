@@ -29,53 +29,7 @@ services:
     networks:
       - mediafusion-network
 
-  # ── Background Worker (Rust) ──────────────────────────────────────────────
-  mediafusion-worker:
-    image: mhdzumair/mediafusion:6.0.0-beta.9
-    command: ["/usr/local/bin/mediafusion-worker"]
-    env_file: .env
-    environment:
-      - POSTGRES_URI=postgresql://mediafusion:mediafusion@postgres:5432/mediafusion
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - mediafusion-network
-
-  nginx:
-    image: nginx:alpine
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./mediafusion.local.pem:/etc/ssl/certs/mediafusion.local.pem:ro
-      - ./mediafusion.local-key.pem:/etc/ssl/private/mediafusion.local-key.pem:ro
-    ports:
-      - "443:443"
-    depends_on:
-      mediafusion-api:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "nginx", "-t"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - mediafusion-network
-
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
   postgres:
     image: postgres:18-alpine
     container_name: mediafusion-postgres
@@ -124,6 +78,7 @@ services:
     networks:
       - mediafusion-network
 
+  # ── Redis ─────────────────────────────────────────────────────────────────
   redis:
     image: redis:latest
     ports:
@@ -137,22 +92,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - mediafusion-network
-
-  browserless:
-    image: browserless/chrome:latest
-    environment:
-      - ENABLE_DEBUGGER=false
-      - PREBOOT_CHROME=true
-      - MAX_CONCURRENT_SESSIONS=2
-      - CONNECTION_TIMEOUT=60000
-    restart: unless-stopped
     logging:
       driver: "json-file"
       options:

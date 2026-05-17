@@ -31,8 +31,11 @@ pub async fn handler(
     if let Some(meta) = resolve_poster_meta(&state, id, &media_type).await {
         let poster_url = match meta.poster_url {
             Some(ref u) if !u.is_empty() => Some(u.clone()),
-            // Sports: no stored poster but title overlay enabled → pick from artifacts
-            None | Some(_) if meta.is_add_title => resolve_sports_poster_url(&state, id).await,
+            // is_add_title = true: use full sports fallback (includes Other Sports catchall).
+            _ if meta.is_add_title => resolve_sports_poster_url(&state, id).await,
+            // No stored poster: try a strict genre-matched sports poster (no catchall)
+            // so items with sports genres get a relevant poster even without is_add_title.
+            None => resolve_sports_poster_strict(&state, id).await,
             _ => None,
         };
 
@@ -171,16 +174,15 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
     })
 }
 
-/// Fetch genres for a media item (by external or internal ID) and return a random sports poster URL.
-async fn resolve_sports_poster_url(state: &AppState, id: &str) -> Option<String> {
-    let genres: Vec<String> = if let Some(num_str) = id.strip_prefix("mf") {
-        let internal_id: i32 = num_str.parse().ok()?;
+async fn fetch_genres(state: &AppState, id: &str) -> Vec<String> {
+    if let Some(num_str) = id.strip_prefix("mf") {
+        let Ok(internal_id) = num_str.parse::<i32>() else {
+            return vec![];
+        };
         sqlx::query_scalar(
-            r#"
-            SELECT g.name FROM genre g
-            JOIN media_genre_link mgl ON mgl.genre_id = g.id
-            WHERE mgl.media_id = $1
-            "#,
+            "SELECT g.name FROM genre g \
+             JOIN media_genre_link mgl ON mgl.genre_id = g.id \
+             WHERE mgl.media_id = $1",
         )
         .bind(internal_id)
         .fetch_all(&state.pool_ro)
@@ -188,20 +190,30 @@ async fn resolve_sports_poster_url(state: &AppState, id: &str) -> Option<String>
         .unwrap_or_default()
     } else {
         sqlx::query_scalar(
-            r#"
-            SELECT g.name FROM genre g
-            JOIN media_genre_link mgl ON mgl.genre_id = g.id
-            JOIN media_external_id meid ON meid.media_id = mgl.media_id
-            WHERE meid.external_id = $1
-            "#,
+            "SELECT g.name FROM genre g \
+             JOIN media_genre_link mgl ON mgl.genre_id = g.id \
+             JOIN media_external_id meid ON meid.media_id = mgl.media_id \
+             WHERE meid.external_id = $1",
         )
         .bind(id)
         .fetch_all(&state.pool_ro)
         .await
         .unwrap_or_default()
-    };
+    }
+}
 
+/// Full sports poster: genre-matched with "Other Sports"/"Sports" catchall.
+/// Used when `is_add_title_to_poster = true`.
+async fn resolve_sports_poster_url(state: &AppState, id: &str) -> Option<String> {
+    let genres = fetch_genres(state, id).await;
     crate::poster::sports::random_sports_poster(&genres)
+}
+
+/// Strict sports poster: only matches if the item has an explicit sports genre.
+/// No catchall — non-sports items receive `None` and fall through to 404.
+async fn resolve_sports_poster_strict(state: &AppState, id: &str) -> Option<String> {
+    let genres = fetch_genres(state, id).await;
+    crate::poster::sports::random_sports_poster_strict(&genres)
 }
 
 // ─── Fetch + annotate + cache ─────────────────────────────────────────────────

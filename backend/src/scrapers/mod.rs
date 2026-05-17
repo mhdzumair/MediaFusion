@@ -1,3 +1,4 @@
+pub mod browser;
 pub mod easynews;
 pub mod fetcher;
 pub mod jackett;
