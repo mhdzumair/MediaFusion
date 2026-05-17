@@ -221,6 +221,117 @@ async fn build_suggestion_json(
     })
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/// Apply an approved metadata suggestion directly to the media record.
+/// Complex relational fields (genres, cast, etc.) are skipped — they require
+/// dedicated moderation tooling to resolve lookup IDs.
+async fn apply_metadata_field_change(
+    pool: &sqlx::PgPool,
+    media_id: i32,
+    field_name: &str,
+    suggested_value: &str,
+) {
+    match field_name {
+        "title" => {
+            if let Err(e) =
+                sqlx::query("UPDATE media SET title = $1, updated_at = NOW() WHERE id = $2")
+                    .bind(suggested_value)
+                    .bind(media_id)
+                    .execute(pool)
+                    .await
+            {
+                tracing::warn!("apply_metadata_field_change: title update failed: {e}");
+            }
+        }
+        "description" => {
+            if let Err(e) =
+                sqlx::query("UPDATE media SET description = $1, updated_at = NOW() WHERE id = $2")
+                    .bind(suggested_value)
+                    .bind(media_id)
+                    .execute(pool)
+                    .await
+            {
+                tracing::warn!("apply_metadata_field_change: description update failed: {e}");
+            }
+        }
+        "year" => {
+            if let Ok(year) = suggested_value.parse::<i32>() {
+                if let Err(e) =
+                    sqlx::query("UPDATE media SET year = $1, updated_at = NOW() WHERE id = $2")
+                        .bind(year)
+                        .bind(media_id)
+                        .execute(pool)
+                        .await
+                {
+                    tracing::warn!("apply_metadata_field_change: year update failed: {e}");
+                }
+            }
+        }
+        "runtime" => {
+            if let Ok(minutes) = suggested_value.parse::<i32>() {
+                if let Err(e) = sqlx::query(
+                    "UPDATE media SET runtime_minutes = $1, updated_at = NOW() WHERE id = $2",
+                )
+                .bind(minutes)
+                .bind(media_id)
+                .execute(pool)
+                .await
+                {
+                    tracing::warn!("apply_metadata_field_change: runtime update failed: {e}");
+                }
+            }
+        }
+        "nudity_status" => {
+            if let Err(e) = sqlx::query(
+                "UPDATE media SET nudity_status = $1::nuditystatus, updated_at = NOW() WHERE id = $2",
+            )
+            .bind(suggested_value)
+            .bind(media_id)
+            .execute(pool)
+            .await
+            {
+                tracing::warn!("apply_metadata_field_change: nudity_status update failed: {e}");
+            }
+        }
+        "imdb_id" | "tmdb_id" | "tvdb_id" | "mal_id" | "kitsu_id" => {
+            let provider = field_name.trim_end_matches("_id");
+            let updated = sqlx::query(
+                "UPDATE media_external_id SET external_id = $1, updated_at = NOW() WHERE media_id = $2 AND provider = $3",
+            )
+            .bind(suggested_value)
+            .bind(media_id)
+            .bind(provider)
+            .execute(pool)
+            .await;
+            match updated {
+                Ok(r) if r.rows_affected() == 0 => {
+                    if let Err(e) = sqlx::query(
+                        "INSERT INTO media_external_id (media_id, provider, external_id, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())",
+                    )
+                    .bind(media_id)
+                    .bind(provider)
+                    .bind(suggested_value)
+                    .execute(pool)
+                    .await
+                    {
+                        tracing::warn!("apply_metadata_field_change: {field_name} insert failed: {e}");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("apply_metadata_field_change: {field_name} update failed: {e}");
+                }
+                _ => {}
+            }
+        }
+        _ => {
+            tracing::debug!(
+                "apply_metadata_field_change: no direct DB mapping for field {field_name}, skipping"
+            );
+        }
+    }
+}
+
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 /// POST /api/v1/metadata/{media_id}/suggest
@@ -356,6 +467,16 @@ pub async fn create_suggestion(
     .fetch_one(&state.pool)
     .await
     .unwrap_or_default();
+
+    if suggestion_status == "auto_approved" {
+        apply_metadata_field_change(
+            &state.pool,
+            media_id,
+            &body.field_name,
+            &body.suggested_value,
+        )
+        .await;
+    }
 
     let username = get_username(&state.pool, user_id).await;
     let contrib: Option<(i32, String)> =
@@ -1016,14 +1137,15 @@ pub async fn review_suggestion(
         }
     };
 
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT status FROM metadata_suggestions WHERE id = $1")
-            .bind(&suggestion_id)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None);
+    let row: Option<(String, i32, String, String)> = sqlx::query_as(
+        "SELECT status, media_id, field_name, suggested_value FROM metadata_suggestions WHERE id = $1",
+    )
+    .bind(&suggestion_id)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
 
-    match row {
+    let (suggestion_media_id, suggestion_field, suggestion_value) = match row {
         None => {
             return (
                 StatusCode::NOT_FOUND,
@@ -1031,15 +1153,15 @@ pub async fn review_suggestion(
             )
                 .into_response()
         }
-        Some((ref st,)) if st != "pending" => {
+        Some((ref st, _, _, _)) if st != "pending" => {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "Suggestion has already been reviewed"})),
             )
                 .into_response();
         }
-        _ => {}
-    }
+        Some((_, mid, field, val)) => (mid, field, val),
+    };
 
     sqlx::query(
         r#"UPDATE metadata_suggestions
@@ -1053,6 +1175,16 @@ pub async fn review_suggestion(
     .execute(&state.pool)
     .await
     .ok();
+
+    if new_status == "approved" {
+        apply_metadata_field_change(
+            &state.pool,
+            suggestion_media_id,
+            &suggestion_field,
+            &suggestion_value,
+        )
+        .await;
+    }
 
     let updated_row: Option<(
         String,

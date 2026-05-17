@@ -115,12 +115,17 @@ fn parse_category_page(html: &str, base_url: &str) -> Vec<ContentBlock> {
 
     for block in doc.select(&block_sel) {
         // Title: join all <strong> text inside a wb_Text div.
-        let title: String = block
+        // The site appends a category label separated by " / " (e.g. "/ FILESHARING").
+        let raw_title: String = block
             .select(&title_sel)
             .flat_map(|el| el.text())
             .collect::<Vec<_>>()
             .join("")
-            .replace("(NEW)", "")
+            .replace("(NEW)", "");
+        let title = raw_title
+            .split(" / ")
+            .next()
+            .unwrap_or(&raw_title)
             .trim()
             .to_string();
 
