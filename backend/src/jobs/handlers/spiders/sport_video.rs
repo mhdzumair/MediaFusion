@@ -119,6 +119,8 @@ fn parse_category_page(html: &str, base_url: &str) -> Vec<ContentBlock> {
             .next()
             .unwrap_or(&raw_title)
             .trim()
+            .trim_end_matches("TORRENT")
+            .trim()
             .to_string();
 
         if title.is_empty() {
