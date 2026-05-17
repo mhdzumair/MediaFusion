@@ -113,11 +113,20 @@ fn jaccard(a: &str, b: &str) -> u32 {
     ((intersection * 100) / union) as u32
 }
 
-/// Rough keyword check for 18+ / adult content.
+/// Checks whether a string contains any known adult/18+ keyword.
+///
+/// Keywords are loaded from the embedded PTT keyword list (combined-keywords.txt)
+/// and matched as substrings of the lowercased input, mirroring the Python PTT
+/// `is_adult_content` logic.
 pub fn contains_adult_keywords(s: &str) -> bool {
-    static ADULT_RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = ADULT_RE.get_or_init(|| {
-        regex::Regex::new(r"(?i)\b(xxx|porn|sex|erotic|18\+|adult|hentai|nude|naked)\b").unwrap()
+    static ADULT_KEYWORDS: OnceLock<Vec<String>> = OnceLock::new();
+    let keywords = ADULT_KEYWORDS.get_or_init(|| {
+        include_str!("../ptt/adult-keywords.txt")
+            .lines()
+            .map(|l| l.trim().to_lowercase())
+            .filter(|l| !l.is_empty())
+            .collect()
     });
-    re.is_match(s)
+    let lower = s.to_lowercase();
+    keywords.iter().any(|kw| lower.contains(kw.as_str()))
 }
