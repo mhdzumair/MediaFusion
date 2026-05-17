@@ -70,8 +70,8 @@ impl AppState {
 
         let telegram = crate::scrapers::telegram::init_client(&config).await;
 
-        // Sync keywords file → DB (skips if file hash unchanged), then load cache
-        sync_keywords_from_file(&pool).await;
+        // Load keyword cache — sync_keywords_from_file is called after
+        // migrate::run in main/worker so the schema is guaranteed to exist.
         let kf_cache = load_keyword_filter_cache(&pool).await;
         let keyword_filters = Arc::new(RwLock::new(kf_cache));
 

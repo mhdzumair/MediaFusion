@@ -1,4 +1,9 @@
-use mediafusion_api::{config::AppConfig, exception_tracker, routes, state::AppState};
+use mediafusion_api::{
+    config::AppConfig,
+    exception_tracker,
+    routes,
+    state::{AppState, load_keyword_filter_cache, sync_keywords_from_file},
+};
 use tracing::info;
 
 #[tokio::main]
@@ -63,6 +68,11 @@ async fn main() {
     mediafusion_api::migrate::run(&state.pool)
         .await
         .expect("database migration failed");
+
+    // Sync keyword file → DB now that migrations (including 0007) are applied,
+    // then refresh the in-memory cache that was loaded before migrations ran.
+    sync_keywords_from_file(&state.pool).await;
+    *state.keyword_filters.write().unwrap() = load_keyword_filter_cache(&state.pool).await;
 
     // Start the exception tracker background worker now that Redis is ready
     if let Some((rx, ttl, max_entries)) = exc_rx {

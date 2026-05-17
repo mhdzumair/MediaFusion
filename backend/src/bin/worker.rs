@@ -33,7 +33,7 @@ use mediafusion_api::{
         metrics::JobMetrics,
         JobRegistry,
     },
-    state::AppState,
+    state::{AppState, load_keyword_filter_cache, sync_keywords_from_file},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -84,6 +84,9 @@ async fn main() {
     mediafusion_api::migrate::run(&state.pool)
         .await
         .expect("database migration failed");
+
+    sync_keywords_from_file(&state.pool).await;
+    *state.keyword_filters.write().unwrap() = load_keyword_filter_cache(&state.pool).await;
 
     let cancel = CancellationToken::new();
 
