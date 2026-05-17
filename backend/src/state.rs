@@ -70,8 +70,8 @@ impl AppState {
 
         let telegram = crate::scrapers::telegram::init_client(&config).await;
 
-        // Seed PTT keywords into DB if empty, then load cache
-        seed_keyword_filters_if_empty(&pool).await;
+        // Sync keywords file → DB (skips if file hash unchanged), then load cache
+        sync_keywords_from_file(&pool).await;
         let kf_cache = load_keyword_filter_cache(&pool).await;
         let keyword_filters = Arc::new(RwLock::new(kf_cache));
 
@@ -107,27 +107,137 @@ pub async fn load_keyword_filter_cache(pool: &PgPool) -> KeywordFilterCache {
     }
 }
 
-pub async fn seed_keyword_filters_if_empty(pool: &PgPool) {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM keyword_filters")
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
-    if count > 0 {
+/// Sync `keywords/adult-keywords.txt` into the DB.
+///
+/// Lines starting with `!` are whitelist entries; all other non-empty lines
+/// are blocked keywords.  Only rows with `source = 'file'` are touched —
+/// admin-managed entries are left untouched.
+///
+/// A SHA-256 of the raw file bytes is stored in `keyword_sync_state`.  If the
+/// hash matches the stored value the sync is skipped entirely.
+pub async fn sync_keywords_from_file(pool: &PgPool) {
+    const FILE_CONTENT: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/adult-keywords.txt"));
+    const SYNC_ID: &str = "adult-keywords";
+
+    // ── Compute hash ──────────────────────────────────────────────────────────
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(FILE_CONTENT.as_bytes());
+    let hash: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+
+    // ── Compare with stored hash ──────────────────────────────────────────────
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT file_hash FROM keyword_sync_state WHERE id = $1")
+            .bind(SYNC_ID)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+
+    if stored.as_deref() == Some(hash.as_str()) {
+        tracing::debug!("keyword sync: file unchanged (hash {hash}), skipping");
         return;
     }
-    tracing::info!("seeding keyword_filters from PTT list…");
-    let keywords: Vec<String> = include_str!("ptt/adult-keywords.txt")
-        .lines()
-        .map(|l| l.trim().to_lowercase())
-        .filter(|l| !l.is_empty())
-        .collect();
+
+    tracing::info!("keyword sync: file changed, syncing to DB…");
+
+    // ── Parse file ────────────────────────────────────────────────────────────
+    let mut keywords: Vec<String> = Vec::new();
+    let mut whitelist: Vec<String> = Vec::new();
+
+    for line in FILE_CONTENT.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(phrase) = trimmed.strip_prefix('!') {
+            let phrase = phrase.trim().to_lowercase();
+            if !phrase.is_empty() {
+                whitelist.push(phrase);
+            }
+        } else {
+            keywords.push(trimmed.to_lowercase());
+        }
+    }
+
+    // ── Replace file-sourced rows atomically ──────────────────────────────────
+    let mut tx = match pool.begin().await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("keyword sync: failed to begin transaction: {e}");
+            return;
+        }
+    };
+
+    // Remove old file-sourced entries
+    if let Err(e) = sqlx::query("DELETE FROM keyword_filters WHERE source = 'file'")
+        .execute(&mut *tx)
+        .await
+    {
+        tracing::error!("keyword sync: delete keyword_filters failed: {e}");
+        return;
+    }
+    if let Err(e) = sqlx::query("DELETE FROM keyword_whitelist WHERE source = 'file'")
+        .execute(&mut *tx)
+        .await
+    {
+        tracing::error!("keyword sync: delete keyword_whitelist failed: {e}");
+        return;
+    }
+
+    // Insert new keywords
+    if !keywords.is_empty() {
+        if let Err(e) = sqlx::query(
+            "INSERT INTO keyword_filters (keyword, source)
+             SELECT UNNEST($1::text[]), 'file'
+             ON CONFLICT (LOWER(keyword)) DO UPDATE SET source = 'file', is_active = true",
+        )
+        .bind(&keywords[..])
+        .execute(&mut *tx)
+        .await
+        {
+            tracing::error!("keyword sync: insert keyword_filters failed: {e}");
+            return;
+        }
+    }
+
+    // Insert new whitelist phrases
+    if !whitelist.is_empty() {
+        if let Err(e) = sqlx::query(
+            "INSERT INTO keyword_whitelist (phrase, reason, source)
+             SELECT UNNEST($1::text[]), 'from keywords file', 'file'
+             ON CONFLICT (LOWER(phrase)) DO UPDATE SET source = 'file'",
+        )
+        .bind(&whitelist[..])
+        .execute(&mut *tx)
+        .await
+        {
+            tracing::error!("keyword sync: insert keyword_whitelist failed: {e}");
+            return;
+        }
+    }
+
+    // Update stored hash
     if let Err(e) = sqlx::query(
-        "INSERT INTO keyword_filters (keyword) SELECT UNNEST($1::text[]) ON CONFLICT DO NOTHING",
+        "INSERT INTO keyword_sync_state (id, file_hash, synced_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (id) DO UPDATE SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
     )
-    .bind(&keywords[..])
-    .execute(pool)
+    .bind(SYNC_ID)
+    .bind(&hash)
+    .execute(&mut *tx)
     .await
     {
-        tracing::error!("keyword_filters seed failed: {e}");
+        tracing::error!("keyword sync: update keyword_sync_state failed: {e}");
+        return;
     }
+
+    if let Err(e) = tx.commit().await {
+        tracing::error!("keyword sync: commit failed: {e}");
+        return;
+    }
+
+    tracing::info!(
+        "keyword sync: done — {} keywords, {} whitelist phrases (hash {hash})",
+        keywords.len(),
+        whitelist.len()
+    );
 }

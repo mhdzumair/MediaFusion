@@ -121,10 +121,12 @@ fn jaccard(a: &str, b: &str) -> u32 {
 pub fn contains_adult_keywords(s: &str) -> bool {
     static ADULT_KEYWORDS: OnceLock<Vec<String>> = OnceLock::new();
     let keywords = ADULT_KEYWORDS.get_or_init(|| {
-        include_str!("../ptt/adult-keywords.txt")
+        // Lines prefixed with '!' are whitelist entries — skip them here.
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/adult-keywords.txt"))
             .lines()
-            .map(|l| l.trim().to_lowercase())
-            .filter(|l| !l.is_empty())
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.starts_with('!'))
+            .map(|l| l.to_lowercase())
             .collect()
     });
     let lower = s.to_lowercase();
