@@ -705,7 +705,7 @@ pub async fn update_file_links(
 
         let result = if let Some(link_id) = existing_link {
             sqlx::query(
-                "UPDATE file_media_link SET season_number = $1, episode_number = $2, episode_end = $3 WHERE id = $4",
+                "UPDATE file_media_link SET season_number = $1, episode_number = $2, episode_end = $3, updated_at = NOW() WHERE id = $4",
             )
             .bind(update.season_number)
             .bind(update.episode_number)
@@ -715,7 +715,7 @@ pub async fn update_file_links(
             .await
         } else {
             sqlx::query(
-                "INSERT INTO file_media_link (file_id, media_id, season_number, episode_number, episode_end) VALUES ($1, $2, $3, $4, $5)",
+                "INSERT INTO file_media_link (file_id, media_id, season_number, episode_number, episode_end, created_at, is_primary, confidence, link_source) VALUES ($1, $2, $3, $4, $5, NOW(), true, 1.0, 'MANUAL')",
             )
             .bind(update.file_id)
             .bind(body.media_id)

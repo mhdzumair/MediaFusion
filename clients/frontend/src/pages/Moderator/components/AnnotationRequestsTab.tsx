@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import {
+  Ban,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -21,7 +22,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { FileAnnotationDialog, type EditedFileLink, type FileLink } from '@/components/stream'
-import { useDismissAnnotationRequest, useStreamsNeedingAnnotation, useUpdateFileLinks } from '@/hooks'
+import { useBlockStream, useDismissAnnotationRequest, useStreamsNeedingAnnotation, useUpdateFileLinks } from '@/hooks'
 import { fileLinksApi } from '@/lib/api/fileLinks'
 
 import { formatBytes, formatTimeAgo } from './helpers'
@@ -46,6 +47,7 @@ export function AnnotationRequestsTab() {
   })
   const updateFileLinks = useUpdateFileLinks()
   const dismissAnnotationRequest = useDismissAnnotationRequest()
+  const blockStream = useBlockStream()
 
   const [selectedStream, setSelectedStream] = useState<{
     streamId: number
@@ -216,6 +218,15 @@ export function AnnotationRequestsTab() {
     }
   }
 
+  const handleBlockStream = async (streamId: number) => {
+    try {
+      await blockStream.mutateAsync(streamId)
+      refetch()
+    } catch (error) {
+      console.error('Failed to block stream:', error)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -374,9 +385,24 @@ export function AnnotationRequestsTab() {
                         variant="outline"
                         className="rounded-lg border-red-500/40 text-red-500 hover:text-red-400"
                         onClick={() => handleDismissRequest(stream.stream_id, stream.media_id)}
-                        disabled={dismissAnnotationRequest.isPending || isLoadingFiles}
+                        disabled={dismissAnnotationRequest.isPending || isLoadingFiles || blockStream.isPending}
                       >
                         Discard
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="rounded-lg border-orange-500/40 text-orange-500 hover:text-orange-400"
+                        onClick={() => handleBlockStream(stream.stream_id)}
+                        disabled={blockStream.isPending || dismissAnnotationRequest.isPending || isLoadingFiles}
+                        title="Block this stream (removes it from all queues)"
+                      >
+                        {blockStream.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Ban className="h-4 w-4 mr-1" />
+                        )}
+                        Block
                       </Button>
                       <Button
                         size="sm"

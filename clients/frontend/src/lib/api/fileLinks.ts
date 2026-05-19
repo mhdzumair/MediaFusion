@@ -175,4 +175,11 @@ export const fileLinksApi = {
       request,
     )
   },
+
+  /**
+   * Toggle is_blocked on a stream (moderator only)
+   */
+  blockStream: async (streamId: number): Promise<{ stream_id: number; is_blocked: boolean; message: string }> => {
+    return apiClient.patch(`/streams/${streamId}/broken-status`, {})
+  },
 }

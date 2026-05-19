@@ -52,6 +52,20 @@ export function useUpdateFileLinks() {
 }
 
 /**
+ * Hook to toggle is_blocked on a stream (moderator only)
+ */
+export function useBlockStream() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (streamId: number) => fileLinksApi.blockStream(streamId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: fileLinksKeys.all })
+    },
+  })
+}
+
+/**
  * Hook to dismiss an annotation request entry (moderator only)
  */
 export function useDismissAnnotationRequest() {

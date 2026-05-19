@@ -224,7 +224,7 @@ async fn fetch_contrib_row(pool: &sqlx::PgPool, id: &str) -> Option<ContribRow> 
         contribution_type: row.2,
         target_id: row.3,
         data: row.4,
-        status: row.5,
+        status: row.5.to_lowercase(),
         reviewed_by: row.6,
         reviewed_at: row.7,
         review_notes: row.8,
@@ -343,7 +343,52 @@ pub async fn list_contributions(
         push_condition!(format!("contribution_type = ${idx}"), ct.clone());
     }
     if let Some(ref cs) = params.contribution_status {
-        push_condition!(format!("status = ${idx}"), cs.clone());
+        push_condition!(format!("status::text = ${idx}"), cs.to_uppercase());
+    }
+    if let Some(ref c) = params.contributor {
+        if c != "all" {
+            if let Some(uid_str) = c.strip_prefix("user:") {
+                if let Ok(uid) = uid_str.parse::<i64>() {
+                    count_sql.push_str(&format!(" AND user_id = ${idx}"));
+                    fetch_sql.push_str(&format!(" AND user_id = ${idx}"));
+                    bind_values.push(json!(uid));
+                    idx += 1;
+                }
+            }
+        }
+    }
+    if let Some(ref q) = params.uploader_query {
+        let q = q.trim();
+        if !q.is_empty() {
+            let pattern = format!("%{}%", q);
+            count_sql.push_str(&format!(
+                " AND user_id IN (SELECT id FROM users WHERE username ILIKE ${idx})"
+            ));
+            fetch_sql.push_str(&format!(
+                " AND user_id IN (SELECT id FROM users WHERE username ILIKE ${idx})"
+            ));
+            bind_values.push(json!(pattern));
+            idx += 1;
+        }
+    }
+    if let Some(ref q) = params.reviewer_query {
+        let q = q.trim();
+        if !q.is_empty() {
+            if q.eq_ignore_ascii_case("auto") {
+                count_sql.push_str(" AND reviewed_by = 'auto'");
+                fetch_sql.push_str(" AND reviewed_by = 'auto'");
+            } else {
+                let pattern = format!("%{}%", q);
+                count_sql.push_str(&format!(
+                    " AND reviewed_by IN (SELECT id::text FROM users WHERE username ILIKE ${idx})"
+                ));
+                fetch_sql.push_str(&format!(
+                    " AND reviewed_by IN (SELECT id::text FROM users WHERE username ILIKE ${idx})"
+                ));
+                bind_values.push(json!(pattern));
+                idx += 1;
+            }
+        }
     }
 
     fetch_sql.push_str(&format!(
@@ -464,14 +509,14 @@ pub async fn get_contribution_stats(
     .unwrap_or(0);
 
     let stream_total: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1")
+        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestions WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
 
     let stream_pending: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'PENDING'",
+        "SELECT COUNT(*) FROM stream_suggestions WHERE user_id = $1 AND status = 'PENDING'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
@@ -479,7 +524,7 @@ pub async fn get_contribution_stats(
     .unwrap_or(0);
 
     let stream_approved: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status IN ('approved', 'auto_approved')",
+        "SELECT COUNT(*) FROM stream_suggestions WHERE user_id = $1 AND status IN ('approved', 'auto_approved')",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
@@ -487,7 +532,7 @@ pub async fn get_contribution_stats(
     .unwrap_or(0);
 
     let stream_rejected: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestion WHERE user_id = $1 AND status = 'REJECTED'",
+        "SELECT COUNT(*) FROM stream_suggestions WHERE user_id = $1 AND status = 'REJECTED'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
@@ -577,7 +622,10 @@ pub async fn list_contribution_contributors(
         ));
     }
     if let Some(ref cs) = params.contribution_status {
-        sql.push_str(&format!(" AND c.status = '{}'", cs.replace('\'', "''")));
+        sql.push_str(&format!(
+            " AND c.status::text = '{}'",
+            cs.to_uppercase().replace('\'', "''")
+        ));
     }
     if let Some(ref q) = params.query {
         let esc = q.replace('\'', "''");
@@ -776,23 +824,23 @@ pub async fn get_all_contribution_stats(
             .await
             .unwrap_or(0);
 
-    let stream_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion")
+    let stream_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestions")
         .fetch_one(&state.pool_ro)
         .await
         .unwrap_or(0);
     let stream_pending: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'PENDING'")
+        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestions WHERE status = 'PENDING'")
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
     let stream_approved: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestion WHERE status IN ('approved', 'auto_approved')",
+        "SELECT COUNT(*) FROM stream_suggestions WHERE status IN ('approved', 'auto_approved')",
     )
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
     let stream_rejected: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestion WHERE status = 'REJECTED'")
+        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestions WHERE status = 'REJECTED'")
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
@@ -1070,6 +1118,7 @@ pub async fn review_contribution(
             .into_response();
     }
 
+    // row.status is normalized to lowercase; DB comparisons need uppercase for the ENUM
     let new_status = match body.status.as_str() {
         "APPROVED" | "approved" => "APPROVED",
         "REJECTED" | "rejected" => "REJECTED",

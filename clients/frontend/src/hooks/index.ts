@@ -277,6 +277,7 @@ export {
   useStreamFileLinks,
   useUpdateFileLinks,
   useDismissAnnotationRequest,
+  useBlockStream,
   fileLinksKeys,
 } from './useFileLinks'
 

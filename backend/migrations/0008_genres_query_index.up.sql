@@ -1,3 +1,4 @@
+-- no-transaction
 -- Covering index for the genres-by-media-type query.
 -- EXISTS subquery joins media_genre_link on genre_id then looks up media_id;
 -- this index lets that inner scan run without touching the heap.

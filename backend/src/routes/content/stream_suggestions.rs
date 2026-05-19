@@ -1490,7 +1490,7 @@ pub async fn update_stream_broken_status(
     }
 
     // Check stream exists
-    let existing: Option<(bool,)> = sqlx::query_as("SELECT is_blocked FROM streams WHERE id = $1")
+    let existing: Option<(bool,)> = sqlx::query_as("SELECT is_blocked FROM stream WHERE id = $1")
         .bind(stream_id)
         .fetch_optional(&state.pool_ro)
         .await
@@ -1506,7 +1506,7 @@ pub async fn update_stream_broken_status(
 
     // Toggle is_blocked
     let row: Option<(bool,)> = sqlx::query_as(
-        "UPDATE streams SET is_blocked = NOT is_blocked WHERE id = $1 RETURNING is_blocked",
+        "UPDATE stream SET is_blocked = NOT is_blocked WHERE id = $1 RETURNING is_blocked",
     )
     .bind(stream_id)
     .fetch_optional(&state.pool)
