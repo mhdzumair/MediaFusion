@@ -28,7 +28,7 @@ VERSION_NEW ?=
 CONTRIBUTORS ?= $(shell git log --pretty=format:'%an' $(VERSION_OLD)..$(VERSION_NEW) | sort | uniq)
 
 # Gemini API settings
-GEMINI_MODEL ?= gemini-3-flash-preview
+GEMINI_MODEL ?= gemini-3.1-flash-lite
 MAX_TOKENS ?= 4096
 
 # Reddit post settings
@@ -168,7 +168,8 @@ endif
 	    exit 1; \
 	fi; \
 	temp_file=$$(mktemp); \
-	curl -s "https://generativelanguage.googleapis.com/v1beta/models/$(GEMINI_MODEL):generateContent" \
+	curl -sf --retry 3 --retry-delay 5 --retry-all-errors \
+		"https://generativelanguage.googleapis.com/v1beta/models/$(GEMINI_MODEL):generateContent" \
 		--header "x-goog-api-key: $(GEMINI_API_KEY)" \
 		--header "content-type: application/json" \
 		--data "{\"contents\":[{\"parts\":[{\"text\":$$PROMPT_CONTENT}]}],\"generationConfig\":{\"maxOutputTokens\":$(MAX_TOKENS)}}" > $$temp_file; \
@@ -198,7 +199,8 @@ endif
 	    exit 1; \
 	fi; \
 	temp_file=$$(mktemp); \
-	curl -s "https://generativelanguage.googleapis.com/v1beta/models/$(GEMINI_MODEL):generateContent" \
+	curl -sf --retry 3 --retry-delay 5 --retry-all-errors \
+		"https://generativelanguage.googleapis.com/v1beta/models/$(GEMINI_MODEL):generateContent" \
 		--header "x-goog-api-key: $(GEMINI_API_KEY)" \
 		--header "content-type: application/json" \
 		--data "{\"contents\":[{\"parts\":[{\"text\":$$PROMPT_CONTENT}]}],\"generationConfig\":{\"maxOutputTokens\":$(MAX_TOKENS)}}" > $$temp_file; \
