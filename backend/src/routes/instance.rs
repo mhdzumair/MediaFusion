@@ -231,7 +231,7 @@ pub async fn create_initial_admin(
     // Create admin user
     let user_id: i64 = match sqlx::query_scalar(
         r#"INSERT INTO users (email, username, password_hash, role, is_verified, is_active, created_at, last_login)
-           VALUES ($1, $2, $3, 'admin', true, true, NOW(), NOW())
+           VALUES ($1, $2, $3, 'ADMIN', true, true, NOW(), NOW())
            RETURNING id"#,
     )
     .bind(&body.email)
