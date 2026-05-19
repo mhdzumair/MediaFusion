@@ -4,6 +4,7 @@
 /// All requests require `?agent=mediafusion` appended and a Bearer token.
 use serde_json::Value;
 
+use crate::providers::torrents::transport::{append_query, encode_form_body, MediaFlowForward};
 use crate::providers::ProviderError;
 
 const BASE_URL: &str = "https://api.alldebrid.com/v4.1";
@@ -65,17 +66,23 @@ async fn ad_get(
     path: &str,
     extra_params: &[(&str, String)],
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
     let mut params = build_query(user_ip);
     params.extend_from_slice(extra_params);
 
-    let resp = http
-        .get(&url)
-        .bearer_auth(token)
-        .query(&params)
-        .send()
-        .await?;
+    let resp = if let Some(fwd) = forward {
+        let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let dest = append_query(&url, &param_refs);
+        fwd.get(http, &dest, token).await?
+    } else {
+        http.get(&url)
+            .bearer_auth(token)
+            .query(&params)
+            .send()
+            .await?
+    };
 
     let body: Value = resp.json().await?;
     check_ad_error(&body)?;
@@ -88,6 +95,7 @@ async fn ad_post_form(
     path: &str,
     fields: &[(&str, String)],
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
     let query = build_query(user_ip);
@@ -98,13 +106,20 @@ async fn ad_post_form(
         form.push(("ip", ip.to_string()));
     }
 
-    let resp = http
-        .post(&url)
-        .bearer_auth(token)
-        .query(&query)
-        .form(&form)
-        .send()
-        .await?;
+    let resp = if let Some(fwd) = forward {
+        let query_refs: Vec<(&str, &str)> = query.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let dest = append_query(&url, &query_refs);
+        let form_refs: Vec<(&str, &str)> = form.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let body_str = encode_form_body(&form_refs);
+        fwd.post_form(http, &dest, token, body_str).await?
+    } else {
+        http.post(&url)
+            .bearer_auth(token)
+            .query(&query)
+            .form(&form)
+            .send()
+            .await?
+    };
 
     let body: Value = resp.json().await?;
     check_ad_error(&body)?;
@@ -234,12 +249,13 @@ async fn get_magnet_status(
     token: &str,
     id: Option<i64>,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let mut params: Vec<(&str, String)> = Vec::new();
     if let Some(i) = id {
         params.push(("id", i.to_string()));
     }
-    let body = ad_get(http, token, "/magnet/status", &params, user_ip).await?;
+    let body = ad_get(http, token, "/magnet/status", &params, user_ip, forward).await?;
     Ok(body)
 }
 
@@ -249,9 +265,10 @@ async fn delete_magnet(
     token: &str,
     id: i64,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<(), ProviderError> {
     let params = [("ids[]", id.to_string())];
-    ad_get(http, token, "/magnet/delete", &params, user_ip).await?;
+    ad_get(http, token, "/magnet/delete", &params, user_ip, forward).await?;
     Ok(())
 }
 
@@ -261,9 +278,10 @@ async fn upload_magnet(
     token: &str,
     magnet: &str,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<i64, ProviderError> {
     let fields = [("magnets[]", magnet.to_string())];
-    let body = ad_post_form(http, token, "/magnet/upload", &fields, user_ip).await?;
+    let body = ad_post_form(http, token, "/magnet/upload", &fields, user_ip, forward).await?;
 
     // data.magnets can be a list or a dict (single-element shorthand)
     let magnets = body
@@ -303,9 +321,10 @@ async fn get_magnet_files(
     token: &str,
     id: i64,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Vec<(String, i64, String)>, ProviderError> {
     let params = [("id[]", id.to_string())];
-    let body = ad_get(http, token, "/magnet/files", &params, user_ip).await?;
+    let body = ad_get(http, token, "/magnet/files", &params, user_ip, forward).await?;
 
     // data.magnets is an array; each element has "files" (the nested tree)
     let magnets = body
@@ -334,9 +353,10 @@ async fn unlock_link(
     token: &str,
     link: &str,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     let params = [("link", link.to_string())];
-    let body = ad_get(http, token, "/link/unlock", &params, user_ip).await?;
+    let body = ad_get(http, token, "/link/unlock", &params, user_ip, forward).await?;
 
     body.get("data")
         .and_then(|d| d.get("link"))
@@ -358,9 +378,10 @@ async fn wait_for_ready(
     id: i64,
     max_retries: u32,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<(), ProviderError> {
     for attempt in 0..max_retries {
-        let body = get_magnet_status(http, token, Some(id), user_ip).await?;
+        let body = get_magnet_status(http, token, Some(id), user_ip, forward).await?;
 
         let magnets = body
             .get("data")
@@ -422,8 +443,9 @@ async fn find_magnet_by_hash(
     token: &str,
     info_hash: &str,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Option<Value>, ProviderError> {
-    let body = get_magnet_status(http, token, None, user_ip).await?;
+    let body = get_magnet_status(http, token, None, user_ip, forward).await?;
 
     let magnets = match body.get("data").and_then(|d| d.get("magnets")) {
         Some(Value::Array(arr)) => arr.clone(),
@@ -458,6 +480,7 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     const MAX_RETRIES: u32 = 5;
 
@@ -469,7 +492,8 @@ pub async fn get_video_url(
     let magnet = format!("magnet:?xt=urn:btih:{info_hash}{trackers}");
 
     // Check whether we already have this torrent
-    let magnet_id: i64 = match find_magnet_by_hash(http, token, info_hash, user_ip).await? {
+    let magnet_id: i64 = match find_magnet_by_hash(http, token, info_hash, user_ip, forward).await?
+    {
         Some(existing) => {
             let status_code = existing
                 .get("statusCode")
@@ -481,8 +505,8 @@ pub async fn get_video_url(
 
             if status_code == 7 {
                 // Error state — delete and re-add
-                delete_magnet(http, token, id, user_ip).await.ok();
-                upload_magnet(http, token, &magnet, user_ip).await?
+                delete_magnet(http, token, id, user_ip, forward).await.ok();
+                upload_magnet(http, token, &magnet, user_ip, forward).await?
             } else if status_code == 4 {
                 // Already ready — skip polling
                 id
@@ -490,24 +514,26 @@ pub async fn get_video_url(
                 id
             }
         }
-        None => upload_magnet(http, token, &magnet, user_ip).await?,
+        None => upload_magnet(http, token, &magnet, user_ip, forward).await?,
     };
 
     // Wait for the torrent to be ready
-    match wait_for_ready(http, token, magnet_id, MAX_RETRIES, user_ip).await {
+    match wait_for_ready(http, token, magnet_id, MAX_RETRIES, user_ip, forward).await {
         Ok(()) => {}
         Err(e) => {
             // If it stuck in error, clean up and propagate
             let msg = e.to_string();
             if msg.contains("statusCode 7") || msg.contains("error state") {
-                delete_magnet(http, token, magnet_id, user_ip).await.ok();
+                delete_magnet(http, token, magnet_id, user_ip, forward)
+                    .await
+                    .ok();
             }
             return Err(e);
         }
     }
 
     // Fetch and flatten files
-    let files_raw = get_magnet_files(http, token, magnet_id, user_ip).await?;
+    let files_raw = get_magnet_files(http, token, magnet_id, user_ip, forward).await?;
 
     if files_raw.is_empty() {
         return Err(ProviderError::api(
@@ -532,7 +558,7 @@ pub async fn get_video_url(
         })?;
 
     // Unlock the link to get the direct URL
-    unlock_link(http, token, link, user_ip).await
+    unlock_link(http, token, link, user_ip, forward).await
 }
 
 // ─── Delete by hash / Delete all torrents ─────────────────────────────────────
@@ -544,11 +570,11 @@ pub async fn delete_torrent_by_hash(
     token: &str,
     info_hash: &str,
 ) -> Result<bool, ProviderError> {
-    match find_magnet_by_hash(http, token, info_hash, None).await? {
+    match find_magnet_by_hash(http, token, info_hash, None, None).await? {
         None => Ok(false),
         Some(magnet) => {
             if let Some(id) = magnet.get("id").and_then(|v| v.as_i64()) {
-                delete_magnet(http, token, id, None).await.ok();
+                delete_magnet(http, token, id, None, None).await.ok();
             }
             Ok(true)
         }
@@ -557,7 +583,7 @@ pub async fn delete_torrent_by_hash(
 
 /// Delete ALL magnets from the user's AllDebrid account (implements delete-all-watchlist).
 pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
-    let body = get_magnet_status(http, token, None, None).await?;
+    let body = get_magnet_status(http, token, None, None, None).await?;
 
     let magnets = match body.get("data").and_then(|d| d.get("magnets")) {
         Some(Value::Array(arr)) => arr.clone(),

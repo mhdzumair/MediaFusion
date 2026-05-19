@@ -6,7 +6,10 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use serde_json::{json, Value};
 
-use crate::providers::ProviderError;
+use crate::providers::{
+    torrents::transport::{append_query, MediaFlowForward},
+    ProviderError,
+};
 
 const BASE_URL: &str = "https://debrid-link.com/api/v2";
 const CLIENT_ID: &str = "RyrV22FOg30DsxjYPziRKA";
@@ -123,13 +126,20 @@ async fn dl_get(
     bearer: &str,
     path: &str,
     query: &[(&str, &str)],
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
-    let url = format!("{BASE_URL}{path}");
-    let mut req = http.get(&url).bearer_auth(bearer);
-    if !query.is_empty() {
-        req = req.query(query);
-    }
-    let resp = req.send().await?;
+    let base_url = format!("{BASE_URL}{path}");
+    let dest = if query.is_empty() {
+        base_url
+    } else {
+        let pairs: Vec<(&str, &str)> = query.to_vec();
+        append_query(&base_url, &pairs)
+    };
+    let resp = if let Some(fwd) = forward {
+        fwd.get(http, &dest, bearer).await?
+    } else {
+        http.get(&dest).bearer_auth(bearer).send().await?
+    };
     let body: Value = resp.json().await?;
     check_dl_error(&body)?;
     Ok(body)
@@ -140,22 +150,41 @@ async fn dl_post(
     bearer: &str,
     path: &str,
     payload: Value,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
-    let resp = http
-        .post(&url)
-        .bearer_auth(bearer)
-        .json(&payload)
-        .send()
-        .await?;
+    let resp = if let Some(fwd) = forward {
+        fwd.post_json(http, &url, bearer, payload.to_string())
+            .await?
+    } else {
+        http.post(&url)
+            .bearer_auth(bearer)
+            .json(&payload)
+            .send()
+            .await?
+    };
     let body: Value = resp.json().await?;
     check_dl_error(&body)?;
     Ok(body)
 }
 
-async fn dl_delete(http: &reqwest::Client, bearer: &str, path: &str) -> Result<(), ProviderError> {
+async fn dl_delete(
+    http: &reqwest::Client,
+    bearer: &str,
+    path: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<(), ProviderError> {
     let url = format!("{BASE_URL}{path}");
-    http.delete(&url).bearer_auth(bearer).send().await?;
+    if let Some(fwd) = forward {
+        // DELETE via forward — use a dedicated method
+        http.delete(fwd.forward_url())
+            .query(&[("d", &url), ("api_password", &fwd.api_password)])
+            .query(&[("h_authorization", format!("Bearer {bearer}"))])
+            .send()
+            .await?;
+    } else {
+        http.delete(&url).bearer_auth(bearer).send().await?;
+    }
     Ok(())
 }
 
@@ -167,6 +196,7 @@ async fn find_torrent_by_hash(
     http: &reqwest::Client,
     bearer: &str,
     info_hash: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Option<Value>, ProviderError> {
     let mut page = 0usize;
     let per_page = 25usize;
@@ -180,6 +210,7 @@ async fn find_torrent_by_hash(
                 ("page", &page.to_string()),
                 ("perPage", &per_page.to_string()),
             ],
+            forward,
         )
         .await?;
 
@@ -217,12 +248,14 @@ async fn add_torrent(
     http: &reqwest::Client,
     bearer: &str,
     magnet: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let body = dl_post(
         http,
         bearer,
         "/seedbox/add",
         json!({ "url": magnet, "async": true }),
+        forward,
     )
     .await?;
 
@@ -242,6 +275,7 @@ async fn wait_for_download(
     torrent_id: &str,
     max_retries: u32,
     retry_secs: u64,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     for attempt in 0..max_retries {
         let body = dl_get(
@@ -249,6 +283,7 @@ async fn wait_for_download(
             bearer,
             "/seedbox/list",
             &[("ids", torrent_id), ("page", "0"), ("perPage", "1")],
+            forward,
         )
         .await?;
 
@@ -263,9 +298,14 @@ async fn wait_for_download(
             if let Some(err) = torrent.get("errorString").and_then(|v| v.as_str()) {
                 if !err.is_empty() {
                     // Delete the broken torrent and bail
-                    dl_delete(http, bearer, &format!("/seedbox/{torrent_id}/delete"))
-                        .await
-                        .ok();
+                    dl_delete(
+                        http,
+                        bearer,
+                        &format!("/seedbox/{torrent_id}/delete"),
+                        forward,
+                    )
+                    .await
+                    .ok();
                     return Err(ProviderError::api(
                         format!("Debrid-Link torrent error: {err}"),
                         "transfer_error.mp4",
@@ -377,6 +417,7 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     user_ip: Option<&str>,
+    forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     const MAX_RETRIES: u32 = 5;
     const RETRY_SECS: u64 = 5;
@@ -391,7 +432,7 @@ pub async fn get_video_url(
     let magnet = format!("magnet:?xt=urn:btih:{info_hash}{trackers}");
 
     // Find or add torrent
-    let torrent = match find_torrent_by_hash(http, &bearer, info_hash).await? {
+    let torrent = match find_torrent_by_hash(http, &bearer, info_hash, forward).await? {
         Some(existing) => {
             // Check if it errored
             let err_str = existing
@@ -400,16 +441,16 @@ pub async fn get_video_url(
                 .unwrap_or("");
             if !err_str.is_empty() {
                 if let Some(id) = existing.get("id").and_then(|v| v.as_str()) {
-                    dl_delete(http, &bearer, &format!("/seedbox/{id}/delete"))
+                    dl_delete(http, &bearer, &format!("/seedbox/{id}/delete"), forward)
                         .await
                         .ok();
                 }
-                add_torrent(http, &bearer, &magnet).await?
+                add_torrent(http, &bearer, &magnet, forward).await?
             } else {
                 existing
             }
         }
-        None => add_torrent(http, &bearer, &magnet).await?,
+        None => add_torrent(http, &bearer, &magnet, forward).await?,
     };
 
     let torrent_id = torrent
@@ -424,7 +465,7 @@ pub async fn get_video_url(
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
     let torrent = if download_pct < 100 {
-        wait_for_download(http, &bearer, &torrent_id, MAX_RETRIES, RETRY_SECS).await?
+        wait_for_download(http, &bearer, &torrent_id, MAX_RETRIES, RETRY_SECS, forward).await?
     } else {
         torrent
     };
@@ -487,10 +528,16 @@ pub async fn get_video_url(
         })?
         .to_string();
 
-    // Append user_ip if provided
-    if let Some(ip) = user_ip {
+    // Append ip= to CDN URL: if forward is set, get MediaFlow's actual public IP;
+    // otherwise use the user_ip hint passed by the caller.
+    let ip_to_append = if let Some(fwd) = forward {
+        fwd.get_public_ip(http).await
+    } else {
+        user_ip.map(str::to_string)
+    };
+    if let Some(ip) = ip_to_append {
         let sep = if url.contains('?') { '&' } else { '?' };
-        url = format!("{url}{sep}ip={}", urlencoding::encode(ip));
+        url = format!("{url}{sep}ip={}", urlencoding::encode(&ip));
     }
 
     Ok(url)
@@ -504,11 +551,11 @@ pub async fn delete_torrent_by_hash(
     info_hash: &str,
 ) -> Result<bool, ProviderError> {
     let bearer = resolve_bearer(http, token).await?;
-    match find_torrent_by_hash(http, &bearer, info_hash).await? {
+    match find_torrent_by_hash(http, &bearer, info_hash, None).await? {
         None => Ok(false),
         Some(torrent) => {
             if let Some(id) = torrent.get("id").and_then(|v| v.as_str()) {
-                dl_delete(http, &bearer, &format!("/seedbox/{id}/delete")).await?;
+                dl_delete(http, &bearer, &format!("/seedbox/{id}/delete"), None).await?;
             }
             Ok(true)
         }
@@ -530,6 +577,7 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
                 ("page", &page.to_string()),
                 ("perPage", &per_page.to_string()),
             ],
+            None,
         )
         .await?;
 
@@ -545,7 +593,7 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
 
         for item in &items {
             if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
-                dl_delete(http, &bearer, &format!("/seedbox/{id}/delete"))
+                dl_delete(http, &bearer, &format!("/seedbox/{id}/delete"), None)
                     .await
                     .ok();
             }

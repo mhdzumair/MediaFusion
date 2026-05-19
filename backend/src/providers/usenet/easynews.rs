@@ -6,7 +6,9 @@
 ///   3. Build streaming URL with embedded `user:pass@` credentials
 use serde_json::Value;
 
-use crate::providers::ProviderError;
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+
+use crate::providers::{torrents::transport::MediaFlowForward, ProviderError};
 
 use super::{clean_for_search, is_video_ext, jaccard_similarity};
 
@@ -17,6 +19,7 @@ pub async fn get_url(
     name: &str,
     season: i32,
     episode: i32,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     if username.is_empty() || password.is_empty() {
         return Err(ProviderError::api(
@@ -26,26 +29,41 @@ pub async fn get_url(
     }
 
     let query = clean_for_search(name);
-    let resp: Value = http
-        .get("https://members.easynews.com/2.0/search/solr-search/advanced")
-        .query(&[
-            ("st", "adv"),
-            ("sb", "1"),
-            ("fex", "mkv,mp4,avi,mov,m4v"),
-            ("gps", query.as_str()),
-            ("pby", "50"),
-            ("s1", "nrr1"),
-            ("s1d", "-"),
-            ("s2", "vd"),
-            ("s2d", "-"),
-            ("s3", "nrr"),
-            ("s3d", "-"),
-        ])
-        .basic_auth(username, Some(password))
-        .send()
-        .await?
-        .json()
-        .await?;
+    let search_params = [
+        ("st", "adv"),
+        ("sb", "1"),
+        ("fex", "mkv,mp4,avi,mov,m4v"),
+        ("gps", query.as_str()),
+        ("pby", "50"),
+        ("s1", "nrr1"),
+        ("s1d", "-"),
+        ("s2", "vd"),
+        ("s2d", "-"),
+        ("s3", "nrr"),
+        ("s3d", "-"),
+    ];
+    let base_url = "https://members.easynews.com/2.0/search/solr-search/advanced";
+
+    let resp: Value = if let Some(fwd) = forward {
+        use crate::providers::torrents::transport::append_query;
+        let dest = append_query(
+            base_url,
+            &search_params
+                .iter()
+                .map(|(k, v)| (*k, *v))
+                .collect::<Vec<_>>(),
+        );
+        let auth = format!("Basic {}", B64.encode(format!("{username}:{password}")));
+        fwd.get_auth(http, &dest, &auth).await?.json().await?
+    } else {
+        http.get(base_url)
+            .query(&search_params)
+            .basic_auth(username, Some(password))
+            .send()
+            .await?
+            .json()
+            .await?
+    };
 
     let down_url = resp
         .get("downURL")

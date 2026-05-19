@@ -4,7 +4,7 @@
 ///   POST /link/generate → files array → select best video file → download_link
 use serde_json::Value;
 
-use crate::providers::ProviderError;
+use crate::providers::{torrents::transport::MediaFlowForward, ProviderError};
 
 use super::select_best_file;
 
@@ -17,6 +17,7 @@ pub async fn get_url(
     _name: &str,
     season: i32,
     episode: i32,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     if token.is_empty() {
         return Err(ProviderError::api(
@@ -31,14 +32,19 @@ pub async fn get_url(
         ));
     }
 
-    let resp: Value = http
-        .post(format!("{BASE}/link/generate"))
-        .bearer_auth(token)
-        .json(&serde_json::json!({"data": nzb_url}))
-        .send()
-        .await?
-        .json()
-        .await?;
+    let url = format!("{BASE}/link/generate");
+    let body = serde_json::json!({"data": nzb_url}).to_string();
+    let resp: Value = if let Some(fwd) = forward {
+        fwd.post_json(http, &url, token, body).await?.json().await?
+    } else {
+        http.post(&url)
+            .bearer_auth(token)
+            .json(&serde_json::json!({"data": nzb_url}))
+            .send()
+            .await?
+            .json()
+            .await?
+    };
 
     let files = resp
         .get("files")

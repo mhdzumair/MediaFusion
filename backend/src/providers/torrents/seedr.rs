@@ -10,7 +10,10 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use crate::providers::ProviderError;
+use crate::providers::{
+    torrents::transport::{encode_form_body, MediaFlowForward},
+    ProviderError,
+};
 
 const BASE_URL: &str = "https://v2.seedr.cc/api/v0.1/p";
 const MAX_RETRIES: u32 = 3;
@@ -35,9 +38,18 @@ fn resolve_token(raw: &str) -> String {
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
-async fn api_get(http: &Client, token: &str, path: &str) -> Result<Value, ProviderError> {
+async fn api_get(
+    http: &Client,
+    token: &str,
+    path: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
-    let resp = http.get(&url).bearer_auth(token).send().await?;
+    let resp = if let Some(fwd) = forward {
+        fwd.get(http, &url, token).await?
+    } else {
+        http.get(&url).bearer_auth(token).send().await?
+    };
     handle_response(resp).await
 }
 
@@ -46,15 +58,29 @@ async fn api_post(
     token: &str,
     path: &str,
     body: &Value,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
-    let resp = http.post(&url).bearer_auth(token).json(body).send().await?;
+    let resp = if let Some(fwd) = forward {
+        fwd.post_json(http, &url, token, body.to_string()).await?
+    } else {
+        http.post(&url).bearer_auth(token).json(body).send().await?
+    };
     handle_response(resp).await
 }
 
-async fn api_delete(http: &Client, token: &str, path: &str) -> Result<(), ProviderError> {
+async fn api_delete(
+    http: &Client,
+    token: &str,
+    path: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<(), ProviderError> {
     let url = format!("{BASE_URL}{path}");
-    let resp = http.delete(&url).bearer_auth(token).send().await?;
+    let resp = if let Some(fwd) = forward {
+        fwd.delete(http, &url, token).await?
+    } else {
+        http.delete(&url).bearer_auth(token).send().await?
+    };
     let status = resp.status();
     if status == reqwest::StatusCode::UNAUTHORIZED {
         return Err(ProviderError::api(
@@ -138,8 +164,12 @@ fn extract_info_hash_from_magnet(magnet: &str) -> Option<String> {
 
 // ─── Task helpers ─────────────────────────────────────────────────────────────
 
-async fn list_tasks(http: &Client, token: &str) -> Result<Vec<Value>, ProviderError> {
-    let resp = api_get(http, token, "/tasks").await?;
+async fn list_tasks(
+    http: &Client,
+    token: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Vec<Value>, ProviderError> {
+    let resp = api_get(http, token, "/tasks", forward).await?;
     Ok(resp["tasks"].as_array().cloned().unwrap_or_default())
 }
 
@@ -226,15 +256,22 @@ async fn folder_files_recursive(
     http: &Client,
     token: &str,
     folder_id: i64,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Vec<(String, i64, i64)>, ProviderError> {
-    let resp = api_get(http, token, &format!("/fs/folder/{folder_id}/contents")).await?;
+    let resp = api_get(
+        http,
+        token,
+        &format!("/fs/folder/{folder_id}/contents"),
+        forward,
+    )
+    .await?;
     let mut files = Vec::new();
     collect_files(&resp, &mut files);
     // Recurse into subfolders
     if let Some(subfolders) = resp["folders"].as_array() {
         for sf in subfolders {
             if let Some(sfid) = sf["id"].as_i64() {
-                let sub = Box::pin(folder_files_recursive(http, token, sfid)).await?;
+                let sub = Box::pin(folder_files_recursive(http, token, sfid, forward)).await?;
                 files.extend(sub);
             }
         }
@@ -300,9 +337,21 @@ fn select_video<'a>(
 
 // ─── Download URL ─────────────────────────────────────────────────────────────
 
-async fn file_url(http: &Client, token: &str, file_id: i64) -> Result<String, ProviderError> {
+async fn file_url(
+    http: &Client,
+    token: &str,
+    file_id: i64,
+    forward: Option<&MediaFlowForward>,
+) -> Result<String, ProviderError> {
     // Try video presentation first (streaming URL)
-    if let Ok(resp) = api_get(http, token, &format!("/presentations/file/{file_id}/video")).await {
+    if let Ok(resp) = api_get(
+        http,
+        token,
+        &format!("/presentations/file/{file_id}/video"),
+        forward,
+    )
+    .await
+    {
         if let Some(url) = resp["url"]
             .as_str()
             .or_else(|| resp["stream_url"].as_str())
@@ -313,7 +362,13 @@ async fn file_url(http: &Client, token: &str, file_id: i64) -> Result<String, Pr
     }
 
     // Fall back to direct download URL
-    let resp = api_get(http, token, &format!("/download/file/{file_id}/url")).await?;
+    let resp = api_get(
+        http,
+        token,
+        &format!("/download/file/{file_id}/url"),
+        forward,
+    )
+    .await?;
     resp["url"]
         .as_str()
         .or_else(|| resp["download_url"].as_str())
@@ -328,6 +383,7 @@ async fn file_url(http: &Client, token: &str, file_id: i64) -> Result<String, Pr
 
 // ─── Internal resolution ──────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 async fn resolve_from_folder(
     http: &Client,
     token: &str,
@@ -336,15 +392,16 @@ async fn resolve_from_folder(
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
-    let files = folder_files_recursive(http, token, folder_id).await?;
+    let files = folder_files_recursive(http, token, folder_id, forward).await?;
     let sel = select_video(&files, filename, file_index, season, episode).ok_or_else(|| {
         ProviderError::api(
             "No matching video file found in Seedr folder.",
             "no_matching_file.mp4",
         )
     })?;
-    file_url(http, token, sel.2).await
+    file_url(http, token, sel.2, forward).await
 }
 
 // ─── Folder-per-hash helpers ──────────────────────────────────────────────────
@@ -363,8 +420,9 @@ async fn find_hash_folder(
     http: &Client,
     token: &str,
     hash: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Option<(i64, Option<i64>)>, ProviderError> {
-    let root = api_get(http, token, "/fs/root/contents").await?;
+    let root = api_get(http, token, "/fs/root/contents", forward).await?;
     let Some(folders) = root["folders"].as_array() else {
         return Ok(None);
     };
@@ -377,7 +435,13 @@ async fn find_hash_folder(
         let Some(folder_id) = folder["id"].as_i64() else {
             continue;
         };
-        let contents = api_get(http, token, &format!("/fs/folder/{folder_id}/contents")).await?;
+        let contents = api_get(
+            http,
+            token,
+            &format!("/fs/folder/{folder_id}/contents"),
+            forward,
+        )
+        .await?;
         let sub_id = contents["folders"]
             .as_array()
             .and_then(|sf| sf.first())
@@ -397,9 +461,10 @@ async fn check_status(
     http: &Client,
     token: &str,
     hash: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<TorrentStatus, ProviderError> {
     // The v2 /tasks endpoint retains completed tasks, so we must check state explicitly.
-    let tasks = list_tasks(http, token).await.unwrap_or_default();
+    let tasks = list_tasks(http, token, forward).await.unwrap_or_default();
 
     let hash_task = tasks
         .iter()
@@ -417,13 +482,13 @@ async fn check_status(
     }
 
     // Scan root filesystem for a hash-named folder.
-    match find_hash_folder(http, token, hash).await? {
+    match find_hash_folder(http, token, hash, forward).await? {
         Some((_, Some(content_id))) => Ok(TorrentStatus::Completed(content_id)),
         Some((folder_id, None)) => {
             if hash_task.is_none() {
                 // Orphaned: folder exists but no content and no active task — clean up.
                 tracing::info!("Seedr: removing orphaned empty folder for hash {hash}");
-                api_delete(http, token, &format!("/fs/folder/{folder_id}"))
+                api_delete(http, token, &format!("/fs/folder/{folder_id}"), forward)
                     .await
                     .ok();
                 Ok(TorrentStatus::NotFound)
@@ -440,14 +505,23 @@ async fn check_status(
 /// Uses `POST /fs/folder` with form-encoded `parent_id=0&name=<hash>`.
 /// The API returns `{"success": true, "id": "<string_id>", "path": "<hash>"}`.
 /// On conflict (folder already exists) falls back to `find_hash_folder`.
-async fn ensure_hash_folder(http: &Client, token: &str, hash: &str) -> Result<i64, ProviderError> {
+async fn ensure_hash_folder(
+    http: &Client,
+    token: &str,
+    hash: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<i64, ProviderError> {
     let url = format!("{BASE_URL}/fs/folder");
-    let resp = http
-        .post(&url)
-        .bearer_auth(token)
-        .form(&[("parent_id", "0"), ("name", hash)])
-        .send()
-        .await?;
+    let resp = if let Some(fwd) = forward {
+        let body_str = encode_form_body(&[("parent_id", "0"), ("name", hash)]);
+        fwd.post_form(http, &url, token, body_str).await?
+    } else {
+        http.post(&url)
+            .bearer_auth(token)
+            .form(&[("parent_id", "0"), ("name", hash)])
+            .send()
+            .await?
+    };
 
     let status = resp.status();
     if status == reqwest::StatusCode::UNAUTHORIZED {
@@ -470,7 +544,7 @@ async fn ensure_hash_folder(http: &Client, token: &str, hash: &str) -> Result<i6
     }
 
     // Folder may already exist (409) or ID was missing — look it up.
-    match find_hash_folder(http, token, hash).await? {
+    match find_hash_folder(http, token, hash, forward).await? {
         Some((id, _)) => Ok(id),
         None => Err(ProviderError::api(
             "Failed to create or locate Seedr folder for this torrent.",
@@ -488,12 +562,14 @@ async fn add_torrent_to_folder(
     token: &str,
     magnet: &str,
     folder_id: i64,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<i64, ProviderError> {
     let add_resp = api_post(
         http,
         token,
         "/tasks",
         &json!({"torrent_magnet": magnet, "folder_id": folder_id}),
+        forward,
     )
     .await
     .map_err(|e| {
@@ -549,14 +625,19 @@ async fn add_torrent_to_folder(
 /// then deletes hash-named folders from largest to smallest until enough space is freed.
 /// `required_bytes` = 0 uses a 1 GiB safety minimum.
 /// Non-fatal: on any API failure, logs a warning and returns without blocking the download.
-async fn ensure_enough_space(http: &Client, token: &str, required_bytes: i64) {
+async fn ensure_enough_space(
+    http: &Client,
+    token: &str,
+    required_bytes: i64,
+    forward: Option<&MediaFlowForward>,
+) {
     let minimum = if required_bytes > 0 {
         required_bytes
     } else {
         1_073_741_824 // 1 GiB
     };
 
-    let root = match api_get(http, token, "/fs/root/contents").await {
+    let root = match api_get(http, token, "/fs/root/contents", forward).await {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!("Seedr: could not fetch root contents for space check: {e}");
@@ -602,7 +683,7 @@ async fn ensure_enough_space(http: &Client, token: &str, required_bytes: i64) {
             break;
         }
         tracing::info!("Seedr: deleting folder {id} ({size} bytes) to free space");
-        api_delete(http, token, &format!("/fs/folder/{id}"))
+        api_delete(http, token, &format!("/fs/folder/{id}"), forward)
             .await
             .ok();
         freed += size;
@@ -623,12 +704,13 @@ pub async fn get_video_url(
     episode: Option<i32>,
     size_bytes: Option<i64>,
     _user_ip: Option<&str>,
+    forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     let token = resolve_token(token);
     let hash = info_hash.to_lowercase();
     let magnet = build_magnet(&hash, announce_list);
 
-    let content_folder_id = match check_status(http, &token, &hash).await? {
+    let content_folder_id = match check_status(http, &token, &hash, forward).await? {
         TorrentStatus::Downloading => {
             return Err(ProviderError::api(
                 "Torrent is still downloading in Seedr. Please try again later.",
@@ -638,11 +720,11 @@ pub async fn get_video_url(
         TorrentStatus::Completed(id) => id,
         TorrentStatus::NotFound => {
             // Ensure there is enough space, freeing old downloads if necessary.
-            ensure_enough_space(http, &token, size_bytes.unwrap_or(0)).await;
+            ensure_enough_space(http, &token, size_bytes.unwrap_or(0), forward).await;
 
             // Create a named folder for tracking, then submit the torrent into it.
-            let folder_id = ensure_hash_folder(http, &token, &hash).await?;
-            let task_id = add_torrent_to_folder(http, &token, &magnet, folder_id).await?;
+            let folder_id = ensure_hash_folder(http, &token, &hash, forward).await?;
+            let task_id = add_torrent_to_folder(http, &token, &magnet, folder_id, forward).await?;
 
             // Poll until the content sub-folder appears inside the hash folder.
             let mut content_id: Option<i64> = None;
@@ -650,7 +732,9 @@ pub async fn get_video_url(
                 tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_SECS)).await;
 
                 // Check task for fatal errors.
-                if let Ok(full_resp) = api_get(http, &token, &format!("/tasks/{task_id}")).await {
+                if let Ok(full_resp) =
+                    api_get(http, &token, &format!("/tasks/{task_id}"), forward).await
+                {
                     let task_resp = if full_resp["task"].is_object() {
                         full_resp["task"].clone()
                     } else {
@@ -676,7 +760,9 @@ pub async fn get_video_url(
                 }
 
                 // Fallback: check whether the content sub-folder has appeared in the hash folder.
-                if let Ok(Some((_, Some(id)))) = find_hash_folder(http, &token, &hash).await {
+                if let Ok(Some((_, Some(id)))) =
+                    find_hash_folder(http, &token, &hash, forward).await
+                {
                     content_id = Some(id);
                     break;
                 }
@@ -699,6 +785,7 @@ pub async fn get_video_url(
         file_index,
         season,
         episode,
+        forward,
     )
     .await
 }
@@ -717,7 +804,7 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
     let mut cached: Vec<String> = Vec::new();
 
     // Root contents gives us both storage info and all folders in one call.
-    let root = match api_get(http, &bearer, "/fs/root/contents").await {
+    let root = match api_get(http, &bearer, "/fs/root/contents", None).await {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!("Seedr check_cached: failed to fetch root contents: {e}");
@@ -747,7 +834,7 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
         .cloned()
         .collect();
     if !remaining.is_empty() {
-        if let Ok(tasks_resp) = api_get(http, &bearer, "/tasks").await {
+        if let Ok(tasks_resp) = api_get(http, &bearer, "/tasks", None).await {
             for task in tasks_resp["tasks"].as_array().cloned().unwrap_or_default() {
                 if !task_is_complete(&task) {
                     continue;
@@ -771,23 +858,23 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
 pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), ProviderError> {
     let bearer = resolve_token(token);
 
-    let tasks = list_tasks(http, &bearer).await.unwrap_or_default();
+    let tasks = list_tasks(http, &bearer, None).await.unwrap_or_default();
     for task in &tasks {
         if let Some(id) = task["id"].as_i64() {
-            api_delete(http, &bearer, &format!("/tasks/{id}"))
+            api_delete(http, &bearer, &format!("/tasks/{id}"), None)
                 .await
                 .ok();
         }
     }
 
     // Delete root folders whose path looks like an info hash (40-char SHA-1 or 32-char MD5).
-    if let Ok(root) = api_get(http, &bearer, "/fs/root/contents").await {
+    if let Ok(root) = api_get(http, &bearer, "/fs/root/contents", None).await {
         if let Some(folders) = root["folders"].as_array() {
             for folder in folders {
                 let path = folder["path"].as_str().unwrap_or("").to_lowercase();
                 if path.len() == 40 || path.len() == 32 {
                     if let Some(id) = folder["id"].as_i64() {
-                        api_delete(http, &bearer, &format!("/fs/folder/{id}"))
+                        api_delete(http, &bearer, &format!("/fs/folder/{id}"), None)
                             .await
                             .ok();
                     }
@@ -810,18 +897,18 @@ pub async fn delete_torrent_by_hash(
     let hash_lower = info_hash.to_lowercase();
     let mut deleted = false;
 
-    let tasks = list_tasks(http, &bearer).await.unwrap_or_default();
+    let tasks = list_tasks(http, &bearer, None).await.unwrap_or_default();
     for task in &tasks {
         if task_info_hash(task).as_deref() == Some(hash_lower.as_str()) {
             if let Some(id) = task["id"].as_i64() {
-                api_delete(http, &bearer, &format!("/tasks/{id}")).await?;
+                api_delete(http, &bearer, &format!("/tasks/{id}"), None).await?;
                 deleted = true;
             }
         }
     }
 
-    if let Some((folder_id, _)) = find_hash_folder(http, &bearer, &hash_lower).await? {
-        api_delete(http, &bearer, &format!("/fs/folder/{folder_id}")).await?;
+    if let Some((folder_id, _)) = find_hash_folder(http, &bearer, &hash_lower, None).await? {
+        api_delete(http, &bearer, &format!("/fs/folder/{folder_id}"), None).await?;
         deleted = true;
     }
 

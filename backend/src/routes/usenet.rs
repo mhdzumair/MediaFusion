@@ -215,6 +215,23 @@ async fn handle_provider(
         "usenet playback: NZB URL resolved"
     );
 
+    // Build a MediaFlow forward transport when the user has a non-local proxy configured.
+    let forward = user_data.mediaflow_config.as_ref().and_then(|cfg| {
+        let proxy_url = cfg.proxy_url.as_deref()?;
+        let api_password = cfg.api_password.as_deref()?;
+        if crate::providers::torrents::transport::MediaFlowForward::is_local(proxy_url) {
+            None
+        } else {
+            Some(
+                crate::providers::torrents::transport::MediaFlowForward::new(
+                    proxy_url,
+                    api_password,
+                ),
+            )
+        }
+    });
+    let fwd = forward.as_ref();
+
     // 6. Dispatch to provider
     let result = dispatch(
         &state.http,
@@ -227,6 +244,7 @@ async fn handle_provider(
         &stream.name,
         season,
         episode,
+        fwd,
     )
     .await;
 
@@ -261,6 +279,7 @@ async fn dispatch(
     name: &str,
     season: i32,
     episode: i32,
+    fwd: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, providers::ProviderError> {
     match provider_name.to_lowercase().as_str() {
         "torbox" => {
@@ -276,12 +295,13 @@ async fn dispatch(
                 name,
                 season,
                 episode,
+                fwd,
             )
             .await
         }
         "easynews" => {
             let (username, password) = easynews_credentials(provider_cfg, config);
-            easynews::get_url(http, &username, &password, name, season, episode).await
+            easynews::get_url(http, &username, &password, name, season, episode, fwd).await
         }
         "debrider" => {
             let token = provider_cfg
@@ -292,7 +312,7 @@ async fn dispatch(
             } else {
                 fallback_url
             };
-            debrider::get_url(http, token, nzb_url, name, season, episode).await
+            debrider::get_url(http, token, nzb_url, name, season, episode, fwd).await
         }
         "stremio_nntp" => {
             let url = if !submission_url.is_empty() {

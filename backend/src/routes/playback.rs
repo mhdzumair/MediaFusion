@@ -215,7 +215,31 @@ async fn resolve(
     let resolved_filename = filename.or(stream_info.filename.as_deref());
     let no_file_metadata = stream_info.has_no_files;
 
+    // Build a MediaFlow forward transport when the user has a non-local proxy configured.
+    // When the proxy URL is loopback/private the addon and MediaFlow share an IP, so
+    // routing debrid API calls through it would not help — use direct calls instead.
+    let forward = user_data.mediaflow_config.as_ref().and_then(|cfg| {
+        let proxy_url = cfg.proxy_url.as_deref()?;
+        let api_password = cfg.api_password.as_deref()?;
+        if providers::torrents::transport::MediaFlowForward::is_local(proxy_url) {
+            None
+        } else {
+            Some(providers::torrents::transport::MediaFlowForward::new(
+                proxy_url,
+                api_password,
+            ))
+        }
+    });
+    let fwd = forward.as_ref();
+
     // 5. Dispatch to provider — realdebrid returns (url, files); others just url.
+    //
+    // Only providers where forward IS fully wired (api calls routed through MediaFlow)
+    // AND whose API accepts an ip= hint receive "{mediaflow_ip}" as user_ip.
+    // MediaFlow substitutes that placeholder with its actual public IP before forwarding.
+    //
+    // Providers with _forward (ignored) make direct API calls, so passing a placeholder
+    // would send the literal string "{mediaflow_ip}" to the debrid API — always None there.
     macro_rules! call_provider_simple {
         ($module:path) => {{
             use $module as p;
@@ -229,14 +253,25 @@ async fn resolve(
                 season,
                 episode,
                 None,
+                fwd,
             )
             .await?;
             (url, Vec::<ProviderFile>::new())
         }};
     }
 
+    // ip= hint: only for providers with fully wired forward transport.
+    let ip_hint = |has_ip_hint: bool| -> Option<&str> {
+        if has_ip_hint && fwd.is_some() {
+            Some("{mediaflow_ip}")
+        } else {
+            None
+        }
+    };
+
     let (video_url, provider_files): (String, Vec<ProviderFile>) = match provider.service.as_str() {
         "realdebrid" => {
+            // forward wired + ip= form field supported
             providers::torrents::realdebrid::get_video_url(
                 &state.http,
                 token,
@@ -246,16 +281,54 @@ async fn resolve(
                 stream_info.file_index,
                 season,
                 episode,
-                None,
+                ip_hint(true),
+                fwd,
             )
             .await?
         }
-        "alldebrid" => call_provider_simple!(providers::torrents::alldebrid),
+        "alldebrid" => {
+            // forward wired + ip= query/body supported
+            use providers::torrents::alldebrid as p;
+            let url = p::get_video_url(
+                &state.http,
+                token,
+                info_hash,
+                &stream_info.announce_list,
+                resolved_filename,
+                stream_info.file_index,
+                season,
+                episode,
+                ip_hint(true),
+                fwd,
+            )
+            .await?;
+            (url, Vec::<ProviderFile>::new())
+        }
+        // Providers below make API calls through forward when wired.
         "premiumize" => call_provider_simple!(providers::torrents::premiumize),
+        // debridlink: forward wired for API calls; CDN ip= fetched from /proxy/ip internally
         "debridlink" => call_provider_simple!(providers::torrents::debridlink),
-        "torbox" => call_provider_simple!(providers::torrents::torbox),
+        "torbox" => {
+            // forward wired + user_ip= query param supported — pass placeholder
+            use providers::torrents::torbox as p;
+            let url = p::get_video_url(
+                &state.http,
+                token,
+                info_hash,
+                &stream_info.announce_list,
+                resolved_filename,
+                stream_info.file_index,
+                season,
+                episode,
+                ip_hint(true),
+                fwd,
+            )
+            .await?;
+            (url, Vec::<ProviderFile>::new())
+        }
         "stremthru" => call_provider_simple!(providers::torrents::stremthru),
         "offcloud" => call_provider_simple!(providers::torrents::offcloud),
+        // easydebrid: forward wired; X-Forwarded-For is stripped by /proxy/forward — None for user_ip
         "easydebrid" => call_provider_simple!(providers::torrents::easydebrid),
         "seedr" => {
             use providers::torrents::seedr as p;
@@ -270,6 +343,7 @@ async fn resolve(
                 episode,
                 stream_info.size_bytes,
                 None,
+                fwd,
             )
             .await?;
             (url, Vec::<ProviderFile>::new())

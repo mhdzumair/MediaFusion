@@ -7,7 +7,10 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::providers::ProviderError;
+use crate::providers::{
+    torrents::transport::{encode_form_body, MediaFlowForward},
+    ProviderError,
+};
 
 const BASE_URL: &str = "https://api.real-debrid.com/rest/1.0";
 const OAUTH_URL: &str = "https://api.real-debrid.com/oauth/v2";
@@ -138,12 +141,25 @@ async fn rd_get(
     bearer: &str,
     url: &str,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
-    let mut req = http.get(url).bearer_auth(bearer);
-    if let Some(ip) = user_ip {
-        req = req.query(&[("ip", ip)]);
-    }
-    let resp = req.send().await?;
+    let resp = if let Some(fwd) = forward {
+        // Include ip= in the destination URL so MediaFlow substitutes {mediaflow_ip}
+        let dest = match user_ip {
+            Some(ip) => {
+                let sep = if url.contains('?') { '&' } else { '?' };
+                format!("{url}{sep}ip={}", urlencoding::encode(ip))
+            }
+            None => url.to_string(),
+        };
+        fwd.get(http, &dest, bearer).await?
+    } else {
+        let mut req = http.get(url).bearer_auth(bearer);
+        if let Some(ip) = user_ip {
+            req = req.query(&[("ip", ip)]);
+        }
+        req.send().await?
+    };
     if resp.status() == 204 {
         return Ok(Value::Null);
     }
@@ -158,19 +174,31 @@ async fn rd_post(
     url: &str,
     fields: &[(&str, &str)],
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
-    let mut form: Vec<(&str, &str)> = fields.to_vec();
-    let owned_ip;
-    if let Some(ip) = user_ip {
-        owned_ip = ip.to_string();
-        form.push(("ip", &owned_ip));
-    }
-    let resp = http
-        .post(url)
-        .bearer_auth(bearer)
-        .form(&form)
-        .send()
-        .await?;
+    let resp = if let Some(fwd) = forward {
+        // Include ip= in the form body so MediaFlow substitutes {mediaflow_ip}
+        let mut all_fields: Vec<(&str, &str)> = fields.to_vec();
+        let owned_ip;
+        if let Some(ip) = user_ip {
+            owned_ip = ip.to_string();
+            all_fields.push(("ip", &owned_ip));
+        }
+        let body = encode_form_body(&all_fields);
+        fwd.post_form(http, url, bearer, body).await?
+    } else {
+        let mut form: Vec<(&str, &str)> = fields.to_vec();
+        let owned_ip;
+        if let Some(ip) = user_ip {
+            owned_ip = ip.to_string();
+            form.push(("ip", &owned_ip));
+        }
+        http.post(url)
+            .bearer_auth(bearer)
+            .form(&form)
+            .send()
+            .await?
+    };
     if resp.status() == 204 {
         return Ok(Value::Null);
     }
@@ -193,7 +221,7 @@ async fn get_torrent_list(
     limit: u32,
 ) -> Result<Vec<Value>, ProviderError> {
     let url = format!("{BASE_URL}/torrents?page={page}&limit={limit}");
-    let body = rd_get(http, bearer, &url, None).await?;
+    let body = rd_get(http, bearer, &url, None, None).await?;
     match body {
         Value::Array(arr) => Ok(arr),
         Value::Null => Ok(vec![]),
@@ -246,6 +274,7 @@ async fn get_torrent_info(
         bearer,
         &format!("{BASE_URL}/torrents/info/{torrent_id}"),
         None,
+        None,
     )
     .await?;
     if body.is_null() {
@@ -262,6 +291,7 @@ async fn add_magnet(
     bearer: &str,
     magnet: &str,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     let body = rd_post(
         http,
@@ -269,6 +299,7 @@ async fn add_magnet(
         &format!("{BASE_URL}/torrents/addMagnet"),
         &[("magnet", magnet)],
         user_ip,
+        forward,
     )
     .await?;
     body.get("id")
@@ -283,6 +314,7 @@ async fn select_files(
     torrent_id: &str,
     file_ids: &str, // "all" or comma-separated IDs
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<(), ProviderError> {
     rd_post(
         http,
@@ -290,6 +322,7 @@ async fn select_files(
         &format!("{BASE_URL}/torrents/selectFiles/{torrent_id}"),
         &[("files", file_ids)],
         user_ip,
+        forward,
     )
     .await?;
     Ok(())
@@ -368,6 +401,7 @@ async fn unrestrict_link(
     bearer: &str,
     link: &str,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     rd_post(
         http,
@@ -375,6 +409,7 @@ async fn unrestrict_link(
         &format!("{BASE_URL}/unrestrict/link"),
         &[("link", link)],
         user_ip,
+        forward,
     )
     .await
 }
@@ -384,6 +419,7 @@ async fn get_active_count(http: &reqwest::Client, bearer: &str) -> Result<Value,
         http,
         bearer,
         &format!("{BASE_URL}/torrents/activeCount"),
+        None,
         None,
     )
     .await
@@ -430,6 +466,7 @@ async fn add_new_torrent(
     magnet: &str,
     info_hash: &str,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let active = get_active_count(http, bearer).await?;
     if let (Some(limit), Some(nb)) = (
@@ -456,7 +493,7 @@ async fn add_new_torrent(
 
     // Try adding the magnet up to 2 times; fetch torrent info with retries.
     for create_attempt in 0..2u32 {
-        let torrent_id = add_magnet(http, bearer, magnet, user_ip).await?;
+        let torrent_id = add_magnet(http, bearer, magnet, user_ip, forward).await?;
         for info_attempt in 0..3u32 {
             match get_torrent_info(http, bearer, &torrent_id).await {
                 Ok(info) => return Ok(info),
@@ -573,6 +610,7 @@ async fn create_download_link(
     episode: Option<i32>,
     file_index: Option<i32>,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
     max_retries: u32,
     retry_interval: u64,
 ) -> Result<String, ProviderError> {
@@ -609,7 +647,7 @@ async fn create_download_link(
     let (torrent_info, link_idx) = if needs_reselect {
         delete_torrent(http, bearer, torrent_id).await.ok();
 
-        let new_id = add_magnet(http, bearer, magnet, user_ip).await?;
+        let new_id = add_magnet(http, bearer, magnet, user_ip, forward).await?;
         let info_wait = wait_for_status(
             http,
             bearer,
@@ -628,7 +666,7 @@ async fn create_download_link(
             .get(selected_idx)
             .map(|f| f.id.to_string())
             .unwrap_or_else(|| "1".to_string());
-        select_files(http, bearer, &new_id, &file_id, user_ip).await?;
+        select_files(http, bearer, &new_id, &file_id, user_ip, forward).await?;
         let downloaded = wait_for_status(
             http,
             bearer,
@@ -665,7 +703,7 @@ async fn create_download_link(
         ProviderError::api("No download link available", "torrent_not_downloaded.mp4")
     })?;
 
-    let unrestricted = unrestrict_link(http, bearer, link, user_ip).await?;
+    let unrestricted = unrestrict_link(http, bearer, link, user_ip, forward).await?;
     check_rd_error(&unrestricted)?;
 
     let mime = unrestricted
@@ -710,6 +748,7 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     user_ip: Option<&str>,
+    forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<
     (
         String,
@@ -747,12 +786,12 @@ pub async fn get_video_url(
             if matches!(status, "magnet_error" | "error" | "virus" | "dead") {
                 let torrent_id = existing.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 delete_torrent(http, &bearer, torrent_id).await.ok();
-                add_new_torrent(http, &bearer, &magnet, info_hash, user_ip).await?
+                add_new_torrent(http, &bearer, &magnet, info_hash, user_ip, forward).await?
             } else {
                 existing
             }
         }
-        None => add_new_torrent(http, &bearer, &magnet, info_hash, user_ip).await?,
+        None => add_new_torrent(http, &bearer, &magnet, info_hash, user_ip, forward).await?,
     };
 
     let torrent_id = torrent_info
@@ -782,7 +821,7 @@ pub async fn get_video_url(
             .and_then(|v| v.as_str())
             .unwrap_or(&torrent_id)
             .to_string();
-        select_files(http, &bearer, &tid, "all", user_ip)
+        select_files(http, &bearer, &tid, "all", user_ip, forward)
             .await
             .inspect_err(|_e| {
                 let tid2 = tid.clone();
@@ -845,6 +884,7 @@ pub async fn get_video_url(
         episode,
         file_index,
         user_ip,
+        forward,
         MAX_RETRIES,
         RETRY_INTERVAL,
     )

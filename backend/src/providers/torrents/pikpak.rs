@@ -12,7 +12,10 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use crate::providers::ProviderError;
+use crate::providers::{
+    torrents::transport::{append_query, MediaFlowForward},
+    ProviderError,
+};
 
 const API_HOST: &str = "api-drive.mypikpak.com";
 const USER_HOST: &str = "user.mypikpak.com";
@@ -122,25 +125,46 @@ async fn api_get(
     tokens: &mut Tokens,
     path: &str,
     params: &[(&str, &str)],
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let url = drive_url(path);
-    let resp = http
-        .get(&url)
-        .headers(build_headers(&tokens.access_token))
-        .query(params)
-        .send()
-        .await?;
-    let data: Value = resp.json().await.unwrap_or_default();
-    if data.get("error_code").and_then(|v| v.as_i64()) == Some(16) {
-        // Token expired — refresh and retry once
-        *tokens = refresh_tokens(http, &tokens.refresh_token).await?;
-        let resp2 = http
-            .get(&url)
+    let data: Value = if let Some(fwd) = forward {
+        let dest = append_query(&url, params);
+        fwd.get(http, &dest, &tokens.access_token)
+            .await?
+            .json()
+            .await
+            .unwrap_or_default()
+    } else {
+        http.get(&url)
             .headers(build_headers(&tokens.access_token))
             .query(params)
             .send()
-            .await?;
-        let data2: Value = resp2.json().await.unwrap_or_default();
+            .await?
+            .json()
+            .await
+            .unwrap_or_default()
+    };
+    if data.get("error_code").and_then(|v| v.as_i64()) == Some(16) {
+        // Token expired — refresh and retry once
+        *tokens = refresh_tokens(http, &tokens.refresh_token).await?;
+        let data2: Value = if let Some(fwd) = forward {
+            let dest = append_query(&url, params);
+            fwd.get(http, &dest, &tokens.access_token)
+                .await?
+                .json()
+                .await
+                .unwrap_or_default()
+        } else {
+            http.get(&url)
+                .headers(build_headers(&tokens.access_token))
+                .query(params)
+                .send()
+                .await?
+                .json()
+                .await
+                .unwrap_or_default()
+        };
         return check_api_error(data2);
     }
     check_api_error(data)
@@ -152,24 +176,43 @@ async fn api_post(
     tokens: &mut Tokens,
     path: &str,
     body: &Value,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let url = drive_url(path);
-    let resp = http
-        .post(&url)
-        .headers(build_headers(&tokens.access_token))
-        .json(body)
-        .send()
-        .await?;
-    let data: Value = resp.json().await.unwrap_or_default();
-    if data.get("error_code").and_then(|v| v.as_i64()) == Some(16) {
-        *tokens = refresh_tokens(http, &tokens.refresh_token).await?;
-        let resp2 = http
-            .post(&url)
+    let data: Value = if let Some(fwd) = forward {
+        fwd.post_json(http, &url, &tokens.access_token, body.to_string())
+            .await?
+            .json()
+            .await
+            .unwrap_or_default()
+    } else {
+        http.post(&url)
             .headers(build_headers(&tokens.access_token))
             .json(body)
             .send()
-            .await?;
-        let data2: Value = resp2.json().await.unwrap_or_default();
+            .await?
+            .json()
+            .await
+            .unwrap_or_default()
+    };
+    if data.get("error_code").and_then(|v| v.as_i64()) == Some(16) {
+        *tokens = refresh_tokens(http, &tokens.refresh_token).await?;
+        let data2: Value = if let Some(fwd) = forward {
+            fwd.post_json(http, &url, &tokens.access_token, body.to_string())
+                .await?
+                .json()
+                .await
+                .unwrap_or_default()
+        } else {
+            http.post(&url)
+                .headers(build_headers(&tokens.access_token))
+                .json(body)
+                .send()
+                .await?
+                .json()
+                .await
+                .unwrap_or_default()
+        };
         return check_api_error(data2);
     }
     check_api_error(data)
@@ -200,6 +243,7 @@ async fn offline_list(
     http: &Client,
     tokens: &mut Tokens,
     phases: &[&str],
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Vec<Value>, ProviderError> {
     let filters =
         serde_json::to_string(&json!({"phase": {"in": phases.join(",")}})).unwrap_or_default();
@@ -214,6 +258,7 @@ async fn offline_list(
             ("filters", &filters),
             ("with", "reference_resource"),
         ],
+        forward,
     )
     .await?;
     Ok(data["tasks"].as_array().cloned().unwrap_or_default())
@@ -259,6 +304,7 @@ async fn collect_folder_videos(
     http: &Client,
     tokens: &mut Tokens,
     folder_id: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Vec<(String, i64, String)>, ProviderError> {
     let filters = serde_json::to_string(
         &json!({"trashed": {"eq": false}, "phase": {"eq": "PHASE_TYPE_COMPLETE"}}),
@@ -275,6 +321,7 @@ async fn collect_folder_videos(
             ("with_audit", "true"),
             ("filters", &filters),
         ],
+        forward,
     )
     .await?;
 
@@ -286,7 +333,7 @@ async fn collect_folder_videos(
 
         if kind == "drive#folder" {
             if !id.is_empty() {
-                let sub = Box::pin(collect_folder_videos(http, tokens, &id)).await?;
+                let sub = Box::pin(collect_folder_videos(http, tokens, &id, forward)).await?;
                 results.extend(sub);
             }
         } else if is_video(&name) && !id.is_empty() {
@@ -350,8 +397,16 @@ async fn get_download_url(
     http: &Client,
     tokens: &mut Tokens,
     file_id: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
-    let data = api_get(http, tokens, &format!("/drive/v1/files/{file_id}"), &[]).await?;
+    let data = api_get(
+        http,
+        tokens,
+        &format!("/drive/v1/files/{file_id}"),
+        &[],
+        forward,
+    )
+    .await?;
 
     // Prefer streaming URL from medias array
     if let Some(medias) = data["medias"].as_array() {
@@ -380,6 +435,7 @@ async fn get_download_url(
 async fn get_my_pack_folder_id(
     http: &Client,
     tokens: &mut Tokens,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     let filters = serde_json::to_string(
         &json!({"trashed": {"eq": false}, "phase": {"eq": "PHASE_TYPE_COMPLETE"}}),
@@ -395,6 +451,7 @@ async fn get_my_pack_folder_id(
             ("with_audit", "true"),
             ("filters", &filters),
         ],
+        forward,
     )
     .await?;
 
@@ -416,6 +473,7 @@ async fn find_torrent_item(
     tokens: &mut Tokens,
     my_pack_id: &str,
     info_hash: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Option<Value>, ProviderError> {
     let filters = serde_json::to_string(
         &json!({"trashed": {"eq": false}, "phase": {"eq": "PHASE_TYPE_COMPLETE"}}),
@@ -432,6 +490,7 @@ async fn find_torrent_item(
             ("with_audit", "true"),
             ("filters", &filters),
         ],
+        forward,
     )
     .await?;
 
@@ -505,6 +564,7 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     _user_ip: Option<&str>,
+    forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     let mut tokens = decode_token(token)?;
     let hash = info_hash.to_lowercase();
@@ -514,6 +574,7 @@ pub async fn get_video_url(
         http,
         &mut tokens,
         &["PHASE_TYPE_RUNNING", "PHASE_TYPE_ERROR"],
+        forward,
     )
     .await?;
     for task in &tasks {
@@ -535,8 +596,8 @@ pub async fn get_video_url(
     }
 
     // 2. Find file in My Pack folder
-    let my_pack_id = get_my_pack_folder_id(http, &mut tokens).await?;
-    let torrent_item = find_torrent_item(http, &mut tokens, &my_pack_id, &hash).await?;
+    let my_pack_id = get_my_pack_folder_id(http, &mut tokens, forward).await?;
+    let torrent_item = find_torrent_item(http, &mut tokens, &my_pack_id, &hash, forward).await?;
 
     if let Some(item) = torrent_item {
         let file_id = item["id"].as_str().unwrap_or("").to_string();
@@ -545,7 +606,7 @@ pub async fn get_video_url(
 
         let selected_id = if kind == "drive#folder" {
             // Collect all video files from folder
-            let videos = collect_folder_videos(http, &mut tokens, &file_id).await?;
+            let videos = collect_folder_videos(http, &mut tokens, &file_id, forward).await?;
             select_video(&videos, filename, file_index, season, episode)
                 .ok_or_else(|| {
                     ProviderError::api(
@@ -565,7 +626,7 @@ pub async fn get_video_url(
             ));
         };
 
-        return get_download_url(http, &mut tokens, &selected_id).await;
+        return get_download_url(http, &mut tokens, &selected_id, forward).await;
     }
 
     // 3. Add magnet and wait
@@ -592,6 +653,7 @@ pub async fn get_video_url(
             "url": {"url": magnet},
             "folder_type": "DOWNLOAD",
         }),
+        forward,
     )
     .await
     .map_err(|e| {
@@ -631,6 +693,7 @@ pub async fn get_video_url(
                 "PHASE_TYPE_ERROR",
                 "PHASE_TYPE_COMPLETE",
             ],
+            forward,
         )
         .await
         .unwrap_or_default();
@@ -646,14 +709,15 @@ pub async fn get_video_url(
             if task_is_complete(task) {
                 // Re-check My Pack folder
                 if let Ok(Some(item)) =
-                    find_torrent_item(http, &mut tokens, &my_pack_id, &hash).await
+                    find_torrent_item(http, &mut tokens, &my_pack_id, &hash, forward).await
                 {
                     let file_id = item["id"].as_str().unwrap_or("").to_string();
                     let kind = item["kind"].as_str().unwrap_or("");
                     let file_name = item["name"].as_str().unwrap_or("").to_string();
 
                     let selected_id = if kind == "drive#folder" {
-                        let videos = collect_folder_videos(http, &mut tokens, &file_id).await?;
+                        let videos =
+                            collect_folder_videos(http, &mut tokens, &file_id, forward).await?;
                         select_video(&videos, filename, file_index, season, episode)
                             .ok_or_else(|| {
                                 ProviderError::api(
@@ -672,7 +736,7 @@ pub async fn get_video_url(
                         ));
                     };
 
-                    return get_download_url(http, &mut tokens, &selected_id).await;
+                    return get_download_url(http, &mut tokens, &selected_id, forward).await;
                 }
             }
         }
@@ -687,7 +751,7 @@ pub async fn get_video_url(
 /// Delete ALL items in the PikPak My Pack folder.
 pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), ProviderError> {
     let mut tokens = decode_token(token)?;
-    let my_pack_id = get_my_pack_folder_id(http, &mut tokens).await?;
+    let my_pack_id = get_my_pack_folder_id(http, &mut tokens, None).await?;
 
     let filters =
         serde_json::to_string(&serde_json::json!({"trashed": {"eq": false}})).unwrap_or_default();
@@ -700,6 +764,7 @@ pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), Provi
             ("limit", "1000"),
             ("filters", &filters),
         ],
+        None,
     )
     .await?;
 
@@ -712,7 +777,7 @@ pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), Provi
 
     if !ids.is_empty() {
         let body = serde_json::json!({ "ids": ids });
-        api_post(http, &mut tokens, "/drive/v1/files/trash", &body)
+        api_post(http, &mut tokens, "/drive/v1/files/trash", &body, None)
             .await
             .ok();
     }
@@ -728,8 +793,8 @@ pub async fn delete_torrent_by_hash(
 ) -> Result<bool, ProviderError> {
     let mut tokens = decode_token(token)?;
     let hash = info_hash.to_lowercase();
-    let my_pack_id = get_my_pack_folder_id(http, &mut tokens).await?;
-    let item = find_torrent_item(http, &mut tokens, &my_pack_id, &hash).await?;
+    let my_pack_id = get_my_pack_folder_id(http, &mut tokens, None).await?;
+    let item = find_torrent_item(http, &mut tokens, &my_pack_id, &hash, None).await?;
 
     match item {
         None => Ok(false),
@@ -737,7 +802,7 @@ pub async fn delete_torrent_by_hash(
             let file_id = item["id"].as_str().unwrap_or("").to_string();
             if !file_id.is_empty() {
                 let body = serde_json::json!({ "ids": [file_id] });
-                api_post(http, &mut tokens, "/drive/v1/files/trash", &body)
+                api_post(http, &mut tokens, "/drive/v1/files/trash", &body, None)
                     .await
                     .ok();
             }

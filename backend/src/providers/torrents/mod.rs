@@ -17,3 +17,4 @@ pub mod realdebrid;
 pub mod seedr;
 pub mod stremthru;
 pub mod torbox;
+pub mod transport;

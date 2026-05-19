@@ -6,7 +6,7 @@
 /// IP forwarding: `X-Forwarded-For: {user_ip}` when user_ip is set.
 use serde_json::Value;
 
-use crate::providers::ProviderError;
+use crate::providers::{torrents::transport::MediaFlowForward, ProviderError};
 
 const BASE_URL: &str = "https://easydebrid.com/api/v1";
 
@@ -102,14 +102,18 @@ async fn ed_post(
     path: &str,
     body: &Value,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<reqwest::Response, ProviderError> {
     let url = format!("{BASE_URL}{path}");
+    if let Some(fwd) = forward {
+        // Route through MediaFlow; X-Forwarded-For would be stripped anyway — omit it
+        let resp = fwd.post_json(http, &url, token, body.to_string()).await?;
+        return Ok(resp);
+    }
     let mut builder = http.post(&url).bearer_auth(token).json(body);
-
     if let Some(ip) = user_ip {
         builder = builder.header("X-Forwarded-For", ip);
     }
-
     let resp = builder.send().await?;
     Ok(resp)
 }
@@ -131,6 +135,7 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     user_ip: Option<&str>,
+    forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     // Build magnet URI
     let trackers: String = announce_list
@@ -140,9 +145,19 @@ pub async fn get_video_url(
     let magnet = format!("magnet:?xt=urn:btih:{info_hash}{trackers}");
 
     let request_body = serde_json::json!({ "url": magnet });
+    // When routing through forward, X-Forwarded-For gets stripped — pass None for user_ip
+    let effective_ip = if forward.is_some() { None } else { user_ip };
 
     // Step 1: POST /link/generate — attempt to get an instant link
-    let generate_resp = ed_post(http, token, "/link/generate", &request_body, user_ip).await?;
+    let generate_resp = ed_post(
+        http,
+        token,
+        "/link/generate",
+        &request_body,
+        effective_ip,
+        forward,
+    )
+    .await?;
     let status = generate_resp.status();
 
     if status.is_success() {
@@ -176,7 +191,15 @@ pub async fn get_video_url(
     }
 
     // Step 2: POST /link/request — submit for caching and tell user to try later
-    let _ = ed_post(http, token, "/link/request", &request_body, user_ip).await;
+    let _ = ed_post(
+        http,
+        token,
+        "/link/request",
+        &request_body,
+        effective_ip,
+        forward,
+    )
+    .await;
 
     Err(ProviderError::api(
         "Torrent is not yet cached on EasyDebrid; submitted for caching — try again later",
@@ -210,6 +233,7 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
             token,
             "/link/lookup",
             &serde_json::json!({"urls": urls}),
+            None,
             None,
         )
         .await

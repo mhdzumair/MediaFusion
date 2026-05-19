@@ -4,7 +4,10 @@
 use serde_json::Value;
 use std::sync::OnceLock;
 
-use crate::providers::ProviderError;
+use crate::providers::{
+    torrents::transport::{append_query, encode_form_body, MediaFlowForward},
+    ProviderError,
+};
 
 const BASE_URL: &str = "https://offcloud.com";
 
@@ -101,14 +104,24 @@ fn select_video_file(
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
 /// GET request with Bearer auth + `key=` query param.
-async fn oc_get(http: &reqwest::Client, token: &str, path: &str) -> Result<Value, ProviderError> {
+async fn oc_get(
+    http: &reqwest::Client,
+    token: &str,
+    path: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
-    let resp = http
-        .get(&url)
-        .bearer_auth(token)
-        .query(&[("key", token)])
-        .send()
-        .await?;
+    let resp = if let Some(fwd) = forward {
+        // Embed key= in destination URL; Bearer forwarded via h_authorization
+        let dest = append_query(&url, &[("key", token)]);
+        fwd.get(http, &dest, token).await?
+    } else {
+        http.get(&url)
+            .bearer_auth(token)
+            .query(&[("key", token)])
+            .send()
+            .await?
+    };
 
     let status = resp.status();
     if status == reqwest::StatusCode::FORBIDDEN {
@@ -141,16 +154,23 @@ async fn oc_post_form(
     token: &str,
     path: &str,
     mut fields: Vec<(&str, String)>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
     fields.push(("key", token.to_string()));
 
-    let resp = http
-        .post(&url)
-        .bearer_auth(token)
-        .form(&fields)
-        .send()
-        .await?;
+    let resp = if let Some(fwd) = forward {
+        // Keep key in body; Bearer forwarded via h_authorization
+        let form_ref: Vec<(&str, &str)> = fields.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let body_str = encode_form_body(&form_ref);
+        fwd.post_form(http, &url, token, body_str).await?
+    } else {
+        http.post(&url)
+            .bearer_auth(token)
+            .form(&fields)
+            .send()
+            .await?
+    };
 
     let status = resp.status();
     if status == reqwest::StatusCode::FORBIDDEN {
@@ -223,8 +243,9 @@ async fn find_in_history(
     http: &reqwest::Client,
     token: &str,
     info_hash: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Option<Value>, ProviderError> {
-    let body = oc_get(http, token, "/api/cloud/history").await?;
+    let body = oc_get(http, token, "/api/cloud/history", forward).await?;
     let hash_lower = info_hash.to_lowercase();
 
     let arr = match body.as_array() {
@@ -248,8 +269,16 @@ async fn submit_magnet(
     http: &reqwest::Client,
     token: &str,
     magnet: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
-    let body = oc_post_form(http, token, "/api/cloud", vec![("url", magnet.to_string())]).await?;
+    let body = oc_post_form(
+        http,
+        token,
+        "/api/cloud",
+        vec![("url", magnet.to_string())],
+        forward,
+    )
+    .await?;
 
     body.get("requestId")
         .and_then(|v| v.as_str())
@@ -267,12 +296,14 @@ async fn get_torrent_status(
     http: &reqwest::Client,
     token: &str,
     request_id: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let body = oc_post_form(
         http,
         token,
         "/api/cloud/status",
         vec![("requestId", request_id.to_string())],
+        forward,
     )
     .await?;
 
@@ -312,9 +343,10 @@ async fn wait_for_downloaded(
     request_id: &str,
     max_retries: u32,
     retry_interval_secs: u64,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     for attempt in 0..max_retries {
-        let info = get_torrent_status(http, token, request_id).await?;
+        let info = get_torrent_status(http, token, request_id, forward).await?;
         let status = extract_status_str(&info);
 
         if status.eq_ignore_ascii_case("downloaded") {
@@ -343,8 +375,15 @@ async fn explore_torrent(
     http: &reqwest::Client,
     token: &str,
     request_id: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Vec<String>, ProviderError> {
-    let body = oc_get(http, token, &format!("/api/cloud/explore/{request_id}")).await?;
+    let body = oc_get(
+        http,
+        token,
+        &format!("/api/cloud/explore/{request_id}"),
+        forward,
+    )
+    .await?;
 
     match body {
         Value::Array(arr) => Ok(arr
@@ -433,6 +472,7 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     _user_ip: Option<&str>,
+    forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     const MAX_RETRIES: u32 = 5;
     const RETRY_INTERVAL: u64 = 5;
@@ -448,7 +488,7 @@ pub async fn get_video_url(
     );
 
     // Check history for existing download
-    let request_id = match find_in_history(http, token, info_hash).await? {
+    let request_id = match find_in_history(http, token, info_hash, forward).await? {
         Some(existing) => existing
             .get("requestId")
             .and_then(|v| v.as_str())
@@ -459,12 +499,19 @@ pub async fn get_video_url(
                     "api_error.mp4",
                 )
             })?,
-        None => submit_magnet(http, token, &magnet).await?,
+        None => submit_magnet(http, token, &magnet, forward).await?,
     };
 
     // Wait for completion
-    let torrent_info =
-        wait_for_downloaded(http, token, &request_id, MAX_RETRIES, RETRY_INTERVAL).await?;
+    let torrent_info = wait_for_downloaded(
+        http,
+        token,
+        &request_id,
+        MAX_RETRIES,
+        RETRY_INTERVAL,
+        forward,
+    )
+    .await?;
 
     // Try single-file shortcut first
     if let Some(url) = try_single_file_url(&torrent_info, &request_id) {
@@ -472,7 +519,7 @@ pub async fn get_video_url(
     }
 
     // Multi-file: explore and select
-    let urls = explore_torrent(http, token, &request_id).await?;
+    let urls = explore_torrent(http, token, &request_id, forward).await?;
 
     select_url_from_list(&urls, filename, file_index, season, episode).ok_or_else(|| {
         ProviderError::api(
@@ -489,11 +536,11 @@ pub async fn delete_torrent_by_hash(
     token: &str,
     info_hash: &str,
 ) -> Result<bool, ProviderError> {
-    match find_in_history(http, token, info_hash).await? {
+    match find_in_history(http, token, info_hash, None).await? {
         None => Ok(false),
         Some(item) => {
             if let Some(request_id) = item.get("requestId").and_then(|v| v.as_str()) {
-                oc_get(http, token, &format!("/cloud/remove/{request_id}"))
+                oc_get(http, token, &format!("/cloud/remove/{request_id}"), None)
                     .await
                     .ok();
             }
@@ -504,7 +551,7 @@ pub async fn delete_torrent_by_hash(
 
 /// Delete ALL cloud downloads from the user's OffCloud account.
 pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
-    let body = oc_get(http, token, "/api/cloud/history").await?;
+    let body = oc_get(http, token, "/api/cloud/history", None).await?;
 
     let items = match body.as_array() {
         Some(arr) => arr.clone(),
@@ -514,7 +561,7 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
     for item in items {
         if let Some(request_id) = item.get("requestId").and_then(|v| v.as_str()) {
             // Best-effort; ignore individual errors
-            oc_get(http, token, &format!("/cloud/remove/{request_id}"))
+            oc_get(http, token, &format!("/cloud/remove/{request_id}"), None)
                 .await
                 .ok();
         }

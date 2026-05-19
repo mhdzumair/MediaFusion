@@ -6,7 +6,10 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use serde_json::Value;
 
-use crate::providers::ProviderError;
+use crate::providers::{
+    torrents::transport::{append_query, encode_form_body, MediaFlowForward},
+    ProviderError,
+};
 
 const BASE_URL: &str = "https://www.premiumize.me/api";
 
@@ -38,16 +41,37 @@ async fn pm_get(
     kind: &TokenKind,
     path: &str,
     extra_query: &[(&str, &str)],
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
-    let mut req = match kind {
-        TokenKind::Bearer(t) => http.get(&url).bearer_auth(t),
-        TokenKind::ApiKey(k) => http.get(&url).query(&[("apikey", k.as_str())]),
+    let resp = if let Some(fwd) = forward {
+        match kind {
+            TokenKind::Bearer(t) => {
+                let dest = if extra_query.is_empty() {
+                    url
+                } else {
+                    append_query(&url, extra_query)
+                };
+                fwd.get(http, &dest, t).await?
+            }
+            TokenKind::ApiKey(k) => {
+                // Embed apikey in URL; no Bearer header needed
+                let mut all_params: Vec<(&str, &str)> = vec![("apikey", k.as_str())];
+                all_params.extend_from_slice(extra_query);
+                let dest = append_query(&url, &all_params);
+                fwd.get_no_auth(http, &dest).await?
+            }
+        }
+    } else {
+        let mut req = match kind {
+            TokenKind::Bearer(t) => http.get(&url).bearer_auth(t),
+            TokenKind::ApiKey(k) => http.get(&url).query(&[("apikey", k.as_str())]),
+        };
+        if !extra_query.is_empty() {
+            req = req.query(extra_query);
+        }
+        req.send().await?
     };
-    if !extra_query.is_empty() {
-        req = req.query(extra_query);
-    }
-    let resp = req.send().await?;
     check_status_code(resp.status())?;
     let body: Value = resp.json().await?;
     check_pm_error(&body)?;
@@ -60,18 +84,43 @@ async fn pm_post_form(
     kind: &TokenKind,
     path: &str,
     fields: Vec<(String, String)>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
-    let mut form = fields;
-    if let TokenKind::ApiKey(k) = kind {
-        form.push(("apikey".to_string(), k.clone()));
-    }
-    let form_ref: Vec<(&str, &str)> = form.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    let mut req = http.post(&url).form(&form_ref);
-    if let TokenKind::Bearer(t) = kind {
-        req = http.post(&url).bearer_auth(t).form(&form_ref);
-    }
-    let resp = req.send().await?;
+    let resp = if let Some(fwd) = forward {
+        match kind {
+            TokenKind::Bearer(t) => {
+                let form_ref: Vec<(&str, &str)> = fields
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect();
+                let body_str = encode_form_body(&form_ref);
+                fwd.post_form(http, &url, t, body_str).await?
+            }
+            TokenKind::ApiKey(k) => {
+                // Embed apikey in URL; body carries only the data fields
+                let dest = append_query(&url, &[("apikey", k.as_str())]);
+                let form_ref: Vec<(&str, &str)> = fields
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect();
+                let body_str = encode_form_body(&form_ref);
+                fwd.post_form_no_auth(http, &dest, body_str).await?
+            }
+        }
+    } else {
+        let mut form = fields;
+        if let TokenKind::ApiKey(k) = kind {
+            form.push(("apikey".to_string(), k.clone()));
+        }
+        let form_ref: Vec<(&str, &str)> =
+            form.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let mut req = http.post(&url).form(&form_ref);
+        if let TokenKind::Bearer(t) = kind {
+            req = http.post(&url).bearer_auth(t).form(&form_ref);
+        }
+        req.send().await?
+    };
     check_status_code(resp.status())?;
     let body: Value = resp.json().await?;
     check_pm_error(&body)?;
@@ -184,8 +233,16 @@ async fn check_cache(
     http: &reqwest::Client,
     kind: &TokenKind,
     info_hash: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<bool, ProviderError> {
-    let body = pm_get(http, kind, "/cache/check", &[("items[]", info_hash)]).await?;
+    let body = pm_get(
+        http,
+        kind,
+        "/cache/check",
+        &[("items[]", info_hash)],
+        forward,
+    )
+    .await?;
     Ok(body
         .get("response")
         .and_then(|v| v.as_array())
@@ -198,12 +255,14 @@ async fn direct_download(
     http: &reqwest::Client,
     kind: &TokenKind,
     magnet: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     pm_post_form(
         http,
         kind,
         "/transfer/directdl",
         vec![("src".to_string(), magnet.to_string())],
+        forward,
     )
     .await
 }
@@ -245,9 +304,10 @@ async fn get_or_create_folder(
     http: &reqwest::Client,
     kind: &TokenKind,
     name: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     // List root folders
-    let body = pm_get(http, kind, "/folder/list", &[]).await?;
+    let body = pm_get(http, kind, "/folder/list", &[], forward).await?;
     if let Some(folders) = body.get("content").and_then(|v| v.as_array()) {
         for f in folders {
             if f.get("name").and_then(|v| v.as_str()) == Some(name) {
@@ -263,6 +323,7 @@ async fn get_or_create_folder(
         kind,
         "/folder/create",
         vec![("name".to_string(), name.to_string())],
+        forward,
     )
     .await?;
     resp.get("id")
@@ -278,6 +339,7 @@ async fn create_transfer(
     kind: &TokenKind,
     magnet: &str,
     folder_id: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     pm_post_form(
         http,
@@ -287,6 +349,7 @@ async fn create_transfer(
             ("src".to_string(), magnet.to_string()),
             ("folder_id".to_string(), folder_id.to_string()),
         ],
+        forward,
     )
     .await
 }
@@ -297,9 +360,10 @@ async fn wait_for_transfer(
     transfer_id: &str,
     max_retries: u32,
     retry_secs: u64,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<(), ProviderError> {
     for attempt in 0..max_retries {
-        let body = pm_get(http, kind, "/transfer/list", &[]).await?;
+        let body = pm_get(http, kind, "/transfer/list", &[], forward).await?;
         if let Some(transfers) = body.get("transfers").and_then(|v| v.as_array()) {
             for t in transfers {
                 if t.get("id").and_then(|v| v.as_str()) == Some(transfer_id) {
@@ -336,8 +400,9 @@ async fn get_folder_contents(
     http: &reqwest::Client,
     kind: &TokenKind,
     folder_id: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Vec<Value>, ProviderError> {
-    let body = pm_get(http, kind, "/folder/list", &[("id", folder_id)]).await?;
+    let body = pm_get(http, kind, "/folder/list", &[("id", folder_id)], forward).await?;
     Ok(body
         .get("content")
         .and_then(|v| v.as_array())
@@ -402,6 +467,7 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     _user_ip: Option<&str>,
+    forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     const MAX_RETRIES: u32 = 5;
     const RETRY_SECS: u64 = 5;
@@ -416,10 +482,10 @@ pub async fn get_video_url(
     let magnet = format!("magnet:?xt=urn:btih:{info_hash}{trackers}");
 
     // Check instant availability
-    let cached = check_cache(http, &kind, info_hash).await?;
+    let cached = check_cache(http, &kind, info_hash, forward).await?;
 
     if cached {
-        let body = direct_download(http, &kind, &magnet).await?;
+        let body = direct_download(http, &kind, &magnet, forward).await?;
         if let Some(content) = body.get("content").and_then(|v| v.as_array()) {
             if let Some(url) =
                 select_from_directdl_content(content, filename, file_index, season, episode)
@@ -434,8 +500,8 @@ pub async fn get_video_url(
     }
 
     // Not cached — use transfer flow
-    let folder_id = get_or_create_folder(http, &kind, info_hash).await?;
-    let transfer_resp = create_transfer(http, &kind, &magnet, &folder_id).await?;
+    let folder_id = get_or_create_folder(http, &kind, info_hash, forward).await?;
+    let transfer_resp = create_transfer(http, &kind, &magnet, &folder_id, forward).await?;
 
     // If the transfer already has content (immediate), skip waiting
     if let Some(content) = transfer_resp.get("content").and_then(|v| v.as_array()) {
@@ -452,9 +518,9 @@ pub async fn get_video_url(
         .ok_or_else(|| ProviderError::api("No transfer id from Premiumize", "transfer_error.mp4"))?
         .to_string();
 
-    wait_for_transfer(http, &kind, &transfer_id, MAX_RETRIES, RETRY_SECS).await?;
+    wait_for_transfer(http, &kind, &transfer_id, MAX_RETRIES, RETRY_SECS, forward).await?;
 
-    let content = get_folder_contents(http, &kind, &folder_id).await?;
+    let content = get_folder_contents(http, &kind, &folder_id, forward).await?;
     select_from_folder_content(&content, filename, file_index, season, episode).ok_or_else(|| {
         ProviderError::api(
             "No video file found in Premiumize folder",
@@ -472,7 +538,7 @@ pub async fn delete_torrent_by_hash(
     info_hash: &str,
 ) -> Result<bool, ProviderError> {
     let kind = decode_token(token);
-    let body = pm_get(http, &kind, "/transfer/list", &[]).await?;
+    let body = pm_get(http, &kind, "/transfer/list", &[], None).await?;
     let hash_lower = info_hash.to_lowercase();
 
     let transfer_id = body
@@ -498,6 +564,7 @@ pub async fn delete_torrent_by_hash(
                 &kind,
                 "/transfer/delete",
                 vec![("id".to_string(), id)],
+                None,
             )
             .await
             .ok();
@@ -510,7 +577,7 @@ pub async fn delete_torrent_by_hash(
 pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     let kind = decode_token(token);
 
-    let body = pm_get(http, &kind, "/folder/list", &[]).await?;
+    let body = pm_get(http, &kind, "/folder/list", &[], None).await?;
     let folders = body
         .get("content")
         .and_then(|v| v.as_array())
@@ -524,6 +591,7 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
                 &kind,
                 "/folder/delete",
                 vec![("id".to_string(), id.to_string())],
+                None,
             )
             .await
             .ok();
@@ -539,7 +607,7 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
 pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]) -> Vec<String> {
     let kind = decode_token(token);
     let params: Vec<(&str, &str)> = hashes.iter().map(|h| ("items[]", h.as_str())).collect();
-    let body = match pm_get(http, &kind, "/cache/check", &params).await {
+    let body = match pm_get(http, &kind, "/cache/check", &params, None).await {
         Ok(v) => v,
         Err(e) => {
             tracing::warn!("premiumize cache/check: {e}");

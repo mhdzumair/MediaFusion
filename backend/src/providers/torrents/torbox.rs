@@ -4,7 +4,10 @@
 use serde_json::Value;
 use std::sync::OnceLock;
 
-use crate::providers::ProviderError;
+use crate::providers::{
+    torrents::transport::{encode_form_body, MediaFlowForward},
+    ProviderError,
+};
 
 const BASE_URL: &str = "https://api.torbox.app/v1/api";
 
@@ -131,8 +134,17 @@ fn check_torbox_error(body: &Value) -> Result<(), ProviderError> {
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
-async fn tb_get(http: &reqwest::Client, token: &str, url: &str) -> Result<Value, ProviderError> {
-    let resp = http.get(url).bearer_auth(token).send().await?;
+async fn tb_get(
+    http: &reqwest::Client,
+    token: &str,
+    url: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    let resp = if let Some(fwd) = forward {
+        fwd.get(http, url, token).await?
+    } else {
+        http.get(url).bearer_auth(token).send().await?
+    };
     let body: Value = resp.json().await?;
     check_torbox_error(&body)?;
     Ok(body)
@@ -143,8 +155,14 @@ async fn tb_post_form(
     token: &str,
     url: &str,
     form: &[(&str, &str)],
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
-    let resp = http.post(url).bearer_auth(token).form(form).send().await?;
+    let resp = if let Some(fwd) = forward {
+        let body_str = encode_form_body(form);
+        fwd.post_form(http, url, token, body_str).await?
+    } else {
+        http.post(url).bearer_auth(token).form(form).send().await?
+    };
     let body: Value = resp.json().await?;
     check_torbox_error(&body)?;
     Ok(body)
@@ -169,9 +187,13 @@ async fn tb_post_json(
 
 // ─── TorBox API operations ────────────────────────────────────────────────────
 
-async fn get_mylist(http: &reqwest::Client, token: &str) -> Result<Value, ProviderError> {
+async fn get_mylist(
+    http: &reqwest::Client,
+    token: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}/torrents/mylist?bypass_cache=true");
-    tb_get(http, token, &url).await
+    tb_get(http, token, &url, forward).await
 }
 
 fn find_torrent_in_list(list: &Value, info_hash: &str) -> Option<Value> {
@@ -187,9 +209,13 @@ fn find_torrent_in_list(list: &Value, info_hash: &str) -> Option<Value> {
         .cloned()
 }
 
-async fn get_queued(http: &reqwest::Client, token: &str) -> Result<Value, ProviderError> {
+async fn get_queued(
+    http: &reqwest::Client,
+    token: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}/queued/getqueued?type=torrent&bypass_cache=true");
-    tb_get(http, token, &url).await
+    tb_get(http, token, &url, forward).await
 }
 
 fn is_torrent_queued(queued: &Value, info_hash: &str) -> bool {
@@ -212,9 +238,10 @@ async fn create_torrent(
     http: &reqwest::Client,
     token: &str,
     magnet: &str,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}/torrents/createtorrent");
-    tb_post_form(http, token, &url, &[("magnet", magnet)]).await
+    tb_post_form(http, token, &url, &[("magnet", magnet)], forward).await
 }
 
 async fn request_download_link(
@@ -223,6 +250,7 @@ async fn request_download_link(
     torrent_id: i64,
     file_id: i64,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     let mut url = format!(
         "{BASE_URL}/torrents/requestdl?token={token}&torrent_id={torrent_id}&file_id={file_id}"
@@ -230,7 +258,7 @@ async fn request_download_link(
     if let Some(ip) = user_ip {
         url.push_str(&format!("&user_ip={}", urlencoding::encode(ip)));
     }
-    let body = tb_get(http, token, &url).await?;
+    let body = tb_get(http, token, &url, forward).await?;
     body.get("data")
         .and_then(|v| v.as_str())
         .map(str::to_string)
@@ -272,6 +300,7 @@ async fn build_download_link_from_torrent(
     season: Option<i32>,
     episode: Option<i32>,
     user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     let torrent_id = torrent.get("id").and_then(|v| v.as_i64()).ok_or_else(|| {
         ProviderError::api("Missing torrent id in TorBox response", "api_error.mp4")
@@ -293,7 +322,7 @@ async fn build_download_link_from_torrent(
     let idx = select_video_file(&name_size, filename, file_index, season, episode);
     let file_id = raw_files[idx].0;
 
-    request_download_link(http, token, torrent_id, file_id, user_ip).await
+    request_download_link(http, token, torrent_id, file_id, user_ip, forward).await
 }
 
 // ─── Public entry points ──────────────────────────────────────────────────────
@@ -310,6 +339,7 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     user_ip: Option<&str>,
+    forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     let magnet = format!(
         "magnet:?xt=urn:btih:{}&{}",
@@ -322,7 +352,7 @@ pub async fn get_video_url(
     );
 
     // Check if torrent already exists and is ready
-    let mylist = get_mylist(http, token).await?;
+    let mylist = get_mylist(http, token, forward).await?;
     if let Some(torrent) = find_torrent_in_list(&mylist, info_hash) {
         let finished = torrent
             .get("download_finished")
@@ -335,7 +365,7 @@ pub async fn get_video_url(
 
         if finished && present {
             return build_download_link_from_torrent(
-                http, token, &torrent, filename, file_index, season, episode, user_ip,
+                http, token, &torrent, filename, file_index, season, episode, user_ip, forward,
             )
             .await;
         }
@@ -347,7 +377,9 @@ pub async fn get_video_url(
     }
 
     // Check queued list before creating
-    let queued = get_queued(http, token).await.unwrap_or(Value::Null);
+    let queued = get_queued(http, token, forward)
+        .await
+        .unwrap_or(Value::Null);
     if is_torrent_queued(&queued, info_hash) {
         return Err(ProviderError::api(
             "Torrent is queued on TorBox but not yet downloaded",
@@ -356,7 +388,7 @@ pub async fn get_video_url(
     }
 
     // Add the torrent
-    let create_resp = create_torrent(http, token, &magnet).await?;
+    let create_resp = create_torrent(http, token, &magnet, forward).await?;
     let detail = create_resp
         .get("detail")
         .and_then(|v| v.as_str())
@@ -364,7 +396,7 @@ pub async fn get_video_url(
 
     if detail.contains("Found Cached") {
         // Re-check mylist — should now be present
-        let mylist2 = get_mylist(http, token).await?;
+        let mylist2 = get_mylist(http, token, forward).await?;
         if let Some(torrent) = find_torrent_in_list(&mylist2, info_hash) {
             let finished = torrent
                 .get("download_finished")
@@ -376,7 +408,7 @@ pub async fn get_video_url(
                 .unwrap_or(false);
             if finished && present {
                 return build_download_link_from_torrent(
-                    http, token, &torrent, filename, file_index, season, episode, user_ip,
+                    http, token, &torrent, filename, file_index, season, episode, user_ip, forward,
                 )
                 .await;
             }
@@ -396,7 +428,7 @@ pub async fn delete_torrent_by_hash(
     token: &str,
     info_hash: &str,
 ) -> Result<bool, ProviderError> {
-    let mylist = get_mylist(http, token).await?;
+    let mylist = get_mylist(http, token, None).await?;
     match find_torrent_in_list(&mylist, info_hash) {
         None => Ok(false),
         Some(torrent) => {
@@ -412,7 +444,7 @@ pub async fn delete_torrent_by_hash(
 
 /// Delete ALL torrents from the user's TorBox account.
 pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
-    let mylist = get_mylist(http, token).await?;
+    let mylist = get_mylist(http, token, None).await?;
     let torrents = mylist
         .get("data")
         .and_then(|d| d.as_array())
