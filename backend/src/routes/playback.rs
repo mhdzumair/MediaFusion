@@ -160,8 +160,13 @@ async fn dispatch(
     {
         Ok(url) => url,
         Err(e) => {
-            tracing::warn!("playback error hash={info_hash} provider={provider_name}: {e}");
-            error_video_url(state, e.video_file())
+            let vf = e.video_file();
+            if vf == "api_error.mp4" {
+                tracing::warn!("playback error hash={info_hash} provider={provider_name}: {e}");
+            } else {
+                tracing::debug!("playback error hash={info_hash} provider={provider_name}: {e}");
+            }
+            error_video_url(state, vf)
         }
     };
 
