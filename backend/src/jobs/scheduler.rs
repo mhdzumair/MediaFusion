@@ -28,6 +28,13 @@ pub async fn run(pool: Arc<PgPool>, cancel: CancellationToken) {
                         // Hold the dedicated connection alive — dropping it releases the lock.
                         tick_loop(&pool, conn, &cancel).await;
                         info!("scheduler: released advisory lock");
+                        // Avoid a tight reconnect loop if the lock connection was recycled.
+                        // The select! restarts with a fresh sleep, so without this explicit
+                        // wait we'd re-acquire in milliseconds instead of LOCK_RETRY_SECS.
+                        tokio::select! {
+                            _ = cancel.cancelled() => return,
+                            _ = sleep(Duration::from_secs(LOCK_RETRY_SECS)) => {}
+                        }
                     }
                     None => {
                         // Lock held by another replica; try again after LOCK_RETRY_SECS.
