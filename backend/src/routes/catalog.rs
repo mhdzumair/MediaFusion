@@ -89,6 +89,12 @@ async fn handle_catalog(
     media_type: &str,
     rest: &str,
 ) -> axum::response::Response {
+    // Normalise legacy Stremio type aliases before hitting the DB enum.
+    let media_type = match media_type {
+        "shows" | "show" => "series",
+        other => other,
+    };
+
     let Some((catalog_id, extra)) = parse_catalog_path(rest) else {
         return (
             StatusCode::BAD_REQUEST,
