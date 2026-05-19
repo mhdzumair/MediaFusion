@@ -269,7 +269,7 @@ pub static ALL_INDEXERS: &[IndexerDef] = &[
         max_detail_url_length: 260,
         crawl: None,
     },
-    // ── YTS (no CF, movies only) ─────────────────────────────────────────────
+    // ── YTS (CF-protected, movies only) ──────────────────────────────────────
     IndexerDef {
         key: "yts",
         source_name: "YTS",
@@ -283,8 +283,8 @@ pub static ALL_INDEXERS: &[IndexerDef] = &[
         supports_movie: true,
         supports_series: false,
         supports_anime: false,
-        solve_cloudflare: false,
-        http_fallback: false,
+        solve_cloudflare: true,
+        http_fallback: true,
         pages_per_query: 1,
         handler: HandlerType::Html,
         max_detail_url_length: 260,
@@ -608,8 +608,8 @@ pub fn get_indexers_for_media(
                     return false;
                 }
             }
-            // Skip CF-only indexers when Byparr is unavailable and no plain fallback
-            if def.solve_cloudflare && !byparr_available && !def.http_fallback {
+            // Skip CF indexers when Byparr is unavailable (worker-only)
+            if def.solve_cloudflare && !byparr_available {
                 return false;
             }
             true
