@@ -62,7 +62,12 @@ export function KeywordFiltersTab() {
     if (!ph) return
     addPhrase.mutate(
       { phrase: ph, reason: newReason.trim() || undefined },
-      { onSuccess: () => { setNewPhrase(''); setNewReason('') } },
+      {
+        onSuccess: () => {
+          setNewPhrase('')
+          setNewReason('')
+        },
+      },
     )
   }
 
@@ -84,17 +89,8 @@ export function KeywordFiltersTab() {
             Block contributions containing these keywords. Whitelist phrases bypass all keyword checks.
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => reloadCache.mutate()}
-          disabled={reloadCache.isPending}
-        >
-          {reloadCache.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4" />
-          )}
+        <Button variant="outline" size="sm" onClick={() => reloadCache.mutate()} disabled={reloadCache.isPending}>
+          {reloadCache.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           <span className="ml-1.5">Reload Cache</span>
         </Button>
       </div>
@@ -129,11 +125,7 @@ export function KeywordFiltersTab() {
                 disabled={addKeyword.isPending || !newKeyword.trim()}
                 className="h-8 shrink-0"
               >
-                {addKeyword.isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Plus className="h-3 w-3" />
-                )}
+                {addKeyword.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
               </Button>
             </div>
 
@@ -143,7 +135,10 @@ export function KeywordFiltersTab() {
               <Input
                 placeholder="Search keywords…"
                 value={keywordSearch}
-                onChange={(e) => { setKeywordSearch(e.target.value); setKeywordPage(1) }}
+                onChange={(e) => {
+                  setKeywordSearch(e.target.value)
+                  setKeywordPage(1)
+                }}
                 className="h-8 pl-8 text-sm"
               />
             </div>
@@ -151,17 +146,12 @@ export function KeywordFiltersTab() {
             {/* List */}
             <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
               {keywordsLoading ? (
-                Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-7 w-full" />
-                ))
+                Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-7 w-full" />)
               ) : keywordsData?.items.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">No keywords found.</p>
               ) : (
                 keywordsData?.items.map((kw) => (
-                  <div
-                    key={kw.id}
-                    className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-muted/50 group"
-                  >
+                  <div key={kw.id} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-muted/50 group">
                     <span
                       className={`flex-1 text-sm font-mono truncate ${!kw.is_active ? 'line-through text-muted-foreground' : ''}`}
                     >
@@ -254,11 +244,7 @@ export function KeywordFiltersTab() {
                   disabled={addPhrase.isPending || !newPhrase.trim()}
                   className="h-8 shrink-0"
                 >
-                  {addPhrase.isPending ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Plus className="h-3 w-3" />
-                  )}
+                  {addPhrase.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
                 </Button>
               </div>
               <div>
@@ -279,22 +265,15 @@ export function KeywordFiltersTab() {
             {/* List */}
             <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
               {whitelistLoading ? (
-                Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))
+                Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)
               ) : whitelistData?.items.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">No whitelist phrases.</p>
               ) : (
                 whitelistData?.items.map((ph) => (
-                  <div
-                    key={ph.id}
-                    className="flex items-start gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 group"
-                  >
+                  <div key={ph.id} className="flex items-start gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 group">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-mono truncate">{ph.phrase}</p>
-                      {ph.reason && (
-                        <p className="text-xs text-muted-foreground truncate">{ph.reason}</p>
-                      )}
+                      {ph.reason && <p className="text-xs text-muted-foreground truncate">{ph.reason}</p>}
                     </div>
                     <Button
                       variant="ghost"

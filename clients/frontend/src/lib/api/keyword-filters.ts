@@ -63,10 +63,7 @@ export const keywordFiltersApi = {
     return apiClient.post<KeywordCacheStats>('/admin/keyword-filters/reload')
   },
 
-  listWhitelist: async (params?: {
-    page?: number
-    page_size?: number
-  }): Promise<WhitelistListResponse> => {
+  listWhitelist: async (params?: { page?: number; page_size?: number }): Promise<WhitelistListResponse> => {
     const sp = new URLSearchParams()
     if (params?.page) sp.set('page', String(params.page))
     if (params?.page_size) sp.set('page_size', String(params.page_size))
