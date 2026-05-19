@@ -405,6 +405,23 @@ pub async fn resolve(
         })
         .collect();
 
+    // Drop uncached torrents for providers that have only_show_cached_streams enabled.
+    let torrent_pairs: Vec<(Value, usize)> = torrent_pairs
+        .into_iter()
+        .filter(|(t, pi)| {
+            let Some(provider) = torrent_providers_refs.get(*pi) else {
+                return true;
+            };
+            if !provider.only_show_cached_streams {
+                return true;
+            }
+            let hash = t.get("info_hash").and_then(|v| v.as_str()).unwrap_or("");
+            p.per_provider_cached
+                .get(*pi)
+                .is_some_and(|m| m.get(hash).copied().unwrap_or(false))
+        })
+        .collect();
+
     let tpl = p.user_data.stream_template.as_ref();
 
     // ── MIXED type grouping: unified sort across all types before formatting ─────
