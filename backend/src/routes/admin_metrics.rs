@@ -824,7 +824,7 @@ pub async fn get_activity_stats(
         },
         async {
             sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM watch_history WHERE action = 'downloaded'",
+                "SELECT COUNT(*) FROM watch_history WHERE action = 'DOWNLOADED'",
             )
             .fetch_one(&state.pool_ro)
             .await
@@ -970,7 +970,7 @@ pub async fn get_system_overview(
 
     // Pending contributions
     let pending_contributions: i64 =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM contributions WHERE status = 'pending'")
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM contributions WHERE status = 'PENDING'")
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);

@@ -26,7 +26,7 @@ pub async fn record_playback(
         INSERT INTO watch_history
             (user_id, profile_id, media_id, title, media_type, season, episode,
              action, source, stream_info, watched_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'watched', 'mediafusion', $8, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'WATCHED', 'MEDIAFUSION', $8, NOW())
         ON CONFLICT DO NOTHING
         "#,
     )

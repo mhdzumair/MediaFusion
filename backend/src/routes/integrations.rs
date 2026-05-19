@@ -545,7 +545,7 @@ pub async fn connect_trakt(
 
     if let Err(e) = sqlx::query(
         r#"INSERT INTO profile_integration (profile_id, platform, encrypted_credentials, is_enabled, sync_direction, scrobble_enabled)
-           VALUES ($1, 'trakt', $2, true, 'two_way', true)
+           VALUES ($1, 'TRAKT', $2, true, 'two_way', true)
            ON CONFLICT (profile_id, platform) DO UPDATE SET encrypted_credentials = EXCLUDED.encrypted_credentials, is_enabled = true"#,
     )
     .bind(profile_id)
@@ -667,7 +667,7 @@ pub async fn connect_simkl(
 
     if let Err(e) = sqlx::query(
         r#"INSERT INTO profile_integration (profile_id, platform, encrypted_credentials, is_enabled, sync_direction, scrobble_enabled)
-           VALUES ($1, 'simkl', $2, true, 'two_way', false)
+           VALUES ($1, 'SIMKL', $2, true, 'two_way', false)
            ON CONFLICT (profile_id, platform) DO UPDATE SET encrypted_credentials = EXCLUDED.encrypted_credentials, is_enabled = true"#,
     )
     .bind(profile_id)

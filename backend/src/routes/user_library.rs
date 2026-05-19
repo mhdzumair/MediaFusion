@@ -1223,7 +1223,7 @@ pub async fn advanced_import_torrents(
                             if let Some(lid) = lid {
                                 sqlx::query(
                                     "INSERT INTO stream_language_link(stream_id, language_id, language_type) \
-                                     VALUES((SELECT stream_id FROM torrent_stream WHERE info_hash = $1 LIMIT 1), $2, 'audio') \
+                                     VALUES((SELECT stream_id FROM torrent_stream WHERE info_hash = $1 LIMIT 1), $2, 'AUDIO') \
                                      ON CONFLICT DO NOTHING",
                                 )
                                 .bind(&hash)
@@ -1250,7 +1250,7 @@ pub async fn advanced_import_torrents(
                             for f in files {
                                 let fid: Option<i32> = sqlx::query_scalar(
                                     r#"INSERT INTO stream_file(stream_id, file_index, filename, size, file_type)
-                                       VALUES($1, $2, $3, $4, 'video')
+                                       VALUES($1, $2, $3, $4, 'VIDEO')
                                        ON CONFLICT DO NOTHING RETURNING id"#,
                                 )
                                 .bind(sid as i32)

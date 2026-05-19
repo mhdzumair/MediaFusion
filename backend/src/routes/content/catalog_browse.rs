@@ -238,10 +238,13 @@ pub async fn get_genres(
     }
 
     let rows: Vec<(i32, String)> = sqlx::query_as(
-        r#"SELECT DISTINCT g.id, g.name
-           FROM media_genre_link mgl
-           JOIN media m ON m.id = mgl.media_id AND m.type = $1::mediatype
-           JOIN genre g ON g.id = mgl.genre_id
+        r#"SELECT g.id, g.name
+           FROM genre g
+           WHERE EXISTS (
+               SELECT 1 FROM media_genre_link mgl
+               JOIN media m ON m.id = mgl.media_id
+               WHERE mgl.genre_id = g.id AND m.type = $1::mediatype
+           )
            ORDER BY g.name"#,
     )
     .bind(&catalog_type)

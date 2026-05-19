@@ -47,7 +47,7 @@ async fn fetch_source(
     let row = sqlx::query(
         r#"SELECT id, user_id, m3u_url, name, is_public, import_live, import_vod, import_series
            FROM iptv_source
-           WHERE id = $1 AND source_type = 'm3u' AND is_active = true"#,
+           WHERE id = $1 AND source_type = 'M3U' AND is_active = true"#,
     )
     .bind(source_id)
     .fetch_optional(pool)

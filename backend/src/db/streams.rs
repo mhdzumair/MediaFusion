@@ -41,7 +41,7 @@ pub async fn fetch_streams_bulk(
                                 SELECT jsonb_agg(l.name ORDER BY l.name)
                                 FROM stream_language_link sll
                                 JOIN language l ON l.id = sll.language_id
-                                WHERE sll.stream_id = st.id AND sll.language_type = 'audio'
+                                WHERE sll.stream_id = st.id AND sll.language_type = 'AUDIO'
                             ), '[]'::jsonb)
                         ) ORDER BY ts.seeders DESC NULLS LAST
                     ) FILTER (WHERE ts.info_hash IS NOT NULL AND st.is_active AND NOT st.is_blocked), '[]')
@@ -87,7 +87,7 @@ pub async fn fetch_streams_bulk(
                                 SELECT jsonb_agg(l.name ORDER BY l.name)
                                 FROM stream_language_link sll
                                 JOIN language l ON l.id = sll.language_id
-                                WHERE sll.stream_id = st.id AND sll.language_type = 'audio'
+                                WHERE sll.stream_id = st.id AND sll.language_type = 'AUDIO'
                             ), '[]'::jsonb)
                         ) ORDER BY ts.seeders DESC NULLS LAST
                     ) FILTER (WHERE ts.info_hash IS NOT NULL AND st.is_active AND NOT st.is_blocked), '[]')
@@ -231,7 +231,7 @@ pub async fn fetch_http_streams_bulk(
                     'languages', COALESCE((
                         SELECT jsonb_agg(l.name ORDER BY l.name)
                         FROM stream_language_link sll JOIN language l ON l.id = sll.language_id
-                        WHERE sll.stream_id = st.id AND sll.language_type = 'audio'
+                        WHERE sll.stream_id = st.id AND sll.language_type = 'AUDIO'
                     ), '[]'::jsonb)
                 ) AS item
             FROM file_media_link fml
@@ -260,7 +260,7 @@ pub async fn fetch_http_streams_bulk(
                     'languages', COALESCE((
                         SELECT jsonb_agg(l.name ORDER BY l.name)
                         FROM stream_language_link sll JOIN language l ON l.id = sll.language_id
-                        WHERE sll.stream_id = st.id AND sll.language_type = 'audio'
+                        WHERE sll.stream_id = st.id AND sll.language_type = 'AUDIO'
                     ), '[]'::jsonb)
                 ) AS item
             FROM stream_media_link sml
@@ -307,7 +307,7 @@ pub async fn fetch_youtube_streams_bulk(
                 'languages', COALESCE((
                     SELECT jsonb_agg(l.name ORDER BY l.name)
                     FROM stream_language_link sll JOIN language l ON l.id = sll.language_id
-                    WHERE sll.stream_id = st.id AND sll.language_type = 'audio'
+                    WHERE sll.stream_id = st.id AND sll.language_type = 'AUDIO'
                 ), '[]'::jsonb)
             ) AS item
         FROM stream_media_link sml
@@ -355,7 +355,7 @@ pub async fn fetch_telegram_streams_bulk(
                     'languages', COALESCE((
                         SELECT jsonb_agg(l.name ORDER BY l.name)
                         FROM stream_language_link sll JOIN language l ON l.id = sll.language_id
-                        WHERE sll.stream_id = st.id AND sll.language_type = 'audio'
+                        WHERE sll.stream_id = st.id AND sll.language_type = 'AUDIO'
                     ), '[]'::jsonb)
                 ) AS item
             FROM file_media_link fml
@@ -384,7 +384,7 @@ pub async fn fetch_telegram_streams_bulk(
                     'languages', COALESCE((
                         SELECT jsonb_agg(l.name ORDER BY l.name)
                         FROM stream_language_link sll JOIN language l ON l.id = sll.language_id
-                        WHERE sll.stream_id = st.id AND sll.language_type = 'audio'
+                        WHERE sll.stream_id = st.id AND sll.language_type = 'AUDIO'
                     ), '[]'::jsonb)
                 ) AS item
             FROM stream_media_link sml
@@ -428,7 +428,7 @@ pub async fn fetch_acestream_streams_bulk(
                 'languages', COALESCE((
                     SELECT jsonb_agg(l.name ORDER BY l.name)
                     FROM stream_language_link sll JOIN language l ON l.id = sll.language_id
-                    WHERE sll.stream_id = st.id AND sll.language_type = 'audio'
+                    WHERE sll.stream_id = st.id AND sll.language_type = 'AUDIO'
                 ), '[]'::jsonb)
             ) AS item
         FROM stream_media_link sml
@@ -694,7 +694,7 @@ pub async fn upsert_stream_files(
         let file_id: i32 = sqlx::query_scalar(
             r#"
             INSERT INTO stream_file(stream_id, file_index, filename, size, file_type)
-            VALUES ($1, $2, $3, $4, 'video')
+            VALUES ($1, $2, $3, $4, 'VIDEO')
             ON CONFLICT DO NOTHING
             RETURNING id
             "#,
@@ -760,7 +760,7 @@ pub async fn fetch_tv_streams_for_media(pool: &PgPool, media_id: i64) -> Vec<Val
                 'languages', COALESCE((
                     SELECT jsonb_agg(l.name ORDER BY l.name)
                     FROM stream_language_link sll JOIN language l ON l.id = sll.language_id
-                    WHERE sll.stream_id = st.id AND sll.language_type = 'audio'
+                    WHERE sll.stream_id = st.id AND sll.language_type = 'AUDIO'
                 ), '[]'::jsonb)
             ) AS item
         FROM stream_media_link sml

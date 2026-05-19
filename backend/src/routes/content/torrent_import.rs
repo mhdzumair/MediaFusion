@@ -279,7 +279,7 @@ async fn insert_languages(
 
         if let Some(lid) = lang_id {
             sqlx::query(
-                "INSERT INTO stream_language_link(stream_id, language_id, language_type) VALUES($1, $2, 'audio') ON CONFLICT DO NOTHING",
+                "INSERT INTO stream_language_link(stream_id, language_id, language_type) VALUES($1, $2, 'AUDIO') ON CONFLICT DO NOTHING",
             )
             .bind(stream_id)
             .bind(lid)
@@ -300,7 +300,7 @@ async fn insert_file_data(
     for f in files {
         let file_id: Option<i32> = sqlx::query_scalar(
             r#"INSERT INTO stream_file(stream_id, file_index, filename, size, file_type)
-               VALUES($1, $2, $3, $4, 'video')
+               VALUES($1, $2, $3, $4, 'VIDEO')
                ON CONFLICT DO NOTHING
                RETURNING id"#,
         )

@@ -58,7 +58,7 @@ async fn fetch_source(
                   name, is_public, import_live, import_vod, import_series,
                   live_category_ids, vod_category_ids, series_category_ids
            FROM iptv_source
-           WHERE id = $1 AND source_type = 'xtream' AND is_active = true"#,
+           WHERE id = $1 AND source_type = 'XTREAM' AND is_active = true"#,
     )
     .bind(source_id)
     .fetch_optional(pool)
