@@ -23,23 +23,22 @@ pub fn init(exc_tx: Option<mpsc::UnboundedSender<crate::exception_tracker::ExcEv
         .init();
 }
 
-/// Strip the D-prefixed secret_str token from the path so it never appears in logs.
-/// e.g. /D-abc123.../manifest.json  →  /[token]/manifest.json
+/// Strip user/secret tokens from paths so they never appear in logs.
+/// Masks any path segment that starts with "D-" or "U-" and is longer than 10 chars.
+/// e.g. /D-abc123.../manifest.json            →  /[token]/manifest.json
+///      /U-03824ebc-.../manifest.json          →  /[token]/manifest.json
+///      /streaming_provider/D-abc.../playback  →  /streaming_provider/[token]/playback
 pub fn sanitize_path(path: &str) -> String {
-    let mut parts = path.splitn(3, '/');
-    parts.next(); // leading empty string before first '/'
-    let first = parts.next().unwrap_or("");
-    let rest = parts.next().unwrap_or("");
-
-    if first.starts_with("D-") && first.len() > 10 {
-        if rest.is_empty() {
-            "/[token]".to_string()
-        } else {
-            format!("/[token]/{rest}")
-        }
-    } else {
-        path.to_string()
-    }
+    path.split('/')
+        .map(|seg| {
+            if (seg.starts_with("D-") || seg.starts_with("U-")) && seg.len() > 10 {
+                "[token]"
+            } else {
+                seg
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// Return a TraceLayer configured with sanitized path logging and latency in milliseconds.
