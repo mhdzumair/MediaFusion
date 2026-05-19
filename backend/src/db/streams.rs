@@ -657,7 +657,7 @@ pub async fn upsert_stream_files(
     }
 
     // Fetch stream_id + media_id in one query
-    let row: Option<(i32, i32, i64)> = sqlx::query_as(
+    let row: Option<(i32, i32, i32)> = sqlx::query_as(
         r#"
         SELECT ts.stream_id, ts.id, sml.media_id
         FROM torrent_stream ts
@@ -717,7 +717,7 @@ pub async fn upsert_stream_files(
                     "#,
                 )
                 .bind(file_id)
-                .bind(media_id as i32)
+                .bind(media_id)
                 .bind(s)
                 .bind(e)
                 .execute(&mut *txn)
