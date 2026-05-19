@@ -122,12 +122,15 @@ pub fn contains_adult_keywords(s: &str) -> bool {
     static ADULT_KEYWORDS: OnceLock<Vec<String>> = OnceLock::new();
     let keywords = ADULT_KEYWORDS.get_or_init(|| {
         // Lines prefixed with '!' are whitelist entries — skip them here.
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/adult-keywords.txt"))
-            .lines()
-            .map(|l| l.trim())
-            .filter(|l| !l.is_empty() && !l.starts_with('!'))
-            .map(|l| l.to_lowercase())
-            .collect()
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/resources/adult-keywords.txt"
+        ))
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with('!'))
+        .map(|l| l.to_lowercase())
+        .collect()
     });
     let lower = s.to_lowercase();
     keywords.iter().any(|kw| lower.contains(kw.as_str()))

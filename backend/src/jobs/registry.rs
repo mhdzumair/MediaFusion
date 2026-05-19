@@ -4,7 +4,12 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use super::{handler::{ErasedHandler, JobCtx}, metrics::JobMetrics, runner::QueueRunner, scheduler};
+use super::{
+    handler::{ErasedHandler, JobCtx},
+    metrics::JobMetrics,
+    runner::QueueRunner,
+    scheduler,
+};
 use crate::state::AppState;
 
 pub struct JobRegistry {
@@ -44,10 +49,9 @@ impl JobRegistry {
         args: serde_json::Value,
         cancel: CancellationToken,
     ) -> Result<(), String> {
-        let handler = self
-            .handlers
-            .get(queue)
-            .ok_or_else(|| format!("unknown queue '{queue}' — run with --list-jobs to see options"))?;
+        let handler = self.handlers.get(queue).ok_or_else(|| {
+            format!("unknown queue '{queue}' — run with --list-jobs to see options")
+        })?;
 
         let ctx = JobCtx {
             job_id: -1,

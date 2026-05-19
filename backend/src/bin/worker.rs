@@ -33,7 +33,7 @@ use mediafusion_api::{
         metrics::JobMetrics,
         JobRegistry,
     },
-    state::{AppState, load_keyword_filter_cache, sync_keywords_from_file},
+    state::{load_keyword_filter_cache, sync_keywords_from_file, AppState},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -76,14 +76,20 @@ fn parse_args() -> CliArgs {
             }
             other => {
                 eprintln!("unknown argument '{other}'");
-                eprintln!("usage: mediafusion-worker [--run-job <queue>] [--args <json>] [--list-jobs]");
+                eprintln!(
+                    "usage: mediafusion-worker [--run-job <queue>] [--args <json>] [--list-jobs]"
+                );
                 std::process::exit(1);
             }
         }
         i += 1;
     }
 
-    CliArgs { run_job, args, list_jobs }
+    CliArgs {
+        run_job,
+        args,
+        list_jobs,
+    }
 }
 
 #[tokio::main]

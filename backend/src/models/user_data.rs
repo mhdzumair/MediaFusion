@@ -212,8 +212,6 @@ pub struct MediaFlowConfig {
     pub proxy_url: Option<String>,
     #[serde(default, rename = "ap", alias = "api_password")]
     pub api_password: Option<String>,
-    #[serde(default, rename = "pip", alias = "public_ip")]
-    pub public_ip: Option<String>,
     #[serde(default, rename = "pls", alias = "proxy_live_streams")]
     pub proxy_live_streams: bool,
     #[serde(default, rename = "ewp", alias = "enable_web_playback")]

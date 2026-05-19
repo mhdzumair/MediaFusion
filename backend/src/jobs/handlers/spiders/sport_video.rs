@@ -53,25 +53,46 @@ fn load_sport_video_categories() -> Vec<(String, String)> {
     }
 
     vec![
-        ("football".into(),        "https://www.sport-video.org.ua/football.html".into()),
-        ("basketball".into(),      "https://www.sport-video.org.ua/basketball.html".into()),
-        ("hockey".into(),          "https://www.sport-video.org.ua/hockey.html".into()),
-        ("american_football".into(),"https://www.sport-video.org.ua/americanfootball.html".into()),
-        ("baseball".into(),        "https://www.sport-video.org.ua/baseball.html".into()),
-        ("rugby".into(),           "https://www.sport-video.org.ua/rugby.html".into()),
-        ("other_sports".into(),    "https://www.sport-video.org.ua/other.html".into()),
+        (
+            "football".into(),
+            "https://www.sport-video.org.ua/football.html".into(),
+        ),
+        (
+            "basketball".into(),
+            "https://www.sport-video.org.ua/basketball.html".into(),
+        ),
+        (
+            "hockey".into(),
+            "https://www.sport-video.org.ua/hockey.html".into(),
+        ),
+        (
+            "american_football".into(),
+            "https://www.sport-video.org.ua/americanfootball.html".into(),
+        ),
+        (
+            "baseball".into(),
+            "https://www.sport-video.org.ua/baseball.html".into(),
+        ),
+        (
+            "rugby".into(),
+            "https://www.sport-video.org.ua/rugby.html".into(),
+        ),
+        (
+            "other_sports".into(),
+            "https://www.sport-video.org.ua/other.html".into(),
+        ),
     ]
 }
 
 fn category_to_genre(category: &str) -> &'static str {
     match category {
-        "football"         => "Football",
-        "basketball"       => "Basketball",
-        "hockey"           => "Hockey",
-        "american_football"=> "American Football",
-        "baseball"         => "Baseball",
-        "rugby"            => "Rugby/AFL",
-        _                  => "Other Sports",
+        "football" => "Football",
+        "basketball" => "Basketball",
+        "hockey" => "Hockey",
+        "american_football" => "American Football",
+        "baseball" => "Baseball",
+        "rugby" => "Rugby/AFL",
+        _ => "Other Sports",
     }
 }
 
@@ -99,10 +120,10 @@ struct ContentBlock {
 
 fn parse_category_page(html: &str, base_url: &str) -> Vec<ContentBlock> {
     let doc = Html::parse_document(html);
-    let block_sel        = Selector::parse(r#"div[id^="wb_LayoutGrid"]"#).unwrap();
-    let title_sel        = Selector::parse(r#"div[id^="wb_Text"] strong"#).unwrap();
-    let img_sel          = Selector::parse(r#"div[id^="wb_PhotoGallery"] img"#).unwrap();
-    let shape_link_sel   = Selector::parse(r#"div[id^="wb_Shape"] a"#).unwrap();
+    let block_sel = Selector::parse(r#"div[id^="wb_LayoutGrid"]"#).unwrap();
+    let title_sel = Selector::parse(r#"div[id^="wb_Text"] strong"#).unwrap();
+    let img_sel = Selector::parse(r#"div[id^="wb_PhotoGallery"] img"#).unwrap();
+    let shape_link_sel = Selector::parse(r#"div[id^="wb_Shape"] a"#).unwrap();
     let direct_torrent_sel = Selector::parse(r#"a[href$=".torrent"]"#).unwrap();
 
     let mut blocks = Vec::new();
@@ -130,7 +151,11 @@ fn parse_category_page(html: &str, base_url: &str) -> Vec<ContentBlock> {
         let poster_url = block
             .select(&img_sel)
             .next()
-            .and_then(|img| img.value().attr("src").or_else(|| img.value().attr("data-src")))
+            .and_then(|img| {
+                img.value()
+                    .attr("src")
+                    .or_else(|| img.value().attr("data-src"))
+            })
             .map(|src| resolve_url(base_url, src));
 
         let torrent_page_href = block
@@ -145,7 +170,12 @@ fn parse_category_page(html: &str, base_url: &str) -> Vec<ContentBlock> {
             .and_then(|a| a.value().attr("href"))
             .map(|href| resolve_url(base_url, href));
 
-        blocks.push(ContentBlock { title, poster_url, torrent_page_href, direct_torrent_href });
+        blocks.push(ContentBlock {
+            title,
+            poster_url,
+            torrent_page_href,
+            direct_torrent_href,
+        });
     }
 
     blocks
@@ -171,17 +201,29 @@ fn extract_info_hash_from_torrent(data: &[u8]) -> Option<String> {
     let info_slice = &data[info_start..info_end];
     let mut hasher = Sha1::new();
     hasher.update(info_slice);
-    Some(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    Some(
+        hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect(),
+    )
 }
 
 fn bencode_end(data: &[u8], pos: usize) -> Option<usize> {
-    if pos >= data.len() { return None; }
+    if pos >= data.len() {
+        return None;
+    }
     match data[pos] {
         b'd' | b'l' => {
             let mut i = pos + 1;
             loop {
-                if i >= data.len() { return None; }
-                if data[i] == b'e' { return Some(i + 1); }
+                if i >= data.len() {
+                    return None;
+                }
+                if data[i] == b'e' {
+                    return Some(i + 1);
+                }
                 i = bencode_end(data, i)?;
             }
         }
@@ -191,7 +233,10 @@ fn bencode_end(data: &[u8], pos: usize) -> Option<usize> {
         }
         b'0'..=b'9' => {
             let colon = data[pos..].iter().position(|&b| b == b':')?;
-            let len: usize = std::str::from_utf8(&data[pos..pos + colon]).ok()?.parse().ok()?;
+            let len: usize = std::str::from_utf8(&data[pos..pos + colon])
+                .ok()?
+                .parse()
+                .ok()?;
             Some(pos + colon + 1 + len)
         }
         _ => None,
@@ -250,9 +295,9 @@ impl JobHandler for SportVideoCrawl {
             return Ok(());
         }
 
-        let client     = &ctx.state.http;
+        let client = &ctx.state.http;
         let byparr_url = ctx.state.config.byparr_url.clone();
-        let pool       = &ctx.state.pool;
+        let pool = &ctx.state.pool;
 
         let Some(ref browserless_url) = ctx.state.config.browserless_url else {
             warn!(
@@ -263,8 +308,8 @@ impl JobHandler for SportVideoCrawl {
             return Ok(());
         };
 
-        let base_url  = "https://www.sport-video.org.ua";
-        let rate_key  = "sport-video.org.ua";
+        let base_url = "https://www.sport-video.org.ua";
+        let rate_key = "sport-video.org.ua";
 
         for (category, category_url) in &categories {
             if ctx.is_cancelled() {

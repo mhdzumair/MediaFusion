@@ -1,8 +1,7 @@
 use mediafusion_api::{
     config::AppConfig,
-    exception_tracker,
-    routes,
-    state::{AppState, load_keyword_filter_cache, sync_keywords_from_file},
+    exception_tracker, routes,
+    state::{load_keyword_filter_cache, sync_keywords_from_file, AppState},
 };
 use tracing::info;
 

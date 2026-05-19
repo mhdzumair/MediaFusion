@@ -743,8 +743,7 @@ pub fn router(state: Arc<AppState>) -> Router {
 
     // ServeDir serves real files (assets, etc.) directly; unmatched paths fall
     // back to index.html so React Router handles client-side navigation.
-    let spa_service = ServeDir::new(&frontend_dist_dir)
-        .fallback(ServeFile::new(&index_html));
+    let spa_service = ServeDir::new(&frontend_dist_dir).fallback(ServeFile::new(&index_html));
 
     Router::new()
         .route("/", get(root_redirect))

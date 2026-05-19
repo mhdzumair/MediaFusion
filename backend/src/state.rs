@@ -116,7 +116,10 @@ pub async fn load_keyword_filter_cache(pool: &PgPool) -> KeywordFilterCache {
 /// A SHA-256 of the raw file bytes is stored in `keyword_sync_state`.  If the
 /// hash matches the stored value the sync is skipped entirely.
 pub async fn sync_keywords_from_file(pool: &PgPool) {
-    const FILE_CONTENT: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/adult-keywords.txt"));
+    const FILE_CONTENT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/resources/adult-keywords.txt"
+    ));
     const SYNC_ID: &str = "adult-keywords";
 
     // ── Compute hash ──────────────────────────────────────────────────────────

@@ -55,7 +55,11 @@ pub async fn fetch_plain(client: &Client, url: &str) -> Option<FetchResult> {
         tracing::debug!("fetch_plain: CF challenge detected for {url}");
         return None;
     }
-    Some(FetchResult { html, final_url, cookies: vec![] })
+    Some(FetchResult {
+        html,
+        final_url,
+        cookies: vec![],
+    })
 }
 
 pub async fn fetch_byparr(client: &Client, byparr_url: &str, url: &str) -> Option<FetchResult> {
@@ -113,7 +117,11 @@ pub async fn fetch_byparr(client: &Client, byparr_url: &str, url: &str) -> Optio
         })
         .unwrap_or_default();
 
-    Some(FetchResult { html, final_url, cookies })
+    Some(FetchResult {
+        html,
+        final_url,
+        cookies,
+    })
 }
 
 /// Fetch a page with CF bypass logic.

@@ -338,6 +338,7 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     _user_ip: Option<&str>,
+    _forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     const MAX_RETRIES: u32 = 5;
     const RETRY_INTERVAL: u64 = 5;
