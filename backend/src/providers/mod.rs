@@ -32,6 +32,7 @@ impl ProviderError {
     pub fn video_file(&self) -> &'static str {
         match self {
             Self::Api { video_file, .. } => video_file,
+            Self::Http(e) if e.is_timeout() || e.is_connect() => "debrid_service_down_error.mp4",
             _ => "api_error.mp4",
         }
     }
