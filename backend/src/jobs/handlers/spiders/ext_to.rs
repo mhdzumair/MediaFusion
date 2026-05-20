@@ -357,7 +357,7 @@ async fn fetch_magnet(
 
     // Try AJAX magnet endpoint as fallback.
     let (page_token, csrf) = extract_security_tokens(&detail_html);
-    if let (Some(pt), Some(csrf)) = (page_token, csrf) {
+    if let (Some(pt), Some(_csrf)) = (page_token, csrf) {
         // Extract numeric torrent ID — do this in a scoped block so that the
         // non-Send `Html` value is dropped before any `.await` point.
         let numeric_id: Option<u64> = {

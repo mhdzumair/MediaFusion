@@ -91,6 +91,7 @@ fn classify_entry(group: &Option<String>) -> &'static str {
 /// that appear between an `#EXTINF` line and its URL, storing them as `behavior_hints`.
 pub fn parse_m3u(content: &str) -> Vec<M3uEntry> {
     let mut entries = Vec::new();
+    #[allow(clippy::type_complexity)]
     let mut current_meta: Option<(String, Option<String>, Option<String>, Option<String>)> = None;
     // (name, logo, group, tvg_id)
     let mut pending_headers: std::collections::HashMap<String, String> =
