@@ -10,6 +10,16 @@ use serde_json::json;
 
 use crate::{crypto, models::user_data::UserData, state::AppState};
 
+// Stremio user routes that appear as the second path segment after /{secret_str}/
+const STREMIO_USER_ROUTE_PREFIXES: &[&str] = &[
+    "meta",
+    "catalog",
+    "stream",
+    "manifest.json",
+    "configure",
+    "kodi",
+];
+
 /// Middleware for all Stremio `/{secret_str}/...` routes.
 ///
 /// Rules:
@@ -17,9 +27,10 @@ use crate::{crypto, models::user_data::UserData, state::AppState};
 /// - `D-{data}`: anonymous encrypted config, validate api_password when instance
 ///   has one configured.
 /// - No secret_str (public routes): always pass through.
+/// - Unknown prefix on a Stremio user route: rejected immediately with 400.
 ///
 /// For stream paths the error is returned as a Stremio stream object so Stremio
-/// shows a meaningful message. All other Stremio paths get a 401.
+/// shows a meaningful message. All other Stremio paths get a 401/400.
 pub async fn stremio_auth_middleware(
     State(state): State<Arc<AppState>>,
     req: axum::extract::Request,
@@ -30,7 +41,23 @@ pub async fn stremio_auth_middleware(
     // Extract first path segment as the potential secret_str
     let first_seg = path.trim_start_matches('/').split('/').next().unwrap_or("");
 
-    // Public instance — no enforcement at all
+    // Reject unrecognized secret formats before doing any real work.
+    // Check applies regardless of public/private instance — a malformed secret is always invalid.
+    if !first_seg.is_empty() && !first_seg.starts_with("D-") && !first_seg.starts_with("U-") {
+        let second_seg = path
+            .trim_start_matches('/')
+            .split_once('/')
+            .map(|x| x.1.split('/').next().unwrap_or(""))
+            .unwrap_or("");
+        if STREMIO_USER_ROUTE_PREFIXES
+            .iter()
+            .any(|r| second_seg == *r)
+        {
+            return invalid_secret_response(&state, path);
+        }
+    }
+
+    // Public instance — no api_password enforcement
     if state.config.is_public_instance {
         return next.run(req).await;
     }
@@ -77,6 +104,36 @@ pub async fn stremio_auth_middleware(
     }
 
     next.run(req).await
+}
+
+fn invalid_secret_response(state: &AppState, path: &str) -> Response {
+    let path_after_secret = path
+        .trim_start_matches('/')
+        .split_once('/')
+        .map(|x| x.1)
+        .unwrap_or("");
+
+    if path_after_secret.starts_with("stream/") {
+        let error_video = format!(
+            "{}/static/exceptions/invalid_config.mp4",
+            state.config.host_url
+        );
+        Json(json!({
+            "streams": [{
+                "name": state.config.addon_name,
+                "description": "Invalid MediaFusion configuration.\nDelete and reconfigure the addon.",
+                "url": error_video,
+                "behaviorHints": { "notWebReady": true }
+            }]
+        }))
+        .into_response()
+    } else {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid user data. Unrecognized configuration format."})),
+        )
+            .into_response()
+    }
 }
 
 fn unauthorized_response(state: &AppState, path: &str) -> Response {
