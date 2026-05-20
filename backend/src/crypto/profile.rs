@@ -283,3 +283,90 @@ pub fn encrypt_secrets(secrets: &serde_json::Value, key: &[u8; 32]) -> Option<St
     combined.extend_from_slice(&ct);
     Some(URL_SAFE_NO_PAD.encode(&combined))
 }
+
+/// Patch a single streaming-provider token inside `encrypted_secrets` for a stored profile.
+///
+/// Finds the provider at `provider_index` (its position in the `sps` array) within the
+/// decrypted secrets, updates its `tk` field, re-encrypts, writes back to Postgres, and
+/// invalidates the Redis profile cache so the next lookup picks up the new token.
+///
+/// Non-fatal: all errors are logged as warnings so the calling request is never blocked.
+pub async fn patch_provider_token(
+    pool: &PgPool,
+    redis: &fred::clients::Client,
+    secret_key: &[u8; 32],
+    profile_id: i64,
+    provider_index: usize,
+    new_token: &str,
+) {
+    // 1. Fetch current encrypted_secrets + uuid from DB
+    let row: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT uuid, encrypted_secrets FROM user_profiles WHERE id = $1 LIMIT 1")
+            .bind(profile_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or_else(|e| {
+                warn!("patch_provider_token: DB fetch failed profile_id={profile_id}: {e}");
+                None
+            });
+    let Some((uuid, enc)) = row else {
+        warn!("patch_provider_token: profile_id={profile_id} not found");
+        return;
+    };
+
+    // 2. Decrypt existing secrets (empty object if none)
+    let mut secrets = enc
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| decrypt_secrets(s, secret_key))
+        .unwrap_or_else(|| Value::Object(Default::default()));
+
+    // 3. Patch the token: find or create the provider entry in secrets["sps"]
+    let sps = secrets
+        .as_object_mut()
+        .unwrap()
+        .entry("sps")
+        .or_insert_with(|| Value::Array(vec![]))
+        .as_array_mut()
+        .unwrap();
+
+    if let Some(entry) = sps
+        .iter_mut()
+        .find(|e| e.get("_index").and_then(|v| v.as_u64()) == Some(provider_index as u64))
+    {
+        entry
+            .as_object_mut()
+            .unwrap()
+            .insert("tk".into(), Value::String(new_token.to_string()));
+    } else {
+        sps.push(serde_json::json!({
+            "_index": provider_index,
+            "tk": new_token,
+        }));
+    }
+
+    // 4. Re-encrypt
+    let Some(new_enc) = encrypt_secrets(&secrets, secret_key) else {
+        warn!("patch_provider_token: re-encryption failed profile_id={profile_id}");
+        return;
+    };
+
+    // 5. Write back to Postgres
+    if let Err(e) = sqlx::query(
+        "UPDATE user_profiles SET encrypted_secrets = $1, updated_at = NOW() WHERE id = $2",
+    )
+    .bind(&new_enc)
+    .bind(profile_id)
+    .execute(pool)
+    .await
+    {
+        warn!("patch_provider_token: DB update failed profile_id={profile_id}: {e}");
+        return;
+    }
+
+    // 6. Bust Redis profile cache so next lookup reads the fresh token from DB
+    let cache_key = format!("{REDIS_KEY_PREFIX}{uuid}");
+    if let Err(e) = redis.del::<(), _>(cache_key).await {
+        warn!("patch_provider_token: Redis invalidation failed uuid={uuid}: {e}");
+    }
+}

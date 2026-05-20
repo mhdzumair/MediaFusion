@@ -216,30 +216,73 @@ async fn resolve(
             providers::ProviderError::api("No streaming provider configured", "api_error.mp4")
         })?;
 
-    // PikPak can authenticate via email+password if no token is stored yet.
-    let owned_token: Option<String>;
-    let token: &str = if provider.service == "pikpak" && provider.token.is_none() {
-        owned_token = Some(
-            providers::torrents::pikpak::login(
-                &state.http,
-                provider.email.as_deref().ok_or_else(|| {
-                    providers::ProviderError::api(
-                        "PikPak email is missing",
-                        "invalid_credentials.mp4",
-                    )
-                })?,
-                provider.password.as_deref().ok_or_else(|| {
-                    providers::ProviderError::api(
-                        "PikPak password is missing",
-                        "invalid_credentials.mp4",
-                    )
-                })?,
-            )
-            .await?,
-        );
-        owned_token.as_deref().unwrap()
+    // For PikPak with email+password: capture credentials and profile location now,
+    // while `provider` is still in scope, so the pikpak match arm can re-login if needed.
+    let pikpak_credentials: Option<(String, String)> = if provider.service == "pikpak" {
+        match (provider.email.clone(), provider.password.clone()) {
+            (Some(e), Some(p)) => Some((e, p)),
+            _ => None,
+        }
     } else {
-        owned_token = None;
+        None
+    };
+    let pikpak_profile_id = user_data.profile_id;
+    let pikpak_provider_index: Option<usize> = if provider.service == "pikpak" {
+        user_data
+            .streaming_providers
+            .iter()
+            .position(|p| p.service == "pikpak")
+    } else {
+        None
+    };
+
+    // PikPak authenticates via email+password when no token is stored in the profile yet.
+    // After a successful login the token is persisted back to the user profile (DB + Redis)
+    // so subsequent requests find it in the profile and skip the login call entirely.
+    // For inline D- tokens (no profile_id) we also cache in Redis for 90 min as a fallback.
+    let owned_token: Option<String> = if provider.service == "pikpak" && provider.token.is_none() {
+        let (email, password) = pikpak_credentials.as_ref().ok_or_else(|| {
+            providers::ProviderError::api(
+                "PikPak email or password is missing",
+                "invalid_credentials.mp4",
+            )
+        })?;
+
+        // Fast path: check Redis fallback cache (used for D- inline tokens, or before the
+        // first DB write completes on a brand-new profile).
+        let cache_key = format!(
+            "pikpak_token:{}",
+            providers::torrents::pikpak::token_cache_id(email, password)
+        );
+        let cached: Option<String> = state
+            .redis
+            .get::<Option<Vec<u8>>, _>(&cache_key)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|b| String::from_utf8(b).ok());
+
+        if let Some(t) = cached {
+            Some(t)
+        } else {
+            let t = providers::torrents::pikpak::login(&state.http, email, password).await?;
+            pikpak_save_token(
+                state,
+                &t,
+                email,
+                password,
+                pikpak_profile_id,
+                pikpak_provider_index,
+            )
+            .await;
+            Some(t)
+        }
+    } else {
+        None
+    };
+    let token: &str = if let Some(ref t) = owned_token {
+        t.as_str()
+    } else {
         provider.token.as_deref().ok_or_else(|| {
             providers::ProviderError::api("Provider token is missing", "invalid_token.mp4")
         })?
@@ -394,7 +437,60 @@ async fn resolve(
             .await?;
             (url, Vec::<ProviderFile>::new())
         }
-        "pikpak" => call_provider_simple!(providers::torrents::pikpak),
+        "pikpak" => {
+            use providers::torrents::pikpak as p;
+            let first = p::get_video_url(
+                &state.http,
+                token,
+                info_hash,
+                &stream_info.announce_list,
+                resolved_filename,
+                stream_info.file_index,
+                season,
+                episode,
+                None,
+                fwd,
+            )
+            .await;
+            match first {
+                Ok(url) => (url, Vec::new()),
+                Err(e) if e.video_file() == "invalid_token.mp4" => {
+                    // Access token expired and refresh token is invalid — re-login once.
+                    let (email, password) = pikpak_credentials.as_ref().ok_or_else(|| {
+                        providers::ProviderError::api(
+                            "PikPak token expired and no credentials available to re-authenticate.",
+                            "invalid_credentials.mp4",
+                        )
+                    })?;
+                    tracing::debug!("PikPak token expired; re-logging in with email+password");
+                    let new_token = p::login(&state.http, email, password).await?;
+                    pikpak_save_token(
+                        state,
+                        &new_token,
+                        email,
+                        password,
+                        pikpak_profile_id,
+                        pikpak_provider_index,
+                    )
+                    .await;
+                    let url = p::get_video_url(
+                        &state.http,
+                        &new_token,
+                        info_hash,
+                        &stream_info.announce_list,
+                        resolved_filename,
+                        stream_info.file_index,
+                        season,
+                        episode,
+                        None,
+                        fwd,
+                    )
+                    .await?;
+                    (url, Vec::new())
+                }
+                Err(e) => return Err(e),
+            }
+        }
         other => {
             return Err(providers::ProviderError::api(
                 format!("Provider '{other}' is not yet supported in the Rust service"),
@@ -430,6 +526,48 @@ async fn resolve(
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/// Persist a freshly obtained PikPak login token to both Redis (90-min fallback)
+/// and the user's DB profile (permanent, encrypted in `encrypted_secrets`).
+///
+/// Called after any successful PikPak login — initial login and re-login on token expiry.
+/// The DB write runs as a background task so it never delays the playback response.
+async fn pikpak_save_token(
+    state: &AppState,
+    token: &str,
+    email: &str,
+    password: &str,
+    profile_id: Option<i64>,
+    provider_index: Option<usize>,
+) {
+    // Short-term Redis cache: covers D- inline profiles and the window before DB write lands.
+    let cache_key = format!(
+        "pikpak_token:{}",
+        providers::torrents::pikpak::token_cache_id(email, password)
+    );
+    let _ = state
+        .redis
+        .set::<(), _, _>(
+            &cache_key,
+            token.as_bytes(),
+            Some(Expiration::EX(5400)), // 90 min
+            None,
+            false,
+        )
+        .await;
+
+    // Persistent DB write for U- profiles (runs in background).
+    if let (Some(pid), Some(idx)) = (profile_id, provider_index) {
+        let pool = state.pool.clone();
+        let redis = state.redis.clone();
+        let key = state.config.secret_key;
+        let token_owned = token.to_string();
+        tokio::spawn(async move {
+            crypto::profile::patch_provider_token(&pool, &redis, &key, pid, idx, &token_owned)
+                .await;
+        });
+    }
+}
 
 fn playback_cache_key(
     secret_str: &str,

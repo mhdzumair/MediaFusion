@@ -8,9 +8,13 @@
 /// API hosts:
 ///   Drive: api-drive.mypikpak.com
 ///   User:  user.mypikpak.com
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+    Engine,
+};
 use reqwest::Client;
 use serde_json::{json, Value};
+use sha1::{Digest, Sha1};
 
 use crate::providers::{
     torrents::transport::{append_query, MediaFlowForward},
@@ -21,6 +25,27 @@ const API_HOST: &str = "api-drive.mypikpak.com";
 const USER_HOST: &str = "user.mypikpak.com";
 const CLIENT_ID: &str = "YNxT9w7GMdWvEOKa";
 const CLIENT_SECRET: &str = "dbw2OtmVEeuUvIptb1Coyg";
+const CLIENT_VERSION: &str = "1.47.1";
+const PACKAGE_NAME: &str = "com.pikcloud.pikpak";
+const SDK_VERSION: &str = "2.0.4.204000";
+
+const CAPTCHA_SALTS: &[&str] = &[
+    "Gez0T9ijiI9WCeTsKSg3SMlx",
+    "zQdbalsolyb1R/",
+    "ftOjr52zt51JD68C3s",
+    "yeOBMH0JkbQdEFNNwQ0RI9T3wU/v",
+    "BRJrQZiTQ65WtMvwO",
+    "je8fqxKPdQVJiy1DM6Bc9Nb1",
+    "niV",
+    "9hFCW2R1",
+    "sHKHpe2i96",
+    "p7c5E6AcXQ/IJUuAEC9W6",
+    "",
+    "aRv9hjc9P+Pbn+u3krN6",
+    "BzStcgE8qVdqjEH16l4",
+    "SqgeZvL5j9zoHP95xWHt",
+    "zVof5yaJkPe3VFpadPof",
+];
 
 const MAX_RETRIES: u32 = 3;
 const RETRY_SECS: u64 = 5;
@@ -32,6 +57,15 @@ static VIDEO_EXTS: &[&str] = &["mkv", "mp4", "avi", "webm", "mov", "flv", "m4v",
 struct Tokens {
     access_token: String,
     refresh_token: String,
+}
+
+fn encode_token(tokens: &Tokens) -> String {
+    let json = serde_json::to_string(&json!({
+        "access_token": tokens.access_token,
+        "refresh_token": tokens.refresh_token,
+    }))
+    .unwrap_or_default();
+    STANDARD.encode(json.as_bytes())
 }
 
 fn decode_token(raw: &str) -> Result<Tokens, ProviderError> {
@@ -58,6 +92,245 @@ fn decode_token(raw: &str) -> Result<Tokens, ProviderError> {
         access_token: access,
         refresh_token: refresh,
     })
+}
+
+// ─── Login helpers ────────────────────────────────────────────────────────────
+
+fn pikpak_device_id(email: &str, password: &str) -> String {
+    format!(
+        "{:x}",
+        md5::compute(format!("{email}{password}").as_bytes())
+    )
+}
+
+/// Stable cache key component for a given email+password pair (MD5 hex of credentials).
+/// Used by the playback route to key the login token in Redis.
+pub fn token_cache_id(email: &str, password: &str) -> String {
+    pikpak_device_id(email, password)
+}
+
+fn auth_headers(device_id: &str) -> reqwest::header::HeaderMap {
+    let mut h = reqwest::header::HeaderMap::new();
+    h.insert(
+        reqwest::header::CONTENT_TYPE,
+        "application/json; charset=utf-8".parse().unwrap(),
+    );
+    h.insert(
+        reqwest::header::USER_AGENT,
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36".parse().unwrap(),
+    );
+    if let Ok(val) = device_id.parse() {
+        h.insert("X-Device-Id", val);
+    }
+    h
+}
+
+async fn captcha_init(
+    http: &Client,
+    device_id: &str,
+    email: &str,
+) -> Result<String, ProviderError> {
+    let url = user_url("/v1/shield/captcha/init");
+    let login_url = user_url("/v1/auth/signin");
+    let body = json!({
+        "client_id": CLIENT_ID,
+        "action": format!("POST:{login_url}"),
+        "device_id": device_id,
+        "meta": { "email": email },
+    });
+    let data: Value = http
+        .post(&url)
+        .headers(auth_headers(device_id))
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await
+        .unwrap_or_default();
+
+    data["captcha_token"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .ok_or_else(|| {
+            ProviderError::api(
+                "PikPak captcha init failed. Please try again.",
+                "invalid_credentials.mp4",
+            )
+        })
+}
+
+/// Authenticate with email+password and return a base64-encoded token
+/// (`{"access_token":"...","refresh_token":"..."}`).
+pub async fn login(http: &Client, email: &str, password: &str) -> Result<String, ProviderError> {
+    let dev_id = pikpak_device_id(email, password);
+    let captcha_token = captcha_init(http, &dev_id, email).await?;
+
+    let url = user_url("/v1/auth/signin");
+    let body = json!({
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "username": email,
+        "password": password,
+        "captcha_token": captcha_token,
+    });
+    let data: Value = http
+        .post(&url)
+        .headers(auth_headers(&dev_id))
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await
+        .unwrap_or_default();
+
+    if let Some(err) = data.get("error") {
+        let msg = data["error_description"]
+            .as_str()
+            .unwrap_or_else(|| err.as_str().unwrap_or("PikPak login failed"));
+        tracing::debug!(email = %email, error = %msg, "PikPak login API error");
+        return Err(map_pikpak_error(msg));
+    }
+
+    let access = data["access_token"]
+        .as_str()
+        .ok_or_else(|| {
+            ProviderError::api(
+                "PikPak login: missing access_token.",
+                "invalid_credentials.mp4",
+            )
+        })?
+        .to_string();
+    let refresh = data["refresh_token"]
+        .as_str()
+        .ok_or_else(|| {
+            ProviderError::api(
+                "PikPak login: missing refresh_token.",
+                "invalid_credentials.mp4",
+            )
+        })?
+        .to_string();
+
+    Ok(encode_token(&Tokens {
+        access_token: access,
+        refresh_token: refresh,
+    }))
+}
+
+// ─── Captcha / device helpers ─────────────────────────────────────────────────
+
+fn compute_captcha_sign(device_id: &str, timestamp: &str) -> String {
+    let mut sign = format!("{CLIENT_ID}{CLIENT_VERSION}{PACKAGE_NAME}{device_id}{timestamp}");
+    for salt in CAPTCHA_SALTS {
+        sign = format!("{:x}", md5::compute(format!("{sign}{salt}").as_bytes()));
+    }
+    format!("1.{sign}")
+}
+
+fn generate_device_sign(device_id: &str) -> String {
+    let sig_base = format!("{device_id}{PACKAGE_NAME}1appkey");
+    let sha1_hex: String = Sha1::digest(sig_base.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let md5_hex = format!("{:x}", md5::compute(sha1_hex.as_bytes()));
+    format!("div101.{device_id}{md5_hex}")
+}
+
+fn build_android_user_agent(device_id: &str, user_id: &str) -> String {
+    let device_sign = generate_device_sign(device_id);
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    format!(
+        "ANDROID-{PACKAGE_NAME}/{CLIENT_VERSION} protocolVersion/200 accesstype/ \
+         clientid/{CLIENT_ID} clientversion/{CLIENT_VERSION} action_type/ \
+         networktype/WIFI sessionid/ deviceid/{device_id} providername/NONE \
+         devicesign/{device_sign} refresh_token/ sdkversion/{SDK_VERSION} \
+         datetime/{ts} usrno/{user_id} appname/{PACKAGE_NAME} session_origin/ \
+         grant_type/ appid/ clientip/ devicename/Xiaomi_M2004j7ac \
+         osversion/13 platformversion/10 accessmode/ devicemodel/M2004J7AC"
+    )
+}
+
+/// Decode the `sub` (user_id) from a JWT access token without verifying the signature.
+fn extract_user_id_from_jwt(access_token: &str) -> String {
+    let payload = match access_token.split('.').nth(1) {
+        Some(p) => p,
+        None => return String::new(),
+    };
+    URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()
+        .and_then(|b| String::from_utf8(b).ok())
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| v["sub"].as_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+/// Obtain a captcha token authorising `GET /drive/v1/files/{file_id}`.
+/// Required to get the high-speed `medias[].link.url` in the file response.
+/// Non-fatal — returns None on any failure.
+async fn file_captcha_init(
+    http: &Client,
+    tokens: &Tokens,
+    device_id: &str,
+    file_id: &str,
+) -> Option<String> {
+    let user_id = extract_user_id_from_jwt(&tokens.access_token);
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis()
+        .to_string();
+    let sign = compute_captcha_sign(device_id, &ts);
+
+    let url = user_url("/v1/shield/captcha/init");
+    let body = json!({
+        "client_id": CLIENT_ID,
+        "action": format!("GET:/drive/v1/files/{file_id}"),
+        "device_id": device_id,
+        "meta": {
+            "captcha_sign": sign,
+            "client_version": CLIENT_VERSION,
+            "package_name": PACKAGE_NAME,
+            "user_id": user_id,
+            "timestamp": ts,
+        },
+    });
+
+    let mut h = reqwest::header::HeaderMap::new();
+    h.insert(
+        reqwest::header::CONTENT_TYPE,
+        "application/json; charset=utf-8".parse().unwrap(),
+    );
+    h.insert(
+        reqwest::header::USER_AGENT,
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36".parse().unwrap(),
+    );
+    h.insert(
+        reqwest::header::AUTHORIZATION,
+        format!("Bearer {}", tokens.access_token).parse().ok()?,
+    );
+    if let Ok(val) = device_id.parse() {
+        h.insert("X-Device-Id", val);
+    }
+
+    let resp: Value = http
+        .post(&url)
+        .headers(h)
+        .json(&body)
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    resp["captcha_token"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -393,22 +666,67 @@ fn select_video<'a>(
 
 // ─── Download URL ─────────────────────────────────────────────────────────────
 
+/// Fetch the file and return the best playback URL.
+///
+/// PikPak only populates `medias[].link.url` (high-speed CDN) when the request
+/// carries a valid `X-Captcha-Token` obtained for that specific file GET action,
+/// together with the custom Android User-Agent. Without it the response only
+/// contains `web_content_link`, which is rate-limited and much slower.
 async fn get_download_url(
     http: &Client,
     tokens: &mut Tokens,
     file_id: &str,
+    device_id: &str,
     forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
-    let data = api_get(
-        http,
-        tokens,
-        &format!("/drive/v1/files/{file_id}"),
-        &[],
-        forward,
-    )
-    .await?;
+    let file_url = drive_url(&format!("/drive/v1/files/{file_id}"));
 
-    // Prefer streaming URL from medias array
+    // Step 1: obtain captcha token for this file (non-fatal).
+    let captcha_token = file_captcha_init(http, tokens, device_id, file_id).await;
+
+    // Step 2: fetch file details.  When we have a captcha token we make a direct
+    // request with the full Android headers so the API returns medias[].link.url.
+    let data: Value = if let Some(ref ct) = captcha_token {
+        let user_id = extract_user_id_from_jwt(&tokens.access_token);
+        let user_agent = build_android_user_agent(device_id, &user_id);
+        let mut h = reqwest::header::HeaderMap::new();
+        h.insert(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {}", tokens.access_token).parse().unwrap(),
+        );
+        h.insert(
+            reqwest::header::CONTENT_TYPE,
+            "application/json; charset=utf-8".parse().unwrap(),
+        );
+        if let Ok(val) = user_agent.parse() {
+            h.insert(reqwest::header::USER_AGENT, val);
+        }
+        if let Ok(val) = device_id.parse() {
+            h.insert("X-Device-Id", val);
+        }
+        if let Ok(val) = ct.parse() {
+            h.insert("X-Captcha-Token", val);
+        }
+        http.get(&file_url)
+            .headers(h)
+            .send()
+            .await?
+            .json()
+            .await
+            .unwrap_or_default()
+    } else {
+        // Fall back to standard api_get (no captcha token — medias may be absent).
+        api_get(
+            http,
+            tokens,
+            &format!("/drive/v1/files/{file_id}"),
+            &[],
+            forward,
+        )
+        .await?
+    };
+
+    // Prefer high-speed streaming URL from medias array.
     if let Some(medias) = data["medias"].as_array() {
         for media in medias {
             if let Some(url) = media["link"]["url"].as_str().filter(|s| !s.is_empty()) {
@@ -417,7 +735,7 @@ async fn get_download_url(
         }
     }
 
-    // Fall back to web content link
+    // Fall back to web_content_link.
     data["web_content_link"]
         .as_str()
         .filter(|s| !s.is_empty())
@@ -569,6 +887,9 @@ pub async fn get_video_url(
     let mut tokens = decode_token(token)?;
     let hash = info_hash.to_lowercase();
 
+    // Random device_id for captcha sessions within this request.
+    let dev_id = uuid::Uuid::new_v4().as_simple().to_string();
+
     // 1. Check offline tasks (running + error phases)
     let tasks = offline_list(
         http,
@@ -577,6 +898,8 @@ pub async fn get_video_url(
         forward,
     )
     .await?;
+    let mut failed_task_id: Option<String> = None;
+    let mut should_clear_space = false;
     for task in &tasks {
         if !task_has_info_hash(task, &hash) {
             continue;
@@ -585,7 +908,27 @@ pub async fn get_video_url(
             let msg = task["message"]
                 .as_str()
                 .unwrap_or("Error downloading torrent");
-            return Err(map_pikpak_error(msg));
+            let msg_lower = msg.to_lowercase();
+            tracing::debug!(
+                hash = %hash,
+                task_id = task["id"].as_str().unwrap_or(""),
+                phase = task["phase"].as_str().unwrap_or(""),
+                message = %msg,
+                "PikPak error task found"
+            );
+            if msg_lower.contains("storage") || msg_lower.contains("not enough space") {
+                // Storage: delete task, clear My Pack, re-add magnet.
+                failed_task_id = task["id"].as_str().map(str::to_string);
+                should_clear_space = true;
+            } else if msg_lower.contains("too frequent") || msg_lower.contains("try again later") {
+                // Rate-limited: delete the stale task and fall through.
+                // The file may already be in My Pack from a prior successful download;
+                // if not, the magnet will be re-added below.
+                tracing::debug!(hash = %hash, message = %msg, "PikPak rate-limited task; will delete and retry");
+                failed_task_id = task["id"].as_str().map(str::to_string);
+            } else {
+                return Err(map_pikpak_error(msg));
+            }
         }
         if task_is_downloading(task) {
             return Err(ProviderError::api(
@@ -626,7 +969,7 @@ pub async fn get_video_url(
             ));
         };
 
-        return get_download_url(http, &mut tokens, &selected_id, forward).await;
+        return get_download_url(http, &mut tokens, &selected_id, &dev_id, forward).await;
     }
 
     // 3. Add magnet and wait
@@ -643,41 +986,64 @@ pub async fn get_video_url(
         }
     };
 
-    let add_resp = api_post(
-        http,
-        &mut tokens,
-        "/drive/v1/files",
-        &json!({
-            "kind": "drive#file",
-            "upload_type": "UPLOAD_TYPE_URL",
-            "url": {"url": magnet},
-            "folder_type": "DOWNLOAD",
-        }),
-        forward,
-    )
-    .await
-    .map_err(|e| {
-        let msg = e.to_string().to_lowercase();
-        if msg.contains("daily") || msg.contains("free usage") {
-            ProviderError::api(
-                "PikPak daily download limit reached.",
-                "daily_download_limit.mp4",
-            )
-        } else if msg.contains("storage") || msg.contains("not enough space") {
-            ProviderError::api(
-                "Not enough storage space in your PikPak account.",
-                "not_enough_space.mp4",
-            )
-        } else {
-            ProviderError::api(
-                format!("Failed to add torrent to PikPak: {e}"),
-                "transfer_error.mp4",
-            )
+    // Delete the previously failed task (if any) before re-adding.
+    if let Some(ref task_id) = failed_task_id {
+        delete_offline_tasks(http, &mut tokens, &[task_id.as_str()], forward).await;
+    }
+
+    // Ensure sufficient storage only when a storage error was detected.
+    if should_clear_space {
+        ensure_enough_space(http, &mut tokens, 0, forward).await;
+    }
+
+    let magnet_body = json!({
+        "kind": "drive#file",
+        "upload_type": "UPLOAD_TYPE_URL",
+        "url": {"url": magnet},
+        "folder_type": "DOWNLOAD",
+    });
+
+    let add_result = api_post(http, &mut tokens, "/drive/v1/files", &magnet_body, forward).await;
+    let add_resp = match add_result {
+        Ok(v) => v,
+        Err(e) => {
+            let msg = e.to_string().to_lowercase();
+            if msg.contains("storage") || msg.contains("not enough space") {
+                // Free space by clearing My Pack, then retry once.
+                trash_my_pack_files(http, &mut tokens, forward).await.ok();
+                api_post(http, &mut tokens, "/drive/v1/files", &magnet_body, forward)
+                    .await
+                    .map_err(|e2| {
+                        let m = e2.to_string().to_lowercase();
+                        if m.contains("storage") || m.contains("not enough space") {
+                            ProviderError::api(
+                                "Not enough storage space in your PikPak account even after cleanup.",
+                                "not_enough_space.mp4",
+                            )
+                        } else {
+                            ProviderError::api(
+                                format!("Failed to add torrent to PikPak: {e2}"),
+                                "transfer_error.mp4",
+                            )
+                        }
+                    })?
+            } else if msg.contains("daily") || msg.contains("free usage") {
+                return Err(ProviderError::api(
+                    "PikPak daily download limit reached.",
+                    "daily_download_limit.mp4",
+                ));
+            } else {
+                return Err(ProviderError::api(
+                    format!("Failed to add torrent to PikPak: {e}"),
+                    "transfer_error.mp4",
+                ));
+            }
         }
-    })?;
+    };
 
     // Check for inline errors in the add response
     if let Some(err) = add_resp["error"].as_str() {
+        tracing::debug!(hash = %hash, error = %err, "PikPak add-magnet inline error");
         return Err(map_pikpak_error(err));
     }
 
@@ -704,6 +1070,12 @@ pub async fn get_video_url(
                 let msg = task["message"]
                     .as_str()
                     .unwrap_or("Error downloading torrent");
+                tracing::debug!(
+                    hash = %hash,
+                    task_id = task["id"].as_str().unwrap_or(""),
+                    message = %msg,
+                    "PikPak polling loop: error task"
+                );
                 return Err(map_pikpak_error(msg));
             }
             if task_is_complete(task) {
@@ -736,7 +1108,8 @@ pub async fn get_video_url(
                         ));
                     };
 
-                    return get_download_url(http, &mut tokens, &selected_id, forward).await;
+                    return get_download_url(http, &mut tokens, &selected_id, &dev_id, forward)
+                        .await;
                 }
             }
         }
@@ -748,23 +1121,112 @@ pub async fn get_video_url(
     ))
 }
 
-/// Delete ALL items in the PikPak My Pack folder.
-pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), ProviderError> {
-    let mut tokens = decode_token(token)?;
-    let my_pack_id = get_my_pack_folder_id(http, &mut tokens, None).await?;
+/// Fetch storage quota. Returns (limit_bytes, total_used_bytes).
+/// Total used = usage + usage_in_trash (trash still counts toward the quota limit).
+async fn get_quota(
+    http: &Client,
+    tokens: &mut Tokens,
+    forward: Option<&MediaFlowForward>,
+) -> Result<(i64, i64), ProviderError> {
+    let data = api_get(http, tokens, "/drive/v1/about", &[], forward).await?;
+    let limit = data["quota"]["limit"]
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0i64);
+    let usage = data["quota"]["usage"]
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0i64);
+    let usage_in_trash = data["quota"]["usage_in_trash"]
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0i64);
+    Ok((limit, usage + usage_in_trash))
+}
 
-    let filters =
-        serde_json::to_string(&serde_json::json!({"trashed": {"eq": false}})).unwrap_or_default();
+/// Delete offline tasks by their task IDs (e.g. to remove failed tasks).
+async fn delete_offline_tasks(
+    http: &Client,
+    tokens: &mut Tokens,
+    task_ids: &[&str],
+    forward: Option<&MediaFlowForward>,
+) {
+    if task_ids.is_empty() {
+        return;
+    }
+    let url = drive_url("/drive/v1/tasks");
+    let mut query: Vec<(&str, String)> = task_ids
+        .iter()
+        .map(|id| ("task_ids", id.to_string()))
+        .collect();
+    query.push(("delete_files", "false".to_string()));
+    let req = http
+        .delete(&url)
+        .headers(build_headers(&tokens.access_token))
+        .query(&query);
+    let req = if let Some(fwd) = forward {
+        // Route through MediaFlow if configured; fall back to direct on error.
+        let _ = fwd; // forward not used for DELETE — make direct call
+        req
+    } else {
+        req
+    };
+    req.send().await.ok();
+}
+
+/// Ensure at least `minimum` bytes are free. Clears My Pack folder if needed.
+/// Non-fatal — logs a warning and returns on any failure.
+async fn ensure_enough_space(
+    http: &Client,
+    tokens: &mut Tokens,
+    minimum: i64,
+    forward: Option<&MediaFlowForward>,
+) {
+    let minimum = if minimum > 0 { minimum } else { 1_073_741_824 }; // default 1 GiB
+
+    let (limit, usage) = match get_quota(http, tokens, forward).await {
+        Ok(q) => q,
+        Err(e) => {
+            tracing::warn!("PikPak: could not fetch quota for space check: {e}");
+            return;
+        }
+    };
+
+    if limit == 0 {
+        tracing::warn!("PikPak: storage quota unavailable; skipping space check");
+        return;
+    }
+
+    let free = (limit - usage).max(0);
+    if free >= minimum {
+        return;
+    }
+
+    tracing::info!(
+        "PikPak: only {free} bytes free (need {minimum}) — clearing My Pack to free space"
+    );
+    trash_my_pack_files(http, tokens, forward).await.ok();
+}
+
+/// Trash all files in the My Pack folder using an already-authenticated token.
+async fn trash_my_pack_files(
+    http: &Client,
+    tokens: &mut Tokens,
+    forward: Option<&MediaFlowForward>,
+) -> Result<(), ProviderError> {
+    let my_pack_id = get_my_pack_folder_id(http, tokens, forward).await?;
+
+    let filters = serde_json::to_string(&json!({"trashed": {"eq": false}})).unwrap_or_default();
     let data = api_get(
         http,
-        &mut tokens,
+        tokens,
         "/drive/v1/files",
         &[
             ("parent_id", my_pack_id.as_str()),
             ("limit", "1000"),
             ("filters", &filters),
         ],
-        None,
+        forward,
     )
     .await?;
 
@@ -776,12 +1238,18 @@ pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), Provi
         .collect();
 
     if !ids.is_empty() {
-        let body = serde_json::json!({ "ids": ids });
-        api_post(http, &mut tokens, "/drive/v1/files/trash", &body, None)
+        let body = json!({ "ids": ids });
+        api_post(http, tokens, "/drive/v1/files:batchDelete", &body, forward)
             .await
             .ok();
     }
     Ok(())
+}
+
+/// Delete ALL items in the PikPak My Pack folder.
+pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), ProviderError> {
+    let mut tokens = decode_token(token)?;
+    trash_my_pack_files(http, &mut tokens, None).await
 }
 
 /// Delete the item matching `info_hash` from PikPak My Pack folder.
@@ -802,9 +1270,15 @@ pub async fn delete_torrent_by_hash(
             let file_id = item["id"].as_str().unwrap_or("").to_string();
             if !file_id.is_empty() {
                 let body = serde_json::json!({ "ids": [file_id] });
-                api_post(http, &mut tokens, "/drive/v1/files/trash", &body, None)
-                    .await
-                    .ok();
+                api_post(
+                    http,
+                    &mut tokens,
+                    "/drive/v1/files:batchDelete",
+                    &body,
+                    None,
+                )
+                .await
+                .ok();
             }
             Ok(true)
         }
