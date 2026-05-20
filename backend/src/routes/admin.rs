@@ -74,20 +74,13 @@ fn forbidden() -> impl IntoResponse {
 
 // ─── Cache patterns map ───────────────────────────────────────────────────────
 
-fn cache_type_to_pattern(cache_type: &str) -> Option<&'static str> {
-    match cache_type {
-        "scrapers" => Some("rss_scraper:*"),
-        "metadata" => Some("meta_cache:*"),
-        "catalog" => Some("catalog:*"),
-        "streams" => Some("torrent_streams:*"),
-        "debrid" => Some("debrid_cache:*"),
-        "profiles" => Some("profile_enc:*"),
-        "events" => Some("events:*"),
-        "genres" => Some("genres:*"),
-        "images" => Some("poster_src:*"),
-        "rate_limit" => Some("rate_limit:*"),
-        _ => None,
-    }
+/// Return all Redis glob patterns for a named cache category.
+/// Driven by CACHE_PATTERNS so stats and clear always agree.
+fn cache_type_to_patterns(cache_type: &str) -> Option<&'static [&'static str]> {
+    CACHE_PATTERNS
+        .iter()
+        .find(|(name, _, _)| *name == cache_type)
+        .map(|(_, _, patterns)| *patterns)
 }
 
 // ─── SCAN helper ─────────────────────────────────────────────────────────────
@@ -226,7 +219,7 @@ pub struct CacheClearRequest {
 const CACHE_PATTERNS: &[(&str, &str, &[&str])] = &[
     (
         "scrapers",
-        "Scraper status tracking (sorted sets)",
+        "Scraper cooldown sorted sets",
         &[
             "rss_scraper",
             "zilean",
@@ -249,7 +242,7 @@ const CACHE_PATTERNS: &[(&str, &str, &[&str])] = &[
     ),
     (
         "metadata",
-        "Metadata existence checks and scraper meta cache",
+        "Movie/TV show metadata",
         &[
             "movie_exists:*",
             "series_exists:*",
@@ -257,37 +250,47 @@ const CACHE_PATTERNS: &[(&str, &str, &[&str])] = &[
             "meta_cache:*",
         ],
     ),
-    ("catalog", "Catalog metadata cache", &["catalog:*", "mf:*"]),
+    ("catalog", "Catalog browse cache", &["catalog:*", "mf:*"]),
     (
         "streams",
-        "Torrent stream data and raw list cache",
+        "Stream data cache",
         &["torrent_streams:*", "stream:*", "stream_data:*"],
     ),
-    ("debrid", "Debrid availability cache", &["debrid_cache:*"]),
-    ("profiles", "User profile cache", &["profile_enc:*"]),
-    ("events", "Live events cache", &["events:*", "dlhd:*"]),
-    ("genres", "Genre lists cache", &["genres:*"]),
     (
-        "lookup",
-        "ID lookup cache (catalog, language, announce)",
-        &["lang:*", "announce:*"],
+        "debrid",
+        "Debrid service cache",
+        // debrid_cache:{service}  — availability hashes
+        // debrid_checked:{service}:{media_id}  — recent-check markers
+        &["debrid_cache:*", "debrid_checked:*"],
     ),
     (
+        "profiles",
+        "User profile data",
+        // key written by crypto/profile.rs: user_profile:{uuid}
+        &["user_profile:*"],
+    ),
+    ("events", "Sports events cache", &["events:*", "dlhd:*"]),
+    ("genres", "Genre mappings", &["genres:*"]),
+    ("lookup", "ID lookup cache", &["lang:*", "announce:*"]),
+    (
         "scheduler",
-        "Scheduler job states and history",
+        "Scheduler job state",
         &["scheduler:*", "apscheduler*"],
     ),
     (
         "streaming",
-        "Streaming provider caches",
-        &[
-            "streaming_provider_*",
-            "pikpak:*",
-            "setup_code:*",
-            "manifest:*",
-        ],
+        "Active streaming sessions",
+        // playback_url:{sha256}  — resolved CDN URLs (playback.rs)
+        // setup_code:{code}      — Kodi setup codes
+        // manifest:{code|hash}   — manifest cache
+        &["playback_url:*", "setup_code:*", "manifest:*"],
     ),
-    ("images", "Cached images/posters", &["poster_src:*"]),
+    (
+        "images",
+        "Cached poster images",
+        // key written by poster.rs: {media_type}_{id}.jpg  e.g. movie_tt1234567.jpg
+        &["*_*.jpg"],
+    ),
     (
         "rate_limit",
         "Rate limiting counters",
@@ -616,37 +619,32 @@ pub async fn cache_clear(
         return forbidden().into_response();
     }
 
-    // Resolve pattern — frontend sends `type` field; legacy callers may send `cache_type`/`pattern`
+    // Resolve the set of patterns to delete.
+    // Frontend sends `type`; legacy callers may send `cache_type` or a literal `pattern`.
     let type_val = body.type_field.as_deref().unwrap_or("");
-    let pattern = if let Some(p) = body.pattern.filter(|s| !s.is_empty()) {
-        p
-    } else if type_val == "all" {
-        "*".to_string()
-    } else if type_val == "pattern" {
+    let cache_type = if !type_val.is_empty() {
+        type_val
+    } else {
+        body.cache_type.as_deref().unwrap_or("")
+    };
+
+    let patterns: Vec<String> = if let Some(p) = body.pattern.filter(|s| !s.is_empty()) {
+        vec![p]
+    } else if cache_type == "all" {
+        vec!["*".to_string()]
+    } else if cache_type == "pattern" {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": "pattern field required when type=pattern"})),
         )
             .into_response();
-    } else if !type_val.is_empty() {
-        // treat as cache_type name
-        match cache_type_to_pattern(type_val) {
-            Some(p) => p.to_string(),
+    } else if !cache_type.is_empty() {
+        match cache_type_to_patterns(cache_type) {
+            Some(pats) => pats.iter().map(|s| s.to_string()).collect(),
             None => {
                 return (
                     StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({"error": format!("Unknown cache type: {type_val}")})),
-                )
-                    .into_response();
-            }
-        }
-    } else if let Some(ct) = body.cache_type.as_deref() {
-        match cache_type_to_pattern(ct) {
-            Some(p) => p.to_string(),
-            None => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({"error": format!("Unknown cache_type: {ct}")})),
+                    Json(serde_json::json!({"error": format!("Unknown cache type: {cache_type}")})),
                 )
                     .into_response();
             }
@@ -659,26 +657,26 @@ pub async fn cache_clear(
             .into_response();
     };
 
-    // Scan and delete in chunks of 100
+    // Scan and delete for every pattern in the category.
     let mut total_cleared: i64 = 0;
-    let mut cursor = "0".to_string();
-
-    loop {
-        let (next_cursor, keys) = redis_scan_page(&state.redis, &cursor, &pattern, 100).await;
-
-        if !keys.is_empty() {
-            let deleted: i64 = state.redis.del(keys).await.unwrap_or(0);
-            total_cleared += deleted;
-        }
-        cursor = next_cursor;
-        if cursor == "0" {
-            break;
+    for pattern in &patterns {
+        let mut cursor = "0".to_string();
+        loop {
+            let (next_cursor, keys) = redis_scan_page(&state.redis, &cursor, pattern, 100).await;
+            if !keys.is_empty() {
+                let deleted: i64 = state.redis.del(keys).await.unwrap_or(0);
+                total_cleared += deleted;
+            }
+            cursor = next_cursor;
+            if cursor == "0" {
+                break;
+            }
         }
     }
 
     Json(CacheClearResponse {
         cleared: total_cleared,
-        pattern,
+        pattern: patterns.join(", "),
     })
     .into_response()
 }
