@@ -161,10 +161,26 @@ async fn dispatch(
         Ok(url) => url,
         Err(e) => {
             let vf = e.video_file();
+            let kind = match &e {
+                providers::ProviderError::Http(_) => "http",
+                providers::ProviderError::Api { .. } => "api",
+                providers::ProviderError::Json(_) => "json",
+                providers::ProviderError::Other(_) => "other",
+            };
             if vf == "api_error.mp4" {
-                tracing::warn!("playback error hash={info_hash} provider={provider_name}: {e}");
+                tracing::warn!(
+                    provider = %provider_name,
+                    hash = %info_hash,
+                    kind,
+                    "playback error: {e}"
+                );
             } else {
-                tracing::debug!("playback error hash={info_hash} provider={provider_name}: {e}");
+                tracing::debug!(
+                    provider = %provider_name,
+                    hash = %info_hash,
+                    kind,
+                    "playback error: {e}"
+                );
             }
             error_video_url(state, vf)
         }
@@ -200,9 +216,34 @@ async fn resolve(
             providers::ProviderError::api("No streaming provider configured", "api_error.mp4")
         })?;
 
-    let token = provider.token.as_deref().ok_or_else(|| {
-        providers::ProviderError::api("Provider token is missing", "invalid_token.mp4")
-    })?;
+    // PikPak can authenticate via email+password if no token is stored yet.
+    let owned_token: Option<String>;
+    let token: &str = if provider.service == "pikpak" && provider.token.is_none() {
+        owned_token = Some(
+            providers::torrents::pikpak::login(
+                &state.http,
+                provider.email.as_deref().ok_or_else(|| {
+                    providers::ProviderError::api(
+                        "PikPak email is missing",
+                        "invalid_credentials.mp4",
+                    )
+                })?,
+                provider.password.as_deref().ok_or_else(|| {
+                    providers::ProviderError::api(
+                        "PikPak password is missing",
+                        "invalid_credentials.mp4",
+                    )
+                })?,
+            )
+            .await?,
+        );
+        owned_token.as_deref().unwrap()
+    } else {
+        owned_token = None;
+        provider.token.as_deref().ok_or_else(|| {
+            providers::ProviderError::api("Provider token is missing", "invalid_token.mp4")
+        })?
+    };
 
     // 3. Check Redis cache
     let cache_key = playback_cache_key(secret_str, info_hash, season, episode);
