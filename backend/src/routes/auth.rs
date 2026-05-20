@@ -1039,7 +1039,7 @@ async fn send_email_verification(
         to_email,
         "Verify your MediaFusion email",
         format!(
-            "Click the link to verify your email: {}/api/v1/auth/verify-email?token={token}",
+            "Click the link to verify your email: {}/app/verify-email?token={token}",
             state.config.host_url
         ),
     )
@@ -1056,7 +1056,7 @@ async fn send_password_reset_email(
         to_email,
         "Reset your MediaFusion password",
         format!(
-            "Click the link to reset your password: {}/api/v1/auth/reset-password?token={token}",
+            "Click the link to reset your password: {}/app/reset-password?token={token}",
             state.config.host_url
         ),
     )
