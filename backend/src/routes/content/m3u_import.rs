@@ -67,6 +67,8 @@ pub struct M3uEntry {
     pub group: Option<String>,
     pub tvg_id: Option<String>,
     pub entry_type: String, // "tv", "movie", "series"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub behavior_hints: Option<serde_json::Value>,
 }
 
 fn classify_entry(group: &Option<String>) -> &'static str {
@@ -85,17 +87,21 @@ fn classify_entry(group: &Option<String>) -> &'static str {
 }
 
 /// Parse M3U playlist content into a list of entries.
-#[allow(clippy::type_complexity)]
+/// Extracts `#EXTVLCOPT:http-user-agent` and `#EXTVLCOPT:http-referrer` directives
+/// that appear between an `#EXTINF` line and its URL, storing them as `behavior_hints`.
 pub fn parse_m3u(content: &str) -> Vec<M3uEntry> {
     let mut entries = Vec::new();
     let mut current_meta: Option<(String, Option<String>, Option<String>, Option<String>)> = None;
     // (name, logo, group, tvg_id)
+    let mut pending_headers: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     for line in content.lines() {
         let line = line.trim();
         if line.starts_with("#EXTINF:") {
             // Parse the EXTINF line
             // Format: #EXTINF:-1 tvg-id="..." tvg-logo="..." group-title="..." ,NAME
+            pending_headers.clear();
             let tvg_id = extract_m3u_attr(line, "tvg-id");
             let logo =
                 extract_m3u_attr(line, "tvg-logo").or_else(|| extract_m3u_attr(line, "tvg-image"));
@@ -111,10 +117,31 @@ pub fn parse_m3u(content: &str) -> Vec<M3uEntry> {
                 name
             };
             current_meta = Some((name, logo, group, tvg_id));
+        } else if line.starts_with("#EXTVLCOPT:") && current_meta.is_some() {
+            // Extract per-entry VLC options that map to HTTP headers
+            let opt = &line["#EXTVLCOPT:".len()..];
+            if let Some((key, val)) = opt.split_once('=') {
+                match key.trim() {
+                    "http-user-agent" => {
+                        pending_headers
+                            .insert("User-Agent".to_string(), val.trim().to_string());
+                    }
+                    "http-referrer" => {
+                        pending_headers.insert("Referer".to_string(), val.trim().to_string());
+                    }
+                    _ => {}
+                }
+            }
         } else if !line.is_empty() && !line.starts_with('#') {
             // This is a URL line
             if let Some((name, logo, group, tvg_id)) = current_meta.take() {
                 let entry_type = classify_entry(&group).to_string();
+                let behavior_hints = if pending_headers.is_empty() {
+                    None
+                } else {
+                    Some(serde_json::json!({ "headers": pending_headers }))
+                };
+                pending_headers.clear();
                 entries.push(M3uEntry {
                     name,
                     url: line.to_string(),
@@ -122,6 +149,7 @@ pub fn parse_m3u(content: &str) -> Vec<M3uEntry> {
                     group,
                     tvg_id,
                     entry_type,
+                    behavior_hints,
                 });
             }
         }
@@ -154,6 +182,7 @@ pub async fn import_tv_channel(
     url: &str,
     logo: Option<&str>,
     source_name: &str,
+    behavior_hints: Option<&serde_json::Value>,
 ) -> bool {
     // Find existing media by title+type
     let media_id: Option<i64> = sqlx::query_scalar(
@@ -248,12 +277,14 @@ pub async fn import_tv_channel(
     };
 
     // Insert http_stream row
+    let bh_json = behavior_hints.map(|v| v.to_string());
     let hs = sqlx::query(
-        "INSERT INTO http_stream (stream_id, url, stream_behavior) \
-         VALUES ($1, $2, 'DIRECT'::streambehavior) ON CONFLICT (stream_id) DO NOTHING",
+        "INSERT INTO http_stream (stream_id, url, behavior_hints) \
+         VALUES ($1, $2, $3::jsonb) ON CONFLICT (stream_id) DO NOTHING",
     )
     .bind(stream_id)
     .bind(url)
+    .bind(bh_json.as_deref())
     .execute(pool)
     .await;
 
@@ -267,8 +298,8 @@ pub async fn import_tv_channel(
 
     // Link stream to media
     let _ = sqlx::query(
-        "INSERT INTO stream_media_link (stream_id, media_id, is_primary) \
-         SELECT $1, $2, true WHERE NOT EXISTS \
+        "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at) \
+         SELECT $1, $2, true, false, NOW() WHERE NOT EXISTS \
          (SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2)",
     )
     .bind(stream_id)
@@ -643,6 +674,7 @@ pub async fn import_m3u(
                     &entry.url,
                     entry.logo.as_deref(),
                     &source,
+                    entry.behavior_hints.as_ref(),
                 )
                 .await
                 {
@@ -706,6 +738,7 @@ pub async fn import_m3u(
             &entry.url,
             entry.logo.as_deref(),
             &source_name,
+            entry.behavior_hints.as_ref(),
         )
         .await
         {

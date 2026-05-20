@@ -18,7 +18,9 @@ use crate::{
     parser,
     scrapers::{
         fetcher::{fetch_byparr, fetch_plain},
-        media_resolve, persist, ScrapedStream, SearchMeta,
+        media_resolve, persist,
+        prowlarr::build_series_files,
+        ScrapedStream, SearchMeta,
     },
     util::{rate_limit, retry},
 };
@@ -41,12 +43,9 @@ const MAX_PAGES: u32 = 5;
 ///
 /// Falls back to a hard-coded default when the config file is missing or the
 /// key is absent, so the handler can still run.
-fn spider_homepage(spider_name: &str, default: &str) -> String {
-    let config_path = std::env::var("SCRAPER_CONFIG_PATH")
-        .unwrap_or_else(|_| "config/scraper_config.yaml".into());
-
+fn spider_homepage(spider_name: &str, default: &str, config_path: &str) -> String {
     // Try to read and parse as JSON.
-    if let Ok(text) = std::fs::read_to_string(&config_path) {
+    if let Ok(text) = std::fs::read_to_string(config_path) {
         if let Ok(root) = serde_json::from_str::<serde_json::Value>(&text) {
             if let Some(hp) = root
                 .get(spider_name)
@@ -304,20 +303,24 @@ async fn scrape_tamil_forum(
                     .await
                     .unwrap_or_default();
 
-                    let info_hash = extract_info_hash_from_torrent(&torrent_bytes);
-                    let Some(info_hash) = info_hash else {
+                    let Some(torrent_info) = extract_torrent_info(&torrent_bytes) else {
                         debug!("{spider_name}: no info_hash for {torrent_url}");
                         continue;
                     };
 
+                    let files = if is_series {
+                        build_series_files(&parsed, None, None)
+                    } else {
+                        vec![]
+                    };
                     let stream = ScrapedStream {
-                        info_hash,
-                        name: title.clone(),
+                        info_hash: torrent_info.info_hash,
+                        name: torrent_info.name.unwrap_or_else(|| title.clone()),
                         source: source_label.to_string(),
                         seeders: None,
-                        size: None,
+                        size: torrent_info.total_size,
                         parsed: parsed.clone(),
-                        files: vec![],
+                        files,
                         is_cached: false,
                     };
                     persist::write_back(&[stream], pool, &meta, media_type_str, None, None).await;
@@ -340,11 +343,15 @@ async fn scrape_tamil_forum(
 
 // ─── Torrent info_hash extraction ─────────────────────────────────────────────
 
-/// Parse a bencoded `.torrent` file and return the hex-encoded SHA-1 info_hash.
-///
-/// This is a minimal hand-rolled bencode walker — we only need the `info`
-/// dictionary offset and length, then SHA-1 hash that slice.
-fn extract_info_hash_from_torrent(data: &[u8]) -> Option<String> {
+struct TorrentInfo {
+    info_hash: String,
+    name: Option<String>,
+    total_size: Option<i64>,
+}
+
+/// Parse a bencoded `.torrent` file and return the info_hash, name, and total
+/// size extracted from the `info` dictionary.
+fn extract_torrent_info(data: &[u8]) -> Option<TorrentInfo> {
     use sha1::{Digest, Sha1};
 
     // Find "4:info" in the bencode stream.
@@ -352,15 +359,106 @@ fn extract_info_hash_from_torrent(data: &[u8]) -> Option<String> {
     let pos = data.windows(needle.len()).position(|w| w == needle)?;
     let info_start = pos + needle.len();
 
-    // The info dict starts at info_start and extends to the matching 'e'.
-    // Walk the bencode to find the end of the dict.
     let info_end = bencode_end(data, info_start)?;
     let info_slice = &data[info_start..info_end];
 
     let mut hasher = Sha1::new();
     hasher.update(info_slice);
     let hash = hasher.finalize();
-    Some(hash.iter().map(|b| format!("{b:02x}")).collect())
+    let info_hash = hash.iter().map(|b| format!("{b:02x}")).collect();
+
+    // Parse name and total_size from the info dict.
+    let name = bencode_dict_str(info_slice, b"name");
+    let total_size = bencode_total_size(info_slice);
+
+    Some(TorrentInfo { info_hash, name, total_size })
+}
+
+/// Extract a UTF-8 string value from a flat bencode dict by key.
+fn bencode_dict_str(dict: &[u8], key: &[u8]) -> Option<String> {
+    // dict starts with 'd'; iterate key-value pairs.
+    if dict.first() != Some(&b'd') {
+        return None;
+    }
+    let mut i = 1;
+    while i < dict.len() {
+        if dict[i] == b'e' {
+            break;
+        }
+        // Read key string
+        let key_end = bencode_end(dict, i)?;
+        let colon = dict[i..].iter().position(|&b| b == b':')?;
+        let key_bytes = &dict[i + colon + 1..key_end];
+        // Read value
+        let val_end = bencode_end(dict, key_end)?;
+        if key_bytes == key {
+            // Value is a bencode string
+            if let Some(c) = dict[key_end..].iter().position(|&b| b == b':') {
+                let val_bytes = &dict[key_end + c + 1..val_end];
+                return std::str::from_utf8(val_bytes).ok().map(|s| s.to_string());
+            }
+        }
+        i = val_end;
+    }
+    None
+}
+
+/// Return the total size of a torrent from its info dict.
+/// Single-file: `length` key. Multi-file: sum of `length` across `files` list.
+fn bencode_total_size(info: &[u8]) -> Option<i64> {
+    // Try single-file first: look for "6:length" directly in info dict.
+    if let Some(len) = bencode_dict_int(info, b"length") {
+        return Some(len);
+    }
+    // Multi-file: sum lengths in the `files` list.
+    let files_key = b"5:files";
+    let pos = info.windows(files_key.len()).position(|w| w == files_key)?;
+    let list_start = pos + files_key.len();
+    if info.get(list_start) != Some(&b'l') {
+        return None;
+    }
+    let mut total: i64 = 0;
+    let mut i = list_start + 1;
+    while i < info.len() {
+        if info[i] == b'e' {
+            break;
+        }
+        // Each element is a dict; find "6:length" inside it.
+        let dict_end = bencode_end(info, i)?;
+        let file_dict = &info[i..dict_end];
+        if let Some(len) = bencode_dict_int(file_dict, b"length") {
+            total += len;
+        }
+        i = dict_end;
+    }
+    Some(total)
+}
+
+/// Extract an integer value from a flat bencode dict by key.
+fn bencode_dict_int(dict: &[u8], key: &[u8]) -> Option<i64> {
+    if dict.first() != Some(&b'd') {
+        return None;
+    }
+    let mut i = 1;
+    while i < dict.len() {
+        if dict[i] == b'e' {
+            break;
+        }
+        let key_end = bencode_end(dict, i)?;
+        let colon = dict[i..].iter().position(|&b| b == b':')?;
+        let key_bytes = &dict[i + colon + 1..key_end];
+        let val_end = bencode_end(dict, key_end)?;
+        if key_bytes == key {
+            // Value is bencode integer: i<digits>e
+            if dict.get(key_end) == Some(&b'i') {
+                let e = dict[key_end..].iter().position(|&b| b == b'e')?;
+                let s = std::str::from_utf8(&dict[key_end + 1..key_end + e]).ok()?;
+                return s.parse().ok();
+            }
+        }
+        i = val_end;
+    }
+    None
 }
 
 /// Return the exclusive end index of the bencode value starting at `pos`.
@@ -400,11 +498,8 @@ fn bencode_end(data: &[u8], pos: usize) -> Option<usize> {
 
 // ─── Config loader ────────────────────────────────────────────────────────────
 
-fn load_catalogs(spider_name: &str) -> serde_json::Value {
-    let config_path = std::env::var("SCRAPER_CONFIG_PATH")
-        .unwrap_or_else(|_| "config/scraper_config.yaml".into());
-
-    if let Ok(text) = std::fs::read_to_string(&config_path) {
+fn load_catalogs(spider_name: &str, config_path: &str) -> serde_json::Value {
+    if let Ok(text) = std::fs::read_to_string(config_path) {
         if let Ok(root) = serde_json::from_str::<serde_json::Value>(&text) {
             if let Some(catalogs) = root.get(spider_name).and_then(|v| v.get("catalogs")) {
                 return catalogs.clone();
@@ -425,8 +520,9 @@ impl JobHandler for TamilMvCrawl {
     type Args = serde_json::Value;
 
     async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        let homepage = spider_homepage("tamilmv", "https://www.1tamilmv.earth");
-        let catalogs = load_catalogs("tamilmv");
+        let config_path = &ctx.state.config.scraper_config_path;
+        let homepage = spider_homepage("tamilmv", "https://www.1tamilmv.earth", config_path);
+        let catalogs = load_catalogs("tamilmv", config_path);
         scrape_tamil_forum("tamilmv", "TamilMV", &homepage, &catalogs, &ctx).await
     }
 }
@@ -440,8 +536,9 @@ impl JobHandler for TamilBlastersCrawl {
     type Args = serde_json::Value;
 
     async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        let homepage = spider_homepage("tamil_blasters", "https://1tamilblasters.wtf");
-        let catalogs = load_catalogs("tamil_blasters");
+        let config_path = &ctx.state.config.scraper_config_path;
+        let homepage = spider_homepage("tamil_blasters", "https://1tamilblasters.wtf", config_path);
+        let catalogs = load_catalogs("tamil_blasters", config_path);
         scrape_tamil_forum(
             "tamil_blasters",
             "TamilBlasters",

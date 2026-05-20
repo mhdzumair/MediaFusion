@@ -257,6 +257,7 @@ async fn insert_http_stream_for_media(
     url: &str,
     source_label: &str,
     is_public: bool,
+    behavior_hints: Option<&serde_json::Value>,
 ) -> Result<bool, sqlx::Error> {
     // Check for existing URL already linked to this media
     let existing: Option<i32> = sqlx::query_scalar(
@@ -298,13 +299,15 @@ async fn insert_http_stream_for_media(
     };
 
     // Insert http_stream
+    let bh_json = behavior_hints.map(|v| v.to_string());
     let hs = sqlx::query(
-        "INSERT INTO http_stream (stream_id, url, stream_behavior)
-         VALUES ($1, $2, 'DIRECT'::streambehavior)
+        "INSERT INTO http_stream (stream_id, url, behavior_hints)
+         VALUES ($1, $2, $3::jsonb)
          ON CONFLICT (stream_id) DO NOTHING",
     )
     .bind(stream_id)
     .bind(url)
+    .bind(bh_json.as_deref())
     .execute(pool)
     .await;
 
@@ -319,8 +322,8 @@ async fn insert_http_stream_for_media(
 
     // Link to media
     let _ = sqlx::query(
-        "INSERT INTO stream_media_link (stream_id, media_id, is_primary)
-         SELECT $1, $2, true
+        "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at)
+         SELECT $1, $2, true, false, NOW()
          WHERE NOT EXISTS (
              SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2
          )",
@@ -435,7 +438,7 @@ impl JobHandler for XtreamImport {
                     let stream_url =
                         format!("{}/live/{}/{}/{}.m3u8", server, user, pass, stream_id);
 
-                    if import_tv_channel(pool, name, &stream_url, logo, &source_label).await {
+                    if import_tv_channel(pool, name, &stream_url, logo, &source_label, None).await {
                         total_imported += 1;
                     } else {
                         total_skipped += 1;
@@ -538,6 +541,7 @@ impl JobHandler for XtreamImport {
                                 &stream_url,
                                 &source_label,
                                 is_public,
+                                None,
                             )
                             .await
                             {
@@ -722,6 +726,7 @@ impl JobHandler for XtreamImport {
                                         &ep_url,
                                         &source_label,
                                         is_public,
+                                        None,
                                     )
                                     .await
                                     {

@@ -462,6 +462,7 @@ pub async fn sync_iptv_source(
             &entry.url,
             entry.logo.as_deref(),
             &source_label,
+            entry.behavior_hints.as_ref(),
         )
         .await
         {

@@ -59,12 +59,8 @@ struct AceStreamSource {
 /// `config/scraper_config.yaml`) by `config_manager`.  If no config or no
 /// sources are present the function returns an empty Vec so the handler exits
 /// gracefully.
-fn load_sources() -> Vec<AceStreamSource> {
-    // Attempt to read the config file that the Python side uses.
-    let config_path = std::env::var("SCRAPER_CONFIG_PATH")
-        .unwrap_or_else(|_| "config/scraper_config.yaml".into());
-
-    let text = match std::fs::read_to_string(&config_path) {
+fn load_sources(config_path: &str) -> Vec<AceStreamSource> {
+    let text = match std::fs::read_to_string(config_path) {
         Ok(t) => t,
         Err(_) => return vec![],
     };
@@ -241,7 +237,7 @@ async fn insert_acestream_stream(
     sqlx::query(
         "INSERT INTO acestream_stream (stream_id, content_id, info_hash)
          VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING",
+         ON CONFLICT (stream_id) DO NOTHING",
     )
     .bind(stream_id)
     .bind(content_id)
@@ -263,7 +259,7 @@ impl JobHandler for AcestreamBgScraper {
     type Args = serde_json::Value;
 
     async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        let sources = load_sources();
+        let sources = load_sources(&ctx.state.config.scraper_config_path);
 
         if sources.is_empty() {
             info!("acestream_bg: no sources configured, nothing to do");

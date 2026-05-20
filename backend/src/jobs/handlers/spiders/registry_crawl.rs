@@ -10,6 +10,7 @@ use crate::{
     parser,
     scrapers::{
         fetcher, persist,
+        prowlarr::build_series_files,
         public_indexer_registry::ALL_INDEXERS,
         public_indexers::{extract_row_data_pub, parse_size_bytes_pub},
         ScrapedStream, SearchMeta,
@@ -173,10 +174,12 @@ impl JobHandler for RegistryCrawl {
                     .and_then(|s| s.trim().parse::<i32>().ok());
 
                 let parsed = parser::parse_title(&title);
-                let media_type = if parsed.seasons.is_empty() && parsed.episodes.is_empty() {
-                    "movie"
+                let is_series = !parsed.seasons.is_empty() || !parsed.episodes.is_empty();
+                let media_type = if is_series { "series" } else { "movie" };
+                let files = if is_series {
+                    build_series_files(&parsed, None, None)
                 } else {
-                    "series"
+                    vec![]
                 };
 
                 let stream = ScrapedStream {
@@ -186,7 +189,7 @@ impl JobHandler for RegistryCrawl {
                     seeders,
                     size,
                     parsed,
-                    files: vec![],
+                    files,
                     is_cached: false,
                 };
 

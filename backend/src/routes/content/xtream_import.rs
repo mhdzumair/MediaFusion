@@ -398,7 +398,7 @@ pub async fn import_xtream(
                     server_url, username, password, stream_id
                 );
 
-                if import_tv_channel(&pool, name, &stream_url, logo, &source_name).await {
+                if import_tv_channel(&pool, name, &stream_url, logo, &source_name, None).await {
                     imported += 1;
                 } else {
                     skipped += 1;
@@ -475,7 +475,7 @@ pub async fn import_xtream(
             server_url, username, password, stream_id
         );
 
-        if import_tv_channel(&state.pool, name, &stream_url, logo, &source_name).await {
+        if import_tv_channel(&state.pool, name, &stream_url, logo, &source_name, None).await {
             imported += 1;
         } else {
             skipped += 1;

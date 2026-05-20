@@ -254,8 +254,8 @@ impl JobHandler for YoutubeBgScraper {
 
                 // ── 3. Link stream to media ───────────────────────────────
                 let _ = sqlx::query(
-                    "INSERT INTO stream_media_link (stream_id, media_id, is_primary) \
-                     SELECT $1, $2, true \
+                    "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at) \
+                     SELECT $1, $2, true, false, NOW() \
                      WHERE NOT EXISTS (\
                          SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2\
                      )",

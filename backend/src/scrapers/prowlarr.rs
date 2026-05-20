@@ -413,14 +413,16 @@ pub fn build_series_files(
     };
 
     let mut files = Vec::new();
+    let mut idx: i32 = 0;
     for s in &seasons {
         for e in &episodes {
             files.push(StreamFile {
-                file_index: 0,
+                file_index: idx,
                 filename: String::new(),
                 season_number: *s,
                 episode_number: *e,
             });
+            idx += 1;
         }
     }
     files

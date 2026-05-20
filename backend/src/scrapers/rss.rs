@@ -452,7 +452,7 @@ async fn upsert_rss_stream(
     if is_series {
         if let (Some(s), Some(e)) = (season, episode) {
             let sf: Option<(i32,)> = sqlx::query_as(
-                "INSERT INTO stream_file (stream_id, file_index, filename, file_type) VALUES ($1, 0, $2, 'VIDEO'::filetype) ON CONFLICT (stream_id, file_index) DO NOTHING RETURNING id"
+                "INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive) VALUES ($1, 0, $2, 'VIDEO'::filetype, false) ON CONFLICT (stream_id, file_index) DO UPDATE SET is_archive = EXCLUDED.is_archive RETURNING id"
             )
             .bind(stream_id)
             .bind(name)
@@ -463,7 +463,7 @@ async fn upsert_rss_stream(
 
             if let Some((file_id,)) = sf {
                 let _ = sqlx::query(
-                    "INSERT INTO file_media_link (file_id, media_id, season_number, episode_number, is_primary, confidence, link_source) VALUES ($1, $2, $3, $4, true, 1.0, 'PTT_PARSER'::linksource) ON CONFLICT DO NOTHING"
+                    "INSERT INTO file_media_link (file_id, media_id, season_number, episode_number, is_primary, confidence, link_source, created_at) VALUES ($1, $2, $3, $4, true, 1.0, 'PTT_PARSER'::linksource, NOW()) ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING"
                 )
                 .bind(file_id)
                 .bind(media_id)
@@ -475,7 +475,7 @@ async fn upsert_rss_stream(
         } else {
             // Series but no season/episode — link to media via stream_media_link
             let _ = sqlx::query(
-                "INSERT INTO stream_media_link (stream_id, media_id, is_primary) SELECT $1, $2, true WHERE NOT EXISTS (SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2)"
+                "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at) SELECT $1, $2, true, false, NOW() WHERE NOT EXISTS (SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2)"
             )
             .bind(stream_id)
             .bind(media_id)
@@ -484,7 +484,7 @@ async fn upsert_rss_stream(
         }
     } else {
         let _ = sqlx::query(
-            "INSERT INTO stream_media_link (stream_id, media_id, is_primary) SELECT $1, $2, true WHERE NOT EXISTS (SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2)"
+            "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at) SELECT $1, $2, true, false, NOW() WHERE NOT EXISTS (SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2)"
         )
         .bind(stream_id)
         .bind(media_id)

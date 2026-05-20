@@ -33,11 +33,8 @@ use crate::{
 
 // ─── Config helpers ───────────────────────────────────────────────────────────
 
-fn load_sport_video_categories() -> Vec<(String, String)> {
-    let config_path = std::env::var("SCRAPER_CONFIG_PATH")
-        .unwrap_or_else(|_| "config/scraper_config.yaml".into());
-
-    if let Ok(text) = std::fs::read_to_string(&config_path) {
+fn load_sport_video_categories(config_path: &str) -> Vec<(String, String)> {
+    if let Ok(text) = std::fs::read_to_string(config_path) {
         if let Ok(root) = serde_json::from_str::<serde_json::Value>(&text) {
             if let Some(cats) = root
                 .get("sport_video")
@@ -289,7 +286,7 @@ impl JobHandler for SportVideoCrawl {
     type Args = serde_json::Value;
 
     async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        let categories = load_sport_video_categories();
+        let categories = load_sport_video_categories(&ctx.state.config.scraper_config_path);
         if categories.is_empty() {
             warn!("sport_video: no categories configured");
             return Ok(());
@@ -394,7 +391,7 @@ impl JobHandler for SportVideoCrawl {
                         continue;
                     };
 
-                    let parsed = parser::parse_title(&block.title);
+                    let parsed = parser::parse_sports_title(&block.title);
                     block_streams.push(ScrapedStream {
                         info_hash,
                         name: block.title.clone(),
@@ -411,7 +408,7 @@ impl JobHandler for SportVideoCrawl {
                     continue;
                 }
 
-                let parsed_title = parser::parse_title(&block.title);
+                let parsed_title = parser::parse_sports_title(&block.title);
                 let media_id = media_resolve::find_or_create_sports_stub(
                     pool,
                     &block.title,

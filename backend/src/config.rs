@@ -266,6 +266,7 @@ pub struct AppConfig {
     /// Byparr (FlareSolverr-compatible) base URL. When set, Cloudflare-protected
     /// public indexers (1337x, TPB, etc.) are fetched via Byparr instead of plain HTTP.
     pub byparr_url: Option<String>,
+    pub scraper_config_path: String,
     /// Comma-separated list of public indexer keys to enable (e.g. "x1337,nyaa").
     /// When unset, all indexers matching the media type are used.
     pub public_indexers_live_search_sites: Option<String>,
@@ -669,6 +670,8 @@ impl AppConfig {
             byparr_url: env("BYPARR_URL").ok()
                 .filter(|s| !s.is_empty())
                 .map(|u| u.trim_end_matches('/').to_string()),
+            scraper_config_path: env("SCRAPER_CONFIG_PATH")
+                .unwrap_or_else(|_| "../resources/json/scraper_config.json".into()),
             public_indexers_live_search_sites: env("PUBLIC_INDEXERS_LIVE_SEARCH_SITES")
                 .ok().filter(|s| !s.is_empty()),
             public_indexers_source_health_gates_enabled: env("PUBLIC_INDEXERS_SOURCE_HEALTH_GATES_ENABLED")

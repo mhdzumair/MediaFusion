@@ -159,6 +159,7 @@ impl JobHandler for M3uImport {
                 &entry.url,
                 entry.logo.as_deref(),
                 &source_label,
+                entry.behavior_hints.as_ref(),
             )
             .await
             {

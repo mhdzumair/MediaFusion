@@ -34,8 +34,8 @@ use crate::{
     },
     parser,
     scrapers::{
-        fetcher::{fetch_byparr, fetch_plain},
-        persist, ScrapedStream, SearchMeta,
+        fetcher::{fetch_byparr, fetch_plain, post_byparr},
+        media_resolve, persist, ScrapedStream, SearchMeta,
     },
     util::{rate_limit, retry},
 };
@@ -68,10 +68,8 @@ fn magnet_inline_re() -> &'static Regex {
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 /// ext.to domain (from scraper config or default).
-fn ext_to_domain() -> String {
-    let config_path = std::env::var("SCRAPER_CONFIG_PATH")
-        .unwrap_or_else(|_| "config/scraper_config.yaml".into());
-    if let Ok(text) = std::fs::read_to_string(&config_path) {
+fn ext_to_domain(config_path: &str) -> String {
+    if let Ok(text) = std::fs::read_to_string(config_path) {
         if let Ok(root) = serde_json::from_str::<serde_json::Value>(&text) {
             if let Some(domains) = root
                 .get("start_urls")
@@ -100,6 +98,8 @@ pub(crate) struct CatalogSpec {
     keyword: &'static str,
     /// Media type to use when persisting ("movie" or "series").
     media_type: &'static str,
+    /// Sports category key (matches `catalog.name` in the DB, e.g. "formula_racing").
+    category: &'static str,
 }
 
 const FORMULA_SPEC: CatalogSpec = CatalogSpec {
@@ -108,6 +108,7 @@ const FORMULA_SPEC: CatalogSpec = CatalogSpec {
     queries: &["formula 1", "formula 2", "formula 3"],
     keyword: "formula",
     media_type: "movie",
+    category: "formula_racing",
 };
 
 const MOTOGP_SPEC: CatalogSpec = CatalogSpec {
@@ -116,6 +117,7 @@ const MOTOGP_SPEC: CatalogSpec = CatalogSpec {
     queries: &["motogp"],
     keyword: "motogp",
     media_type: "movie",
+    category: "motogp_racing",
 };
 
 const WWE_SPEC: CatalogSpec = CatalogSpec {
@@ -124,6 +126,7 @@ const WWE_SPEC: CatalogSpec = CatalogSpec {
     queries: &["wwe"],
     keyword: "wwe",
     media_type: "movie",
+    category: "fighting",
 };
 
 const UFC_SPEC: CatalogSpec = CatalogSpec {
@@ -132,6 +135,7 @@ const UFC_SPEC: CatalogSpec = CatalogSpec {
     queries: &["ufc"],
     keyword: "ufc",
     media_type: "movie",
+    category: "fighting",
 };
 
 const MOVIES_TV_SPEC: CatalogSpec = CatalogSpec {
@@ -140,6 +144,7 @@ const MOVIES_TV_SPEC: CatalogSpec = CatalogSpec {
     queries: &["movies 2026", "movies 2025", "series 2026", "series 2025"],
     keyword: "",
     media_type: "movie",
+    category: "ext_to_movie",
 };
 
 // ─── HMAC helpers ─────────────────────────────────────────────────────────────
@@ -314,11 +319,38 @@ async fn fetch_magnet(
     client: &reqwest::Client,
     byparr_url: &Option<String>,
 ) -> Option<String> {
-    let detail_html = fetch_html(label, detail_url, client, byparr_url).await?;
+    // Fetch the full result (not just HTML) so we can reuse CF clearance cookies
+    // in the subsequent AJAX magnet request, which is also CF-protected.
+    let detail_result = retry::with_retry(label, || {
+        let url = detail_url.to_string();
+        let client = client.clone();
+        let bp = byparr_url.clone();
+        async move {
+            if let Some(bp_url) = &bp {
+                if let Some(r) = fetch_byparr(&client, bp_url, &url).await {
+                    return Ok(r);
+                }
+            }
+            fetch_plain(&client, &url)
+                .await
+                .ok_or_else(|| format!("fetch failed: {url}"))
+        }
+    })
+    .await
+    .ok()?;
+    let detail_cookies = detail_result.cookies;
+    let detail_html = detail_result.html;
 
-    // Try AJAX magnet endpoint first.
+    // Fast path: magnet is often embedded directly in the page (e.g. inside a
+    // webga.zx viewer href). Skip AJAX entirely when it's already there.
+    if let Some(magnet) = extract_inline_magnet(&detail_html) {
+        debug!(label, "found inline magnet, skipping AJAX");
+        return Some(magnet);
+    }
+
+    // Try AJAX magnet endpoint as fallback.
     let (page_token, csrf) = extract_security_tokens(&detail_html);
-    if let (Some(pt), Some(_csrf)) = (page_token, csrf) {
+    if let (Some(pt), Some(csrf)) = (page_token, csrf) {
         // Extract numeric torrent ID — do this in a scoped block so that the
         // non-Send `Html` value is dropped before any `.await` point.
         let numeric_id: Option<u64> = {
@@ -351,23 +383,80 @@ async fn fetch_magnet(
                 "token": sig,
             });
 
+            // Form-encoded body for byparr (FlareSolverr only supports form POST).
+            let form_data = format!(
+                "torrent_id={tid}&ts={ts}&token={}",
+                urlencoding::encode(&sig),
+            );
+
+            // Cookie header for direct reqwest fallback.
+            let cookie_header = detail_cookies
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+
             if let Ok(magnet) = retry::with_retry(label, || {
                 let client = client.clone();
                 let ajax_url = ajax_url.clone();
                 let body = body.clone();
+                let form_data = form_data.clone();
                 let referer = detail_url.to_string();
+                let byparr_url = byparr_url.clone();
+                let detail_cookies = detail_cookies.clone();
+                let cookie_header = cookie_header.clone();
                 async move {
-                    let resp = client
-                        .post(&ajax_url)
-                        .header("X-Requested-With", "XMLHttpRequest")
-                        .header("Referer", &referer)
-                        .json(&body)
-                        .timeout(std::time::Duration::from_secs(20))
-                        .send()
-                        .await
-                        .map_err(|e| e.to_string())?
-                        .json::<serde_json::Value>()
-                        .await
+                    // Use byparr with session cookies injected so CF is bypassed
+                    // AND the PHP session is valid in the same request.
+                    let raw = if let Some(ref bp_url) = byparr_url {
+                        if let Some(r) =
+                            post_byparr(&client, bp_url, &ajax_url, &form_data, &detail_cookies)
+                                .await
+                        {
+                            r
+                        } else {
+                            // byparr unavailable — try direct with cookies (may hit CF)
+                            let mut req = client
+                                .post(&ajax_url)
+                                .header("X-Requested-With", "XMLHttpRequest")
+                                .header("Referer", &referer);
+                            if !cookie_header.is_empty() {
+                                req = req.header("Cookie", &cookie_header);
+                            }
+                            req.json(&body)
+                                .timeout(std::time::Duration::from_secs(20))
+                                .send()
+                                .await
+                                .map_err(|e| e.to_string())?
+                                .text()
+                                .await
+                                .map_err(|e| e.to_string())?
+                        }
+                    } else {
+                        let mut req = client
+                            .post(&ajax_url)
+                            .header("X-Requested-With", "XMLHttpRequest")
+                            .header("Referer", &referer);
+                        if !cookie_header.is_empty() {
+                            req = req.header("Cookie", &cookie_header);
+                        }
+                        req.json(&body)
+                            .timeout(std::time::Duration::from_secs(20))
+                            .send()
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .text()
+                            .await
+                            .map_err(|e| e.to_string())?
+                    };
+                    debug!(label, ajax_response = %&raw[..raw.len().min(500)], "AJAX magnet response");
+                    // byparr wraps JSON responses in <html><body><pre>…</pre></body></html>
+                    let json_str = raw
+                        .split("<pre>")
+                        .nth(1)
+                        .and_then(|s| s.split("</pre>").next())
+                        .unwrap_or(&raw);
+                    let resp = serde_json::from_str::<serde_json::Value>(json_str)
                         .map_err(|e| e.to_string())?;
 
                     if resp.get("success").and_then(|v| v.as_bool()) != Some(true) {
@@ -408,7 +497,7 @@ async fn fetch_magnet(
 // ─── Main catalog scraper ─────────────────────────────────────────────────────
 
 pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Result<(), JobError> {
-    let domain = ext_to_domain();
+    let domain = ext_to_domain(&ctx.state.config.scraper_config_path);
     let base_url = format!("https://{domain}");
     let client = &ctx.state.http;
     let byparr_url = ctx.state.config.byparr_url.clone();
@@ -428,7 +517,7 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
         ));
     }
 
-    let mut all_streams: Vec<ScrapedStream> = Vec::new();
+    let mut total_written = 0usize;
 
     for (start_url, is_profile) in start_urls {
         let mut current_url = start_url.clone();
@@ -463,24 +552,58 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                 }
                 rate_limit::wait(&rate_key, 1).await;
 
+                info!("{}: scraping \"{}\" — {detail_url}", spec.source, title);
+
                 let magnet =
                     fetch_magnet(spec.source, &base_url, &detail_url, client, &byparr_url).await;
 
                 let Some(magnet) = magnet else {
-                    debug!("{}: no magnet for {detail_url}", spec.source);
+                    warn!("{}: no magnet for \"{}\" ({detail_url})", spec.source, title);
                     continue;
                 };
 
                 let info_hash = parser::extract_info_hash(&magnet).map(|h| h.to_lowercase());
                 let Some(info_hash) = info_hash else {
-                    debug!(
-                        "{}: can't parse info_hash from magnet {magnet}",
-                        spec.source
-                    );
+                    warn!("{}: can't parse info_hash from magnet — title=\"{}\" magnet={magnet}", spec.source, title);
                     continue;
                 };
 
-                let parsed = parser::parse_title(&title);
+                // For the generic movies/TV catalog, only apply sports parsing when
+                // the title is actually detected as sports content.
+                let parsed = if spec.category != "ext_to_movie"
+                    || parser::is_sports_title(&title)
+                {
+                    parser::parse_sports_title(&title)
+                } else {
+                    parser::parse_title(&title)
+                };
+                let clean_title = parsed.title.clone().unwrap_or_else(|| title.clone());
+                let year = parsed.year;
+
+                info!(
+                    "{}: ✓ title=\"{}\" info_hash={} seeders={:?} size={:?} parsed_title={:?} year={:?}",
+                    spec.source, title, info_hash, seeders, size,
+                    parsed.title, year
+                );
+
+                // Find or create a media stub for this event, linked to the
+                // correct sports category catalog.
+                let media_id = media_resolve::find_or_create_sports_stub(
+                    pool,
+                    &clean_title,
+                    year,
+                    spec.category,
+                    None,
+                )
+                .await
+                .unwrap_or(0);
+
+                // Also link the media to the sports category catalog so it
+                // appears in catalog browsing.
+                if media_id > 0 {
+                    media_resolve::link_to_catalogs(pool, media_id, &[spec.category]).await;
+                }
+
                 let stream = ScrapedStream {
                     info_hash,
                     name: title,
@@ -491,7 +614,15 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                     files: vec![],
                     is_cached: false,
                 };
-                all_streams.push(stream);
+
+                let meta = SearchMeta {
+                    media_id: media_id as i64,
+                    imdb_id: None,
+                    title: clean_title,
+                    year,
+                };
+                persist::write_back(&[stream], pool, &meta, spec.media_type, None, None).await;
+                total_written += 1;
             }
 
             // Pagination.
@@ -503,15 +634,7 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
         }
     }
 
-    if !all_streams.is_empty() {
-        let meta = SearchMeta {
-            media_id: 0,
-            imdb_id: None,
-            title: String::new(),
-            year: None,
-        };
-        persist::write_back(&all_streams, pool, &meta, spec.media_type, None, None).await;
-    }
+    info!("{}: {} streams written total", spec.source, total_written);
 
     Ok(())
 }

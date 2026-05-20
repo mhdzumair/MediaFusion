@@ -507,7 +507,11 @@ pub async fn analyze_magnet(
             .into_response();
     }
 
-    let parsed = parser::parse_title(&torrent_name);
+    let parsed = if parser::is_sports_title(&torrent_name) {
+        parser::parse_sports_title(&torrent_name)
+    } else {
+        parser::parse_title(&torrent_name)
+    };
 
     let meta_type = body.meta_type.as_deref().unwrap_or("movie");
     let search_title = parsed.title.as_deref().unwrap_or(&torrent_name);
@@ -660,7 +664,11 @@ pub async fn analyze_torrent(
             .into_response();
     }
 
-    let parsed = parser::parse_title(&name);
+    let parsed = if parser::is_sports_title(&name) {
+        parser::parse_sports_title(&name)
+    } else {
+        parser::parse_title(&name)
+    };
     let search_title = parsed.title.as_deref().unwrap_or(&name);
     let matches = search_media(&state.pool, search_title, &meta_type).await;
 
@@ -873,7 +881,11 @@ pub async fn import_magnet(
         }
     }
 
-    let mut parsed = parser::parse_title(&name_for_parse);
+    let mut parsed = if parser::is_sports_title(&name_for_parse) {
+        parser::parse_sports_title(&name_for_parse)
+    } else {
+        parser::parse_title(&name_for_parse)
+    };
     // Allow caller to override parser-detected values
     if let Some(ref r) = resolution {
         if !r.is_empty() {
@@ -1248,7 +1260,11 @@ pub async fn import_torrent(
         }
     }
 
-    let mut parsed = parser::parse_title(&torrent_name);
+    let mut parsed = if parser::is_sports_title(&torrent_name) {
+        parser::parse_sports_title(&torrent_name)
+    } else {
+        parser::parse_title(&torrent_name)
+    };
     // Allow caller to override parser-detected values
     if let Some(ref r) = resolution {
         if !r.is_empty() {

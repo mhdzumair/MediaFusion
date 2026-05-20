@@ -8,7 +8,7 @@ use crate::{
         handler::{JobCtx, JobHandler},
     },
     parser,
-    scrapers::{persist, ScrapedStream, SearchMeta},
+    scrapers::{persist, prowlarr::build_series_files, ScrapedStream, SearchMeta},
     util::rate_limit,
 };
 
@@ -228,10 +228,12 @@ impl JobHandler for EztvRssCrawl {
             rate_limit::wait("eztv.re", 5).await;
 
             let parsed = parser::parse_title(&title);
-            let media_type = if parsed.seasons.is_empty() && parsed.episodes.is_empty() {
-                "movie"
+            let is_series = !parsed.seasons.is_empty() || !parsed.episodes.is_empty();
+            let media_type = if is_series { "series" } else { "movie" };
+            let files = if is_series {
+                build_series_files(&parsed, None, None)
             } else {
-                "series"
+                vec![]
             };
 
             let stream = ScrapedStream {
@@ -241,7 +243,7 @@ impl JobHandler for EztvRssCrawl {
                 seeders: item.seeds,
                 size: item.enclosure_size,
                 parsed,
-                files: vec![],
+                files,
                 is_cached: false,
             };
 

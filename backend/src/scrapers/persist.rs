@@ -118,12 +118,13 @@ async fn upsert_stream(
     .await?;
 
     // Insert torrent_stream row
+    let file_count = if s.files.is_empty() { 1 } else { s.files.len() as i32 };
     let ts_result = sqlx::query(
         r#"
         INSERT INTO torrent_stream (
             stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at
         ) VALUES (
-            $1, $2, $3, $4, 'PUBLIC'::torrenttype, 1, NOW()
+            $1, $2, $3, $4, 'PUBLIC'::torrenttype, $5, NOW()
         )
         ON CONFLICT (info_hash) DO NOTHING
         "#,
@@ -132,6 +133,7 @@ async fn upsert_stream(
     .bind(&s.info_hash)
     .bind(s.size.unwrap_or(0))
     .bind(s.seeders)
+    .bind(file_count)
     .execute(pool)
     .await;
 
@@ -153,12 +155,13 @@ async fn upsert_stream(
     // Link stream to media
     if media_type == "series" && !s.files.is_empty() {
         for f in &s.files {
-            // Insert stream_file row
+            // Insert stream_file row; on conflict return the existing id so the
+            // file_media_link can still be written for re-processed streams.
             let file_result: Result<(i32,), _> = sqlx::query_as(
                 r#"
                 INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive)
                 VALUES ($1, $2, $3, 'VIDEO'::filetype, false)
-                ON CONFLICT (stream_id, file_index) DO NOTHING
+                ON CONFLICT (stream_id, file_index) DO UPDATE SET is_archive = EXCLUDED.is_archive
                 RETURNING id
                 "#,
             )
@@ -376,7 +379,7 @@ async fn upsert_usenet_stream(
                 r#"
                 INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive)
                 VALUES ($1, $2, $3, 'VIDEO'::filetype, false)
-                ON CONFLICT (stream_id, file_index) DO NOTHING
+                ON CONFLICT (stream_id, file_index) DO UPDATE SET is_archive = EXCLUDED.is_archive
                 RETURNING id
                 "#,
             )
@@ -391,8 +394,8 @@ async fn upsert_usenet_stream(
                     r#"
                     INSERT INTO file_media_link
                         (file_id, media_id, season_number, episode_number,
-                         is_primary, confidence, link_source)
-                    VALUES ($1, $2, $3, $4, true, 1.0, 'PTT_PARSER'::linksource)
+                         is_primary, confidence, link_source, created_at)
+                    VALUES ($1, $2, $3, $4, true, 1.0, 'PTT_PARSER'::linksource, NOW())
                     ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING
                     "#,
                 )
@@ -408,8 +411,8 @@ async fn upsert_usenet_stream(
     } else {
         sqlx::query(
             r#"
-            INSERT INTO stream_media_link (stream_id, media_id, is_primary)
-            SELECT $1, $2, true
+            INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at)
+            SELECT $1, $2, true, false, NOW()
             WHERE NOT EXISTS (
                 SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2
             )
@@ -426,7 +429,7 @@ async fn upsert_usenet_stream(
                 r#"
                 INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive)
                 VALUES ($1, 0, '', 'VIDEO'::filetype, false)
-                ON CONFLICT (stream_id, file_index) DO NOTHING
+                ON CONFLICT (stream_id, file_index) DO UPDATE SET is_archive = EXCLUDED.is_archive
                 RETURNING id
                 "#,
             )
@@ -439,8 +442,8 @@ async fn upsert_usenet_stream(
                     r#"
                     INSERT INTO file_media_link
                         (file_id, media_id, season_number, episode_number,
-                         is_primary, confidence, link_source)
-                    VALUES ($1, $2, $3, $4, true, 1.0, 'PTT_PARSER'::linksource)
+                         is_primary, confidence, link_source, created_at)
+                    VALUES ($1, $2, $3, $4, true, 1.0, 'PTT_PARSER'::linksource, NOW())
                     ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING
                     "#,
                 )
@@ -565,7 +568,7 @@ async fn upsert_telegram_stream(
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7
         )
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (stream_id) DO NOTHING
         "#,
     )
     .bind(stream_id)
@@ -594,8 +597,8 @@ async fn upsert_telegram_stream(
     // Link stream to media item
     sqlx::query(
         r#"
-        INSERT INTO stream_media_link (stream_id, media_id, is_primary)
-        SELECT $1, $2, true
+        INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at)
+        SELECT $1, $2, true, false, NOW()
         WHERE NOT EXISTS (
             SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2
         )

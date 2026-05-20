@@ -821,8 +821,8 @@ pub async fn update_media_images(
     for (image_type, url_opt) in &image_fields {
         if let Some(url) = url_opt {
             let ins = sqlx::query(
-                "INSERT INTO media_image (media_id, image_type, url, is_primary, display_order) \
-                 VALUES ($1, $2, $3, true, 0) ON CONFLICT DO NOTHING",
+                "INSERT INTO media_image (media_id, provider_id, image_type, url, is_primary, display_order) \
+                 VALUES ($1, 1, $2, $3, true, 0) ON CONFLICT (media_id, provider_id, image_type, url) DO NOTHING",
             )
             .bind(media_id)
             .bind(*image_type)
@@ -1122,8 +1122,8 @@ pub async fn add_tv_metadata(
         ] {
             if let Some(url) = url_opt {
                 let _ = sqlx::query(
-                    "INSERT INTO media_image (media_id, image_type, url, is_primary, display_order) \
-                     VALUES ($1, $2, $3, true, 0) ON CONFLICT DO NOTHING",
+                    "INSERT INTO media_image (media_id, provider_id, image_type, url, is_primary, display_order) \
+                     VALUES ($1, 1, $2, $3, true, 0) ON CONFLICT (media_id, provider_id, image_type, url) DO NOTHING",
                 )
                 .bind(new_media_id)
                 .bind(image_type)
@@ -1163,7 +1163,9 @@ pub async fn add_tv_metadata(
                     .await;
 
                 let _ = sqlx::query(
-                    "INSERT INTO stream_media_link (stream_id, media_id, is_primary) VALUES ($1, $2, true) ON CONFLICT DO NOTHING",
+                    "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at) \
+                     SELECT $1, $2, true, false, NOW() \
+                     WHERE NOT EXISTS (SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2)",
                 )
                 .bind(stream_id)
                 .bind(media_id)
