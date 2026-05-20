@@ -246,6 +246,8 @@ pub struct StreamingProvider {
     pub use_mediaflow: bool,
     #[serde(default, rename = "oscs", alias = "only_show_cached_streams")]
     pub only_show_cached_streams: bool,
+    #[serde(default, rename = "eun", alias = "enable_usenet")]
+    pub enable_usenet: bool,
     // Complex nested configs — kept as raw JSON so we don't lose data but don't need to parse
     #[serde(
         default,

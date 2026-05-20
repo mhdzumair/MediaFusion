@@ -73,7 +73,14 @@ async fn pm_get(
         req.send().await?
     };
     check_status_code(resp.status())?;
-    let body: Value = resp.json().await?;
+    let text = resp.text().await?;
+    let body: Value = serde_json::from_str(&text).map_err(|e| {
+        tracing::warn!(
+            "premiumize json decode ({path}): {e} — body: {}",
+            &text[..text.len().min(200)]
+        );
+        e
+    })?;
     check_pm_error(&body)?;
     Ok(body)
 }
@@ -128,10 +135,16 @@ async fn pm_post_form(
 }
 
 fn check_status_code(status: reqwest::StatusCode) -> Result<(), ProviderError> {
-    if status == 403 {
+    if status == 403 || status == 401 {
         return Err(ProviderError::api(
             "Invalid Premiumize token",
             "invalid_token.mp4",
+        ));
+    }
+    if !status.is_success() {
+        return Err(ProviderError::api(
+            format!("Premiumize HTTP {status}"),
+            "debrid_service_down_error.mp4",
         ));
     }
     Ok(())

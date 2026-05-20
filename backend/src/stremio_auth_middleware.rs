@@ -49,10 +49,7 @@ pub async fn stremio_auth_middleware(
             .split_once('/')
             .map(|x| x.1.split('/').next().unwrap_or(""))
             .unwrap_or("");
-        if STREMIO_USER_ROUTE_PREFIXES
-            .iter()
-            .any(|r| second_seg == *r)
-        {
+        if STREMIO_USER_ROUTE_PREFIXES.contains(&second_seg) {
             return invalid_secret_response(&state, path);
         }
     }

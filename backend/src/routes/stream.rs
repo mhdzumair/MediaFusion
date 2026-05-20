@@ -775,6 +775,8 @@ async fn build_pipeline(
             .filter(|p| {
                 p.enabled
                     && USENET_CAPABLE.contains(&p.service.as_str())
+                    // Hybrid providers (also torrent-capable) require explicit opt-in for usenet
+                    && (!TORRENT_CAPABLE.contains(&p.service.as_str()) || p.enable_usenet)
                     && !disabled.contains(&p.service)
             })
             .cloned()
@@ -866,6 +868,8 @@ async fn build_pipeline(
         .filter(|p| {
             p.enabled
                 && USENET_CAPABLE.contains(&p.service.as_str())
+                // Hybrid providers (also torrent-capable) require explicit opt-in for usenet
+                && (!TORRENT_CAPABLE.contains(&p.service.as_str()) || p.enable_usenet)
                 && !disabled.contains(&p.service)
         })
         .cloned()

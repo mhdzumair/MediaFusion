@@ -1249,8 +1249,8 @@ pub async fn advanced_import_torrents(
                         if let Some(sid) = stream_id {
                             for f in files {
                                 let fid: Option<i32> = sqlx::query_scalar(
-                                    r#"INSERT INTO stream_file(stream_id, file_index, filename, size, file_type)
-                                       VALUES($1, $2, $3, $4, 'VIDEO')
+                                    r#"INSERT INTO stream_file(stream_id, file_index, filename, size, file_type, is_archive)
+                                       VALUES($1, $2, $3, $4, 'VIDEO', false)
                                        ON CONFLICT DO NOTHING RETURNING id"#,
                                 )
                                 .bind(sid as i32)

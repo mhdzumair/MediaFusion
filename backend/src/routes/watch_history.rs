@@ -402,7 +402,7 @@ pub async fn list_watch_history(
             idx += 1;
         }
         let _ = idx; // suppress unused_assignments: idx is only needed while building the SQL string
-        let mut q = sqlx::query_scalar::<_, i32>(&count_sql).bind(user_id as i32);
+        let mut q = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id as i32);
         if let Some(pid) = params.profile_id {
             q = q.bind(pid);
         }
@@ -413,7 +413,7 @@ pub async fn list_watch_history(
             q = q.bind(act.clone());
         }
         match q.fetch_one(&state.pool_ro).await {
-            Ok(c) => c.into(),
+            Ok(c) => c,
             Err(e) => {
                 tracing::error!("list_watch_history count: {e}");
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();

@@ -52,6 +52,11 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
         user_id,
     } = q;
 
+    const VALID_MEDIA_TYPES: &[&str] = &["movie", "series", "tv", "events"];
+    if !VALID_MEDIA_TYPES.contains(&media_type.to_lowercase().as_str()) {
+        return vec![];
+    }
+
     // my_library_* catalogs join through user_library_item instead of catalog/media_catalog_link.
     if catalog_id.starts_with("my_library_") {
         return get_library_items(

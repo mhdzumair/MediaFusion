@@ -836,10 +836,11 @@ pub async fn create_profile(
         }
     }
 
+    let profile_uuid = uuid::Uuid::new_v4().to_string();
     let row: (i32, String, i32, String, serde_json::Value, Option<String>, bool, DateTime<Utc>) =
         match sqlx::query_as(
-            r#"INSERT INTO user_profiles (user_id, name, config, encrypted_secrets, is_default)
-               VALUES ($1, $2, $3, $4, $5)
+            r#"INSERT INTO user_profiles (user_id, name, config, encrypted_secrets, is_default, uuid, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, NOW())
                RETURNING id, uuid, user_id, name, config, encrypted_secrets, is_default, created_at"#,
         )
         .bind(user_id)
@@ -847,6 +848,7 @@ pub async fn create_profile(
         .bind(&clean_config)
         .bind(&encrypted_secrets)
         .bind(should_set_default)
+        .bind(&profile_uuid)
         .fetch_one(&mut *tx)
         .await
         {

@@ -693,8 +693,8 @@ pub async fn upsert_stream_files(
     for f in files {
         let file_id: i32 = sqlx::query_scalar(
             r#"
-            INSERT INTO stream_file(stream_id, file_index, filename, size, file_type)
-            VALUES ($1, $2, $3, $4, 'VIDEO')
+            INSERT INTO stream_file(stream_id, file_index, filename, size, file_type, is_archive)
+            VALUES ($1, $2, $3, $4, 'VIDEO', false)
             ON CONFLICT DO NOTHING
             RETURNING id
             "#,

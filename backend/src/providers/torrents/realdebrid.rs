@@ -1023,10 +1023,27 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
                 break;
             }
         };
-        let body: serde_json::Value = match resp.json().await {
+        if resp.status() == 204 {
+            break;
+        }
+        if !resp.status().is_success() {
+            tracing::warn!("realdebrid torrents page {page}: HTTP {}", resp.status());
+            break;
+        }
+        let text = match resp.text().await {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!("realdebrid torrents read page {page}: {e}");
+                break;
+            }
+        };
+        let body: serde_json::Value = match serde_json::from_str(&text) {
             Ok(v) => v,
             Err(e) => {
-                tracing::warn!("realdebrid torrents json page {page}: {e}");
+                tracing::warn!(
+                    "realdebrid torrents json page {page}: {e} — body: {}",
+                    &text[..text.len().min(200)]
+                );
                 break;
             }
         };

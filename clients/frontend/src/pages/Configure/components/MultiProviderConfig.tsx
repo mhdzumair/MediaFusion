@@ -1295,6 +1295,17 @@ function SingleProviderEditor({
                   <Switch checked={provider.oscs === true} onCheckedChange={(checked) => onUpdate({ oscs: checked })} />
                 </div>
 
+                {/* Enable Usenet Streams - only relevant for hybrid torrent+usenet providers */}
+                {(selectedProvider.value === 'torbox' || selectedProvider.value === 'debrider') && (
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>Enable Usenet Streams</Label>
+                      <p className="text-xs text-muted-foreground">Show usenet streams (requires TorBox Pro plan)</p>
+                    </div>
+                    <Switch checked={provider.eun === true} onCheckedChange={(checked) => onUpdate({ eun: checked })} />
+                  </div>
+                )}
+
                 {/* Use MediaFlow Proxy - only show when MediaFlow is globally configured */}
                 {hasMediaFlowConfigured && (
                   <div className="flex items-center justify-between">

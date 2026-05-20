@@ -335,7 +335,7 @@ pub async fn get_sync_status(
            WHERE profile_id = $1 AND platform = $2"#,
     )
     .bind(params.profile_id.unwrap_or(0))
-    .bind(&platform)
+    .bind(platform.to_ascii_uppercase())
     .fetch_optional(&state.pool_ro)
     .await
     {
@@ -715,7 +715,7 @@ pub async fn disconnect_integration(
         "SELECT id FROM profile_integration WHERE profile_id = $1 AND platform = $2",
     )
     .bind(params.profile_id.unwrap_or(0))
-    .bind(&platform)
+    .bind(platform.to_ascii_uppercase())
     .fetch_optional(&state.pool)
     .await
     {
@@ -730,7 +730,7 @@ pub async fn disconnect_integration(
     if let Err(e) =
         sqlx::query("DELETE FROM profile_integration WHERE profile_id = $1 AND platform = $2")
             .bind(params.profile_id.unwrap_or(0))
-            .bind(&platform)
+            .bind(platform.to_ascii_uppercase())
             .execute(&state.pool)
             .await
     {
@@ -776,7 +776,7 @@ pub async fn update_integration_settings(
         "SELECT id, settings FROM profile_integration WHERE profile_id = $1 AND platform = $2",
     )
     .bind(params.profile_id.unwrap_or(0))
-    .bind(&platform)
+    .bind(platform.to_ascii_uppercase())
     .fetch_optional(&state.pool)
     .await
     {
@@ -875,7 +875,7 @@ pub async fn trigger_sync(
         "SELECT id FROM profile_integration WHERE profile_id = $1 AND platform = $2 AND is_enabled = true",
     )
     .bind(profile_id)
-    .bind(&platform)
+    .bind(platform.to_ascii_uppercase())
     .fetch_optional(&state.pool_ro)
     .await
     {

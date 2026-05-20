@@ -79,6 +79,7 @@ export interface StreamingProviderConfigType {
   u?: string // url
   ewc?: boolean // enable_watchlist_catalogs
   oscs?: boolean // only_show_cached_streams
+  eun?: boolean // enable_usenet
   stsn?: string // stremthru_store_name
   qbc?: QBittorrentConfig
   // Usenet provider configs
