@@ -123,8 +123,7 @@ pub fn parse_m3u(content: &str) -> Vec<M3uEntry> {
             if let Some((key, val)) = opt.split_once('=') {
                 match key.trim() {
                     "http-user-agent" => {
-                        pending_headers
-                            .insert("User-Agent".to_string(), val.trim().to_string());
+                        pending_headers.insert("User-Agent".to_string(), val.trim().to_string());
                     }
                     "http-referrer" => {
                         pending_headers.insert("Referer".to_string(), val.trim().to_string());

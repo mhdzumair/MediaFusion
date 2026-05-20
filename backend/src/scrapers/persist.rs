@@ -118,7 +118,11 @@ async fn upsert_stream(
     .await?;
 
     // Insert torrent_stream row
-    let file_count = if s.files.is_empty() { 1 } else { s.files.len() as i32 };
+    let file_count = if s.files.is_empty() {
+        1
+    } else {
+        s.files.len() as i32
+    };
     let ts_result = sqlx::query(
         r#"
         INSERT INTO torrent_stream (

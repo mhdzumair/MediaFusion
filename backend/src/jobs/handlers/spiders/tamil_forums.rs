@@ -371,7 +371,11 @@ fn extract_torrent_info(data: &[u8]) -> Option<TorrentInfo> {
     let name = bencode_dict_str(info_slice, b"name");
     let total_size = bencode_total_size(info_slice);
 
-    Some(TorrentInfo { info_hash, name, total_size })
+    Some(TorrentInfo {
+        info_hash,
+        name,
+        total_size,
+    })
 }
 
 /// Extract a UTF-8 string value from a flat bencode dict by key.

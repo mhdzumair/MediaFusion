@@ -565,22 +565,26 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                     fetch_magnet(spec.source, &base_url, &detail_url, client, &byparr_url).await;
 
                 let Some(magnet) = magnet else {
-                    warn!("{}: no magnet for \"{}\" ({detail_url})", spec.source, title);
+                    warn!(
+                        "{}: no magnet for \"{}\" ({detail_url})",
+                        spec.source, title
+                    );
                     continue;
                 };
 
                 let info_hash = parser::extract_info_hash(&magnet).map(|h| h.to_lowercase());
                 let Some(info_hash) = info_hash else {
-                    warn!("{}: can't parse info_hash from magnet — title=\"{}\" magnet={magnet}", spec.source, title);
+                    warn!(
+                        "{}: can't parse info_hash from magnet — title=\"{}\" magnet={magnet}",
+                        spec.source, title
+                    );
                     continue;
                 };
 
                 // Always parse technical metadata via sports-aware PTT.
                 // For generic movie/TV catalog, fall back to standard parsing
                 // for non-sports titles.
-                let parsed = if spec.category != "ext_to_movie"
-                    || parser::is_sports_title(&title)
-                {
+                let parsed = if spec.category != "ext_to_movie" || parser::is_sports_title(&title) {
                     parser::parse_sports_title(&title)
                 } else {
                     parser::parse_title(&title)
@@ -613,8 +617,14 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                 info!(
                     "{}: ✓ title=\"{}\" info_hash={} seeders={:?} size={:?} \
                      clean_title=\"{}\" year={:?} media_type={}",
-                    spec.source, title, info_hash, seeders, size,
-                    clean_title, year, effective_media_type,
+                    spec.source,
+                    title,
+                    info_hash,
+                    seeders,
+                    size,
+                    clean_title,
+                    year,
+                    effective_media_type,
                 );
 
                 let stub_media_type = effective_media_type.to_uppercase();
@@ -650,8 +660,7 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                     title: clean_title,
                     year,
                 };
-                persist::write_back(&[stream], pool, &meta, effective_media_type, None, None)
-                    .await;
+                persist::write_back(&[stream], pool, &meta, effective_media_type, None, None).await;
                 total_written += 1;
             }
 
