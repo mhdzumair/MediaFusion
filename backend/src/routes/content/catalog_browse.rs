@@ -351,7 +351,7 @@ pub async fn browse_catalog(
 
     // Full-response cache (2 min TTL) — browse pages rarely change within a session
     let browse_cache_key = format!(
-        "catalog:browse:{}:{}:{}:{}:{}:{}:{}:{}",
+        "catalog:browse:{}:{}:{}:{}:{}:{}:{}:{}:{}",
         catalog_type,
         params.sort.as_deref().unwrap_or("latest"),
         params.sort_dir.as_deref().unwrap_or("desc"),
@@ -360,6 +360,7 @@ pub async fn browse_catalog(
         params.genre.as_deref().unwrap_or(""),
         params.catalog.as_deref().unwrap_or(""),
         params.has_streams.unwrap_or(true),
+        params.search.as_deref().unwrap_or(""),
     );
     if let Some(cached) = cache::get_json(&state.redis, &browse_cache_key).await {
         return Json(cached).into_response();
