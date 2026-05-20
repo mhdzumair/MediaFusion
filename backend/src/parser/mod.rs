@@ -2,7 +2,10 @@ pub mod episode_detector;
 pub mod filter;
 pub mod sports_parser;
 
-pub use sports_parser::{detect_sports_category, is_sports_title, parse_sports_title};
+pub use sports_parser::{
+    classify_wwe_title, clean_sports_title, detect_sports_category, is_sports_title,
+    parse_sports_title, WweEpisodeInfo,
+};
 
 use std::sync::OnceLock;
 

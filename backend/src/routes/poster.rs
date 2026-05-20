@@ -97,7 +97,11 @@ struct PosterMeta {
 async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Option<PosterMeta> {
     type Row = (Option<String>, Option<f64>, Option<String>, Option<bool>);
 
-    let row: Option<Row> = if let Some(num_str) = id.strip_prefix("mf") {
+    // Frontend uses "mf:{id}", Stremio catalog uses "mf{id}" — accept both.
+    let row: Option<Row> = if let Some(num_str) = id
+        .strip_prefix("mf:")
+        .or_else(|| id.strip_prefix("mf"))
+    {
         let internal_id: i32 = num_str.parse().ok()?;
         sqlx::query_as(
             r#"
@@ -175,7 +179,7 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
 }
 
 async fn fetch_genres(state: &AppState, id: &str) -> Vec<String> {
-    if let Some(num_str) = id.strip_prefix("mf") {
+    if let Some(num_str) = id.strip_prefix("mf:").or_else(|| id.strip_prefix("mf")) {
         let Ok(internal_id) = num_str.parse::<i32>() else {
             return vec![];
         };

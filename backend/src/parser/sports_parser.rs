@@ -357,6 +357,139 @@ pub fn clean_sports_title(raw: &str) -> String {
     }
 }
 
+// ─── WWE episode classification ──────────────────────────────────────────────
+
+/// PPV / premium live event keywords — these map to standalone movie imports.
+/// More specific phrases are listed first to prevent substring shadowing.
+static WWE_PPV_IDENTIFIERS: &[&str] = &[
+    "wrestlemania",
+    "nxt takeover",
+    "nxt stand & deliver",
+    "nxt stand and deliver",
+    "clash at the castle",
+    "clash of champions",
+    "saturday night main event",
+    "tables ladders chairs",
+    "survivor series",
+    "royal rumble",
+    "summerslam",
+    "money in the bank",
+    "elimination chamber",
+    "hell in a cell",
+    "night of champions",
+    "extreme rules",
+    "battleground",
+    "fastlane",
+    "stomping grounds",
+    "bad blood",
+    "no mercy",
+    "vengeance",
+    "unforgiven",
+    "armageddon",
+    "judgment day",
+    "new year revolution",
+    "one night stand",
+    "cyber sunday",
+    "bragging rights",
+    "over the limit",
+    "capitol punishment",
+    "wargames",
+    "war games",
+    "backlash",
+    "payback",
+    "evolution",
+    "in your house",
+    "king of the ring",
+    "crown jewel",
+    "greatest royal rumble",
+    "super showdown",
+    "super show-down",
+];
+
+/// Weekly show identifiers mapped to their canonical series title.
+/// Order matters: more specific patterns before their substrings
+/// (e.g. "monday night raw" before "raw").
+/// The third field indicates whether a word-boundary check is required.
+static WWE_WEEKLY_SHOWS: &[(&str, &str, bool)] = &[
+    ("monday night raw", "WWE Monday Night Raw", false),
+    ("friday night smackdown", "WWE SmackDown", false),
+    ("smackdown live", "WWE SmackDown", false),
+    ("smackdown", "WWE SmackDown", false),
+    ("205 live", "WWE 205 Live", false),
+    ("main event", "WWE Main Event", false),
+    ("nxt level up", "WWE NXT Level Up", false),
+    ("nxt", "WWE NXT", true),
+    ("raw", "WWE Monday Night Raw", true),
+];
+
+fn wwe_date_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        // Matches YYYY MM DD after separator normalisation (e.g. "2018 05 07")
+        Regex::new(r"\b((?:19|20)\d{2})\s+(\d{1,2})\s+(\d{1,2})\b").expect("wwe_date_re")
+    })
+}
+
+/// Information extracted from a WWE weekly show title.
+pub struct WweEpisodeInfo {
+    /// Canonical series title (e.g. "WWE Monday Night Raw").
+    pub series_title: &'static str,
+    /// Calendar year — used as Stremio season number.
+    pub season_number: i32,
+    /// MMDD-encoded episode number (e.g. 507 for May 7th).
+    pub episode_number: i32,
+}
+
+/// Classify a WWE torrent title as a weekly series episode or a PPV/standalone movie.
+///
+/// Returns `Some(WweEpisodeInfo)` when the title is a recognised weekly show AND a
+/// `YYYY MM DD` date can be extracted.  Returns `None` for PPV events or titles
+/// without a parseable date — those should be imported as movies.
+pub fn classify_wwe_title(title: &str) -> Option<WweEpisodeInfo> {
+    let normalized = sep_re()
+        .replace_all(&title.to_lowercase(), " ")
+        .into_owned();
+    let padded = format!(" {normalized} ");
+
+    // PPV / premium live events → movie
+    for ppv in WWE_PPV_IDENTIFIERS {
+        if normalized.contains(ppv) {
+            return None;
+        }
+    }
+
+    // Match a weekly show identifier
+    let mut series_title: Option<&'static str> = None;
+    for &(identifier, series, boundary) in WWE_WEEKLY_SHOWS {
+        let matched = if boundary {
+            padded.contains(&format!(" {identifier} "))
+        } else {
+            normalized.contains(identifier)
+        };
+        if matched {
+            series_title = Some(series);
+            break;
+        }
+    }
+    let series_title = series_title?;
+
+    // Extract YYYY MM DD from the normalised title
+    let caps = wwe_date_re().captures(&normalized)?;
+    let year: i32 = caps.get(1)?.as_str().parse().ok()?;
+    let month: i32 = caps.get(2)?.as_str().parse().ok()?;
+    let day: i32 = caps.get(3)?.as_str().parse().ok()?;
+
+    if !(1990..=2030).contains(&year) || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+
+    Some(WweEpisodeInfo {
+        series_title,
+        season_number: year,
+        episode_number: month * 100 + day,
+    })
+}
+
 // ─── Title parsing ────────────────────────────────────────────────────────────
 
 /// Parse a sports torrent title, returning a `ParsedTitle` with a corrected

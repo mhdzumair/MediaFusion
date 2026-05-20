@@ -278,14 +278,16 @@ pub async fn find_or_create_sports_stub(
     year: Option<i32>,
     genre_name: &str,
     poster_url: Option<&str>,
+    media_type: &str,
 ) -> Option<i32> {
     // 1. Exact title match (case-insensitive).
     let row: Option<(i32,)> = if let Some(y) = year {
         sqlx::query_as(
             "SELECT id FROM media WHERE LOWER(title) = LOWER($1) \
-             AND type = 'MOVIE'::mediatype AND (year = $2 OR year IS NULL) LIMIT 1",
+             AND type = $2::mediatype AND (year = $3 OR year IS NULL) LIMIT 1",
         )
         .bind(title)
+        .bind(media_type)
         .bind(y)
         .fetch_optional(pool)
         .await
@@ -294,9 +296,10 @@ pub async fn find_or_create_sports_stub(
     } else {
         sqlx::query_as(
             "SELECT id FROM media WHERE LOWER(title) = LOWER($1) \
-             AND type = 'MOVIE'::mediatype LIMIT 1",
+             AND type = $2::mediatype LIMIT 1",
         )
         .bind(title)
+        .bind(media_type)
         .fetch_optional(pool)
         .await
         .ok()
@@ -310,9 +313,10 @@ pub async fn find_or_create_sports_stub(
 
     // 2. Fuzzy pg_trgm match (same threshold as find_or_create_media).
     let fuzzy: Option<(i32, String)> = sqlx::query_as(
-        "SELECT id, title FROM media WHERE type = 'MOVIE'::mediatype AND title % $1 \
-         ORDER BY similarity(title, $1) DESC LIMIT 1",
+        "SELECT id, title FROM media WHERE type = $1::mediatype AND title % $2 \
+         ORDER BY similarity(title, $2) DESC LIMIT 1",
     )
+    .bind(media_type)
     .bind(title)
     .fetch_optional(pool)
     .await
@@ -334,11 +338,12 @@ pub async fn find_or_create_sports_stub(
             adult, is_blocked, is_public, is_user_created,
             is_add_title_to_poster, total_streams, created_at
         )
-        VALUES ('MOVIE'::mediatype, $1, $2, false, false, true, false, true, 0, NOW())
+        VALUES ($1::mediatype, $2, $3, false, false, true, false, true, 0, NOW())
         ON CONFLICT DO NOTHING
         RETURNING id
         "#,
     )
+    .bind(media_type)
     .bind(title)
     .bind(year)
     .fetch_optional(pool)
@@ -351,9 +356,10 @@ pub async fn find_or_create_sports_stub(
         Some((id,)) => id,
         None => sqlx::query_scalar::<_, i32>(
             "SELECT id FROM media WHERE LOWER(title) = LOWER($1) \
-             AND type = 'MOVIE'::mediatype LIMIT 1",
+             AND type = $2::mediatype LIMIT 1",
         )
         .bind(title)
+        .bind(media_type)
         .fetch_optional(pool)
         .await
         .ok()
@@ -376,7 +382,7 @@ pub async fn find_or_create_sports_stub(
 
     link_genre(pool, media_id, genre_name).await;
 
-    debug!("media_resolve: created sports stub {media_id} for '{title}'");
+    debug!("media_resolve: created sports stub {media_id} ({media_type}) for '{title}'");
     Some(media_id)
 }
 

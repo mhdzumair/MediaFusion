@@ -35,7 +35,7 @@ use crate::{
     parser,
     scrapers::{
         fetcher::{fetch_byparr, fetch_plain, post_byparr},
-        media_resolve, persist, ScrapedStream, SearchMeta,
+        media_resolve, persist, ScrapedStream, SearchMeta, StreamFile,
     },
     util::{rate_limit, retry},
 };
@@ -100,6 +100,8 @@ pub(crate) struct CatalogSpec {
     media_type: &'static str,
     /// Sports category key (matches `catalog.name` in the DB, e.g. "formula_racing").
     category: &'static str,
+    /// Display genre name matching keys in sports_artifacts.json (e.g. "Formula Racing").
+    genre: &'static str,
 }
 
 const FORMULA_SPEC: CatalogSpec = CatalogSpec {
@@ -109,6 +111,7 @@ const FORMULA_SPEC: CatalogSpec = CatalogSpec {
     keyword: "formula",
     media_type: "movie",
     category: "formula_racing",
+    genre: "Formula Racing",
 };
 
 const MOTOGP_SPEC: CatalogSpec = CatalogSpec {
@@ -118,6 +121,7 @@ const MOTOGP_SPEC: CatalogSpec = CatalogSpec {
     keyword: "motogp",
     media_type: "movie",
     category: "motogp_racing",
+    genre: "MotoGP Racing",
 };
 
 const WWE_SPEC: CatalogSpec = CatalogSpec {
@@ -127,6 +131,7 @@ const WWE_SPEC: CatalogSpec = CatalogSpec {
     keyword: "wwe",
     media_type: "movie",
     category: "fighting",
+    genre: "Fighting (WWE, UFC)",
 };
 
 const UFC_SPEC: CatalogSpec = CatalogSpec {
@@ -136,6 +141,7 @@ const UFC_SPEC: CatalogSpec = CatalogSpec {
     keyword: "ufc",
     media_type: "movie",
     category: "fighting",
+    genre: "Fighting (WWE, UFC)",
 };
 
 const MOVIES_TV_SPEC: CatalogSpec = CatalogSpec {
@@ -145,6 +151,7 @@ const MOVIES_TV_SPEC: CatalogSpec = CatalogSpec {
     keyword: "",
     media_type: "movie",
     category: "ext_to_movie",
+    genre: "",
 };
 
 // ─── HMAC helpers ─────────────────────────────────────────────────────────────
@@ -512,7 +519,7 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
     for query in spec.queries {
         let encoded = urlencoding::encode(query);
         start_urls.push((
-            format!("{base_url}/browse/?q={encoded}&sort=seeds&order=desc"),
+            format!("{base_url}/browse/?q={encoded}&sort=added&order=desc"),
             false,
         ));
     }
@@ -568,8 +575,9 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                     continue;
                 };
 
-                // For the generic movies/TV catalog, only apply sports parsing when
-                // the title is actually detected as sports content.
+                // Always parse technical metadata via sports-aware PTT.
+                // For generic movie/TV catalog, fall back to standard parsing
+                // for non-sports titles.
                 let parsed = if spec.category != "ext_to_movie"
                     || parser::is_sports_title(&title)
                 {
@@ -577,29 +585,50 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                 } else {
                     parser::parse_title(&title)
                 };
-                let clean_title = parsed.title.clone().unwrap_or_else(|| title.clone());
-                let year = parsed.year;
+
+                // Determine whether this is a weekly series episode (Raw,
+                // SmackDown, NXT, …) or a standalone movie (PPV events,
+                // race sessions, etc.).
+                let wwe_info = parser::classify_wwe_title(&title);
+                let (clean_title, year, effective_media_type, files) =
+                    if let Some(ref info) = wwe_info {
+                        // Weekly show → series episode.
+                        // Use the episode full title as the file name so
+                        // the episode appears with a descriptive label.
+                        let episode_title = parser::clean_sports_title(&title);
+                        let files = vec![StreamFile {
+                            file_index: 0,
+                            filename: episode_title,
+                            season_number: info.season_number,
+                            episode_number: info.episode_number,
+                        }];
+                        // The series itself has no year (it spans many seasons).
+                        (info.series_title.to_string(), None, "series", files)
+                    } else {
+                        // Movie, PPV event, or race session.
+                        let clean = parsed.title.clone().unwrap_or_else(|| title.clone());
+                        (clean, parsed.year, spec.media_type, vec![])
+                    };
 
                 info!(
-                    "{}: ✓ title=\"{}\" info_hash={} seeders={:?} size={:?} parsed_title={:?} year={:?}",
+                    "{}: ✓ title=\"{}\" info_hash={} seeders={:?} size={:?} \
+                     clean_title=\"{}\" year={:?} media_type={}",
                     spec.source, title, info_hash, seeders, size,
-                    parsed.title, year
+                    clean_title, year, effective_media_type,
                 );
 
-                // Find or create a media stub for this event, linked to the
-                // correct sports category catalog.
+                let stub_media_type = effective_media_type.to_uppercase();
                 let media_id = media_resolve::find_or_create_sports_stub(
                     pool,
                     &clean_title,
                     year,
-                    spec.category,
+                    spec.genre,
                     None,
+                    &stub_media_type,
                 )
                 .await
                 .unwrap_or(0);
 
-                // Also link the media to the sports category catalog so it
-                // appears in catalog browsing.
                 if media_id > 0 {
                     media_resolve::link_to_catalogs(pool, media_id, &[spec.category]).await;
                 }
@@ -611,7 +640,7 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                     seeders,
                     size,
                     parsed,
-                    files: vec![],
+                    files,
                     is_cached: false,
                 };
 
@@ -621,7 +650,8 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                     title: clean_title,
                     year,
                 };
-                persist::write_back(&[stream], pool, &meta, spec.media_type, None, None).await;
+                persist::write_back(&[stream], pool, &meta, effective_media_type, None, None)
+                    .await;
                 total_written += 1;
             }
 

@@ -89,6 +89,13 @@ fn category_to_genre(category: &str) -> &'static str {
         "american_football" => "American Football",
         "baseball" => "Baseball",
         "rugby" => "Rugby/AFL",
+        "formula_racing" => "Formula Racing",
+        "motogp_racing" => "MotoGP Racing",
+        "fighting" => "Fighting/Wrestling",
+        "tennis" => "Tennis",
+        "golf" => "Golf",
+        "cycling" => "Cycling",
+        "athletics" => "Athletics",
         _ => "Other Sports",
     }
 }
@@ -338,8 +345,6 @@ impl JobHandler for SportVideoCrawl {
                 blocks.len()
             );
 
-            let genre = category_to_genre(category);
-
             for block in blocks {
                 if ctx.is_cancelled() {
                     return Err(JobError::Cancelled);
@@ -409,15 +414,28 @@ impl JobHandler for SportVideoCrawl {
                 }
 
                 let parsed_title = parser::parse_sports_title(&block.title);
+
+                // Detect the actual sports category from the title so that
+                // content on a generic page (e.g. "other_sports") is tagged
+                // with its true catalog key (e.g. "formula_racing").
+                let detected_category: &str =
+                    parser::detect_sports_category(&block.title).unwrap_or(category.as_str());
+                let display_genre = category_to_genre(detected_category);
+
                 let media_id = media_resolve::find_or_create_sports_stub(
                     pool,
                     &block.title,
                     parsed_title.year,
-                    genre,
+                    display_genre,
                     block.poster_url.as_deref(),
+                    "MOVIE",
                 )
                 .await
                 .unwrap_or(0);
+
+                if media_id > 0 {
+                    media_resolve::link_to_catalogs(pool, media_id, &[detected_category]).await;
+                }
 
                 let meta = SearchMeta {
                     media_id: media_id as i64,
