@@ -1,31 +1,30 @@
-use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use std::time::Duration;
 
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
+use moka::sync::Cache;
 use once_cell::sync::Lazy;
-use tokio::sync::RwLock;
 
 type Limiter = Arc<DefaultDirectRateLimiter>;
 
-static LIMITERS: Lazy<RwLock<HashMap<String, Limiter>>> = Lazy::new(|| RwLock::new(HashMap::new()));
+// TTL of 1 hour: limiters for domains not recently scraped are evicted automatically.
+static LIMITERS: Lazy<Cache<String, Limiter>> = Lazy::new(|| {
+    Cache::builder()
+        .max_capacity(1_024)
+        .time_to_idle(Duration::from_secs(3600))
+        .build()
+});
 
 /// Get-or-create a rate limiter for `key` allowing `rps` requests per second.
 pub async fn get_limiter(key: &str, rps: u32) -> Limiter {
-    {
-        let guard = LIMITERS.read().await;
-        if let Some(l) = guard.get(key) {
-            return Arc::clone(l);
-        }
+    if let Some(l) = LIMITERS.get(key) {
+        return l;
     }
-    let mut guard = LIMITERS.write().await;
-    guard
-        .entry(key.to_string())
-        .or_insert_with(|| {
-            let quota = Quota::per_second(NonZeroU32::new(rps.max(1)).unwrap());
-            Arc::new(RateLimiter::direct(quota))
-        })
-        .clone()
+    let quota = Quota::per_second(NonZeroU32::new(rps.max(1)).unwrap());
+    let limiter = Arc::new(RateLimiter::direct(quota));
+    LIMITERS.insert(key.to_string(), Arc::clone(&limiter));
+    limiter
 }
 
 /// Wait until the rate limiter grants a token (async, no spin).
@@ -37,20 +36,13 @@ pub async fn wait(key: &str, rps: u32) {
 /// Get-or-create a rate limiter capped at `rpm` requests per minute.
 pub async fn get_limiter_rpm(key: &str, rpm: u32) -> Limiter {
     let rpm_key = format!("{key}::rpm");
-    {
-        let guard = LIMITERS.read().await;
-        if let Some(l) = guard.get(&rpm_key) {
-            return Arc::clone(l);
-        }
+    if let Some(l) = LIMITERS.get(&rpm_key) {
+        return l;
     }
-    let mut guard = LIMITERS.write().await;
-    guard
-        .entry(rpm_key)
-        .or_insert_with(|| {
-            let quota = Quota::per_minute(NonZeroU32::new(rpm.max(1)).unwrap());
-            Arc::new(RateLimiter::direct(quota))
-        })
-        .clone()
+    let quota = Quota::per_minute(NonZeroU32::new(rpm.max(1)).unwrap());
+    let limiter = Arc::new(RateLimiter::direct(quota));
+    LIMITERS.insert(rpm_key, Arc::clone(&limiter));
+    limiter
 }
 
 /// Wait until the rate limiter grants a token (rpm-based, async, no spin).

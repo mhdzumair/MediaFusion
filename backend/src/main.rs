@@ -1,3 +1,6 @@
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 use mediafusion_api::{
     config::AppConfig,
     exception_tracker, routes,

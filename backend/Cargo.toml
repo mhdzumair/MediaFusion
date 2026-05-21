@@ -16,6 +16,9 @@ name = "mediafusion-worker"
 path = "src/bin/worker.rs"
 
 [dependencies]
+# Global allocator: dramatically reduces RSS growth vs glibc malloc on long-running services
+tikv-jemallocator = "0.6"
+
 # Async trait support
 async-trait = "0.1"
 
@@ -68,7 +71,7 @@ imageproc = "0.26"
 ab_glyph = "0.2"
 
 # In-process LRU cache (imdb_id → media_id)
-moka = { version = "0.12", features = ["future"] }
+moka = { version = "0.12", features = ["future", "sync"] }
 
 # Typed errors
 thiserror = "2"
