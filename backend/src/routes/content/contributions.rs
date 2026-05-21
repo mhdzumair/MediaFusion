@@ -352,8 +352,8 @@ pub async fn list_contributions(
         idx += 1;
     }
     if let Some(ref cs) = params.contribution_status {
-        count_sql.push_str(&format!(" AND status = ${idx}"));
-        fetch_sql.push_str(&format!(" AND status = ${idx}"));
+        count_sql.push_str(&format!(" AND status::text = ${idx}"));
+        fetch_sql.push_str(&format!(" AND status::text = ${idx}"));
         filter_binds.push(ListContribBind::Str(cs.to_uppercase()));
         idx += 1;
     }
