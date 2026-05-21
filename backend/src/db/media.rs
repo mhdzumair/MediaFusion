@@ -115,3 +115,80 @@ pub async fn resolve_media_ids(
     let related_ids = related.into_iter().map(|(id,)| id as i64).collect();
     Ok((media_id, related_ids))
 }
+
+/// Resolve a browse/search external ID to an internal `media.id`.
+///
+/// Supports the same formats as the Python `get_media_by_external_id`:
+/// `tt*`, `mf:*`, `mftmdb*`, and `provider:id` (e.g. `tmdb:603`, `tvdb:123`).
+pub async fn get_media_id_by_external_id(
+    pool: &PgPool,
+    external_id: &str,
+    media_type: Option<&str>,
+) -> Result<Option<i32>, sqlx::Error> {
+    let external_id = external_id.trim();
+    if external_id.is_empty() {
+        return Ok(None);
+    }
+
+    if let Some(raw) = external_id
+        .strip_prefix("mf:")
+        .or_else(|| external_id.strip_prefix("mf"))
+    {
+        let Ok(internal_id) = raw.parse::<i32>() else {
+            return Ok(None);
+        };
+        if let Some(mt) = media_type {
+            return sqlx::query_scalar(
+                "SELECT id FROM media WHERE id = $1 AND type = upper($2)::mediatype LIMIT 1",
+            )
+            .bind(internal_id)
+            .bind(mt)
+            .fetch_optional(pool)
+            .await;
+        }
+        return sqlx::query_scalar("SELECT id FROM media WHERE id = $1 LIMIT 1")
+            .bind(internal_id)
+            .fetch_optional(pool)
+            .await;
+    }
+
+    let (provider, provider_external_id): (String, &str) = if external_id.starts_with("tt") {
+        ("imdb".to_string(), external_id)
+    } else if let Some(id) = external_id.strip_prefix("mftmdb") {
+        ("tmdb".to_string(), id)
+    } else if let Some((provider, id)) = external_id.split_once(':') {
+        (provider.to_ascii_lowercase(), id)
+    } else {
+        return Ok(None);
+    };
+
+    if let Some(mt) = media_type {
+        sqlx::query_scalar(
+            r#"
+            SELECT m.id FROM media m
+            JOIN media_external_id meid ON m.id = meid.media_id
+            WHERE meid.provider = $1
+              AND meid.external_id = $2
+              AND m.type = upper($3)::mediatype
+            LIMIT 1
+            "#,
+        )
+        .bind(&provider)
+        .bind(provider_external_id)
+        .bind(mt)
+        .fetch_optional(pool)
+        .await
+    } else {
+        sqlx::query_scalar(
+            r#"
+            SELECT meid.media_id FROM media_external_id meid
+            WHERE meid.provider = $1 AND meid.external_id = $2
+            LIMIT 1
+            "#,
+        )
+        .bind(&provider)
+        .bind(provider_external_id)
+        .fetch_optional(pool)
+        .await
+    }
+}

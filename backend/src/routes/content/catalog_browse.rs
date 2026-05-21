@@ -156,6 +156,7 @@ pub struct BrowseParams {
     pub catalog: Option<String>,
     pub genre: Option<String>,
     pub search: Option<String>,
+    pub external_id: Option<String>,
     pub sort: Option<String>,
     pub sort_dir: Option<String>,
     pub page: Option<i64>,
@@ -349,9 +350,38 @@ pub async fn browse_catalog(
     let page = params.page.unwrap_or(1).max(1);
     let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
 
+    // Resolve external_id filter to a media_id (matches Python catalog browse)
+    let external_id_media: Option<i32> = if let Some(ref eid) = params.external_id {
+        match crate::db::get_media_id_by_external_id(&state.pool_ro, eid, Some(&catalog_type)).await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("browse_catalog external_id lookup: {e}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"detail": "Failed to resolve external ID"})),
+                )
+                    .into_response();
+            }
+        }
+    } else {
+        None
+    };
+
+    if params.external_id.is_some() && external_id_media.is_none() {
+        return Json(json!({
+            "items": [],
+            "total": 0,
+            "page": page,
+            "page_size": page_size,
+            "has_more": false,
+        }))
+        .into_response();
+    }
+
     // Full-response cache (2 min TTL) — browse pages rarely change within a session
     let browse_cache_key = format!(
-        "catalog:browse:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+        "catalog:browse:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
         catalog_type,
         params.sort.as_deref().unwrap_or("latest"),
         params.sort_dir.as_deref().unwrap_or("desc"),
@@ -361,6 +391,7 @@ pub async fn browse_catalog(
         params.catalog.as_deref().unwrap_or(""),
         params.has_streams.unwrap_or(true),
         params.search.as_deref().unwrap_or(""),
+        params.external_id.as_deref().unwrap_or(""),
     );
     if let Some(cached) = cache::get_json(&state.redis, &browse_cache_key).await {
         return Json(cached).into_response();
@@ -438,6 +469,13 @@ pub async fn browse_catalog(
         search_bind = Some(format!("%{}%", search));
     }
 
+    let mut external_id_media_bind: Option<i32> = None;
+    if let Some(mid) = external_id_media {
+        bind_idx += 1;
+        where_parts.push(format!("m.id = ${bind_idx}"));
+        external_id_media_bind = Some(mid);
+    }
+
     let where_clause = where_parts.join(" AND ");
 
     let limit_idx = bind_idx + 1;
@@ -459,12 +497,15 @@ pub async fn browse_catalog(
 
     // COUNT result cache — keyed on the full filter tuple (changes rarely)
     let count_cache_key = format!(
-        "catalog:count:{}:{}:{}:{}:{}",
+        "catalog:count:{}:{}:{}:{}:{}:{}",
         catalog_type,
         genre_name_bind.as_deref().unwrap_or(""),
         catalog_name_bind.as_deref().unwrap_or(""),
         search_bind.as_deref().unwrap_or(""),
         params.has_streams.unwrap_or(true),
+        external_id_media_bind
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
     );
 
     let total: i64 = if let Some(cached_count) = cache::get_json(&state.redis, &count_cache_key)
@@ -482,6 +523,9 @@ pub async fn browse_catalog(
         }
         if let Some(ref v) = search_bind {
             count_q = count_q.bind(v.clone());
+        }
+        if let Some(mid) = external_id_media_bind {
+            count_q = count_q.bind(mid);
         }
         let n = count_q.fetch_one(&state.pool_ro).await.unwrap_or(0);
         // Cache count for 5 minutes — counts change slowly
@@ -518,6 +562,9 @@ pub async fn browse_catalog(
     }
     if let Some(ref v) = search_bind {
         list_q = list_q.bind(v.clone());
+    }
+    if let Some(mid) = external_id_media_bind {
+        list_q = list_q.bind(mid);
     }
     list_q = list_q.bind(page_size).bind(offset);
 
