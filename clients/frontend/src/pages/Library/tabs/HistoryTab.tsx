@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -32,8 +32,10 @@ import {
   Calendar,
   X,
   Zap,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
-import { useInfiniteWatchHistory, useDeleteWatchHistory, useClearWatchHistory, useProfiles } from '@/hooks'
+import { useWatchHistory, useDeleteWatchHistory, useClearWatchHistory, useProfiles } from '@/hooks'
 import { useRpdb } from '@/contexts/RpdbContext'
 import { PosterCompact } from '@/components/ui/poster'
 import { cn } from '@/lib/utils'
@@ -350,18 +352,19 @@ function HistoryCardSkeleton() {
 }
 
 export function HistoryTab() {
-  const loadMoreRef = useRef<HTMLDivElement>(null)
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [actionFilter, setActionFilter] = useState<WatchAction | 'all'>('all')
   const [typeFilter, setTypeFilter] = useState<'movie' | 'series' | 'tv' | 'all'>('all')
   const [selectedProfileId, setSelectedProfileId] = useState<number | 'all'>('all')
+  const [page, setPage] = useState(1)
+  const pageSize = 20
   const { rpdbApiKey } = useRpdb()
 
-  // Fetch profiles for the profile selector
   const { data: profiles } = useProfiles()
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteWatchHistory({
-    page_size: 20,
+  const { data, isLoading } = useWatchHistory({
+    page,
+    page_size: pageSize,
     action: actionFilter === 'all' ? undefined : actionFilter,
     media_type: typeFilter === 'all' ? undefined : typeFilter,
     profile_id: selectedProfileId === 'all' ? undefined : selectedProfileId,
@@ -370,31 +373,7 @@ export function HistoryTab() {
   const deleteHistory = useDeleteWatchHistory()
   const clearHistory = useClearWatchHistory()
 
-  // Infinite scroll
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const first = entries[0]
-        if (first.isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage()
-        }
-      },
-      { threshold: 0.1, rootMargin: '100px' },
-    )
-
-    const currentRef = loadMoreRef.current
-    if (currentRef) {
-      observer.observe(currentRef)
-    }
-
-    return () => {
-      if (currentRef) {
-        observer.unobserve(currentRef)
-      }
-    }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
-
-  const items = data?.pages.flatMap((page) => page.items ?? []).filter(Boolean) ?? []
+  const items = data?.items?.filter(Boolean) ?? []
 
   const handleClearAll = async () => {
     // Clear only the selected profile's history, or all if 'all' is selected
@@ -412,7 +391,10 @@ export function HistoryTab() {
             <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium mr-1">Profile:</span>
             <Select
               value={selectedProfileId.toString()}
-              onValueChange={(value) => setSelectedProfileId(value === 'all' ? 'all' : parseInt(value, 10))}
+              onValueChange={(value) => {
+                setSelectedProfileId(value === 'all' ? 'all' : parseInt(value, 10))
+                setPage(1)
+              }}
             >
               <SelectTrigger className="w-[180px] h-8 rounded-xl text-sm">
                 <SelectValue placeholder="Select Profile" />
@@ -439,24 +421,41 @@ export function HistoryTab() {
         {/* Action filters */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium mr-1">Activity:</span>
-          <FilterPill active={actionFilter === 'all'} onClick={() => setActionFilter('all')} icon={Clock} label="All" />
+          <FilterPill
+            active={actionFilter === 'all'}
+            onClick={() => {
+              setActionFilter('all')
+              setPage(1)
+            }}
+            icon={Clock}
+            label="All"
+          />
           <FilterPill
             active={actionFilter === 'WATCHED'}
-            onClick={() => setActionFilter('WATCHED')}
+            onClick={() => {
+              setActionFilter('WATCHED')
+              setPage(1)
+            }}
             icon={Eye}
             label="Watched"
             color="text-sky-400"
           />
           <FilterPill
             active={actionFilter === 'DOWNLOADED'}
-            onClick={() => setActionFilter('DOWNLOADED')}
+            onClick={() => {
+              setActionFilter('DOWNLOADED')
+              setPage(1)
+            }}
             icon={Download}
             label="Downloaded"
             color="text-emerald-400"
           />
           <FilterPill
             active={actionFilter === 'QUEUED'}
-            onClick={() => setActionFilter('QUEUED')}
+            onClick={() => {
+              setActionFilter('QUEUED')
+              setPage(1)
+            }}
             icon={ListPlus}
             label="Queued"
             color="text-amber-400"
@@ -466,24 +465,40 @@ export function HistoryTab() {
         {/* Type filters */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium mr-1">Type:</span>
-          <FilterPill active={typeFilter === 'all'} onClick={() => setTypeFilter('all')} label="All" />
+          <FilterPill
+            active={typeFilter === 'all'}
+            onClick={() => {
+              setTypeFilter('all')
+              setPage(1)
+            }}
+            label="All"
+          />
           <FilterPill
             active={typeFilter === 'movie'}
-            onClick={() => setTypeFilter('movie')}
+            onClick={() => {
+              setTypeFilter('movie')
+              setPage(1)
+            }}
             icon={Film}
             label="Movies"
             color="text-purple-400"
           />
           <FilterPill
             active={typeFilter === 'series'}
-            onClick={() => setTypeFilter('series')}
+            onClick={() => {
+              setTypeFilter('series')
+              setPage(1)
+            }}
             icon={Tv}
             label="Series"
             color="text-blue-400"
           />
           <FilterPill
             active={typeFilter === 'tv'}
-            onClick={() => setTypeFilter('tv')}
+            onClick={() => {
+              setTypeFilter('tv')
+              setPage(1)
+            }}
             icon={Radio}
             label="TV"
             color="text-rose-400"
@@ -498,8 +513,8 @@ export function HistoryTab() {
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Loading...
               </span>
-            ) : items.length > 0 ? (
-              `${items.length} item${items.length !== 1 ? 's' : ''} in history`
+            ) : data && data.total > 0 ? (
+              `${data.total} item${data.total !== 1 ? 's' : ''} in history`
             ) : (
               'No activity found'
             )}
@@ -578,16 +593,37 @@ export function HistoryTab() {
         </div>
       )}
 
-      {/* Infinite scroll sentinel */}
-      <div ref={loadMoreRef} className="flex justify-center py-6">
-        {isFetchingNextPage && (
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Loading more...</span>
-          </div>
-        )}
-        {!hasNextPage && items.length > 0 && <p className="text-xs text-muted-foreground/60">You've reached the end</p>}
-      </div>
+      {data && data.total > pageSize && (
+        <div className="flex justify-center items-center gap-2 pt-4">
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={page === 1}
+            onClick={() => {
+              setPage((p) => p - 1)
+              window.scrollTo(0, 0)
+            }}
+            className="rounded-xl"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="px-4 text-sm text-muted-foreground">
+            Page {page} of {Math.ceil(data.total / pageSize)}
+          </span>
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={!data.has_more}
+            onClick={() => {
+              setPage((p) => p + 1)
+              window.scrollTo(0, 0)
+            }}
+            className="rounded-xl"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

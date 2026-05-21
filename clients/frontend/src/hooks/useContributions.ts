@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   contributionsApi,
   type ContributionContributorListParams,
@@ -27,15 +27,6 @@ export function useContributionContributors(params: ContributionContributorListP
     queryKey: [...CONTRIBUTIONS_QUERY_KEY, 'contributors', params],
     queryFn: () => contributionsApi.listContributors(params),
     placeholderData: keepPreviousData,
-  })
-}
-
-export function useInfiniteContributions(params: Omit<ContributionListParams, 'page'> = {}) {
-  return useInfiniteQuery({
-    queryKey: [...CONTRIBUTIONS_QUERY_KEY, 'infinite', params],
-    queryFn: ({ pageParam = 1 }) => contributionsApi.list({ ...params, page: pageParam }),
-    getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.page + 1 : undefined),
-    initialPageParam: 1,
   })
 }
 

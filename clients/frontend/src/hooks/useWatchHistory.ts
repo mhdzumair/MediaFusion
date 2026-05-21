@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   watchHistoryApi,
   type WatchHistoryListParams,
@@ -14,15 +14,6 @@ export function useWatchHistory(params: WatchHistoryListParams = {}) {
   return useQuery({
     queryKey: [...WATCH_HISTORY_QUERY_KEY, params],
     queryFn: () => watchHistoryApi.list(params),
-  })
-}
-
-export function useInfiniteWatchHistory(params: Omit<WatchHistoryListParams, 'page'> = {}) {
-  return useInfiniteQuery({
-    queryKey: [...WATCH_HISTORY_QUERY_KEY, 'infinite', params],
-    queryFn: ({ pageParam = 1 }) => watchHistoryApi.list({ ...params, page: pageParam }),
-    getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.page + 1 : undefined),
-    initialPageParam: 1,
   })
 }
 

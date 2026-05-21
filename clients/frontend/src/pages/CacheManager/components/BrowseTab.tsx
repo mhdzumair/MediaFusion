@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Search,
   Eye,
@@ -12,8 +12,11 @@ import {
   SortAsc,
   Type,
   AlertCircle,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
@@ -52,7 +55,24 @@ export function BrowseTab({ initialPattern = '', initialBackendCategory, onViewK
   const [debouncedPattern, setDebouncedPattern] = useState(initialPattern)
   const [backendCategory, setBackendCategory] = useState<string | undefined>(initialBackendCategory)
   const [typeFilter, setTypeFilter] = useState('all')
-  const loadMoreRef = useRef<HTMLDivElement>(null)
+  const filterKey = `${debouncedPattern}|${typeFilter}|${backendCategory ?? ''}`
+  const [pagination, setPagination] = useState({ filterKey, pageIndex: 0, cursors: ['0'] as string[] })
+  if (pagination.filterKey !== filterKey) {
+    setPagination({ filterKey, pageIndex: 0, cursors: ['0'] })
+  }
+  const { pageIndex, cursors } = pagination
+  const setPageIndex = (value: number | ((prev: number) => number)) => {
+    setPagination((prev) => ({
+      ...prev,
+      pageIndex: typeof value === 'function' ? value(prev.pageIndex) : value,
+    }))
+  }
+  const setCursors = (value: string[] | ((prev: string[]) => string[])) => {
+    setPagination((prev) => ({
+      ...prev,
+      cursors: typeof value === 'function' ? value(prev.cursors) : value,
+    }))
+  }
 
   // Update search pattern when initialPattern changes (during render, not in effect)
   const [prevInitialPattern, setPrevInitialPattern] = useState(initialPattern)
@@ -76,40 +96,29 @@ export function BrowseTab({ initialPattern = '', initialBackendCategory, onViewK
     return () => clearTimeout(timer)
   }, [searchPattern])
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } = useCacheKeys(
-    debouncedPattern,
-    typeFilter,
-    backendCategory,
-  )
+  const cursor = cursors[pageIndex] ?? '0'
+  const { data, isLoading, isFetching, error } = useCacheKeys(debouncedPattern, typeFilter, backendCategory, cursor)
 
-  // Infinite scroll observer
-  const handleObserver = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      const [entry] = entries
-      if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage()
-      }
-    },
-    [fetchNextPage, hasNextPage, isFetchingNextPage],
-  )
+  const keys = data?.keys ?? []
+  const totalKeys = data?.total ?? 0
+  const hasMore = data?.has_more ?? false
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(handleObserver, {
-      root: null,
-      rootMargin: '100px',
-      threshold: 0,
+  const goToNextPage = () => {
+    if (!hasMore || !data?.cursor) return
+    setCursors((prev) => {
+      const next = [...prev]
+      next[pageIndex + 1] = data.cursor
+      return next
     })
+    setPageIndex((i) => i + 1)
+    window.scrollTo(0, 0)
+  }
 
-    if (loadMoreRef.current) {
-      observer.observe(loadMoreRef.current)
-    }
-
-    return () => observer.disconnect()
-  }, [handleObserver])
-
-  // Flatten pages into single array
-  const allKeys = data?.pages.flatMap((page) => page.keys) || []
-  const totalKeys = data?.pages[0]?.total || 0
+  const goToPrevPage = () => {
+    if (pageIndex === 0) return
+    setPageIndex((i) => i - 1)
+    window.scrollTo(0, 0)
+  }
 
   return (
     <div className="space-y-4">
@@ -147,8 +156,9 @@ export function BrowseTab({ initialPattern = '', initialBackendCategory, onViewK
       {(debouncedPattern || backendCategory) && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>
-            Showing {allKeys.length} of {totalKeys.toLocaleString()} keys
+            Showing {keys.length} of {totalKeys.toLocaleString()} keys
             {typeFilter !== 'all' && ` (filtered by ${typeFilter})`}
+            {(hasMore || pageIndex > 0) && ` · Page ${pageIndex + 1}`}
           </span>
           <span className="font-mono text-xs text-right max-w-[60%] truncate">
             {backendCategory ? `Category: ${backendCategory}` : `Pattern: ${debouncedPattern}`}
@@ -177,7 +187,7 @@ export function BrowseTab({ initialPattern = '', initialBackendCategory, onViewK
       )}
 
       {/* Empty state */}
-      {!isLoading && !error && allKeys.length === 0 && (debouncedPattern || backendCategory) && (
+      {!isLoading && !error && keys.length === 0 && (debouncedPattern || backendCategory) && (
         <div className="flex items-center justify-center py-16">
           <div className="flex flex-col items-center gap-3 text-muted-foreground">
             <Search className="h-8 w-8" />
@@ -191,9 +201,9 @@ export function BrowseTab({ initialPattern = '', initialBackendCategory, onViewK
       )}
 
       {/* Keys list */}
-      {allKeys.length > 0 && (
+      {keys.length > 0 && (
         <div className="space-y-2">
-          {allKeys.map((key) => (
+          {keys.map((key) => (
             <button
               key={key.key}
               onClick={() => onViewKey(key.key)}
@@ -220,13 +230,15 @@ export function BrowseTab({ initialPattern = '', initialBackendCategory, onViewK
             </button>
           ))}
 
-          {/* Infinite scroll trigger */}
-          <div ref={loadMoreRef} className="h-px" />
-
-          {/* Loading more indicator */}
-          {isFetchingNextPage && (
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          {(pageIndex > 0 || hasMore) && (
+            <div className="flex justify-center items-center gap-2 pt-4">
+              <Button variant="outline" size="icon" disabled={pageIndex === 0 || isFetching} onClick={goToPrevPage}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="px-4 text-sm text-muted-foreground">Page {pageIndex + 1}</span>
+              <Button variant="outline" size="icon" disabled={!hasMore || isFetching} onClick={goToNextPage}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
           )}
         </div>

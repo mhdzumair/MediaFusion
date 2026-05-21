@@ -1,16 +1,7 @@
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import {
-  Sparkles,
-  ChevronLeft,
-  ChevronRight,
-  Settings2,
-  Loader2,
-  Search,
-  X,
-  ChevronRight as LoadMoreIcon,
-} from 'lucide-react'
-import { useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query'
+import { Sparkles, ChevronLeft, ChevronRight, Settings2, Loader2, Search, X } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -19,28 +10,15 @@ import { Poster } from '@/components/ui/poster'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useProfiles } from '@/hooks/useProfiles'
 import { useRpdb } from '@/contexts/RpdbContext'
-import {
-  useDiscoverTrending,
-  useDiscoverList,
-  useWatchProviders,
-  useDiscoverProviderFeed,
-  useDiscoverAnime,
-  useDiscoverSearch,
-  useDiscoverTvdb,
-  useDiscoverMdblist,
-} from '@/hooks/useDiscover'
+import { useWatchProviders, useDiscoverSource, type DiscoverSource } from '@/hooks/useDiscover'
 import { userMetadataApi } from '@/lib/api/user-metadata'
 import { scrapersApi } from '@/lib/api/scrapers'
 import { metadataApi } from '@/lib/api/metadata'
-import type { DiscoverItem, DiscoverPage, DiscoverDbEntry } from '@/lib/api/discover'
+import type { DiscoverItem } from '@/lib/api/discover'
 import { discoverDbKey } from '@/lib/api/discover'
 import type { MDBListItem } from '@/pages/Configure/components/types'
 import type { ImportProvider } from '@/lib/api/user-metadata'
 import { useDebounce } from '@/hooks/useDebounce'
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type InfiniteDiscoverResult = ReturnType<typeof useDiscoverTrending>
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -54,16 +32,47 @@ function getCurrentSeason(): { season: string; year: number } {
   return { season, year }
 }
 
-/** Flatten all pages from an infinite query into a single items + merged db_index */
-function flattenPages(data?: InfiniteData<DiscoverPage>) {
-  if (!data) return { items: [], db_index: {} as Record<string, DiscoverDbEntry> }
-  return {
-    items: data.pages.flatMap((p) => p.items),
-    db_index: data.pages.reduce((acc, p) => ({ ...acc, ...p.db_index }), {} as Record<string, DiscoverDbEntry>),
-  }
-}
-
 const LANG_ANY = '__any__'
+
+function DiscoverRowPagination({
+  page,
+  totalPages,
+  onPageChange,
+  isFetching,
+}: {
+  page: number
+  totalPages: number
+  onPageChange: (page: number) => void
+  isFetching?: boolean
+}) {
+  if (totalPages <= 1) return null
+
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        disabled={page <= 1 || isFetching}
+        onClick={() => onPageChange(page - 1)}
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <span className="text-xs text-muted-foreground min-w-[4.5rem] text-center">
+        {page} / {totalPages}
+      </span>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        disabled={page >= totalPages || isFetching}
+        onClick={() => onPageChange(page + 1)}
+      >
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+    </div>
+  )
+}
 
 const LANGUAGES = [
   { code: LANG_ANY, label: 'Any Language' },
@@ -207,20 +216,29 @@ function DiscoverCard({
   )
 }
 
-// ─── Horizontal Row (infinite) ────────────────────────────────────────────────
+// ─── Horizontal Row ─────────────────────────────────────────────────────────
 
 interface DiscoverRowProps {
   title: string
-  query: InfiniteDiscoverResult
+  source: DiscoverSource
   onImport: (item: DiscoverItem) => void
   loadingKey?: string | null
   rpdbApiKey?: string | null
   onNavigate: (mediaId: number, mediaType: string) => void
 }
 
-function DiscoverRow({ title, query, onImport, loadingKey, rpdbApiKey, onNavigate }: DiscoverRowProps) {
+function DiscoverRow(props: DiscoverRowProps) {
+  return <DiscoverRowInner key={JSON.stringify(props.source)} {...props} />
+}
+
+function DiscoverRowInner({ title, source, onImport, loadingKey, rpdbApiKey, onNavigate }: DiscoverRowProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const { items, db_index } = useMemo(() => flattenPages(query.data), [query.data])
+  const [page, setPage] = useState(1)
+
+  const query = useDiscoverSource(source, page)
+  const items = query.data?.items ?? []
+  const db_index = query.data?.db_index ?? {}
+  const totalPages = query.data?.total_pages ?? 1
 
   const scroll = (dir: 'left' | 'right') => {
     scrollRef.current?.scrollBy({ left: dir === 'right' ? 600 : -600, behavior: 'smooth' })
@@ -243,9 +261,15 @@ function DiscoverRow({ title, query, onImport, loadingKey, rpdbApiKey, onNavigat
 
   return (
     <section className="space-y-2">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h3 className="font-semibold text-sm">{title}</h3>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
+          <DiscoverRowPagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            isFetching={query.isFetching}
+          />
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => scroll('left')}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -279,25 +303,6 @@ function DiscoverRow({ title, query, onImport, loadingKey, rpdbApiKey, onNavigat
             />
           )
         })}
-
-        {/* Load more card */}
-        {query.hasNextPage && (
-          <div
-            className="relative flex-shrink-0 w-[140px] group cursor-pointer select-none"
-            onClick={() => !query.isFetchingNextPage && query.fetchNextPage()}
-          >
-            <div className="aspect-[2/3] rounded-lg bg-muted/50 border border-border/50 flex flex-col items-center justify-center gap-2 hover:bg-muted/80 transition-colors">
-              {query.isFetchingNextPage ? (
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              ) : (
-                <>
-                  <LoadMoreIcon className="h-6 w-6 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground font-medium">Load more</span>
-                </>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </section>
   )
@@ -314,11 +319,22 @@ interface MDBListRowProps {
   onNavigate: (mediaId: number, mediaType: string) => void
 }
 
-function MDBListRow({ list, enabled, rpdbApiKey, onImport, loadingKey, onNavigate }: MDBListRowProps) {
+function MDBListRow(props: MDBListRowProps) {
+  const catalogType = props.list.ct === 'movie' ? 'movie' : 'series'
+  const sourceKey = `${props.list.i}:${catalogType}:${props.enabled}`
+  return <MDBListRowInner key={sourceKey} {...props} />
+}
+
+function MDBListRowInner({ list, enabled, rpdbApiKey, onImport, loadingKey, onNavigate }: MDBListRowProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const catalogType = list.ct === 'movie' ? 'movie' : ('series' as const)
-  const query = useDiscoverMdblist(list.i, catalogType, enabled)
-  const { items, db_index } = useMemo(() => flattenPages(query.data), [query.data])
+  const [page, setPage] = useState(1)
+  const source: DiscoverSource = { kind: 'mdblist', listId: list.i, catalogType, enabled }
+
+  const query = useDiscoverSource(source, page)
+  const items = query.data?.items ?? []
+  const db_index = query.data?.db_index ?? {}
+  const totalPages = query.data?.total_pages ?? 1
 
   const scroll = (dir: 'left' | 'right') => {
     scrollRef.current?.scrollBy({ left: dir === 'right' ? 600 : -600, behavior: 'smooth' })
@@ -348,7 +364,13 @@ function MDBListRow({ list, enabled, rpdbApiKey, onImport, loadingKey, onNavigat
             MDBList
           </Badge>
         </div>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
+          <DiscoverRowPagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            isFetching={query.isFetching}
+          />
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => scroll('left')}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -381,30 +403,12 @@ function MDBListRow({ list, enabled, rpdbApiKey, onImport, loadingKey, onNavigat
             />
           )
         })}
-
-        {query.hasNextPage && (
-          <div
-            className="relative flex-shrink-0 w-[140px] group cursor-pointer select-none"
-            onClick={() => !query.isFetchingNextPage && query.fetchNextPage()}
-          >
-            <div className="aspect-[2/3] rounded-lg bg-muted/50 border border-border/50 flex flex-col items-center justify-center gap-2 hover:bg-muted/80 transition-colors">
-              {query.isFetchingNextPage ? (
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              ) : (
-                <>
-                  <LoadMoreIcon className="h-6 w-6 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground font-medium">Load more</span>
-                </>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </section>
   )
 }
 
-// ─── Search Results (infinite grid) ──────────────────────────────────────────
+// ─── Search Results ───────────────────────────────────────────────────────────
 
 interface SearchResultsProps {
   query: string
@@ -417,7 +421,17 @@ interface SearchResultsProps {
   onNavigate: (mediaId: number, mediaType: string) => void
 }
 
-function SearchResults({
+function SearchResults(props: SearchResultsProps) {
+  const sourceKey = JSON.stringify({
+    query: props.query,
+    mediaType: props.mediaType,
+    language: props.language,
+    enabled: props.enabled,
+  })
+  return <SearchResultsInner key={sourceKey} {...props} />
+}
+
+function SearchResultsInner({
   query,
   mediaType,
   language,
@@ -427,8 +441,19 @@ function SearchResults({
   rpdbApiKey,
   onNavigate,
 }: SearchResultsProps) {
-  const result = useDiscoverSearch(query, mediaType, enabled, language)
-  const { items, db_index } = useMemo(() => flattenPages(result.data), [result.data])
+  const [page, setPage] = useState(1)
+  const source: DiscoverSource = {
+    kind: 'search',
+    query,
+    mediaType,
+    language,
+    enabled,
+  }
+
+  const result = useDiscoverSource(source, page)
+  const items = result.data?.items ?? []
+  const db_index = result.data?.db_index ?? {}
+  const totalPages = result.data?.total_pages ?? 1
 
   if (result.isLoading) {
     return (
@@ -472,11 +497,28 @@ function SearchResults({
           )
         })}
       </div>
-      {result.hasNextPage && (
-        <div className="flex justify-center">
-          <Button variant="outline" onClick={() => result.fetchNextPage()} disabled={result.isFetchingNextPage}>
-            {result.isFetchingNextPage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Load more results
+      {totalPages > 1 && (
+        <div className="flex justify-center items-center gap-2 pt-2">
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={page === 1 || result.isFetching}
+            onClick={() => setPage((p) => p - 1)}
+            className="rounded-xl"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="px-4 text-sm text-muted-foreground">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={page >= totalPages || result.isFetching}
+            onClick={() => setPage((p) => p + 1)}
+            className="rounded-xl"
+          >
+            <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
       )}
@@ -525,31 +567,7 @@ export function DiscoverTab() {
   const tmdbEnabled = hasKey
   const lang = language === LANG_ANY ? undefined : language || undefined
 
-  const trendingAll = useDiscoverTrending('all', 'week', tmdbEnabled && showAll && !isSearching, lang)
-  const trendingMovies = useDiscoverTrending(
-    'movie',
-    'week',
-    tmdbEnabled && showMovies && !showAll && !isSearching,
-    lang,
-  )
-  const trendingSeries = useDiscoverTrending('tv', 'week', tmdbEnabled && showSeries && !showAll && !isSearching, lang)
-  const popularMovies = useDiscoverList('popular', 'movie', region, tmdbEnabled && showMovies && !isSearching, lang)
-  const popularSeries = useDiscoverList('popular', 'tv', region, tmdbEnabled && showSeries && !isSearching, lang)
-  const topMovies = useDiscoverList('top_rated', 'movie', region, tmdbEnabled && showMovies && !isSearching, lang)
-  const topSeries = useDiscoverList('top_rated', 'tv', region, tmdbEnabled && showSeries && !isSearching, lang)
-  const nowPlaying = useDiscoverList('now_playing', 'movie', region, tmdbEnabled && showMovies && !isSearching, lang)
-  const upcoming = useDiscoverList('upcoming', 'movie', region, tmdbEnabled && showMovies && !isSearching, lang)
   useWatchProviders('movie', region, tmdbEnabled)
-  const netflixMovies = useDiscoverProviderFeed('movie', 8, region, tmdbEnabled && showMovies && !isSearching, lang)
-  const netflixSeries = useDiscoverProviderFeed('tv', 8, region, tmdbEnabled && showSeries && !isSearching, lang)
-  const primeMovies = useDiscoverProviderFeed('movie', 9, region, tmdbEnabled && showMovies && !isSearching, lang)
-  // Anime (AniList/Kitsu) needs no external API key — available to all authenticated users
-  const animeTrending = useDiscoverAnime('trending', undefined, undefined, 'anilist', showSeries && !isSearching)
-  const animeSeasonal = useDiscoverAnime('seasonal', season, year, 'anilist', showSeries && !isSearching)
-
-  // TVDB rows — only when user has their own TVDB key configured
-  const tvdbSeries = useDiscoverTvdb('tv', hasTvdbKey && showSeries && !isSearching)
-  const tvdbMovies = useDiscoverTvdb('movie', hasTvdbKey && showMovies && !isSearching)
 
   const importMutation = useMutation({
     mutationFn: async (item: DiscoverItem) => {
@@ -692,24 +710,159 @@ export function DiscoverTab() {
         <div className="space-y-8">
           {hasKey && (
             <>
-              {showAll && <DiscoverRow title="Trending This Week" query={trendingAll} {...rowProps} />}
-              {showMovies && !showAll && <DiscoverRow title="Trending Movies" query={trendingMovies} {...rowProps} />}
-              {showSeries && !showAll && <DiscoverRow title="Trending Series" query={trendingSeries} {...rowProps} />}
+              {showAll && (
+                <DiscoverRow
+                  title="Trending This Week"
+                  source={{
+                    kind: 'trending',
+                    mediaType: 'all',
+                    window: 'week',
+                    language: lang,
+                    enabled: tmdbEnabled && showAll && !isSearching,
+                  }}
+                  {...rowProps}
+                />
+              )}
+              {showMovies && !showAll && (
+                <DiscoverRow
+                  title="Trending Movies"
+                  source={{
+                    kind: 'trending',
+                    mediaType: 'movie',
+                    window: 'week',
+                    language: lang,
+                    enabled: tmdbEnabled && showMovies && !showAll && !isSearching,
+                  }}
+                  {...rowProps}
+                />
+              )}
+              {showSeries && !showAll && (
+                <DiscoverRow
+                  title="Trending Series"
+                  source={{
+                    kind: 'trending',
+                    mediaType: 'tv',
+                    window: 'week',
+                    language: lang,
+                    enabled: tmdbEnabled && showSeries && !showAll && !isSearching,
+                  }}
+                  {...rowProps}
+                />
+              )}
               {showMovies && (
                 <>
-                  <DiscoverRow title="Now Playing" query={nowPlaying} {...rowProps} />
-                  <DiscoverRow title="Upcoming Movies" query={upcoming} {...rowProps} />
-                  <DiscoverRow title="Popular Movies" query={popularMovies} {...rowProps} />
-                  <DiscoverRow title="Top Rated Movies" query={topMovies} {...rowProps} />
-                  <DiscoverRow title="New on Netflix (Movies)" query={netflixMovies} {...rowProps} />
-                  <DiscoverRow title="New on Prime Video (Movies)" query={primeMovies} {...rowProps} />
+                  <DiscoverRow
+                    title="Now Playing"
+                    source={{
+                      kind: 'list',
+                      listKind: 'now_playing',
+                      mediaType: 'movie',
+                      region,
+                      language: lang,
+                      enabled: tmdbEnabled && showMovies && !isSearching,
+                    }}
+                    {...rowProps}
+                  />
+                  <DiscoverRow
+                    title="Upcoming Movies"
+                    source={{
+                      kind: 'list',
+                      listKind: 'upcoming',
+                      mediaType: 'movie',
+                      region,
+                      language: lang,
+                      enabled: tmdbEnabled && showMovies && !isSearching,
+                    }}
+                    {...rowProps}
+                  />
+                  <DiscoverRow
+                    title="Popular Movies"
+                    source={{
+                      kind: 'list',
+                      listKind: 'popular',
+                      mediaType: 'movie',
+                      region,
+                      language: lang,
+                      enabled: tmdbEnabled && showMovies && !isSearching,
+                    }}
+                    {...rowProps}
+                  />
+                  <DiscoverRow
+                    title="Top Rated Movies"
+                    source={{
+                      kind: 'list',
+                      listKind: 'top_rated',
+                      mediaType: 'movie',
+                      region,
+                      language: lang,
+                      enabled: tmdbEnabled && showMovies && !isSearching,
+                    }}
+                    {...rowProps}
+                  />
+                  <DiscoverRow
+                    title="New on Netflix (Movies)"
+                    source={{
+                      kind: 'providerFeed',
+                      mediaType: 'movie',
+                      providerId: 8,
+                      region,
+                      language: lang,
+                      enabled: tmdbEnabled && showMovies && !isSearching,
+                    }}
+                    {...rowProps}
+                  />
+                  <DiscoverRow
+                    title="New on Prime Video (Movies)"
+                    source={{
+                      kind: 'providerFeed',
+                      mediaType: 'movie',
+                      providerId: 9,
+                      region,
+                      language: lang,
+                      enabled: tmdbEnabled && showMovies && !isSearching,
+                    }}
+                    {...rowProps}
+                  />
                 </>
               )}
               {showSeries && (
                 <>
-                  <DiscoverRow title="Popular Series" query={popularSeries} {...rowProps} />
-                  <DiscoverRow title="Top Rated Series" query={topSeries} {...rowProps} />
-                  <DiscoverRow title="New on Netflix (Series)" query={netflixSeries} {...rowProps} />
+                  <DiscoverRow
+                    title="Popular Series"
+                    source={{
+                      kind: 'list',
+                      listKind: 'popular',
+                      mediaType: 'tv',
+                      region,
+                      language: lang,
+                      enabled: tmdbEnabled && showSeries && !isSearching,
+                    }}
+                    {...rowProps}
+                  />
+                  <DiscoverRow
+                    title="Top Rated Series"
+                    source={{
+                      kind: 'list',
+                      listKind: 'top_rated',
+                      mediaType: 'tv',
+                      region,
+                      language: lang,
+                      enabled: tmdbEnabled && showSeries && !isSearching,
+                    }}
+                    {...rowProps}
+                  />
+                  <DiscoverRow
+                    title="New on Netflix (Series)"
+                    source={{
+                      kind: 'providerFeed',
+                      mediaType: 'tv',
+                      providerId: 8,
+                      region,
+                      language: lang,
+                      enabled: tmdbEnabled && showSeries && !isSearching,
+                    }}
+                    {...rowProps}
+                  />
                 </>
               )}
             </>
@@ -718,10 +871,26 @@ export function DiscoverTab() {
           {/* Anime rows — no external API key required */}
           {showSeries && !isSearching && (
             <>
-              <DiscoverRow title="Trending Anime" query={animeTrending} {...rowProps} />
+              <DiscoverRow
+                title="Trending Anime"
+                source={{
+                  kind: 'anime',
+                  animeKind: 'trending',
+                  source: 'anilist',
+                  enabled: showSeries && !isSearching,
+                }}
+                {...rowProps}
+              />
               <DiscoverRow
                 title={`This Season — ${season.charAt(0).toUpperCase() + season.slice(1)} ${year}`}
-                query={animeSeasonal}
+                source={{
+                  kind: 'anime',
+                  animeKind: 'seasonal',
+                  season,
+                  year,
+                  source: 'anilist',
+                  enabled: showSeries && !isSearching,
+                }}
                 {...rowProps}
               />
             </>
@@ -730,8 +899,20 @@ export function DiscoverTab() {
           {/* TVDB rows — only when user has their own TVDB key */}
           {hasTvdbKey && (
             <>
-              {showSeries && <DiscoverRow title="Popular Series (TVDB)" query={tvdbSeries} {...rowProps} />}
-              {showMovies && <DiscoverRow title="Popular Movies (TVDB)" query={tvdbMovies} {...rowProps} />}
+              {showSeries && (
+                <DiscoverRow
+                  title="Popular Series (TVDB)"
+                  source={{ kind: 'tvdb', mediaType: 'tv', enabled: hasTvdbKey && showSeries && !isSearching }}
+                  {...rowProps}
+                />
+              )}
+              {showMovies && (
+                <DiscoverRow
+                  title="Popular Movies (TVDB)"
+                  source={{ kind: 'tvdb', mediaType: 'movie', enabled: hasTvdbKey && showMovies && !isSearching }}
+                  {...rowProps}
+                />
+              )}
             </>
           )}
 

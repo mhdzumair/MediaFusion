@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   usersApi,
   type UserListParams,
@@ -13,15 +13,6 @@ export function useUsers(params: UserListParams = {}) {
   return useQuery({
     queryKey: [...USERS_QUERY_KEY, params],
     queryFn: () => usersApi.list(params),
-  })
-}
-
-export function useInfiniteUsers(params: Omit<UserListParams, 'page'> = {}) {
-  return useInfiniteQuery({
-    queryKey: [...USERS_QUERY_KEY, 'infinite', params],
-    queryFn: ({ pageParam = 1 }) => usersApi.list({ ...params, page: pageParam }),
-    getNextPageParam: (lastPage) => (lastPage.page < lastPage.pages ? lastPage.page + 1 : undefined),
-    initialPageParam: 1,
   })
 }
 

@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef } from 'react'
+import { getContentDetailReturnUrl } from '@/pages/Library/browseNavigation'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -1452,13 +1453,15 @@ export function ContentDetailPage() {
     )
   }
 
+  const libraryReturnTo = getContentDetailReturnUrl()
+
   if (!item) {
     return (
       <div className="text-center py-12">
         <Film className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
         <p className="mt-4 text-lg">Content not found</p>
         <Button asChild className="mt-4 rounded-xl">
-          <Link to="/dashboard/library">
+          <Link to={libraryReturnTo}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Library
           </Link>
@@ -1471,7 +1474,7 @@ export function ContentDetailPage() {
     <div className="space-y-6">
       {/* Back Button */}
       <Button variant="ghost" asChild className="rounded-xl">
-        <Link to="/dashboard/library">
+        <Link to={libraryReturnTo}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Library
         </Link>

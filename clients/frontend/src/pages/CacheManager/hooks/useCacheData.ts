@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api'
 import type { CacheStats, CacheKeysResponse, CacheValueResponse, ClearCacheResponse, DeleteKeyResponse } from '../types'
 
@@ -6,8 +6,8 @@ import type { CacheStats, CacheKeysResponse, CacheValueResponse, ClearCacheRespo
 export const cacheQueryKeys = {
   all: ['cache'] as const,
   stats: () => [...cacheQueryKeys.all, 'stats'] as const,
-  keys: (pattern: string, typeFilter: string, cacheCategory?: string | null) =>
-    [...cacheQueryKeys.all, 'keys', pattern, typeFilter, cacheCategory ?? ''] as const,
+  keys: (pattern: string, typeFilter: string, cacheCategory: string | null | undefined, cursor: string) =>
+    [...cacheQueryKeys.all, 'keys', pattern, typeFilter, cacheCategory ?? '', cursor] as const,
   key: (key: string) => [...cacheQueryKeys.all, 'key', key] as const,
 }
 
@@ -23,14 +23,14 @@ export function useCacheStats() {
   })
 }
 
-// Fetch cache keys with infinite scroll
-export function useCacheKeys(pattern: string, typeFilter: string = '', cacheCategory?: string | null) {
-  return useInfiniteQuery({
-    queryKey: cacheQueryKeys.keys(pattern, typeFilter, cacheCategory),
-    queryFn: async ({ pageParam = '0' }) => {
+// Fetch one page of cache keys (cursor-based SCAN pagination)
+export function useCacheKeys(pattern: string, typeFilter: string = '', cacheCategory?: string | null, cursor = '0') {
+  return useQuery({
+    queryKey: cacheQueryKeys.keys(pattern, typeFilter, cacheCategory, cursor),
+    queryFn: async () => {
       const params = new URLSearchParams({
         pattern: cacheCategory ? '*' : pattern || '*',
-        cursor: String(pageParam),
+        cursor: String(cursor),
         count: '50',
       })
       if (typeFilter && typeFilter !== 'all') {
@@ -42,8 +42,6 @@ export function useCacheKeys(pattern: string, typeFilter: string = '', cacheCate
       const response = await apiClient.get<CacheKeysResponse>(`/admin/cache/keys?${params.toString()}`)
       return response
     },
-    getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.cursor : undefined),
-    initialPageParam: '0',
     enabled: Boolean(cacheCategory || (pattern && pattern.length > 0)),
   })
 }
@@ -95,15 +93,12 @@ export function useDeleteCacheKey() {
       // Invalidate stats
       queryClient.invalidateQueries({ queryKey: cacheQueryKeys.stats() })
       // Remove from cached keys lists
-      queryClient.setQueriesData<{ pages: CacheKeysResponse[] }>({ queryKey: cacheQueryKeys.all }, (old) => {
-        if (!old?.pages) return old
+      queryClient.setQueriesData<CacheKeysResponse>({ queryKey: [...cacheQueryKeys.all, 'keys'] }, (old) => {
+        if (!old) return old
         return {
           ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            keys: page.keys.filter((k) => k.key !== deletedKey),
-            total: page.total - 1,
-          })),
+          keys: old.keys.filter((k) => k.key !== deletedKey),
+          total: old.total - 1,
         }
       })
     },

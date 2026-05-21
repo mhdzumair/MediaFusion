@@ -1,6 +1,4 @@
 export { ContentCard, ContentGrid, ContentList, QuickLike } from './ContentCard'
-export { VirtualContentGrid } from './VirtualContentGrid'
-export type { VirtualContentGridProps } from './VirtualContentGrid'
 export type { ContentCardData, ContentCardProps } from './ContentCard'
 
 export { ContentFilters, DEFAULT_SORT_OPTIONS, LIBRARY_SORT_OPTIONS } from './ContentFilters'

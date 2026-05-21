@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { libraryApi, type LibraryListParams, type LibraryItemCreate, type CatalogType } from '@/lib/api'
 
 // Query keys
@@ -15,17 +15,6 @@ export function useLibrary(params: LibraryListParams = {}) {
   return useQuery({
     queryKey: libraryKeys.list(params),
     queryFn: () => libraryApi.getLibrary(params),
-    staleTime: 2 * 60 * 1000, // 2 minutes
-  })
-}
-
-// Get library with infinite loading
-export function useInfiniteLibrary(params: Omit<LibraryListParams, 'page'> = {}) {
-  return useInfiniteQuery({
-    queryKey: [...libraryKeys.list(params), 'infinite'],
-    queryFn: ({ pageParam = 1 }) => libraryApi.getLibrary({ ...params, page: pageParam }),
-    getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.page + 1 : undefined),
-    initialPageParam: 1,
     staleTime: 2 * 60 * 1000, // 2 minutes
   })
 }

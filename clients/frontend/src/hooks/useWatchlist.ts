@@ -1,4 +1,4 @@
-import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { watchlistApi, type WatchlistParams, type AdvancedTorrentImport } from '@/lib/api/watchlist'
 
 // Query keys
@@ -34,29 +34,6 @@ export function useWatchlist(
     queryFn: () => watchlistApi.getWatchlist(provider!, params),
     enabled: options?.enabled !== false && !!provider,
     staleTime: 2 * 60 * 1000, // 2 minutes (watchlist can change)
-  })
-}
-
-/**
- * Hook to get watchlist items with infinite scrolling
- */
-export function useInfiniteWatchlist(
-  provider: string | undefined,
-  params: Omit<WatchlistParams, 'page'> = {},
-  options?: { enabled?: boolean },
-) {
-  return useInfiniteQuery({
-    queryKey: watchlistKeys.list(provider || '', { ...params, page: 'infinite' as unknown as number }),
-    queryFn: ({ pageParam = 1 }) => watchlistApi.getWatchlist(provider!, { ...params, page: pageParam }),
-    getNextPageParam: (lastPage) => {
-      if (lastPage.has_more) {
-        return lastPage.page + 1
-      }
-      return undefined
-    },
-    initialPageParam: 1,
-    enabled: options?.enabled !== false && !!provider,
-    staleTime: 2 * 60 * 1000,
   })
 }
 

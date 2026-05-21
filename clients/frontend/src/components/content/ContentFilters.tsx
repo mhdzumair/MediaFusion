@@ -3,21 +3,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import {
-  Film,
-  Tv,
-  Radio,
-  Search,
-  Grid3X3,
-  List,
-  SortAsc,
-  SortDesc,
-  CheckCircle,
-  User,
-  X,
-  Infinity as InfinityIcon,
-  LayoutList,
-} from 'lucide-react'
+import { Film, Tv, Radio, Search, Grid3X3, List, SortAsc, SortDesc, CheckCircle, User, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CatalogType, SortOption, SortDirection, GenreResponse, CatalogInfo } from '@/lib/api'
 
@@ -79,10 +65,6 @@ export interface ContentFiltersProps {
   // Page size
   pageSize?: 25 | 50 | 100
   onPageSizeChange?: (size: 25 | 50 | 100) => void
-
-  // Scroll mode
-  scrollMode?: 'infinite' | 'paged'
-  onScrollModeChange?: (mode: 'infinite' | 'paged') => void
 
   className?: string
 }
@@ -159,14 +141,10 @@ export function ContentFilters({
   pageSize,
   onPageSizeChange,
 
-  // Scroll mode
-  scrollMode,
-  onScrollModeChange,
-
   className,
 }: ContentFiltersProps) {
   const showTvFilters = catalogType === 'tv' && (onWorkingOnlyChange || onMyChannelsChange)
-  const hasDisplayControls = (showViewMode && !!onViewModeChange) || !!onScrollModeChange || pageSize !== undefined
+  const hasDisplayControls = (showViewMode && !!onViewModeChange) || pageSize !== undefined
   const hasTypeRow = (showTypeFilter && !!catalogType && !!onCatalogTypeChange) || showTvFilters || hasDisplayControls
 
   return (
@@ -233,7 +211,7 @@ export function ContentFilters({
             )}
           </div>
 
-          {/* Right: display controls — view mode, scroll mode, page size */}
+          {/* Right: display controls — view mode, page size */}
           {hasDisplayControls && (
             <div className="flex items-center gap-2 self-start sm:self-auto">
               {showViewMode && onViewModeChange && (
@@ -255,29 +233,6 @@ export function ContentFilters({
                     title="List view"
                   >
                     <List className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-
-              {scrollMode && onScrollModeChange && (
-                <div className="flex items-center border rounded-xl overflow-hidden">
-                  <Button
-                    variant={scrollMode === 'infinite' ? 'secondary' : 'ghost'}
-                    size="icon"
-                    className="rounded-none h-9 w-9"
-                    onClick={() => onScrollModeChange('infinite')}
-                    title="Infinite scroll"
-                  >
-                    <InfinityIcon className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant={scrollMode === 'paged' ? 'secondary' : 'ghost'}
-                    size="icon"
-                    className="rounded-none h-9 w-9"
-                    onClick={() => onScrollModeChange('paged')}
-                    title="Page navigation"
-                  >
-                    <LayoutList className="h-4 w-4" />
                   </Button>
                 </div>
               )}

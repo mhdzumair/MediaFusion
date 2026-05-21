@@ -25,7 +25,6 @@ export {
 // Watch History hooks (includes downloads - unified with action field)
 export {
   useWatchHistory,
-  useInfiniteWatchHistory,
   useContinueWatching,
   useCreateWatchHistory,
   useUpdateWatchProgress,
@@ -38,7 +37,6 @@ export {
 export {
   useContributions,
   useContributionContributors,
-  useInfiniteContributions,
   useContribution,
   useContributionStats,
   useCreateContribution,
@@ -91,15 +89,7 @@ export {
 } from './useMetrics'
 
 // Users hooks (Admin)
-export {
-  useUsers,
-  useInfiniteUsers,
-  useUser,
-  useUpdateUser,
-  useUpdateUserRole,
-  useDeleteUser,
-  useSendUploadWarning,
-} from './useUsers'
+export { useUsers, useUser, useUpdateUser, useUpdateUserRole, useDeleteUser, useSendUploadWarning } from './useUsers'
 
 // Content Import hooks
 export {
@@ -129,7 +119,6 @@ export {
   useAvailableCatalogs,
   useGenres,
   useCatalogList,
-  useInfiniteCatalog,
   useCatalogItem,
   useCatalogStreams,
   catalogKeys,
@@ -142,19 +131,14 @@ export {
 // Metadata reference hooks (non-admin)
 export {
   useMetadataReferenceGenres,
-  useInfiniteMetadataReferenceGenres,
   useMetadataReferenceCatalogs,
-  useInfiniteMetadataReferenceCatalogs,
   useMetadataReferenceStars,
-  useInfiniteMetadataReferenceStars,
   useMetadataReferenceParentalCertificates,
-  useInfiniteMetadataReferenceParentalCertificates,
 } from './useMetadataReference'
 
 // Library hooks
 export {
   useLibrary,
-  useInfiniteLibrary,
   useLibraryStats,
   useLibraryItem,
   useLibraryCheck,
@@ -303,7 +287,6 @@ export {
 export {
   useWatchlistProviders,
   useWatchlist,
-  useInfiniteWatchlist,
   useMissingTorrents,
   useImportTorrents,
   useRemoveTorrent,

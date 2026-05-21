@@ -1,4 +1,4 @@
-import { useQuery, useInfiniteQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { catalogApi, type CatalogType, type CatalogListParams, type SortOption, type SortDirection } from '@/lib/api'
 
 // Query keys
@@ -46,23 +46,6 @@ export function useCatalogList(
     queryKey: catalogKeys.list(catalogType, params),
     queryFn: () => catalogApi.browseCatalog(catalogType, params),
     staleTime: 5 * 60 * 1000, // 5 minutes
-    enabled: options?.enabled ?? true,
-  })
-}
-
-// Browse catalog with infinite loading
-export function useInfiniteCatalog(
-  catalogType: CatalogType,
-  params: Omit<CatalogListParams, 'page'> = {},
-  options?: { enabled?: boolean },
-) {
-  return useInfiniteQuery({
-    queryKey: [...catalogKeys.list(catalogType, params), 'infinite'],
-    queryFn: ({ pageParam = 1 }) => catalogApi.browseCatalog(catalogType, { ...params, page: pageParam }),
-    getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.page + 1 : undefined),
-    initialPageParam: 1,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    maxPages: 20, // Keep at most 20 pages in cache — DOM memory is bounded by the virtualizer, not page count
     enabled: options?.enabled ?? true,
   })
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useLocation } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -13,19 +13,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Film, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Film, ChevronLeft, ChevronRight } from 'lucide-react'
 import {
   ContentCard,
   ContentGrid,
   ContentList,
   ContentFilters,
-  VirtualContentGrid,
   type ContentCardData,
   type ViewMode,
   type SearchMode,
 } from '@/components/content'
 import {
-  useInfiniteCatalog,
   useCatalogList,
   useAvailableCatalogs,
   useGenres,
@@ -36,12 +34,12 @@ import {
 import { adminApi } from '@/lib/api/admin'
 import { useRole } from '@/hooks/useRole'
 import { useToast } from '@/hooks/use-toast'
+import { saveContentDetailReturnUrl } from '../browseNavigation'
 
 // Storage key for persisting browse state
 const BROWSE_STATE_KEY = 'browse_tab_state'
 const BROWSE_SELECTED_ITEM_KEY = 'browse_selected_item'
 
-type ScrollMode = 'infinite' | 'paged'
 type PageSize = 25 | 50 | 100
 
 interface BrowseState {
@@ -50,8 +48,8 @@ interface BrowseState {
   sort: SortOption
   sortDir: SortDirection
   viewMode: ViewMode
-  scrollMode: ScrollMode
   pageSize: PageSize
+  page: number
   scrollPosition: number
   workingOnly: boolean
   myChannels: boolean
@@ -76,6 +74,7 @@ const saveState = (state: BrowseState) => {
 
 export function BrowseTab() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
   const { isAdmin } = useRole()
   const { toast } = useToast()
   const [blockTarget, setBlockTarget] = useState<ContentCardData | null>(null)
@@ -107,7 +106,6 @@ export function BrowseTab() {
   const urlSearch = searchParams.get('search') || ''
   const searchMode: SearchMode = urlSearchMode ?? (urlExternalId ? 'external_id' : 'title')
   const search = urlExternalId || urlSearch
-  const scrollMode: ScrollMode = searchParams.get('scroll_mode') === 'paged' ? 'paged' : 'infinite'
   const browsePage = (() => {
     const n = parseInt(searchParams.get('page') ?? '1', 10)
     return Number.isFinite(n) && n > 0 ? n : 1
@@ -139,6 +137,7 @@ export function BrowseTab() {
   const containerRef = useRef<HTMLDivElement>(null)
   const selectedCardRef = useRef<HTMLDivElement>(null)
   const hasScrolledToSelected = useRef(false)
+  const hasRestoredBrowsePage = useRef(false)
 
   // ---------------------------------------------------------------------------
   // Single URL mutator — all filter/pagination writes go through here.
@@ -151,7 +150,6 @@ export function BrowseTab() {
       genre: string
       search: string
       searchMode: SearchMode
-      scrollMode: ScrollMode
       page: number
     }>,
     opts: { resetPage?: boolean } = {},
@@ -167,14 +165,6 @@ export function BrowseTab() {
             params.set('genre', updates.genre)
           } else {
             params.delete('genre')
-          }
-        }
-
-        if (updates.scrollMode !== undefined) {
-          if (updates.scrollMode === 'paged') {
-            params.set('scroll_mode', 'paged')
-          } else {
-            params.delete('scroll_mode')
           }
         }
 
@@ -211,7 +201,18 @@ export function BrowseTab() {
   // One-shot URL hydration so a stored catalogType materialises in URL on bare /library visit
   useEffect(() => {
     if (!searchParams.get('type') && storedState.catalogType) {
-      updateUrl({ type: storedState.catalogType, scrollMode: storedState.scrollMode })
+      updateUrl({ type: storedState.catalogType })
+    }
+    // Strip legacy scroll_mode param from bookmarks
+    if (searchParams.get('scroll_mode')) {
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev)
+          params.delete('scroll_mode')
+          return params
+        },
+        { replace: true },
+      )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -233,22 +234,8 @@ export function BrowseTab() {
     }),
   }
 
-  const {
-    data: infiniteData,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isLoading: isInfiniteLoading,
-  } = useInfiniteCatalog(catalogType, commonParams, { enabled: scrollMode === 'infinite' })
-
-  const { data: pagedData, isLoading: isPagedLoading } = useCatalogList(
-    catalogType,
-    { ...commonParams, page: browsePage },
-    { enabled: scrollMode === 'paged' },
-  )
-
-  const isLoading = scrollMode === 'infinite' ? isInfiniteLoading : isPagedLoading
-  const hasData = scrollMode === 'infinite' ? !!infiniteData : !!pagedData
+  const { data: pagedData, isLoading } = useCatalogList(catalogType, { ...commonParams, page: browsePage })
+  const hasData = !!pagedData
 
   // ---------------------------------------------------------------------------
   // Save non-URL state to sessionStorage (excludes URL-derived values)
@@ -262,8 +249,8 @@ export function BrowseTab() {
         sort,
         sortDir,
         viewMode,
-        scrollMode,
         pageSize,
+        page: browsePage,
         scrollPosition: window.scrollY,
         workingOnly,
         myChannels,
@@ -275,8 +262,8 @@ export function BrowseTab() {
     sort,
     sortDir,
     viewMode,
-    scrollMode,
     pageSize,
+    browsePage,
     isRestoring,
     workingOnly,
     myChannels,
@@ -294,8 +281,8 @@ export function BrowseTab() {
           sort,
           sortDir,
           viewMode,
-          scrollMode,
           pageSize,
+          page: browsePage,
           scrollPosition: window.scrollY,
           workingOnly,
           myChannels,
@@ -307,23 +294,31 @@ export function BrowseTab() {
       window.removeEventListener('scroll', handleScroll)
       clearTimeout(timeoutId)
     }
-  }, [catalogType, selectedCatalog, sort, sortDir, viewMode, scrollMode, pageSize, workingOnly, myChannels])
+  }, [catalogType, selectedCatalog, sort, sortDir, viewMode, pageSize, browsePage, workingOnly, myChannels])
 
-  // Restore scroll position after data loads
+  // Restore browse page when returning from detail (URL may omit ?page=)
   useEffect(() => {
-    if (!isLoading && hasData && !restoredScroll && storedState.scrollPosition !== undefined) {
+    if (!selectedItemId || hasRestoredBrowsePage.current) return
+    const storedPage = storedState.page ?? 1
+    if (storedPage > 1 && browsePage !== storedPage) {
+      hasRestoredBrowsePage.current = true
+      updateUrl({ page: storedPage })
+      setRestoredScroll(true)
+    }
+  }, [selectedItemId, browsePage, storedState.page])
+
+  // Restore scroll position after data loads (skip when highlighting a returned item)
+  useEffect(() => {
+    if (!isLoading && hasData && !restoredScroll && !selectedItemId && storedState.scrollPosition !== undefined) {
       const timer = setTimeout(() => {
         window.scrollTo(0, storedState.scrollPosition!)
         setRestoredScroll(true)
       }, 100)
       return () => clearTimeout(timer)
     }
-  }, [isLoading, hasData, storedState.scrollPosition, restoredScroll])
+  }, [isLoading, hasData, storedState.scrollPosition, restoredScroll, selectedItemId])
 
-  const items =
-    scrollMode === 'infinite'
-      ? (infiniteData?.pages.flatMap((page) => page.items ?? []).filter(Boolean) ?? [])
-      : (pagedData?.items.filter(Boolean) ?? [])
+  const items = pagedData?.items.filter(Boolean) ?? []
 
   const catalogs =
     catalogType === 'movie'
@@ -348,11 +343,17 @@ export function BrowseTab() {
     nudity: item.nudity,
   }))
 
-  // Clear selection if item not found
   const itemExists = contentItems.some((item) => item.id === selectedItemId)
-  if (!isLoading && hasData && selectedItemId && !itemExists) {
-    setSelectedItemId(null)
-  }
+
+  // Clear selection only after the stored page is loaded and the item is still missing
+  useEffect(() => {
+    if (!isLoading && hasData && selectedItemId && !itemExists) {
+      const storedPage = storedState.page ?? 1
+      if (browsePage === storedPage) {
+        setSelectedItemId(null)
+      }
+    }
+  }, [isLoading, hasData, selectedItemId, itemExists, browsePage, storedState.page])
 
   useEffect(() => {
     if (selectedItemId === null) {
@@ -360,10 +361,9 @@ export function BrowseTab() {
     }
   }, [selectedItemId])
 
-  // Scroll to selected item in paged/list mode (virtual grid handles its own scrolling)
+  // Scroll to selected item after returning from detail view
   useEffect(() => {
-    const isVirtualMode = scrollMode === 'infinite' && viewMode === 'grid'
-    if (!isVirtualMode && !isLoading && hasData && selectedItemId && itemExists && !hasScrolledToSelected.current) {
+    if (!isLoading && hasData && selectedItemId && itemExists && !hasScrolledToSelected.current) {
       const timer = setTimeout(() => {
         if (selectedCardRef.current) {
           selectedCardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -376,18 +376,30 @@ export function BrowseTab() {
       }, 200)
       return () => clearTimeout(timer)
     }
-  }, [isLoading, hasData, selectedItemId, itemExists, scrollMode, viewMode, contentItems])
+  }, [isLoading, hasData, selectedItemId, itemExists, contentItems])
 
   useEffect(() => {
     hasScrolledToSelected.current = false
+    hasRestoredBrowsePage.current = false
   }, [catalogType, selectedCatalog, selectedGenre, search, searchMode, sort, sortDir])
 
   const handleCardClick = (item: ContentCardData) => {
+    saveContentDetailReturnUrl(location.pathname, location.search)
+    saveState({
+      catalogType,
+      selectedCatalog,
+      sort,
+      sortDir,
+      viewMode,
+      pageSize,
+      page: browsePage,
+      scrollPosition: window.scrollY,
+      workingOnly,
+      myChannels,
+    })
     sessionStorage.setItem(BROWSE_SELECTED_ITEM_KEY, item.id.toString())
     setSelectedItemId(item.id)
   }
-
-  const selectedIndex = selectedItemId != null ? contentItems.findIndex((i) => i.id === selectedItemId) : undefined
 
   return (
     <div ref={containerRef} className="space-y-6">
@@ -429,11 +441,6 @@ export function BrowseTab() {
         }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        scrollMode={scrollMode}
-        onScrollModeChange={(mode) => {
-          updateUrl({ scrollMode: mode }, { resetPage: true })
-          window.scrollTo(0, 0)
-        }}
         pageSize={pageSize}
         onPageSizeChange={(size) => {
           setPageSize(size)
@@ -477,70 +484,7 @@ export function BrowseTab() {
         </div>
       ) : (
         <>
-          {/* Virtual grid for infinite scroll — bounds DOM size regardless of scroll depth */}
-          {scrollMode === 'infinite' && viewMode === 'grid' ? (
-            <>
-              <VirtualContentGrid
-                items={contentItems}
-                renderItem={(item) => {
-                  const isSelected = selectedItemId === item.id
-                  return (
-                    <ContentCard
-                      key={item.id}
-                      item={item}
-                      variant="grid"
-                      showEdit
-                      onBlock={isAdmin ? setBlockTarget : undefined}
-                      onNavigate={handleCardClick}
-                      isSelected={isSelected}
-                    />
-                  )
-                }}
-                onLoadMore={fetchNextPage}
-                hasMore={hasNextPage}
-                loading={isFetchingNextPage}
-                scrollTargetIndex={selectedIndex !== undefined && selectedIndex >= 0 ? selectedIndex : undefined}
-              />
-              <div className="flex justify-center py-8">
-                {isFetchingNextPage && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    <span>Loading more...</span>
-                  </div>
-                )}
-                {!hasNextPage && items.length > 0 && (
-                  <p className="text-sm text-muted-foreground">You've reached the end</p>
-                )}
-              </div>
-            </>
-          ) : scrollMode === 'infinite' && viewMode === 'list' ? (
-            <>
-              <ContentList>
-                {contentItems.map((item) => {
-                  const isSelected = selectedItemId === item.id
-                  return (
-                    <ContentCard
-                      key={item.id}
-                      item={item}
-                      variant="list"
-                      showEdit
-                      onBlock={isAdmin ? setBlockTarget : undefined}
-                      onNavigate={handleCardClick}
-                      isSelected={isSelected}
-                      cardRef={isSelected ? selectedCardRef : undefined}
-                    />
-                  )
-                })}
-              </ContentList>
-              {/* Infinite scroll sentinel for list view */}
-              <InfiniteScrollSentinel
-                hasNextPage={hasNextPage}
-                isFetchingNextPage={isFetchingNextPage}
-                fetchNextPage={fetchNextPage}
-                itemCount={items.length}
-              />
-            </>
-          ) : viewMode === 'grid' ? (
+          {viewMode === 'grid' ? (
             <ContentGrid>
               {contentItems.map((item) => {
                 const isSelected = selectedItemId === item.id
@@ -578,8 +522,7 @@ export function BrowseTab() {
             </ContentList>
           )}
 
-          {/* Paged navigation */}
-          {scrollMode === 'paged' && pagedData && pagedData.total > pageSize && (
+          {pagedData && pagedData.total > pageSize && (
             <div className="flex justify-center items-center gap-2 pt-4">
               <Button
                 variant="outline"
@@ -665,49 +608,6 @@ export function BrowseTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  )
-}
-
-// Infinite scroll sentinel for list view (grid view uses VirtualContentGrid)
-function InfiniteScrollSentinel({
-  hasNextPage,
-  isFetchingNextPage,
-  fetchNextPage,
-  itemCount,
-}: {
-  hasNextPage: boolean | undefined
-  isFetchingNextPage: boolean
-  fetchNextPage: () => void
-  itemCount: number
-}) {
-  const sentinelRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage()
-        }
-      },
-      { threshold: 0.1, rootMargin: '100px' },
-    )
-    const el = sentinelRef.current
-    if (el) observer.observe(el)
-    return () => {
-      if (el) observer.unobserve(el)
-    }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
-
-  return (
-    <div ref={sentinelRef} className="flex justify-center py-8">
-      {isFetchingNextPage && (
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          <span>Loading more...</span>
-        </div>
-      )}
-      {!hasNextPage && itemCount > 0 && <p className="text-sm text-muted-foreground">You've reached the end</p>}
     </div>
   )
 }

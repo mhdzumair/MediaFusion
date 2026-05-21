@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -17,12 +17,24 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { Film, Tv, Cloud, CloudOff, Settings, Loader2, HardDrive, Download, Trash2 } from 'lucide-react'
+import {
+  Film,
+  Tv,
+  Cloud,
+  CloudOff,
+  Settings,
+  Loader2,
+  HardDrive,
+  Download,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { ContentCard, ContentGrid, type ContentCardData } from '@/components/content'
 import {
   useWatchlistProviders,
-  useInfiniteWatchlist,
+  useWatchlist,
   useMissingTorrents,
   useProfiles,
   useRemoveTorrent,
@@ -59,9 +71,8 @@ export function WatchlistTab() {
 
   // Filters
   const [mediaType, setMediaType] = useState<'movie' | 'series' | ''>('')
-
-  // Infinite scroll ref
-  const loadMoreRef = useRef<HTMLDivElement>(null)
+  const [page, setPage] = useState(1)
+  const pageSize = 24
 
   // Set default profile on load (during render, not in effect)
   // Only guard on selectedProfileId === undefined — prev reference guard fails when profiles are cached
@@ -86,48 +97,38 @@ export function WatchlistTab() {
     }
   }
 
-  // Fetch watchlist items with infinite scroll
   const {
     data: watchlistData,
     isLoading: watchlistLoading,
     isFetching,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = useInfiniteWatchlist(
+  } = useWatchlist(
     selectedProvider,
     {
       profileId: selectedProfileId,
       mediaType: mediaType || undefined,
-      pageSize: 24,
+      page,
+      pageSize,
     },
     {
       enabled: !!selectedProvider && selectedProfileId !== undefined,
     },
   )
 
-  // Transform watchlist items to ContentCardData format (flatten pages)
-  // Also keep track of info_hashes for each item
   const { contentItems, itemHashesMap } = useMemo(() => {
-    if (!watchlistData?.pages)
-      return { contentItems: [] as ContentCardData[], itemHashesMap: new Map<number, string[]>() }
-
     const hashesMap = new Map<number, string[]>()
-    const items = watchlistData.pages.flatMap((page) =>
-      (page.items ?? []).filter(Boolean).map((item: WatchlistItem) => {
-        hashesMap.set(item.id, item.info_hashes || [])
-        return {
-          id: item.id,
-          external_ids: item.external_ids,
-          title: item.title,
-          type: item.type,
-          year: item.year,
-          poster: item.poster,
-        } as ContentCardData
-      }),
-    )
+    const items = (watchlistData?.items ?? []).filter(Boolean).map((item: WatchlistItem) => {
+      hashesMap.set(item.id, item.info_hashes || [])
+      return {
+        id: item.id,
+        external_ids: item.external_ids,
+        title: item.title,
+        type: item.type,
+        year: item.year,
+        poster: item.poster,
+      } as ContentCardData
+    })
     return { contentItems: items, itemHashesMap: hashesMap }
-  }, [watchlistData])
+  }, [watchlistData?.items])
 
   // Remove torrent mutation
   const removeTorrent = useRemoveTorrent()
@@ -204,9 +205,8 @@ export function WatchlistTab() {
     }
   }, [selectedProvider, selectedProfileId, clearAllTorrents, toast])
 
-  // Get total count from first page
-  const totalCount = watchlistData?.pages?.[0]?.total || 0
-  const providerName = watchlistData?.pages?.[0]?.provider_name
+  const totalCount = watchlistData?.total || 0
+  const providerName = watchlistData?.provider_name
 
   // Check for missing torrents (only for supported providers)
   const supportsImport = selectedProvider && IMPORT_SUPPORTED_PROVIDERS.has(selectedProvider)
@@ -214,31 +214,6 @@ export function WatchlistTab() {
     enabled: !!supportsImport && selectedProfileId !== undefined,
   })
   const missingCount = missingData?.total || 0
-
-  // Infinite scroll observer
-  const handleObserver = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      const [target] = entries
-      if (target.isIntersecting && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage()
-      }
-    },
-    [fetchNextPage, hasNextPage, isFetchingNextPage],
-  )
-
-  useEffect(() => {
-    const element = loadMoreRef.current
-    if (!element) return
-
-    const observer = new IntersectionObserver(handleObserver, {
-      root: null,
-      rootMargin: '100px',
-      threshold: 0,
-    })
-
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [handleObserver])
 
   // Get display name for provider tabs
   const getTabDisplayName = (provider: WatchlistProviderInfo): string => {
@@ -280,7 +255,10 @@ export function WatchlistTab() {
         {profiles && profiles.length > 1 && (
           <Select
             value={selectedProfileId?.toString()}
-            onValueChange={(value) => setSelectedProfileId(parseInt(value, 10))}
+            onValueChange={(value) => {
+              setSelectedProfileId(parseInt(value, 10))
+              setPage(1)
+            }}
           >
             <SelectTrigger className="w-[180px] rounded-xl">
               <SelectValue placeholder="Select Profile" />
@@ -327,7 +305,13 @@ export function WatchlistTab() {
       {hasProviders && (
         <>
           {providers.length > 1 ? (
-            <Tabs value={selectedProvider} onValueChange={setSelectedProvider}>
+            <Tabs
+              value={selectedProvider}
+              onValueChange={(v) => {
+                setSelectedProvider(v)
+                setPage(1)
+              }}
+            >
               <TabsList className="h-auto flex-wrap gap-1 bg-transparent p-0">
                 {providers.map((provider) => (
                   <TabsTrigger
@@ -423,6 +407,7 @@ export function WatchlistTab() {
               value={mediaType || 'all'}
               onValueChange={(v) => {
                 setMediaType(v === 'all' ? '' : (v as 'movie' | 'series'))
+                setPage(1)
               }}
             >
               <SelectTrigger className="w-[130px] rounded-xl">
@@ -476,13 +461,35 @@ export function WatchlistTab() {
                 ))}
               </ContentGrid>
 
-              {/* Infinite scroll trigger */}
-              <div ref={loadMoreRef} className="h-4" />
-
-              {/* Loading indicator for next page */}
-              {isFetchingNextPage && (
-                <div className="flex justify-center py-4">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              {totalCount > pageSize && (
+                <div className="flex justify-center items-center gap-2 pt-4">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={page === 1}
+                    onClick={() => {
+                      setPage((p) => p - 1)
+                      window.scrollTo(0, 0)
+                    }}
+                    className="rounded-xl"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="px-4 text-sm text-muted-foreground">
+                    Page {page} of {Math.ceil(totalCount / pageSize)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={!watchlistData?.has_more}
+                    onClick={() => {
+                      setPage((p) => p + 1)
+                      window.scrollTo(0, 0)
+                    }}
+                    className="rounded-xl"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
                 </div>
               )}
             </>
