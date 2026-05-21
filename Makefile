@@ -217,37 +217,24 @@ generate-baseline:
 
 # Frontend build targets
 frontend-install:
-	cd clients/frontend && npm ci
+	cd clients/frontend && pnpm ci
 
 frontend-build: frontend-install
-	cd clients/frontend && npm run build
+	cd clients/frontend && pnpm run build
 
 frontend-dev:
-	cd clients/frontend && npm run dev
+	cd clients/frontend && pnpm run dev
 
 frontend-lint:
-	cd clients/frontend && npm run lint
+	cd clients/frontend && pnpm run lint
 
 frontend-fmt:
-	cd clients/frontend && npm run format:check
-
-# Python targets
-python-lint:
-	uv run ruff check .
-
-python-fmt:
-	uv run ruff format --check .
-
-python-test:
-	uv run pytest
-
-# Development targets
-backend-dev:
-	uvicorn api.main:app --reload --port 8000
+	cd clients/frontend && pnpm run format
 
 dev:
 	@echo "Starting backend and frontend in development mode..."
-	@echo "Run 'make backend-dev' in one terminal and 'make frontend-dev' in another"
+	cd backend && cargo run --bin mediafusion-api -- --reload &
+	cd clients/frontend && pnpm run dev
 
 # Worker job targets
 worker-list-jobs:
@@ -275,16 +262,16 @@ rust-test:
 	cd backend && cargo test
 
 rust-fmt:
-	cd backend && cargo fmt --check
+	cd backend && cargo fmt --all
 
 rust-lint:
 	cd backend && cargo clippy --all-targets -- -D warnings
 
 # Aggregate targets
-lint: python-lint rust-lint frontend-lint
+lint: rust-lint frontend-lint
 
-fmt: python-fmt rust-fmt frontend-fmt
+fmt: rust-fmt frontend-fmt
 
-test: python-test rust-test
+test: rust-test
 
 all: build-multi
