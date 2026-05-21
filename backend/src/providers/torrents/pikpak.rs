@@ -1,9 +1,11 @@
 /// PikPak streaming provider.
 ///
-/// Token format: base64-encoded JSON {"access_token": "...", "refresh_token": "..."}
+/// Token format: base64-encoded JSON:
+/// `{"access_token":"...","refresh_token":"...","device_id":"...","user_id":"...","captcha_token":"..."}`
 ///
-/// Auth: Bearer {access_token} on every request.
-/// Token refresh: POST /v1/auth/token — no captcha required.
+/// Auth follows the PikPak web client (rclone / debrify):
+///   - Web client_id + captcha tokens on every API call
+///   - Token refresh WITHOUT client_secret (sending it triggers permission_denied)
 ///
 /// API hosts:
 ///   Drive: api-drive.mypikpak.com
@@ -14,7 +16,6 @@ use base64::{
 };
 use reqwest::Client;
 use serde_json::{json, Value};
-use sha1::{Digest, Sha1};
 
 use crate::providers::{
     torrents::transport::{append_query, MediaFlowForward},
@@ -23,28 +24,31 @@ use crate::providers::{
 
 const API_HOST: &str = "api-drive.mypikpak.com";
 const USER_HOST: &str = "user.mypikpak.com";
-const CLIENT_ID: &str = "YNxT9w7GMdWvEOKa";
-const CLIENT_SECRET: &str = "dbw2OtmVEeuUvIptb1Coyg";
-const CLIENT_VERSION: &str = "1.47.1";
-const PACKAGE_NAME: &str = "com.pikcloud.pikpak";
-const SDK_VERSION: &str = "2.0.4.204000";
+const CLIENT_ID: &str = "YUMx5nI8ZU8Ap8pm";
+const CLIENT_SECRET: &str = "dbw2OtmVEeuUvIptb1Coygx";
+const CLIENT_VERSION: &str = "2.0.0";
+const PACKAGE_NAME: &str = "mypikpak.com";
+const USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0";
+const REDIRECT_URI: &str = "xlaccsdk01://xbase.cloud/callback?state=harbor";
 
+/// Web-platform captcha sign salts (rclone / debrify).
 const CAPTCHA_SALTS: &[&str] = &[
-    "Gez0T9ijiI9WCeTsKSg3SMlx",
-    "zQdbalsolyb1R/",
-    "ftOjr52zt51JD68C3s",
-    "yeOBMH0JkbQdEFNNwQ0RI9T3wU/v",
-    "BRJrQZiTQ65WtMvwO",
-    "je8fqxKPdQVJiy1DM6Bc9Nb1",
-    "niV",
-    "9hFCW2R1",
-    "sHKHpe2i96",
-    "p7c5E6AcXQ/IJUuAEC9W6",
+    "C9qPpZLN8ucRTaTiUMWYS9cQvWOE",
+    "+r6CQVxjzJV6LCV",
+    "F",
+    "pFJRC",
+    "9WXYIDGrwTCz2OiVlgZa90qpECPD6olt",
+    "/750aCr4lm/Sly/c",
+    "RB+DT/gZCrbV",
     "",
-    "aRv9hjc9P+Pbn+u3krN6",
-    "BzStcgE8qVdqjEH16l4",
-    "SqgeZvL5j9zoHP95xWHt",
-    "zVof5yaJkPe3VFpadPof",
+    "CyLsf7hdkIRxRm215hl",
+    "7xHvLi2tOYP0Y92b",
+    "ZGTXXxu8E/MIWaEDB+Sm/",
+    "1UI3",
+    "E7fP5Pfijd+7K+t6Tg/NhuLq0eEUVChpJSkrKxpO",
+    "ihtqpG6FMt65+Xk+tWUH2",
+    "NhXXU9rg4XXdzo7u5o",
 ];
 
 const MAX_RETRIES: u32 = 3;
@@ -52,20 +56,29 @@ const RETRY_SECS: u64 = 5;
 
 static VIDEO_EXTS: &[&str] = &["mkv", "mp4", "avi", "webm", "mov", "flv", "m4v", "wmv"];
 
-// ─── Token ────────────────────────────────────────────────────────────────────
+// ─── Token / session ──────────────────────────────────────────────────────────
 
 struct Tokens {
     access_token: String,
     refresh_token: String,
+    device_id: String,
+    user_id: String,
+    captcha_token: Option<String>,
 }
 
 fn encode_token(tokens: &Tokens) -> String {
-    let json = serde_json::to_string(&json!({
+    let mut obj = json!({
         "access_token": tokens.access_token,
         "refresh_token": tokens.refresh_token,
-    }))
-    .unwrap_or_default();
-    STANDARD.encode(json.as_bytes())
+        "device_id": tokens.device_id,
+    });
+    if !tokens.user_id.is_empty() {
+        obj["user_id"] = json!(tokens.user_id);
+    }
+    if let Some(ref ct) = tokens.captcha_token {
+        obj["captcha_token"] = json!(ct);
+    }
+    STANDARD.encode(serde_json::to_string(&obj).unwrap_or_default().as_bytes())
 }
 
 fn decode_token(raw: &str) -> Result<Tokens, ProviderError> {
@@ -88,14 +101,36 @@ fn decode_token(raw: &str) -> Result<Tokens, ProviderError> {
             ProviderError::api("PikPak token missing refresh_token.", "invalid_token.mp4")
         })?
         .to_string();
+    if is_legacy_token_value(&v) {
+        return Err(ProviderError::api(
+            "PikPak session uses an outdated token format. Please reconnect your PikPak account.",
+            "invalid_token.mp4",
+        ));
+    }
+    let device_id = v["device_id"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .expect("legacy tokens are rejected above");
+    let user_id = v["user_id"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| extract_user_id_from_jwt(&access));
+    let captcha_token = v["captcha_token"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
     Ok(Tokens {
         access_token: access,
         refresh_token: refresh,
+        device_id,
+        user_id,
+        captcha_token,
     })
 }
 
-// ─── Login helpers ────────────────────────────────────────────────────────────
-
+/// Stable device ID derived from credentials (persisted across logins).
 fn pikpak_device_id(email: &str, password: &str) -> String {
     format!(
         "{:x}",
@@ -103,44 +138,142 @@ fn pikpak_device_id(email: &str, password: &str) -> String {
     )
 }
 
-/// Stable cache key component for a given email+password pair (MD5 hex of credentials).
-/// Used by the playback route to key the login token in Redis.
+fn is_legacy_token_value(v: &Value) -> bool {
+    !v.get("device_id")
+        .and_then(|d| d.as_str())
+        .is_some_and(|s| !s.is_empty())
+}
+
+/// Returns true when the stored token predates the web-client session format (no `device_id`).
+pub fn is_legacy_token(raw: &str) -> bool {
+    let Ok(decoded) = STANDARD.decode(raw.trim()) else {
+        return true;
+    };
+    let Ok(s) = String::from_utf8(decoded) else {
+        return true;
+    };
+    let Ok(v) = serde_json::from_str::<Value>(&s) else {
+        return true;
+    };
+    is_legacy_token_value(&v)
+}
+
+/// Stable cache key component for a given email+password pair.
 pub fn token_cache_id(email: &str, password: &str) -> String {
     pikpak_device_id(email, password)
 }
 
-fn auth_headers(device_id: &str) -> reqwest::header::HeaderMap {
+fn extract_user_id_from_jwt(access_token: &str) -> String {
+    let payload = match access_token.split('.').nth(1) {
+        Some(p) => p,
+        None => return String::new(),
+    };
+    URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()
+        .and_then(|b| String::from_utf8(b).ok())
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| v["sub"].as_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+// ─── Captcha ──────────────────────────────────────────────────────────────────
+
+fn compute_captcha_sign(device_id: &str, timestamp: &str) -> String {
+    let mut sign = format!("{CLIENT_ID}{CLIENT_VERSION}{PACKAGE_NAME}{device_id}{timestamp}");
+    for salt in CAPTCHA_SALTS {
+        sign = format!("{:x}", md5::compute(format!("{sign}{salt}").as_bytes()));
+    }
+    format!("1.{sign}")
+}
+
+fn build_auth_headers(device_id: &str, captcha_token: Option<&str>) -> reqwest::header::HeaderMap {
     let mut h = reqwest::header::HeaderMap::new();
     h.insert(
         reqwest::header::CONTENT_TYPE,
-        "application/json; charset=utf-8".parse().unwrap(),
+        "application/json".parse().unwrap(),
     );
-    h.insert(
-        reqwest::header::USER_AGENT,
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36".parse().unwrap(),
-    );
+    h.insert(reqwest::header::USER_AGENT, USER_AGENT.parse().unwrap());
+    if let Ok(val) = CLIENT_ID.parse() {
+        h.insert("X-Client-ID", val);
+    }
+    if let Ok(val) = CLIENT_VERSION.parse() {
+        h.insert("X-Client-Version", val);
+    }
     if let Ok(val) = device_id.parse() {
-        h.insert("X-Device-Id", val);
+        h.insert("X-Device-ID", val);
+    }
+    if let Some(ct) = captcha_token.filter(|s| !s.is_empty()) {
+        if let Ok(val) = ct.parse() {
+            h.insert("X-Captcha-Token", val);
+        }
     }
     h
 }
 
-async fn captcha_init(
+fn build_api_headers(tokens: &Tokens) -> reqwest::header::HeaderMap {
+    let mut h = build_auth_headers(&tokens.device_id, tokens.captcha_token.as_deref());
+    h.insert(
+        reqwest::header::AUTHORIZATION,
+        format!("Bearer {}", tokens.access_token).parse().unwrap(),
+    );
+    h
+}
+
+/// Request a captcha token for the given API action (e.g. `POST:/v1/auth/signin`).
+async fn request_captcha_token(
     http: &Client,
+    action: &str,
     device_id: &str,
-    email: &str,
+    username: Option<&str>,
+    user_id: Option<&str>,
+    old_captcha_token: Option<&str>,
+    access_token: Option<&str>,
 ) -> Result<String, ProviderError> {
-    let url = user_url("/v1/shield/captcha/init");
-    let login_url = user_url("/v1/auth/signin");
-    let body = json!({
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .to_string();
+    let captcha_sign = compute_captcha_sign(device_id, &timestamp);
+
+    let mut meta = json!({
+        "captcha_sign": captcha_sign,
         "client_id": CLIENT_ID,
-        "action": format!("POST:{login_url}"),
+        "client_version": CLIENT_VERSION,
         "device_id": device_id,
-        "meta": { "email": email },
+        "package_name": PACKAGE_NAME,
+        "timestamp": timestamp,
     });
+    if action == "POST:/v1/auth/signin" {
+        if let Some(email) = username {
+            meta["username"] = json!(email);
+        }
+    } else if let Some(uid) = user_id.filter(|s| !s.is_empty()) {
+        meta["user_id"] = json!(uid);
+    }
+
+    let url = format!("{}/v1/shield/captcha/init?client_id={CLIENT_ID}", user_base());
+    let body = json!({
+        "action": action,
+        "captcha_token": old_captcha_token.unwrap_or(""),
+        "client_id": CLIENT_ID,
+        "device_id": device_id,
+        "meta": meta,
+        "redirect_uri": REDIRECT_URI,
+    });
+
+    let mut headers = build_auth_headers(device_id, None);
+    if let Some(token) = access_token {
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {token}").parse().unwrap(),
+        );
+    }
+
     let data: Value = http
         .post(&url)
-        .headers(auth_headers(device_id))
+        .headers(headers)
         .json(&body)
         .send()
         .await?
@@ -153,30 +286,90 @@ async fn captcha_init(
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .ok_or_else(|| {
+            let msg = data["error_description"]
+                .as_str()
+                .or_else(|| data["error"].as_str())
+                .unwrap_or("captcha init failed");
             ProviderError::api(
-                "PikPak captcha init failed. Please try again.",
+                format!("PikPak captcha init failed: {msg}"),
                 "invalid_credentials.mp4",
             )
         })
 }
 
-/// Authenticate with email+password and return a base64-encoded token
-/// (`{"access_token":"...","refresh_token":"..."}`).
-pub async fn login(http: &Client, email: &str, password: &str) -> Result<String, ProviderError> {
-    let dev_id = pikpak_device_id(email, password);
-    let captcha_token = captcha_init(http, &dev_id, email).await?;
+/// Ensure `tokens.captcha_token` is set for the given drive/user action.
+async fn ensure_captcha(
+    http: &Client,
+    tokens: &mut Tokens,
+    action: &str,
+) -> Result<(), ProviderError> {
+    if tokens.captcha_token.is_some() {
+        return Ok(());
+    }
+    let ct = request_captcha_token(
+        http,
+        action,
+        &tokens.device_id,
+        None,
+        Some(&tokens.user_id),
+        None,
+        Some(&tokens.access_token),
+    )
+    .await?;
+    tokens.captcha_token = Some(ct);
+    Ok(())
+}
 
-    let url = user_url("/v1/auth/signin");
+fn invalidate_captcha(tokens: &mut Tokens) {
+    tokens.captcha_token = None;
+}
+
+fn api_error_code(data: &Value) -> Option<i64> {
+    data.get("error_code").and_then(|v| v.as_i64())
+}
+
+fn is_captcha_error(data: &Value) -> bool {
+    api_error_code(data) == Some(4002)
+        || data["error"]
+            .as_str()
+            .is_some_and(|e| e == "captcha_invalid")
+}
+
+fn is_auth_error(data: &Value) -> bool {
+    api_error_code(data) == Some(16)
+        || data["error"].as_str().is_some_and(|e| e == "unauthenticated")
+}
+
+// ─── Login / refresh ──────────────────────────────────────────────────────────
+
+/// Authenticate with email+password and return a base64-encoded session token.
+pub async fn login(http: &Client, email: &str, password: &str) -> Result<String, ProviderError> {
+    let device_id = pikpak_device_id(email, password);
+
+    let captcha_token = request_captcha_token(
+        http,
+        "POST:/v1/auth/signin",
+        &device_id,
+        Some(email),
+        None,
+        None,
+        None,
+    )
+    .await?;
+
+    let url = format!("{}/v1/auth/signin?client_id={CLIENT_ID}", user_base());
     let body = json!({
+        "captcha_token": captcha_token,
         "client_id": CLIENT_ID,
         "client_secret": CLIENT_SECRET,
         "username": email,
         "password": password,
-        "captcha_token": captcha_token,
     });
+
+    let headers = build_auth_headers(&device_id, Some(&captcha_token));
     let data: Value = http
         .post(&url)
-        .headers(auth_headers(&dev_id))
+        .headers(headers.clone())
         .json(&body)
         .send()
         .await?
@@ -210,127 +403,69 @@ pub async fn login(http: &Client, email: &str, password: &str) -> Result<String,
             )
         })?
         .to_string();
+    let user_id = data["sub"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| extract_user_id_from_jwt(&access));
 
     Ok(encode_token(&Tokens {
         access_token: access,
         refresh_token: refresh,
+        device_id,
+        user_id,
+        captcha_token: Some(captcha_token),
     }))
 }
 
-// ─── Captcha / device helpers ─────────────────────────────────────────────────
+/// Refresh access token WITHOUT client_secret (PikPak rejects it with error_code 7).
+async fn refresh_tokens(http: &Client, tokens: &mut Tokens) -> Result<(), ProviderError> {
+    invalidate_captcha(tokens);
+    ensure_captcha(http, tokens, "POST:/v1/auth/token").await?;
 
-fn compute_captcha_sign(device_id: &str, timestamp: &str) -> String {
-    let mut sign = format!("{CLIENT_ID}{CLIENT_VERSION}{PACKAGE_NAME}{device_id}{timestamp}");
-    for salt in CAPTCHA_SALTS {
-        sign = format!("{:x}", md5::compute(format!("{sign}{salt}").as_bytes()));
-    }
-    format!("1.{sign}")
-}
-
-fn generate_device_sign(device_id: &str) -> String {
-    let sig_base = format!("{device_id}{PACKAGE_NAME}1appkey");
-    let sha1_hex: String = Sha1::digest(sig_base.as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    let md5_hex = format!("{:x}", md5::compute(sha1_hex.as_bytes()));
-    format!("div101.{device_id}{md5_hex}")
-}
-
-fn build_android_user_agent(device_id: &str, user_id: &str) -> String {
-    let device_sign = generate_device_sign(device_id);
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    format!(
-        "ANDROID-{PACKAGE_NAME}/{CLIENT_VERSION} protocolVersion/200 accesstype/ \
-         clientid/{CLIENT_ID} clientversion/{CLIENT_VERSION} action_type/ \
-         networktype/WIFI sessionid/ deviceid/{device_id} providername/NONE \
-         devicesign/{device_sign} refresh_token/ sdkversion/{SDK_VERSION} \
-         datetime/{ts} usrno/{user_id} appname/{PACKAGE_NAME} session_origin/ \
-         grant_type/ appid/ clientip/ devicename/Xiaomi_M2004j7ac \
-         osversion/13 platformversion/10 accessmode/ devicemodel/M2004J7AC"
-    )
-}
-
-/// Decode the `sub` (user_id) from a JWT access token without verifying the signature.
-fn extract_user_id_from_jwt(access_token: &str) -> String {
-    let payload = match access_token.split('.').nth(1) {
-        Some(p) => p,
-        None => return String::new(),
-    };
-    URL_SAFE_NO_PAD
-        .decode(payload)
-        .ok()
-        .and_then(|b| String::from_utf8(b).ok())
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .and_then(|v| v["sub"].as_str().map(str::to_string))
-        .unwrap_or_default()
-}
-
-/// Obtain a captcha token authorising `GET /drive/v1/files/{file_id}`.
-/// Required to get the high-speed `medias[].link.url` in the file response.
-/// Non-fatal — returns None on any failure.
-async fn file_captcha_init(
-    http: &Client,
-    tokens: &Tokens,
-    device_id: &str,
-    file_id: &str,
-) -> Option<String> {
-    let user_id = extract_user_id_from_jwt(&tokens.access_token);
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_millis()
-        .to_string();
-    let sign = compute_captcha_sign(device_id, &ts);
-
-    let url = user_url("/v1/shield/captcha/init");
+    let url = format!("{}/v1/auth/token?client_id={CLIENT_ID}", user_base());
     let body = json!({
         "client_id": CLIENT_ID,
-        "action": format!("GET:/drive/v1/files/{file_id}"),
-        "device_id": device_id,
-        "meta": {
-            "captcha_sign": sign,
-            "client_version": CLIENT_VERSION,
-            "package_name": PACKAGE_NAME,
-            "user_id": user_id,
-            "timestamp": ts,
-        },
+        "grant_type": "refresh_token",
+        "refresh_token": tokens.refresh_token,
     });
 
-    let mut h = reqwest::header::HeaderMap::new();
-    h.insert(
-        reqwest::header::CONTENT_TYPE,
-        "application/json; charset=utf-8".parse().unwrap(),
-    );
-    h.insert(
-        reqwest::header::USER_AGENT,
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36".parse().unwrap(),
-    );
-    h.insert(
-        reqwest::header::AUTHORIZATION,
-        format!("Bearer {}", tokens.access_token).parse().ok()?,
-    );
-    if let Ok(val) = device_id.parse() {
-        h.insert("X-Device-Id", val);
-    }
-
-    let resp: Value = http
+    let headers = build_auth_headers(&tokens.device_id, tokens.captcha_token.as_deref());
+    let data: Value = http
         .post(&url)
-        .headers(h)
+        .headers(headers)
         .json(&body)
         .send()
-        .await
-        .ok()?
+        .await?
         .json()
         .await
-        .ok()?;
-    resp["captcha_token"]
+        .unwrap_or_default();
+
+    if data.get("error").is_some() || api_error_code(&data).is_some() {
+        let msg = data["error_description"]
+            .as_str()
+            .or_else(|| data["error"].as_str())
+            .unwrap_or("token refresh failed");
+        tracing::debug!(error = %msg, "PikPak token refresh failed");
+        return Err(ProviderError::api(
+            "PikPak token is expired or invalid. Please reconnect your PikPak account.",
+            "invalid_token.mp4",
+        ));
+    }
+
+    tokens.access_token = data["access_token"]
         .as_str()
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
+        .ok_or_else(|| ProviderError::api("PikPak token refresh failed.", "invalid_token.mp4"))?
+        .to_string();
+    if let Some(rt) = data["refresh_token"].as_str().filter(|s| !s.is_empty()) {
+        tokens.refresh_token = rt.to_string();
+    }
+    if let Some(sub) = data["sub"].as_str().filter(|s| !s.is_empty()) {
+        tokens.user_id = sub.to_string();
+    } else if tokens.user_id.is_empty() {
+        tokens.user_id = extract_user_id_from_jwt(&tokens.access_token);
+    }
+    Ok(())
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -339,60 +474,10 @@ fn drive_url(path: &str) -> String {
     format!("https://{API_HOST}{path}")
 }
 
-fn user_url(path: &str) -> String {
-    format!("https://{USER_HOST}{path}")
+fn user_base() -> String {
+    format!("https://{USER_HOST}")
 }
 
-fn build_headers(access_token: &str) -> reqwest::header::HeaderMap {
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(
-        reqwest::header::AUTHORIZATION,
-        format!("Bearer {access_token}").parse().unwrap(),
-    );
-    headers.insert(
-        reqwest::header::CONTENT_TYPE,
-        "application/json; charset=utf-8".parse().unwrap(),
-    );
-    // Minimal User-Agent (no captcha token, so basic browser UA)
-    headers.insert(
-        reqwest::header::USER_AGENT,
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36".parse().unwrap(),
-    );
-    headers
-}
-
-/// Attempt to refresh the access token. Returns updated Tokens on success.
-async fn refresh_tokens(http: &Client, refresh_token: &str) -> Result<Tokens, ProviderError> {
-    let url = user_url("/v1/auth/token");
-    let body = json!({
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "refresh_token": refresh_token,
-        "grant_type": "refresh_token",
-    });
-    let resp = http.post(&url).json(&body).send().await?;
-    let data: Value = resp.json().await.unwrap_or_default();
-    if data.get("error").is_some() {
-        return Err(ProviderError::api(
-            "PikPak token is expired or invalid. Please reconnect your PikPak account.",
-            "invalid_token.mp4",
-        ));
-    }
-    let access = data["access_token"]
-        .as_str()
-        .ok_or_else(|| ProviderError::api("PikPak token refresh failed.", "invalid_token.mp4"))?
-        .to_string();
-    let refresh = data["refresh_token"]
-        .as_str()
-        .unwrap_or(refresh_token)
-        .to_string();
-    Ok(Tokens {
-        access_token: access,
-        refresh_token: refresh,
-    })
-}
-
-/// Make a GET request, refreshing token once on error_code 16.
 async fn api_get(
     http: &Client,
     tokens: &mut Tokens,
@@ -400,28 +485,75 @@ async fn api_get(
     params: &[(&str, &str)],
     forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
+    let action = format!("GET:{path}");
+    api_request(http, tokens, "GET", path, params, None, &action, forward).await
+}
+
+async fn api_post(
+    http: &Client,
+    tokens: &mut Tokens,
+    path: &str,
+    body: &Value,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    let action = format!("POST:{path}");
+    api_request(
+        http,
+        tokens,
+        "POST",
+        path,
+        &[],
+        Some(body),
+        &action,
+        forward,
+    )
+    .await
+}
+
+async fn api_request(
+    http: &Client,
+    tokens: &mut Tokens,
+    method: &str,
+    path: &str,
+    params: &[(&str, &str)],
+    body: Option<&Value>,
+    action: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    ensure_captcha(http, tokens, action).await?;
+    let data = do_api_request(http, tokens, method, path, params, body, forward).await?;
+
+    if is_auth_error(&data) {
+        refresh_tokens(http, tokens).await?;
+        ensure_captcha(http, tokens, action).await?;
+        let data2 = do_api_request(http, tokens, method, path, params, body, forward).await?;
+        return check_api_error(data2);
+    }
+
+    if is_captcha_error(&data) {
+        invalidate_captcha(tokens);
+        ensure_captcha(http, tokens, action).await?;
+        let data2 = do_api_request(http, tokens, method, path, params, body, forward).await?;
+        return check_api_error(data2);
+    }
+
+    check_api_error(data)
+}
+
+async fn do_api_request(
+    http: &Client,
+    tokens: &Tokens,
+    method: &str,
+    path: &str,
+    params: &[(&str, &str)],
+    body: Option<&Value>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
     let url = drive_url(path);
-    let data: Value = if let Some(fwd) = forward {
-        let dest = append_query(&url, params);
-        fwd.get(http, &dest, &tokens.access_token)
-            .await?
-            .json()
-            .await
-            .unwrap_or_default()
-    } else {
-        http.get(&url)
-            .headers(build_headers(&tokens.access_token))
-            .query(params)
-            .send()
-            .await?
-            .json()
-            .await
-            .unwrap_or_default()
-    };
-    if data.get("error_code").and_then(|v| v.as_i64()) == Some(16) {
-        // Token expired — refresh and retry once
-        *tokens = refresh_tokens(http, &tokens.refresh_token).await?;
-        let data2: Value = if let Some(fwd) = forward {
+    let headers = build_api_headers(tokens);
+
+    let data: Value = if method == "GET" {
+        if let Some(fwd) = forward {
             let dest = append_query(&url, params);
             fwd.get(http, &dest, &tokens.access_token)
                 .await?
@@ -430,65 +562,36 @@ async fn api_get(
                 .unwrap_or_default()
         } else {
             http.get(&url)
-                .headers(build_headers(&tokens.access_token))
+                .headers(headers)
                 .query(params)
                 .send()
                 .await?
                 .json()
                 .await
                 .unwrap_or_default()
-        };
-        return check_api_error(data2);
-    }
-    check_api_error(data)
-}
-
-/// Make a POST request, refreshing token once on error_code 16.
-async fn api_post(
-    http: &Client,
-    tokens: &mut Tokens,
-    path: &str,
-    body: &Value,
-    forward: Option<&MediaFlowForward>,
-) -> Result<Value, ProviderError> {
-    let url = drive_url(path);
-    let data: Value = if let Some(fwd) = forward {
-        fwd.post_json(http, &url, &tokens.access_token, body.to_string())
-            .await?
-            .json()
-            .await
-            .unwrap_or_default()
-    } else {
-        http.post(&url)
-            .headers(build_headers(&tokens.access_token))
-            .json(body)
-            .send()
-            .await?
-            .json()
-            .await
-            .unwrap_or_default()
-    };
-    if data.get("error_code").and_then(|v| v.as_i64()) == Some(16) {
-        *tokens = refresh_tokens(http, &tokens.refresh_token).await?;
-        let data2: Value = if let Some(fwd) = forward {
-            fwd.post_json(http, &url, &tokens.access_token, body.to_string())
+        }
+    } else if let Some(b) = body {
+        if let Some(fwd) = forward {
+            fwd.post_json(http, &url, &tokens.access_token, b.to_string())
                 .await?
                 .json()
                 .await
                 .unwrap_or_default()
         } else {
             http.post(&url)
-                .headers(build_headers(&tokens.access_token))
-                .json(body)
+                .headers(headers)
+                .json(b)
                 .send()
                 .await?
                 .json()
                 .await
                 .unwrap_or_default()
-        };
-        return check_api_error(data2);
-    }
-    check_api_error(data)
+        }
+    } else {
+        return Err(ProviderError::api("PikPak internal API error.", "api_error.mp4"));
+    };
+
+    Ok(data)
 }
 
 fn check_api_error(data: Value) -> Result<Value, ProviderError> {
@@ -506,12 +609,19 @@ fn check_api_error(data: Value) -> Result<Value, ProviderError> {
         };
         return Err(ProviderError::api(msg.to_string(), vf));
     }
+    if let Some(code) = api_error_code(&data) {
+        if code != 0 {
+            let msg = data["error_description"]
+                .as_str()
+                .unwrap_or("PikPak API error");
+            return Err(map_pikpak_error(msg));
+        }
+    }
     Ok(data)
 }
 
 // ─── Task helpers ─────────────────────────────────────────────────────────────
 
-/// Fetch offline tasks. Phases: PHASE_TYPE_RUNNING, PHASE_TYPE_ERROR, PHASE_TYPE_COMPLETE, PHASE_TYPE_PENDING.
 async fn offline_list(
     http: &Client,
     tokens: &mut Tokens,
@@ -572,7 +682,6 @@ fn is_video(name: &str) -> bool {
     VIDEO_EXTS.iter().any(|e| lower.ends_with(&format!(".{e}")))
 }
 
-/// Recursively collect all video files from a folder.
 async fn collect_folder_videos(
     http: &Client,
     tokens: &mut Tokens,
@@ -666,68 +775,30 @@ fn select_video<'a>(
 
 // ─── Download URL ─────────────────────────────────────────────────────────────
 
-/// Fetch the file and return the best playback URL.
-///
-/// PikPak only populates `medias[].link.url` (high-speed CDN) when the request
-/// carries a valid `X-Captcha-Token` obtained for that specific file GET action,
-/// together with the custom Android User-Agent. Without it the response only
-/// contains `web_content_link`, which is rate-limited and much slower.
+/// Fetch file details with `usage=FETCH` so medias/web_content_link are populated.
 async fn get_download_url(
     http: &Client,
     tokens: &mut Tokens,
     file_id: &str,
-    device_id: &str,
     forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
-    let file_url = drive_url(&format!("/drive/v1/files/{file_id}"));
+    let path = format!("/drive/v1/files/{file_id}");
+    let params = [
+        ("usage", "FETCH"),
+        ("_magic", "2021"),
+        ("thumbnail_size", "SIZE_LARGE"),
+        ("with_audit", "true"),
+    ];
+    let data = api_get(http, tokens, &path, &params, forward).await?;
 
-    // Step 1: obtain captcha token for this file (non-fatal).
-    let captcha_token = file_captcha_init(http, tokens, device_id, file_id).await;
-
-    // Step 2: fetch file details.  When we have a captcha token we make a direct
-    // request with the full Android headers so the API returns medias[].link.url.
-    let data: Value = if let Some(ref ct) = captcha_token {
-        let user_id = extract_user_id_from_jwt(&tokens.access_token);
-        let user_agent = build_android_user_agent(device_id, &user_id);
-        let mut h = reqwest::header::HeaderMap::new();
-        h.insert(
-            reqwest::header::AUTHORIZATION,
-            format!("Bearer {}", tokens.access_token).parse().unwrap(),
-        );
-        h.insert(
-            reqwest::header::CONTENT_TYPE,
-            "application/json; charset=utf-8".parse().unwrap(),
-        );
-        if let Ok(val) = user_agent.parse() {
-            h.insert(reqwest::header::USER_AGENT, val);
-        }
-        if let Ok(val) = device_id.parse() {
-            h.insert("X-Device-Id", val);
-        }
-        if let Ok(val) = ct.parse() {
-            h.insert("X-Captcha-Token", val);
-        }
-        http.get(&file_url)
-            .headers(h)
-            .send()
-            .await?
-            .json()
-            .await
-            .unwrap_or_default()
-    } else {
-        // Fall back to standard api_get (no captcha token — medias may be absent).
-        api_get(
-            http,
-            tokens,
-            &format!("/drive/v1/files/{file_id}"),
-            &[],
-            forward,
-        )
-        .await?
-    };
-
-    // Prefer high-speed streaming URL from medias array.
     if let Some(medias) = data["medias"].as_array() {
+        for media in medias {
+            if media["is_default"].as_bool() == Some(true) || media["is_origin"].as_bool() == Some(true) {
+                if let Some(url) = media["link"]["url"].as_str().filter(|s| !s.is_empty()) {
+                    return Ok(url.to_string());
+                }
+            }
+        }
         for media in medias {
             if let Some(url) = media["link"]["url"].as_str().filter(|s| !s.is_empty()) {
                 return Ok(url.to_string());
@@ -735,7 +806,6 @@ async fn get_download_url(
         }
     }
 
-    // Fall back to web_content_link.
     data["web_content_link"]
         .as_str()
         .filter(|s| !s.is_empty())
@@ -785,7 +855,6 @@ async fn get_my_pack_folder_id(
         .ok_or_else(|| ProviderError::api("PikPak 'My Pack' folder not found.", "api_error.mp4"))
 }
 
-/// Find item in My Pack folder whose params.url contains info_hash.
 async fn find_torrent_item(
     http: &Client,
     tokens: &mut Tokens,
@@ -887,10 +956,6 @@ pub async fn get_video_url(
     let mut tokens = decode_token(token)?;
     let hash = info_hash.to_lowercase();
 
-    // Random device_id for captcha sessions within this request.
-    let dev_id = uuid::Uuid::new_v4().as_simple().to_string();
-
-    // 1. Check offline tasks (running + error phases)
     let tasks = offline_list(
         http,
         &mut tokens,
@@ -917,13 +982,9 @@ pub async fn get_video_url(
                 "PikPak error task found"
             );
             if msg_lower.contains("storage") || msg_lower.contains("not enough space") {
-                // Storage: delete task, clear My Pack, re-add magnet.
                 failed_task_id = task["id"].as_str().map(str::to_string);
                 should_clear_space = true;
             } else if msg_lower.contains("too frequent") || msg_lower.contains("try again later") {
-                // Rate-limited: delete the stale task and fall through.
-                // The file may already be in My Pack from a prior successful download;
-                // if not, the magnet will be re-added below.
                 tracing::debug!(hash = %hash, message = %msg, "PikPak rate-limited task; will delete and retry");
                 failed_task_id = task["id"].as_str().map(str::to_string);
             } else {
@@ -938,7 +999,6 @@ pub async fn get_video_url(
         }
     }
 
-    // 2. Find file in My Pack folder
     let my_pack_id = get_my_pack_folder_id(http, &mut tokens, forward).await?;
     let torrent_item = find_torrent_item(http, &mut tokens, &my_pack_id, &hash, forward).await?;
 
@@ -948,7 +1008,6 @@ pub async fn get_video_url(
         let file_name = item["name"].as_str().unwrap_or("").to_string();
 
         let selected_id = if kind == "drive#folder" {
-            // Collect all video files from folder
             let videos = collect_folder_videos(http, &mut tokens, &file_id, forward).await?;
             select_video(&videos, filename, file_index, season, episode)
                 .ok_or_else(|| {
@@ -960,7 +1019,6 @@ pub async fn get_video_url(
                 .2
                 .clone()
         } else if is_video(&file_name) {
-            // Single file torrent
             file_id
         } else {
             return Err(ProviderError::api(
@@ -969,10 +1027,9 @@ pub async fn get_video_url(
             ));
         };
 
-        return get_download_url(http, &mut tokens, &selected_id, &dev_id, forward).await;
+        return get_download_url(http, &mut tokens, &selected_id, forward).await;
     }
 
-    // 3. Add magnet and wait
     let magnet = {
         let trackers = announce_list
             .iter()
@@ -986,21 +1043,20 @@ pub async fn get_video_url(
         }
     };
 
-    // Delete the previously failed task (if any) before re-adding.
     if let Some(ref task_id) = failed_task_id {
         delete_offline_tasks(http, &mut tokens, &[task_id.as_str()], forward).await;
     }
 
-    // Ensure sufficient storage only when a storage error was detected.
     if should_clear_space {
         ensure_enough_space(http, &mut tokens, 0, forward).await;
     }
 
     let magnet_body = json!({
         "kind": "drive#file",
+        "name": "",
         "upload_type": "UPLOAD_TYPE_URL",
         "url": {"url": magnet},
-        "folder_type": "DOWNLOAD",
+        "folder_type": "",
     });
 
     let add_result = api_post(http, &mut tokens, "/drive/v1/files", &magnet_body, forward).await;
@@ -1009,7 +1065,6 @@ pub async fn get_video_url(
         Err(e) => {
             let msg = e.to_string().to_lowercase();
             if msg.contains("storage") || msg.contains("not enough space") {
-                // Free space by clearing My Pack, then retry once.
                 trash_my_pack_files(http, &mut tokens, forward).await.ok();
                 api_post(http, &mut tokens, "/drive/v1/files", &magnet_body, forward)
                     .await
@@ -1041,13 +1096,11 @@ pub async fn get_video_url(
         }
     };
 
-    // Check for inline errors in the add response
     if let Some(err) = add_resp["error"].as_str() {
         tracing::debug!(hash = %hash, error = %err, "PikPak add-magnet inline error");
         return Err(map_pikpak_error(err));
     }
 
-    // 4. Poll for completion
     for _ in 0..MAX_RETRIES {
         tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_SECS)).await;
 
@@ -1079,7 +1132,6 @@ pub async fn get_video_url(
                 return Err(map_pikpak_error(msg));
             }
             if task_is_complete(task) {
-                // Re-check My Pack folder
                 if let Ok(Some(item)) =
                     find_torrent_item(http, &mut tokens, &my_pack_id, &hash, forward).await
                 {
@@ -1108,8 +1160,7 @@ pub async fn get_video_url(
                         ));
                     };
 
-                    return get_download_url(http, &mut tokens, &selected_id, &dev_id, forward)
-                        .await;
+                    return get_download_url(http, &mut tokens, &selected_id, forward).await;
                 }
             }
         }
@@ -1121,8 +1172,6 @@ pub async fn get_video_url(
     ))
 }
 
-/// Fetch storage quota. Returns (limit_bytes, total_used_bytes).
-/// Total used = usage + usage_in_trash (trash still counts toward the quota limit).
 async fn get_quota(
     http: &Client,
     tokens: &mut Tokens,
@@ -1144,7 +1193,6 @@ async fn get_quota(
     Ok((limit, usage + usage_in_trash))
 }
 
-/// Delete offline tasks by their task IDs (e.g. to remove failed tasks).
 async fn delete_offline_tasks(
     http: &Client,
     tokens: &mut Tokens,
@@ -1160,29 +1208,22 @@ async fn delete_offline_tasks(
         .map(|id| ("task_ids", id.to_string()))
         .collect();
     query.push(("delete_files", "false".to_string()));
-    let req = http
+    let _ = http
         .delete(&url)
-        .headers(build_headers(&tokens.access_token))
-        .query(&query);
-    let req = if let Some(fwd) = forward {
-        // Route through MediaFlow if configured; fall back to direct on error.
-        let _ = fwd; // forward not used for DELETE — make direct call
-        req
-    } else {
-        req
-    };
-    req.send().await.ok();
+        .headers(build_api_headers(tokens))
+        .query(&query)
+        .send()
+        .await;
+    let _ = forward;
 }
 
-/// Ensure at least `minimum` bytes are free. Clears My Pack folder if needed.
-/// Non-fatal — logs a warning and returns on any failure.
 async fn ensure_enough_space(
     http: &Client,
     tokens: &mut Tokens,
     minimum: i64,
     forward: Option<&MediaFlowForward>,
 ) {
-    let minimum = if minimum > 0 { minimum } else { 1_073_741_824 }; // default 1 GiB
+    let minimum = if minimum > 0 { minimum } else { 1_073_741_824 };
 
     let (limit, usage) = match get_quota(http, tokens, forward).await {
         Ok(q) => q,
@@ -1208,7 +1249,6 @@ async fn ensure_enough_space(
     trash_my_pack_files(http, tokens, forward).await.ok();
 }
 
-/// Trash all files in the My Pack folder using an already-authenticated token.
 async fn trash_my_pack_files(
     http: &Client,
     tokens: &mut Tokens,
@@ -1246,14 +1286,11 @@ async fn trash_my_pack_files(
     Ok(())
 }
 
-/// Delete ALL items in the PikPak My Pack folder.
 pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), ProviderError> {
     let mut tokens = decode_token(token)?;
     trash_my_pack_files(http, &mut tokens, None).await
 }
 
-/// Delete the item matching `info_hash` from PikPak My Pack folder.
-/// Returns `true` if found and trashed, `false` if not found.
 pub async fn delete_torrent_by_hash(
     http: &Client,
     token: &str,
@@ -1282,5 +1319,41 @@ pub async fn delete_torrent_by_hash(
             }
             Ok(true)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn captcha_sign_matches_web_platform() {
+        let sign = compute_captcha_sign("abc123deviceid000000000000000000", "1700000000000");
+        assert!(sign.starts_with("1."));
+        assert_eq!(sign.len(), 34); // "1." + 32 hex chars
+    }
+
+    #[test]
+    fn token_roundtrip_includes_session_fields() {
+        let tokens = Tokens {
+            access_token: "access".into(),
+            refresh_token: "refresh".into(),
+            device_id: "device".into(),
+            user_id: "user".into(),
+            captcha_token: Some("captcha".into()),
+        };
+        let encoded = encode_token(&tokens);
+        let decoded = decode_token(&encoded).unwrap();
+        assert_eq!(decoded.access_token, "access");
+        assert_eq!(decoded.device_id, "device");
+        assert_eq!(decoded.user_id, "user");
+        assert_eq!(decoded.captcha_token.as_deref(), Some("captcha"));
+    }
+
+    #[test]
+    fn legacy_token_is_detected_and_rejected() {
+        let legacy = STANDARD.encode(r#"{"access_token":"a","refresh_token":"r"}"#.as_bytes());
+        assert!(is_legacy_token(&legacy));
+        assert!(decode_token(&legacy).is_err());
     }
 }

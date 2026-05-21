@@ -236,51 +236,22 @@ async fn resolve(
         None
     };
 
-    // PikPak authenticates via email+password when no token is stored in the profile yet.
-    // After a successful login the token is persisted back to the user profile (DB + Redis)
-    // so subsequent requests find it in the profile and skip the login call entirely.
-    // For inline D- tokens (no profile_id) we also cache in Redis for 90 min as a fallback.
-    let owned_token: Option<String> = if provider.service == "pikpak" && provider.token.is_none() {
-        let (email, password) = pikpak_credentials.as_ref().ok_or_else(|| {
-            providers::ProviderError::api(
-                "PikPak email or password is missing",
-                "invalid_credentials.mp4",
-            )
-        })?;
-
-        // Fast path: check Redis fallback cache (used for D- inline tokens, or before the
-        // first DB write completes on a brand-new profile).
-        let cache_key = format!(
-            "pikpak_token:{}",
-            providers::torrents::pikpak::token_cache_id(email, password)
-        );
-        let cached: Option<String> = state
-            .redis
-            .get::<Option<Vec<u8>>, _>(&cache_key)
-            .await
-            .ok()
-            .flatten()
-            .and_then(|b| String::from_utf8(b).ok());
-
-        if let Some(t) = cached {
-            Some(t)
-        } else {
-            let t = providers::torrents::pikpak::login(&state.http, email, password).await?;
-            pikpak_save_token(
+    // PikPak: resolve session token (login, migrate legacy tokens, or use stored token).
+    let resolved_token: Option<String> = if provider.service == "pikpak" {
+        Some(
+            pikpak_resolve_token(
                 state,
-                &t,
-                email,
-                password,
+                provider,
+                pikpak_credentials.as_ref(),
                 pikpak_profile_id,
                 pikpak_provider_index,
             )
-            .await;
-            Some(t)
-        }
+            .await?,
+        )
     } else {
         None
     };
-    let token: &str = if let Some(ref t) = owned_token {
+    let token: &str = if let Some(ref t) = resolved_token {
         t.as_str()
     } else {
         provider.token.as_deref().ok_or_else(|| {
@@ -526,6 +497,80 @@ async fn resolve(
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/// Resolve a PikPak session token: use stored token, or login with email+password.
+///
+/// Legacy tokens (pre-web-client format, missing `device_id`) are cleared from DB/Redis
+/// and replaced with a fresh login when credentials are available.
+async fn pikpak_resolve_token(
+    state: &AppState,
+    provider: &crate::models::user_data::StreamingProvider,
+    credentials: Option<&(String, String)>,
+    profile_id: Option<i64>,
+    provider_index: Option<usize>,
+) -> Result<String, providers::ProviderError> {
+    use providers::torrents::pikpak as p;
+
+    let (email, password) = credentials.ok_or_else(|| {
+        providers::ProviderError::api(
+            "PikPak email or password is missing",
+            "invalid_credentials.mp4",
+        )
+    })?;
+
+    let cache_key = format!("pikpak_token:{}", p::token_cache_id(email, password));
+
+    let mut token = provider.token.clone().filter(|t| !t.is_empty());
+
+    if token.is_none() {
+        token = state
+            .redis
+            .get::<Option<Vec<u8>>, _>(&cache_key)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|b| String::from_utf8(b).ok())
+            .filter(|t| !t.is_empty());
+    }
+
+    if token.as_ref().is_some_and(|t| p::is_legacy_token(t)) {
+        tracing::info!("PikPak legacy token detected — clearing stored session and re-logging in");
+        pikpak_clear_token(state, email, password, profile_id, provider_index).await;
+        token = None;
+    }
+
+    if let Some(t) = token {
+        return Ok(t);
+    }
+
+    let t = p::login(&state.http, email, password).await?;
+    pikpak_save_token(state, &t, email, password, profile_id, provider_index).await;
+    Ok(t)
+}
+
+/// Remove a stored PikPak token from Redis and the user's DB profile.
+async fn pikpak_clear_token(
+    state: &AppState,
+    email: &str,
+    password: &str,
+    profile_id: Option<i64>,
+    provider_index: Option<usize>,
+) {
+    let cache_key = format!(
+        "pikpak_token:{}",
+        providers::torrents::pikpak::token_cache_id(email, password)
+    );
+    let _ = state.redis.del::<(), _>(&cache_key).await;
+
+    if let (Some(pid), Some(idx)) = (profile_id, provider_index) {
+        let pool = state.pool.clone();
+        let redis = state.redis.clone();
+        let key = state.config.secret_key;
+        tokio::spawn(async move {
+            crypto::profile::clear_provider_token(&pool, &redis, &key, pid, idx).await;
+        });
+    }
+}
 
 /// Persist a freshly obtained PikPak login token to both Redis (90-min fallback)
 /// and the user's DB profile (permanent, encrypted in `encrypted_secrets`).

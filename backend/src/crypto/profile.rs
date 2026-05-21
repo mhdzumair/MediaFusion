@@ -370,3 +370,71 @@ pub async fn patch_provider_token(
         warn!("patch_provider_token: Redis invalidation failed uuid={uuid}: {e}");
     }
 }
+
+/// Remove a streaming-provider token from `encrypted_secrets` (e.g. after format migration).
+///
+/// Same persistence path as [`patch_provider_token`], but deletes the `tk` field instead of
+/// updating it. Non-fatal — errors are logged as warnings.
+pub async fn clear_provider_token(
+    pool: &PgPool,
+    redis: &fred::clients::Client,
+    secret_key: &[u8; 32],
+    profile_id: i64,
+    provider_index: usize,
+) {
+    let row: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT uuid, encrypted_secrets FROM user_profiles WHERE id = $1 LIMIT 1")
+            .bind(profile_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or_else(|e| {
+                warn!("clear_provider_token: DB fetch failed profile_id={profile_id}: {e}");
+                None
+            });
+    let Some((uuid, enc)) = row else {
+        warn!("clear_provider_token: profile_id={profile_id} not found");
+        return;
+    };
+
+    let Some(enc_str) = enc.filter(|s| !s.is_empty()) else {
+        return;
+    };
+    let mut secrets = decrypt_secrets(&enc_str, secret_key);
+    let Some(sps) = secrets
+        .as_object_mut()
+        .and_then(|o| o.get_mut("sps"))
+        .and_then(|v| v.as_array_mut())
+    else {
+        return;
+    };
+
+    let Some(entry) = sps
+        .iter_mut()
+        .find(|e| e.get("_index").and_then(|v| v.as_u64()) == Some(provider_index as u64))
+    else {
+        return;
+    };
+    entry.as_object_mut().map(|o| o.remove("tk"));
+
+    let Some(new_enc) = encrypt_secrets(&secrets, secret_key) else {
+        warn!("clear_provider_token: re-encryption failed profile_id={profile_id}");
+        return;
+    };
+
+    if let Err(e) = sqlx::query(
+        "UPDATE user_profiles SET encrypted_secrets = $1, updated_at = NOW() WHERE id = $2",
+    )
+    .bind(&new_enc)
+    .bind(profile_id)
+    .execute(pool)
+    .await
+    {
+        warn!("clear_provider_token: DB update failed profile_id={profile_id}: {e}");
+        return;
+    }
+
+    let cache_key = format!("{REDIS_KEY_PREFIX}{uuid}");
+    if let Err(e) = redis.del::<(), _>(cache_key).await {
+        warn!("clear_provider_token: Redis invalidation failed uuid={uuid}: {e}");
+    }
+}
