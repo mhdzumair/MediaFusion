@@ -1,0 +1,2 @@
+# Import/metadata helpers often need pool, http, API keys, and override structs.
+too-many-arguments-threshold = 20

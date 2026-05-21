@@ -66,7 +66,7 @@ impl AppState {
             .time_to_live(Duration::from_secs(300))
             .build();
 
-        let http = crate::util::http::build();
+        let http = crate::util::http::build(config.requests_proxy_url.as_deref());
 
         let telegram = crate::scrapers::telegram::init_client(&config).await;
 

@@ -21,6 +21,7 @@ use sha2::Sha256;
 use super::import_helpers::{
     award_contribution_points, create_contribution_record, enforce_upload_permissions,
     fetch_user_info, notify_pending_contribution, resolve_uploader_identity,
+    should_auto_approve_import,
 };
 use crate::state::AppState;
 
@@ -106,6 +107,7 @@ async fn fetch_oembed(http: &reqwest::Client, video_id: &str) -> Option<(String,
 #[derive(Deserialize)]
 pub struct AnalyzeYouTubeRequest {
     pub url: String,
+    pub meta_type: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -124,6 +126,7 @@ pub struct ImportYouTubeRequest {
     pub is_live: bool,
     pub is_anonymous: Option<bool>,
     pub anonymous_display_name: Option<String>,
+    pub languages: Option<Vec<String>>,
 }
 
 fn default_true() -> bool {
@@ -179,14 +182,25 @@ pub async fn analyze_youtube_url(
         .await
         .unwrap_or_else(|| (String::new(), String::new()));
 
-    Json(json!({
+    let meta_type = body.meta_type.as_deref().unwrap_or("movie");
+    let mut response = json!({
+        "status": "success",
         "video_id": video_id,
-        "url": format!("https://www.youtube.com/watch?v={}", video_id),
+        "url": format!("https://www.youtube.com/watch?v={video_id}"),
         "title": title,
         "channel_name": channel_name,
         "already_exists": already_exists,
-    }))
-    .into_response()
+    });
+
+    if !title.is_empty() {
+        let matches =
+            super::import_helpers::search_analyze_matches(&state, &title, None, meta_type).await;
+        if let Some(obj) = response.as_object_mut() {
+            obj.insert("matches".to_string(), serde_json::Value::Array(matches));
+        }
+    }
+
+    Json(response).into_response()
 }
 
 /// POST /api/v1/import/youtube
@@ -231,7 +245,8 @@ pub async fn import_youtube_video(
 
     let resolved_is_anonymous = body.is_anonymous.unwrap_or(user.contribute_anonymously);
     let is_privileged = matches!(user.role.as_str(), "moderator" | "admin");
-    let auto_approve = is_privileged || !resolved_is_anonymous;
+    let auto_approve =
+        should_auto_approve_import(is_privileged, user.is_active, resolved_is_anonymous);
 
     let url = body.url.trim().to_string();
     if url.is_empty() {
@@ -304,49 +319,34 @@ pub async fn import_youtube_video(
         &user.username,
         user_id,
     );
-    let is_public = auto_approve && body.is_public;
+    let is_public = super::import_helpers::stream_is_public_on_submit(auto_approve, body.is_public);
 
-    // Resolve media_id
-    let media_id: Option<i64> = if let Some(ref meta_id) = body.meta_id {
-        if !meta_id.is_empty() {
-            sqlx::query_scalar(
-                "SELECT m.id FROM media m JOIN media_external_id meid ON m.id = meid.media_id WHERE meid.external_id = $1 LIMIT 1",
-            )
-            .bind(meta_id)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let meta_type = body.meta_type.as_deref().unwrap_or("movie");
+    let effective_meta_id = body
+        .meta_id
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| super::import_helpers::synthetic_import_meta_id("youtube", &video_id));
 
-    // Fallback: create media
-    let media_id: Option<i64> = if media_id.is_none() {
-        let title_for_media = body.title.as_deref().unwrap_or(&stream_name);
-        if !title_for_media.is_empty() {
-            let meta_type = body.meta_type.as_deref().unwrap_or("movie");
-            let db_type = match meta_type {
-                "series" => "SERIES",
-                "tv" => "TV",
-                _ => "MOVIE",
-            };
-            sqlx::query_scalar(
-                "INSERT INTO media (title, type, created_at) VALUES ($1, $2::mediatype, NOW()) RETURNING id",
-            )
-            .bind(title_for_media)
-            .bind(db_type)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None)
-        } else {
-            None
-        }
-    } else {
-        media_id
-    };
+    let media_id = super::import_helpers::resolve_media_for_import(
+        &state.pool,
+        &state.http,
+        state.config.tmdb_api_key.as_deref(),
+        state.config.tvdb_api_key.as_deref(),
+        &effective_meta_id,
+        meta_type,
+        crate::scrapers::media_resolve::ImportMediaOverrides {
+            title: body.title.as_deref().or(Some(stream_name.as_str())),
+            poster: None,
+            background: None,
+            release_date: None,
+            year: None,
+        },
+        None,
+    )
+    .await
+    .map(i64::from);
 
     // Insert stream
     let stream_id: i64 = match sqlx::query_scalar(
@@ -385,28 +385,33 @@ pub async fn import_youtube_video(
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
-    // Link to media
     if let Some(mid) = media_id {
-        let _ = sqlx::query(
-            "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at) VALUES ($1, $2, true, true, NOW()) ON CONFLICT DO NOTHING",
-        )
-        .bind(stream_id)
-        .bind(mid)
-        .execute(&state.pool)
-        .await;
-
-        let _ = sqlx::query("UPDATE media SET total_streams = total_streams + 1 WHERE id = $1")
-            .bind(mid)
-            .execute(&state.pool)
-            .await;
+        let _ =
+            super::import_helpers::link_stream_to_media(&state.pool, stream_id as i32, mid as i32)
+                .await;
     }
+
+    let effective_meta_id = body
+        .meta_id
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| super::import_helpers::synthetic_import_meta_id("youtube", &video_id));
 
     let data = serde_json::json!({
         "name": stream_name,
+        "title": body.title.as_deref().unwrap_or(&stream_name),
         "video_id": video_id,
+        "url": body.url,
+        "channel_id": body.channel_id,
         "channel_name": channel_name,
         "meta_type": body.meta_type.as_deref().unwrap_or("movie"),
+        "meta_id": effective_meta_id,
+        "duration_seconds": body.duration_seconds,
+        "is_live": body.is_live,
+        "languages": body.languages.clone().unwrap_or_default(),
         "uploader_name": uploader_name,
+        "anonymous_display_name": body.anonymous_display_name,
         "is_anonymous": resolved_is_anonymous,
         "is_public": is_public,
     });
@@ -425,7 +430,7 @@ pub async fn import_youtube_video(
     {
         if auto_approve {
             if let Some(uid) = uploader_user_id {
-                award_contribution_points(&state.pool, uid).await;
+                award_contribution_points(&state.pool, uid, "youtube").await;
             }
         } else if let (Some(bot_token), Some(chat_id)) = (
             state.config.telegram_bot_token.as_deref(),
@@ -445,9 +450,17 @@ pub async fn import_youtube_video(
         contrib_id = Some(cid);
     }
 
+    let message = if auto_approve {
+        "YouTube stream imported successfully!".to_string()
+    } else {
+        super::import_helpers::pending_import_message("YouTube stream")
+    };
+
     (
         StatusCode::CREATED,
         Json(json!({
+            "status": if auto_approve { "success" } else { "pending" },
+            "message": message,
             "stream_id": stream_id,
             "video_id": video_id,
             "name": stream_name,

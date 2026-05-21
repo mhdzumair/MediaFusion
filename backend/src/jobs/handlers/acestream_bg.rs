@@ -1,27 +1,27 @@
-/// Background AceStream scraper.
-///
-/// Fetches AceStream sources configured via the `config_manager` scraper config
-/// (key `acestream_background`). Source URLs and search-API endpoints are defined
-/// in the operator's YAML/JSON config file rather than in AppConfig env-vars, so
-/// this handler reads them at runtime via the `config_manager` utility — mirroring
-/// the Python `_fetch_acestream_candidates()` flow.
-///
-/// For each discovered AceStream content_id the handler:
-///   1. Deduplicates via the Redis set `acestream_bg:seen`.
-///   2. Inserts a stream row + acestream_stream row if absent.
-///   3. Marks the content_id seen in Redis (TTL 7 days).
+/// Background AceStream scraper (Python `run_acestream_background_scraper` parity).
 use async_trait::async_trait;
 use fred::prelude::{KeysInterface, SetsInterface};
 use once_cell::sync::Lazy;
 use regex::Regex;
+use serde_json::Value;
 use tracing::{info, warn};
 
-use crate::jobs::{
-    error::JobError,
-    handler::{JobCtx, JobHandler},
+use crate::{
+    jobs::{
+        error::JobError,
+        handler::{JobCtx, JobHandler},
+    },
+    parser,
+    routes::content::import_helpers::is_adult_content,
+    scrapers::media_resolve,
 };
 
-// ─── Regex patterns ───────────────────────────────────────────────────────────
+const SEEN_KEY: &str = "acestream_bg:seen";
+const SEEN_TTL: i64 = 604_800;
+const FETCH_TIMEOUT_SECS: u64 = 20;
+const MAX_ITEMS_PER_SOURCE: usize = 50;
+const MAX_PAGES_PER_SOURCE: usize = 2;
+const DEFAULT_QUERIES: &[&str] = &["live sports", "movies", "series"];
 
 static ACESTREAM_URI_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"acestream://([a-fA-F0-9]{40})").expect("acestream uri regex"));
@@ -37,57 +37,69 @@ static INFOHASH_PARAM_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?:infohash|info_hash)=([a-fA-F0-9]{40})").expect("infohash param regex")
 });
 
-// ─── Redis keys / TTL ─────────────────────────────────────────────────────────
+static LABELED_SERVER_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"Server\s*(?P<server_no>\d+)\s*:\s*(?P<label>[^\n\r<]+).*?acestream://(?P<cid>[a-fA-F0-9]{40})",
+    )
+    .expect("acestream labeled server regex")
+});
 
-const SEEN_KEY: &str = "acestream_bg:seen";
-const SEEN_TTL: i64 = 604_800; // 7 days
+static RESOLUTION_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)\b(\d{3,4}p)\b").expect("resolution regex"));
 
-// ─── Config helpers ───────────────────────────────────────────────────────────
-
-/// A minimal, parsed representation of one source entry from the scraper config.
-#[derive(Debug)]
-struct AceStreamSource {
-    /// Human-readable name used as `source` on the inserted stream row.
-    name: String,
-    /// List of URLs to fetch in order.
-    urls: Vec<String>,
+#[derive(Debug, Clone)]
+struct AceCandidate {
+    content_id: Option<String>,
+    info_hash: Option<String>,
+    title: Option<String>,
+    source_name: String,
+    default_media_type: String,
+    channel_key: Option<String>,
+    upsert_by_channel: bool,
+    metadata_title: Option<String>,
+    metadata_external_id: Option<String>,
+    metadata_media_type: Option<String>,
+    metadata_poster: Option<String>,
 }
 
-/// Read acestream_background sources from the operator config file.
-///
-/// The config is loaded from `SCRAPER_CONFIG_PATH` (defaults to
-/// `config/scraper_config.yaml`) by `config_manager`.  If no config or no
-/// sources are present the function returns an empty Vec so the handler exits
-/// gracefully.
-fn load_sources(config_path: &str) -> Vec<AceStreamSource> {
-    let text = match std::fs::read_to_string(config_path) {
-        Ok(t) => t,
-        Err(_) => return vec![],
-    };
+#[derive(Debug)]
+struct AceStreamSourceConfig {
+    name: String,
+    urls: Vec<String>,
+    media_type: String,
+    channel_key: Option<String>,
+    channel_key_mode: Option<String>,
+    upsert_by_channel: bool,
+    channel_name: Option<String>,
+    labeled_server_parser: bool,
+    metadata_title: Option<String>,
+    metadata_external_id: Option<String>,
+    metadata_media_type: Option<String>,
+    metadata_poster: Option<String>,
+}
 
-    // Parse as JSON. YAML-only configs are not supported here; operators
-    // should use JSON or YAML that is also valid JSON.
-    let root: serde_json::Value = match serde_json::from_str(&text) {
-        Ok(v) => v,
-        Err(_) => return vec![],
-    };
+fn scraper_config_root(path: &str) -> Option<Value> {
+    let text = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
 
-    let source_items = match root
+fn load_source_configs(path: &str) -> Vec<AceStreamSourceConfig> {
+    let root = match scraper_config_root(path) {
+        Some(v) => v,
+        None => return vec![],
+    };
+    let items = root
         .get("acestream_background")
         .and_then(|v| v.get("sources"))
         .and_then(|v| v.as_array())
-    {
-        Some(arr) => arr.clone(),
-        None => return vec![],
-    };
+        .cloned()
+        .unwrap_or_default();
 
-    let mut sources = Vec::new();
-    for item in source_items {
+    let mut out = Vec::new();
+    for item in items {
         if item.get("enabled").and_then(|v| v.as_bool()) == Some(false) {
             continue;
         }
-
-        // Collect URLs from either `urls` (array) or `url` (scalar).
         let urls: Vec<String> = if let Some(arr) = item.get("urls").and_then(|v| v.as_array()) {
             arr.iter()
                 .filter_map(|v| v.as_str().map(str::to_string))
@@ -102,36 +114,118 @@ fn load_sources(config_path: &str) -> Vec<AceStreamSource> {
         } else {
             vec![]
         };
-
         if urls.is_empty() {
             continue;
         }
-
         let name = item
             .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or(&urls[0])
             .to_string();
-
-        sources.push(AceStreamSource { name, urls });
+        let target = item.get("target_metadata");
+        out.push(AceStreamSourceConfig {
+            name,
+            urls,
+            media_type: item
+                .get("media_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("movie")
+                .to_string(),
+            channel_key: item
+                .get("channel_key")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            channel_key_mode: item
+                .get("channel_key_mode")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            upsert_by_channel: item
+                .get("upsert_by_channel")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            channel_name: item
+                .get("channel_name")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
+            labeled_server_parser: item
+                .get("labeled_server_parser")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            metadata_title: target
+                .and_then(|t| t.get("title"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            metadata_external_id: target
+                .and_then(|t| t.get("id"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            metadata_media_type: target
+                .and_then(|t| t.get("media_type"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            metadata_poster: target
+                .and_then(|t| t.get("poster"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+        });
     }
-
-    sources
+    out
 }
 
-// ─── Candidate extraction ─────────────────────────────────────────────────────
-
-#[derive(Debug)]
-struct AceCandidate {
-    content_id: Option<String>,
-    info_hash: Option<String>,
-    title: Option<String>,
+fn clean_acestream_stream_name(raw: &str) -> (String, Option<String>) {
+    let mut label = Regex::new(r"(?i)^\s*Server\s*\d+\s*:\s*")
+        .unwrap()
+        .replace(raw, "")
+        .trim()
+        .to_string();
+    label = Regex::new(r"(?i)/\s*\d+\s*fps\b")
+        .unwrap()
+        .replace_all(&label, "")
+        .trim()
+        .to_string();
+    label = label.split_whitespace().collect::<Vec<_>>().join(" ");
+    let resolution = RESOLUTION_RE
+        .find(&label)
+        .map(|m| m.as_str().to_lowercase());
+    let lower = label.to_lowercase();
+    if lower.contains("f1tv") {
+        if let Some(ref res) = resolution {
+            return (format!("F1TV {res}"), resolution);
+        }
+    }
+    if lower.contains("sky sport f1") {
+        return ("Sky Sport F1".to_string(), resolution);
+    }
+    if lower == "skyf1" {
+        return ("SKYF1".to_string(), resolution);
+    }
+    if let Some(cap) = Regex::new(r"(?i)\bdanz\s+server\s+(\d+)\b")
+        .unwrap()
+        .captures(&lower)
+    {
+        return (format!("DAZN {}", &cap[1]), resolution);
+    }
+    (
+        if label.is_empty() {
+            "F1 Live".to_string()
+        } else {
+            label
+        },
+        resolution,
+    )
 }
 
-fn extract_candidates(body: &str, source_name: &str) -> Vec<AceCandidate> {
-    let mut candidates: Vec<AceCandidate> = Vec::new();
+fn source_identifier(source_name: &str, channel_key: Option<&str>) -> String {
+    if let Some(ck) = channel_key.filter(|s| !s.is_empty()) {
+        format!("acestream:{source_name}:{ck}")
+    } else {
+        source_name.to_string()
+    }
+}
 
-    // Anchored links: <a href="acestream://…">Title</a>
+fn extract_from_html(body: &str, source_name: &str, default_media_type: &str) -> Vec<AceCandidate> {
+    let mut candidates = Vec::new();
     for cap in ACESTREAM_ANCHOR_RE.captures_iter(body) {
         let cid = cap.name("cid").map(|m| m.as_str().to_lowercase());
         let title = cap
@@ -143,14 +237,19 @@ fn extract_candidates(body: &str, source_name: &str) -> Vec<AceCandidate> {
                 content_id: Some(content_id),
                 info_hash: None,
                 title,
+                source_name: source_name.to_string(),
+                default_media_type: default_media_type.to_string(),
+                channel_key: None,
+                upsert_by_channel: false,
+                metadata_title: None,
+                metadata_external_id: None,
+                metadata_media_type: None,
+                metadata_poster: None,
             });
         }
     }
-
-    // Plain acestream:// URIs
     for cap in ACESTREAM_URI_RE.captures_iter(body) {
         let cid = cap[1].to_lowercase();
-        // Skip if already captured by anchor pass
         if candidates
             .iter()
             .any(|c| c.content_id.as_deref() == Some(&cid))
@@ -161,63 +260,438 @@ fn extract_candidates(body: &str, source_name: &str) -> Vec<AceCandidate> {
             content_id: Some(cid),
             info_hash: None,
             title: None,
+            source_name: source_name.to_string(),
+            default_media_type: default_media_type.to_string(),
+            channel_key: None,
+            upsert_by_channel: false,
+            metadata_title: None,
+            metadata_external_id: None,
+            metadata_media_type: None,
+            metadata_poster: None,
         });
     }
-
-    // Infohash query params: ?infohash=…
     for cap in INFOHASH_PARAM_RE.captures_iter(body) {
-        let ih = cap[1].to_lowercase();
         candidates.push(AceCandidate {
             content_id: None,
-            info_hash: Some(ih),
+            info_hash: Some(cap[1].to_lowercase()),
             title: None,
+            source_name: source_name.to_string(),
+            default_media_type: default_media_type.to_string(),
+            channel_key: None,
+            upsert_by_channel: false,
+            metadata_title: None,
+            metadata_external_id: None,
+            metadata_media_type: None,
+            metadata_poster: None,
         });
     }
-
-    if candidates.is_empty() {
-        tracing::debug!(
-            "acestream_bg: no candidates in response from {}",
-            source_name
-        );
-    }
-
     candidates
 }
 
-// ─── DB helpers ───────────────────────────────────────────────────────────────
-
-/// Returns the stream_id if an acestream_stream row already exists for this
-/// content_id, otherwise None.
-async fn find_existing_stream(
-    pool: &sqlx::PgPool,
-    content_id: &str,
-) -> Result<Option<i64>, sqlx::Error> {
-    let row: Option<(i64,)> =
-        sqlx::query_as("SELECT stream_id FROM acestream_stream WHERE content_id = $1 LIMIT 1")
-            .bind(content_id)
-            .fetch_optional(pool)
-            .await?;
-    Ok(row.map(|(id,)| id))
+fn extract_labeled_servers(
+    body: &str,
+    source_name: &str,
+    default_media_type: &str,
+) -> Vec<AceCandidate> {
+    let mut candidates = Vec::new();
+    for cap in LABELED_SERVER_RE.captures_iter(body) {
+        let content_id = cap.name("cid").map(|m| m.as_str().to_lowercase());
+        let server_no = cap.name("server_no").map(|m| m.as_str()).unwrap_or("");
+        let label = cap.name("label").map(|m| m.as_str().trim()).unwrap_or("");
+        let display = if server_no.is_empty() {
+            label.to_string()
+        } else {
+            format!("Server {server_no}: {label}")
+        };
+        if let Some(cid) = content_id {
+            candidates.push(AceCandidate {
+                content_id: Some(cid),
+                info_hash: None,
+                title: Some(display),
+                source_name: source_name.to_string(),
+                default_media_type: default_media_type.to_string(),
+                channel_key: None,
+                upsert_by_channel: false,
+                metadata_title: None,
+                metadata_external_id: None,
+                metadata_media_type: None,
+                metadata_poster: None,
+            });
+        }
+    }
+    candidates
 }
 
-/// Insert a new stream + acestream_stream row.  Returns the new stream_id on
-/// success, or None if insertion conflicted / failed.
-async fn insert_acestream_stream(
+fn json_items(payload: &Value) -> Vec<&Value> {
+    if let Some(arr) = payload.as_array() {
+        return arr.iter().collect();
+    }
+    for key in ["results", "items", "data", "streams"] {
+        if let Some(arr) = payload.get(key).and_then(|v| v.as_array()) {
+            return arr.iter().collect();
+        }
+    }
+    vec![]
+}
+
+fn extract_from_json_item(
+    item: &Value,
+    source_name: &str,
+    default_media_type: &str,
+) -> Vec<AceCandidate> {
+    let mut out = Vec::new();
+    let title = item
+        .get("title")
+        .or_else(|| item.get("name"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    for key in ["content_id", "contentId", "acestream_id", "id"] {
+        if let Some(v) = item.get(key).and_then(|x| x.as_str()) {
+            if v.contains("acestream://") {
+                if let Some(cap) = ACESTREAM_URI_RE.captures(v) {
+                    out.push(AceCandidate {
+                        content_id: Some(cap[1].to_lowercase()),
+                        info_hash: None,
+                        title: title.clone(),
+                        source_name: source_name.to_string(),
+                        default_media_type: default_media_type.to_string(),
+                        channel_key: None,
+                        upsert_by_channel: false,
+                        metadata_title: None,
+                        metadata_external_id: None,
+                        metadata_media_type: None,
+                        metadata_poster: None,
+                    });
+                }
+            } else if v.len() == 40 && v.chars().all(|c| c.is_ascii_hexdigit()) {
+                out.push(AceCandidate {
+                    content_id: Some(v.to_lowercase()),
+                    info_hash: None,
+                    title: title.clone(),
+                    source_name: source_name.to_string(),
+                    default_media_type: default_media_type.to_string(),
+                    channel_key: None,
+                    upsert_by_channel: false,
+                    metadata_title: None,
+                    metadata_external_id: None,
+                    metadata_media_type: None,
+                    metadata_poster: None,
+                });
+            }
+        }
+    }
+    for key in ["info_hash", "infoHash"] {
+        if let Some(v) = item.get(key).and_then(|x| x.as_str()) {
+            if v.len() == 40 {
+                out.push(AceCandidate {
+                    content_id: None,
+                    info_hash: Some(v.to_lowercase()),
+                    title: title.clone(),
+                    source_name: source_name.to_string(),
+                    default_media_type: default_media_type.to_string(),
+                    channel_key: None,
+                    upsert_by_channel: false,
+                    metadata_title: None,
+                    metadata_external_id: None,
+                    metadata_media_type: None,
+                    metadata_poster: None,
+                });
+            }
+        }
+    }
+    out
+}
+
+async fn fetch_search_api_candidates(
+    http: &reqwest::Client,
+    config_path: &str,
+    api_key: Option<&str>,
+) -> Vec<AceCandidate> {
+    let root = match scraper_config_root(config_path) {
+        Some(v) => v,
+        None => return vec![],
+    };
+    let search = match root
+        .get("acestream_background")
+        .and_then(|v| v.get("search_api"))
+    {
+        Some(s) => s,
+        None => return vec![],
+    };
+    if !search
+        .get("enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return vec![];
+    }
+    let url = search
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+    if url.is_empty() {
+        return vec![];
+    }
+    let source_name = search
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("acestream_search_api");
+    let default_media_type = search
+        .get("media_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("movie");
+    let queries: Vec<String> = search
+        .get("queries")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .filter(|v: &Vec<String>| !v.is_empty())
+        .unwrap_or_else(|| DEFAULT_QUERIES.iter().map(|s| s.to_string()).collect());
+
+    let query_param = search
+        .get("query_param")
+        .and_then(|v| v.as_str())
+        .unwrap_or("query");
+    let page_param = search
+        .get("page_param")
+        .and_then(|v| v.as_str())
+        .unwrap_or("page");
+    let limit_param = search
+        .get("limit_param")
+        .and_then(|v| v.as_str())
+        .unwrap_or("limit");
+    let max_results = search
+        .get("max_results")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(MAX_ITEMS_PER_SOURCE as u64) as usize;
+    let max_pages = search
+        .get("max_pages")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(MAX_PAGES_PER_SOURCE as u64) as usize;
+    let max_results = max_results.clamp(1, MAX_ITEMS_PER_SOURCE);
+    let max_pages = max_pages.clamp(1, MAX_PAGES_PER_SOURCE);
+
+    let mut candidates = Vec::new();
+    for query in queries {
+        for page in 1..=max_pages {
+            let page_s = page.to_string();
+            let limit_s = max_results.to_string();
+            let mut req = http
+                .get(url)
+                .query(&[
+                    (query_param, query.as_str()),
+                    (page_param, page_s.as_str()),
+                    (limit_param, limit_s.as_str()),
+                ])
+                .timeout(std::time::Duration::from_secs(FETCH_TIMEOUT_SECS));
+            if let Some(key) = api_key {
+                if let Some(header) = search.get("api_key_header").and_then(|v| v.as_str()) {
+                    let prefix = search
+                        .get("api_key_prefix")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    req = req.header(header, format!("{prefix}{key}"));
+                }
+                if let Some(param) = search.get("api_key_param").and_then(|v| v.as_str()) {
+                    req = req.query(&[(param, key)]);
+                }
+            }
+            let payload: Value = match req.send().await {
+                Ok(r) if r.status().is_success() => r.json().await.unwrap_or(Value::Null),
+                _ => break,
+            };
+            let items = json_items(&payload);
+            if items.is_empty() {
+                break;
+            }
+            let mut produced = 0usize;
+            for item in items {
+                for c in extract_from_json_item(item, source_name, default_media_type) {
+                    candidates.push(c);
+                    produced += 1;
+                    if produced >= max_results {
+                        break;
+                    }
+                }
+            }
+            if produced == 0 {
+                break;
+            }
+        }
+    }
+    candidates
+}
+
+async fn fetch_source_candidates(
+    http: &reqwest::Client,
+    configs: &[AceStreamSourceConfig],
+) -> Vec<AceCandidate> {
+    let mut all = Vec::new();
+    for cfg in configs {
+        for url in cfg.urls.iter().take(MAX_PAGES_PER_SOURCE) {
+            let body = match http
+                .get(url)
+                .timeout(std::time::Duration::from_secs(FETCH_TIMEOUT_SECS))
+                .send()
+                .await
+            {
+                Ok(r) if r.status().is_success() => r.text().await.unwrap_or_default(),
+                Err(e) => {
+                    warn!("acestream_bg: fetch {} failed: {e}", url);
+                    continue;
+                }
+                Ok(r) => {
+                    warn!("acestream_bg: HTTP {} from {}", r.status().as_u16(), url);
+                    continue;
+                }
+            };
+            let extracted = if cfg.labeled_server_parser {
+                extract_labeled_servers(&body, &cfg.name, &cfg.media_type)
+            } else {
+                extract_from_html(&body, &cfg.name, &cfg.media_type)
+            };
+            for mut c in extracted.into_iter().take(MAX_ITEMS_PER_SOURCE) {
+                if let Some(ref cn) = cfg.channel_name {
+                    c.title = Some(cn.clone());
+                }
+                c.metadata_title = cfg.metadata_title.clone();
+                c.metadata_external_id = cfg.metadata_external_id.clone();
+                c.metadata_media_type = cfg.metadata_media_type.clone();
+                c.metadata_poster = cfg.metadata_poster.clone();
+                if cfg.upsert_by_channel {
+                    if let Some(ref mode) = cfg.channel_key_mode {
+                        c.channel_key = Some(match mode.as_str() {
+                            "server_label" => {
+                                format!("{}:{}", cfg.name, c.title.as_deref().unwrap_or("stream"))
+                            }
+                            "server_number" => format!("{}:server:0", cfg.name),
+                            _ => cfg.channel_key.clone().unwrap_or_default(),
+                        });
+                    } else {
+                        c.channel_key = cfg.channel_key.clone();
+                    }
+                    c.upsert_by_channel = c.channel_key.is_some();
+                }
+                all.push(c);
+            }
+        }
+    }
+    all
+}
+
+async fn ensure_tv_media(pool: &sqlx::PgPool, title: &str, poster: Option<&str>) -> Option<i32> {
+    let existing: Option<i32> = sqlx::query_scalar(
+        "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = 'TV'::mediatype LIMIT 1",
+    )
+    .bind(title)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()?;
+    if let Some(id) = existing {
+        if let Some(p) = poster {
+            let _ = sqlx::query(
+                "UPDATE media SET poster = $1 WHERE id = $2 AND (poster IS NULL OR poster = '')",
+            )
+            .bind(p)
+            .bind(id)
+            .execute(pool)
+            .await;
+        }
+        return Some(id);
+    }
+    let id: Option<i32> = sqlx::query_scalar(
+        "INSERT INTO media (title, type, created_at, adult, is_blocked, total_streams, popularity) \
+         VALUES ($1, 'TV'::mediatype, NOW(), false, false, 0, 0.0) RETURNING id",
+    )
+    .bind(title)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()?;
+    if let (Some(mid), Some(p)) = (id, poster) {
+        let _ = sqlx::query(
+            "UPDATE media SET poster = $1 WHERE id = $2 AND (poster IS NULL OR poster = '')",
+        )
+        .bind(p)
+        .bind(mid)
+        .execute(pool)
+        .await;
+    }
+    id
+}
+
+async fn find_by_content_id(pool: &sqlx::PgPool, content_id: &str) -> Option<i64> {
+    sqlx::query_scalar("SELECT stream_id FROM acestream_stream WHERE content_id = $1 LIMIT 1")
+        .bind(content_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+}
+
+async fn find_by_source(pool: &sqlx::PgPool, source: &str) -> Option<(i64, String)> {
+    sqlx::query_as(
+        "SELECT s.id, ac.content_id FROM stream s \
+         JOIN acestream_stream ac ON ac.stream_id = s.id \
+         WHERE s.source = $1 AND s.stream_type = 'ACESTREAM'::streamtype LIMIT 1",
+    )
+    .bind(source)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn upsert_acestream(
     pool: &sqlx::PgPool,
     name: &str,
     source: &str,
+    resolution: Option<&str>,
+    release_group: Option<&str>,
     content_id: &str,
     info_hash: Option<&str>,
+    media_id: Option<i32>,
 ) -> Result<Option<i64>, sqlx::Error> {
-    let row: Option<(i64,)> = sqlx::query_as(
+    if let Some(existing) = find_by_content_id(pool, content_id).await {
+        sqlx::query(
+            "UPDATE stream SET name = $1, source = $2, resolution = $3, release_group = $4, updated_at = NOW() WHERE id = $5",
+        )
+        .bind(name)
+        .bind(source)
+        .bind(resolution)
+        .bind(release_group)
+        .bind(existing as i32)
+        .execute(pool)
+        .await?;
+        sqlx::query(
+            "UPDATE acestream_stream SET info_hash = COALESCE($1, info_hash) WHERE stream_id = $2",
+        )
+        .bind(info_hash)
+        .bind(existing as i32)
+        .execute(pool)
+        .await?;
+        if let Some(mid) = media_id {
+            let _ = media_resolve::link_stream_to_media(pool, existing as i32, mid).await;
+        }
+        return Ok(Some(existing));
+    }
+
+    let stream_id: Option<i64> = sqlx::query_scalar(
         r#"INSERT INTO stream (
-            stream_type, name, source,
+            stream_type, name, source, resolution, release_group,
             is_active, is_blocked, is_public, playback_count,
             is_remastered, is_upscaled, is_proper, is_repack,
             is_extended, is_complete, is_dubbed, is_subbed,
             created_at, updated_at
         ) VALUES (
-            'ACESTREAM'::streamtype, $1, $2,
+            'ACESTREAM'::streamtype, $1, $2, $3, $4,
             true, false, true, 0,
             false, false, false, false,
             false, false, false, false,
@@ -226,29 +700,144 @@ async fn insert_acestream_stream(
     )
     .bind(name)
     .bind(source)
+    .bind(resolution)
+    .bind(release_group)
     .fetch_optional(pool)
     .await?;
 
-    let stream_id = match row {
-        Some((id,)) => id,
-        None => return Ok(None),
+    let Some(stream_id) = stream_id else {
+        return Ok(None);
     };
 
     sqlx::query(
-        "INSERT INTO acestream_stream (stream_id, content_id, info_hash)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (stream_id) DO NOTHING",
+        "INSERT INTO acestream_stream (stream_id, content_id, info_hash) VALUES ($1, $2, $3) \
+         ON CONFLICT (stream_id) DO UPDATE SET content_id = EXCLUDED.content_id, info_hash = COALESCE(EXCLUDED.info_hash, acestream_stream.info_hash)",
     )
-    .bind(stream_id)
+    .bind(stream_id as i32)
     .bind(content_id)
     .bind(info_hash)
     .execute(pool)
     .await?;
 
+    if let Some(mid) = media_id {
+        let _ = media_resolve::link_stream_to_media(pool, stream_id as i32, mid).await;
+    }
+
     Ok(Some(stream_id))
 }
 
-// ─── Handler ──────────────────────────────────────────────────────────────────
+async fn process_candidate(
+    pool: &sqlx::PgPool,
+    http: &reqwest::Client,
+    candidate: &AceCandidate,
+    cfg: &crate::config::AppConfig,
+) -> Result<&'static str, sqlx::Error> {
+    let content_id = match &candidate.content_id {
+        Some(c) => c.clone(),
+        None => return Ok("skipped"),
+    };
+
+    let default_title = format!("AceStream {}", &content_id[..10.min(content_id.len())]);
+    let raw_title = candidate.title.as_deref().unwrap_or(&default_title);
+    let (title, resolution) = clean_acestream_stream_name(raw_title);
+    if is_adult_content(&title) {
+        return Ok("skipped");
+    }
+
+    let source_id = source_identifier(&candidate.source_name, candidate.channel_key.as_deref());
+
+    if candidate.upsert_by_channel {
+        if let Some((_stream_id, existing_cid)) = find_by_source(pool, &source_id).await {
+            if existing_cid == content_id {
+                return Ok("skipped");
+            }
+            let media_id = resolve_media_for_candidate(pool, http, candidate, &title, cfg).await;
+            let _ = upsert_acestream(
+                pool,
+                &title,
+                &source_id,
+                resolution.as_deref(),
+                candidate.channel_key.as_deref(),
+                &content_id,
+                candidate.info_hash.as_deref(),
+                media_id,
+            )
+            .await?;
+            return Ok("updated");
+        }
+    } else if find_by_content_id(pool, &content_id).await.is_some() {
+        return Ok("skipped");
+    }
+
+    let media_id = resolve_media_for_candidate(pool, http, candidate, &title, cfg).await;
+    if upsert_acestream(
+        pool,
+        &title,
+        &source_id,
+        resolution.as_deref(),
+        candidate.channel_key.as_deref(),
+        &content_id,
+        candidate.info_hash.as_deref(),
+        media_id,
+    )
+    .await?
+    .is_some()
+    {
+        Ok("created")
+    } else {
+        Ok("skipped")
+    }
+}
+
+async fn resolve_media_for_candidate(
+    pool: &sqlx::PgPool,
+    http: &reqwest::Client,
+    candidate: &AceCandidate,
+    title: &str,
+    cfg: &crate::config::AppConfig,
+) -> Option<i32> {
+    let media_type = candidate
+        .metadata_media_type
+        .as_deref()
+        .unwrap_or(candidate.default_media_type.as_str());
+    if media_type == "tv" {
+        let meta_title = candidate.metadata_title.as_deref().unwrap_or(title);
+        return ensure_tv_media(pool, meta_title, candidate.metadata_poster.as_deref()).await;
+    }
+
+    let parsed = parser::parse_title(title);
+    let is_series = !parsed.seasons.is_empty() || !parsed.episodes.is_empty();
+    let meta = media_resolve::search_meta_for_title_with_anime(
+        pool,
+        http,
+        parsed.title.as_deref().unwrap_or(title),
+        parsed.year,
+        is_series,
+        cfg.tmdb_api_key.as_deref(),
+        cfg.imdb_cinemeta_fallback_enabled,
+        &cfg.anime_metadata_source_order,
+        &cfg.metadata_primary_source,
+    )
+    .await?;
+    Some(meta.media_id as i32)
+}
+
+fn dedupe_key(candidate: &AceCandidate) -> String {
+    if candidate.upsert_by_channel {
+        if let Some(ref ck) = candidate.channel_key {
+            return format!(
+                "channel:{ck}:{}:{}",
+                candidate.content_id.as_deref().unwrap_or(""),
+                candidate.info_hash.as_deref().unwrap_or("")
+            );
+        }
+    }
+    format!(
+        "{}:{}",
+        candidate.content_id.as_deref().unwrap_or(""),
+        candidate.info_hash.as_deref().unwrap_or("")
+    )
+}
 
 pub struct AcestreamBgScraper;
 
@@ -259,132 +848,69 @@ impl JobHandler for AcestreamBgScraper {
     type Args = serde_json::Value;
 
     async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        let sources = load_sources(&ctx.state.config.scraper_config_path);
-
-        if sources.is_empty() {
-            info!("acestream_bg: no sources configured, nothing to do");
+        if ctx.state.config.disable_acestream_background_scraper {
+            info!("acestream_bg: disabled by config");
             return Ok(());
         }
 
+        let config_path = &ctx.state.config.scraper_config_path;
+        let source_configs = load_source_configs(config_path);
+        let api_key = std::env::var("ACESTREAM_BACKGROUND_SEARCH_API_KEY")
+            .ok()
+            .filter(|s| !s.is_empty());
+
+        let mut candidates =
+            fetch_search_api_candidates(&ctx.state.http, config_path, api_key.as_deref()).await;
+        candidates.extend(fetch_source_candidates(&ctx.state.http, &source_configs).await);
+
+        if candidates.is_empty() {
+            info!("acestream_bg: no candidates");
+            return Ok(());
+        }
+
+        let mut seen_keys = std::collections::HashSet::new();
+        candidates.retain(|c| seen_keys.insert(dedupe_key(c)));
+
         info!(
-            "acestream_bg: processing {} configured source(s)",
-            sources.len()
+            "acestream_bg: processing {} unique candidates",
+            candidates.len()
         );
 
         let pool = &ctx.state.pool;
         let redis = &ctx.state.redis;
-        let http = &ctx.state.http;
+        let mut metrics = (0usize, 0usize, 0usize, 0usize); // processed, created, updated, skipped
 
-        let mut total_seen = 0usize;
-        let mut total_inserted = 0usize;
-        let mut total_skipped = 0usize;
-
-        for source in &sources {
+        for candidate in candidates {
             if ctx.is_cancelled() {
-                warn!("acestream_bg: cancellation requested, stopping early");
                 return Err(JobError::Cancelled);
             }
-
-            for url in &source.urls {
-                let body = match http
-                    .get(url)
-                    .timeout(std::time::Duration::from_secs(30))
-                    .send()
-                    .await
-                {
-                    Ok(r) if r.status().is_success() => match r.text().await {
-                        Ok(t) => t,
-                        Err(e) => {
-                            warn!("acestream_bg: failed to read body from {}: {e}", url);
-                            continue;
-                        }
-                    },
-                    Ok(r) => {
-                        warn!("acestream_bg: HTTP {} from {}", r.status().as_u16(), url);
-                        continue;
-                    }
-                    Err(e) => {
-                        warn!("acestream_bg: fetch error for {}: {e}", url);
-                        continue;
-                    }
-                };
-
-                let candidates = extract_candidates(&body, &source.name);
-                total_seen += candidates.len();
-
-                for candidate in candidates {
-                    let dedup_key = match &candidate.content_id {
-                        Some(cid) => cid.clone(),
-                        None => match &candidate.info_hash {
-                            Some(ih) => ih.clone(),
-                            None => continue,
-                        },
-                    };
-
-                    // Redis dedup
-                    let already_seen: bool = redis
-                        .sismember::<bool, _, _>(SEEN_KEY, &dedup_key)
-                        .await
-                        .unwrap_or(false);
-                    if already_seen {
-                        total_skipped += 1;
-                        continue;
-                    }
-
-                    // Use content_id as the lookup key when available
-                    if let Some(ref content_id) = candidate.content_id {
-                        match find_existing_stream(pool, content_id).await {
-                            Ok(Some(_)) => {
-                                total_skipped += 1;
-                            }
-                            Ok(None) => {
-                                let name = candidate
-                                    .title
-                                    .as_deref()
-                                    .filter(|s| !s.is_empty())
-                                    .unwrap_or("AceStream");
-
-                                match insert_acestream_stream(
-                                    pool,
-                                    name,
-                                    &source.name,
-                                    content_id,
-                                    candidate.info_hash.as_deref(),
-                                )
-                                .await
-                                {
-                                    Ok(Some(_)) => {
-                                        total_inserted += 1;
-                                    }
-                                    Ok(None) => {
-                                        total_skipped += 1;
-                                    }
-                                    Err(e) => {
-                                        warn!(
-                                            "acestream_bg: DB insert error for {}: {e}",
-                                            content_id
-                                        );
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                warn!("acestream_bg: DB lookup error for {}: {e}", content_id);
-                            }
-                        }
-                    }
-
-                    // Mark seen regardless of DB outcome
-                    let _ = redis.sadd::<(), _, _>(SEEN_KEY, dedup_key).await;
-                    let _ = redis.expire::<i64, _>(SEEN_KEY, SEEN_TTL, None).await;
+            let item_key = format!("acestream:{}", dedupe_key(&candidate));
+            if redis
+                .sismember::<bool, _, _>(SEEN_KEY, &item_key)
+                .await
+                .unwrap_or(false)
+            {
+                metrics.3 += 1;
+                continue;
+            }
+            metrics.0 += 1;
+            match process_candidate(pool, &ctx.state.http, &candidate, &ctx.state.config).await {
+                Ok("created") => metrics.1 += 1,
+                Ok("updated") => metrics.2 += 1,
+                Ok(_) => metrics.3 += 1,
+                Err(e) => {
+                    warn!("acestream_bg: process error: {e}");
+                    metrics.3 += 1;
                 }
             }
+            let _ = redis.sadd::<(), _, _>(SEEN_KEY, item_key).await;
+            let _ = redis.expire::<i64, _>(SEEN_KEY, SEEN_TTL, None).await;
         }
 
         info!(
-            "acestream_bg: done — seen={} inserted={} skipped={}",
-            total_seen, total_inserted, total_skipped
+            "acestream_bg: done processed={} created={} updated={} skipped={}",
+            metrics.0, metrics.1, metrics.2, metrics.3
         );
-
         Ok(())
     }
 }

@@ -5,8 +5,13 @@
 ///   2. pg_trgm fuzzy match (similarity > 0.4, then similarity_ratio >= 70)
 ///   3. External metadata: TMDB (if API key) → Cinemeta/IMDb
 ///   4. Minimal stub creation so the stream is never lost
+use std::collections::HashMap;
+
+use chrono::NaiveDate;
+use futures::future::join_all;
+use serde_json::Value;
 use sqlx::PgPool;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub struct MediaEntry {
     pub id: i32,
@@ -22,6 +27,34 @@ pub async fn find_or_create_media(
     is_series: bool,
     catalog_ids: &[&str],
     tmdb_api_key: Option<&str>,
+    cinemeta_fallback_enabled: bool,
+) -> Option<MediaEntry> {
+    find_or_create_media_with_anime(
+        pool,
+        http,
+        title,
+        year,
+        is_series,
+        catalog_ids,
+        tmdb_api_key,
+        cinemeta_fallback_enabled,
+        &[],
+        "tmdb",
+    )
+    .await
+}
+
+pub async fn find_or_create_media_with_anime(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    title: &str,
+    year: Option<i32>,
+    is_series: bool,
+    catalog_ids: &[&str],
+    tmdb_api_key: Option<&str>,
+    cinemeta_fallback_enabled: bool,
+    anime_source_order: &[String],
+    metadata_primary_source: &str,
 ) -> Option<MediaEntry> {
     let media_type = if is_series { "SERIES" } else { "MOVIE" };
 
@@ -91,9 +124,18 @@ pub async fn find_or_create_media(
         }
     }
 
-    // 3. External metadata lookup: TMDB → Cinemeta.
-    if let Some(meta) =
-        crate::scrapers::metadata::search_by_title(http, title, year, is_series, tmdb_api_key).await
+    // 3. External metadata lookup: TMDB → Cinemeta → anime providers.
+    if let Some(meta) = crate::scrapers::metadata::search_by_title_with_anime_primary(
+        http,
+        title,
+        year,
+        is_series,
+        tmdb_api_key,
+        cinemeta_fallback_enabled,
+        anime_source_order,
+        metadata_primary_source,
+    )
+    .await
     {
         debug!(
             "media_resolve: external match '{}' ({:?}) via {} for '{title}'",
@@ -238,6 +280,518 @@ pub async fn insert_media_row(
         .ok()
         .flatten(),
     }
+}
+
+pub struct ImportMediaOverrides<'a> {
+    pub title: Option<&'a str>,
+    pub poster: Option<&'a str>,
+    pub background: Option<&'a str>,
+    pub release_date: Option<&'a str>,
+    pub year: Option<i32>,
+}
+
+/// Cache key for prefetched torrent import metadata (Python `prefetched_media_payloads`).
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub struct ImportMetaCacheKey {
+    pub meta_id: String,
+    pub meta_type: String,
+}
+
+/// Prefetched provider payload or a title-only fallback when fetch fails.
+#[derive(Clone)]
+pub enum ImportMediaPrefetchEntry {
+    Fetched(crate::scrapers::metadata::TmdbDetails),
+    FallbackTitle(String),
+}
+
+pub type ImportMetadataCache = HashMap<ImportMetaCacheKey, ImportMediaPrefetchEntry>;
+
+/// Normalize UI meta ids (bare numeric TMDB ids → `tmdb:123`).
+pub fn normalize_contributor_meta_id(meta_id: &str) -> String {
+    let meta_id = meta_id.trim();
+    if meta_id.is_empty() {
+        return String::new();
+    }
+    if meta_id.contains(':') || meta_id.starts_with("tt") {
+        meta_id.to_string()
+    } else {
+        format!("tmdb:{meta_id}")
+    }
+}
+
+/// Map sports file metadata to movie/series for external provider fetch (Python `_resolve_fetch_media_type`).
+pub fn resolve_file_fetch_meta_type(
+    raw_meta_type: &str,
+    sports_category: Option<&str>,
+) -> &'static str {
+    if raw_meta_type == "sports" {
+        if matches!(
+            sports_category.unwrap_or("other_sports"),
+            "wwe" | "mma" | "boxing"
+        ) {
+            "series"
+        } else {
+            "movie"
+        }
+    } else if raw_meta_type == "series" {
+        "series"
+    } else {
+        "movie"
+    }
+}
+
+fn import_fetch_opts<'a>(
+    tmdb_api_key: Option<&'a str>,
+    tvdb_api_key: Option<&'a str>,
+) -> crate::scrapers::metadata::ExternalFetchOpts<'a> {
+    crate::scrapers::metadata::ExternalFetchOpts {
+        tmdb_api_key,
+        tvdb_api_key,
+        cinemeta_fallback: true,
+    }
+}
+
+/// Fetch metadata from external providers without holding a DB connection (Python `fetch_external_metadata_payload`).
+pub async fn fetch_external_metadata_for_import(
+    http: &reqwest::Client,
+    meta_id: &str,
+    meta_type: &str,
+    fallback_title: Option<&str>,
+    tmdb_api_key: Option<&str>,
+    tvdb_api_key: Option<&str>,
+) -> ImportMediaPrefetchEntry {
+    if meta_type == "sports" {
+        return ImportMediaPrefetchEntry::FallbackTitle(
+            fallback_title.unwrap_or("Unknown").to_string(),
+        );
+    }
+
+    let meta_id = normalize_contributor_meta_id(meta_id);
+    if meta_id.is_empty() {
+        return ImportMediaPrefetchEntry::FallbackTitle(
+            fallback_title.unwrap_or("Unknown").to_string(),
+        );
+    }
+
+    let is_series = meta_type == "series";
+    if let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(&meta_id) {
+        if let Some(details) = crate::scrapers::metadata::fetch_by_external_id_with_opts(
+            http,
+            provider,
+            &ext_id,
+            is_series,
+            import_fetch_opts(tmdb_api_key, tvdb_api_key),
+        )
+        .await
+        {
+            return ImportMediaPrefetchEntry::Fetched(details);
+        }
+    }
+
+    ImportMediaPrefetchEntry::FallbackTitle(fallback_title.unwrap_or("Unknown").to_string())
+}
+
+/// Collect unique `(meta_id, fetch_meta_type, fallback_title)` tuples for prefetch.
+pub fn collect_import_prefetch_requests(
+    primary_meta_id: &str,
+    primary_meta_type: &str,
+    primary_title: &str,
+    default_sports_category: Option<&str>,
+    file_rows: &[Value],
+) -> Vec<(String, String, Option<String>)> {
+    let mut out: Vec<(String, String, Option<String>)> = Vec::new();
+    let mut seen: Vec<(String, String)> = Vec::new();
+
+    let mut push = |meta_id: &str, fetch_type: &str, fallback: Option<String>| {
+        if meta_id.is_empty() || fetch_type == "sports" {
+            return;
+        }
+        let meta_id = normalize_contributor_meta_id(meta_id);
+        if meta_id.is_empty() {
+            return;
+        }
+        let key = (meta_id.clone(), fetch_type.to_string());
+        if seen.iter().any(|k| k == &key) {
+            return;
+        }
+        seen.push(key);
+        out.push((meta_id, fetch_type.to_string(), fallback));
+    };
+
+    if primary_meta_type != "sports" && !primary_meta_id.is_empty() {
+        push(
+            primary_meta_id,
+            primary_meta_type,
+            Some(primary_title.to_string()),
+        );
+    }
+
+    for file in file_rows {
+        let Some(file_meta_id) = file.get("meta_id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if file_meta_id.is_empty() {
+            continue;
+        }
+        let raw_type = file
+            .get("meta_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or(primary_meta_type);
+        let sports_cat = file
+            .get("sports_category")
+            .and_then(|v| v.as_str())
+            .or(default_sports_category);
+        let fetch_type = if raw_type == "sports" || primary_meta_type == "sports" {
+            resolve_file_fetch_meta_type("sports", sports_cat)
+        } else {
+            resolve_file_fetch_meta_type(raw_type, None)
+        };
+        let fallback = file
+            .get("meta_title")
+            .or_else(|| file.get("title"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        push(file_meta_id, fetch_type, fallback);
+    }
+
+    out
+}
+
+/// Prefetch all external metadata for a torrent import before DB writes.
+pub async fn prefetch_import_metadata(
+    http: &reqwest::Client,
+    tmdb_api_key: Option<&str>,
+    tvdb_api_key: Option<&str>,
+    primary_meta_id: &str,
+    primary_meta_type: &str,
+    primary_title: &str,
+    default_sports_category: Option<&str>,
+    file_rows: &[Value],
+) -> ImportMetadataCache {
+    let requests = collect_import_prefetch_requests(
+        primary_meta_id,
+        primary_meta_type,
+        primary_title,
+        default_sports_category,
+        file_rows,
+    );
+
+    let fetches = join_all(requests.into_iter().map(|(meta_id, meta_type, fallback)| {
+        let http = http.clone();
+        async move {
+            let key = ImportMetaCacheKey {
+                meta_id: meta_id.clone(),
+                meta_type: meta_type.clone(),
+            };
+            let entry = fetch_external_metadata_for_import(
+                &http,
+                &meta_id,
+                &meta_type,
+                fallback.as_deref(),
+                tmdb_api_key,
+                tvdb_api_key,
+            )
+            .await;
+            (key, entry)
+        }
+    }))
+    .await;
+
+    fetches.into_iter().collect()
+}
+
+fn prefetched_details(
+    cache: Option<&ImportMetadataCache>,
+    meta_id: &str,
+    meta_type: &str,
+) -> Option<crate::scrapers::metadata::TmdbDetails> {
+    let key = ImportMetaCacheKey {
+        meta_id: normalize_contributor_meta_id(meta_id),
+        meta_type: meta_type.to_string(),
+    };
+    match cache?.get(&key) {
+        Some(ImportMediaPrefetchEntry::Fetched(d)) => Some(d.clone()),
+        _ => None,
+    }
+}
+
+fn prefetched_fallback_title(
+    cache: Option<&ImportMetadataCache>,
+    meta_id: &str,
+    meta_type: &str,
+) -> Option<String> {
+    let key = ImportMetaCacheKey {
+        meta_id: normalize_contributor_meta_id(meta_id),
+        meta_type: meta_type.to_string(),
+    };
+    match cache?.get(&key) {
+        Some(ImportMediaPrefetchEntry::FallbackTitle(t)) => Some(t.clone()),
+        _ => None,
+    }
+}
+
+/// Resolve or create `media` for a user torrent import from `meta_id` (tt*, tmdb:*, etc.).
+pub async fn ensure_media_for_import(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    meta_id: &str,
+    meta_type: &str,
+    tmdb_api_key: Option<&str>,
+    tvdb_api_key: Option<&str>,
+    overrides: ImportMediaOverrides<'_>,
+    prefetch: Option<&ImportMetadataCache>,
+) -> Option<i32> {
+    let meta_id = meta_id.trim();
+    if meta_id.is_empty() {
+        return None;
+    }
+
+    if let Some(raw) = meta_id
+        .strip_prefix("mf:")
+        .or_else(|| meta_id.strip_prefix("mf"))
+    {
+        if let Ok(id) = raw.parse::<i32>() {
+            return Some(id);
+        }
+    }
+
+    if let Ok(Some(id)) =
+        crate::db::get_media_id_by_external_id(pool, meta_id, Some(meta_type)).await
+    {
+        return Some(id);
+    }
+
+    let fetch_meta_type = if meta_type == "sports" {
+        "movie"
+    } else {
+        meta_type
+    };
+    let is_series = fetch_meta_type == "series";
+    let db_type = if is_series { "SERIES" } else { "MOVIE" };
+
+    let mut details = prefetched_details(prefetch, meta_id, fetch_meta_type);
+    if details.is_none() && prefetch.is_none() {
+        if let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(meta_id) {
+            details = crate::scrapers::metadata::fetch_by_external_id_with_opts(
+                http,
+                provider,
+                &ext_id,
+                is_series,
+                import_fetch_opts(tmdb_api_key, tvdb_api_key),
+            )
+            .await;
+        }
+    }
+
+    let title = overrides
+        .title
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
+        .or_else(|| details.as_ref().map(|d| d.title.clone()))
+        .or_else(|| prefetched_fallback_title(prefetch, meta_id, fetch_meta_type))
+        .or_else(|| Some(meta_id.to_string()))?;
+
+    let year = overrides
+        .year
+        .or_else(|| details.as_ref().and_then(|d| d.year));
+    let description = details.as_ref().and_then(|d| d.description.clone());
+    let release_date = overrides
+        .release_date
+        .filter(|d| !d.is_empty())
+        .map(str::to_string)
+        .or_else(|| details.as_ref().and_then(|d| d.release_date.clone()));
+    let parsed_release = release_date
+        .as_deref()
+        .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
+
+    let media_id = insert_media_row(pool, db_type, &title, year).await?;
+    if let Some(desc) = description {
+        let _ = sqlx::query(
+            "UPDATE media SET description = $2, release_date = COALESCE($3, release_date), updated_at = NOW() WHERE id = $1",
+        )
+        .bind(media_id)
+        .bind(desc)
+        .bind(parsed_release)
+        .execute(pool)
+        .await;
+    } else if let Some(rd) = parsed_release {
+        let _ = sqlx::query("UPDATE media SET release_date = $2, updated_at = NOW() WHERE id = $1")
+            .bind(media_id)
+            .bind(rd)
+            .execute(pool)
+            .await;
+    }
+
+    if let Some(d) = &details {
+        if let Some(ref tmdb_id) = d.tmdb_id {
+            store_external_id(pool, media_id, "tmdb", tmdb_id).await;
+        }
+        if let Some(ref imdb_id) = d.imdb_id {
+            store_external_id(pool, media_id, "imdb", imdb_id).await;
+        }
+    } else if let Some((provider, ext_id)) =
+        crate::scrapers::metadata::parse_import_meta_id(meta_id)
+    {
+        store_external_id(pool, media_id, provider, &ext_id).await;
+    }
+
+    let poster = overrides
+        .poster
+        .filter(|u| !u.is_empty())
+        .map(str::to_string)
+        .or_else(|| details.as_ref().and_then(|d| d.poster_url.clone()));
+    let background = overrides
+        .background
+        .filter(|u| !u.is_empty())
+        .map(str::to_string)
+        .or_else(|| details.as_ref().and_then(|d| d.backdrop_url.clone()));
+
+    if let Some(url) = poster {
+        upsert_primary_image(pool, media_id, "poster", &url).await;
+    }
+    if let Some(url) = background {
+        upsert_primary_image(pool, media_id, "background", &url).await;
+    }
+
+    info!("ensure_media_for_import: created media {media_id} for meta_id={meta_id}");
+    Some(media_id)
+}
+
+async fn upsert_primary_image(pool: &PgPool, media_id: i32, image_type: &str, url: &str) {
+    if let Err(e) = sqlx::query(
+        "INSERT INTO media_image \
+         (media_id, provider_id, image_type, url, is_primary, display_order) \
+         VALUES ($1, 1, $2, $3, true, 0) \
+         ON CONFLICT (media_id, provider_id, image_type, url) DO NOTHING",
+    )
+    .bind(media_id)
+    .bind(image_type)
+    .bind(url)
+    .execute(pool)
+    .await
+    {
+        warn!("upsert_primary_image({image_type}, media_id={media_id}): {e}");
+    }
+}
+
+pub async fn link_stream_to_media(
+    pool: &PgPool,
+    stream_id: i32,
+    media_id: i32,
+) -> Result<(), sqlx::Error> {
+    let inserted: Option<(i32,)> = sqlx::query_as(
+        r#"INSERT INTO stream_media_link(stream_id, media_id, is_primary)
+           SELECT $1, $2, true
+           WHERE NOT EXISTS (
+               SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2
+           )
+           RETURNING 1"#,
+    )
+    .bind(stream_id)
+    .bind(media_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if inserted.is_some() {
+        sqlx::query(
+            r#"UPDATE media SET
+                   total_streams = total_streams + 1,
+                   last_stream_added = GREATEST(COALESCE(last_stream_added, NOW()), NOW())
+               WHERE id = $1"#,
+        )
+        .bind(media_id)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
+/// Resolve media from a parsed title before persisting scraped streams.
+pub async fn search_meta_for_title(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    title: &str,
+    year: Option<i32>,
+    is_series: bool,
+    tmdb_api_key: Option<&str>,
+    cinemeta_fallback_enabled: bool,
+) -> Option<crate::scrapers::SearchMeta> {
+    search_meta_for_title_with_anime(
+        pool,
+        http,
+        title,
+        year,
+        is_series,
+        tmdb_api_key,
+        cinemeta_fallback_enabled,
+        &[],
+        "tmdb",
+    )
+    .await
+}
+
+pub async fn search_meta_for_title_with_anime(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    title: &str,
+    year: Option<i32>,
+    is_series: bool,
+    tmdb_api_key: Option<&str>,
+    cinemeta_fallback_enabled: bool,
+    anime_source_order: &[String],
+    metadata_primary_source: &str,
+) -> Option<crate::scrapers::SearchMeta> {
+    let media = find_or_create_media_with_anime(
+        pool,
+        http,
+        title,
+        year,
+        is_series,
+        &[],
+        tmdb_api_key,
+        cinemeta_fallback_enabled,
+        anime_source_order,
+        metadata_primary_source,
+    )
+    .await?;
+    Some(crate::scrapers::SearchMeta {
+        media_id: media.id as i64,
+        imdb_id: None,
+        title: media.title,
+        year: media.year,
+    })
+}
+
+/// Resolve media for a feed/spider scraped torrent before persistence (skip when unresolved).
+pub async fn search_meta_for_scraped(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    stream: &crate::scrapers::ScrapedStream,
+    is_series: bool,
+    tmdb_api_key: Option<&str>,
+    cinemeta_fallback_enabled: bool,
+    anime_source_order: &[String],
+    metadata_primary_source: &str,
+) -> Option<crate::scrapers::SearchMeta> {
+    let title = stream
+        .parsed
+        .title
+        .as_deref()
+        .filter(|t| !t.is_empty())
+        .unwrap_or(stream.name.as_str());
+    search_meta_for_title_with_anime(
+        pool,
+        http,
+        title,
+        stream.parsed.year,
+        is_series,
+        tmdb_api_key,
+        cinemeta_fallback_enabled,
+        anime_source_order,
+        metadata_primary_source,
+    )
+    .await
 }
 
 pub async fn store_external_id(pool: &PgPool, media_id: i32, provider: &str, external_id: &str) {
@@ -417,4 +971,42 @@ fn md5_short(s: &str) -> u32 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     s.hash(&mut h);
     h.finish() as u32
+}
+
+#[cfg(test)]
+mod prefetch_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn normalize_bare_tmdb_id() {
+        assert_eq!(normalize_contributor_meta_id("603"), "tmdb:603");
+        assert_eq!(normalize_contributor_meta_id("tt0111161"), "tt0111161");
+    }
+
+    #[test]
+    fn collects_primary_and_per_file_prefetch_keys() {
+        let files = vec![
+            json!({"meta_id": "tt1234567", "meta_type": "movie"}),
+            json!({"meta_id": "603", "meta_title": "Episode 2"}),
+        ];
+        let reqs = collect_import_prefetch_requests("tt999", "series", "Show Name", None, &files);
+        assert!(reqs
+            .iter()
+            .any(|(id, ty, _)| id == "tt999" && ty == "series"));
+        assert!(reqs
+            .iter()
+            .any(|(id, ty, _)| id == "tt1234567" && ty == "movie"));
+        assert!(reqs
+            .iter()
+            .any(|(id, ty, _)| id == "tmdb:603" && ty == "series"));
+        assert_eq!(reqs.len(), 3);
+    }
+
+    #[test]
+    fn skips_prefetch_for_sports_primary() {
+        let reqs =
+            collect_import_prefetch_requests("tt1", "sports", "Match", Some("football"), &[]);
+        assert!(reqs.is_empty());
+    }
 }

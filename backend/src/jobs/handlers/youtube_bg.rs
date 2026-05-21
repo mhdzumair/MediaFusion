@@ -7,9 +7,12 @@ use tracing::{debug, info, warn};
 
 use fred::prelude::*;
 
-use crate::jobs::{
-    error::JobError,
-    handler::{JobCtx, JobHandler},
+use crate::{
+    jobs::{
+        error::JobError,
+        handler::{JobCtx, JobHandler},
+    },
+    routes::content::import_helpers,
 };
 
 pub struct YoutubeBgScraper;
@@ -252,17 +255,11 @@ impl JobHandler for YoutubeBgScraper {
                     continue;
                 }
 
-                // ── 3. Link stream to media ───────────────────────────────
-                let _ = sqlx::query(
-                    "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at) \
-                     SELECT $1, $2, true, false, NOW() \
-                     WHERE NOT EXISTS (\
-                         SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2\
-                     )",
+                let _ = import_helpers::link_stream_to_media(
+                    &ctx.state.pool,
+                    stream_id,
+                    candidate.media_id,
                 )
-                .bind(stream_id)
-                .bind(candidate.media_id)
-                .execute(&ctx.state.pool)
                 .await;
             }
 

@@ -1981,12 +1981,16 @@ pub async fn import_user_metadata_preview(
             let tmdb_key = state.config.tmdb_api_key.as_deref();
             let is_series = body.media_type.eq_ignore_ascii_case("series")
                 || body.media_type.eq_ignore_ascii_case("show");
-            match crate::scrapers::metadata::fetch_by_external_id(
+            match crate::scrapers::metadata::fetch_by_external_id_with_opts(
                 &state.http,
                 &body.provider,
                 &body.external_id,
                 is_series,
-                tmdb_key,
+                crate::scrapers::metadata::ExternalFetchOpts {
+                    tmdb_api_key: tmdb_key,
+                    tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+                    cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
+                },
             )
             .await
             {
@@ -2066,12 +2070,16 @@ pub async fn import_from_external(
             let is_series = body.media_type.eq_ignore_ascii_case("series")
                 || body.media_type.eq_ignore_ascii_case("show");
 
-            let details = match crate::scrapers::metadata::fetch_by_external_id(
+            let details = match crate::scrapers::metadata::fetch_by_external_id_with_opts(
                 &state.http,
                 &body.provider,
                 &body.external_id,
                 is_series,
-                tmdb_key,
+                crate::scrapers::metadata::ExternalFetchOpts {
+                    tmdb_api_key: tmdb_key,
+                    tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+                    cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
+                },
             )
             .await
             {
@@ -2095,6 +2103,7 @@ pub async fn import_from_external(
                 is_series,
                 &[],
                 tmdb_key,
+                state.config.imdb_cinemeta_fallback_enabled,
             )
             .await;
 

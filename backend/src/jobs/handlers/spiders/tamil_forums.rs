@@ -251,7 +251,7 @@ async fn scrape_tamil_forum(
                 let parsed = parser::parse_title(&title);
                 let clean_title = parsed.title.as_deref().unwrap_or(&title).to_string();
                 let is_series = !parsed.seasons.is_empty() || !parsed.episodes.is_empty();
-                let media_type_str = if is_series { "SERIES" } else { "MOVIE" };
+                let media_type_str = if is_series { "series" } else { "movie" };
 
                 // Resolve or create media (PTT clean title → DB lookup → TMDB → stub).
                 let tmdb_key = ctx.state.config.tmdb_api_key.as_deref();
@@ -263,6 +263,7 @@ async fn scrape_tamil_forum(
                     is_series,
                     &[],
                     tmdb_key,
+                    ctx.state.config.imdb_cinemeta_fallback_enabled,
                 )
                 .await;
 

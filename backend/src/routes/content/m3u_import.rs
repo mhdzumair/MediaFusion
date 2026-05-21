@@ -69,6 +69,18 @@ pub struct M3uEntry {
     pub entry_type: String, // "tv", "movie", "series"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub behavior_hints: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parsed_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parsed_year: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub season: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub episode: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matched_media_id: Option<String>,
 }
 
 fn classify_entry(group: &Option<String>) -> &'static str {
@@ -142,6 +154,10 @@ pub fn parse_m3u(content: &str) -> Vec<M3uEntry> {
                     Some(serde_json::json!({ "headers": pending_headers }))
                 };
                 pending_headers.clear();
+                let (parsed_title, parsed_year, season, episode) =
+                    super::iptv_import::parse_iptv_title_info(&name);
+                let entry_type =
+                    super::iptv_import::refine_entry_type(&entry_type, season, episode).to_string();
                 entries.push(M3uEntry {
                     name,
                     url: line.to_string(),
@@ -150,6 +166,12 @@ pub fn parse_m3u(content: &str) -> Vec<M3uEntry> {
                     tvg_id,
                     entry_type,
                     behavior_hints,
+                    index: None,
+                    parsed_title: Some(parsed_title),
+                    parsed_year,
+                    season,
+                    episode,
+                    matched_media_id: None,
                 });
             }
         }
@@ -296,16 +318,7 @@ pub async fn import_tv_channel(
         return false;
     }
 
-    // Link stream to media
-    let _ = sqlx::query(
-        "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at) \
-         SELECT $1, $2, true, false, NOW() WHERE NOT EXISTS \
-         (SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2)",
-    )
-    .bind(stream_id)
-    .bind(media_id as i32)
-    .execute(pool)
-    .await;
+    let _ = super::import_helpers::link_stream_to_media(pool, stream_id, media_id as i32).await;
 
     true
 }
@@ -322,6 +335,14 @@ pub async fn analyze_m3u(
         return (
             StatusCode::UNAUTHORIZED,
             Json(json!({"detail": "Unauthorized"})),
+        )
+            .into_response();
+    }
+
+    if !state.config.enable_iptv_import {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "IPTV import feature is disabled on this server."})),
         )
             .into_response();
     }
@@ -457,21 +478,50 @@ pub async fn analyze_m3u(
             .cmp(&a["count"].as_u64().unwrap_or(0))
     });
 
-    // Preview: first 50 entries
-    let preview: Vec<serde_json::Value> = entries
-        .iter()
-        .take(50)
-        .map(|e| {
-            json!({
-                "name": e.name,
-                "url": e.url,
-                "logo": e.logo,
-                "group": e.group,
-                "tvg_id": e.tvg_id,
-                "type": e.entry_type,
-            })
-        })
-        .collect();
+    // Preview: first 50 entries (with metadata matches for movie/series, Python parity)
+    let mut preview: Vec<serde_json::Value> = Vec::new();
+    for e in entries.iter().take(50) {
+        let parsed = crate::parser::parse_title(&e.name);
+        let search_title = parsed.title.as_deref().unwrap_or(&e.name);
+        let parsed_year = parsed.year;
+
+        let mut item = json!({
+            "name": e.name,
+            "url": e.url,
+            "logo": e.logo,
+            "group": e.group,
+            "tvg_id": e.tvg_id,
+            "type": e.entry_type,
+            "parsed_title": search_title,
+            "parsed_year": parsed_year,
+        });
+
+        if e.entry_type == "movie" || e.entry_type == "series" {
+            let meta_type = if e.entry_type == "series" {
+                "series"
+            } else {
+                "movie"
+            };
+            let matches = super::import_helpers::search_analyze_matches(
+                &state,
+                search_title,
+                parsed_year,
+                meta_type,
+            )
+            .await;
+            if let Some(first) = matches.first() {
+                item["matched_media"] = json!({
+                    "id": first.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                    "title": first.get("title").and_then(|v| v.as_str()).unwrap_or(""),
+                    "year": first.get("year"),
+                    "poster": first.get("poster"),
+                    "type": meta_type,
+                });
+            }
+        }
+
+        preview.push(item);
+    }
 
     // Cache full entries in Redis
     let redis_key = format!("m3u_analyze_{}", Uuid::new_v4());
@@ -565,10 +615,32 @@ pub async fn import_m3u(
         .get("m3u_url")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
-    let import_live = params
-        .get("import_live")
+    if !state.config.enable_iptv_import {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "IPTV import feature is disabled on this server."})),
+        )
+            .into_response();
+    }
+
+    let mut is_public = params
+        .get("is_public")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
+    if !state.config.allow_public_iptv_sharing {
+        is_public = false;
+    }
+
+    let overrides_raw = params
+        .get("overrides")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let override_map = super::iptv_import::parse_override_map(overrides_raw.as_deref());
+    let source_label = params
+        .get("source")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| source_name.clone());
 
     // Load entries from Redis or re-parse from URL
     let entries: Vec<M3uEntry> = if let Some(ref key) = redis_key {
@@ -631,90 +703,123 @@ pub async fn import_m3u(
             .into_response();
     };
 
-    let tv_entries: Vec<&M3uEntry> = if import_live {
-        entries.iter().filter(|e| e.entry_type == "tv").collect()
-    } else {
-        vec![]
-    };
+    let mut entries = entries;
+    for (i, entry) in entries.iter_mut().enumerate() {
+        entry.index = Some(i);
+    }
 
-    let total = tv_entries.len();
+    let total = entries.len();
+    let ctx = super::iptv_import::IptvImportCtx::from_state(&state);
 
-    // For >100 items, process in background and return 202
-    if total > 100 {
+    const BACKGROUND_THRESHOLD: usize = 100;
+    if total > BACKGROUND_THRESHOLD {
         let job_id = Uuid::new_v4().to_string();
         let job_key = format!("import_job:{job_id}");
-        let job_status = json!({
-            "status": "processing",
-            "progress": 0,
-            "total": total,
-        });
-        let _ = state
-            .redis
-            .set::<(), _, _>(
+        super::iptv_import::update_import_job_full(
+            &state.redis,
+            &job_key,
+            "queued",
+            0,
+            total,
+            &super::iptv_import::IptvImportStats::default(),
+            Some(user_id),
+            Some("m3u"),
+            None,
+        )
+        .await;
+
+        let pool = state.pool.clone();
+        let http = state.http.clone();
+        let redis = state.redis.clone();
+        let tmdb = state.config.tmdb_api_key.clone();
+        let tvdb = state.config.tvdb_api_key.clone();
+        let cinemeta = state.config.imdb_cinemeta_fallback_enabled;
+        let source_bg = source_label.clone();
+        let entries_owned = entries;
+        let override_map_bg = override_map;
+        let save_source_bg = params
+            .get("save_source")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let m3u_url_bg = m3u_url.clone();
+        let source_name_bg = source_name.clone();
+
+        tokio::spawn(async move {
+            super::iptv_import::update_import_job_full(
+                &redis,
                 &job_key,
-                job_status.to_string(),
-                Some(Expiration::EX(86400)),
+                "processing",
+                0,
+                total,
+                &super::iptv_import::IptvImportStats::default(),
+                Some(user_id),
+                Some("m3u"),
                 None,
-                false,
             )
             .await;
 
-        let pool = state.pool.clone();
-        let redis = state.redis.clone();
-        let source = source_name.clone();
-        let entries_owned: Vec<M3uEntry> = tv_entries.into_iter().cloned().collect();
-        let _ = user_id;
-        tokio::spawn(async move {
-            let mut imported = 0usize;
-            let mut skipped = 0usize;
-            for (i, entry) in entries_owned.iter().enumerate() {
-                if import_tv_channel(
-                    &pool,
-                    &entry.name,
-                    &entry.url,
-                    entry.logo.as_deref(),
-                    &source,
-                    entry.behavior_hints.as_ref(),
-                )
-                .await
-                {
-                    imported += 1;
-                } else {
-                    skipped += 1;
-                }
-                if (i + 1) % 10 == 0 {
-                    let progress = json!({
-                        "status": "processing",
-                        "progress": i + 1,
-                        "total": entries_owned.len(),
-                    });
-                    let _ = redis
-                        .set::<(), _, _>(
-                            &job_key,
-                            progress.to_string(),
-                            Some(Expiration::EX(86400)),
-                            None,
-                            false,
-                        )
-                        .await;
+            let ctx_bg = super::iptv_import::IptvImportCtx {
+                pool: &pool,
+                http: &http,
+                tmdb_api_key: tmdb.as_deref(),
+                tvdb_api_key: tvdb.as_deref(),
+                cinemeta_enabled: cinemeta,
+            };
+            let stats = super::iptv_import::run_m3u_import_batch(
+                &ctx_bg,
+                entries_owned,
+                &source_bg,
+                user_id,
+                is_public,
+                override_map_bg,
+            )
+            .await;
+
+            let mut source_id: Option<i32> = None;
+            if save_source_bg {
+                if let Some(ref url) = m3u_url_bg {
+                    let save_name = if source_name_bg.is_empty() {
+                        url::Url::parse(url)
+                            .ok()
+                            .and_then(|u| u.host_str().map(|h| format!("M3U - {h}")))
+                            .unwrap_or_else(|| "M3U Import".to_string())
+                    } else {
+                        source_name_bg.clone()
+                    };
+                    source_id = super::iptv_import::save_m3u_iptv_source(
+                        &pool, user_id, &save_name, url, is_public, &stats,
+                    )
+                    .await
+                    .ok();
                 }
             }
-            let done = json!({
+
+            let mut job_body = serde_json::json!({
                 "status": "completed",
-                "progress": entries_owned.len(),
-                "total": entries_owned.len(),
-                "stats": { "imported": imported, "skipped": skipped },
+                "progress": total,
+                "total": total,
+                "stats": stats,
+                "user_id": user_id,
+                "source_type": "m3u",
             });
+            if let Some(sid) = source_id {
+                job_body["source_id"] = serde_json::json!(sid);
+                job_body["source_saved"] = serde_json::json!(true);
+            }
             let _ = redis
                 .set::<(), _, _>(
                     &job_key,
-                    done.to_string(),
-                    Some(Expiration::EX(86400)),
+                    job_body.to_string(),
+                    Some(fred::types::Expiration::EX(86400)),
                     None,
                     false,
                 )
                 .await;
         });
+
+        if let Some(ref key) = redis_key {
+            let _: Result<(), _> = state.redis.del(key).await;
+        }
 
         return (
             StatusCode::ACCEPTED,
@@ -722,42 +827,64 @@ pub async fn import_m3u(
                 "status": "processing",
                 "job_id": job_id,
                 "total": total,
-                "message": format!("Import started for {total} TV channels"),
+                "message": format!("Import of {total} items started in background."),
             })),
         )
             .into_response();
     }
 
-    // Small batch: process synchronously
-    let mut imported = 0usize;
-    let mut skipped = 0usize;
-    for entry in &tv_entries {
-        if import_tv_channel(
-            &state.pool,
-            &entry.name,
-            &entry.url,
-            entry.logo.as_deref(),
-            &source_name,
-            entry.behavior_hints.as_ref(),
-        )
-        .await
-        {
-            imported += 1;
-        } else {
-            skipped += 1;
+    let save_source = params
+        .get("save_source")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let stats = super::iptv_import::run_m3u_import_batch(
+        &ctx,
+        entries,
+        &source_label,
+        user_id,
+        is_public,
+        override_map,
+    )
+    .await;
+
+    let mut source_id: Option<i32> = None;
+    if save_source {
+        if let Some(ref url) = m3u_url {
+            let save_name = params
+                .get("source_name")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    url::Url::parse(url)
+                        .ok()
+                        .and_then(|u| u.host_str().map(|h| format!("M3U - {h}")))
+                        .unwrap_or_else(|| "M3U Import".to_string())
+                });
+            source_id = super::iptv_import::save_m3u_iptv_source(
+                &state.pool,
+                user_id,
+                &save_name,
+                url,
+                is_public,
+                &stats,
+            )
+            .await
+            .ok();
         }
     }
 
-    // Clean up Redis key
     if let Some(ref key) = redis_key {
         let _: Result<(), _> = state.redis.del(key).await;
     }
 
     Json(json!({
         "status": "success",
-        "imported": imported,
-        "skipped": skipped,
+        "stats": stats,
         "total": total,
+        "source_saved": source_id.is_some(),
+        "source_id": source_id,
     }))
     .into_response()
 }
@@ -769,13 +896,16 @@ pub async fn get_import_job_status(
     Path(job_id): Path<String>,
     _req: Request,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
 
     let key = format!("import_job:{job_id}");
     let val: Option<String> = state.redis.get(&key).await.unwrap_or(None);
@@ -784,6 +914,15 @@ pub async fn get_import_job_status(
         Some(json_str) => {
             let status: serde_json::Value =
                 serde_json::from_str(&json_str).unwrap_or_else(|_| json!({"status": "unknown"}));
+            if let Some(owner) = status.get("user_id").and_then(|v| v.as_i64()) {
+                if owner != user_id {
+                    return (
+                        StatusCode::FORBIDDEN,
+                        Json(json!({"detail": "Job does not belong to this user"})),
+                    )
+                        .into_response();
+                }
+            }
             Json(status).into_response()
         }
         None => (

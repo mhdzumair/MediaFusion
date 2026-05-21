@@ -898,12 +898,16 @@ pub async fn refresh_imdb_data(
         .map(|t| t.eq_ignore_ascii_case("series") || t.eq_ignore_ascii_case("show"))
         .unwrap_or(false);
 
-    let details = match crate::scrapers::metadata::fetch_by_external_id(
+    let details = match crate::scrapers::metadata::fetch_by_external_id_with_opts(
         &state.http,
         provider,
         ext_id,
         is_series,
-        Some(tmdb_key),
+        crate::scrapers::metadata::ExternalFetchOpts {
+            tmdb_api_key: Some(tmdb_key),
+            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+            cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
+        },
     )
     .await
     {

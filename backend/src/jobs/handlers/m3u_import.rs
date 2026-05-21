@@ -14,7 +14,10 @@ use crate::{
         error::JobError,
         handler::{JobCtx, JobHandler},
     },
-    routes::content::m3u_import::{import_tv_channel, parse_m3u},
+    routes::content::{
+        iptv_import::{self, IptvImportCtx},
+        m3u_import::parse_m3u,
+    },
 };
 
 pub struct M3uImport;
@@ -131,8 +134,10 @@ impl JobHandler for M3uImport {
         );
 
         let source_label = format!("iptv:{}", source.id);
-        let mut imported = 0usize;
-        let mut skipped = 0usize;
+        let import_ctx = IptvImportCtx::from_state(&ctx.state);
+        let user_id = source.user_id as i64;
+        let is_public = source.is_public;
+        let mut stats = iptv_import::IptvImportStats::default();
 
         for entry in &all_entries {
             if ctx.is_cancelled() {
@@ -140,47 +145,96 @@ impl JobHandler for M3uImport {
                 return Err(JobError::Cancelled);
             }
 
-            // Determine whether to import this entry type
             let should_import = match entry.entry_type.as_str() {
                 "tv" => source.import_live,
                 "movie" => source.import_vod,
                 "series" => source.import_series,
-                _ => source.import_live, // fallback: treat unknown as live
+                _ => source.import_live,
             };
 
             if !should_import {
-                skipped += 1;
+                stats.skipped += 1;
                 continue;
             }
 
-            if import_tv_channel(
-                &ctx.state.pool,
-                &entry.name,
-                &entry.url,
-                entry.logo.as_deref(),
-                &source_label,
-                entry.behavior_hints.as_ref(),
-            )
-            .await
-            {
-                imported += 1;
-            } else {
-                skipped += 1;
+            let result = match entry.entry_type.as_str() {
+                "tv" => {
+                    let r = iptv_import::import_tv_entry(
+                        &ctx.state.pool,
+                        entry,
+                        &source_label,
+                        user_id,
+                        is_public,
+                    )
+                    .await;
+                    if r.stream_created {
+                        stats.tv += 1;
+                    } else if r.stream_existed {
+                        stats.skipped += 1;
+                    } else {
+                        stats.failed += 1;
+                    }
+                    Ok(())
+                }
+                "movie" => iptv_import::import_movie_entry(
+                    &import_ctx,
+                    entry,
+                    &source_label,
+                    user_id,
+                    is_public,
+                )
+                .await
+                .map(|created| {
+                    if created {
+                        stats.movie += 1;
+                    } else {
+                        stats.skipped += 1;
+                    }
+                }),
+                "series" => iptv_import::import_series_entry(
+                    &import_ctx,
+                    entry,
+                    &source_label,
+                    user_id,
+                    is_public,
+                )
+                .await
+                .map(|created| {
+                    if created {
+                        stats.series += 1;
+                    } else {
+                        stats.skipped += 1;
+                    }
+                }),
+                _ => Ok(()),
+            };
+
+            if let Err(e) = result {
+                warn!("m3u_import: entry {:?} failed: {e}", entry.name);
+                stats.failed += 1;
             }
         }
 
-        // Update last_synced_at
+        let sync_stats = serde_json::json!({
+            "tv": stats.tv,
+            "movie": stats.movie,
+            "series": stats.series,
+            "failed": stats.failed,
+            "skipped": stats.skipped,
+            "total_parsed": total_parsed,
+        });
+
         sqlx::query(
             "UPDATE iptv_source SET last_synced_at = NOW(), last_sync_stats = $1::jsonb WHERE id = $2",
         )
-        .bind(serde_json::json!({"imported": imported, "skipped": skipped, "total_parsed": total_parsed}))
+        .bind(&sync_stats)
         .bind(source.id)
         .execute(&ctx.state.pool)
         .await?;
 
         info!(
-            "m3u_import: source_id={} done — parsed={} imported={} skipped={}",
-            source.id, total_parsed, imported, skipped
+            "m3u_import: source_id={} done — parsed={} tv={} movie={} series={} skipped={} failed={}",
+            source.id, total_parsed, stats.tv, stats.movie, stats.series, stats.skipped, stats.failed
         );
 
         Ok(())

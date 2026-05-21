@@ -9,11 +9,11 @@ use crate::{
     },
     parser,
     scrapers::{
-        fetcher, persist,
+        fetcher, media_resolve, persist,
         prowlarr::build_series_files,
         public_indexer_registry::ALL_INDEXERS,
         public_indexers::{extract_row_data_pub, parse_size_bytes_pub},
-        ScrapedStream, SearchMeta,
+        ScrapedStream,
     },
     util::rate_limit,
 };
@@ -57,8 +57,6 @@ impl JobHandler for RegistryCrawl {
         let pool = &ctx.state.pool;
         let byparr_url = ctx.state.config.byparr_url.as_deref();
 
-        let mut movie_streams: Vec<ScrapedStream> = Vec::new();
-        let mut series_streams: Vec<ScrapedStream> = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
         let domain = rate_limit::domain_key(crawl.browse_url);
@@ -193,46 +191,39 @@ impl JobHandler for RegistryCrawl {
                     is_cached: false,
                 };
 
-                if media_type == "movie" {
-                    movie_streams.push(stream);
-                } else {
-                    series_streams.push(stream);
+                let is_series = media_type == "series";
+                let cfg = &ctx.state.config;
+                if let Some(meta) = media_resolve::search_meta_for_scraped(
+                    pool,
+                    &ctx.state.http,
+                    &stream,
+                    is_series,
+                    cfg.tmdb_api_key.as_deref(),
+                    cfg.imdb_cinemeta_fallback_enabled,
+                    &cfg.anime_metadata_source_order,
+                    &cfg.metadata_primary_source,
+                )
+                .await
+                {
+                    persist::write_back(
+                        std::slice::from_ref(&stream),
+                        pool,
+                        &meta,
+                        media_type,
+                        None,
+                        None,
+                    )
+                    .await;
                 }
             }
 
             info!(
-                "registry_crawl: page {}/{} done for {indexer_name}, running total {} items",
-                page,
-                crawl.max_pages,
-                movie_streams.len() + series_streams.len()
+                "registry_crawl: page {}/{} done for {indexer_name}",
+                page, crawl.max_pages,
             );
         }
 
-        info!(
-            "registry_crawl: {indexer_name} done — {} movies, {} series",
-            movie_streams.len(),
-            series_streams.len()
-        );
-
-        if !movie_streams.is_empty() {
-            let meta = SearchMeta {
-                media_id: 0,
-                imdb_id: None,
-                title: String::new(),
-                year: None,
-            };
-            persist::write_back(&movie_streams, pool, &meta, "movie", None, None).await;
-        }
-
-        if !series_streams.is_empty() {
-            let meta = SearchMeta {
-                media_id: 0,
-                imdb_id: None,
-                title: String::new(),
-                year: None,
-            };
-            persist::write_back(&series_streams, pool, &meta, "series", None, None).await;
-        }
+        info!("registry_crawl: {indexer_name} crawl complete");
 
         Ok(())
     }

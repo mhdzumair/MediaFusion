@@ -39,6 +39,10 @@ REDDIT_POST_TITLE ?= "MediaFusion $(VERSION_NEW) Update - What's New?"
 JOB ?=
 JOB_ARGS ?=
 
+# Ignore file events during build/run and debounce rapid saves to avoid
+# overlapping restarts that race for the same port (ADDRINUSE).
+CARGO_WATCH_FLAGS = --watch-when-idle -d 1
+
 .PHONY: build build-multi tag push prompt update-version generate-notes generate-reddit-post generate-baseline frontend-install frontend-build frontend-dev frontend-lint frontend-fmt dev backend-dev python-lint python-fmt python-test rust-build rust-dev rust-test rust-fmt rust-lint lint fmt test worker-list-jobs worker-run-job worker-run-sport-video
 
 build:
@@ -237,7 +241,7 @@ dev:
 	trap cleanup INT TERM EXIT; \
 	echo "Starting backend and frontend in development mode..."; \
 	if cargo watch -h >/dev/null 2>&1; then \
-		cd backend && cargo watch -x 'run --bin mediafusion-api' & \
+		cd backend && cargo watch $(CARGO_WATCH_FLAGS) -x 'run --bin mediafusion-api' & \
 	else \
 		echo "Note: cargo-watch not installed — run: cargo install cargo-watch"; \
 		echo "Backend will not auto-reload on file changes."; \
@@ -269,7 +273,7 @@ rust-build:
 
 rust-dev:
 	@if cargo watch -h >/dev/null 2>&1; then \
-		cd backend && cargo watch -x 'run --bin mediafusion-api'; \
+		cd backend && cargo watch $(CARGO_WATCH_FLAGS) -x 'run --bin mediafusion-api'; \
 	else \
 		echo "Note: cargo-watch not installed — run: cargo install cargo-watch"; \
 		cd backend && cargo run --bin mediafusion-api; \

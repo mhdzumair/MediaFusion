@@ -8,7 +8,7 @@ use crate::{
         handler::{JobCtx, JobHandler},
     },
     parser,
-    scrapers::{persist, prowlarr::build_series_files, ScrapedStream, SearchMeta, StreamFile},
+    scrapers::{media_resolve, persist, prowlarr::build_series_files, ScrapedStream, StreamFile},
 };
 
 pub struct JackettFeedScraper;
@@ -173,9 +173,6 @@ impl JobHandler for JackettFeedScraper {
 
         debug!("jackett_feed: received {} results", feed.results.len());
 
-        let mut movie_streams: Vec<ScrapedStream> = Vec::new();
-        let mut series_streams: Vec<ScrapedStream> = Vec::new();
-
         for result in &feed.results {
             if ctx.cancel.is_cancelled() {
                 debug!("jackett_feed: cancelled during processing");
@@ -201,35 +198,36 @@ impl JobHandler for JackettFeedScraper {
 
             if let Some(stream) = build_scraped_stream_jackett(result) {
                 let media_type = media_type_from_category_desc(result.category_desc.as_deref());
-                debug!(
-                    "jackett_feed: new item {} ({}): {}",
-                    info_hash, media_type, stream.name
-                );
-                if media_type == "series" {
-                    series_streams.push(stream);
+                let is_series = media_type == "series";
+                let cfg = &ctx.state.config;
+                if let Some(meta) = media_resolve::search_meta_for_scraped(
+                    pool,
+                    &ctx.state.http,
+                    &stream,
+                    is_series,
+                    cfg.tmdb_api_key.as_deref(),
+                    cfg.imdb_cinemeta_fallback_enabled,
+                    &cfg.anime_metadata_source_order,
+                    &cfg.metadata_primary_source,
+                )
+                .await
+                {
+                    persist::write_back(
+                        std::slice::from_ref(&stream),
+                        pool,
+                        &meta,
+                        media_type,
+                        None,
+                        None,
+                    )
+                    .await;
                 } else {
-                    movie_streams.push(stream);
+                    debug!(
+                        "jackett_feed: skipped {} ({}) — metadata unresolved",
+                        info_hash, media_type
+                    );
                 }
             }
-        }
-
-        if !movie_streams.is_empty() {
-            let meta = SearchMeta {
-                media_id: 0,
-                imdb_id: None,
-                title: String::new(),
-                year: None,
-            };
-            persist::write_back(&movie_streams, pool, &meta, "movie", None, None).await;
-        }
-        if !series_streams.is_empty() {
-            let meta = SearchMeta {
-                media_id: 0,
-                imdb_id: None,
-                title: String::new(),
-                year: None,
-            };
-            persist::write_back(&series_streams, pool, &meta, "series", None, None).await;
         }
 
         Ok(())

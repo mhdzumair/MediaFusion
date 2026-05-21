@@ -21,6 +21,7 @@ use sha2::Sha256;
 use super::import_helpers::{
     award_contribution_points, create_contribution_record, enforce_upload_permissions,
     fetch_user_info, notify_pending_contribution, resolve_uploader_identity,
+    should_auto_approve_import,
 };
 use crate::state::AppState;
 
@@ -232,14 +233,15 @@ pub async fn import_acestream(
 
     let resolved_is_anonymous = body.is_anonymous.unwrap_or(user.contribute_anonymously);
     let is_privileged = matches!(user.role.as_str(), "moderator" | "admin");
-    let auto_approve = is_privileged || !resolved_is_anonymous;
+    let auto_approve =
+        should_auto_approve_import(is_privileged, user.is_active, resolved_is_anonymous);
     let (uploader_name, uploader_user_id) = resolve_uploader_identity(
         resolved_is_anonymous,
         body.anonymous_display_name.as_deref(),
         &user.username,
         user_id,
     );
-    let is_public = auto_approve && body.is_public;
+    let is_public = super::import_helpers::stream_is_public_on_submit(auto_approve, body.is_public);
 
     // Resolve content_id
     let content_id_raw = body
@@ -274,15 +276,71 @@ pub async fn import_acestream(
         _ => None,
     };
 
-    // Check for duplicate
-    let existing: Option<i64> =
+    let stream_name = body
+        .name
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .or(body.title.as_deref())
+        .unwrap_or("AceStream")
+        .to_string();
+
+    let meta_type = body.meta_type.as_deref().unwrap_or("tv");
+    let effective_meta_id = body
+        .meta_id
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            super::import_helpers::synthetic_import_meta_id("acestream", &content_id)
+        });
+
+    let media_id = super::import_helpers::resolve_media_for_import(
+        &state.pool,
+        &state.http,
+        state.config.tmdb_api_key.as_deref(),
+        state.config.tvdb_api_key.as_deref(),
+        &effective_meta_id,
+        meta_type,
+        crate::scrapers::media_resolve::ImportMediaOverrides {
+            title: body.title.as_deref().or(Some(stream_name.as_str())),
+            poster: None,
+            background: None,
+            release_date: None,
+            year: None,
+        },
+        None,
+    )
+    .await
+    .map(i64::from);
+
+    async fn link_existing_acestream(
+        pool: &sqlx::PgPool,
+        existing_id: i64,
+        media_id: Option<i64>,
+        is_public: bool,
+    ) {
+        if let Some(mid) = media_id {
+            let _ =
+                super::import_helpers::link_stream_to_media(pool, existing_id as i32, mid as i32)
+                    .await;
+        }
+        if is_public {
+            let _ =
+                sqlx::query("UPDATE stream SET is_public = true WHERE id = $1 AND NOT is_public")
+                    .bind(existing_id)
+                    .execute(pool)
+                    .await;
+        }
+    }
+
+    if let Some(existing_id) =
         sqlx::query_scalar("SELECT stream_id FROM acestream_stream WHERE content_id = $1 LIMIT 1")
             .bind(&content_id)
             .fetch_optional(&state.pool)
             .await
-            .unwrap_or(None);
-
-    if let Some(existing_id) = existing {
+            .unwrap_or(None)
+    {
+        link_existing_acestream(&state.pool, existing_id, media_id, is_public).await;
         return (
             StatusCode::CONFLICT,
             Json(json!({"detail": "AceStream already imported", "stream_id": existing_id})),
@@ -290,17 +348,16 @@ pub async fn import_acestream(
             .into_response();
     }
 
-    // Check by info_hash too
     if let Some(ref h) = info_hash {
-        let existing: Option<i64> = sqlx::query_scalar(
+        if let Some(existing_id) = sqlx::query_scalar(
             "SELECT stream_id FROM acestream_stream WHERE info_hash = $1 LIMIT 1",
         )
         .bind(h)
         .fetch_optional(&state.pool)
         .await
-        .unwrap_or(None);
-
-        if let Some(existing_id) = existing {
+        .unwrap_or(None)
+        {
+            link_existing_acestream(&state.pool, existing_id, media_id, is_public).await;
             return (
                 StatusCode::CONFLICT,
                 Json(
@@ -310,59 +367,6 @@ pub async fn import_acestream(
                 .into_response();
         }
     }
-
-    let stream_name = body
-        .name
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .or(body.title.as_deref())
-        .unwrap_or("AceStream")
-        .to_string();
-
-    // Resolve media_id
-    let media_id: Option<i64> = if let Some(ref meta_id) = body.meta_id {
-        if !meta_id.is_empty() {
-            sqlx::query_scalar(
-                "SELECT m.id FROM media m JOIN media_external_id meid ON m.id = meid.media_id WHERE meid.external_id = $1 LIMIT 1",
-            )
-            .bind(meta_id)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    // Fallback: create media
-    let media_id: Option<i64> = if media_id.is_none() {
-        if let Some(ref title) = body.title {
-            if !title.is_empty() {
-                let meta_type = body.meta_type.as_deref().unwrap_or("tv");
-                let db_type = match meta_type {
-                    "movie" => "MOVIE",
-                    "series" => "SERIES",
-                    _ => "TV",
-                };
-                sqlx::query_scalar(
-                    "INSERT INTO media (title, type, created_at) VALUES ($1, $2::mediatype, NOW()) RETURNING id",
-                )
-                .bind(title)
-                .bind(db_type)
-                .fetch_optional(&state.pool)
-                .await
-                .unwrap_or(None)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    } else {
-        media_id
-    };
 
     // Insert stream
     let stream_id: i64 = match sqlx::query_scalar(
@@ -398,28 +402,30 @@ pub async fn import_acestream(
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
-    // Link to media
     if let Some(mid) = media_id {
-        let _ = sqlx::query(
-            "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at) VALUES ($1, $2, true, true, NOW()) ON CONFLICT DO NOTHING",
-        )
-        .bind(stream_id)
-        .bind(mid)
-        .execute(&state.pool)
-        .await;
-
-        let _ = sqlx::query("UPDATE media SET total_streams = total_streams + 1 WHERE id = $1")
-            .bind(mid)
-            .execute(&state.pool)
-            .await;
+        let _ =
+            super::import_helpers::link_stream_to_media(&state.pool, stream_id as i32, mid as i32)
+                .await;
     }
+
+    let effective_meta_id = body
+        .meta_id
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            super::import_helpers::synthetic_import_meta_id("acestream", &content_id)
+        });
 
     let data = serde_json::json!({
         "name": stream_name,
+        "title": body.title.as_deref().unwrap_or(&stream_name),
         "content_id": content_id,
         "info_hash": info_hash,
         "meta_type": body.meta_type.as_deref().unwrap_or("tv"),
+        "meta_id": effective_meta_id,
         "uploader_name": uploader_name,
+        "anonymous_display_name": body.anonymous_display_name,
         "is_anonymous": resolved_is_anonymous,
         "is_public": is_public,
     });
@@ -438,7 +444,7 @@ pub async fn import_acestream(
     {
         if auto_approve {
             if let Some(uid) = uploader_user_id {
-                award_contribution_points(&state.pool, uid).await;
+                award_contribution_points(&state.pool, uid, "acestream").await;
             }
         } else if let (Some(bot_token), Some(chat_id)) = (
             state.config.telegram_bot_token.as_deref(),
@@ -458,9 +464,17 @@ pub async fn import_acestream(
         contrib_id = Some(cid);
     }
 
+    let message = if auto_approve {
+        "AceStream imported successfully!".to_string()
+    } else {
+        super::import_helpers::pending_import_message("AceStream")
+    };
+
     (
         StatusCode::CREATED,
         Json(json!({
+            "status": if auto_approve { "success" } else { "pending" },
+            "message": message,
             "stream_id": stream_id,
             "content_id": content_id,
             "info_hash": info_hash,

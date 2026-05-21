@@ -28,9 +28,13 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use tracing::{debug, info, warn};
 
-use crate::jobs::{
-    error::JobError,
-    handler::{JobCtx, JobHandler},
+use crate::{
+    jobs::{
+        error::JobError,
+        handler::{JobCtx, JobHandler},
+    },
+    parser,
+    scrapers::media_resolve,
 };
 
 // ─── Redis key constants (must match Python side) ─────────────────────────────
@@ -229,13 +233,17 @@ fn decode_hashlist_payload(encoded: &str) -> Vec<HashlistEntry> {
 
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 
-/// Store a single torrent stream (without media link — the on-demand scraper
-/// will link it later when a user requests the title).
+/// Store a single torrent stream with resolved media linking (Python `dmm_hashlist` parity).
 ///
 /// Returns true if a new row was inserted, false if already present.
 async fn store_torrent_stream(
     pool: &sqlx::PgPool,
+    http: &reqwest::Client,
     entry: &HashlistEntry,
+    tmdb_api_key: Option<&str>,
+    cinemeta_fallback: bool,
+    anime_source_order: &[String],
+    metadata_primary_source: &str,
 ) -> Result<bool, sqlx::Error> {
     // Check existing
     let existing: Option<(i32,)> =
@@ -293,6 +301,29 @@ async fn store_torrent_stream(
         return Ok(false);
     }
 
+    let parsed = parser::parse_title(&entry.filename);
+    let is_series = !parsed.seasons.is_empty() || !parsed.episodes.is_empty();
+    let title = parsed
+        .title
+        .as_deref()
+        .filter(|t| !t.is_empty())
+        .unwrap_or(entry.filename.as_str());
+    if let Some(meta) = media_resolve::search_meta_for_title_with_anime(
+        pool,
+        http,
+        title,
+        parsed.year,
+        is_series,
+        tmdb_api_key,
+        cinemeta_fallback,
+        anime_source_order,
+        metadata_primary_source,
+    )
+    .await
+    {
+        let _ = media_resolve::link_stream_to_media(pool, stream_id, meta.media_id as i32).await;
+    }
+
     Ok(true)
 }
 
@@ -310,6 +341,10 @@ async fn process_commit(
     redis: &fred::clients::Client,
     cfg: &DmmConfig,
     commit_sha: &str,
+    tmdb_api_key: Option<&str>,
+    cinemeta_fallback: bool,
+    anime_source_order: &[String],
+    metadata_primary_source: &str,
 ) -> Result<CommitStats, JobError> {
     let commit_url = format!(
         "https://api.github.com/repos/{}/{}/commits/{}",
@@ -396,7 +431,17 @@ async fn process_commit(
         let mut file_new = 0usize;
 
         for entry in &entries {
-            match store_torrent_stream(pool, entry).await {
+            match store_torrent_stream(
+                pool,
+                http,
+                entry,
+                tmdb_api_key,
+                cinemeta_fallback,
+                anime_source_order,
+                metadata_primary_source,
+            )
+            .await
+            {
                 Ok(true) => file_new += 1,
                 Ok(false) => {}
                 Err(e) => {
@@ -504,7 +549,19 @@ impl JobHandler for DmmHashlistScraper {
                         return Err(JobError::Cancelled);
                     }
 
-                    match process_commit(http, pool, redis, &cfg, &commit_sha).await {
+                    match process_commit(
+                        http,
+                        pool,
+                        redis,
+                        &cfg,
+                        &commit_sha,
+                        ctx.state.config.tmdb_api_key.as_deref(),
+                        ctx.state.config.imdb_cinemeta_fallback_enabled,
+                        &ctx.state.config.anime_metadata_source_order,
+                        &ctx.state.config.metadata_primary_source,
+                    )
+                    .await
+                    {
                         Ok(stats) => {
                             incr_commits += 1;
                             incr_files += stats.files_processed;
@@ -599,7 +656,19 @@ impl JobHandler for DmmHashlistScraper {
                     break;
                 }
 
-                match process_commit(http, pool, redis, &cfg, sha).await {
+                match process_commit(
+                    http,
+                    pool,
+                    redis,
+                    &cfg,
+                    sha,
+                    ctx.state.config.tmdb_api_key.as_deref(),
+                    ctx.state.config.imdb_cinemeta_fallback_enabled,
+                    &ctx.state.config.anime_metadata_source_order,
+                    &ctx.state.config.metadata_primary_source,
+                )
+                .await
+                {
                     Ok(stats) => {
                         bf_commits += 1;
                         bf_files += stats.files_processed;

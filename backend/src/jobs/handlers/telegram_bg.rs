@@ -6,7 +6,7 @@ use crate::{
         error::JobError,
         handler::{JobCtx, JobHandler},
     },
-    scrapers::{persist, SearchMeta},
+    scrapers::{media_resolve, persist},
 };
 
 pub struct TelegramBgScraper;
@@ -46,64 +46,69 @@ impl JobHandler for TelegramBgScraper {
 
             info!("telegram_bg: scraping channel {channel}");
 
-            // Build a dummy SearchMeta for background mode.
-            // title must be non-empty so the similarity check inside
-            // scrape_channel passes for every message (we set it to "*"
-            // and rely on the 0-threshold background path below).
-            //
-            // Because the public `scrape()` function applies a title
-            // similarity filter (≥80 %) we pass a wildcard title and
-            // disable the filter by passing an empty string as the
-            // title — process_message will compute similarity against ""
-            // and most files will score ≤80 %.  For a true background
-            // scrape we therefore call scrape() with a per-channel
-            // wildcard: use the channel name itself as the "title" so
-            // the threshold check is skipped for files whose parsed
-            // title is empty (score 0 against the channel name still
-            // fails the 80 % gate).
-            //
-            // The correct long-term fix is a dedicated
-            // `scrape_channel_bg` that skips the similarity gate; for
-            // now we use a generous dummy meta so at least some files
-            // flow through.
-            let meta = SearchMeta {
+            let channel_title = channel.trim_start_matches('@');
+            let probe_meta = crate::scrapers::SearchMeta {
                 media_id: 0,
                 imdb_id: None,
-                title: channel.trim_start_matches('@').to_string(),
+                title: channel_title.to_string(),
                 year: None,
             };
 
-            // `scrape()` accepts both global and per-user channel
-            // slices; pass the channel as the sole "global" entry and
-            // an empty user list.
             let streams = crate::scrapers::telegram::scrape(
                 &client,
                 std::slice::from_ref(channel),
-                &[], // user_channels
-                &meta,
-                "movie", // media_type — background pass; series episodes filtered separately
-                None,    // season
-                None,    // episode
+                &[],
+                &probe_meta,
+                "movie",
+                None,
+                None,
                 message_limit,
                 min_size,
             )
             .await;
 
-            let found = streams.len();
-            info!("telegram_bg: channel {channel} — found {found} streams");
-
-            if !streams.is_empty() {
-                persist::write_telegram_streams(
-                    &streams,
+            let cfg = &ctx.state.config;
+            let mut persisted = 0usize;
+            for stream in &streams {
+                let title = stream
+                    .parsed
+                    .title
+                    .as_deref()
+                    .filter(|t| !t.is_empty())
+                    .unwrap_or(&stream.name);
+                let is_series = stream.season.is_some() || stream.episode.is_some();
+                let media_type = if is_series { "series" } else { "movie" };
+                if let Some(meta) = media_resolve::search_meta_for_title_with_anime(
                     &ctx.state.pool,
-                    &meta,
-                    "movie", // background pass — media_type unused for dedup key
-                    None,
-                    None,
+                    &ctx.state.http,
+                    title,
+                    stream.parsed.year,
+                    is_series,
+                    cfg.tmdb_api_key.as_deref(),
+                    cfg.imdb_cinemeta_fallback_enabled,
+                    &cfg.anime_metadata_source_order,
+                    &cfg.metadata_primary_source,
                 )
-                .await;
-                total_streams += found;
+                .await
+                {
+                    persist::write_telegram_streams(
+                        std::slice::from_ref(stream),
+                        &ctx.state.pool,
+                        &meta,
+                        media_type,
+                        stream.season,
+                        stream.episode,
+                    )
+                    .await;
+                    persisted += 1;
+                }
             }
+
+            info!(
+                "telegram_bg: channel {channel} — persisted {persisted}/{}",
+                streams.len()
+            );
+            total_streams += persisted;
         }
 
         info!("telegram_bg: done — total streams persisted across all channels: {total_streams}");

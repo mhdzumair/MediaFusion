@@ -10,7 +10,7 @@ use crate::{
         handler::{JobCtx, JobHandler},
     },
     parser,
-    scrapers::{persist, ScrapedStream, SearchMeta, StreamFile},
+    scrapers::{media_resolve, persist, ScrapedStream, StreamFile},
 };
 
 pub struct ProwlarrFeedScraper;
@@ -258,59 +258,40 @@ impl JobHandler for ProwlarrFeedScraper {
                 }
             }
 
+            let cfg = &ctx.state.config;
             for (stream, media_type) in &new_streams {
                 let hash = stream.info_hash.clone();
-
-                // Use a synthetic SearchMeta (no specific media link at feed time)
-                // The persist layer will handle missing media gracefully via stream_media_link.
-                // For feed scraping we don't have a resolved media_id, so we skip linking
-                // and only persist the torrent itself when we have one to anchor it.
-                // Mark as seen regardless so we don't re-process.
                 let _ = redis.sadd::<(), _, _>(SEEN_KEY, hash.clone()).await;
                 let _ = redis.expire::<i64, _>(SEEN_KEY, SEEN_TTL, None).await;
 
-                // We need a media_id to persist; without one we can only store if we
-                // can find a match in the DB by info_hash. For now, emit a debug log.
-                // Full linking happens when a user requests the stream.
-                debug!(
-                    "prowlarr_feed: new item {} ({}): {}",
-                    hash, media_type, stream.name
-                );
-            }
-
-            // Persist streams that came with enough context to link.
-            // Group by guessed media_type for write_back. Because we have no resolved
-            // media_id at feed-scrape time, we use media_id=0 (sentinel) and rely on
-            // the persist layer's ON CONFLICT DO NOTHING to at least store the torrent
-            // row so later on-demand scrapes can pick it up from torrent_stream.
-            let movie_streams: Vec<ScrapedStream> = new_streams
-                .iter()
-                .filter(|(_, mt)| *mt == "movie")
-                .map(|(s, _)| s.clone())
-                .collect();
-            let series_streams: Vec<ScrapedStream> = new_streams
-                .iter()
-                .filter(|(_, mt)| *mt == "series")
-                .map(|(s, _)| s.clone())
-                .collect();
-
-            if !movie_streams.is_empty() {
-                let meta = SearchMeta {
-                    media_id: 0,
-                    imdb_id: None,
-                    title: String::new(),
-                    year: None,
-                };
-                persist::write_back(&movie_streams, pool, &meta, "movie", None, None).await;
-            }
-            if !series_streams.is_empty() {
-                let meta = SearchMeta {
-                    media_id: 0,
-                    imdb_id: None,
-                    title: String::new(),
-                    year: None,
-                };
-                persist::write_back(&series_streams, pool, &meta, "series", None, None).await;
+                let is_series = *media_type == "series";
+                if let Some(meta) = media_resolve::search_meta_for_scraped(
+                    pool,
+                    &ctx.state.http,
+                    stream,
+                    is_series,
+                    cfg.tmdb_api_key.as_deref(),
+                    cfg.imdb_cinemeta_fallback_enabled,
+                    &cfg.anime_metadata_source_order,
+                    &cfg.metadata_primary_source,
+                )
+                .await
+                {
+                    persist::write_back(
+                        std::slice::from_ref(stream),
+                        pool,
+                        &meta,
+                        media_type,
+                        None,
+                        None,
+                    )
+                    .await;
+                } else {
+                    debug!(
+                        "prowlarr_feed: skipped {} ({}) — metadata unresolved",
+                        hash, media_type
+                    );
+                }
             }
         }
 

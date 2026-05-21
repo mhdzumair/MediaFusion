@@ -21,7 +21,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;
 
-use crate::state::AppState;
+use crate::{
+    jobs::enqueue::{enqueue_simple, EnqueueOpts},
+    state::AppState,
+};
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -393,101 +396,39 @@ pub async fn sync_iptv_source(
             .into_response();
     }
 
-    if source_type.to_uppercase() == "XTREAM" {
-        // Xtream sync is complex — return 202 indicating background processing needed
-        sqlx::query("UPDATE iptv_source SET last_synced_at = NOW() WHERE id = $1")
-            .bind(source_id)
-            .execute(&state.pool)
-            .await
-            .ok();
+    let queue = if source_type.to_uppercase() == "XTREAM" {
+        "xtream_import"
+    } else {
+        "m3u_import"
+    };
 
+    if source_type.to_uppercase() != "XTREAM" && m3u_url.as_ref().is_none_or(|u| u.is_empty()) {
         return (
-            StatusCode::ACCEPTED,
-            Json(json!({
-                "status": "accepted",
-                "message": "Xtream source sync requires background processing. Use import/xtream endpoints directly.",
-                "source_id": source_id,
-            })),
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "M3U source has no URL configured"})),
         )
             .into_response();
     }
 
-    // M3U sync
-    let url = match m3u_url {
-        Some(u) if !u.is_empty() => u,
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"detail": "M3U source has no URL configured"})),
-            )
-                .into_response();
-        }
-    };
-
-    // Fetch M3U content
-    let content = match state
-        .http
-        .get(&url)
-        .timeout(std::time::Duration::from_secs(120))
-        .send()
-        .await
-    {
-        Ok(r) if r.status().is_success() => r.text().await.unwrap_or_default(),
-        Ok(r) => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"detail": format!("Failed to fetch M3U: HTTP {}", r.status())})),
-            )
-                .into_response();
-        }
-        Err(e) => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"detail": format!("Failed to fetch M3U: {e}")})),
-            )
-                .into_response();
-        }
-    };
-
-    // Parse M3U
-    let entries = crate::routes::content::m3u_import::parse_m3u(&content);
-    let source_label = format!("IPTV Source #{source_id}");
-    let mut imported = 0usize;
-    let mut skipped = 0usize;
-
-    for entry in entries.iter().filter(|e| e.entry_type == "tv") {
-        if crate::routes::content::m3u_import::import_tv_channel(
-            &state.pool,
-            &entry.name,
-            &entry.url,
-            entry.logo.as_deref(),
-            &source_label,
-            entry.behavior_hints.as_ref(),
+    let payload = json!({ "iptv_source_id": source_id });
+    match enqueue_simple(&state.pool, queue, &payload, EnqueueOpts::default()).await {
+        Ok(job_id) => (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "status": if job_id.is_some() { "queued" } else { "already_queued" },
+                "message": format!("IPTV source sync enqueued on {queue}"),
+                "source_id": source_id,
+                "job_id": job_id,
+            })),
         )
-        .await
-        {
-            imported += 1;
-        } else {
-            skipped += 1;
+            .into_response(),
+        Err(e) => {
+            tracing::error!("sync_iptv_source enqueue failed: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": "Failed to enqueue sync job"})),
+            )
+                .into_response()
         }
     }
-
-    // Update last_synced_at
-    let sync_stats = json!({"imported": imported, "skipped": skipped});
-    sqlx::query(
-        "UPDATE iptv_source SET last_synced_at = NOW(), last_sync_stats = $1::jsonb WHERE id = $2",
-    )
-    .bind(sync_stats)
-    .bind(source_id)
-    .execute(&state.pool)
-    .await
-    .ok();
-
-    Json(json!({
-        "status": "success",
-        "imported": imported,
-        "skipped": skipped,
-        "source_id": source_id,
-    }))
-    .into_response()
 }

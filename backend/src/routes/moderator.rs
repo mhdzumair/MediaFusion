@@ -524,192 +524,6 @@ fn get_server_tmdb_key(state: &crate::state::AppState) -> Option<String> {
     state.config.tmdb_api_key.clone()
 }
 
-fn cinemeta_type(media_type: &str) -> &str {
-    if media_type.contains("movie") {
-        "movie"
-    } else {
-        "series"
-    }
-}
-
-async fn search_cinemeta(http: &reqwest::Client, media_type: &str, title: &str) -> Vec<Value> {
-    let encoded = urlencoding::encode(title);
-    let url = format!(
-        "https://v3-cinemeta.strem.io/catalog/{}/top/search={}.json",
-        cinemeta_type(media_type),
-        encoded
-    );
-    let Ok(resp) = http.get(&url).send().await else {
-        return vec![];
-    };
-    let Ok(data): Result<Value, _> = resp.json().await else {
-        return vec![];
-    };
-    let metas = data["metas"].as_array().cloned().unwrap_or_default();
-    metas
-        .into_iter()
-        .map(|m| {
-            let year_val = m["year"]
-                .as_str()
-                .and_then(|y| y.split('-').next()?.parse::<i32>().ok())
-                .or_else(|| m["year"].as_i64().map(|y| y as i32));
-            json!({
-                "provider": "imdb",
-                "external_id": m["id"],
-                "title": m["name"],
-                "year": year_val,
-                "poster": m["poster"],
-            })
-        })
-        .collect()
-}
-
-async fn search_tmdb(
-    http: &reqwest::Client,
-    api_key: &str,
-    media_type: &str,
-    title: &str,
-) -> Vec<Value> {
-    let encoded = urlencoding::encode(title);
-    let tmdb_type = if media_type.contains("movie") {
-        "movie"
-    } else {
-        "tv"
-    };
-    let url = format!(
-        "https://api.themoviedb.org/3/search/{tmdb_type}?api_key={api_key}&query={encoded}"
-    );
-    let Ok(resp) = http.get(&url).send().await else {
-        return vec![];
-    };
-    let Ok(data): Result<Value, _> = resp.json().await else {
-        return vec![];
-    };
-    let results = data["results"].as_array().cloned().unwrap_or_default();
-    results
-        .into_iter()
-        .map(|item| {
-            let title_str = item["title"]
-                .as_str()
-                .or_else(|| item["name"].as_str())
-                .unwrap_or("")
-                .to_string();
-            let year_str = item["release_date"]
-                .as_str()
-                .or_else(|| item["first_air_date"].as_str())
-                .unwrap_or("");
-            let year = if year_str.len() >= 4 {
-                year_str[..4].parse::<i32>().ok()
-            } else {
-                None
-            };
-            let poster = item["poster_path"]
-                .as_str()
-                .map(|p| format!("https://image.tmdb.org/t/p/w500{p}"));
-            let ext_id = item["id"]
-                .as_i64()
-                .map(|id| id.to_string())
-                .unwrap_or_default();
-            json!({
-                "provider": "tmdb",
-                "external_id": ext_id,
-                "title": title_str,
-                "year": year,
-                "poster": poster,
-            })
-        })
-        .collect()
-}
-
-async fn fetch_cinemeta_meta(
-    http: &reqwest::Client,
-    media_type: &str,
-    external_id: &str,
-) -> Option<Value> {
-    let url = format!(
-        "https://v3-cinemeta.strem.io/meta/{}/{}.json",
-        cinemeta_type(media_type),
-        external_id
-    );
-    let resp = http.get(&url).send().await.ok()?;
-    let data: Value = resp.json().await.ok()?;
-    let m = data.get("meta")?;
-    let year_val = m["year"]
-        .as_str()
-        .and_then(|y| y.split('-').next()?.parse::<i32>().ok())
-        .or_else(|| m["year"].as_i64().map(|y| y as i32));
-    let genres: Vec<String> = m["genres"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    Some(json!({
-        "provider": "imdb",
-        "external_id": m["id"],
-        "title": m["name"],
-        "year": year_val,
-        "description": m["description"],
-        "poster": m["poster"],
-        "genres": genres,
-    }))
-}
-
-async fn fetch_tmdb_meta(
-    http: &reqwest::Client,
-    api_key: &str,
-    media_type: &str,
-    external_id: &str,
-) -> Option<Value> {
-    let tmdb_type = if media_type.contains("movie") {
-        "movie"
-    } else {
-        "tv"
-    };
-    let url = format!("https://api.themoviedb.org/3/{tmdb_type}/{external_id}?api_key={api_key}");
-    let resp = http.get(&url).send().await.ok()?;
-    if !resp.status().is_success() {
-        return None;
-    }
-    let item: Value = resp.json().await.ok()?;
-    let title_str = item["title"]
-        .as_str()
-        .or_else(|| item["name"].as_str())
-        .unwrap_or("")
-        .to_string();
-    let year_str = item["release_date"]
-        .as_str()
-        .or_else(|| item["first_air_date"].as_str())
-        .unwrap_or("");
-    let year = if year_str.len() >= 4 {
-        year_str[..4].parse::<i32>().ok()
-    } else {
-        None
-    };
-    let poster = item["poster_path"]
-        .as_str()
-        .map(|p| format!("https://image.tmdb.org/t/p/w500{p}"));
-    let genres: Vec<String> = item["genres"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v["name"].as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    Some(json!({
-        "provider": "tmdb",
-        "external_id": external_id,
-        "title": title_str,
-        "year": year,
-        "description": item["overview"].as_str(),
-        "poster": poster,
-        "genres": genres,
-    }))
-}
-
 // ─── Moderator external metadata handlers ─────────────────────────────────────
 
 /// POST /api/v1/moderator/metadata/search-external
@@ -747,19 +561,26 @@ pub async fn moderator_search_external_metadata(
         }
     };
 
-    let mut results = match provider {
-        "tmdb" => {
-            let api_key = match get_server_tmdb_key(&state) {
-                Some(k) => k,
-                None => return (
-                    StatusCode::PRECONDITION_FAILED,
-                    Json(json!({"code": "tmdb_key_required", "message": "TMDB API key not configured on server."}))
-                ).into_response(),
-            };
-            search_tmdb(&state.http, &api_key, media_type, &title).await
-        }
-        _ => search_cinemeta(&state.http, media_type, &title).await,
-    };
+    if provider == "tmdb" && get_server_tmdb_key(&state).is_none() {
+        return (
+            StatusCode::PRECONDITION_FAILED,
+            Json(json!({"code": "tmdb_key_required", "message": "TMDB API key not configured on server."})),
+        )
+            .into_response();
+    }
+
+    let mut results = crate::scrapers::metadata::search_external_for_provider(
+        &state.http,
+        &state.pool_ro,
+        provider,
+        &title,
+        params.year,
+        media_type,
+        state.config.tmdb_api_key.as_deref(),
+        state.config.tvdb_api_key.as_deref(),
+        state.config.imdb_cinemeta_fallback_enabled,
+    )
+    .await;
 
     if let Some(filter_year) = params.year {
         results.retain(|r| match r.get("year").and_then(|v| v.as_i64()) {
@@ -824,19 +645,29 @@ pub async fn moderator_fetch_external_metadata(
         }
     };
 
-    let preview = match provider {
-        "tmdb" => {
-            let api_key = match get_server_tmdb_key(&state) {
-                Some(k) => k,
-                None => return (
-                    StatusCode::PRECONDITION_FAILED,
-                    Json(json!({"code": "tmdb_key_required", "message": "TMDB API key not configured on server."}))
-                ).into_response(),
-            };
-            fetch_tmdb_meta(&state.http, &api_key, &db_media_type, &external_id).await
-        }
-        _ => fetch_cinemeta_meta(&state.http, &db_media_type, &external_id).await,
-    };
+    let is_series = db_media_type == "series";
+    let preview = crate::scrapers::metadata::fetch_by_external_id_with_opts(
+        &state.http,
+        provider,
+        &external_id,
+        is_series,
+        crate::scrapers::metadata::ExternalFetchOpts {
+            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
+            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+            cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
+        },
+    )
+    .await
+    .map(|d| {
+        json!({
+            "title": d.title,
+            "year": d.year,
+            "description": d.description,
+            "poster_url": d.poster_url,
+            "imdb_id": d.imdb_id,
+            "tmdb_id": d.tmdb_id,
+        })
+    });
 
     match preview {
         Some(p) => Json(p).into_response(),
@@ -901,19 +732,27 @@ pub async fn moderator_apply_external_metadata(
         }
     };
 
-    let preview = match provider {
-        "tmdb" => {
-            let api_key = match get_server_tmdb_key(&state) {
-                Some(k) => k,
-                None => return (
-                    StatusCode::PRECONDITION_FAILED,
-                    Json(json!({"code": "tmdb_key_required", "message": "TMDB API key not configured on server."}))
-                ).into_response(),
-            };
-            fetch_tmdb_meta(&state.http, &api_key, &db_media_type, &external_id).await
-        }
-        _ => fetch_cinemeta_meta(&state.http, &db_media_type, &external_id).await,
-    };
+    let is_series = db_media_type == "series";
+    let preview = crate::scrapers::metadata::fetch_by_external_id_with_opts(
+        &state.http,
+        provider,
+        &external_id,
+        is_series,
+        crate::scrapers::metadata::ExternalFetchOpts {
+            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
+            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+            cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
+        },
+    )
+    .await
+    .map(|d| {
+        json!({
+            "title": d.title,
+            "year": d.year,
+            "description": d.description,
+            "poster_url": d.poster_url,
+        })
+    });
 
     let meta = match preview {
         Some(p) => p,

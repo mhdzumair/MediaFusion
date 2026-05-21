@@ -227,6 +227,16 @@ pub struct AppConfig {
     // ── Discover / TMDB ───────────────────────────────────────────
     /// TMDB API key (server-level fallback for discover endpoints).
     pub tmdb_api_key: Option<String>,
+    /// TVDB API key for import metadata search (Python `settings.tvdb_api_key`).
+    pub tvdb_api_key: Option<String>,
+    /// When false, do not call v3-cinemeta.strem.io (mirrors Python `imdb_cinemeta_fallback_enabled`).
+    pub imdb_cinemeta_fallback_enabled: bool,
+    /// Primary metadata source for scrapers (`imdb` or `tmdb`, Python `metadata_primary_source`).
+    pub metadata_primary_source: String,
+    /// Ordered anime provider chain for search/fetch (`kitsu`, `anilist`).
+    pub anime_metadata_source_order: Vec<String>,
+    /// Optional HTTP proxy for metadata/scraper requests (Python `requests_proxy_url`).
+    pub requests_proxy_url: Option<String>,
     /// Enable the Discover feature endpoints (default: true).
     pub discover_enabled: bool,
     /// Allow server-level TMDB key to be used as fallback when user has none (default: false).
@@ -632,6 +642,25 @@ impl AppConfig {
             disable_integration_sync_scheduler: env("DISABLE_INTEGRATION_SYNC_SCHEDULER")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
             tmdb_api_key: env("TMDB_API_KEY").ok().filter(|s| !s.is_empty()),
+            tvdb_api_key: env("TVDB_API_KEY").ok().filter(|s| !s.is_empty()),
+            imdb_cinemeta_fallback_enabled: env("IMDB_CINEMETA_FALLBACK_ENABLED")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(true),
+            metadata_primary_source: env("METADATA_PRIMARY_SOURCE")
+                .unwrap_or_else(|_| "imdb".into())
+                .to_lowercase(),
+            anime_metadata_source_order: env("ANIME_METADATA_SOURCE_ORDER")
+                .ok()
+                .map(|s| {
+                    s.split(',')
+                        .map(|p| p.trim().to_lowercase())
+                        .filter(|p| *p == "kitsu" || *p == "anilist")
+                        .collect()
+                })
+                .filter(|v: &Vec<String>| !v.is_empty())
+                .unwrap_or_else(|| vec!["kitsu".into(), "anilist".into()]),
+            requests_proxy_url: env("REQUESTS_PROXY_URL").ok().filter(|s| !s.is_empty()),
             discover_enabled: env("DISCOVER_ENABLED")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
             discover_allow_server_key: env("DISCOVER_ALLOW_SERVER_KEY")

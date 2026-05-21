@@ -325,6 +325,7 @@ async fn find_or_create_media(
     is_series: bool,
     catalog_ids: &[&str],
     tmdb_api_key: Option<&str>,
+    cinemeta_fallback_enabled: bool,
 ) -> Option<MediaEntry> {
     crate::scrapers::media_resolve::find_or_create_media(
         pool,
@@ -334,6 +335,7 @@ async fn find_or_create_media(
         is_series,
         catalog_ids,
         tmdb_api_key,
+        cinemeta_fallback_enabled,
     )
     .await
 }
@@ -473,23 +475,12 @@ async fn upsert_rss_stream(
                 .await;
             }
         } else {
-            // Series but no season/episode — link to media via stream_media_link
-            let _ = sqlx::query(
-                "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at) SELECT $1, $2, true, false, NOW() WHERE NOT EXISTS (SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2)"
-            )
-            .bind(stream_id)
-            .bind(media_id)
-            .execute(pool)
-            .await;
+            let _ = crate::scrapers::media_resolve::link_stream_to_media(pool, stream_id, media_id)
+                .await;
         }
     } else {
-        let _ = sqlx::query(
-            "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at) SELECT $1, $2, true, false, NOW() WHERE NOT EXISTS (SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2)"
-        )
-        .bind(stream_id)
-        .bind(media_id)
-        .execute(pool)
-        .await;
+        let _ =
+            crate::scrapers::media_resolve::link_stream_to_media(pool, stream_id, media_id).await;
     }
 
     true
@@ -559,6 +550,7 @@ pub async fn scrape_feed(
     _filters: Option<&Value>,
     _auto_detect_catalog: bool,
     tmdb_api_key: Option<&str>,
+    cinemeta_fallback_enabled: bool,
 ) -> ScrapeResult {
     let start = std::time::Instant::now();
     let empty_patterns = Value::Object(serde_json::Map::new());
@@ -703,6 +695,7 @@ pub async fn scrape_feed(
             is_series,
             &catalogs,
             tmdb_api_key,
+            cinemeta_fallback_enabled,
         )
         .await
         {

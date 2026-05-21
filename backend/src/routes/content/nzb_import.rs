@@ -26,6 +26,7 @@ use sha2::{Digest, Sha256};
 use super::import_helpers::{
     award_contribution_points, create_contribution_record, enforce_upload_permissions,
     fetch_user_info, is_adult_content, notify_pending_contribution, resolve_uploader_identity,
+    should_auto_approve_import,
 };
 use crate::{parser, state::AppState};
 
@@ -195,72 +196,6 @@ fn extract_nzb_title(subject: &str) -> String {
     s.trim().to_string()
 }
 
-// ─── Media helpers ────────────────────────────────────────────────────────────
-
-async fn search_media(pool: &sqlx::PgPool, title: &str, meta_type: &str) -> Vec<serde_json::Value> {
-    let pattern = format!("%{title}%");
-    let type_upper = meta_type.to_uppercase();
-    let rows: Vec<(i32, String, Option<i32>)> = sqlx::query_as(
-        "SELECT id, title, year FROM media WHERE LOWER(title) LIKE LOWER($1) AND UPPER(type::text) = $2 LIMIT 5",
-    )
-    .bind(&pattern)
-    .bind(&type_upper)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
-
-    rows.into_iter()
-        .map(|(id, title, year)| json!({"media_id": id, "title": title, "year": year}))
-        .collect()
-}
-
-async fn resolve_media_id(
-    pool: &sqlx::PgPool,
-    meta_id: &str,
-    meta_type: &str,
-    parsed_title: &str,
-    parsed_year: Option<i32>,
-) -> Option<i64> {
-    let row: Option<(i32,)> =
-        sqlx::query_as("SELECT media_id FROM media_external_id WHERE external_id = $1 LIMIT 1")
-            .bind(meta_id)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
-
-    if let Some((id,)) = row {
-        return Some(id as i64);
-    }
-
-    let type_upper = meta_type.to_uppercase();
-    if let Some(year) = parsed_year {
-        let row: Option<(i32,)> = sqlx::query_as(
-            "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND year = $2 AND UPPER(type::text) = $3 LIMIT 1",
-        )
-        .bind(parsed_title)
-        .bind(year)
-        .bind(&type_upper)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None);
-        if let Some((id,)) = row {
-            return Some(id as i64);
-        }
-    }
-
-    let pattern = format!("%{parsed_title}%");
-    let row: Option<(i32,)> = sqlx::query_as(
-        "SELECT id FROM media WHERE LOWER(title) LIKE LOWER($1) AND UPPER(type::text) = $2 LIMIT 1",
-    )
-    .bind(&pattern)
-    .bind(&type_upper)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
-
-    row.map(|(id,)| id as i64)
-}
-
 // ─── DB insert helper ─────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
@@ -341,6 +276,11 @@ async fn insert_usenet_stream(
                     .fetch_one(pool)
                     .await
                     .unwrap_or(stream_id);
+            if let Some(mid) = media_id {
+                let _ =
+                    super::import_helpers::link_stream_to_media(pool, existing as i32, mid as i32)
+                        .await;
+            }
             return Ok(existing);
         }
     }
@@ -519,7 +459,9 @@ async fn analyze_nzb_bytes(state: &Arc<AppState>, bytes: &Bytes, meta_type: &str
 
     let parsed = parser::parse_title(&info.title);
     let search_title = parsed.title.as_deref().unwrap_or(&info.title);
-    let matches = search_media(&state.pool, search_title, meta_type).await;
+    let matches =
+        super::import_helpers::search_analyze_matches(state, search_title, parsed.year, meta_type)
+            .await;
 
     (
         StatusCode::OK,
@@ -580,6 +522,9 @@ pub async fn import_nzb(
     let mut force_import = false;
     let mut is_anonymous_field: Option<bool> = None;
     let mut anonymous_display_name: Option<String> = None;
+    let mut poster: Option<String> = None;
+    let mut background: Option<String> = None;
+    let mut release_date: Option<String> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
@@ -594,6 +539,15 @@ pub async fn import_nzb(
             }
             Some("title") => {
                 title = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("poster") => {
+                poster = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("background") => {
+                background = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("created_at") | Some("release_date") => {
+                release_date = field.text().await.ok().filter(|s| !s.is_empty());
             }
             Some("indexer") => {
                 indexer = field.text().await.ok().filter(|s| !s.is_empty());
@@ -644,7 +598,8 @@ pub async fn import_nzb(
         user_id,
     );
     let is_privileged = matches!(user.role.as_str(), "moderator" | "admin");
-    let auto_approve = is_privileged || !resolved_is_anonymous;
+    let auto_approve =
+        should_auto_approve_import(is_privileged, user.is_active, resolved_is_anonymous);
 
     do_nzb_import(
         &state,
@@ -653,6 +608,9 @@ pub async fn import_nzb(
         &meta_type,
         meta_id.as_deref(),
         title.as_deref(),
+        poster.as_deref(),
+        background.as_deref(),
+        release_date.as_deref(),
         indexer.as_deref(),
         force_import,
         uploader_name,
@@ -670,6 +628,9 @@ pub struct ImportNzbUrlBody {
     meta_type: Option<String>,
     meta_id: Option<String>,
     title: Option<String>,
+    poster: Option<String>,
+    background: Option<String>,
+    release_date: Option<String>,
     indexer: Option<String>,
     force_import: Option<bool>,
     is_anonymous: Option<bool>,
@@ -761,7 +722,8 @@ pub async fn import_nzb_url(
         user_id,
     );
     let is_privileged = matches!(user.role.as_str(), "moderator" | "admin");
-    let auto_approve = is_privileged || !resolved_is_anonymous;
+    let auto_approve =
+        should_auto_approve_import(is_privileged, user.is_active, resolved_is_anonymous);
 
     do_nzb_import(
         &state,
@@ -770,6 +732,9 @@ pub async fn import_nzb_url(
         meta_type,
         body.meta_id.as_deref(),
         body.title.as_deref(),
+        body.poster.as_deref(),
+        body.background.as_deref(),
+        body.release_date.as_deref(),
         body.indexer.as_deref(),
         force_import,
         uploader_name,
@@ -789,6 +754,9 @@ async fn do_nzb_import(
     meta_type: &str,
     meta_id: Option<&str>,
     title_override: Option<&str>,
+    poster: Option<&str>,
+    background: Option<&str>,
+    release_date: Option<&str>,
     indexer: Option<&str>,
     force_import: bool,
     uploader_name: String,
@@ -832,22 +800,29 @@ async fn do_nzb_import(
 
     let parsed = parser::parse_title(name);
 
-    let media_id = if let Some(mid) = meta_id {
-        if !mid.is_empty() {
-            resolve_media_id(
-                &state.pool,
-                mid,
-                meta_type,
-                parsed.title.as_deref().unwrap_or(name),
-                parsed.year,
-            )
-            .await
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let effective_meta_id = meta_id
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| super::import_helpers::synthetic_import_meta_id("nzb", &info.nzb_guid));
+
+    let media_id = super::import_helpers::resolve_media_for_import(
+        &state.pool,
+        &state.http,
+        state.config.tmdb_api_key.as_deref(),
+        state.config.tvdb_api_key.as_deref(),
+        &effective_meta_id,
+        meta_type,
+        crate::scrapers::media_resolve::ImportMediaOverrides {
+            title: title_override.or(parsed.title.as_deref()),
+            poster,
+            background,
+            release_date,
+            year: parsed.year,
+        },
+        None,
+    )
+    .await
+    .map(i64::from);
 
     let source = indexer.unwrap_or("manual");
     let size = if info.total_size > 0 {
@@ -884,14 +859,42 @@ async fn do_nzb_import(
         }
     };
 
+    let file_data: Vec<serde_json::Value> = info
+        .files
+        .iter()
+        .enumerate()
+        .map(|(idx, f)| {
+            json!({
+                "index": idx,
+                "filename": f.subject,
+                "size": f.size,
+            })
+        })
+        .collect();
+
     let data = serde_json::json!({
         "name": name,
+        "title": name,
         "nzb_guid": info.nzb_guid,
+        "nzb_url": nzb_url,
         "meta_type": meta_type,
+        "meta_id": effective_meta_id,
+        "total_size": info.total_size,
+        "file_count": info.files.len().max(1),
+        "file_data": file_data,
+        "indexer": indexer.unwrap_or("manual"),
+        "group_name": info.group,
+        "resolution": parsed.resolution,
+        "codec": parsed.codec,
+        "quality": parsed.quality,
+        "year": parsed.year,
+        "poster": poster,
+        "background": background,
+        "release_date": release_date,
+        "languages": parsed.languages.clone(),
         "uploader_name": uploader_name,
         "is_anonymous": resolved_is_anonymous,
         "is_public": auto_approve,
-        "size": info.total_size,
     });
 
     let mut contrib_id: Option<String> = None;
@@ -908,7 +911,7 @@ async fn do_nzb_import(
     {
         if auto_approve {
             if let Some(uid) = uploader_user_id {
-                award_contribution_points(&state.pool, uid).await;
+                award_contribution_points(&state.pool, uid, "nzb").await;
             }
         } else if let (Some(bot_token), Some(chat_id)) = (
             state.config.telegram_bot_token.as_deref(),
@@ -928,11 +931,20 @@ async fn do_nzb_import(
         contrib_id = Some(cid);
     }
 
+    let (status, message) = if auto_approve {
+        ("success", "NZB imported successfully!".to_string())
+    } else {
+        (
+            "pending",
+            super::import_helpers::pending_import_message("NZB"),
+        )
+    };
+
     (
         StatusCode::CREATED,
         Json(json!({
-            "status": "success",
-            "message": "Stream imported successfully",
+            "status": status,
+            "message": message,
             "import_id": stream_id,
             "contribution_id": contrib_id,
             "auto_approved": auto_approve,

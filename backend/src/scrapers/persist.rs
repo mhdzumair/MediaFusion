@@ -7,7 +7,9 @@
 use sqlx::PgPool;
 use tracing::{debug, warn};
 
-use crate::scrapers::{ScrapedStream, ScrapedTelegramStream, ScrapedUsenetStream, SearchMeta};
+use crate::scrapers::{
+    media_resolve, ScrapedStream, ScrapedTelegramStream, ScrapedUsenetStream, SearchMeta,
+};
 
 pub async fn write_back(
     streams: &[ScrapedStream],
@@ -55,6 +57,10 @@ async fn upsert_stream(
     season: Option<i32>,
     episode: Option<i32>,
 ) -> Result<bool, sqlx::Error> {
+    if meta.media_id <= 0 {
+        return Ok(false);
+    }
+
     // Check existing
     let existing: Option<(i32,)> =
         sqlx::query_as("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
@@ -195,24 +201,7 @@ async fn upsert_stream(
             }
         }
     } else {
-        // Movie (or series with no file breakdown): use stream_media_link
-        // Guard against races: only insert if the link doesn't exist yet.
-        sqlx::query(
-            r#"
-            INSERT INTO stream_media_link
-                (stream_id, media_id, is_primary, is_verified, created_at)
-            SELECT $1, $2, true, false, NOW()
-            WHERE NOT EXISTS (
-                SELECT 1 FROM stream_media_link
-                WHERE stream_id = $1 AND media_id = $2
-            )
-            "#,
-        )
-        .bind(stream_id)
-        .bind(meta.media_id as i32)
-        .execute(pool)
-        .await
-        .ok();
+        let _ = media_resolve::link_stream_to_media(pool, stream_id, meta.media_id as i32).await;
 
         // If the request specified season/episode but no file breakdown, also add
         // a file_media_link via a synthetic stream_file row.

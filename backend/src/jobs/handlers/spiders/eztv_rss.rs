@@ -8,7 +8,7 @@ use crate::{
         handler::{JobCtx, JobHandler},
     },
     parser,
-    scrapers::{persist, prowlarr::build_series_files, ScrapedStream, SearchMeta},
+    scrapers::{media_resolve, persist, prowlarr::build_series_files, ScrapedStream},
     util::rate_limit,
 };
 
@@ -171,9 +171,6 @@ impl JobHandler for EztvRssCrawl {
             return Ok(());
         }
 
-        let mut movie_streams: Vec<ScrapedStream> = Vec::new();
-        let mut series_streams: Vec<ScrapedStream> = Vec::new();
-
         for item in &rss_items {
             if ctx.cancel.is_cancelled() {
                 debug!("eztv_rss: cancelled during item processing");
@@ -247,37 +244,29 @@ impl JobHandler for EztvRssCrawl {
                 is_cached: false,
             };
 
-            if media_type == "movie" {
-                movie_streams.push(stream);
-            } else {
-                series_streams.push(stream);
+            let cfg = &ctx.state.config;
+            if let Some(meta) = media_resolve::search_meta_for_scraped(
+                pool,
+                &ctx.state.http,
+                &stream,
+                is_series,
+                cfg.tmdb_api_key.as_deref(),
+                cfg.imdb_cinemeta_fallback_enabled,
+                &cfg.anime_metadata_source_order,
+                &cfg.metadata_primary_source,
+            )
+            .await
+            {
+                persist::write_back(
+                    std::slice::from_ref(&stream),
+                    pool,
+                    &meta,
+                    media_type,
+                    None,
+                    None,
+                )
+                .await;
             }
-        }
-
-        info!(
-            "eztv_rss: {} movies, {} series to persist",
-            movie_streams.len(),
-            series_streams.len()
-        );
-
-        if !movie_streams.is_empty() {
-            let meta = SearchMeta {
-                media_id: 0,
-                imdb_id: None,
-                title: String::new(),
-                year: None,
-            };
-            persist::write_back(&movie_streams, pool, &meta, "movie", None, None).await;
-        }
-
-        if !series_streams.is_empty() {
-            let meta = SearchMeta {
-                media_id: 0,
-                imdb_id: None,
-                title: String::new(),
-                year: None,
-            };
-            persist::write_back(&series_streams, pool, &meta, "series", None, None).await;
         }
 
         Ok(())

@@ -798,6 +798,7 @@ pub async fn run_rss_feed_scraper(
     let pool = state.pool.clone();
     let http = state.http.clone();
     let tmdb_key = state.config.tmdb_api_key.clone();
+    let cinemeta_fallback = state.config.imdb_cinemeta_fallback_enabled;
     tokio::spawn(async move {
         crate::scrapers::rss::scrape_feed(
             &pool,
@@ -810,6 +811,7 @@ pub async fn run_rss_feed_scraper(
             filters.as_ref(),
             auto_detect,
             tmdb_key.as_deref(),
+            cinemeta_fallback,
         )
         .await;
     });
@@ -1570,6 +1572,7 @@ pub async fn user_scrape_single_feed(
     let pool = state.pool.clone();
     let http = state.http.clone();
     let tmdb_key = state.config.tmdb_api_key.clone();
+    let cinemeta_fallback = state.config.imdb_cinemeta_fallback_enabled;
     tokio::spawn(async move {
         crate::scrapers::rss::scrape_feed(
             &pool,
@@ -1582,6 +1585,7 @@ pub async fn user_scrape_single_feed(
             filters.as_ref(),
             auto_detect,
             tmdb_key.as_deref(),
+            cinemeta_fallback,
         )
         .await;
     });
@@ -1635,6 +1639,7 @@ pub async fn user_run_all_scrapers(
     let pool = state.pool.clone();
     let http = state.http.clone();
     let tmdb_key = state.config.tmdb_api_key.clone();
+    let cinemeta_fallback = state.config.imdb_cinemeta_fallback_enabled;
     tokio::spawn(async move {
         for (db_id, url, name, source, patterns, filters, auto_detect) in feeds {
             crate::scrapers::rss::scrape_feed(
@@ -1648,6 +1653,7 @@ pub async fn user_run_all_scrapers(
                 filters.as_ref(),
                 auto_detect,
                 tmdb_key.as_deref(),
+                cinemeta_fallback,
             )
             .await;
         }

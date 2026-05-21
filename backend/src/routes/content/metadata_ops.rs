@@ -18,10 +18,12 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::json;
 use sha2::Sha256;
 
 use crate::state::AppState;
+
+use super::import_helpers;
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -63,6 +65,14 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
 pub struct LinkExternalIdBody {
     pub provider: String,
     pub external_id: String,
+    #[serde(rename = "type")]
+    pub media_type: Option<String>,
+    #[serde(default = "default_true")]
+    pub fetch_metadata: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Deserialize)]
@@ -115,123 +125,6 @@ struct SearchResultItem {
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
-
-// ─── External metadata helpers (shared with metadata_ops) ────────────────────
-
-fn cinemeta_media_type(media_type: &str) -> &str {
-    if media_type.contains("movie") {
-        "movie"
-    } else {
-        "series"
-    }
-}
-
-async fn cinemeta_fetch_meta(
-    http: &reqwest::Client,
-    media_type: &str,
-    imdb_id: &str,
-) -> Option<Value> {
-    let url = format!(
-        "https://v3-cinemeta.strem.io/meta/{}/{}.json",
-        cinemeta_media_type(media_type),
-        imdb_id
-    );
-    let resp = http.get(&url).send().await.ok()?;
-    if !resp.status().is_success() {
-        return None;
-    }
-    let data: Value = resp.json().await.ok()?;
-    Some(data.get("meta")?.clone())
-}
-
-async fn cinemeta_search(http: &reqwest::Client, media_type: &str, title: &str) -> Vec<Value> {
-    let encoded = urlencoding::encode(title);
-    let url = format!(
-        "https://v3-cinemeta.strem.io/catalog/{}/top/search={}.json",
-        cinemeta_media_type(media_type),
-        encoded
-    );
-    let Ok(resp) = http.get(&url).send().await else {
-        return vec![];
-    };
-    let Ok(data): Result<Value, _> = resp.json().await else {
-        return vec![];
-    };
-    let metas = data["metas"].as_array().cloned().unwrap_or_default();
-    metas
-        .into_iter()
-        .map(|m| {
-            let year_val = m["year"]
-                .as_str()
-                .and_then(|y| y.split('-').next()?.parse::<i32>().ok())
-                .or_else(|| m["year"].as_i64().map(|y| y as i32));
-            json!({
-                "provider": "imdb",
-                "external_id": m["id"],
-                "title": m["name"],
-                "year": year_val,
-                "poster": m["poster"],
-            })
-        })
-        .collect()
-}
-
-async fn tmdb_search_ext(
-    http: &reqwest::Client,
-    api_key: &str,
-    media_type: &str,
-    title: &str,
-) -> Vec<Value> {
-    let encoded = urlencoding::encode(title);
-    let tmdb_type = if media_type.contains("movie") {
-        "movie"
-    } else {
-        "tv"
-    };
-    let url = format!(
-        "https://api.themoviedb.org/3/search/{tmdb_type}?api_key={api_key}&query={encoded}"
-    );
-    let Ok(resp) = http.get(&url).send().await else {
-        return vec![];
-    };
-    let Ok(data): Result<Value, _> = resp.json().await else {
-        return vec![];
-    };
-    let results = data["results"].as_array().cloned().unwrap_or_default();
-    results
-        .into_iter()
-        .map(|item| {
-            let title_str = item["title"]
-                .as_str()
-                .or_else(|| item["name"].as_str())
-                .unwrap_or("")
-                .to_string();
-            let year_str = item["release_date"]
-                .as_str()
-                .or_else(|| item["first_air_date"].as_str())
-                .unwrap_or("");
-            let year = if year_str.len() >= 4 {
-                year_str[..4].parse::<i32>().ok()
-            } else {
-                None
-            };
-            let poster = item["poster_path"]
-                .as_str()
-                .map(|p| format!("https://image.tmdb.org/t/p/w500{p}"));
-            let ext_id = item["id"]
-                .as_i64()
-                .map(|id| id.to_string())
-                .unwrap_or_default();
-            json!({
-                "provider": "tmdb",
-                "external_id": ext_id,
-                "title": title_str,
-                "year": year,
-                "poster": poster,
-            })
-        })
-        .collect()
-}
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -288,57 +181,35 @@ pub async fn refresh_metadata(
             .unwrap_or_default();
 
     // Find IMDB ID
-    let imdb_id = ext_rows
+    let _imdb_id = ext_rows
         .iter()
         .find(|(p, _)| p == "imdb")
         .map(|(_, id)| id.clone());
 
-    let refreshed_from = if let Some(ref iid) = imdb_id {
-        if let Some(meta) = cinemeta_fetch_meta(&state.http, &db_media_type, iid).await {
-            let new_title = meta["name"].as_str().map(str::to_string);
-            let new_year = meta["year"]
-                .as_str()
-                .and_then(|y| y.split('-').next()?.parse::<i32>().ok())
-                .or_else(|| meta["year"].as_i64().map(|y| y as i32));
-            let new_desc = meta["description"].as_str().map(str::to_string);
-
-            let _ = sqlx::query(
-                "UPDATE media SET
-                   title = COALESCE($2, title),
-                   year = COALESCE($3, year),
-                   description = COALESCE($4, description),
-                   last_scraped_at = NOW(),
-                   updated_at = NOW()
-                 WHERE id = $1",
-            )
-            .bind(media_id)
-            .bind(&new_title)
-            .bind(new_year)
-            .bind(&new_desc)
-            .execute(&state.pool)
-            .await;
-
-            "imdb"
-        } else {
-            // Still update last_scraped_at
-            let _ = sqlx::query("UPDATE media SET last_scraped_at = NOW() WHERE id = $1")
-                .bind(media_id)
-                .execute(&state.pool)
-                .await;
-            "none"
-        }
+    let meta_type = if db_media_type == "series" {
+        "series"
     } else {
-        let _ = sqlx::query("UPDATE media SET last_scraped_at = NOW() WHERE id = $1")
-            .bind(media_id)
-            .execute(&state.pool)
-            .await;
-        "none"
+        "movie"
     };
+    let (refreshed_providers, message) = crate::scrapers::metadata::refresh_media_from_providers(
+        &state.pool,
+        &state.http,
+        media_id,
+        meta_type,
+        crate::scrapers::metadata::ExternalFetchOpts {
+            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
+            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+            cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
+        },
+        None,
+    )
+    .await;
 
     Json(json!({
         "status": "success",
         "media_id": media_id,
-        "refreshed_from": refreshed_from,
+        "message": message,
+        "refreshed_providers": refreshed_providers,
     }))
     .into_response()
 }
@@ -406,39 +277,98 @@ pub async fn link_external_id(
             .into_response();
     }
 
-    // Upsert
+    let mut external_id = body.external_id.trim().to_string();
+    let provider = body.provider.to_lowercase();
+    if provider == "imdb" && !external_id.starts_with("tt") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "IMDb ID must start with 'tt'"})),
+        )
+            .into_response();
+    }
+    if matches!(
+        provider.as_str(),
+        "tmdb" | "tvdb" | "mal" | "kitsu" | "anilist"
+    ) {
+        if external_id.contains(':') {
+            external_id = external_id
+                .rsplit_once(':')
+                .map(|(_, id)| id.to_string())
+                .unwrap_or(external_id);
+        }
+        if !external_id.chars().all(|c| c.is_ascii_digit()) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": format!("{} ID must be numeric", provider.to_uppercase())})),
+            )
+                .into_response();
+        }
+    }
+
     let result = sqlx::query(
         "INSERT INTO media_external_id (media_id, provider, external_id)
          VALUES ($1, $2, $3)
-         ON CONFLICT (provider, external_id) DO UPDATE SET external_id = EXCLUDED.external_id",
+         ON CONFLICT (provider, external_id) DO UPDATE SET media_id = EXCLUDED.media_id",
     )
     .bind(media_id)
-    .bind(&body.provider)
-    .bind(&body.external_id)
+    .bind(&provider)
+    .bind(&external_id)
     .execute(&state.pool)
     .await;
 
     match result {
-        Ok(_) => (
-            StatusCode::OK,
-            Json(json!({
-                "status": "success",
-                "message": "External ID linked",
-                "media_id": media_id,
-                "provider": body.provider,
-                "external_id": body.external_id,
-            })),
-        )
-            .into_response(),
+        Ok(_) => {}
         Err(e) => {
             tracing::error!("link_external_id: upsert error: {e}");
-            (
+            return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"detail": "Database error"})),
             )
-                .into_response()
+                .into_response();
         }
     }
+
+    let mut metadata_updated = false;
+    if body.fetch_metadata {
+        let meta_type = body.media_type.as_deref().unwrap_or("movie");
+        let is_series = meta_type == "series";
+        if let Some(details) = crate::scrapers::metadata::fetch_by_external_id_with_opts(
+            &state.http,
+            &provider,
+            &external_id,
+            is_series,
+            crate::scrapers::metadata::ExternalFetchOpts {
+                tmdb_api_key: state.config.tmdb_api_key.as_deref(),
+                tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+                cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
+            },
+        )
+        .await
+        {
+            import_helpers::apply_fetched_metadata_to_media(
+                &state.pool,
+                media_id,
+                &details,
+                &provider,
+                &external_id,
+            )
+            .await;
+            metadata_updated = true;
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "status": "success",
+            "message": "External ID linked",
+            "media_id": media_id,
+            "provider": provider,
+            "external_id": external_id,
+            "metadata_updated": metadata_updated,
+        })),
+    )
+        .into_response()
 }
 
 /// POST /api/v1/metadata/{media_id}/link-multiple-external-ids
@@ -635,19 +565,26 @@ pub async fn search_external_metadata(
         }
     };
 
-    let results = match provider {
-        "tmdb" => {
-            let api_key = match state.config.tmdb_api_key.clone() {
-                Some(k) => k,
-                None => return (
-                    StatusCode::PRECONDITION_FAILED,
-                    Json(json!({"code": "tmdb_key_required", "message": "TMDB API key not configured on server."}))
-                ).into_response(),
-            };
-            tmdb_search_ext(&state.http, &api_key, media_type, &title).await
-        }
-        _ => cinemeta_search(&state.http, media_type, &title).await,
-    };
+    if provider == "tmdb" && state.config.tmdb_api_key.is_none() {
+        return (
+            StatusCode::PRECONDITION_FAILED,
+            Json(json!({"code": "tmdb_key_required", "message": "TMDB API key not configured on server."})),
+        )
+            .into_response();
+    }
+
+    let results = crate::scrapers::metadata::search_external_for_provider(
+        &state.http,
+        &state.pool_ro,
+        provider,
+        &title,
+        body["year"].as_i64().map(|y| y as i32),
+        media_type,
+        state.config.tmdb_api_key.as_deref(),
+        state.config.tvdb_api_key.as_deref(),
+        state.config.imdb_cinemeta_fallback_enabled,
+    )
+    .await;
 
     Json(json!({"results": results})).into_response()
 }

@@ -1,13 +1,17 @@
 /// Shared helpers for all content import endpoints.
 ///
-/// Used by: torrent_import, nzb_import, http_import, youtube_import, acestream_import.
+/// Used by: torrent_import, nzb_import, http_import, youtube_import, acestream_import, m3u_import.
+use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 
 use axum::http::StatusCode;
 use chrono::Utc;
 use fred::prelude::KeysInterface;
-use serde_json::json;
+use serde_json::{json, Value};
+use sqlx::PgPool;
 use uuid::Uuid;
+
+use crate::{parser::detect_sports_category, state::AppState};
 
 // ─── Adult content filter ─────────────────────────────────────────────────────
 
@@ -67,11 +71,35 @@ pub struct UserInfo {
     pub uploads_restricted: bool,
     pub role: String,
     pub contribute_anonymously: bool,
+    pub is_active: bool,
+}
+
+/// Python: `should_auto_approve = is_privileged_reviewer or (user.is_active and not resolved_is_anonymous)`.
+pub fn should_auto_approve_import(
+    is_privileged: bool,
+    is_active: bool,
+    is_anonymous: bool,
+) -> bool {
+    is_privileged || (is_active && !is_anonymous)
+}
+
+/// Stream visibility at submit (Python: `contribution_data["is_public"] = should_auto_approve`).
+pub fn stream_is_public_on_submit(auto_approve: bool, requested_public: bool) -> bool {
+    if auto_approve {
+        requested_public
+    } else {
+        false
+    }
+}
+
+/// Message when a private stream is saved while awaiting moderator review.
+pub fn pending_import_message(import_kind: &str) -> String {
+    format!("{import_kind} submitted for review and saved privately for your account.")
 }
 
 pub async fn fetch_user_info(pool: &sqlx::PgPool, user_id: i64) -> Option<UserInfo> {
-    let row: Option<(String, bool, String, bool)> = sqlx::query_as(
-        "SELECT COALESCE(username, 'user'), uploads_restricted, LOWER(role::text), contribute_anonymously FROM users WHERE id = $1",
+    let row: Option<(String, bool, String, bool, bool)> = sqlx::query_as(
+        "SELECT COALESCE(username, 'user'), uploads_restricted, LOWER(role::text), contribute_anonymously, is_active FROM users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(pool)
@@ -79,11 +107,12 @@ pub async fn fetch_user_info(pool: &sqlx::PgPool, user_id: i64) -> Option<UserIn
     .unwrap_or(None);
 
     row.map(
-        |(username, uploads_restricted, role, contribute_anonymously)| UserInfo {
+        |(username, uploads_restricted, role, contribute_anonymously, is_active)| UserInfo {
             username,
             uploads_restricted,
             role,
             contribute_anonymously,
+            is_active,
         },
     )
 }
@@ -203,7 +232,20 @@ pub async fn create_contribution_record(
     Ok(id)
 }
 
-pub async fn award_contribution_points(pool: &sqlx::PgPool, user_id: i64) {
+pub const POINT_ELIGIBLE_IMPORT_TYPES: &[&str] = &[
+    "stream",
+    "torrent",
+    "telegram",
+    "youtube",
+    "nzb",
+    "http",
+    "acestream",
+];
+
+pub async fn award_contribution_points(pool: &sqlx::PgPool, user_id: i64, contribution_type: &str) {
+    if !POINT_ELIGIBLE_IMPORT_TYPES.contains(&contribution_type) {
+        return;
+    }
     let settings: Option<(i64, i64, i64, i64)> = sqlx::query_as(
         "SELECT points_per_stream_edit, contributor_threshold, trusted_threshold, expert_threshold FROM contribution_settings WHERE id='default' LIMIT 1"
     )
@@ -282,4 +324,560 @@ pub async fn notify_pending_contribution(
         "disable_web_page_preview": true,
     });
     http.post(&url).json(&payload).send().await.ok();
+}
+
+// ─── Metadata search / resolve (Python meta_fetcher + get_or_create_metadata parity) ─
+
+/// Map import UI `meta_type` to DB `mediatype` enum text.
+pub fn db_media_type(meta_type: &str) -> &'static str {
+    match meta_type {
+        "series" => "SERIES",
+        "tv" => "TV",
+        "events" => "EVENT",
+        _ => "MOVIE",
+    }
+}
+
+/// Stable synthetic meta id when the user did not pick an external id (Python `http_{hash}` style).
+pub fn synthetic_import_meta_id(prefix: &str, seed: &str) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    seed.hash(&mut hasher);
+    format!("{prefix}_{}", hasher.finish() % 100_000)
+}
+
+/// Look up existing media for analyze `meta_match` (supports `tmdb:123`, `tt…`, etc.).
+pub async fn lookup_import_media_id(pool: &PgPool, meta_id: &str, meta_type: &str) -> Option<i32> {
+    crate::db::get_media_id_by_external_id(pool, meta_id, Some(meta_type))
+        .await
+        .ok()
+        .flatten()
+}
+
+/// DB lookup by external id, then title/year fallbacks (torrent analyze `meta_match`).
+pub async fn lookup_import_media_id_with_fallback(
+    pool: &PgPool,
+    meta_id: &str,
+    meta_type: &str,
+    parsed_title: &str,
+    parsed_year: Option<i32>,
+) -> Option<i64> {
+    if let Some(id) = lookup_import_media_id(pool, meta_id, meta_type).await {
+        return Some(id as i64);
+    }
+
+    let type_upper = db_media_type(meta_type);
+    if let Some(year) = parsed_year {
+        let row: Option<(i32,)> = sqlx::query_as(
+            "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND year = $2 AND UPPER(type::text) = $3 LIMIT 1",
+        )
+        .bind(parsed_title)
+        .bind(year)
+        .bind(type_upper)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+        if let Some((id,)) = row {
+            return Some(id as i64);
+        }
+    }
+
+    let pattern = format!("%{parsed_title}%");
+    let row: Option<(i32,)> = sqlx::query_as(
+        "SELECT id FROM media WHERE LOWER(title) LIKE LOWER($1) AND UPPER(type::text) = $2 LIMIT 1",
+    )
+    .bind(&pattern)
+    .bind(type_upper)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    row.map(|(id,)| id as i64)
+}
+
+/// External metadata search for import analyze UIs (Python `search_multiple_results`).
+pub async fn search_analyze_matches(
+    state: &AppState,
+    title: &str,
+    year: Option<i32>,
+    meta_type: &str,
+) -> Vec<serde_json::Value> {
+    crate::scrapers::metadata::search_import_matches(
+        &state.http,
+        &state.pool,
+        title,
+        year,
+        meta_type,
+        state.config.tmdb_api_key.as_deref(),
+        state.config.tvdb_api_key.as_deref(),
+        state.config.imdb_cinemeta_fallback_enabled,
+    )
+    .await
+}
+
+/// Fetch/create media for import submission (Python `fetch_and_create_media_from_external`).
+pub async fn resolve_media_for_import(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    tmdb_api_key: Option<&str>,
+    tvdb_api_key: Option<&str>,
+    meta_id: &str,
+    meta_type: &str,
+    overrides: crate::scrapers::media_resolve::ImportMediaOverrides<'_>,
+    prefetch: Option<&crate::scrapers::media_resolve::ImportMetadataCache>,
+) -> Option<i32> {
+    crate::scrapers::media_resolve::ensure_media_for_import(
+        pool,
+        http,
+        meta_id,
+        meta_type,
+        tmdb_api_key,
+        tvdb_api_key,
+        overrides,
+        prefetch,
+    )
+    .await
+}
+
+/// Prefetch provider metadata for torrent import (primary + per-file ids).
+pub async fn prefetch_torrent_import_metadata(
+    http: &reqwest::Client,
+    tmdb_api_key: Option<&str>,
+    tvdb_api_key: Option<&str>,
+    meta_type: &str,
+    meta_id: &str,
+    primary_title: &str,
+    default_sports_category: Option<&str>,
+    file_rows: &[serde_json::Value],
+) -> crate::scrapers::media_resolve::ImportMetadataCache {
+    crate::scrapers::media_resolve::prefetch_import_metadata(
+        http,
+        tmdb_api_key,
+        tvdb_api_key,
+        meta_id,
+        meta_type,
+        primary_title,
+        default_sports_category,
+        file_rows,
+    )
+    .await
+}
+
+/// Link stream ↔ media and bump `total_streams` when the link is new.
+pub async fn link_stream_to_media(
+    pool: &PgPool,
+    stream_id: i32,
+    media_id: i32,
+) -> Result<(), sqlx::Error> {
+    crate::scrapers::media_resolve::link_stream_to_media(pool, stream_id, media_id).await
+}
+
+/// Extract a deduplicated list of non-empty strings from a contribution JSON field.
+pub fn contribution_string_list(data: &serde_json::Value, key: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let Some(arr) = data.get(key).and_then(|v| v.as_array()) else {
+        return out;
+    };
+    for item in arr {
+        if let Some(s) = item.as_str() {
+            let t = s.trim();
+            if !t.is_empty() && !out.iter().any(|x| x == t) {
+                out.push(t.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Link audio format names to a stream.
+pub async fn link_stream_audio_formats(
+    pool: &PgPool,
+    stream_id: i32,
+    formats: &[String],
+) -> Result<(), sqlx::Error> {
+    for name in formats {
+        if name.is_empty() {
+            continue;
+        }
+        let fmt_id: Option<i32> = sqlx::query_scalar(
+            "INSERT INTO audio_format(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
+        )
+        .bind(name)
+        .fetch_optional(pool)
+        .await?;
+        if let Some(fid) = fmt_id {
+            sqlx::query(
+                "INSERT INTO stream_audio_link(stream_id, audio_format_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
+            )
+            .bind(stream_id)
+            .bind(fid)
+            .execute(pool)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Link HDR format names to a stream.
+pub async fn link_stream_hdr_formats(
+    pool: &PgPool,
+    stream_id: i32,
+    formats: &[String],
+) -> Result<(), sqlx::Error> {
+    for name in formats {
+        if name.is_empty() {
+            continue;
+        }
+        let hdr_id: Option<i32> = sqlx::query_scalar(
+            "INSERT INTO hdr_format(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
+        )
+        .bind(name)
+        .fetch_optional(pool)
+        .await?;
+        if let Some(hdr_id) = hdr_id {
+            sqlx::query(
+                "INSERT INTO stream_hdr_link(stream_id, hdr_format_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
+            )
+            .bind(stream_id)
+            .bind(hdr_id)
+            .execute(pool)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Link audio channel names to a stream.
+pub async fn link_stream_audio_channels(
+    pool: &PgPool,
+    stream_id: i32,
+    channels: &[String],
+) -> Result<(), sqlx::Error> {
+    for name in channels {
+        if name.is_empty() {
+            continue;
+        }
+        let ch_id: Option<i32> = sqlx::query_scalar(
+            "INSERT INTO audio_channel(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
+        )
+        .bind(name)
+        .fetch_optional(pool)
+        .await?;
+        if let Some(ch_id) = ch_id {
+            sqlx::query(
+                "INSERT INTO stream_channel_link(stream_id, channel_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
+            )
+            .bind(stream_id)
+            .bind(ch_id)
+            .execute(pool)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Link audio languages to a stream (Python `StreamLanguageLink`).
+pub async fn link_stream_languages(
+    pool: &PgPool,
+    stream_id: i32,
+    languages: &[String],
+) -> Result<(), sqlx::Error> {
+    for lang in languages {
+        if lang.is_empty() {
+            continue;
+        }
+        let lang_id: Option<i32> = sqlx::query_scalar(
+            "INSERT INTO language(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
+        )
+        .bind(lang)
+        .fetch_optional(pool)
+        .await?;
+        if let Some(lid) = lang_id {
+            sqlx::query(
+                "INSERT INTO stream_language_link(stream_id, language_id, language_type) VALUES($1, $2, 'AUDIO') ON CONFLICT DO NOTHING",
+            )
+            .bind(stream_id)
+            .bind(lid)
+            .execute(pool)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Link announce trackers to a torrent (`torrent_stream.id`, not `stream.id`).
+pub async fn link_torrent_trackers(
+    pool: &PgPool,
+    stream_id: i32,
+    tracker_urls: &[String],
+) -> Result<(), sqlx::Error> {
+    let torrent_id: Option<i32> =
+        sqlx::query_scalar("SELECT id FROM torrent_stream WHERE stream_id = $1 LIMIT 1")
+            .bind(stream_id)
+            .fetch_optional(pool)
+            .await?;
+    let Some(torrent_id) = torrent_id else {
+        return Ok(());
+    };
+    for url in tracker_urls {
+        if url.is_empty() {
+            continue;
+        }
+        let tracker_id: Option<i32> = sqlx::query_scalar(
+            "INSERT INTO tracker(url) VALUES($1) ON CONFLICT(url) DO UPDATE SET url = EXCLUDED.url RETURNING id",
+        )
+        .bind(url)
+        .fetch_optional(pool)
+        .await?;
+        if let Some(tid) = tracker_id {
+            sqlx::query(
+                "INSERT INTO torrent_tracker_link(torrent_id, tracker_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
+            )
+            .bind(torrent_id)
+            .bind(tid)
+            .execute(pool)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Attach catalog names to media (Python import catalog linking).
+pub async fn link_media_catalogs(
+    pool: &PgPool,
+    media_id: i32,
+    catalogs: &[String],
+) -> Result<(), sqlx::Error> {
+    for cat_name in catalogs {
+        if cat_name.is_empty() {
+            continue;
+        }
+        let cat_id: Option<i32> = sqlx::query_scalar(
+            "INSERT INTO catalog(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
+        )
+        .bind(cat_name)
+        .fetch_optional(pool)
+        .await?;
+        if let Some(cid) = cat_id {
+            sqlx::query(
+                "INSERT INTO media_catalog_link(media_id, catalog_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
+            )
+            .bind(media_id)
+            .bind(cid)
+            .execute(pool)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Apply fetched provider metadata to an existing media row (link-external parity).
+pub async fn apply_fetched_metadata_to_media(
+    pool: &PgPool,
+    media_id: i32,
+    details: &crate::scrapers::metadata::TmdbDetails,
+    provider: &str,
+    external_id: &str,
+) {
+    let _ = sqlx::query(
+        "UPDATE media SET title = $2, year = COALESCE($3, year), description = COALESCE($4, description), updated_at = NOW() WHERE id = $1",
+    )
+    .bind(media_id)
+    .bind(&details.title)
+    .bind(details.year)
+    .bind(&details.description)
+    .execute(pool)
+    .await;
+
+    let _ = sqlx::query(
+        "INSERT INTO media_external_id (media_id, provider, external_id) VALUES ($1, $2, $3) ON CONFLICT (provider, external_id) DO NOTHING",
+    )
+    .bind(media_id)
+    .bind(provider)
+    .bind(external_id)
+    .execute(pool)
+    .await;
+
+    if let Some(ref imdb) = details.imdb_id {
+        if provider != "imdb" {
+            let _ = sqlx::query(
+                "INSERT INTO media_external_id (media_id, provider, external_id) VALUES ($1, 'imdb', $2) ON CONFLICT (provider, external_id) DO NOTHING",
+            )
+            .bind(media_id)
+            .bind(imdb)
+            .execute(pool)
+            .await;
+        }
+    }
+
+    if let Some(ref poster) = details.poster_url {
+        let _ = sqlx::query(
+            "INSERT INTO media_image (media_id, provider_id, image_type, url, is_primary, display_order) \
+             VALUES ($1, 1, 'poster', $2, true, 0) ON CONFLICT (media_id, provider_id, image_type, url) DO NOTHING",
+        )
+        .bind(media_id)
+        .bind(poster)
+        .execute(pool)
+        .await;
+    }
+}
+
+/// Insert per-file rows and link each file to resolved media (Python `process_torrent_import` file loop).
+pub async fn insert_torrent_import_files(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    tmdb_api_key: Option<&str>,
+    tvdb_api_key: Option<&str>,
+    stream_id: i32,
+    default_meta_type: &str,
+    primary_media_id: Option<i32>,
+    files: &[Value],
+    default_sports_category: Option<&str>,
+    prefetch: &crate::scrapers::media_resolve::ImportMetadataCache,
+) -> Result<(), String> {
+    for (idx, file_info) in files.iter().enumerate() {
+        let file_index = file_info
+            .get("index")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(idx as i64) as i32;
+        let filename = file_info
+            .get("filename")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if is_adult_content(filename) {
+            return Err("Adult content is not allowed.".to_string());
+        }
+        let size = file_info.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
+
+        let file_id: Option<i32> = sqlx::query_scalar(
+            r#"INSERT INTO stream_file(stream_id, file_index, filename, size, file_type, is_archive)
+               VALUES($1, $2, $3, $4, 'VIDEO', false)
+               ON CONFLICT (stream_id, file_index) DO UPDATE SET filename = EXCLUDED.filename
+               RETURNING id"#,
+        )
+        .bind(stream_id)
+        .bind(file_index)
+        .bind(filename)
+        .bind(size)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let Some(file_id) = file_id else {
+            continue;
+        };
+
+        let file_meta_id = file_info.get("meta_id").and_then(|v| v.as_str());
+        let file_meta_type_owned = {
+            let raw = file_info
+                .get("meta_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or(default_meta_type);
+            if raw == "sports" || default_meta_type == "sports" {
+                let cat = file_info
+                    .get("sports_category")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| detect_sports_category(filename))
+                    .or(default_sports_category)
+                    .unwrap_or("other_sports");
+                crate::scrapers::media_resolve::resolve_file_fetch_meta_type("sports", Some(cat))
+                    .to_string()
+            } else {
+                raw.to_string()
+            }
+        };
+        let file_meta_type = file_meta_type_owned.as_str();
+        let file_title = file_info
+            .get("meta_title")
+            .or_else(|| file_info.get("title"))
+            .or_else(|| file_info.get("episode_title"))
+            .and_then(|v| v.as_str())
+            .unwrap_or(filename);
+
+        let target_media = if let Some(mid) = file_meta_id.filter(|s| !s.is_empty()) {
+            let effective = crate::scrapers::media_resolve::normalize_contributor_meta_id(mid);
+            resolve_media_for_import(
+                pool,
+                http,
+                tmdb_api_key,
+                tvdb_api_key,
+                &effective,
+                file_meta_type,
+                crate::scrapers::media_resolve::ImportMediaOverrides {
+                    title: Some(file_title),
+                    poster: None,
+                    background: None,
+                    release_date: None,
+                    year: file_info
+                        .get("year")
+                        .and_then(|v| v.as_i64())
+                        .map(|y| y as i32),
+                },
+                Some(prefetch),
+            )
+            .await
+        } else {
+            primary_media_id
+        };
+
+        let Some(target_media) = target_media else {
+            continue;
+        };
+
+        let mut season = file_info
+            .get("season_number")
+            .and_then(|v| v.as_i64())
+            .map(|n| n as i32);
+        let mut episode = file_info
+            .get("episode_number")
+            .and_then(|v| v.as_i64())
+            .map(|n| n as i32);
+        if default_meta_type == "series" {
+            if season.is_none() {
+                season = Some(1);
+            }
+            if episode.is_none() {
+                episode = Some(file_index + 1);
+            }
+        }
+
+        if let (Some(s), Some(e)) = (season, episode) {
+            sqlx::query(
+                r#"INSERT INTO file_media_link(file_id, media_id, season_number, episode_number)
+                   VALUES($1, $2, $3, $4)
+                   ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING"#,
+            )
+            .bind(file_id)
+            .bind(target_media)
+            .bind(s)
+            .bind(e)
+            .execute(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+
+        if target_media != primary_media_id.unwrap_or(-1) {
+            let _ = link_stream_to_media(pool, stream_id, target_media).await;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_approve_requires_active_non_anonymous_or_privileged() {
+        assert!(should_auto_approve_import(true, false, true));
+        assert!(should_auto_approve_import(false, true, false));
+        assert!(!should_auto_approve_import(false, false, false));
+        assert!(!should_auto_approve_import(false, true, true));
+        assert!(!should_auto_approve_import(false, false, true));
+    }
+
+    #[test]
+    fn point_eligible_types_match_python() {
+        assert!(POINT_ELIGIBLE_IMPORT_TYPES.contains(&"torrent"));
+        assert!(!POINT_ELIGIBLE_IMPORT_TYPES.contains(&"metadata"));
+    }
 }

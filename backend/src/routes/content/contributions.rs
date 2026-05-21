@@ -39,6 +39,13 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
+use super::{
+    contribution_processors::{
+        self, append_review_note, ImportProcessError, PROCESSABLE_IMPORT_TYPES,
+    },
+    import_helpers::award_contribution_points,
+};
+
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
 fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
@@ -1144,18 +1151,89 @@ pub async fn review_contribution(
         }
     };
 
+    let mut final_notes = body.review_notes.clone();
+    let mut updated_data = row.data.clone();
+
+    if new_status == "APPROVED"
+        && PROCESSABLE_IMPORT_TYPES.contains(&row.contribution_type.as_str())
+    {
+        let username: String = if let Some(uid) = row.user_id {
+            sqlx::query_scalar("SELECT COALESCE(username, 'user') FROM users WHERE id = $1")
+                .bind(uid)
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None)
+                .unwrap_or_else(|| "user".to_string())
+        } else {
+            "Anonymous".to_string()
+        };
+
+        let mut data = row.data.clone();
+        match contribution_processors::process_contribution_import(
+            &state,
+            &row.contribution_type,
+            &mut data,
+            row.user_id.map(|id| id as i64),
+            &username,
+        )
+        .await
+        {
+            Ok(result) => {
+                if result.status == "success" {
+                    if let Some(sid) = result.stream_id {
+                        final_notes = Some(append_review_note(
+                            final_notes.as_deref(),
+                            &format!("Import successful: stream_id={sid}"),
+                        ));
+                    }
+                } else if result.status == "exists" {
+                    final_notes = Some(append_review_note(
+                        final_notes.as_deref(),
+                        "Content already exists in database",
+                    ));
+                }
+                updated_data = data;
+            }
+            Err(ImportProcessError::AdultContent) => {
+                return (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(json!({"detail": "Adult content is not allowed."})),
+                )
+                    .into_response();
+            }
+            Err(e) => {
+                tracing::error!(
+                    "review_contribution import processing failed for {}: {}",
+                    contribution_id,
+                    e.message()
+                );
+                final_notes = Some(append_review_note(
+                    final_notes.as_deref(),
+                    &format!("Import processing failed: {}", e.message()),
+                ));
+            }
+        }
+    }
+
     if let Err(e) = sqlx::query(
-        "UPDATE contributions SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3 WHERE id = $4",
+        "UPDATE contributions SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3, data = $4 WHERE id = $5",
     )
     .bind(new_status)
     .bind(user_id.to_string())
-    .bind(&body.review_notes)
+    .bind(&final_notes)
+    .bind(&updated_data)
     .bind(&contribution_id)
     .execute(&state.pool)
     .await
     {
         tracing::error!("review_contribution: {e}");
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    if new_status == "APPROVED" {
+        if let Some(uid) = row.user_id {
+            award_contribution_points(&state.pool, uid as i64, &row.contribution_type).await;
+        }
     }
 
     let updated = match fetch_contrib_row(&state.pool, &contribution_id).await {
@@ -1240,6 +1318,172 @@ pub async fn flag_contribution_for_admin_review(
     Json(contrib_row_to_json(&state.pool, &updated).await).into_response()
 }
 
+fn extract_stream_id_from_review_notes(review_notes: Option<&str>) -> Option<i32> {
+    let notes = review_notes?;
+    let caps = regex::Regex::new(r"stream_id=(\d+)")
+        .ok()?
+        .captures(notes)?;
+    caps.get(1)?.as_str().parse().ok()
+}
+
+/// Resolve the stream created by an approved import contribution (Python `_resolve_stream_for_contribution`).
+async fn resolve_stream_for_contribution(pool: &sqlx::PgPool, row: &ContribRow) -> Option<i32> {
+    if let Some(sid) = extract_stream_id_from_review_notes(row.review_notes.as_deref()) {
+        let exists: Option<i32> = sqlx::query_scalar("SELECT id FROM stream WHERE id = $1")
+            .bind(sid)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+        if exists.is_some() {
+            return Some(sid);
+        }
+    }
+
+    let data = &row.data;
+    let ctype = row.contribution_type.to_lowercase();
+
+    match ctype.as_str() {
+        "torrent" => {
+            let info_hash = data
+                .get("info_hash")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_lowercase();
+            if info_hash.is_empty() {
+                return None;
+            }
+            sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1 LIMIT 1")
+                .bind(&info_hash)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+        }
+        "nzb" => {
+            let nzb_guid = data
+                .get("nzb_guid")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            if nzb_guid.is_empty() {
+                return None;
+            }
+            sqlx::query_scalar("SELECT stream_id FROM usenet_stream WHERE nzb_guid = $1 LIMIT 1")
+                .bind(nzb_guid)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+        }
+        "http" => {
+            let url = data
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            if url.is_empty() {
+                return None;
+            }
+            sqlx::query_scalar(
+                "SELECT stream_id FROM http_stream WHERE url = $1 ORDER BY stream_id DESC LIMIT 1",
+            )
+            .bind(url)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+        }
+        "youtube" => {
+            let video_id = data
+                .get("video_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            if video_id.is_empty() {
+                return None;
+            }
+            sqlx::query_scalar("SELECT stream_id FROM youtube_stream WHERE video_id = $1 LIMIT 1")
+                .bind(video_id)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+        }
+        "acestream" => {
+            let content_id = data
+                .get("content_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_lowercase();
+            if !content_id.is_empty() {
+                if let Some(sid) = sqlx::query_scalar(
+                    "SELECT stream_id FROM acestream_stream WHERE content_id = $1 LIMIT 1",
+                )
+                .bind(&content_id)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+                {
+                    return Some(sid);
+                }
+            }
+            let info_hash = data
+                .get("info_hash")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_lowercase();
+            if info_hash.is_empty() {
+                return None;
+            }
+            sqlx::query_scalar(
+                "SELECT stream_id FROM acestream_stream WHERE info_hash = $1 LIMIT 1",
+            )
+            .bind(&info_hash)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+        }
+        "telegram" => {
+            let file_unique_id = data
+                .get("file_unique_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            if !file_unique_id.is_empty() {
+                return sqlx::query_scalar(
+                    "SELECT stream_id FROM telegram_stream WHERE file_unique_id = $1 LIMIT 1",
+                )
+                .bind(file_unique_id)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten();
+            }
+            let file_id = data
+                .get("file_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            if file_id.is_empty() {
+                return None;
+            }
+            sqlx::query_scalar("SELECT stream_id FROM telegram_stream WHERE file_id = $1 LIMIT 1")
+                .bind(file_id)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+        }
+        _ => None,
+    }
+}
+
 /// PATCH /api/v1/contributions/{contribution_id}/reject-approved  (moderator)
 pub async fn reject_approved_contribution(
     headers: HeaderMap,
@@ -1288,12 +1532,28 @@ pub async fn reject_approved_contribution(
             .into_response();
     }
 
-    let rollback_note = "Moderation rejection rollback: no linked stream could be resolved.";
+    let stream_id = resolve_stream_for_contribution(&state.pool, &row).await;
+    let rollback_note = if let Some(sid) = stream_id {
+        if let Err(e) =
+            sqlx::query("UPDATE stream SET is_public = false, is_active = false WHERE id = $1")
+                .bind(sid)
+                .execute(&state.pool)
+                .await
+        {
+            tracing::error!("reject_approved stream rollback failed for {sid}: {e}");
+        }
+        format!(
+            "Moderation rejection rollback applied: stream_id={sid}, is_public=False, is_active=False."
+        )
+    } else {
+        "Moderation rejection rollback: no linked stream could be resolved.".to_string()
+    };
+
     let mut notes = row.review_notes.clone().unwrap_or_default();
     if !notes.is_empty() {
         notes.push('\n');
     }
-    notes.push_str(rollback_note);
+    notes.push_str(&rollback_note);
     if let Some(ref extra) = body.review_notes {
         let trimmed = extra.trim();
         if !trimmed.is_empty() {
@@ -1410,35 +1670,30 @@ pub async fn bulk_review_contributions(
         }
     };
 
-    let (fetch_sql, rows): (String, Vec<(String, serde_json::Value)>) = if let Some(ref ct) =
+    let rows: Vec<(String, String, Option<i32>, serde_json::Value)> = if let Some(ref ct) =
         body.contribution_type
     {
-        let sql = String::from(
-                "SELECT id, data::jsonb FROM contributions WHERE status = 'PENDING' AND contribution_type = $1 ORDER BY created_at ASC",
-            );
-        let r = sqlx::query_as::<_, (String, serde_json::Value)>(&sql)
-            .bind(ct)
-            .fetch_all(&state.pool)
-            .await
-            .unwrap_or_default();
-        (sql, r)
+        sqlx::query_as(
+            "SELECT id, contribution_type, user_id, data::jsonb FROM contributions WHERE status = 'PENDING' AND contribution_type = $1 ORDER BY created_at ASC",
+        )
+        .bind(ct)
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default()
     } else {
-        let sql = String::from(
-                "SELECT id, data::jsonb FROM contributions WHERE status = 'PENDING' ORDER BY created_at ASC",
-            );
-        let r = sqlx::query_as::<_, (String, serde_json::Value)>(&sql)
-            .fetch_all(&state.pool)
-            .await
-            .unwrap_or_default();
-        (sql, r)
+        sqlx::query_as(
+            "SELECT id, contribution_type, user_id, data::jsonb FROM contributions WHERE status = 'PENDING' ORDER BY created_at ASC",
+        )
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default()
     };
-    let _ = fetch_sql;
 
     let mut approved = 0i64;
     let mut rejected = 0i64;
     let mut skipped = 0i64;
 
-    for (id, data) in rows {
+    for (id, contribution_type, contrib_user_id, data) in rows {
         if let Some(ref allowed_ids) = body.contribution_ids {
             if !allowed_ids.contains(&id) {
                 skipped += 1;
@@ -1446,7 +1701,6 @@ pub async fn bulk_review_contributions(
             }
         }
 
-        // When approving, skip adult content
         if new_status == "APPROVED" {
             let cache = state
                 .keyword_filters
@@ -1460,12 +1714,69 @@ pub async fn bulk_review_contributions(
             }
         }
 
+        let mut final_notes = body.review_notes.clone();
+        let mut updated_data = data.clone();
+
+        if new_status == "APPROVED"
+            && PROCESSABLE_IMPORT_TYPES.contains(&contribution_type.as_str())
+        {
+            let username: String = if let Some(uid) = contrib_user_id {
+                sqlx::query_scalar("SELECT COALESCE(username, 'user') FROM users WHERE id = $1")
+                    .bind(uid)
+                    .fetch_optional(&state.pool)
+                    .await
+                    .unwrap_or(None)
+                    .unwrap_or_else(|| "user".to_string())
+            } else {
+                "Anonymous".to_string()
+            };
+
+            let mut proc_data = data.clone();
+            match contribution_processors::process_contribution_import(
+                &state,
+                &contribution_type,
+                &mut proc_data,
+                contrib_user_id.map(|id| id as i64),
+                &username,
+            )
+            .await
+            {
+                Ok(result) => {
+                    if result.status == "success" {
+                        if let Some(sid) = result.stream_id {
+                            final_notes = Some(append_review_note(
+                                final_notes.as_deref(),
+                                &format!("Import successful: stream_id={sid}"),
+                            ));
+                        }
+                    } else if result.status == "exists" {
+                        final_notes = Some(append_review_note(
+                            final_notes.as_deref(),
+                            "Content already exists in database",
+                        ));
+                    }
+                    updated_data = proc_data;
+                }
+                Err(ImportProcessError::AdultContent) => {
+                    skipped += 1;
+                    continue;
+                }
+                Err(e) => {
+                    final_notes = Some(append_review_note(
+                        final_notes.as_deref(),
+                        &format!("Import processing failed: {}", e.message()),
+                    ));
+                }
+            }
+        }
+
         let result = sqlx::query(
-            "UPDATE contributions SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3 WHERE id = $4 AND status = 'PENDING'",
+            "UPDATE contributions SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3, data = $4 WHERE id = $5 AND status = 'PENDING'",
         )
         .bind(new_status)
         .bind(user_id.to_string())
-        .bind(&body.review_notes)
+        .bind(&final_notes)
+        .bind(&updated_data)
         .bind(&id)
         .execute(&state.pool)
         .await;
@@ -1474,6 +1785,10 @@ pub async fn bulk_review_contributions(
             Ok(r) if r.rows_affected() > 0 => {
                 if new_status == "APPROVED" {
                     approved += 1;
+                    if let Some(uid) = contrib_user_id {
+                        award_contribution_points(&state.pool, uid as i64, &contribution_type)
+                            .await;
+                    }
                 } else {
                     rejected += 1;
                 }

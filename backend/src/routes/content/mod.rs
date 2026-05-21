@@ -1,11 +1,13 @@
 pub mod acestream_import;
 pub mod catalog_browse;
+pub mod contribution_processors;
 pub mod contributions;
 pub mod discover;
 pub mod episode_suggestions;
 pub mod http_import;
 pub mod image_upload;
 pub mod import_helpers;
+pub mod iptv_import;
 pub mod iptv_sources;
 pub mod m3u_import;
 pub mod metadata_ops;

@@ -72,6 +72,39 @@ pub struct ImportXtreamRequest {
     pub import_live: Option<bool>,
     pub import_vod: Option<bool>,
     pub import_series: Option<bool>,
+    pub is_public: Option<bool>,
+    #[serde(default)]
+    pub save_source: bool,
+    pub live_category_ids: Option<Vec<String>>,
+    pub vod_category_ids: Option<Vec<String>>,
+    pub series_category_ids: Option<Vec<String>>,
+}
+
+fn filter_xtream_by_categories(
+    items: &[serde_json::Value],
+    allowed: Option<&[String]>,
+) -> Vec<serde_json::Value> {
+    let Some(ids) = allowed else {
+        return items.to_vec();
+    };
+    if ids.is_empty() {
+        return items.to_vec();
+    }
+    items
+        .iter()
+        .filter(|s| {
+            let cat_id = s.get("category_id").and_then(|v| {
+                v.as_str()
+                    .map(str::to_string)
+                    .or_else(|| v.as_i64().map(|n| n.to_string()))
+            });
+            cat_id
+                .as_ref()
+                .map(|id| ids.iter().any(|a| a == id))
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect()
 }
 
 /// Cached Xtream data stored in Redis.
@@ -115,7 +148,7 @@ async fn fetch_xtream_json(
     }
 }
 
-use crate::routes::content::m3u_import::import_tv_channel;
+use crate::routes::content::iptv_import::{self, IptvImportCtx};
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -275,7 +308,7 @@ pub async fn import_xtream(
     State(state): State<Arc<AppState>>,
     req: Request,
 ) -> Response {
-    let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
             return (
@@ -285,6 +318,14 @@ pub async fn import_xtream(
                 .into_response();
         }
     };
+
+    if !state.config.enable_iptv_import {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "IPTV import feature is disabled on this server."})),
+        )
+            .into_response();
+    }
 
     // Parse body
     let body_bytes = match axum::body::to_bytes(req.into_body(), 1024 * 1024).await {
@@ -337,159 +378,226 @@ pub async fn import_xtream(
         .unwrap_or("Xtream Import")
         .to_string();
     let import_live = req_body.import_live.unwrap_or(true);
+    let import_vod = req_body.import_vod.unwrap_or(true);
+    let import_series = req_body.import_series.unwrap_or(true);
 
-    if !import_live {
+    let mut is_public = req_body.is_public.unwrap_or(false);
+    if !state.config.allow_public_iptv_sharing {
+        is_public = false;
+    }
+
+    let live_streams =
+        filter_xtream_by_categories(&cached.live_streams, req_body.live_category_ids.as_deref());
+    let vod_streams =
+        filter_xtream_by_categories(&cached.vod_streams, req_body.vod_category_ids.as_deref());
+    let series_list =
+        filter_xtream_by_categories(&cached.series, req_body.series_category_ids.as_deref());
+
+    let total_estimate = (if import_live { live_streams.len() } else { 0 })
+        + (if import_vod { vod_streams.len() } else { 0 })
+        + (if import_series { series_list.len() } else { 0 });
+
+    if total_estimate == 0 {
         return Json(json!({
             "status": "success",
-            "imported": 0,
-            "skipped": 0,
-            "message": "Nothing to import (import_live=false)",
+            "stats": iptv_import::IptvImportStats::default(),
+            "message": "Nothing to import (all import flags disabled)",
         }))
         .into_response();
     }
 
-    let live_streams = cached.live_streams;
-    let total = live_streams.len();
+    let ctx = IptvImportCtx::from_state(&state);
 
-    // For >100 items, background processing
-    if total > 100 {
+    if total_estimate > 100 {
         let job_id = Uuid::new_v4().to_string();
         let job_key = format!("import_job:{job_id}");
-        let job_status = json!({
-            "status": "processing",
-            "progress": 0,
-            "total": total,
-        });
-        let _ = state
-            .redis
-            .set::<(), _, _>(
+        iptv_import::update_import_job_full(
+            &state.redis,
+            &job_key,
+            "queued",
+            0,
+            total_estimate,
+            &iptv_import::IptvImportStats::default(),
+            Some(user_id),
+            Some("xtream"),
+            None,
+        )
+        .await;
+
+        let pool = state.pool.clone();
+        let http = state.http.clone();
+        let redis = state.redis.clone();
+        let tmdb = state.config.tmdb_api_key.clone();
+        let tvdb = state.config.tvdb_api_key.clone();
+        let cinemeta = state.config.imdb_cinemeta_fallback_enabled;
+        let secret_key = state.config.secret_key;
+        let server = cached.server_url.clone();
+        let user_c = cached.username.clone();
+        let pass = cached.password.clone();
+        let live = live_streams.clone();
+        let vod = vod_streams.clone();
+        let series = series_list.clone();
+        let label = source_name.clone();
+        let save_source = req_body.save_source;
+        let live_cat_ids = req_body.live_category_ids.clone();
+        let vod_cat_ids = req_body.vod_category_ids.clone();
+        let series_cat_ids = req_body.series_category_ids.clone();
+
+        tokio::spawn(async move {
+            iptv_import::update_import_job_full(
+                &redis,
                 &job_key,
-                job_status.to_string(),
-                Some(Expiration::EX(86400)),
+                "processing",
+                0,
+                total_estimate,
+                &iptv_import::IptvImportStats::default(),
+                Some(user_id),
+                Some("xtream"),
                 None,
-                false,
             )
             .await;
 
-        let pool = state.pool.clone();
-        let redis = state.redis.clone();
-        let server_url = cached.server_url.clone();
-        let username = cached.username.clone();
-        let password = cached.password.clone();
+            let ctx_bg = iptv_import::IptvImportCtx {
+                pool: &pool,
+                http: &http,
+                tmdb_api_key: tmdb.as_deref(),
+                tvdb_api_key: tvdb.as_deref(),
+                cinemeta_enabled: cinemeta,
+            };
+            let stats = iptv_import::run_xtream_import_batch(
+                &ctx_bg,
+                &server,
+                &user_c,
+                &pass,
+                &label,
+                user_id,
+                is_public,
+                import_live,
+                import_vod,
+                import_series,
+                &live,
+                &vod,
+                &series,
+            )
+            .await;
 
-        tokio::spawn(async move {
-            let mut imported = 0usize;
-            let mut skipped = 0usize;
-            for (i, stream) in live_streams.iter().enumerate() {
-                let name = stream
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown");
-                let stream_id = stream
-                    .get("stream_id")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0);
-                let logo = stream
-                    .get("stream_icon")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty());
-                let stream_url = format!(
-                    "{}/live/{}/{}/{}.m3u8",
-                    server_url, username, password, stream_id
-                );
-
-                if import_tv_channel(&pool, name, &stream_url, logo, &source_name, None).await {
-                    imported += 1;
-                } else {
-                    skipped += 1;
-                }
-
-                if (i + 1) % 10 == 0 {
-                    let progress = json!({
-                        "status": "processing",
-                        "progress": i + 1,
-                        "total": live_streams.len(),
-                    });
-                    let _ = redis
-                        .set::<(), _, _>(
-                            &job_key,
-                            progress.to_string(),
-                            Some(Expiration::EX(86400)),
-                            None,
-                            false,
-                        )
-                        .await;
+            let mut source_id: Option<i32> = None;
+            if save_source {
+                let creds = serde_json::json!({
+                    "username": user_c,
+                    "password": pass,
+                });
+                if let Some(enc) = crate::crypto::profile::encrypt_secrets(&creds, &secret_key) {
+                    source_id = iptv_import::save_xtream_iptv_source(
+                        &pool,
+                        user_id,
+                        &label,
+                        &server,
+                        &enc,
+                        is_public,
+                        import_live,
+                        import_vod,
+                        import_series,
+                        live_cat_ids.as_deref(),
+                        vod_cat_ids.as_deref(),
+                        series_cat_ids.as_deref(),
+                        &stats,
+                    )
+                    .await
+                    .ok();
                 }
             }
-            let done = json!({
+
+            let mut job_body = serde_json::json!({
                 "status": "completed",
-                "progress": live_streams.len(),
-                "total": live_streams.len(),
-                "stats": { "imported": imported, "skipped": skipped },
+                "progress": total_estimate,
+                "total": total_estimate,
+                "stats": stats,
+                "user_id": user_id,
+                "source_type": "xtream",
             });
+            if let Some(sid) = source_id {
+                job_body["source_id"] = serde_json::json!(sid);
+                job_body["source_saved"] = serde_json::json!(true);
+            }
             let _ = redis
                 .set::<(), _, _>(
                     &job_key,
-                    done.to_string(),
-                    Some(Expiration::EX(86400)),
+                    job_body.to_string(),
+                    Some(fred::types::Expiration::EX(86400)),
                     None,
                     false,
                 )
                 .await;
         });
 
+        let _: Result<(), _> = state.redis.del(&req_body.redis_key).await;
+
         return (
             StatusCode::ACCEPTED,
             Json(json!({
                 "status": "processing",
                 "job_id": job_id,
-                "total": total,
-                "message": format!("Import started for {total} live streams"),
+                "total": total_estimate,
+                "message": format!("Import started for {total_estimate} items"),
             })),
         )
             .into_response();
     }
 
-    // Small batch: synchronous
-    let server_url = &cached.server_url;
-    let username = &cached.username;
-    let password = &cached.password;
-    let mut imported = 0usize;
-    let mut skipped = 0usize;
+    let stats = iptv_import::run_xtream_import_batch(
+        &ctx,
+        &cached.server_url,
+        &cached.username,
+        &cached.password,
+        &source_name,
+        user_id,
+        is_public,
+        import_live,
+        import_vod,
+        import_series,
+        &live_streams,
+        &vod_streams,
+        &series_list,
+    )
+    .await;
 
-    for stream in &live_streams {
-        let name = stream
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown");
-        let stream_id = stream
-            .get("stream_id")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let logo = stream
-            .get("stream_icon")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty());
-        let stream_url = format!(
-            "{}/live/{}/{}/{}.m3u8",
-            server_url, username, password, stream_id
-        );
-
-        if import_tv_channel(&state.pool, name, &stream_url, logo, &source_name, None).await {
-            imported += 1;
-        } else {
-            skipped += 1;
+    let mut source_id: Option<i32> = None;
+    if req_body.save_source {
+        let creds = serde_json::json!({
+            "username": cached.username,
+            "password": cached.password,
+        });
+        if let Some(enc) = crate::crypto::profile::encrypt_secrets(&creds, &state.config.secret_key)
+        {
+            source_id = iptv_import::save_xtream_iptv_source(
+                &state.pool,
+                user_id,
+                &source_name,
+                &cached.server_url,
+                &enc,
+                is_public,
+                import_live,
+                import_vod,
+                import_series,
+                req_body.live_category_ids.as_deref(),
+                req_body.vod_category_ids.as_deref(),
+                req_body.series_category_ids.as_deref(),
+                &stats,
+            )
+            .await
+            .ok();
         }
     }
 
-    // Clean up Redis key
     let _: Result<(), _> = state.redis.del(&req_body.redis_key).await;
 
     Json(json!({
         "status": "success",
-        "imported": imported,
-        "skipped": skipped,
-        "total": total,
+        "stats": stats,
+        "total": total_estimate,
+        "source_saved": source_id.is_some(),
+        "source_id": source_id,
     }))
     .into_response()
 }

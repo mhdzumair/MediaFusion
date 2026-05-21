@@ -29,11 +29,15 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
 use lava_torrent::torrent::v1::Torrent as LavaTorrent;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use sha2::Sha256;
 
 use crate::{parser, state::AppState};
+
+use super::import_helpers::{
+    link_stream_audio_channels, link_stream_audio_formats, link_stream_hdr_formats,
+};
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -72,6 +76,7 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
 use super::import_helpers::{
     award_contribution_points, create_contribution_record, enforce_upload_permissions,
     fetch_user_info, is_adult_content, notify_pending_contribution, resolve_uploader_identity,
+    should_auto_approve_import,
 };
 
 // ─── Magnet URI helpers ───────────────────────────────────────────────────────
@@ -133,86 +138,6 @@ fn base32_to_hex(s: &str) -> Option<String> {
     Some(out.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-// ─── Media search helper ──────────────────────────────────────────────────────
-
-#[derive(Serialize, Clone)]
-struct MediaMatch {
-    media_id: i64,
-    title: String,
-    year: Option<i32>,
-}
-
-async fn search_media(pool: &sqlx::PgPool, title: &str, meta_type: &str) -> Vec<MediaMatch> {
-    let pattern = format!("%{title}%");
-    let type_upper = meta_type.to_uppercase();
-    let rows: Vec<(i32, String, Option<i32>)> = sqlx::query_as(
-        "SELECT id, title, year FROM media WHERE LOWER(title) LIKE LOWER($1) AND UPPER(type::text) = $2 LIMIT 5",
-    )
-    .bind(&pattern)
-    .bind(&type_upper)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
-
-    rows.into_iter()
-        .map(|(id, title, year)| MediaMatch {
-            media_id: id as i64,
-            title,
-            year,
-        })
-        .collect()
-}
-
-async fn resolve_media_id(
-    pool: &sqlx::PgPool,
-    meta_id: &str,
-    meta_type: &str,
-    parsed_title: &str,
-    parsed_year: Option<i32>,
-) -> Option<i64> {
-    // Try lookup by external ID first (imdb, tmdb, etc.)
-    let row: Option<(i32,)> =
-        sqlx::query_as("SELECT media_id FROM media_external_id WHERE external_id = $1 LIMIT 1")
-            .bind(meta_id)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
-
-    if let Some((id,)) = row {
-        return Some(id as i64);
-    }
-
-    // Fall back to title + year search
-    let type_upper = meta_type.to_uppercase();
-    if let Some(year) = parsed_year {
-        let row: Option<(i32,)> = sqlx::query_as(
-            "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND year = $2 AND UPPER(type::text) = $3 LIMIT 1",
-        )
-        .bind(parsed_title)
-        .bind(year)
-        .bind(&type_upper)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None);
-        if let Some((id,)) = row {
-            return Some(id as i64);
-        }
-    }
-
-    // Broader title search
-    let pattern = format!("%{parsed_title}%");
-    let row: Option<(i32,)> = sqlx::query_as(
-        "SELECT id FROM media WHERE LOWER(title) LIKE LOWER($1) AND UPPER(type::text) = $2 LIMIT 1",
-    )
-    .bind(&pattern)
-    .bind(&type_upper)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
-
-    row.map(|(id,)| id as i64)
-}
-
 // ─── Tracker / language / file DB helpers ────────────────────────────────────
 
 /// Extract tracker URLs from a magnet URI.
@@ -261,6 +186,22 @@ async fn insert_trackers(
 }
 
 /// Insert audio language links for a stream.
+async fn link_parsed_stream_extras(
+    pool: &sqlx::PgPool,
+    stream_id: i32,
+    parsed: &parser::ParsedTitle,
+) {
+    if !parsed.audio.is_empty() {
+        let _ = link_stream_audio_formats(pool, stream_id, &parsed.audio).await;
+    }
+    if !parsed.hdr.is_empty() {
+        let _ = link_stream_hdr_formats(pool, stream_id, &parsed.hdr).await;
+    }
+    if !parsed.channels.is_empty() {
+        let _ = link_stream_audio_channels(pool, stream_id, &parsed.channels).await;
+    }
+}
+
 async fn insert_languages(
     pool: &sqlx::PgPool,
     stream_id: i32,
@@ -290,46 +231,6 @@ async fn insert_languages(
     Ok(())
 }
 
-/// Insert per-file metadata (stream_file + file_media_link) for a stream.
-async fn insert_file_data(
-    pool: &sqlx::PgPool,
-    stream_id: i32,
-    media_id: Option<i64>,
-    files: &[FileEntry],
-) -> Result<(), sqlx::Error> {
-    for f in files {
-        let file_id: Option<i32> = sqlx::query_scalar(
-            r#"INSERT INTO stream_file(stream_id, file_index, filename, size, file_type, is_archive)
-               VALUES($1, $2, $3, $4, 'VIDEO', false)
-               ON CONFLICT DO NOTHING
-               RETURNING id"#,
-        )
-        .bind(stream_id)
-        .bind(f.index)
-        .bind(&f.filename)
-        .bind(f.size)
-        .fetch_optional(pool)
-        .await?;
-
-        if let (Some(fid), Some(mid), Some(s), Some(e)) =
-            (file_id, media_id, f.season_number, f.episode_number)
-        {
-            sqlx::query(
-                r#"INSERT INTO file_media_link(file_id, media_id, season_number, episode_number)
-                   VALUES($1, $2, $3, $4)
-                   ON CONFLICT DO NOTHING"#,
-            )
-            .bind(fid)
-            .bind(mid as i32)
-            .bind(s)
-            .bind(e)
-            .execute(pool)
-            .await?;
-        }
-    }
-    Ok(())
-}
-
 // ─── DB insert helper ─────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
@@ -343,6 +244,7 @@ async fn insert_torrent_stream(
     file_count: i32,
     parsed: &parser::ParsedTitle,
     media_id: Option<i64>,
+    is_public: bool,
 ) -> Result<i32, sqlx::Error> {
     let mut txn = pool.begin().await?;
 
@@ -354,7 +256,7 @@ async fn insert_torrent_stream(
            ) VALUES(
                'TORRENT'::streamtype, $1, $2, $3, $4, $5,
                $6, $7, $8, $9, $10, $11, $12, $13, $14,
-               true, false, true, 0, NOW()
+               true, false, $15, 0, NOW()
            )
            RETURNING id"#,
     )
@@ -372,6 +274,7 @@ async fn insert_torrent_stream(
     .bind(parsed.is_dubbed)
     .bind(parsed.is_subbed)
     .bind(parsed.release_group.as_deref())
+    .bind(is_public)
     .fetch_one(&mut *txn)
     .await?;
 
@@ -396,37 +299,24 @@ async fn insert_torrent_stream(
                 .await
                 .ok();
             txn.commit().await?;
-            // Return the existing stream_id
+            // Return the existing stream_id and link media if provided.
             let existing: i32 =
                 sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
                     .bind(info_hash)
                     .fetch_one(pool)
                     .await
                     .unwrap_or(stream_id);
+            if let Some(mid) = media_id {
+                let _ =
+                    super::import_helpers::link_stream_to_media(pool, existing, mid as i32).await;
+            }
             return Ok(existing);
         }
     }
     ts_result?;
 
     if let Some(mid) = media_id {
-        sqlx::query(
-            r#"INSERT INTO stream_media_link(stream_id, media_id, is_primary)
-               SELECT $1, $2, true
-               WHERE NOT EXISTS (
-                   SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2
-               )"#,
-        )
-        .bind(stream_id as i32)
-        .bind(mid as i32)
-        .execute(&mut *txn)
-        .await
-        .ok();
-
-        sqlx::query("UPDATE media SET total_streams = total_streams + 1 WHERE id = $1")
-            .bind(mid as i32)
-            .execute(&mut *txn)
-            .await
-            .ok();
+        let _ = super::import_helpers::link_stream_to_media(pool, stream_id, mid as i32).await;
     }
 
     txn.commit().await?;
@@ -443,6 +333,150 @@ pub struct FileEntry {
     pub size: i64,
     pub season_number: Option<i32>,
     pub episode_number: Option<i32>,
+    #[serde(default)]
+    pub meta_id: Option<String>,
+    #[serde(default)]
+    pub meta_type: Option<String>,
+    #[serde(default)]
+    pub meta_title: Option<String>,
+    #[serde(default)]
+    pub sports_category: Option<String>,
+    #[serde(default)]
+    pub episode_title: Option<String>,
+}
+
+fn enrich_sports_file_entries(files: &mut [FileEntry]) {
+    for (idx, f) in files.iter_mut().enumerate() {
+        if f.episode_number.is_none() {
+            f.episode_number = Some((idx as i32) + 1);
+        }
+    }
+}
+
+fn file_entries_as_json(files: &[FileEntry]) -> Vec<serde_json::Value> {
+    files
+        .iter()
+        .map(|f| {
+            json!({
+                "index": f.index,
+                "filename": f.filename,
+                "size": f.size,
+                "season_number": f.season_number,
+                "episode_number": f.episode_number,
+                "meta_id": f.meta_id,
+                "meta_type": f.meta_type,
+                "meta_title": f.meta_title.as_deref().or(f.episode_title.as_deref()),
+                "episode_title": f.episode_title,
+                "sports_category": f.sports_category,
+            })
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_torrent_contribution_data(
+    info_hash: &str,
+    torrent_name: &str,
+    meta_type: &str,
+    meta_id: Option<&str>,
+    title: Option<&str>,
+    total_size: Option<i64>,
+    file_count: i32,
+    file_data: &[FileEntry],
+    parsed: &parser::ParsedTitle,
+    poster: Option<&str>,
+    background: Option<&str>,
+    release_date: Option<&str>,
+    is_anonymous: bool,
+    anonymous_display_name: Option<&str>,
+    is_public: bool,
+    stream_id: i32,
+    languages: &[String],
+    trackers: &[String],
+    catalogs: &[String],
+    sports_category: Option<&str>,
+) -> serde_json::Value {
+    let file_json = file_entries_as_json(file_data);
+    json!({
+        "info_hash": info_hash,
+        "name": torrent_name,
+        "title": title.unwrap_or(torrent_name),
+        "meta_type": meta_type,
+        "meta_id": meta_id,
+        "total_size": total_size.unwrap_or(0),
+        "file_count": file_count,
+        "file_data": file_json,
+        "resolution": parsed.resolution,
+        "codec": parsed.codec,
+        "quality": parsed.quality,
+        "release_group": parsed.release_group,
+        "is_remastered": parsed.is_remastered,
+        "is_upscaled": parsed.is_upscaled,
+        "is_proper": parsed.is_proper,
+        "is_repack": parsed.is_repack,
+        "is_extended": parsed.is_extended,
+        "is_complete": parsed.is_complete,
+        "is_dubbed": parsed.is_dubbed,
+        "is_subbed": parsed.is_subbed,
+        "year": parsed.year,
+        "poster": poster,
+        "background": background,
+        "created_at": release_date,
+        "is_anonymous": is_anonymous,
+        "anonymous_display_name": anonymous_display_name,
+        "is_public": is_public,
+        "stream_id": stream_id,
+        "languages": languages,
+        "audio_formats": parsed.audio,
+        "hdr_formats": parsed.hdr,
+        "channels": parsed.channels,
+        "trackers": trackers,
+        "catalogs": catalogs,
+        "sports_category": sports_category,
+    })
+}
+
+async fn record_torrent_contribution(
+    state: &AppState,
+    uploader_user_id: Option<i64>,
+    meta_id: Option<&str>,
+    contribution_data: &serde_json::Value,
+    auto_approve: bool,
+    is_privileged: bool,
+    uploader_name: &str,
+) {
+    if let Ok(contrib_id) = create_contribution_record(
+        &state.pool,
+        uploader_user_id,
+        "torrent",
+        meta_id,
+        contribution_data,
+        auto_approve,
+        is_privileged,
+    )
+    .await
+    {
+        if auto_approve {
+            if let Some(uid) = uploader_user_id {
+                award_contribution_points(&state.pool, uid, "torrent").await;
+            }
+        } else if let (Some(bot_token), Some(chat_id)) = (
+            &state.config.telegram_bot_token,
+            &state.config.telegram_chat_id,
+        ) {
+            notify_pending_contribution(
+                &state.http,
+                bot_token,
+                chat_id,
+                &state.config.host_url,
+                "torrent",
+                uploader_name,
+                contribution_data,
+            )
+            .await;
+        }
+        tracing::debug!("contribution created: {contrib_id}");
+    }
 }
 
 #[derive(Deserialize)]
@@ -515,14 +549,27 @@ pub async fn analyze_magnet(
 
     let meta_type = body.meta_type.as_deref().unwrap_or("movie");
     let search_title = parsed.title.as_deref().unwrap_or(&torrent_name);
-    let matches = search_media(&state.pool, search_title, meta_type).await;
+    let matches =
+        super::import_helpers::search_analyze_matches(&state, search_title, parsed.year, meta_type)
+            .await;
 
     // When caller provides meta_id, resolve and return the specific media match
-    let meta_match: Option<MediaMatch> = if let Some(ref mid) = body.meta_id {
+    let meta_match: Option<serde_json::Value> = if let Some(ref mid) = body.meta_id {
         if !mid.is_empty() {
-            resolve_media_id(&state.pool, mid, meta_type, search_title, parsed.year)
-                .await
-                .and_then(|id| matches.iter().find(|m| m.media_id == id).cloned())
+            super::import_helpers::lookup_import_media_id_with_fallback(
+                &state.pool,
+                mid,
+                meta_type,
+                search_title,
+                parsed.year,
+            )
+            .await
+            .and_then(|id| {
+                matches
+                    .iter()
+                    .find(|m| m["media_id"].as_i64() == Some(id))
+                    .cloned()
+            })
         } else {
             None
         }
@@ -670,7 +717,13 @@ pub async fn analyze_torrent(
         parser::parse_title(&name)
     };
     let search_title = parsed.title.as_deref().unwrap_or(&name);
-    let matches = search_media(&state.pool, search_title, &meta_type).await;
+    let matches = super::import_helpers::search_analyze_matches(
+        &state,
+        search_title,
+        parsed.year,
+        &meta_type,
+    )
+    .await;
 
     (
         StatusCode::OK,
@@ -736,6 +789,9 @@ pub async fn import_magnet(
     let mut file_data: Vec<FileEntry> = Vec::new();
     let mut is_anonymous_field: Option<bool> = None;
     let mut anonymous_display_name: Option<String> = None;
+    let mut poster: Option<String> = None;
+    let mut background: Option<String> = None;
+    let mut release_date: Option<String> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
@@ -803,6 +859,15 @@ pub async fn import_magnet(
             }
             Some("anonymous_display_name") => {
                 anonymous_display_name = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("poster") => {
+                poster = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("background") => {
+                background = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("created_at") | Some("release_date") => {
+                release_date = field.text().await.ok().filter(|s| !s.is_empty());
             }
             _ => {}
         }
@@ -903,19 +968,53 @@ pub async fn import_magnet(
         }
     }
 
-    let media_id = if let Some(ref mid) = meta_id {
-        if !mid.is_empty() {
-            resolve_media_id(
-                &state.pool,
-                mid,
-                &meta_type,
-                parsed.title.as_deref().unwrap_or(&name_for_parse),
-                parsed.year,
-            )
-            .await
-        } else {
-            None
-        }
+    if meta_type == "sports" && !file_data.is_empty() {
+        enrich_sports_file_entries(&mut file_data);
+    }
+
+    let primary_meta_id = meta_id
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("user_{}", &info_hash[..8.min(info_hash.len())]));
+    let primary_title = title.as_deref().unwrap_or(&torrent_name);
+    let file_rows = file_entries_as_json(&file_data);
+    let sports_category = if meta_type == "sports" {
+        parser::detect_sports_category(&name_for_parse).map(str::to_string)
+    } else {
+        None
+    };
+    let prefetch = super::import_helpers::prefetch_torrent_import_metadata(
+        &state.http,
+        state.config.tmdb_api_key.as_deref(),
+        state.config.tvdb_api_key.as_deref(),
+        &meta_type,
+        &primary_meta_id,
+        primary_title,
+        sports_category.as_deref(),
+        &file_rows,
+    )
+    .await;
+
+    let media_id = if meta_id.as_ref().is_some_and(|s| !s.is_empty()) {
+        super::import_helpers::resolve_media_for_import(
+            &state.pool,
+            &state.http,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            meta_id.as_deref().unwrap(),
+            &meta_type,
+            crate::scrapers::media_resolve::ImportMediaOverrides {
+                title: title.as_deref(),
+                poster: poster.as_deref(),
+                background: background.as_deref(),
+                release_date: release_date.as_deref(),
+                year: parsed.year,
+            },
+            Some(&prefetch),
+        )
+        .await
+        .map(i64::from)
     } else {
         None
     };
@@ -930,7 +1029,21 @@ pub async fn import_magnet(
     );
 
     let is_privileged = matches!(user.role.as_str(), "moderator" | "admin");
-    let auto_approve = is_privileged || !resolved_is_anonymous;
+    let auto_approve =
+        should_auto_approve_import(is_privileged, user.is_active, resolved_is_anonymous);
+
+    let mut effective_catalogs = catalogs.clone();
+    if meta_type == "sports" {
+        let sc = sports_category.as_deref().unwrap_or("other_sports");
+        if !effective_catalogs.iter().any(|c| c == sc) {
+            effective_catalogs.insert(0, sc.to_string());
+        }
+    }
+    let effective_languages: Vec<String> = if languages.is_empty() {
+        parsed.languages.clone()
+    } else {
+        languages.clone()
+    };
 
     let source = meta_id.as_deref().unwrap_or("manual").to_string();
     let file_count = if !file_data.is_empty() {
@@ -949,6 +1062,7 @@ pub async fn import_magnet(
         file_count,
         &parsed,
         media_id,
+        auto_approve,
     )
     .await
     {
@@ -977,23 +1091,34 @@ pub async fn import_magnet(
         }
     }
 
-    // Insert language links
-    if !languages.is_empty() {
-        insert_languages(&state.pool, stream_id, &languages)
+    // Insert language links and audio/HDR/channel extras (Python process_torrent_import parity)
+    if !effective_languages.is_empty() {
+        insert_languages(&state.pool, stream_id, &effective_languages)
             .await
             .ok();
     }
+    link_parsed_stream_extras(&state.pool, stream_id, &parsed).await;
 
-    // Insert per-file metadata
-    if !file_data.is_empty() {
-        insert_file_data(&state.pool, stream_id, media_id, &file_data)
-            .await
-            .ok();
+    // Per-file metadata with prefetched provider payloads
+    if !file_rows.is_empty() {
+        let _ = super::import_helpers::insert_torrent_import_files(
+            &state.pool,
+            &state.http,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            stream_id,
+            &meta_type,
+            media_id.map(|m| m as i32),
+            &file_rows,
+            sports_category.as_deref(),
+            &prefetch,
+        )
+        .await;
     }
 
     // Link media to caller-specified catalogs
     if let Some(mid) = media_id {
-        for cat_name in &catalogs {
+        for cat_name in &effective_catalogs {
             if cat_name.is_empty() {
                 continue;
             }
@@ -1016,55 +1141,54 @@ pub async fn import_magnet(
         }
     }
 
-    // Create contribution record
-    let contribution_data = json!({
-        "info_hash": info_hash,
-        "name": torrent_name,
-        "meta_type": meta_type,
-        "uploader_name": uploader_name,
-        "is_anonymous": resolved_is_anonymous,
-        "is_public": auto_approve,
-    });
-    if let Ok(contrib_id) = create_contribution_record(
-        &state.pool,
+    let magnet_trackers = extract_trackers_from_magnet(&magnet_link);
+    let contribution_data = build_torrent_contribution_data(
+        &info_hash,
+        &torrent_name,
+        &meta_type,
+        meta_id.as_deref(),
+        title.as_deref(),
+        total_size,
+        file_count,
+        &file_data,
+        &parsed,
+        poster.as_deref(),
+        background.as_deref(),
+        release_date.as_deref(),
+        resolved_is_anonymous,
+        anonymous_display_name.as_deref(),
+        auto_approve,
+        stream_id,
+        &effective_languages,
+        &magnet_trackers,
+        &effective_catalogs,
+        sports_category.as_deref(),
+    );
+    record_torrent_contribution(
+        &state,
         uploader_user_id,
-        "torrent",
         meta_id.as_deref(),
         &contribution_data,
         auto_approve,
         is_privileged,
+        &uploader_name,
     )
-    .await
-    {
-        if auto_approve {
-            if let Some(uid) = uploader_user_id {
-                award_contribution_points(&state.pool, uid).await;
-            }
-        } else {
-            if let (Some(bot_token), Some(chat_id)) = (
-                &state.config.telegram_bot_token,
-                &state.config.telegram_chat_id,
-            ) {
-                notify_pending_contribution(
-                    &state.http,
-                    bot_token,
-                    chat_id,
-                    &state.config.host_url,
-                    "torrent",
-                    &uploader_name,
-                    &contribution_data,
-                )
-                .await;
-            }
-        }
-        tracing::debug!("contribution created: {contrib_id}");
-    }
+    .await;
+
+    let (status, message) = if auto_approve {
+        ("success", "Torrent imported successfully!".to_string())
+    } else {
+        (
+            "pending",
+            super::import_helpers::pending_import_message("Magnet link"),
+        )
+    };
 
     (
         StatusCode::CREATED,
         Json(json!({
-            "status": "success",
-            "message": "Stream imported successfully",
+            "status": status,
+            "message": message,
             "import_id": stream_id,
             "auto_approved": auto_approve,
         })),
@@ -1112,6 +1236,9 @@ pub async fn import_torrent(
     let mut file_data: Vec<FileEntry> = Vec::new();
     let mut is_anonymous_field: Option<bool> = None;
     let mut anonymous_display_name: Option<String> = None;
+    let mut poster: Option<String> = None;
+    let mut background: Option<String> = None;
+    let mut release_date: Option<String> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
@@ -1126,6 +1253,15 @@ pub async fn import_torrent(
             }
             Some("title") => {
                 title = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("poster") => {
+                poster = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("background") => {
+                background = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("created_at") | Some("release_date") => {
+                release_date = field.text().await.ok().filter(|s| !s.is_empty());
             }
             Some("resolution") => {
                 resolution = field.text().await.ok().filter(|s| !s.is_empty());
@@ -1207,7 +1343,7 @@ pub async fn import_torrent(
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
 
-    let torrent_name = title.unwrap_or_else(|| torrent.name.clone());
+    let torrent_name = title.clone().unwrap_or_else(|| torrent.name.clone());
     let total_size: i64 = torrent.length;
     let file_count = torrent
         .files
@@ -1282,15 +1418,81 @@ pub async fn import_torrent(
         }
     }
 
-    let media_id = if let Some(mid) = &meta_id {
-        resolve_media_id(
+    let mut effective_files: Vec<FileEntry> = if !file_data.is_empty() {
+        file_data
+    } else if let Some(fs) = &torrent.files {
+        fs.iter()
+            .enumerate()
+            .filter_map(|(i, f)| {
+                let filename = f.path.file_name()?.to_string_lossy().into_owned();
+                if crate::parser::episode_detector::is_video_file(&filename) {
+                    Some(FileEntry {
+                        index: i as i32,
+                        filename,
+                        size: f.length,
+                        season_number: None,
+                        episode_number: None,
+                        meta_id: None,
+                        meta_type: None,
+                        meta_title: None,
+                        sports_category: None,
+                        episode_title: None,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    if meta_type == "sports" && !effective_files.is_empty() {
+        enrich_sports_file_entries(&mut effective_files);
+    }
+
+    let primary_meta_id = meta_id
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("user_{}", &info_hash[..8.min(info_hash.len())]));
+    let primary_title = title.as_deref().unwrap_or(&torrent_name);
+    let file_rows = file_entries_as_json(&effective_files);
+    let sports_category = if meta_type == "sports" {
+        parser::detect_sports_category(&torrent_name).map(str::to_string)
+    } else {
+        None
+    };
+    let prefetch = super::import_helpers::prefetch_torrent_import_metadata(
+        &state.http,
+        state.config.tmdb_api_key.as_deref(),
+        state.config.tvdb_api_key.as_deref(),
+        &meta_type,
+        &primary_meta_id,
+        primary_title,
+        sports_category.as_deref(),
+        &file_rows,
+    )
+    .await;
+
+    let media_id = if meta_id.as_ref().is_some_and(|s| !s.is_empty()) {
+        super::import_helpers::resolve_media_for_import(
             &state.pool,
-            mid,
+            &state.http,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            meta_id.as_deref().unwrap(),
             &meta_type,
-            parsed.title.as_deref().unwrap_or(&torrent_name),
-            parsed.year,
+            crate::scrapers::media_resolve::ImportMediaOverrides {
+                title: title.as_deref(),
+                poster: poster.as_deref(),
+                background: background.as_deref(),
+                release_date: release_date.as_deref(),
+                year: parsed.year,
+            },
+            Some(&prefetch),
         )
         .await
+        .map(i64::from)
     } else {
         None
     };
@@ -1305,7 +1507,21 @@ pub async fn import_torrent(
     );
 
     let is_privileged = matches!(user.role.as_str(), "moderator" | "admin");
-    let auto_approve = is_privileged || !resolved_is_anonymous;
+    let auto_approve =
+        should_auto_approve_import(is_privileged, user.is_active, resolved_is_anonymous);
+
+    let mut effective_catalogs = catalogs.clone();
+    if meta_type == "sports" {
+        let sc = sports_category.as_deref().unwrap_or("other_sports");
+        if !effective_catalogs.iter().any(|c| c == sc) {
+            effective_catalogs.insert(0, sc.to_string());
+        }
+    }
+    let effective_languages: Vec<String> = if languages.is_empty() {
+        parsed.languages.clone()
+    } else {
+        languages.clone()
+    };
 
     let source = meta_id.as_deref().unwrap_or("manual").to_string();
 
@@ -1340,6 +1556,7 @@ pub async fn import_torrent(
         file_count,
         &parsed,
         media_id,
+        auto_approve,
     )
     .await
     {
@@ -1367,47 +1584,33 @@ pub async fn import_torrent(
         }
     }
 
-    // Insert language links
-    if !languages.is_empty() {
-        insert_languages(&state.pool, stream_id, &languages)
+    // Insert language links and audio/HDR/channel extras
+    if !effective_languages.is_empty() {
+        insert_languages(&state.pool, stream_id, &effective_languages)
             .await
             .ok();
     }
+    link_parsed_stream_extras(&state.pool, stream_id, &parsed).await;
 
-    // Insert per-file metadata (provided by UI) or auto-detect from .torrent file list
-    let effective_files: Vec<FileEntry> = if !file_data.is_empty() {
-        file_data
-    } else if let Some(fs) = &torrent.files {
-        fs.iter()
-            .enumerate()
-            .filter_map(|(i, f)| {
-                let filename = f.path.file_name()?.to_string_lossy().into_owned();
-                if crate::parser::episode_detector::is_video_file(&filename) {
-                    Some(FileEntry {
-                        index: i as i32,
-                        filename,
-                        size: f.length,
-                        season_number: None,
-                        episode_number: None,
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
-
-    if !effective_files.is_empty() {
-        insert_file_data(&state.pool, stream_id, media_id, &effective_files)
-            .await
-            .ok();
+    if !file_rows.is_empty() {
+        let _ = super::import_helpers::insert_torrent_import_files(
+            &state.pool,
+            &state.http,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            stream_id,
+            &meta_type,
+            media_id.map(|m| m as i32),
+            &file_rows,
+            sports_category.as_deref(),
+            &prefetch,
+        )
+        .await;
     }
 
     // Link media to caller-specified catalogs
     if let Some(mid) = media_id {
-        for cat_name in &catalogs {
+        for cat_name in &effective_catalogs {
             if cat_name.is_empty() {
                 continue;
             }
@@ -1430,53 +1633,57 @@ pub async fn import_torrent(
         }
     }
 
-    // Create contribution record
-    let contribution_data = json!({
-        "info_hash": info_hash,
-        "name": torrent_name,
-        "meta_type": meta_type,
-        "uploader_name": uploader_name,
-        "is_anonymous": resolved_is_anonymous,
-        "is_public": auto_approve,
-    });
-    if let Ok(contrib_id) = create_contribution_record(
-        &state.pool,
+    let contribution_data = build_torrent_contribution_data(
+        &info_hash,
+        &torrent_name,
+        &meta_type,
+        meta_id.as_deref(),
+        title.as_deref(),
+        if total_size > 0 {
+            Some(total_size)
+        } else {
+            None
+        },
+        file_count,
+        &effective_files,
+        &parsed,
+        poster.as_deref(),
+        background.as_deref(),
+        release_date.as_deref(),
+        resolved_is_anonymous,
+        anonymous_display_name.as_deref(),
+        auto_approve,
+        stream_id,
+        &effective_languages,
+        &tracker_urls,
+        &effective_catalogs,
+        sports_category.as_deref(),
+    );
+    record_torrent_contribution(
+        &state,
         uploader_user_id,
-        "torrent",
         meta_id.as_deref(),
         &contribution_data,
         auto_approve,
         is_privileged,
+        &uploader_name,
     )
-    .await
-    {
-        if auto_approve {
-            if let Some(uid) = uploader_user_id {
-                award_contribution_points(&state.pool, uid).await;
-            }
-        } else if let (Some(bot_token), Some(chat_id)) = (
-            &state.config.telegram_bot_token,
-            &state.config.telegram_chat_id,
-        ) {
-            notify_pending_contribution(
-                &state.http,
-                bot_token,
-                chat_id,
-                &state.config.host_url,
-                "torrent",
-                &uploader_name,
-                &contribution_data,
-            )
-            .await;
-        }
-        tracing::debug!("contribution created: {contrib_id}");
-    }
+    .await;
+
+    let (status, message) = if auto_approve {
+        ("success", "Torrent imported successfully!".to_string())
+    } else {
+        (
+            "pending",
+            super::import_helpers::pending_import_message("Torrent"),
+        )
+    };
 
     (
         StatusCode::CREATED,
         Json(json!({
-            "status": "success",
-            "message": "Stream imported successfully",
+            "status": status,
+            "message": message,
             "import_id": stream_id,
             "auto_approved": auto_approve,
         })),

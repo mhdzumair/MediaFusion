@@ -22,6 +22,7 @@ use sha2::Sha256;
 use super::import_helpers::{
     award_contribution_points, create_contribution_record, enforce_upload_permissions,
     fetch_user_info, is_adult_content, notify_pending_contribution, resolve_uploader_identity,
+    should_auto_approve_import,
 };
 use crate::state::AppState;
 
@@ -138,6 +139,7 @@ pub struct ImportHttpRequest {
     pub extractor_name: Option<String>,
     pub is_anonymous: Option<bool>,
     pub anonymous_display_name: Option<String>,
+    pub languages: Option<Vec<String>>,
 }
 
 fn default_true() -> bool {
@@ -279,8 +281,9 @@ pub async fn import_http_stream(
         user_id,
     );
     let is_privileged = matches!(user.role.as_str(), "moderator" | "admin");
-    let auto_approve = is_privileged || !resolved_is_anonymous;
-    let is_public = auto_approve && body.is_public;
+    let auto_approve =
+        should_auto_approve_import(is_privileged, user.is_active, resolved_is_anonymous);
+    let is_public = super::import_helpers::stream_is_public_on_submit(auto_approve, body.is_public);
 
     let format = body
         .extractor_name
@@ -288,52 +291,34 @@ pub async fn import_http_stream(
         .map(|_| None::<&str>)
         .unwrap_or_else(|| detect_stream_format(&url));
 
-    // Resolve media_id
-    let media_id: Option<i64> = if let Some(ref meta_id) = body.meta_id {
-        if !meta_id.is_empty() {
-            sqlx::query_scalar(
-                "SELECT m.id FROM media m JOIN media_external_id meid ON m.id = meid.media_id WHERE meid.external_id = $1 LIMIT 1",
-            )
-            .bind(meta_id)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let meta_type = body.meta_type.as_deref().unwrap_or("movie");
+    let effective_meta_id = body
+        .meta_id
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| super::import_helpers::synthetic_import_meta_id("http", &url));
 
-    // Fallback: create media record if we have a title and type but no match
-    let media_id: Option<i64> = if media_id.is_none() {
-        if let Some(ref title) = body.title {
-            if !title.is_empty() {
-                let meta_type = body.meta_type.as_deref().unwrap_or("movie");
-                let db_type = match meta_type {
-                    "series" => "SERIES",
-                    "tv" => "TV",
-                    _ => "MOVIE",
-                };
-                sqlx::query_scalar(
-                    "INSERT INTO media (title, type, created_at) VALUES ($1, $2::mediatype, NOW()) RETURNING id",
-                )
-                .bind(title)
-                .bind(db_type)
-                .fetch_optional(&state.pool)
-                .await
-                .unwrap_or(None)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    } else {
-        media_id
-    };
+    let media_id = super::import_helpers::resolve_media_for_import(
+        &state.pool,
+        &state.http,
+        state.config.tmdb_api_key.as_deref(),
+        state.config.tvdb_api_key.as_deref(),
+        &effective_meta_id,
+        meta_type,
+        crate::scrapers::media_resolve::ImportMediaOverrides {
+            title: body.title.as_deref().or(Some(stream_name.as_str())),
+            poster: None,
+            background: None,
+            release_date: None,
+            year: None,
+        },
+        None,
+    )
+    .await
+    .map(i64::from);
 
-    // Check for duplicate
+    // Check for duplicate (link media if missing, Python process_http_import parity)
     if let Some(mid) = media_id {
         let existing: Option<i64> = sqlx::query_scalar(
             "SELECT hs.stream_id FROM http_stream hs JOIN stream_media_link sml ON sml.stream_id = hs.stream_id WHERE hs.url = $1 AND sml.media_id = $2 LIMIT 1",
@@ -345,6 +330,20 @@ pub async fn import_http_stream(
         .unwrap_or(None);
 
         if let Some(existing_id) = existing {
+            let _ = super::import_helpers::link_stream_to_media(
+                &state.pool,
+                existing_id as i32,
+                mid as i32,
+            )
+            .await;
+            if is_public {
+                let _ = sqlx::query(
+                    "UPDATE stream SET is_public = true WHERE id = $1 AND NOT is_public",
+                )
+                .bind(existing_id)
+                .execute(&state.pool)
+                .await;
+            }
             return (
                 StatusCode::CONFLICT,
                 Json(json!({"detail": "Stream already exists", "stream_id": existing_id})),
@@ -395,27 +394,34 @@ pub async fn import_http_stream(
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
-    // Link to media
     if let Some(mid) = media_id {
-        let _ = sqlx::query(
-            "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at) VALUES ($1, $2, true, true, NOW()) ON CONFLICT DO NOTHING",
-        )
-        .bind(stream_id)
-        .bind(mid)
-        .execute(&state.pool)
-        .await;
+        let _ =
+            super::import_helpers::link_stream_to_media(&state.pool, stream_id as i32, mid as i32)
+                .await;
+    }
 
-        let _ = sqlx::query("UPDATE media SET total_streams = total_streams + 1 WHERE id = $1")
-            .bind(mid)
-            .execute(&state.pool)
+    if let Some(ref langs) = body.languages {
+        let _ = super::import_helpers::link_stream_languages(&state.pool, stream_id as i32, langs)
             .await;
     }
 
     let data = serde_json::json!({
         "name": stream_name,
+        "title": body.title.as_deref().unwrap_or(&stream_name),
         "url": url,
-        "meta_type": body.meta_type.as_deref().unwrap_or("movie"),
+        "meta_type": meta_type,
+        "meta_id": effective_meta_id,
+        "extractor_name": body.extractor_name,
+        "format": format,
+        "resolution": body.resolution,
+        "quality": body.quality,
+        "codec": body.codec,
+        "drm_key_id": body.drm_key_id,
+        "drm_key": body.drm_key,
+        "behavior_hints": body.behavior_hints,
         "uploader_name": uploader_name,
+        "anonymous_display_name": body.anonymous_display_name,
+        "languages": body.languages.clone().unwrap_or_default(),
         "is_anonymous": resolved_is_anonymous,
         "is_public": is_public,
     });
@@ -434,7 +440,7 @@ pub async fn import_http_stream(
     {
         if auto_approve {
             if let Some(uid) = uploader_user_id {
-                award_contribution_points(&state.pool, uid).await;
+                award_contribution_points(&state.pool, uid, "http").await;
             }
         } else if let (Some(bot_token), Some(chat_id)) = (
             state.config.telegram_bot_token.as_deref(),
@@ -454,9 +460,17 @@ pub async fn import_http_stream(
         contrib_id = Some(cid);
     }
 
+    let message = if auto_approve {
+        "HTTP stream imported successfully!".to_string()
+    } else {
+        super::import_helpers::pending_import_message("HTTP stream")
+    };
+
     (
         StatusCode::CREATED,
         Json(json!({
+            "status": if auto_approve { "success" } else { "pending" },
+            "message": message,
             "stream_id": stream_id,
             "url": url,
             "format": format,

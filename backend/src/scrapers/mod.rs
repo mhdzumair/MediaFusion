@@ -1,7 +1,9 @@
+pub mod anilist;
 pub mod browser;
 pub mod easynews;
 pub mod fetcher;
 pub mod jackett;
+pub mod kitsu;
 pub mod media_resolve;
 pub mod mediafusion;
 pub mod metadata;
@@ -18,6 +20,7 @@ pub mod telegram;
 pub mod torbox_search;
 pub mod torrentio;
 pub mod torznab;
+pub mod tvdb;
 pub mod zilean;
 
 use crate::parser::ParsedTitle;

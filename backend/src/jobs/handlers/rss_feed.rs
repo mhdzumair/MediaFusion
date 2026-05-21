@@ -81,6 +81,7 @@ impl JobHandler for RssFeedScraper {
                 feed.filters.as_ref(),
                 feed.auto_detect_catalog,
                 ctx.state.config.tmdb_api_key.as_deref(),
+                ctx.state.config.imdb_cinemeta_fallback_enabled,
             )
             .await;
 
