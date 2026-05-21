@@ -232,9 +232,21 @@ frontend-fmt:
 	cd clients/frontend && pnpm run format
 
 dev:
-	@echo "Starting backend and frontend in development mode..."
-	cd backend && cargo run --bin mediafusion-api -- --reload &
-	cd clients/frontend && pnpm run dev
+	@set -e; \
+	cleanup() { kill $$(jobs -p) 2>/dev/null || true; }; \
+	trap cleanup INT TERM EXIT; \
+	echo "Starting backend and frontend in development mode..."; \
+	if cargo watch -h >/dev/null 2>&1; then \
+		cd backend && cargo watch -x 'run --bin mediafusion-api' & \
+	else \
+		echo "Note: cargo-watch not installed — run: cargo install cargo-watch"; \
+		echo "Backend will not auto-reload on file changes."; \
+		cd backend && cargo run --bin mediafusion-api & \
+	fi; \
+	cd clients/frontend && pnpm run dev; \
+	wait
+
+backend-dev: rust-dev
 
 # Worker job targets
 worker-list-jobs:
@@ -256,7 +268,12 @@ rust-build:
 	cd backend && cargo build --release --bin mediafusion-api --bin mediafusion-worker
 
 rust-dev:
-	cargo run --manifest-path backend/Cargo.toml --bin mediafusion-api
+	@if cargo watch -h >/dev/null 2>&1; then \
+		cd backend && cargo watch -x 'run --bin mediafusion-api'; \
+	else \
+		echo "Note: cargo-watch not installed — run: cargo install cargo-watch"; \
+		cd backend && cargo run --bin mediafusion-api; \
+	fi
 
 rust-test:
 	cd backend && cargo test
