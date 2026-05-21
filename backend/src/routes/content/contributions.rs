@@ -324,34 +324,39 @@ pub async fn list_contributions(
            FROM contributions WHERE 1=1"#,
     );
 
-    let mut bind_values: Vec<serde_json::Value> = Vec::new();
+    enum ListContribBind {
+        Int(i32),
+        Str(String),
+    }
+
+    let mut filter_binds: Vec<ListContribBind> = Vec::new();
     let mut idx = 1i32;
 
-    macro_rules! push_condition {
-        ($cond:expr, $val:expr) => {{
-            count_sql.push_str(&format!(" AND {}", $cond));
-            fetch_sql.push_str(&format!(" AND {}", $cond));
-            bind_values.push(json!($val));
-            idx += 1;
-        }};
-    }
-
     if !show_all {
-        push_condition!(format!("user_id = ${idx}"), user_id);
+        count_sql.push_str(&format!(" AND user_id = ${idx}"));
+        fetch_sql.push_str(&format!(" AND user_id = ${idx}"));
+        filter_binds.push(ListContribBind::Int(user_id));
+        idx += 1;
     }
     if let Some(ref ct) = params.contribution_type {
-        push_condition!(format!("contribution_type = ${idx}"), ct.clone());
+        count_sql.push_str(&format!(" AND contribution_type = ${idx}"));
+        fetch_sql.push_str(&format!(" AND contribution_type = ${idx}"));
+        filter_binds.push(ListContribBind::Str(ct.clone()));
+        idx += 1;
     }
     if let Some(ref cs) = params.contribution_status {
-        push_condition!(format!("status::text = ${idx}"), cs.to_uppercase());
+        count_sql.push_str(&format!(" AND status = ${idx}"));
+        fetch_sql.push_str(&format!(" AND status = ${idx}"));
+        filter_binds.push(ListContribBind::Str(cs.to_uppercase()));
+        idx += 1;
     }
     if let Some(ref c) = params.contributor {
         if c != "all" {
             if let Some(uid_str) = c.strip_prefix("user:") {
-                if let Ok(uid) = uid_str.parse::<i64>() {
+                if let Ok(uid) = uid_str.parse::<i32>() {
                     count_sql.push_str(&format!(" AND user_id = ${idx}"));
                     fetch_sql.push_str(&format!(" AND user_id = ${idx}"));
-                    bind_values.push(json!(uid));
+                    filter_binds.push(ListContribBind::Int(uid));
                     idx += 1;
                 }
             }
@@ -367,7 +372,7 @@ pub async fn list_contributions(
             fetch_sql.push_str(&format!(
                 " AND user_id IN (SELECT id FROM users WHERE username ILIKE ${idx})"
             ));
-            bind_values.push(json!(pattern));
+            filter_binds.push(ListContribBind::Str(pattern));
             idx += 1;
         }
     }
@@ -385,7 +390,7 @@ pub async fn list_contributions(
                 fetch_sql.push_str(&format!(
                     " AND reviewed_by IN (SELECT id::text FROM users WHERE username ILIKE ${idx})"
                 ));
-                bind_values.push(json!(pattern));
+                filter_binds.push(ListContribBind::Str(pattern));
                 idx += 1;
             }
         }
@@ -396,14 +401,16 @@ pub async fn list_contributions(
         idx + 1
     ));
 
-    // Build and execute count query
     let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
-    for v in &bind_values {
-        cq = cq.bind(v.clone());
+    let mut fq;
+    for b in &filter_binds {
+        match b {
+            ListContribBind::Int(v) => cq = cq.bind(*v),
+            ListContribBind::Str(v) => cq = cq.bind(v.as_str()),
+        }
     }
     let total: i64 = cq.fetch_one(&state.pool_ro).await.unwrap_or(0);
 
-    // Build and execute fetch query
     type ContribTuple = (
         String,
         Option<i32>,
@@ -421,13 +428,19 @@ pub async fn list_contributions(
         DateTime<Utc>,
         Option<DateTime<Utc>>,
     );
-    let mut fq = sqlx::query_as::<_, ContribTuple>(&fetch_sql);
-    for v in &bind_values {
-        fq = fq.bind(v.clone());
+    fq = sqlx::query_as::<_, ContribTuple>(&fetch_sql);
+    for b in &filter_binds {
+        match b {
+            ListContribBind::Int(v) => fq = fq.bind(*v),
+            ListContribBind::Str(v) => fq = fq.bind(v.as_str()),
+        }
     }
-    fq = fq.bind(page_size).bind(offset);
-
-    let rows: Vec<ContribTuple> = fq.fetch_all(&state.pool_ro).await.unwrap_or_default();
+    let rows: Vec<ContribTuple> = fq
+        .bind(page_size)
+        .bind(offset)
+        .fetch_all(&state.pool_ro)
+        .await
+        .unwrap_or_default();
 
     let mut items = Vec::new();
     for r in &rows {
