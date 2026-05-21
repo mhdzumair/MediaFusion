@@ -1221,6 +1221,12 @@ export function ContentDetailPage() {
       })
     }
 
+    // Apply infohash search filter
+    if (streamFilters.infoHashSearch.length > 0) {
+      const needle = streamFilters.infoHashSearch.toLowerCase()
+      result = result.filter((s) => s.info_hash?.toLowerCase().includes(needle) ?? false)
+    }
+
     // Apply sorting
     result.sort((a, b) => {
       let comparison = 0

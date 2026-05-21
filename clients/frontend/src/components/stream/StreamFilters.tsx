@@ -23,6 +23,7 @@ import {
   Send,
   Globe,
   History,
+  Hash,
 } from 'lucide-react'
 
 export type SortBy = 'quality' | 'size' | 'seeders' | 'source'
@@ -44,6 +45,7 @@ export interface StreamFilterState {
   minSizeGB: number | null
   maxSizeGB: number | null
   lastPlayedOnly: boolean // Show only last played stream
+  infoHashSearch: string
 }
 
 const RESOLUTION_OPTIONS = ['4K', '2160p', '1080p', '720p', '480p', 'SD']
@@ -126,6 +128,7 @@ export function StreamFilters({
       minSizeGB: null,
       maxSizeGB: null,
       lastPlayedOnly: false,
+      infoHashSearch: '',
     })
   }
 
@@ -139,7 +142,8 @@ export function StreamFilters({
     filters.streamTypeFilter.length > 0 ||
     filters.minSizeGB !== null ||
     filters.maxSizeGB !== null ||
-    filters.lastPlayedOnly
+    filters.lastPlayedOnly ||
+    filters.infoHashSearch.length > 0
 
   const activeFilterCount =
     filters.qualityFilter.length +
@@ -151,7 +155,8 @@ export function StreamFilters({
     filters.streamTypeFilter.length +
     (filters.minSizeGB !== null ? 1 : 0) +
     (filters.maxSizeGB !== null ? 1 : 0) +
-    (filters.lastPlayedOnly ? 1 : 0)
+    (filters.lastPlayedOnly ? 1 : 0) +
+    (filters.infoHashSearch.length > 0 ? 1 : 0)
 
   return (
     <div className="flex flex-col gap-3">
@@ -452,6 +457,38 @@ export function StreamFilters({
                     </ScrollArea>
                   </div>
                 )}
+
+                <Separator />
+
+                {/* Info Hash Search */}
+                <div className="space-y-2.5">
+                  <Label className="text-xs sm:text-sm font-medium flex items-center gap-1.5">
+                    <Hash className="h-3.5 w-3.5" />
+                    Info Hash
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      placeholder="Paste or type infohash…"
+                      value={filters.infoHashSearch}
+                      onChange={(e) => updateFilter('infoHashSearch', e.target.value.trim())}
+                      className="h-8 sm:h-9 text-xs font-mono pr-7"
+                      spellCheck={false}
+                    />
+                    {filters.infoHashSearch.length > 0 && (
+                      <button
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        onClick={() => updateFilter('infoHashSearch', '')}
+                        type="button"
+                        aria-label="Clear infohash"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">
+                    Partial match — enter any part of the hash
+                  </p>
+                </div>
               </div>
             </ScrollArea>
           </PopoverContent>
@@ -551,6 +588,19 @@ export function StreamFilters({
               />
             </Badge>
           )}
+          {filters.infoHashSearch.length > 0 && (
+            <Badge
+              variant="secondary"
+              className="text-[10px] sm:text-xs gap-1 py-0.5 px-1.5 sm:px-2 font-mono max-w-[180px] truncate"
+            >
+              <Hash className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
+              <span className="truncate">{filters.infoHashSearch}</span>
+              <X
+                className="h-2.5 w-2.5 sm:h-3 sm:w-3 cursor-pointer shrink-0"
+                onClick={() => updateFilter('infoHashSearch', '')}
+              />
+            </Badge>
+          )}
         </div>
       )}
     </div>
@@ -571,4 +621,5 @@ export const defaultStreamFilters: StreamFilterState = {
   minSizeGB: null,
   maxSizeGB: null,
   lastPlayedOnly: false,
+  infoHashSearch: '',
 }
