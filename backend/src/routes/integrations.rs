@@ -40,7 +40,10 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 
 use crate::{
-    jobs::enqueue::{enqueue_simple, EnqueueOpts},
+    jobs::{
+        enqueue::{enqueue_simple, EnqueueOpts},
+        handlers::integration_syncs::sync_integration_inline,
+    },
     state::AppState,
 };
 
@@ -250,11 +253,11 @@ pub async fn list_integrations(
         Err(e) => return db_error("list_integrations fetch", &e),
     };
 
-    // Build a map of platform → row
+    // Build a map of platform → row (normalize to lowercase to match KNOWN_PLATFORMS)
     let mut map: std::collections::HashMap<String, &IntegrationRow> =
         std::collections::HashMap::new();
     for row in &rows {
-        map.insert(row.2.clone(), row);
+        map.insert(row.2.to_lowercase(), row);
     }
 
     let integrations: Vec<IntegrationStatus> = KNOWN_PLATFORMS
@@ -332,7 +335,7 @@ pub async fn get_sync_status(
     let row: Option<SyncRow> = match sqlx::query_as(
         r#"SELECT last_sync_at, last_sync_status, last_sync_error, last_sync_stats
            FROM profile_integration
-           WHERE profile_id = $1 AND platform = $2"#,
+           WHERE profile_id = $1 AND platform = $2::integrationtype"#,
     )
     .bind(params.profile_id.unwrap_or(0))
     .bind(platform.to_ascii_uppercase())
@@ -712,7 +715,7 @@ pub async fn disconnect_integration(
     }
 
     let exists: Option<(i32,)> = match sqlx::query_as(
-        "SELECT id FROM profile_integration WHERE profile_id = $1 AND platform = $2",
+        "SELECT id FROM profile_integration WHERE profile_id = $1 AND platform = $2::integrationtype",
     )
     .bind(params.profile_id.unwrap_or(0))
     .bind(platform.to_ascii_uppercase())
@@ -728,7 +731,7 @@ pub async fn disconnect_integration(
     }
 
     if let Err(e) =
-        sqlx::query("DELETE FROM profile_integration WHERE profile_id = $1 AND platform = $2")
+        sqlx::query("DELETE FROM profile_integration WHERE profile_id = $1 AND platform = $2::integrationtype")
             .bind(params.profile_id.unwrap_or(0))
             .bind(platform.to_ascii_uppercase())
             .execute(&state.pool)
@@ -773,7 +776,7 @@ pub async fn update_integration_settings(
     // Get current integration
     type IntegRow = (i32, serde_json::Value);
     let row: Option<IntegRow> = match sqlx::query_as(
-        "SELECT id, settings FROM profile_integration WHERE profile_id = $1 AND platform = $2",
+        "SELECT id, settings FROM profile_integration WHERE profile_id = $1 AND platform = $2::integrationtype",
     )
     .bind(params.profile_id.unwrap_or(0))
     .bind(platform.to_ascii_uppercase())
@@ -872,7 +875,7 @@ pub async fn trigger_sync(
     }
 
     let row: Option<(i32,)> = match sqlx::query_as(
-        "SELECT id FROM profile_integration WHERE profile_id = $1 AND platform = $2 AND is_enabled = true",
+        "SELECT id FROM profile_integration WHERE profile_id = $1 AND platform = $2::integrationtype AND is_enabled = true",
     )
     .bind(profile_id)
     .bind(platform.to_ascii_uppercase())
@@ -887,20 +890,50 @@ pub async fn trigger_sync(
         return not_found("Integration not connected or disabled");
     };
 
-    let payload = serde_json::json!({"integration_id": integ_id});
-    let _ = enqueue_simple(
-        &state.pool,
-        "integration_syncs",
-        &payload,
-        EnqueueOpts::default(),
+    // Run sync synchronously for this single integration so the caller gets the
+    // actual result. The background worker handles the scheduled sweep across
+    // all users; this endpoint is the per-user "Sync Now" action.
+    sync_integration_inline(Arc::clone(&state), integ_id).await;
+
+    // Return the updated status row so the UI can display the result directly.
+    type StatusRow = (
+        Option<String>,
+        Option<DateTime<Utc>>,
+        Option<String>,
+        Option<serde_json::Value>,
+    );
+    let updated: Option<StatusRow> = sqlx::query_as(
+        r#"SELECT last_sync_status, last_sync_at, last_sync_error, last_sync_stats
+           FROM profile_integration WHERE id = $1"#,
     )
-    .await;
+    .bind(integ_id)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .ok()
+    .flatten();
+
+    let (status_opt, last_sync_at, last_sync_error, last_sync_stats) = updated.unwrap_or((
+        None,
+        None,
+        Some("integration row not found after sync".to_string()),
+        None,
+    ));
+    let status = status_opt.unwrap_or_else(|| "unknown".to_string());
+
+    let http_status = if status == "success" || status == "partial" {
+        StatusCode::OK
+    } else {
+        StatusCode::BAD_GATEWAY
+    };
 
     (
-        StatusCode::ACCEPTED,
+        http_status,
         Json(serde_json::json!({
-            "status": "accepted",
-            "message": "Sync has been triggered. Results will appear shortly."
+            "status": status,
+            "platform": platform,
+            "last_sync_at": last_sync_at,
+            "last_sync_error": last_sync_error,
+            "last_sync_stats": last_sync_stats,
         })),
     )
         .into_response()

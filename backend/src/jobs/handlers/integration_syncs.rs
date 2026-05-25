@@ -14,12 +14,16 @@ use serde_json::Value;
 use sqlx::PgPool;
 use tracing::{debug, info, warn};
 
+use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
+
 use crate::{
     crypto::profile::{decrypt_secrets, encrypt_secrets},
     jobs::{
         error::JobError,
         handler::{JobCtx, JobHandler},
     },
+    state::AppState,
 };
 
 pub struct IntegrationSyncs;
@@ -127,6 +131,31 @@ impl JobHandler for IntegrationSyncs {
     }
 }
 
+/// Run sync immediately for a single integration (bypasses the job queue).
+///
+/// Used by the `Sync Now` UI button — the route spawns this so the HTTP
+/// response returns instantly while sync proceeds in the background.
+pub async fn sync_integration_inline(state: Arc<AppState>, integration_id: i32) {
+    let rows = match fetch_integrations(&state.pool_ro, Some(integration_id)).await {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("sync_integration_inline: fetch failed id={integration_id}: {e}");
+            return;
+        }
+    };
+    let Some(row) = rows.into_iter().next() else {
+        info!("sync_integration_inline: integration id={integration_id} not found or disabled");
+        return;
+    };
+    let ctx = JobCtx {
+        job_id: -1,
+        attempt: 1,
+        state,
+        cancel: CancellationToken::new(),
+    };
+    sync_one(&ctx, &row).await;
+}
+
 // ─── Fetch ────────────────────────────────────────────────────────────────────
 
 async fn fetch_integrations(
@@ -160,7 +189,7 @@ async fn fetch_integrations(
                 id: r.try_get("id")?,
                 profile_id: r.try_get("profile_id")?,
                 user_id: r.try_get("user_id")?,
-                platform: r.try_get("platform")?,
+                platform: r.try_get::<String, _>("platform")?.to_lowercase(),
                 encrypted_credentials: r.try_get("encrypted_credentials")?,
                 sync_direction: r.try_get("sync_direction")?,
                 last_sync_at: r.try_get("last_sync_at")?,
@@ -194,21 +223,9 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
 
     let result = match row.platform.as_str() {
         "trakt" => {
-            let (Some(cid), Some(csec)) = (
-                ctx.state.config.trakt_client_id.as_deref(),
-                ctx.state.config.trakt_client_secret.as_deref(),
-            ) else {
-                mark_status(
-                    &ctx.state.pool,
-                    row.id,
-                    "failed",
-                    Some("TRAKT_CLIENT_ID/SECRET not set"),
-                    None,
-                )
-                .await;
-                return;
-            };
-            let Some(mut creds) = Creds::from_json(&raw, cid, csec) else {
+            let default_cid = ctx.state.config.trakt_client_id.as_deref().unwrap_or("");
+            let default_csec = ctx.state.config.trakt_client_secret.as_deref().unwrap_or("");
+            let Some(mut creds) = Creds::from_json(&raw, default_cid, default_csec) else {
                 mark_status(
                     &ctx.state.pool,
                     row.id,
@@ -219,9 +236,20 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
                 .await;
                 return;
             };
+            if creds.client_id.is_empty() || creds.client_secret.is_empty() {
+                mark_status(
+                    &ctx.state.pool,
+                    row.id,
+                    "failed",
+                    Some("Trakt client_id/secret missing from credentials"),
+                    None,
+                )
+                .await;
+                return;
+            }
             if creds.is_expired() {
                 match trakt_refresh(&ctx.state.http, &creds).await {
-                    Some(refreshed) => {
+                    Ok(refreshed) => {
                         save_credentials(
                             &ctx.state.pool,
                             row.id,
@@ -231,12 +259,13 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
                         .await;
                         creds = refreshed;
                     }
-                    None => {
+                    Err(e) => {
+                        warn!("trakt_refresh: id={} error={}", row.id, e);
                         mark_status(
                             &ctx.state.pool,
                             row.id,
                             "failed",
-                            Some("token refresh failed"),
+                            Some(&format!("token refresh failed: {e}")),
                             None,
                         )
                         .await;
@@ -247,21 +276,9 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
             sync_trakt(ctx, row, &creds).await
         }
         "simkl" => {
-            let (Some(cid), Some(csec)) = (
-                ctx.state.config.simkl_client_id.as_deref(),
-                ctx.state.config.simkl_client_secret.as_deref(),
-            ) else {
-                mark_status(
-                    &ctx.state.pool,
-                    row.id,
-                    "failed",
-                    Some("SIMKL_CLIENT_ID/SECRET not set"),
-                    None,
-                )
-                .await;
-                return;
-            };
-            let Some(mut creds) = Creds::from_json(&raw, cid, csec) else {
+            let default_cid = ctx.state.config.simkl_client_id.as_deref().unwrap_or("");
+            let default_csec = ctx.state.config.simkl_client_secret.as_deref().unwrap_or("");
+            let Some(mut creds) = Creds::from_json(&raw, default_cid, default_csec) else {
                 mark_status(
                     &ctx.state.pool,
                     row.id,
@@ -272,9 +289,20 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
                 .await;
                 return;
             };
+            if creds.client_id.is_empty() || creds.client_secret.is_empty() {
+                mark_status(
+                    &ctx.state.pool,
+                    row.id,
+                    "failed",
+                    Some("Simkl client_id/secret missing from credentials"),
+                    None,
+                )
+                .await;
+                return;
+            }
             if creds.is_expired() {
                 match simkl_refresh(&ctx.state.http, &creds).await {
-                    Some(refreshed) => {
+                    Ok(refreshed) => {
                         save_credentials(
                             &ctx.state.pool,
                             row.id,
@@ -284,12 +312,13 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
                         .await;
                         creds = refreshed;
                     }
-                    None => {
+                    Err(e) => {
+                        warn!("simkl_refresh: id={} error={}", row.id, e);
                         mark_status(
                             &ctx.state.pool,
                             row.id,
                             "failed",
-                            Some("token refresh failed"),
+                            Some(&format!("token refresh failed: {e}")),
                             None,
                         )
                         .await;
@@ -333,10 +362,11 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
 async fn sync_trakt(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds) -> SyncStats {
     let mut stats = SyncStats::default();
     let dir = row.sync_direction.as_str();
-    if dir == "platform_to_mf" || dir == "two_way" {
+    let bidirectional = dir == "two_way" || dir == "bidirectional";
+    if dir == "platform_to_mf" || bidirectional {
         trakt_import(ctx, row, creds, &mut stats).await;
     }
-    if dir == "mf_to_platform" || dir == "two_way" {
+    if dir == "mf_to_platform" || bidirectional {
         trakt_export(ctx, row, creds, &mut stats).await;
     }
     stats
@@ -545,8 +575,8 @@ async fn trakt_get(http: &reqwest::Client, url: &str, creds: &Creds) -> Option<V
         .ok()
 }
 
-async fn trakt_refresh(http: &reqwest::Client, creds: &Creds) -> Option<Creds> {
-    let resp: Value = http
+async fn trakt_refresh(http: &reqwest::Client, creds: &Creds) -> Result<Creds, String> {
+    let res = http
         .post("https://api.trakt.tv/oauth/token")
         .json(&serde_json::json!({
             "refresh_token": creds.refresh_token,
@@ -558,13 +588,26 @@ async fn trakt_refresh(http: &reqwest::Client, creds: &Creds) -> Option<Creds> {
         .timeout(std::time::Duration::from_secs(15))
         .send()
         .await
-        .ok()?
-        .json()
-        .await
-        .ok()?;
+        .map_err(|e| format!("network error: {e}"))?;
 
-    Some(Creds {
-        access_token: resp["access_token"].as_str()?.to_string(),
+    let status = res.status();
+    let body = res.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        let snippet: String = body.chars().take(200).collect();
+        return Err(format!("Trakt HTTP {status}: {snippet}"));
+    }
+
+    let resp: Value = serde_json::from_str(&body)
+        .map_err(|e| format!("invalid JSON from Trakt: {e}"))?;
+
+    let access_token = resp["access_token"]
+        .as_str()
+        .ok_or("Trakt response missing access_token")?
+        .to_string();
+
+    Ok(Creds {
+        access_token,
         refresh_token: resp["refresh_token"]
             .as_str()
             .map(|s| s.to_string())
@@ -582,10 +625,11 @@ async fn trakt_refresh(http: &reqwest::Client, creds: &Creds) -> Option<Creds> {
 async fn sync_simkl(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds) -> SyncStats {
     let mut stats = SyncStats::default();
     let dir = row.sync_direction.as_str();
-    if dir == "platform_to_mf" || dir == "two_way" {
+    let bidirectional = dir == "two_way" || dir == "bidirectional";
+    if dir == "platform_to_mf" || bidirectional {
         simkl_import(ctx, row, creds, &mut stats).await;
     }
-    if dir == "mf_to_platform" || dir == "two_way" {
+    if dir == "mf_to_platform" || bidirectional {
         simkl_export(ctx, row, creds, &mut stats).await;
     }
     stats
@@ -756,8 +800,8 @@ async fn simkl_export(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
     }
 }
 
-async fn simkl_refresh(http: &reqwest::Client, creds: &Creds) -> Option<Creds> {
-    let resp: Value = http
+async fn simkl_refresh(http: &reqwest::Client, creds: &Creds) -> Result<Creds, String> {
+    let res = http
         .post("https://api.simkl.com/oauth/token")
         .header("simkl-api-key", &creds.client_id)
         .json(&serde_json::json!({
@@ -769,13 +813,26 @@ async fn simkl_refresh(http: &reqwest::Client, creds: &Creds) -> Option<Creds> {
         .timeout(std::time::Duration::from_secs(15))
         .send()
         .await
-        .ok()?
-        .json()
-        .await
-        .ok()?;
+        .map_err(|e| format!("network error: {e}"))?;
 
-    Some(Creds {
-        access_token: resp["access_token"].as_str()?.to_string(),
+    let status = res.status();
+    let body = res.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        let snippet: String = body.chars().take(200).collect();
+        return Err(format!("Simkl HTTP {status}: {snippet}"));
+    }
+
+    let resp: Value = serde_json::from_str(&body)
+        .map_err(|e| format!("invalid JSON from Simkl: {e}"))?;
+
+    let access_token = resp["access_token"]
+        .as_str()
+        .ok_or("Simkl response missing access_token")?
+        .to_string();
+
+    Ok(Creds {
+        access_token,
         refresh_token: resp["refresh_token"]
             .as_str()
             .map(|s| s.to_string())
