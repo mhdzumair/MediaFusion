@@ -16,6 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Edit, Trash2, Ban, Loader2, MoreVertical, Flag, FileVideo, Link2 } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -264,6 +265,15 @@ export function StreamCard({
             <span className="text-[10px] font-medium bg-primary/20 text-primary px-1.5 py-0.5 rounded shrink-0">
               Last Played
             </span>
+          )}
+          {stream.rd_blocked && (
+            <Badge
+              variant="outline"
+              className="shrink-0 text-[10px] px-1.5 py-0 h-5 border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10"
+              title="RealDebrid does not support this release type (e.g. WEBRip, WEB-DL). Switch provider or use Stremio P2P."
+            >
+              RD block
+            </Badge>
           )}
         </div>
 

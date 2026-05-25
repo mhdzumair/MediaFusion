@@ -184,6 +184,8 @@ export interface StreamInfo {
   uploader?: string
   release_group?: string
   cached?: boolean // Whether stream is cached in debrid
+  /** RealDebrid rejects this release name (WEBRip, WEB-DL, etc.) when selected_provider is realdebrid */
+  rd_blocked?: boolean
 
   // Episode links for series (for fixing season/episode detection)
   episode_links?: EpisodeLinkInfo[]

@@ -315,11 +315,12 @@ async fn insert_torrent_stream(
     }
     ts_result?;
 
+    txn.commit().await?;
+
     if let Some(mid) = media_id {
         let _ = super::import_helpers::link_stream_to_media(pool, stream_id, mid as i32).await;
     }
 
-    txn.commit().await?;
     Ok(stream_id)
 }
 
@@ -436,6 +437,107 @@ fn build_torrent_contribution_data(
     })
 }
 
+async fn torrent_already_exists_response(
+    state: &AppState,
+    stream_id: i32,
+    info_hash: &str,
+    meta_id: Option<&str>,
+    meta_type: &str,
+    title: Option<&str>,
+    poster: Option<&str>,
+    background: Option<&str>,
+    release_date: Option<&str>,
+    year: Option<i32>,
+) -> Response {
+    let link_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)::bigint FROM stream_media_link WHERE stream_id = $1",
+    )
+    .bind(stream_id)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap_or(0);
+
+    let mut relinked = false;
+    if link_count == 0 {
+        relinked = super::import_helpers::try_link_orphan_torrent_stream(
+            &state.pool,
+            &state.http,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            stream_id,
+            meta_id,
+            meta_type,
+            crate::scrapers::media_resolve::ImportMediaOverrides {
+                title,
+                poster,
+                background,
+                release_date,
+                year,
+            },
+            None,
+        )
+        .await
+        .is_some();
+    }
+
+    let attachments =
+        super::import_helpers::stream_media_attachment_details(&state.pool, stream_id, 2).await;
+    let attached_count = attachments
+        .get("count")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let attached_media = attachments
+        .get("items")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+
+    if relinked && attached_count > 0 {
+        let message = super::import_helpers::build_existing_torrent_warning_message(
+            info_hash,
+            &attachments,
+        );
+        return (
+            StatusCode::OK,
+            Json(json!({
+                "status": "success",
+                "message": format!(
+                    "Torrent already existed but was linked to your library item. {message}"
+                ),
+                "import_id": stream_id.to_string(),
+                "details": {
+                    "reason": "already_exists",
+                    "action": "linked",
+                    "info_hash": info_hash,
+                    "existing_stream_id": stream_id,
+                    "attached_media_count": attached_count,
+                    "attached_media": attached_media,
+                }
+            })),
+        )
+            .into_response();
+    }
+
+    let message =
+        super::import_helpers::build_existing_torrent_warning_message(info_hash, &attachments);
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "status": "warning",
+            "message": message,
+            "details": {
+                "reason": "already_exists",
+                "action": "skipped",
+                "info_hash": info_hash,
+                "existing_stream_id": stream_id,
+                "attached_media_count": attached_count,
+                "attached_media": attached_media,
+            }
+        })),
+    )
+        .into_response()
+}
+
 async fn record_torrent_contribution(
     state: &AppState,
     uploader_user_id: Option<i64>,
@@ -444,8 +546,8 @@ async fn record_torrent_contribution(
     auto_approve: bool,
     is_privileged: bool,
     uploader_name: &str,
-) {
-    if let Ok(contrib_id) = create_contribution_record(
+) -> Option<String> {
+    match create_contribution_record(
         &state.pool,
         uploader_user_id,
         "torrent",
@@ -456,6 +558,7 @@ async fn record_torrent_contribution(
     )
     .await
     {
+        Ok(contrib_id) => {
         if auto_approve {
             if let Some(uid) = uploader_user_id {
                 award_contribution_points(&state.pool, uid, "torrent").await;
@@ -476,7 +579,13 @@ async fn record_torrent_contribution(
             .await;
         }
         tracing::debug!("contribution created: {contrib_id}");
+        return Some(contrib_id);
+        }
+        Err(e) => {
+            tracing::error!("failed to create torrent contribution record: {e}");
+        }
     }
+    None
 }
 
 #[derive(Deserialize)]
@@ -792,6 +901,8 @@ pub async fn import_magnet(
     let mut poster: Option<String> = None;
     let mut background: Option<String> = None;
     let mut release_date: Option<String> = None;
+    let mut form_audio: Vec<String> = Vec::new();
+    let mut form_hdr: Vec<String> = Vec::new();
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
@@ -815,6 +926,24 @@ pub async fn import_magnet(
             }
             Some("codec") => {
                 codec = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("audio") => {
+                if let Ok(raw) = field.text().await {
+                    form_audio = raw
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                }
+            }
+            Some("hdr") => {
+                if let Ok(raw) = field.text().await {
+                    form_hdr = raw
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                }
             }
             Some("languages") => {
                 if let Ok(raw) = field.text().await {
@@ -934,15 +1063,19 @@ pub async fn import_magnet(
 
     if let Some(sid) = existing_id {
         if !force_import {
-            return (
-                StatusCode::CONFLICT,
-                Json(json!({
-                    "status": "exists",
-                    "message": "Stream already exists",
-                    "import_id": sid,
-                })),
+            return torrent_already_exists_response(
+                &state,
+                sid,
+                &info_hash,
+                meta_id.as_deref(),
+                &meta_type,
+                title.as_deref(),
+                poster.as_deref(),
+                background.as_deref(),
+                release_date.as_deref(),
+                None,
             )
-                .into_response();
+            .await;
         }
     }
 
@@ -965,6 +1098,16 @@ pub async fn import_magnet(
     if let Some(ref c) = codec {
         if !c.is_empty() {
             parsed.codec = Some(c.clone());
+        }
+    }
+    for a in form_audio {
+        if !parsed.audio.iter().any(|x| x == &a) {
+            parsed.audio.push(a);
+        }
+    }
+    for h in form_hdr {
+        if !parsed.hdr.iter().any(|x| x == &h) {
+            parsed.hdr.push(h);
         }
     }
 
@@ -1052,6 +1195,7 @@ pub async fn import_magnet(
         1
     };
 
+    let is_public = super::import_helpers::stream_is_public_on_submit(auto_approve, true);
     let stream_id = match insert_torrent_stream(
         &state.pool,
         &info_hash,
@@ -1062,7 +1206,7 @@ pub async fn import_magnet(
         file_count,
         &parsed,
         media_id,
-        auto_approve,
+        is_public,
     )
     .await
     {
@@ -1118,6 +1262,7 @@ pub async fn import_magnet(
 
     // Link media to caller-specified catalogs
     if let Some(mid) = media_id {
+        let _ = super::import_helpers::link_stream_to_media(&state.pool, stream_id, mid as i32).await;
         for cat_name in &effective_catalogs {
             if cat_name.is_empty() {
                 continue;
@@ -1164,7 +1309,7 @@ pub async fn import_magnet(
         &effective_catalogs,
         sports_category.as_deref(),
     );
-    record_torrent_contribution(
+    let contribution_id = record_torrent_contribution(
         &state,
         uploader_user_id,
         meta_id.as_deref(),
@@ -1175,22 +1320,24 @@ pub async fn import_magnet(
     )
     .await;
 
-    let (status, message) = if auto_approve {
-        ("success", "Torrent imported successfully!".to_string())
+    let message = if auto_approve {
+        "Torrent imported successfully!".to_string()
     } else {
-        (
-            "pending",
-            super::import_helpers::pending_import_message("Magnet link"),
-        )
+        super::import_helpers::pending_import_message("Magnet link")
     };
 
     (
-        StatusCode::CREATED,
+        StatusCode::OK,
         Json(json!({
-            "status": status,
+            "status": "success",
             "message": message,
-            "import_id": stream_id,
-            "auto_approved": auto_approve,
+            "import_id": contribution_id.unwrap_or_else(|| stream_id.to_string()),
+            "details": {
+                "info_hash": info_hash,
+                "title": title.as_deref().unwrap_or(&torrent_name),
+                "stream_id": stream_id,
+                "auto_approved": auto_approve,
+            }
         })),
     )
         .into_response()
@@ -1384,15 +1531,19 @@ pub async fn import_torrent(
 
     if let Some(sid) = existing_id {
         if !force_import {
-            return (
-                StatusCode::CONFLICT,
-                Json(json!({
-                    "status": "exists",
-                    "message": "Stream already exists",
-                    "import_id": sid,
-                })),
+            return torrent_already_exists_response(
+                &state,
+                sid,
+                &info_hash,
+                meta_id.as_deref(),
+                &meta_type,
+                title.as_deref(),
+                poster.as_deref(),
+                background.as_deref(),
+                release_date.as_deref(),
+                None,
             )
-                .into_response();
+            .await;
         }
     }
 
@@ -1542,6 +1693,7 @@ pub async fn import_torrent(
         }
     }
 
+    let is_public = super::import_helpers::stream_is_public_on_submit(auto_approve, true);
     let stream_id = match insert_torrent_stream(
         &state.pool,
         &info_hash,
@@ -1556,7 +1708,7 @@ pub async fn import_torrent(
         file_count,
         &parsed,
         media_id,
-        auto_approve,
+        is_public,
     )
     .await
     {
@@ -1610,6 +1762,7 @@ pub async fn import_torrent(
 
     // Link media to caller-specified catalogs
     if let Some(mid) = media_id {
+        let _ = super::import_helpers::link_stream_to_media(&state.pool, stream_id, mid as i32).await;
         for cat_name in &effective_catalogs {
             if cat_name.is_empty() {
                 continue;
@@ -1659,7 +1812,7 @@ pub async fn import_torrent(
         &effective_catalogs,
         sports_category.as_deref(),
     );
-    record_torrent_contribution(
+    let contribution_id = record_torrent_contribution(
         &state,
         uploader_user_id,
         meta_id.as_deref(),
@@ -1670,22 +1823,24 @@ pub async fn import_torrent(
     )
     .await;
 
-    let (status, message) = if auto_approve {
-        ("success", "Torrent imported successfully!".to_string())
+    let message = if auto_approve {
+        "Torrent imported successfully!".to_string()
     } else {
-        (
-            "pending",
-            super::import_helpers::pending_import_message("Torrent"),
-        )
+        super::import_helpers::pending_import_message("Torrent")
     };
 
     (
-        StatusCode::CREATED,
+        StatusCode::OK,
         Json(json!({
-            "status": status,
+            "status": "success",
             "message": message,
-            "import_id": stream_id,
-            "auto_approved": auto_approve,
+            "import_id": contribution_id.unwrap_or_else(|| stream_id.to_string()),
+            "details": {
+                "info_hash": info_hash,
+                "title": title.as_deref().unwrap_or(&torrent_name),
+                "stream_id": stream_id,
+                "auto_approved": auto_approve,
+            }
         })),
     )
         .into_response()

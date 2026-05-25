@@ -196,7 +196,11 @@ pub async fn create_contribution_record(
     is_privileged: bool,
 ) -> Result<String, sqlx::Error> {
     let id = Uuid::new_v4().to_string();
-    let status = if auto_approve { "approved" } else { "pending" };
+    let status = if auto_approve {
+        "APPROVED"
+    } else {
+        "PENDING"
+    };
     let reviewed_by: Option<&str> = if auto_approve { Some("auto") } else { None };
     let review_notes: Option<String> = if is_privileged {
         Some("Auto-approved: Privileged reviewer".to_string())
@@ -438,6 +442,115 @@ pub async fn resolve_media_for_import(
     .await
 }
 
+/// Compact media linkage info for an existing torrent stream (Python `_get_stream_media_attachment_details`).
+pub async fn stream_media_attachment_details(
+    pool: &PgPool,
+    stream_id: i32,
+    max_items: usize,
+) -> serde_json::Value {
+    let rows: Vec<(i32, String, Option<i32>, String)> = sqlx::query_as(
+        r#"SELECT m.id, m.title, m.year, LOWER(m.type::text)
+           FROM stream_media_link sml
+           JOIN media m ON m.id = sml.media_id
+           WHERE sml.stream_id = $1
+           ORDER BY sml.is_primary DESC, sml.id ASC
+           LIMIT $2"#,
+    )
+    .bind(stream_id)
+    .bind(max_items as i64)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let total: i64 =
+        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM stream_media_link WHERE stream_id = $1")
+            .bind(stream_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+
+    let mut items = Vec::new();
+    for (media_id, title, year, media_type) in rows {
+        let external_id: Option<String> = sqlx::query_scalar(
+            r#"SELECT external_id FROM media_external_id
+               WHERE media_id = $1
+               ORDER BY CASE provider WHEN 'imdb' THEN 0 WHEN 'tmdb' THEN 1 ELSE 2 END
+               LIMIT 1"#,
+        )
+        .bind(media_id)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+
+        items.push(json!({
+            "media_id": media_id,
+            "external_id": external_id.unwrap_or_else(|| format!("mf:{media_id}")),
+            "title": title,
+            "year": year,
+            "type": media_type,
+        }));
+    }
+
+    json!({
+        "count": total,
+        "items": items,
+    })
+}
+
+/// User-facing duplicate torrent message (Python `_build_existing_torrent_warning_message`).
+pub fn build_existing_torrent_warning_message(
+    info_hash: &str,
+    attachment_details: &serde_json::Value,
+) -> String {
+    let items = attachment_details
+        .get("items")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let linked_count = attachment_details
+        .get("count")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
+    let mut message = "⚠️ Upload skipped: this torrent already exists in MediaFusion.".to_string();
+    if let Some(first) = items.first() {
+        let title = first
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown title");
+        let year = first.get("year").and_then(|v| v.as_i64());
+        let media_type = first
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("media");
+        let external_id = first
+            .get("external_id")
+            .and_then(|v| v.as_str().map(str::to_string))
+            .or_else(|| {
+                first
+                    .get("media_id")
+                    .and_then(|v| v.as_i64())
+                    .map(|id| format!("mf:{id}"))
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+        let year_suffix = year.map(|y| format!(" ({y})")).unwrap_or_default();
+        let extra_suffix = if linked_count > 1 {
+            format!(" and {} more linked media item(s)", linked_count - 1)
+        } else {
+            String::new()
+        };
+        message.push_str(&format!(
+            " Already attached to {title}{year_suffix} [{media_type}, {external_id}]{extra_suffix}."
+        ));
+    } else {
+        message.push_str(" Existing stream linkage metadata could not be resolved.");
+    }
+    message.push_str(&format!(
+        " Thank you for trying to contribute ✨. If you cannot find it, contact support with this info hash ({info_hash})."
+    ));
+    message
+}
+
 /// Prefetch provider metadata for torrent import (primary + per-file ids).
 pub async fn prefetch_torrent_import_metadata(
     http: &reqwest::Client,
@@ -469,6 +582,95 @@ pub async fn link_stream_to_media(
     media_id: i32,
 ) -> Result<(), sqlx::Error> {
     crate::scrapers::media_resolve::link_stream_to_media(pool, stream_id, media_id).await
+}
+
+fn import_meta_id_candidates<'a>(
+    request_meta_id: Option<&'a str>,
+    stream_source: Option<&'a str>,
+) -> Vec<&'a str> {
+    let mut out = Vec::new();
+    for candidate in [request_meta_id, stream_source] {
+        let Some(id) = candidate.map(str::trim).filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        if id == "manual" || out.iter().any(|existing| *existing == id) {
+            continue;
+        }
+        out.push(id);
+    }
+    out
+}
+
+/// Attach a torrent stream that has no `stream_media_link` rows (duplicate import / prior failed link).
+pub async fn try_link_orphan_torrent_stream(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    tmdb_api_key: Option<&str>,
+    tvdb_api_key: Option<&str>,
+    stream_id: i32,
+    request_meta_id: Option<&str>,
+    meta_type: &str,
+    overrides: crate::scrapers::media_resolve::ImportMediaOverrides<'_>,
+    prefetch: Option<&crate::scrapers::media_resolve::ImportMetadataCache>,
+) -> Option<i32> {
+    let stream_source: Option<String> = sqlx::query_scalar(
+        "SELECT NULLIF(TRIM(source), '') FROM stream WHERE id = $1",
+    )
+    .bind(stream_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    for meta_id in import_meta_id_candidates(request_meta_id, stream_source.as_deref()) {
+        if let Some(media_id) = lookup_import_media_id(pool, meta_id, meta_type).await {
+            match link_stream_to_media(pool, stream_id, media_id).await {
+                Ok(()) => return Some(media_id),
+                Err(e) => tracing::warn!(
+                    "try_link_orphan_torrent_stream: link failed stream={stream_id} media={media_id} meta_id={meta_id}: {e}"
+                ),
+            }
+        }
+
+        if let Ok(Some(media_id)) =
+            crate::db::get_media_id_by_external_id(pool, meta_id, None).await
+        {
+            match link_stream_to_media(pool, stream_id, media_id).await {
+                Ok(()) => return Some(media_id),
+                Err(e) => tracing::warn!(
+                    "try_link_orphan_torrent_stream: link failed stream={stream_id} media={media_id} (no type filter) meta_id={meta_id}: {e}"
+                ),
+            }
+        }
+
+        if let Some(media_id) = resolve_media_for_import(
+            pool,
+            http,
+            tmdb_api_key,
+            tvdb_api_key,
+            meta_id,
+            meta_type,
+            crate::scrapers::media_resolve::ImportMediaOverrides {
+                title: overrides.title,
+                poster: overrides.poster,
+                background: overrides.background,
+                release_date: overrides.release_date,
+                year: overrides.year,
+            },
+            prefetch,
+        )
+        .await
+        {
+            match link_stream_to_media(pool, stream_id, media_id).await {
+                Ok(()) => return Some(media_id),
+                Err(e) => tracing::warn!(
+                    "try_link_orphan_torrent_stream: link failed stream={stream_id} media={media_id} (resolved) meta_id={meta_id}: {e}"
+                ),
+            }
+        }
+    }
+
+    None
 }
 
 /// Extract a deduplicated list of non-empty strings from a contribution JSON field.

@@ -680,8 +680,8 @@ pub async fn link_stream_to_media(
     media_id: i32,
 ) -> Result<(), sqlx::Error> {
     let inserted: Option<(i32,)> = sqlx::query_as(
-        r#"INSERT INTO stream_media_link(stream_id, media_id, is_primary)
-           SELECT $1, $2, true
+        r#"INSERT INTO stream_media_link(stream_id, media_id, is_primary, is_verified, created_at)
+           SELECT $1, $2, true, false, NOW()
            WHERE NOT EXISTS (
                SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2
            )

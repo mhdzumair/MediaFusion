@@ -1269,8 +1269,21 @@ pub async fn get_media_streams(
             let hdr_out = if hdr_arr.is_empty() { json!(null) } else { json!(hdr_arr) };
             let lang_out = if lang_arr_vals.is_empty() { json!([]) } else { json!(lang_arr_vals) };
 
+            let rd_blocked = selected_provider.as_deref() == Some("realdebrid")
+                && r.stream_type == "torrent"
+                && {
+                    let check = r
+                        .filename
+                        .as_deref()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(r.name.as_str());
+                    crate::routes::stream::is_rd_blocked_filename(check)
+                };
+
             // Build playback URL for torrent streams when a provider is configured
-            let playback_url = if !secret_str.is_empty() {
+            let playback_url = if rd_blocked {
+                None
+            } else if !secret_str.is_empty() {
                 if let (Some(ref svc), Some(ref hash)) = (&selected_provider, &r.info_hash) {
                     if r.stream_type == "torrent" {
                         let filename = r.filename.as_deref().unwrap_or("");
@@ -1324,6 +1337,7 @@ pub async fn get_media_streams(
                 "uploader": r.uploader,
                 "release_group": r.release_group,
                 "cached": is_cached,
+                "rd_blocked": rd_blocked,
                 "is_remastered": r.is_remastered,
                 "is_upscaled": r.is_upscaled,
                 "is_proper": r.is_proper,
@@ -1362,30 +1376,6 @@ pub async fn get_media_streams(
                 "usenet" => can_usenet,
                 _ => true,
             }
-        });
-    }
-
-    // Drop torrent streams that RealDebrid would block based on filename patterns.
-    if svc == "realdebrid" {
-        stream_pairs.retain(|(_, out)| {
-            if out
-                .get("stream_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                != "torrent"
-            {
-                return true;
-            }
-            let check = out
-                .get("filename")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| {
-                    out.get("stream_name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                });
-            !crate::routes::stream::is_rd_blocked_filename(check)
         });
     }
 

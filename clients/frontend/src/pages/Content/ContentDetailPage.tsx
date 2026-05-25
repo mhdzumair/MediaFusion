@@ -439,6 +439,15 @@ function StreamActionDialog({
                       Not Cached
                     </Badge>
                   )}
+                  {stream.rd_blocked && (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10"
+                      title="RealDebrid does not support this release type (e.g. WEBRip, WEB-DL)."
+                    >
+                      RD block
+                    </Badge>
+                  )}
                 </div>
               </div>
 
@@ -593,7 +602,15 @@ function StreamActionDialog({
 
               {/* Actions */}
               <div className="grid gap-3">
-                {streamUrl && (isDebridProvider || isDirectProxyStream || isYoutubeStream) ? (
+                {stream.rd_blocked ? (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-sm">
+                    <p className="text-amber-600 dark:text-amber-400 font-medium mb-1">RealDebrid blocked</p>
+                    <p className="text-muted-foreground text-xs">
+                      This release name uses a format RealDebrid rejects (e.g. WEBRip, WEB-DL). The stream is listed for
+                      reference — switch to another debrid provider in the stream bar, or play via P2P in Stremio.
+                    </p>
+                  </div>
+                ) : streamUrl && (isDebridProvider || isDirectProxyStream || isYoutubeStream) ? (
                   <>
                     {/* In-browser playback - requires MediaFlow proxy AND debrid for all streams */}
                     {hasMediaflowProxy || isDirectProxyStream || isYoutubeStream ? (
@@ -821,21 +838,23 @@ function StreamActionDialog({
               <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50 text-sm text-muted-foreground">
                 <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
                 <p>
-                  {streamUrl && (isDebridProvider || isDirectProxyStream || isYoutubeStream)
-                    ? hasMediaflowProxy || isDirectProxyStream || isYoutubeStream
-                      ? isYoutubeStream
-                        ? "Click 'Play via YouTube' to watch in embedded YouTube player."
-                        : isDirectProxyStream
-                          ? isAceStreamStream
-                            ? "Click 'Stream via MediaFlow' to play via MediaFlow Proxy (AceStream)."
-                            : "Click 'Stream via MediaFlow' to play via MediaFlow Proxy (using your Telegram session)."
-                          : "Click 'Stream via MediaFlow' to play in browser, or 'Download' to open in a new tab."
-                      : "Use 'Download' to open in a new tab or use an external player. Enable 'Web Browser Playback' in External Services for in-browser playback."
-                    : isTorrentStream
-                      ? isDebridProvider
-                        ? 'The stream URL will be available once your debrid provider processes the torrent.'
-                        : 'Configure a debrid provider to access this torrent stream.'
-                      : 'Configure a debrid provider and enable Web Browser Playback to stream.'}
+                  {stream.rd_blocked
+                    ? 'RealDebrid cannot process this torrent filename pattern. Use another provider or copy the info hash below.'
+                    : streamUrl && (isDebridProvider || isDirectProxyStream || isYoutubeStream)
+                      ? hasMediaflowProxy || isDirectProxyStream || isYoutubeStream
+                        ? isYoutubeStream
+                          ? "Click 'Play via YouTube' to watch in embedded YouTube player."
+                          : isDirectProxyStream
+                            ? isAceStreamStream
+                              ? "Click 'Stream via MediaFlow' to play via MediaFlow Proxy (AceStream)."
+                              : "Click 'Stream via MediaFlow' to play via MediaFlow Proxy (using your Telegram session)."
+                            : "Click 'Stream via MediaFlow' to play in browser, or 'Download' to open in a new tab."
+                        : "Use 'Download' to open in a new tab or use an external player. Enable 'Web Browser Playback' in External Services for in-browser playback."
+                      : isTorrentStream
+                        ? isDebridProvider
+                          ? 'The stream URL will be available once your debrid provider processes the torrent.'
+                          : 'Configure a debrid provider to access this torrent stream.'
+                        : 'Configure a debrid provider and enable Web Browser Playback to stream.'}
                 </p>
               </div>
             </div>

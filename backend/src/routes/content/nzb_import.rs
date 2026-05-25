@@ -288,8 +288,8 @@ async fn insert_usenet_stream(
 
     if let Some(mid) = media_id {
         sqlx::query(
-            r#"INSERT INTO stream_media_link(stream_id, media_id, is_primary)
-               SELECT $1, $2, true
+            r#"INSERT INTO stream_media_link(stream_id, media_id, is_primary, is_verified, created_at)
+               SELECT $1, $2, true, false, NOW()
                WHERE NOT EXISTS (
                    SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2
                )"#,
