@@ -674,9 +674,8 @@ impl AppConfig {
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(259200),
             exception_tracking_max_entries: env("EXCEPTION_TRACKING_MAX_ENTRIES")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(500),
-            resources_dir: env("RESOURCES_DIR").unwrap_or_else(|_| "resources".into()),
-            frontend_dist_dir: env("FRONTEND_DIST_DIR")
-                .unwrap_or_else(|_| "clients/frontend/dist".into()),
+            resources_dir: default_resources_dir(),
+            frontend_dist_dir: default_frontend_dist_dir(),
             request_timeout: env("REQUEST_TIMEOUT")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(120),
             prowlarr_search_query_timeout: env("PROWLARR_SEARCH_QUERY_TIMEOUT")
@@ -742,5 +741,54 @@ impl AppConfig {
             premiumize_oauth_client_secret: env("PREMIUMIZE_OAUTH_CLIENT_SECRET").ok().filter(|s| !s.is_empty()),
             branding_description: env("BRANDING_DESCRIPTION").unwrap_or_default(),
         }
+    }
+}
+
+/// Resolve a repo-relative directory whether the process cwd is repo root or `backend/`.
+fn resolve_repo_relative_dir(env_key: &str, repo_relative: &str, marker: &str) -> String {
+    if let Ok(v) = std::env::var(env_key) {
+        if !v.is_empty() {
+            return v;
+        }
+    }
+
+    let from_manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(repo_relative);
+    if from_manifest.join(marker).exists() {
+        return from_manifest.to_string_lossy().into_owned();
+    }
+
+    for candidate in [repo_relative, &format!("../{repo_relative}")] {
+        if std::path::Path::new(candidate).join(marker).exists() {
+            return candidate.to_string();
+        }
+    }
+
+    from_manifest.to_string_lossy().into_owned()
+}
+
+fn default_resources_dir() -> String {
+    resolve_repo_relative_dir("RESOURCES_DIR", "resources", "exceptions")
+}
+
+fn default_frontend_dist_dir() -> String {
+    resolve_repo_relative_dir("FRONTEND_DIST_DIR", "clients/frontend/dist", "index.html")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_resources_dir_points_at_repo_resources() {
+        let dir = default_resources_dir();
+        assert!(
+            std::path::Path::new(&dir)
+                .join("exceptions")
+                .join("daily_download_limit.mp4")
+                .is_file(),
+            "expected exception videos under {dir}/exceptions"
+        );
     }
 }

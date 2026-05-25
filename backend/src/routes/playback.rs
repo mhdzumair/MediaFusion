@@ -27,7 +27,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     crypto, db, models::user_data::UserData, providers,
-    providers::torrents::metadata_update::ProviderFile, state::AppState,
+    providers::torrents::metadata_update::ProviderFile, routes::playback_dedup, state::AppState,
 };
 
 const URL_CACHE_TTL: i64 = 3600;
@@ -259,15 +259,97 @@ async fn resolve(
         })?
     };
 
-    // 3. Check Redis cache
+    // 3. Check Redis cache, then deduplicate concurrent resolution.
     let cache_key = playback_cache_key(secret_str, info_hash, season, episode);
-    if let Ok(Some(cached)) = state.redis.get::<Option<Vec<u8>>, _>(&cache_key).await {
-        if let Ok(url) = String::from_utf8(cached) {
-            return Ok(url);
-        }
+    if let Some(cached) = get_playback_cache(&state.redis, &cache_key).await {
+        return Ok(cached);
     }
 
-    // 4. Fetch stream info from DB (announce list, file_index, filename hint)
+    match playback_dedup::prepare_resolve(&state.redis, &cache_key).await {
+        playback_dedup::DedupWaitResult::Cached(url) => return Ok(url),
+        playback_dedup::DedupWaitResult::TimedOut => {
+            tracing::debug!(
+                provider = %provider_name,
+                hash = %info_hash,
+                "playback resolve timed out waiting for in-flight peer"
+            );
+            return Err(playback_dedup::playback_resolve_timed_out());
+        }
+        playback_dedup::DedupWaitResult::ReadyToResolve => {}
+    }
+
+    let lock_guard = match playback_dedup::ResolveLockGuard::acquire(&state.redis, &cache_key).await
+    {
+        Some(guard) => guard,
+        None => {
+            let _ = playback_dedup::reclaim_stale_lock(&state.redis, &cache_key).await;
+            playback_dedup::ResolveLockGuard::acquire(&state.redis, &cache_key)
+                .await
+                .ok_or_else(playback_dedup::playback_resolve_timed_out)?
+        }
+    };
+
+    if let Some(cached) = get_playback_cache(&state.redis, &cache_key).await {
+        lock_guard.release().await;
+        return Ok(cached);
+    }
+
+    tracing::info!(
+        provider = %provider_name,
+        hash = %info_hash,
+        "starting playback provider resolve"
+    );
+
+    let result = match tokio::time::timeout(
+        playback_dedup::holder_resolve_timeout(),
+        resolve_playback_url(
+            state,
+            info_hash,
+            season,
+            episode,
+            filename,
+            provider,
+            token,
+            pikpak_credentials.as_ref(),
+            pikpak_profile_id,
+            pikpak_provider_index,
+            &user_data,
+        ),
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(_) => {
+            tracing::debug!(
+                provider = %provider_name,
+                hash = %info_hash,
+                "playback provider resolve timed out"
+            );
+            Err(playback_dedup::playback_resolve_timed_out())
+        }
+    };
+
+    if let Ok(ref url) = result {
+        set_playback_cache(&state.redis, &cache_key, url).await;
+    }
+    lock_guard.release().await;
+    result
+}
+
+async fn resolve_playback_url(
+    state: &AppState,
+    info_hash: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+    filename: Option<&str>,
+    provider: &crate::models::user_data::StreamingProvider,
+    token: &str,
+    pikpak_credentials: Option<&(String, String)>,
+    pikpak_profile_id: Option<i64>,
+    pikpak_provider_index: Option<usize>,
+    user_data: &UserData,
+) -> Result<String, providers::ProviderError> {
+    // Fetch stream info from DB (announce list, file_index, filename hint)
     let stream_info = db::fetch_stream_playback_info(&state.pool_ro, info_hash, season, episode)
         .await
         .ok_or_else(|| providers::ProviderError::api("Stream not found", "stream_not_found.mp4"))?;
@@ -292,7 +374,7 @@ async fn resolve(
     });
     let fwd = forward.as_ref();
 
-    // 5. Dispatch to provider — realdebrid returns (url, files); others just url.
+    // Dispatch to provider — realdebrid returns (url, files); others just url.
     //
     // Only providers where forward IS fully wired (api calls routed through MediaFlow)
     // AND whose API accepts an ip= hint receive "{mediaflow_ip}" as user_ip.
@@ -419,6 +501,7 @@ async fn resolve(
                 stream_info.file_index,
                 season,
                 episode,
+                stream_info.size_bytes,
                 None,
                 fwd,
             )
@@ -427,7 +510,7 @@ async fn resolve(
                 Ok(url) => (url, Vec::new()),
                 Err(e) if e.video_file() == "invalid_token.mp4" => {
                     // Access token expired and refresh token is invalid — re-login once.
-                    let (email, password) = pikpak_credentials.as_ref().ok_or_else(|| {
+                    let (email, password) = pikpak_credentials.ok_or_else(|| {
                         providers::ProviderError::api(
                             "PikPak token expired and no credentials available to re-authenticate.",
                             "invalid_credentials.mp4",
@@ -453,6 +536,7 @@ async fn resolve(
                         stream_info.file_index,
                         season,
                         episode,
+                        stream_info.size_bytes,
                         None,
                         fwd,
                     )
@@ -470,7 +554,7 @@ async fn resolve(
         }
     };
 
-    // 6. If no file metadata in DB, store it in the background (future users benefit).
+    // If no file metadata in DB, store it in the background (future users benefit).
     if no_file_metadata && !provider_files.is_empty() {
         let pool = state.pool.clone();
         let hash = info_hash.to_string();
@@ -481,19 +565,29 @@ async fn resolve(
         });
     }
 
-    // 7. Cache result
-    let _ = state
-        .redis
+    Ok(video_url)
+}
+
+async fn get_playback_cache(redis: &fred::clients::Client, key: &str) -> Option<String> {
+    redis
+        .get::<Option<Vec<u8>>, _>(key)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|b| String::from_utf8(b).ok())
+        .filter(|s| !s.is_empty())
+}
+
+async fn set_playback_cache(redis: &fred::clients::Client, key: &str, url: &str) {
+    let _ = redis
         .set::<(), _, _>(
-            &cache_key,
-            video_url.as_bytes(),
+            key,
+            url.as_bytes(),
             Some(Expiration::EX(URL_CACHE_TTL)),
             None,
             false,
         )
         .await;
-
-    Ok(video_url)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

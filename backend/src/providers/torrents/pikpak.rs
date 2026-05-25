@@ -64,6 +64,8 @@ struct Tokens {
     device_id: String,
     user_id: String,
     captcha_token: Option<String>,
+    /// Cached from `/drive/v1/about` for the current playback session.
+    is_premium: Option<bool>,
 }
 
 fn encode_token(tokens: &Tokens) -> String {
@@ -127,6 +129,7 @@ fn decode_token(raw: &str) -> Result<Tokens, ProviderError> {
         device_id,
         user_id,
         captcha_token,
+        is_premium: None,
     })
 }
 
@@ -139,9 +142,9 @@ fn pikpak_device_id(email: &str, password: &str) -> String {
 }
 
 fn is_legacy_token_value(v: &Value) -> bool {
-    !v.get("device_id")
+    v.get("device_id")
         .and_then(|d| d.as_str())
-        .is_some_and(|s| !s.is_empty())
+        .is_none_or(|s| s.is_empty())
 }
 
 /// Returns true when the stored token predates the web-client session format (no `device_id`).
@@ -253,7 +256,10 @@ async fn request_captcha_token(
         meta["user_id"] = json!(uid);
     }
 
-    let url = format!("{}/v1/shield/captcha/init?client_id={CLIENT_ID}", user_base());
+    let url = format!(
+        "{}/v1/shield/captcha/init?client_id={CLIENT_ID}",
+        user_base()
+    );
     let body = json!({
         "action": action,
         "captcha_token": old_captcha_token.unwrap_or(""),
@@ -337,7 +343,9 @@ fn is_captcha_error(data: &Value) -> bool {
 
 fn is_auth_error(data: &Value) -> bool {
     api_error_code(data) == Some(16)
-        || data["error"].as_str().is_some_and(|e| e == "unauthenticated")
+        || data["error"]
+            .as_str()
+            .is_some_and(|e| e == "unauthenticated")
 }
 
 // ─── Login / refresh ──────────────────────────────────────────────────────────
@@ -415,6 +423,7 @@ pub async fn login(http: &Client, email: &str, password: &str) -> Result<String,
         device_id,
         user_id,
         captcha_token: Some(captcha_token),
+        is_premium: None,
     }))
 }
 
@@ -588,7 +597,10 @@ async fn do_api_request(
                 .unwrap_or_default()
         }
     } else {
-        return Err(ProviderError::api("PikPak internal API error.", "api_error.mp4"));
+        return Err(ProviderError::api(
+            "PikPak internal API error.",
+            "api_error.mp4",
+        ));
     };
 
     Ok(data)
@@ -620,7 +632,32 @@ fn check_api_error(data: Value) -> Result<Value, ProviderError> {
     Ok(data)
 }
 
-// ─── Task helpers ─────────────────────────────────────────────────────────────
+// ─── Task helpers (Python parity) ─────────────────────────────────────────────
+
+fn default_file_filters(extra: Option<&Value>) -> String {
+    let mut filters = json!({
+        "trashed": {"eq": false},
+        "phase": {"eq": "PHASE_TYPE_COMPLETE"},
+    });
+    if let Some(extra_obj) = extra.and_then(|v| v.as_object()) {
+        for (k, v) in extra_obj {
+            filters[k] = v.clone();
+        }
+    }
+    serde_json::to_string(&filters).unwrap_or_default()
+}
+
+fn trashed_only_file_filters() -> String {
+    serde_json::to_string(&json!({"trashed": {"eq": false}})).unwrap_or_default()
+}
+
+fn parse_pikpak_size(value: &Value) -> i64 {
+    value
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .or_else(|| value.as_i64())
+        .unwrap_or(0)
+}
 
 async fn offline_list(
     http: &Client,
@@ -647,112 +684,679 @@ async fn offline_list(
     Ok(data["tasks"].as_array().cloned().unwrap_or_default())
 }
 
+async fn offline_tasks_for_hash(
+    http: &Client,
+    tokens: &mut Tokens,
+    info_hash: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Vec<Value>, ProviderError> {
+    let tasks = offline_list(
+        http,
+        tokens,
+        &[
+            "PHASE_TYPE_RUNNING",
+            "PHASE_TYPE_ERROR",
+            "PHASE_TYPE_COMPLETE",
+            "PHASE_TYPE_PENDING",
+        ],
+        forward,
+    )
+    .await?;
+
+    let mut matched: Vec<Value> = tasks
+        .iter()
+        .filter(|task| task_has_info_hash(task, info_hash))
+        .cloned()
+        .collect();
+
+    if matched.is_empty() {
+        for task in &tasks {
+            if task_phase(task) != "PHASE_TYPE_COMPLETE" {
+                continue;
+            }
+            let Some(file_id) = task_file_id(task) else {
+                continue;
+            };
+            let detail = get_file_detail(http, tokens, &file_id, forward).await?;
+            if detail.get("error").is_none() && item_has_info_hash(&detail, info_hash) {
+                matched.push(task.clone());
+            }
+        }
+    }
+
+    Ok(matched)
+}
+
+async fn check_torrent_status(
+    http: &Client,
+    tokens: &mut Tokens,
+    info_hash: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Option<Value>, ProviderError> {
+    let tasks = offline_tasks_for_hash(http, tokens, info_hash, forward).await?;
+    // Prefer completed downloads over stale in-progress tasks.
+    let priority = |task: &Value| -> u8 {
+        match task_phase(task) {
+            "PHASE_TYPE_COMPLETE" => 0,
+            "PHASE_TYPE_RUNNING" | "PHASE_TYPE_PENDING" => 1,
+            "PHASE_TYPE_ERROR" => 2,
+            _ => 3,
+        }
+    };
+    Ok(tasks.into_iter().min_by_key(|task| priority(task)))
+}
+
+fn task_file_id(task: &Value) -> Option<String> {
+    task["file_id"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            task["reference_resource"]["id"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        })
+}
+
+async fn drive_file_exists(
+    http: &Client,
+    tokens: &mut Tokens,
+    file_id: &str,
+    forward: Option<&MediaFlowForward>,
+) -> bool {
+    let path = format!("/drive/v1/files/{file_id}");
+    api_get(http, tokens, &path, &[], forward)
+        .await
+        .map(|data| data.get("error").is_none() && data["id"].as_str() == Some(file_id))
+        .unwrap_or(false)
+}
+
+fn magnet_or_resource_url(value: &Value) -> Option<&str> {
+    value
+        .get("params")
+        .and_then(|p| p.get("url"))
+        .and_then(|u| u.as_str().or_else(|| u.get("url").and_then(|inner| inner.as_str())))
+        .or_else(|| value.get("original_url").and_then(|u| u.as_str()))
+}
+
+fn item_has_info_hash(item: &Value, info_hash: &str) -> bool {
+    let hash = info_hash.to_lowercase();
+    if item
+        .get("hash")
+        .and_then(|h| h.as_str())
+        .is_some_and(|h| h.to_lowercase() == hash)
+    {
+        return true;
+    }
+    magnet_or_resource_url(item)
+        .is_some_and(|url| url.to_lowercase().contains(&hash))
+}
+
 fn task_has_info_hash(task: &Value, info_hash: &str) -> bool {
-    let url = task["params"]["url"].as_str().unwrap_or("");
-    url.to_lowercase().contains(info_hash)
+    if item_has_info_hash(task, info_hash) {
+        return true;
+    }
+    task.get("reference_resource")
+        .is_some_and(|resource| item_has_info_hash(resource, info_hash))
+}
+
+async fn cleanup_stale_error_tasks(
+    http: &Client,
+    tokens: &mut Tokens,
+    info_hash: &str,
+    forward: Option<&MediaFlowForward>,
+) {
+    let tasks = offline_tasks_for_hash(http, tokens, info_hash, forward)
+        .await
+        .unwrap_or_default();
+    for task in tasks {
+        if task_phase(&task) != "PHASE_TYPE_ERROR" {
+            continue;
+        }
+        let msg = task["message"].as_str().unwrap_or("");
+        if !is_recoverable_task_error(msg) {
+            continue;
+        }
+        if let Some(task_id) = task["id"].as_str().filter(|s| !s.is_empty()) {
+            tracing::debug!(
+                task_id = %task_id,
+                message = %msg,
+                "PikPak stale offline task — deleting"
+            );
+            delete_offline_tasks(http, tokens, &[task_id], forward).await;
+        }
+    }
+}
+
+async fn get_file_detail(
+    http: &Client,
+    tokens: &mut Tokens,
+    file_id: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    let path = format!("/drive/v1/files/{file_id}");
+    api_get(http, tokens, &path, &[], forward).await
+}
+
+async fn resolve_torrent_folder_id(
+    http: &Client,
+    tokens: &mut Tokens,
+    my_pack_folder_id: &str,
+    info_hash: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Option<String>, ProviderError> {
+    let tasks = offline_tasks_for_hash(http, tokens, info_hash, forward).await?;
+    let mut sorted_tasks: Vec<_> = tasks.into_iter().collect();
+    sorted_tasks.sort_by_key(|task| match task_phase(task) {
+        "PHASE_TYPE_COMPLETE" => 0,
+        "PHASE_TYPE_RUNNING" | "PHASE_TYPE_PENDING" => 1,
+        _ => 2,
+    });
+    for task in &sorted_tasks {
+        let Some(file_id) = task_file_id(task) else {
+            continue;
+        };
+        if drive_file_exists(http, tokens, &file_id, forward).await {
+            tracing::debug!(
+                hash = %info_hash,
+                file_id = %file_id,
+                phase = task_phase(task),
+                "PikPak torrent resolved via offline task file_id"
+            );
+            return Ok(Some(file_id));
+        }
+    }
+
+    let files = {
+        let complete = file_list_all(
+            http,
+            tokens,
+            Some(my_pack_folder_id),
+            "1000",
+            None,
+            forward,
+        )
+        .await?;
+        if complete.iter().any(|f| item_has_info_hash(f, info_hash)) {
+            complete
+        } else {
+            file_list_all_with_filters(
+                http,
+                tokens,
+                Some(my_pack_folder_id),
+                "1000",
+                &trashed_only_file_filters(),
+                forward,
+            )
+            .await?
+        }
+    };
+    if let Some(item) = files.iter().find(|f| item_has_info_hash(f, info_hash)) {
+        if let Some(id) = item["id"].as_str() {
+            tracing::debug!(
+                hash = %info_hash,
+                file_id = %id,
+                "PikPak torrent resolved via My Pack listing"
+            );
+            return Ok(Some(id.to_string()));
+        }
+    }
+
+    // List responses often omit params.url/hash; the detail endpoint includes them.
+    for item in &files {
+        if item["kind"].as_str() != Some("drive#folder") {
+            continue;
+        }
+        let Some(id) = item["id"].as_str() else {
+            continue;
+        };
+        if item_has_info_hash(item, info_hash) {
+            return Ok(Some(id.to_string()));
+        }
+        let detail = get_file_detail(http, tokens, id, forward).await?;
+        if detail.get("error").is_none() && item_has_info_hash(&detail, info_hash) {
+            tracing::debug!(
+                hash = %info_hash,
+                file_id = %id,
+                "PikPak torrent resolved via My Pack folder detail"
+            );
+            return Ok(Some(id.to_string()));
+        }
+    }
+
+    Ok(None)
 }
 
 fn task_phase(task: &Value) -> &str {
     task["phase"].as_str().unwrap_or("")
 }
 
-fn task_is_complete(task: &Value) -> bool {
-    task_phase(task) == "PHASE_TYPE_COMPLETE"
-        || task["progress"]
-            .as_str()
-            .map(|p| p == "100")
-            .unwrap_or(false)
+fn is_recoverable_task_error(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    lower.contains("file deleted")
+        || lower.contains("folder no longer exists")
+        || lower.contains("folder does not exist")
+        || lower.contains("parent folder not found")
+        || msg == "Save failed, retry please"
 }
 
-fn task_is_downloading(task: &Value) -> bool {
-    matches!(
-        task_phase(task),
-        "PHASE_TYPE_RUNNING" | "PHASE_TYPE_PENDING"
-    )
+async fn handle_torrent_error(
+    http: &Client,
+    tokens: &mut Tokens,
+    torrent: &Value,
+    forward: Option<&MediaFlowForward>,
+) -> Result<(), ProviderError> {
+    let msg = torrent["message"].as_str().unwrap_or("");
+    let task_id = torrent["id"].as_str().unwrap_or("");
+
+    if is_recoverable_task_error(msg) {
+        if !task_id.is_empty() {
+            tracing::debug!(
+                task_id = %task_id,
+                message = %msg,
+                "PikPak stale offline task — deleting so torrent can be re-added"
+            );
+            delete_offline_tasks(http, tokens, &[task_id], forward).await;
+        }
+        return Ok(());
+    }
+
+    match msg {
+        "Storage space is not enough" | "Not enough storage space available" => {
+            if !task_id.is_empty() {
+                delete_offline_tasks(http, tokens, &[task_id], forward).await;
+            }
+            Err(ProviderError::api(
+                "Not enough storage space in your PikPak account.",
+                "not_enough_space.mp4",
+            ))
+        }
+        "You have reached the limits of free usage today"
+        | "The number of free transfers has been used up, continued use requires Premium" => {
+            if !task_id.is_empty() {
+                offline_task_retry(http, tokens, task_id, forward).await;
+            }
+            Err(ProviderError::api(
+                "PikPak daily download limit reached.",
+                "daily_download_limit.mp4",
+            ))
+        }
+        other => Err(ProviderError::api(
+            format!("Error downloading torrent: {other}"),
+            "transfer_error.mp4",
+        )),
+    }
 }
 
-fn task_is_error(task: &Value) -> bool {
-    task_phase(task) == "PHASE_TYPE_ERROR"
+async fn offline_task_folder_exists(
+    http: &Client,
+    tokens: &mut Tokens,
+    task: &Value,
+    forward: Option<&MediaFlowForward>,
+) -> bool {
+    match task_file_id(task) {
+        Some(file_id) if !file_id.is_empty() => {
+            drive_file_exists(http, tokens, &file_id, forward).await
+        }
+        _ => false,
+    }
 }
 
-// ─── File helpers ─────────────────────────────────────────────────────────────
+async fn wait_for_torrent_to_complete(
+    http: &Client,
+    tokens: &mut Tokens,
+    info_hash: &str,
+    my_pack_folder_id: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<(), ProviderError> {
+    for _ in 0..MAX_RETRIES {
+        if resolve_torrent_folder_id(http, tokens, my_pack_folder_id, info_hash, forward)
+            .await?
+            .is_some()
+        {
+            return Ok(());
+        }
+
+        let torrent = check_torrent_status(http, tokens, info_hash, forward).await?;
+        match torrent {
+            None => return Ok(()),
+            Some(task) if offline_task_folder_exists(http, tokens, &task, forward).await => {
+                return Ok(());
+            }
+            Some(task) if task["progress"].as_str() == Some("100") => {
+                if offline_task_folder_exists(http, tokens, &task, forward).await
+                    || resolve_torrent_folder_id(http, tokens, my_pack_folder_id, info_hash, forward)
+                        .await?
+                        .is_some()
+                {
+                    return Ok(());
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_SECS)).await;
+            }
+            Some(task) if task_phase(&task) == "PHASE_TYPE_ERROR" => {
+                handle_torrent_error(http, tokens, &task, forward).await?;
+            }
+            Some(task) if task_phase(&task) == "PHASE_TYPE_COMPLETE" => {
+                if offline_task_folder_exists(http, tokens, &task, forward).await
+                    || resolve_torrent_folder_id(http, tokens, my_pack_folder_id, info_hash, forward)
+                        .await?
+                        .is_some()
+                {
+                    return Ok(());
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_SECS)).await;
+            }
+            Some(_) => {
+                tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_SECS)).await;
+            }
+        }
+    }
+    Err(ProviderError::api(
+        "Torrent is still downloading in PikPak. Please try again later.",
+        "torrent_not_downloaded.mp4",
+    ))
+}
+
+async fn handle_torrent_status(
+    http: &Client,
+    tokens: &mut Tokens,
+    info_hash: &str,
+    my_pack_folder_id: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<(), ProviderError> {
+    cleanup_stale_error_tasks(http, tokens, info_hash, forward).await;
+
+    if resolve_torrent_folder_id(http, tokens, my_pack_folder_id, info_hash, forward)
+        .await?
+        .is_some()
+    {
+        return Ok(());
+    }
+
+    let torrent = check_torrent_status(http, tokens, info_hash, forward).await?;
+    let Some(task) = torrent else {
+        return Ok(());
+    };
+
+    match task_phase(&task) {
+        "PHASE_TYPE_ERROR" => handle_torrent_error(http, tokens, &task, forward).await?,
+        "PHASE_TYPE_COMPLETE" => {
+            if offline_task_folder_exists(http, tokens, &task, forward).await {
+                return Ok(());
+            }
+        }
+        "PHASE_TYPE_RUNNING" | "PHASE_TYPE_PENDING" => {
+            if resolve_torrent_folder_id(http, tokens, my_pack_folder_id, info_hash, forward)
+                .await?
+                .is_some()
+            {
+                return Ok(());
+            }
+            wait_for_torrent_to_complete(http, tokens, info_hash, my_pack_folder_id, forward)
+                .await?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+async fn offline_task_retry(
+    http: &Client,
+    tokens: &mut Tokens,
+    task_id: &str,
+    forward: Option<&MediaFlowForward>,
+) {
+    let body = json!({
+        "type": "offline",
+        "create_type": "RETRY",
+        "id": task_id,
+    });
+    let _ = api_post(http, tokens, "/drive/v1/task", &body, forward).await;
+}
+
+// ─── File helpers (Python parity) ─────────────────────────────────────────────
 
 fn is_video(name: &str) -> bool {
     let lower = name.to_lowercase();
     VIDEO_EXTS.iter().any(|e| lower.ends_with(&format!(".{e}")))
 }
 
-async fn collect_folder_videos(
+async fn file_list_page(
+    http: &Client,
+    tokens: &mut Tokens,
+    parent_id: Option<&str>,
+    limit: &str,
+    page_token: Option<&str>,
+    filters: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    let mut params = vec![
+        ("thumbnail_size", "SIZE_MEDIUM"),
+        ("limit", limit),
+        ("with_audit", "true"),
+        ("filters", filters),
+    ];
+    if let Some(pid) = parent_id {
+        params.push(("parent_id", pid));
+    }
+    if let Some(token) = page_token.filter(|s| !s.is_empty()) {
+        params.push(("page_token", token));
+    }
+    api_get(http, tokens, "/drive/v1/files", &params, forward).await
+}
+
+async fn file_list_all_with_filters(
+    http: &Client,
+    tokens: &mut Tokens,
+    parent_id: Option<&str>,
+    limit: &str,
+    filters: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Vec<Value>, ProviderError> {
+    let mut all = Vec::new();
+    let mut page_token: Option<String> = None;
+    loop {
+        let data = file_list_page(
+            http,
+            tokens,
+            parent_id,
+            limit,
+            page_token.as_deref(),
+            filters,
+            forward,
+        )
+        .await?;
+        all.extend(data["files"].as_array().cloned().unwrap_or_default());
+        page_token = data["next_page_token"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        if page_token.is_none() {
+            break;
+        }
+    }
+    Ok(all)
+}
+
+async fn file_list_page_legacy(
+    http: &Client,
+    tokens: &mut Tokens,
+    parent_id: Option<&str>,
+    limit: &str,
+    page_token: Option<&str>,
+    extra_filters: Option<&Value>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    file_list_page(
+        http,
+        tokens,
+        parent_id,
+        limit,
+        page_token,
+        &default_file_filters(extra_filters),
+        forward,
+    )
+    .await
+}
+
+async fn file_list_all(
+    http: &Client,
+    tokens: &mut Tokens,
+    parent_id: Option<&str>,
+    limit: &str,
+    extra_filters: Option<&Value>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Vec<Value>, ProviderError> {
+    let mut all = Vec::new();
+    let mut page_token: Option<String> = None;
+    loop {
+        let data = file_list_page_legacy(
+            http,
+            tokens,
+            parent_id,
+            limit,
+            page_token.as_deref(),
+            extra_filters,
+            forward,
+        )
+        .await?;
+        all.extend(data["files"].as_array().cloned().unwrap_or_default());
+        page_token = data["next_page_token"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        if page_token.is_none() {
+            break;
+        }
+    }
+    Ok(all)
+}
+
+async fn file_list(
+    http: &Client,
+    tokens: &mut Tokens,
+    parent_id: Option<&str>,
+    limit: &str,
+    extra_filters: Option<&Value>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Vec<Value>, ProviderError> {
+    file_list_all(http, tokens, parent_id, limit, extra_filters, forward).await
+}
+
+async fn get_my_pack_folder_id(
+    http: &Client,
+    tokens: &mut Tokens,
+    forward: Option<&MediaFlowForward>,
+) -> Result<String, ProviderError> {
+    let files = file_list(http, tokens, None, "100", None, forward).await?;
+    files
+        .iter()
+        .find(|f| f["name"].as_str() == Some("My Pack"))
+        .and_then(|f| f["id"].as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| ProviderError::api("PikPak 'My Pack' folder not found.", "api_error.mp4"))
+}
+
+async fn get_torrent_file_by_info_hash(
+    http: &Client,
+    tokens: &mut Tokens,
+    my_pack_folder_id: &str,
+    info_hash: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Option<Value>, ProviderError> {
+    let Some(folder_id) =
+        resolve_torrent_folder_id(http, tokens, my_pack_folder_id, info_hash, forward).await?
+    else {
+        return Ok(None);
+    };
+    let path = format!("/drive/v1/files/{folder_id}");
+    let data = api_get(http, tokens, &path, &[], forward).await?;
+    if data.get("error").is_some() {
+        return Ok(None);
+    }
+    Ok(Some(data))
+}
+
+async fn get_files_from_folder(
     http: &Client,
     tokens: &mut Tokens,
     folder_id: &str,
     forward: Option<&MediaFlowForward>,
-) -> Result<Vec<(String, i64, String)>, ProviderError> {
-    let filters = serde_json::to_string(
-        &json!({"trashed": {"eq": false}, "phase": {"eq": "PHASE_TYPE_COMPLETE"}}),
-    )
-    .unwrap_or_default();
-    let data = api_get(
-        http,
-        tokens,
-        "/drive/v1/files",
-        &[
-            ("parent_id", folder_id),
-            ("thumbnail_size", "SIZE_MEDIUM"),
-            ("limit", "100"),
-            ("with_audit", "true"),
-            ("filters", &filters),
-        ],
-        forward,
-    )
-    .await?;
-
-    let mut results = Vec::new();
-    for item in data["files"].as_array().iter().flat_map(|a| a.iter()) {
-        let kind = item["kind"].as_str().unwrap_or("");
-        let name = item["name"].as_str().unwrap_or("").to_string();
-        let id = item["id"].as_str().unwrap_or("").to_string();
-
-        if kind == "drive#folder" {
-            if !id.is_empty() {
-                let sub = Box::pin(collect_folder_videos(http, tokens, &id, forward)).await?;
-                results.extend(sub);
+) -> Result<Vec<Value>, ProviderError> {
+    let contents = file_list(http, tokens, Some(folder_id), "100", None, forward).await?;
+    let mut files = Vec::new();
+    for item in contents {
+        match item["kind"].as_str() {
+            Some("drive#file") => files.push(item),
+            Some("drive#folder") => {
+                if let Some(id) = item["id"].as_str() {
+                    let sub = Box::pin(get_files_from_folder(http, tokens, id, forward)).await?;
+                    files.extend(sub);
+                }
             }
-        } else if is_video(&name) && !id.is_empty() {
-            let size = item["size"]
-                .as_str()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0i64);
-            results.push((name, size, id));
+            _ => {}
         }
     }
-    Ok(results)
+    Ok(files)
 }
 
-fn select_video<'a>(
-    files: &'a [(String, i64, String)],
+fn file_basename(name: &str) -> &str {
+    std::path::Path::new(name)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name)
+}
+
+/// Pick the best file from a torrent folder (Python `select_file_index_from_torrent` parity).
+fn select_video_file(
+    files: &[(String, i64, String)],
     filename: Option<&str>,
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
-) -> Option<&'a (String, i64, String)> {
+) -> Result<usize, ProviderError> {
     if files.is_empty() {
-        return None;
+        return Err(ProviderError::api(
+            "No valid video files found in torrent.",
+            "no_matching_file.mp4",
+        ));
     }
 
-    if let Some(idx) = file_index {
-        if let Some(f) = files.get(idx as usize) {
-            return Some(f);
+    if let Some(name) = filename {
+        for (idx, (fname, _, _)) in files.iter().enumerate() {
+            if file_basename(fname) == name {
+                return Ok(idx);
+            }
         }
     }
 
-    if let Some(fname) = filename {
-        let fname_lower = fname.to_lowercase();
-        if let Some(f) = files
+    if let Some(fi) = file_index {
+        if fi >= 0 && (fi as usize) < files.len() {
+            return Ok(fi as usize);
+        }
+    }
+
+    let video_indices: Vec<usize> = files
+        .iter()
+        .enumerate()
+        .filter(|(_, (name, _, _))| is_video(name))
+        .map(|(i, _)| i)
+        .collect();
+    if video_indices.is_empty() {
+        return Err(ProviderError::api(
+            "No valid video files found in torrent.",
+            "no_matching_file.mp4",
+        ));
+    }
+
+    if let Some(name) = filename {
+        let name_lower = name.to_lowercase();
+        if let Some(idx) = files
             .iter()
-            .find(|(n, _, _)| n.to_lowercase().contains(&fname_lower))
+            .position(|(n, _, _)| n.to_lowercase().contains(&name_lower))
         {
-            return Some(f);
+            return Ok(idx);
         }
     }
 
@@ -762,137 +1366,269 @@ fn select_video<'a>(
             format!("{s}x{e:02}"),
             format!("{s:02}x{e:02}"),
         ];
-        for f in files.iter() {
-            let lower = f.0.to_lowercase();
-            if patterns.iter().any(|p| lower.contains(p.as_str())) {
-                return Some(f);
-            }
+        if let Some(&idx) = video_indices.iter().find(|&&i| {
+            let lower = files[i].0.to_lowercase();
+            patterns.iter().any(|p| lower.contains(p))
+        }) {
+            return Ok(idx);
         }
+        return Err(ProviderError::api(
+            "Found video files but couldn't match season/episode.",
+            "episode_not_found.mp4",
+        ));
     }
 
-    files.iter().max_by_key(|(_, sz, _)| sz)
+    video_indices
+        .into_iter()
+        .max_by_key(|&i| files[i].1)
+        .ok_or_else(|| {
+            ProviderError::api(
+                "No valid video file found in torrent.",
+                "no_matching_file.mp4",
+            )
+        })
 }
 
-// ─── Download URL ─────────────────────────────────────────────────────────────
+async fn find_file_in_folder_tree(
+    http: &Client,
+    tokens: &mut Tokens,
+    my_pack_folder_id: &str,
+    info_hash: &str,
+    filename: Option<&str>,
+    file_index: Option<i32>,
+    season: Option<i32>,
+    episode: Option<i32>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Option<String>, ProviderError> {
+    let torrent_file =
+        get_torrent_file_by_info_hash(http, tokens, my_pack_folder_id, info_hash, forward).await?;
+    let Some(torrent_file) = torrent_file else {
+        return Ok(None);
+    };
 
-/// Fetch file details with `usage=FETCH` so medias/web_content_link are populated.
+    let raw_files = if torrent_file["kind"].as_str() == Some("drive#file") {
+        vec![torrent_file]
+    } else if let Some(folder_id) = torrent_file["id"].as_str() {
+        get_files_from_folder(http, tokens, folder_id, forward).await?
+    } else {
+        return Ok(None);
+    };
+
+    let files: Vec<(String, i64, String)> = raw_files
+        .iter()
+        .filter_map(|f| {
+            let name = f["name"].as_str()?.to_string();
+            let id = f["id"].as_str()?.to_string();
+            let size = parse_pikpak_size(&f["size"]);
+            Some((name, size, id))
+        })
+        .collect();
+
+    let idx = select_video_file(&files, filename, file_index, season, episode)?;
+    Ok(Some(files[idx].2.clone()))
+}
+
+// ─── Download URL (pikpakapi / debrify / alist parity) ───────────────────────
+
+fn link_throughput_bytes(url: &str) -> i64 {
+    for key in ["ms=", "th="] {
+        if let Some(value) = url.split('&').find_map(|part| {
+            part.strip_prefix(key)
+                .and_then(|raw| raw.parse::<i64>().ok())
+        }) {
+            return value;
+        }
+    }
+    0
+}
+
+fn media_link_score(media: &Value, url: &str) -> (i64, u8) {
+    let mut preference = 0u8;
+    if media["is_default"].as_bool() == Some(true) {
+        preference += 2;
+    }
+    if media["is_origin"].as_bool() == Some(true) {
+        preference += 2;
+    }
+    if media["is_visible"].as_bool() != Some(false) {
+        preference += 1;
+    }
+    (link_throughput_bytes(url), preference)
+}
+
+fn pick_best_media_url(medias: &[Value]) -> Option<String> {
+    medias
+        .iter()
+        .filter_map(|media| {
+            let url = media["link"]["url"].as_str().filter(|s| !s.is_empty())?;
+            Some((media_link_score(media, url), url.to_string()))
+        })
+        .max_by(|(a, _), (b, _)| a.cmp(b))
+        .map(|(_, url)| url)
+}
+
+async fn get_about(
+    http: &Client,
+    tokens: &mut Tokens,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    api_get(http, tokens, "/drive/v1/about", &[], forward).await
+}
+
+const PLAYBACK_QUERY_FETCH: &[(&str, &str)] = &[
+    ("_magic", "2021"),
+    ("usage", "FETCH"),
+    ("thumbnail_size", "SIZE_LARGE"),
+    ("with_audit", "true"),
+];
+const PLAYBACK_QUERY_CACHE: &[(&str, &str)] = &[
+    ("_magic", "2021"),
+    ("usage", "CACHE"),
+    ("thumbnail_size", "SIZE_LARGE"),
+    ("with_audit", "true"),
+];
+const PLAYBACK_QUERY_AUDIT: &[(&str, &str)] = &[("with_audit", "true")];
+const PLAYBACK_QUERY_PLAIN: &[(&str, &str)] = &[];
+
+/// Classify account tier from `/drive/v1/about`.
+///
+/// Observed values: `user_type` 1 = premium (10 TB quota), 3 = free (6 GB quota).
+fn about_is_premium(data: &Value) -> bool {
+    match data["user_type"].as_i64() {
+        Some(1) => return true,
+        Some(3) => return false,
+        _ => {}
+    }
+
+    if data["quotas"]["cloud_download"]["is_unlimited"].as_bool() == Some(true) {
+        return true;
+    }
+
+    const PREMIUM_STORAGE_BYTES: i64 = 100 * 1024 * 1024 * 1024;
+    parse_pikpak_size(&data["quota"]["limit"]) >= PREMIUM_STORAGE_BYTES
+}
+
+async fn account_is_premium(
+    http: &Client,
+    tokens: &mut Tokens,
+    forward: Option<&MediaFlowForward>,
+) -> Result<bool, ProviderError> {
+    if let Some(is_premium) = tokens.is_premium {
+        return Ok(is_premium);
+    }
+    let about = get_about(http, tokens, forward).await?;
+    let is_premium = about_is_premium(&about);
+    tokens.is_premium = Some(is_premium);
+    tracing::debug!(
+        premium = is_premium,
+        user_type = about["user_type"].as_i64().unwrap_or(-1),
+        storage_limit = parse_pikpak_size(&about["quota"]["limit"]),
+        cloud_download_unlimited = about["quotas"]["cloud_download"]["is_unlimited"]
+            .as_bool()
+            .unwrap_or(false),
+        "PikPak account tier resolved from /drive/v1/about"
+    );
+    Ok(is_premium)
+}
+
+fn playback_query_sets(premium: bool) -> [&'static [(&'static str, &'static str)]; 4] {
+    if premium {
+        [
+            PLAYBACK_QUERY_CACHE,
+            PLAYBACK_QUERY_FETCH,
+            PLAYBACK_QUERY_AUDIT,
+            PLAYBACK_QUERY_PLAIN,
+        ]
+    } else {
+        [
+            PLAYBACK_QUERY_FETCH,
+            PLAYBACK_QUERY_CACHE,
+            PLAYBACK_QUERY_AUDIT,
+            PLAYBACK_QUERY_PLAIN,
+        ]
+    }
+}
+
+async fn fetch_file_playback_data(
+    http: &Client,
+    tokens: &mut Tokens,
+    file_id: &str,
+    premium: bool,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    let path = format!("/drive/v1/files/{file_id}");
+    let mut last = json!({});
+
+    for params in playback_query_sets(premium) {
+        let data = api_get(http, tokens, &path, params, forward).await?;
+        if data["medias"].as_array().is_some_and(|medias| !medias.is_empty()) {
+            let usage = params
+                .iter()
+                .find(|(key, _)| *key == "usage")
+                .map(|(_, value)| *value)
+                .unwrap_or("default");
+            tracing::debug!(
+                file_id = %file_id,
+                premium,
+                usage,
+                medias = data["medias"].as_array().map(|m| m.len()).unwrap_or(0),
+                "PikPak file detail returned media links"
+            );
+            return Ok(data);
+        }
+        last = data;
+    }
+
+    Ok(last)
+}
+
+/// Resolve a playback URL for a concrete file ID.
+///
+/// Uses `/drive/v1/about` to pick the optimal file-detail mode:
+/// premium → `usage=CACHE`, free → `usage=FETCH` (with fallbacks).
 async fn get_download_url(
     http: &Client,
     tokens: &mut Tokens,
     file_id: &str,
     forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
-    let path = format!("/drive/v1/files/{file_id}");
-    let params = [
-        ("usage", "FETCH"),
-        ("_magic", "2021"),
-        ("thumbnail_size", "SIZE_LARGE"),
-        ("with_audit", "true"),
-    ];
-    let data = api_get(http, tokens, &path, &params, forward).await?;
+    let action = format!("GET:/drive/v1/files/{file_id}");
 
-    if let Some(medias) = data["medias"].as_array() {
-        for media in medias {
-            if media["is_default"].as_bool() == Some(true) || media["is_origin"].as_bool() == Some(true) {
-                if let Some(url) = media["link"]["url"].as_str().filter(|s| !s.is_empty()) {
-                    return Ok(url.to_string());
-                }
-            }
-        }
-        for media in medias {
-            if let Some(url) = media["link"]["url"].as_str().filter(|s| !s.is_empty()) {
-                return Ok(url.to_string());
-            }
+    invalidate_captcha(tokens);
+    ensure_captcha(http, tokens, &action).await?;
+
+    let premium = account_is_premium(http, tokens, forward).await.unwrap_or(false);
+    let data = fetch_file_playback_data(http, tokens, file_id, premium, forward).await?;
+
+    if let Some(medias) = data["medias"].as_array().filter(|m| !m.is_empty()) {
+        if let Some(url) = pick_best_media_url(medias) {
+            tracing::debug!(
+                file_id = %file_id,
+                premium,
+                throughput_bytes = link_throughput_bytes(&url),
+                "PikPak playback using media link"
+            );
+            return Ok(url);
         }
     }
 
     data["web_content_link"]
         .as_str()
         .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        .map(|s| {
+            tracing::debug!(
+                file_id = %file_id,
+                throughput_bytes = link_throughput_bytes(s),
+                "PikPak playback falling back to web_content_link"
+            );
+            s.to_string()
+        })
         .ok_or_else(|| {
             ProviderError::api(
                 "PikPak returned no download URL for this file.",
                 "api_error.mp4",
             )
         })
-}
-
-// ─── My Pack folder lookup ────────────────────────────────────────────────────
-
-async fn get_my_pack_folder_id(
-    http: &Client,
-    tokens: &mut Tokens,
-    forward: Option<&MediaFlowForward>,
-) -> Result<String, ProviderError> {
-    let filters = serde_json::to_string(
-        &json!({"trashed": {"eq": false}, "phase": {"eq": "PHASE_TYPE_COMPLETE"}}),
-    )
-    .unwrap_or_default();
-    let data = api_get(
-        http,
-        tokens,
-        "/drive/v1/files",
-        &[
-            ("thumbnail_size", "SIZE_MEDIUM"),
-            ("limit", "100"),
-            ("with_audit", "true"),
-            ("filters", &filters),
-        ],
-        forward,
-    )
-    .await?;
-
-    data["files"]
-        .as_array()
-        .and_then(|files| {
-            files.iter().find(|f| {
-                f["name"].as_str() == Some("My Pack") && f["kind"].as_str() == Some("drive#folder")
-            })
-        })
-        .and_then(|f| f["id"].as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| ProviderError::api("PikPak 'My Pack' folder not found.", "api_error.mp4"))
-}
-
-async fn find_torrent_item(
-    http: &Client,
-    tokens: &mut Tokens,
-    my_pack_id: &str,
-    info_hash: &str,
-    forward: Option<&MediaFlowForward>,
-) -> Result<Option<Value>, ProviderError> {
-    let filters = serde_json::to_string(
-        &json!({"trashed": {"eq": false}, "phase": {"eq": "PHASE_TYPE_COMPLETE"}}),
-    )
-    .unwrap_or_default();
-    let data = api_get(
-        http,
-        tokens,
-        "/drive/v1/files",
-        &[
-            ("parent_id", my_pack_id),
-            ("thumbnail_size", "SIZE_MEDIUM"),
-            ("limit", "1000"),
-            ("with_audit", "true"),
-            ("filters", &filters),
-        ],
-        forward,
-    )
-    .await?;
-
-    let item = data["files"]
-        .as_array()
-        .and_then(|files| {
-            files.iter().find(|f| {
-                f["params"]["url"]
-                    .as_str()
-                    .map(|u| u.to_lowercase().contains(info_hash))
-                    .unwrap_or(false)
-            })
-        })
-        .cloned();
-    Ok(item)
 }
 
 // ─── Error handling ───────────────────────────────────────────────────────────
@@ -940,6 +1676,148 @@ fn map_pikpak_error(msg: &str) -> ProviderError {
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
+async fn add_magnet(
+    http: &Client,
+    tokens: &mut Tokens,
+    magnet_link: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<(), ProviderError> {
+    let body = json!({
+        "kind": "drive#file",
+        "upload_type": "UPLOAD_TYPE_URL",
+        "url": {"url": magnet_link},
+        "folder_type": "DOWNLOAD",
+    });
+    let data = api_post(http, tokens, "/drive/v1/files", &body, forward).await?;
+    if let Some(err) = data.get("error") {
+        let msg = data["error_description"]
+            .as_str()
+            .unwrap_or_else(|| err.as_str().unwrap_or("Failed to add magnet"));
+        return Err(map_pikpak_error(msg));
+    }
+    Ok(())
+}
+
+async fn retrieve_or_download_file(
+    http: &Client,
+    tokens: &mut Tokens,
+    my_pack_folder_id: &str,
+    info_hash: &str,
+    magnet_link: &str,
+    filename: Option<&str>,
+    file_index: Option<i32>,
+    season: Option<i32>,
+    episode: Option<i32>,
+    required_size: i64,
+    forward: Option<&MediaFlowForward>,
+) -> Result<String, ProviderError> {
+    if let Some(file_id) = find_file_in_folder_tree(
+        http,
+        tokens,
+        my_pack_folder_id,
+        info_hash,
+        filename,
+        file_index,
+        season,
+        episode,
+        forward,
+    )
+    .await?
+    {
+        return Ok(file_id);
+    }
+
+    let active = check_torrent_status(http, tokens, info_hash, forward).await?;
+    if let Some(task) = active {
+        let phase = task_phase(&task);
+        if phase == "PHASE_TYPE_RUNNING" || phase == "PHASE_TYPE_PENDING" {
+            wait_for_torrent_to_complete(http, tokens, info_hash, my_pack_folder_id, forward)
+                .await?;
+            if let Some(file_id) = find_file_in_folder_tree(
+                http,
+                tokens,
+                my_pack_folder_id,
+                info_hash,
+                filename,
+                file_index,
+                season,
+                episode,
+                forward,
+            )
+            .await?
+            {
+                return Ok(file_id);
+            }
+        } else if phase == "PHASE_TYPE_COMPLETE" {
+            if let Some(file_id) = task_file_id(&task) {
+                if drive_file_exists(http, tokens, &file_id, forward).await {
+                    if let Some(selected) = find_file_in_folder_tree(
+                        http,
+                        tokens,
+                        my_pack_folder_id,
+                        info_hash,
+                        filename,
+                        file_index,
+                        season,
+                        episode,
+                        forward,
+                    )
+                    .await?
+                    {
+                        return Ok(selected);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(_folder_id) =
+        resolve_torrent_folder_id(http, tokens, my_pack_folder_id, info_hash, forward).await?
+    {
+        return find_file_in_folder_tree(
+            http,
+            tokens,
+            my_pack_folder_id,
+            info_hash,
+            filename,
+            file_index,
+            season,
+            episode,
+            forward,
+        )
+        .await?
+        .ok_or_else(|| {
+            ProviderError::api(
+                "No valid video files found in torrent.",
+                "no_matching_file.mp4",
+            )
+        });
+    }
+
+    free_up_space(http, tokens, required_size, forward).await;
+    add_magnet(http, tokens, magnet_link, forward).await?;
+    wait_for_torrent_to_complete(http, tokens, info_hash, my_pack_folder_id, forward).await?;
+
+    find_file_in_folder_tree(
+        http,
+        tokens,
+        my_pack_folder_id,
+        info_hash,
+        filename,
+        file_index,
+        season,
+        episode,
+        forward,
+    )
+    .await?
+    .ok_or_else(|| {
+        ProviderError::api(
+            "Torrent is still downloading in PikPak. Please try again later.",
+            "torrent_not_downloaded.mp4",
+        )
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn get_video_url(
     http: &Client,
@@ -950,85 +1828,35 @@ pub async fn get_video_url(
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
+    required_size: Option<i64>,
     _user_ip: Option<&str>,
     forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     let mut tokens = decode_token(token)?;
     let hash = info_hash.to_lowercase();
-
-    let tasks = offline_list(
-        http,
-        &mut tokens,
-        &["PHASE_TYPE_RUNNING", "PHASE_TYPE_ERROR"],
-        forward,
-    )
-    .await?;
-    let mut failed_task_id: Option<String> = None;
-    let mut should_clear_space = false;
-    for task in &tasks {
-        if !task_has_info_hash(task, &hash) {
-            continue;
-        }
-        if task_is_error(task) {
-            let msg = task["message"]
-                .as_str()
-                .unwrap_or("Error downloading torrent");
-            let msg_lower = msg.to_lowercase();
-            tracing::debug!(
-                hash = %hash,
-                task_id = task["id"].as_str().unwrap_or(""),
-                phase = task["phase"].as_str().unwrap_or(""),
-                message = %msg,
-                "PikPak error task found"
-            );
-            if msg_lower.contains("storage") || msg_lower.contains("not enough space") {
-                failed_task_id = task["id"].as_str().map(str::to_string);
-                should_clear_space = true;
-            } else if msg_lower.contains("too frequent") || msg_lower.contains("try again later") {
-                tracing::debug!(hash = %hash, message = %msg, "PikPak rate-limited task; will delete and retry");
-                failed_task_id = task["id"].as_str().map(str::to_string);
-            } else {
-                return Err(map_pikpak_error(msg));
-            }
-        }
-        if task_is_downloading(task) {
-            return Err(ProviderError::api(
-                "Torrent is still downloading in PikPak. Please try again later.",
-                "torrent_not_downloaded.mp4",
-            ));
-        }
-    }
+    let required_size = required_size.unwrap_or(0).max(0);
 
     let my_pack_id = get_my_pack_folder_id(http, &mut tokens, forward).await?;
-    let torrent_item = find_torrent_item(http, &mut tokens, &my_pack_id, &hash, forward).await?;
 
-    if let Some(item) = torrent_item {
-        let file_id = item["id"].as_str().unwrap_or("").to_string();
-        let kind = item["kind"].as_str().unwrap_or("");
-        let file_name = item["name"].as_str().unwrap_or("").to_string();
+    cleanup_stale_error_tasks(http, &mut tokens, &hash, forward).await;
 
-        let selected_id = if kind == "drive#folder" {
-            let videos = collect_folder_videos(http, &mut tokens, &file_id, forward).await?;
-            select_video(&videos, filename, file_index, season, episode)
-                .ok_or_else(|| {
-                    ProviderError::api(
-                        "No matching video file found in PikPak folder.",
-                        "no_matching_file.mp4",
-                    )
-                })?
-                .2
-                .clone()
-        } else if is_video(&file_name) {
-            file_id
-        } else {
-            return Err(ProviderError::api(
-                "No video file found in PikPak torrent.",
-                "no_matching_file.mp4",
-            ));
-        };
-
-        return get_download_url(http, &mut tokens, &selected_id, forward).await;
+    if let Some(file_id) = find_file_in_folder_tree(
+        http,
+        &mut tokens,
+        &my_pack_id,
+        &hash,
+        filename,
+        file_index,
+        season,
+        episode,
+        forward,
+    )
+    .await?
+    {
+        return get_download_url(http, &mut tokens, &file_id, forward).await;
     }
+
+    handle_torrent_status(http, &mut tokens, &hash, &my_pack_id, forward).await?;
 
     let magnet = {
         let trackers = announce_list
@@ -1043,133 +1871,22 @@ pub async fn get_video_url(
         }
     };
 
-    if let Some(ref task_id) = failed_task_id {
-        delete_offline_tasks(http, &mut tokens, &[task_id.as_str()], forward).await;
-    }
+    let selected_file_id = retrieve_or_download_file(
+        http,
+        &mut tokens,
+        &my_pack_id,
+        &hash,
+        &magnet,
+        filename,
+        file_index,
+        season,
+        episode,
+        required_size,
+        forward,
+    )
+    .await?;
 
-    if should_clear_space {
-        ensure_enough_space(http, &mut tokens, 0, forward).await;
-    }
-
-    let magnet_body = json!({
-        "kind": "drive#file",
-        "name": "",
-        "upload_type": "UPLOAD_TYPE_URL",
-        "url": {"url": magnet},
-        "folder_type": "",
-    });
-
-    let add_result = api_post(http, &mut tokens, "/drive/v1/files", &magnet_body, forward).await;
-    let add_resp = match add_result {
-        Ok(v) => v,
-        Err(e) => {
-            let msg = e.to_string().to_lowercase();
-            if msg.contains("storage") || msg.contains("not enough space") {
-                trash_my_pack_files(http, &mut tokens, forward).await.ok();
-                api_post(http, &mut tokens, "/drive/v1/files", &magnet_body, forward)
-                    .await
-                    .map_err(|e2| {
-                        let m = e2.to_string().to_lowercase();
-                        if m.contains("storage") || m.contains("not enough space") {
-                            ProviderError::api(
-                                "Not enough storage space in your PikPak account even after cleanup.",
-                                "not_enough_space.mp4",
-                            )
-                        } else {
-                            ProviderError::api(
-                                format!("Failed to add torrent to PikPak: {e2}"),
-                                "transfer_error.mp4",
-                            )
-                        }
-                    })?
-            } else if msg.contains("daily") || msg.contains("free usage") {
-                return Err(ProviderError::api(
-                    "PikPak daily download limit reached.",
-                    "daily_download_limit.mp4",
-                ));
-            } else {
-                return Err(ProviderError::api(
-                    format!("Failed to add torrent to PikPak: {e}"),
-                    "transfer_error.mp4",
-                ));
-            }
-        }
-    };
-
-    if let Some(err) = add_resp["error"].as_str() {
-        tracing::debug!(hash = %hash, error = %err, "PikPak add-magnet inline error");
-        return Err(map_pikpak_error(err));
-    }
-
-    for _ in 0..MAX_RETRIES {
-        tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_SECS)).await;
-
-        let tasks = offline_list(
-            http,
-            &mut tokens,
-            &[
-                "PHASE_TYPE_RUNNING",
-                "PHASE_TYPE_ERROR",
-                "PHASE_TYPE_COMPLETE",
-            ],
-            forward,
-        )
-        .await
-        .unwrap_or_default();
-
-        let task = tasks.iter().find(|t| task_has_info_hash(t, &hash));
-        if let Some(task) = task {
-            if task_is_error(task) {
-                let msg = task["message"]
-                    .as_str()
-                    .unwrap_or("Error downloading torrent");
-                tracing::debug!(
-                    hash = %hash,
-                    task_id = task["id"].as_str().unwrap_or(""),
-                    message = %msg,
-                    "PikPak polling loop: error task"
-                );
-                return Err(map_pikpak_error(msg));
-            }
-            if task_is_complete(task) {
-                if let Ok(Some(item)) =
-                    find_torrent_item(http, &mut tokens, &my_pack_id, &hash, forward).await
-                {
-                    let file_id = item["id"].as_str().unwrap_or("").to_string();
-                    let kind = item["kind"].as_str().unwrap_or("");
-                    let file_name = item["name"].as_str().unwrap_or("").to_string();
-
-                    let selected_id = if kind == "drive#folder" {
-                        let videos =
-                            collect_folder_videos(http, &mut tokens, &file_id, forward).await?;
-                        select_video(&videos, filename, file_index, season, episode)
-                            .ok_or_else(|| {
-                                ProviderError::api(
-                                    "No matching video file found in PikPak folder.",
-                                    "no_matching_file.mp4",
-                                )
-                            })?
-                            .2
-                            .clone()
-                    } else if is_video(&file_name) {
-                        file_id
-                    } else {
-                        return Err(ProviderError::api(
-                            "No video file found in PikPak torrent.",
-                            "no_matching_file.mp4",
-                        ));
-                    };
-
-                    return get_download_url(http, &mut tokens, &selected_id, forward).await;
-                }
-            }
-        }
-    }
-
-    Err(ProviderError::api(
-        "Torrent is still downloading in PikPak. Please try again in a few minutes.",
-        "torrent_not_downloaded.mp4",
-    ))
+    get_download_url(http, &mut tokens, &selected_file_id, forward).await
 }
 
 async fn get_quota(
@@ -1177,20 +1894,72 @@ async fn get_quota(
     tokens: &mut Tokens,
     forward: Option<&MediaFlowForward>,
 ) -> Result<(i64, i64), ProviderError> {
-    let data = api_get(http, tokens, "/drive/v1/about", &[], forward).await?;
-    let limit = data["quota"]["limit"]
-        .as_str()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0i64);
-    let usage = data["quota"]["usage"]
-        .as_str()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0i64);
-    let usage_in_trash = data["quota"]["usage_in_trash"]
-        .as_str()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0i64);
-    Ok((limit, usage + usage_in_trash))
+    let data = get_about(http, tokens, forward).await?;
+    let limit = parse_pikpak_size(&data["quota"]["limit"]);
+    let usage = parse_pikpak_size(&data["quota"]["usage"]);
+    Ok((limit, usage))
+}
+
+async fn free_up_space(
+    http: &Client,
+    tokens: &mut Tokens,
+    required_space: i64,
+    forward: Option<&MediaFlowForward>,
+) {
+    let Ok((limit, usage)) = get_quota(http, tokens, forward).await else {
+        return;
+    };
+    let mut available_space = (limit - usage).max(0);
+    if available_space >= required_space {
+        return;
+    }
+
+    let mut contents =
+        file_list(http, tokens, Some("*"), "1000", None, forward)
+            .await
+            .unwrap_or_default();
+    let trashed = file_list(
+        http,
+        tokens,
+        Some("*"),
+        "1000",
+        Some(&json!({"trashed": {"eq": true}})),
+        forward,
+    )
+    .await
+    .unwrap_or_default();
+    contents.extend(trashed);
+
+    contents.sort_by(|a, b| {
+        let a_trashed = a["trashed"].as_bool().unwrap_or(false);
+        let b_trashed = b["trashed"].as_bool().unwrap_or(false);
+        let a_size = parse_pikpak_size(&a["size"]);
+        let b_size = parse_pikpak_size(&b["size"]);
+        b_trashed
+            .cmp(&a_trashed)
+            .then(b_size.cmp(&a_size))
+    });
+
+    for file in contents {
+        if available_space >= required_space {
+            break;
+        }
+        let Some(file_id) = file["id"].as_str() else {
+            continue;
+        };
+        let parent_id = file["parent_id"].as_str().unwrap_or("");
+        let mut ids = vec![file_id.to_string()];
+        if !parent_id.is_empty() {
+            ids.insert(0, parent_id.to_string());
+        }
+        let body = json!({ "ids": ids });
+        if api_post(http, tokens, "/drive/v1/files:batchDelete", &body, forward)
+            .await
+            .is_ok()
+        {
+            available_space += parse_pikpak_size(&file["size"]);
+        }
+    }
 }
 
 async fn delete_offline_tasks(
@@ -1217,66 +1986,17 @@ async fn delete_offline_tasks(
     let _ = forward;
 }
 
-async fn ensure_enough_space(
-    http: &Client,
-    tokens: &mut Tokens,
-    minimum: i64,
-    forward: Option<&MediaFlowForward>,
-) {
-    let minimum = if minimum > 0 { minimum } else { 1_073_741_824 };
-
-    let (limit, usage) = match get_quota(http, tokens, forward).await {
-        Ok(q) => q,
-        Err(e) => {
-            tracing::warn!("PikPak: could not fetch quota for space check: {e}");
-            return;
-        }
-    };
-
-    if limit == 0 {
-        tracing::warn!("PikPak: storage quota unavailable; skipping space check");
-        return;
-    }
-
-    let free = (limit - usage).max(0);
-    if free >= minimum {
-        return;
-    }
-
-    tracing::info!(
-        "PikPak: only {free} bytes free (need {minimum}) — clearing My Pack to free space"
-    );
-    trash_my_pack_files(http, tokens, forward).await.ok();
-}
-
 async fn trash_my_pack_files(
     http: &Client,
     tokens: &mut Tokens,
     forward: Option<&MediaFlowForward>,
 ) -> Result<(), ProviderError> {
     let my_pack_id = get_my_pack_folder_id(http, tokens, forward).await?;
-
-    let filters = serde_json::to_string(&json!({"trashed": {"eq": false}})).unwrap_or_default();
-    let data = api_get(
-        http,
-        tokens,
-        "/drive/v1/files",
-        &[
-            ("parent_id", my_pack_id.as_str()),
-            ("limit", "1000"),
-            ("filters", &filters),
-        ],
-        forward,
-    )
-    .await?;
-
-    let ids: Vec<String> = data["files"]
-        .as_array()
-        .unwrap_or(&vec![])
+    let files = file_list(http, tokens, Some(&my_pack_id), "1000", None, forward).await?;
+    let ids: Vec<String> = files
         .iter()
         .filter_map(|f| f["id"].as_str().map(str::to_string))
         .collect();
-
     if !ids.is_empty() {
         let body = json!({ "ids": ids });
         api_post(http, tokens, "/drive/v1/files:batchDelete", &body, forward)
@@ -1299,7 +2019,7 @@ pub async fn delete_torrent_by_hash(
     let mut tokens = decode_token(token)?;
     let hash = info_hash.to_lowercase();
     let my_pack_id = get_my_pack_folder_id(http, &mut tokens, None).await?;
-    let item = find_torrent_item(http, &mut tokens, &my_pack_id, &hash, None).await?;
+    let item = get_torrent_file_by_info_hash(http, &mut tokens, &my_pack_id, &hash, None).await?;
 
     match item {
         None => Ok(false),
@@ -1341,6 +2061,7 @@ mod tests {
             device_id: "device".into(),
             user_id: "user".into(),
             captcha_token: Some("captcha".into()),
+            is_premium: None,
         };
         let encoded = encode_token(&tokens);
         let decoded = decode_token(&encoded).unwrap();
@@ -1355,5 +2076,72 @@ mod tests {
         let legacy = STANDARD.encode(r#"{"access_token":"a","refresh_token":"r"}"#.as_bytes());
         assert!(is_legacy_token(&legacy));
         assert!(decode_token(&legacy).is_err());
+    }
+
+    #[test]
+    fn recoverable_task_errors_include_file_deleted() {
+        assert!(is_recoverable_task_error("File deleted"));
+        assert!(is_recoverable_task_error("Save failed, retry please"));
+        assert!(!is_recoverable_task_error("Storage space is not enough"));
+    }
+
+    #[test]
+    fn item_has_info_hash_matches_multiple_fields() {
+        let hash = "f14edc61dedf9c20cc9c517cda810d86c668443d";
+        assert!(item_has_info_hash(
+            &json!({"hash": "F14EDC61DEDF9C20CC9C517CDA810D86C668443D"}),
+            hash
+        ));
+        assert!(item_has_info_hash(
+            &json!({"params": {"url": format!("magnet:?xt=urn:btih:{hash}")}}),
+            hash
+        ));
+        assert!(item_has_info_hash(
+            &json!({"params": {"url": {"url": format!("magnet:?xt=urn:btih:{hash}")}}}),
+            hash
+        ));
+        assert!(task_has_info_hash(
+            &json!({"reference_resource": {"hash": hash}}),
+            hash
+        ));
+    }
+
+    #[test]
+    fn about_is_premium_matches_observed_account_profiles() {
+        assert!(!about_is_premium(&json!({
+            "user_type": 3,
+            "quota": {"limit": "6442450944", "is_unlimited": false},
+            "quotas": {"cloud_download": {"is_unlimited": false, "limit": "3"}}
+        })));
+        assert!(about_is_premium(&json!({
+            "user_type": 1,
+            "quota": {"limit": "10995116277760", "is_unlimited": false},
+            "quotas": {"cloud_download": {"is_unlimited": true, "limit": "-1"}}
+        })));
+    }
+
+    #[test]
+    fn playback_query_sets_order_by_account_type() {
+        assert_eq!(playback_query_sets(true)[0], PLAYBACK_QUERY_CACHE);
+        assert_eq!(playback_query_sets(false)[0], PLAYBACK_QUERY_FETCH);
+    }
+
+    #[test]
+    fn pick_best_media_url_prefers_higher_throughput() {
+        let medias = vec![
+            json!({
+                "link": {"url": "https://cdn.example/a?ms=6291456&th=6291456"},
+                "is_default": false,
+            }),
+            json!({
+                "link": {"url": "https://cdn.example/b?ms=37800000&th=37800000"},
+                "is_default": true,
+                "is_origin": true,
+            }),
+        ];
+        assert_eq!(
+            pick_best_media_url(&medias).as_deref(),
+            Some("https://cdn.example/b?ms=37800000&th=37800000")
+        );
     }
 }

@@ -8,9 +8,21 @@ from tempfile import NamedTemporaryFile
 
 from PIL import Image, ImageDraw, ImageFont
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+def _find_project_root() -> Path:
+    """Resolve the MediaFusion repo root (not python-deprecated/)."""
+    start = Path(__file__).resolve().parent
+    for candidate in [start, *start.parents]:
+        if (candidate / "backend" / "Cargo.toml").is_file():
+            return candidate
+        if (candidate / "resources" / "exceptions").is_dir():
+            return candidate
+    raise RuntimeError("Could not locate MediaFusion repo root from exception_video.py")
+
+
+PROJECT_ROOT = _find_project_root()
 EXCEPTIONS_DIR = PROJECT_ROOT / "resources" / "exceptions"
-SCAN_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".jsx"}
+SCAN_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".jsx", ".rs"}
 SKIP_DIR_NAMES = {
     ".git",
     ".idea",
@@ -69,8 +81,10 @@ def _discover_exception_video_names(root: Path) -> list[str]:
     patterns = [
         re.compile(r"/static/exceptions/(?P<name>[a-z0-9_\-]+\.mp4)"),
         re.compile(r"ProviderException\([^)]*['\"](?P<name>[a-z0-9_\-]+\.mp4)['\"]"),
+        re.compile(r"ProviderError::api\([^)]*['\"](?P<name>[a-z0-9_\-]+\.mp4)['\"]"),
         re.compile(r"video_file_name\s*==\s*['\"](?P<name>[a-z0-9_\-]+\.mp4)['\"]"),
         re.compile(r'USENET_TRANSFER_ERROR_VIDEO\s*=\s*["\'](?P<name>[a-z0-9_\-]+\.mp4)["\']'),
+        re.compile(r'["\'](?P<name>[a-z0-9_\-]+\.mp4)["\']'),
     ]
 
     discovered_names: set[str] = set(CUSTOM_VIDEO_TEXT.keys())

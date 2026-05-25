@@ -43,7 +43,7 @@ JOB_ARGS ?=
 # overlapping restarts that race for the same port (ADDRINUSE).
 CARGO_WATCH_FLAGS = --watch-when-idle -d 1
 
-.PHONY: build build-multi tag push prompt update-version generate-notes generate-reddit-post generate-baseline frontend-install frontend-build frontend-dev frontend-lint frontend-fmt dev backend-dev python-lint python-fmt python-test rust-build rust-dev rust-test rust-fmt rust-lint lint fmt test worker-list-jobs worker-run-job worker-run-sport-video
+.PHONY: build build-multi tag push prompt update-version generate-notes generate-reddit-post generate-baseline frontend-install frontend-build frontend-dev frontend-lint frontend-fmt dev backend-dev python-lint python-fmt python-test rust-build rust-dev rust-test rust-fmt rust-lint lint fmt test worker-list-jobs worker-run-job worker-run-sport-video exception-videos
 
 build:
 	docker build --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE) -f deployment/Dockerfile .
@@ -287,6 +287,9 @@ rust-fmt:
 
 rust-lint:
 	cd backend && cargo clippy --all-targets -- -D warnings
+
+exception-videos:
+	python3 python-deprecated/utils/exception_video.py
 
 # Aggregate targets
 lint: rust-lint frontend-lint

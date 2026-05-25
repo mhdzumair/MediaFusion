@@ -36,6 +36,7 @@ use crate::{
         self,
         usenet::{cache, debrider, easynews, nzb_url, nzbget, sabnzbd, torbox},
     },
+    routes::playback_dedup,
     state::AppState,
 };
 
@@ -170,7 +171,7 @@ async fn handle_provider(
         return make_redirect(&error_video_url(state, "stream_not_found.mp4"));
     };
 
-    // 3. Redis cache check
+    // 3. Redis cache check, then deduplicate concurrent HEAD/GET resolution.
     let ck = cache::cache_key(secret_str, nzb_guid, season, episode);
     if let Some(cached) = cache::get(&state.redis, &ck).await {
         return make_redirect(&cached);
@@ -232,28 +233,72 @@ async fn handle_provider(
     });
     let fwd = forward.as_ref();
 
-    // 6. Dispatch to provider
-    let result = dispatch(
-        &state.http,
-        &state.config,
-        provider_name,
-        provider_cfg,
-        &submission_url,
-        &fallback_url,
-        &stream.nzb_guid,
-        &stream.name,
-        season,
-        episode,
-        fwd,
-    )
-    .await;
-
-    // 7. Cache successful result and redirect; on error redirect to exception video
-    match result {
-        Ok(url) => {
-            cache::set(&state.redis, &ck, &url).await;
-            make_redirect(&url)
+    match playback_dedup::prepare_resolve(&state.redis, &ck).await {
+        playback_dedup::DedupWaitResult::Cached(url) => return make_redirect(&url),
+        playback_dedup::DedupWaitResult::TimedOut => {
+            warn!("usenet playback {provider_name}/{nzb_guid}: resolve timed out");
+            return make_redirect(&error_video_url(
+                state,
+                playback_dedup::playback_resolve_timed_out().video_file(),
+            ));
         }
+        playback_dedup::DedupWaitResult::ReadyToResolve => {}
+    }
+
+    let lock_guard = match playback_dedup::ResolveLockGuard::acquire(&state.redis, &ck).await {
+        Some(guard) => guard,
+        None => {
+            let _ = playback_dedup::reclaim_stale_lock(&state.redis, &ck).await;
+            match playback_dedup::ResolveLockGuard::acquire(&state.redis, &ck).await {
+                Some(guard) => guard,
+                None => {
+                    warn!("usenet playback {provider_name}/{nzb_guid}: failed to acquire lock");
+                    return make_redirect(&error_video_url(
+                        state,
+                        playback_dedup::playback_resolve_timed_out().video_file(),
+                    ));
+                }
+            }
+        }
+    };
+
+    if let Some(cached) = cache::get(&state.redis, &ck).await {
+        lock_guard.release().await;
+        return make_redirect(&cached);
+    }
+
+    let result = match tokio::time::timeout(
+        playback_dedup::holder_resolve_timeout(),
+        dispatch(
+            &state.http,
+            &state.config,
+            provider_name,
+            provider_cfg,
+            &submission_url,
+            &fallback_url,
+            &stream.nzb_guid,
+            &stream.name,
+            season,
+            episode,
+            fwd,
+        ),
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(_) => {
+            warn!("usenet playback {provider_name}/{nzb_guid}: provider dispatch timed out");
+            Err(playback_dedup::playback_resolve_timed_out())
+        }
+    };
+
+    if let Ok(ref url) = result {
+        cache::set(&state.redis, &ck, url).await;
+    }
+    lock_guard.release().await;
+
+    match result {
+        Ok(url) => make_redirect(&url),
         Err(e) => {
             warn!("usenet playback {provider_name}/{nzb_guid}: {e}");
             make_redirect(&error_video_url(state, e.video_file()))

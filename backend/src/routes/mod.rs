@@ -21,6 +21,7 @@ pub mod meta;
 pub mod metrics;
 pub mod moderator;
 pub mod playback;
+pub mod playback_dedup;
 pub mod poster;
 pub mod profiles;
 pub mod rss;
