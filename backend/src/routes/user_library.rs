@@ -1016,6 +1016,13 @@ fn parse_torrent_meta(name: &str, video_file_count: usize) -> TorrentMeta {
     }
 }
 
+/// Derive the racing session/episode title (e.g. "Qualifying") from a file path.
+/// Returns `None` when no session can be identified.
+fn racing_file_episode_title(path: &str) -> Option<String> {
+    let basename = path.rsplit('/').next().unwrap_or(path);
+    crate::parser::parse_racing_title(basename).and_then(|r| r.session)
+}
+
 /// Strip DD MM YYYY date tokens from a title so FTS can match DB entries.
 /// e.g. "WWE Raw 23 05 2026" → "WWE Raw"
 fn strip_date_tokens(title: &str) -> String {
@@ -1391,8 +1398,25 @@ pub async fn get_missing_torrents(
     let mut missing: Vec<serde_json::Value> = Vec::with_capacity(missing_torrents.len());
     let mut lookups: Vec<TorrentMeta> = Vec::with_capacity(missing_torrents.len());
     for (t, raw) in missing_torrents.into_iter().zip(file_infos) {
-        let video_files = extract_video_files(&raw, &provider, &video_extensions, &sample_re);
+        let mut video_files = extract_video_files(&raw, &provider, &video_extensions, &sample_re);
         let meta = parse_torrent_meta(&t.name, video_files.len());
+
+        // For racing series (F1/MotoGP), derive a per-file episode title (session
+        // name, e.g. "Qualifying") so the UI can prefill episode annotations.
+        if matches!(
+            meta.sports_category.as_deref(),
+            Some("formula_racing") | Some("motogp_racing")
+        ) {
+            for f in &mut video_files {
+                let path = f.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                if let Some(title) = racing_file_episode_title(path) {
+                    if let Some(obj) = f.as_object_mut() {
+                        obj.insert("episode_title".to_string(), json!(title));
+                    }
+                }
+            }
+        }
+
         missing.push(json!({
             "info_hash": t.info_hash,
             "name": t.name,

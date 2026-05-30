@@ -190,6 +190,7 @@ export function AdvancedImportDialog({
         filename: f.path.split('/').pop() || f.path,
         size: f.size,
         index: idx,
+        episode_title: f.episode_title,
       }))
   }, [torrent.files])
 

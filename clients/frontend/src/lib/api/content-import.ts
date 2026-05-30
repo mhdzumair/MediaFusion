@@ -6,6 +6,8 @@ export interface TorrentFile {
   index: number
   season_number?: number
   episode_number?: number
+  /** Detected racing session/episode title (e.g. "Qualifying"), used to prefill annotations. */
+  episode_title?: string
 }
 
 export interface TorrentMatch {

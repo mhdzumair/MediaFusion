@@ -44,6 +44,8 @@ export interface WatchlistParams {
 export interface MissingTorrentFile {
   path: string
   size: number
+  /** Detected racing session/episode title (e.g. "Qualifying"); set for racing series. */
+  episode_title?: string
 }
 
 export interface MissingExternalIds {

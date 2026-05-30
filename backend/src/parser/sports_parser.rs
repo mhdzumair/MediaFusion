@@ -968,6 +968,14 @@ mod racing_tests {
     }
 
     #[test]
+    fn f1_filename_with_dots_and_extension() {
+        let r = parse_racing_title("Formula 1 Canadian Grand Prix Qualifying 23.05.2026.mkv").unwrap();
+        assert_eq!(r.series_title, "Formula 1 Canadian Grand Prix 2026");
+        assert_eq!(r.year, Some(2026));
+        assert_eq!(r.session.as_deref(), Some("Qualifying"));
+    }
+
+    #[test]
     fn non_racing_returns_none() {
         assert!(parse_racing_title("WWE Raw 23 05 2026").is_none());
     }
