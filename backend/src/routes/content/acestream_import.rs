@@ -191,6 +191,32 @@ pub async fn analyze_acestream(
     .into_response()
 }
 
+pub async fn analyze_acestream_for_bot(
+    state: &AppState,
+    content_id: &str,
+    meta_type: &str,
+) -> serde_json::Value {
+    let id = match extract_acestream_id(content_id) {
+        Some(id) => id,
+        None => {
+            return json!({"success": false, "error": "Invalid AceStream ID"});
+        }
+    };
+    let matches = super::import_helpers::search_analyze_matches(
+        state,
+        &format!("AceStream {id}"),
+        None,
+        meta_type,
+    )
+    .await;
+    json!({
+        "success": true,
+        "content_id": id,
+        "parsed_title": format!("AceStream {id}"),
+        "matches": matches,
+    })
+}
+
 /// POST /api/v1/import/acestream
 pub async fn import_acestream(
     headers: HeaderMap,

@@ -1,6 +1,8 @@
 #[global_allocator]
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
+use std::sync::Arc;
+
 use mediafusion_api::{
     config::AppConfig,
     exception_tracker, routes,
@@ -84,6 +86,13 @@ async fn main() {
             ttl,
             max_entries,
         ));
+    }
+
+    if state.config.telegram_bot_token.is_some() {
+        let bot_state = Arc::clone(&state);
+        tokio::spawn(async move {
+            mediafusion_api::bot::register_commands(bot_state).await;
+        });
     }
 
     let app = routes::router(state);

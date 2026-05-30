@@ -7,6 +7,7 @@
 use std::sync::Arc;
 
 use grammers_client::Client;
+use grammers_session::SessionData;
 
 use crate::{
     config::AppConfig,
@@ -30,9 +31,25 @@ pub async fn init_client(config: &AppConfig) -> Option<Arc<Client>> {
     let api_hash = config.telegram_api_hash.as_deref()?;
     let session_b64 = config.telegram_grammers_session.as_deref()?;
 
-    match build_client(api_id, api_hash, session_b64).await {
+    let session_data = match crate::util::telegram_session::parse_session_data(session_b64) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!("telegram: session parse failed: {e}");
+            return None;
+        }
+    };
+
+    if !crate::util::telegram_session::session_is_authenticated(&session_data) {
+        tracing::warn!(
+            "telegram: session is not authenticated — scraping will not work; \
+             run `cargo run --bin telegram_session` or convert your Telethon session"
+        );
+        return None;
+    }
+
+    match build_client(api_id, api_hash, session_data).await {
         Ok(client) => {
-            tracing::info!("telegram: MTProto client initialised");
+            tracing::info!("telegram: MTProto client initialised (authenticated session loaded)");
             Some(Arc::new(client))
         }
         Err(e) => {
@@ -45,52 +62,24 @@ pub async fn init_client(config: &AppConfig) -> Option<Arc<Client>> {
 async fn build_client(
     api_id: i32,
     api_hash: &str,
-    session_b64: &str,
+    session_data: SessionData,
 ) -> Result<Client, Box<dyn std::error::Error + Send + Sync>> {
-    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
     use grammers_session::storages::MemorySession;
-
-    // Decode session bytes
-    let session_bytes = BASE64
-        .decode(session_b64)
-        .map_err(|e| format!("telegram: invalid base64 session: {e}"))?;
-
-    // Deserialize into MemorySession via SessionData
-    let session_data: grammers_session::SessionData = bincode_deserialize(&session_bytes)
-        .unwrap_or_else(|_| {
-            tracing::debug!("telegram: could not deserialize session data, using default");
-            grammers_session::SessionData::default()
-        });
+    use std::sync::Arc;
 
     let session = Arc::new(MemorySession::from(session_data));
 
-    // Build the SenderPool (contains runner + fat handle)
     let pool = grammers_client::sender::SenderPool::new(Arc::clone(&session) as Arc<_>, api_id);
     let runner = pool.runner;
     let handle = pool.handle;
 
-    // Spawn the runner as a background task
     tokio::spawn(async move {
         runner.run().await;
     });
 
-    // Build the Client from the fat handle
     let client = Client::new(handle);
-
-    // api_hash is part of session auth negotiation handled by SenderPool internally
     let _ = api_hash;
     Ok(client)
-}
-
-/// Fallback: try bincode deserialization of session data.
-/// grammers-session 0.9 uses bincode internally for its SQLite storage.
-fn bincode_deserialize(
-    bytes: &[u8],
-) -> Result<grammers_session::SessionData, Box<dyn std::error::Error + Send + Sync>> {
-    // grammers-session doesn't expose a public bytes API, so we fall through
-    // to the default. This function exists as a hook for future improvement.
-    let _ = bytes;
-    Err("no public byte deserializer in grammers-session 0.9".into())
 }
 
 // ─── Scrape entry point ───────────────────────────────────────────────────────

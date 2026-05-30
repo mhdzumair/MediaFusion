@@ -207,6 +207,26 @@ pub async fn analyze_http_url(
     .into_response()
 }
 
+pub fn analyze_http_for_bot(url: &str) -> serde_json::Value {
+    let format = detect_stream_format(url);
+    let extractor = detect_extractor(url);
+    let domain = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or("");
+    json!({
+        "success": true,
+        "url": url,
+        "domain": domain,
+        "format": format,
+        "extractor_name": extractor,
+        "parsed_title": domain,
+        "matches": [],
+    })
+}
+
 /// POST /api/v1/import/http
 pub async fn import_http_stream(
     headers: HeaderMap,

@@ -475,6 +475,50 @@ async fn analyze_nzb_bytes(state: &Arc<AppState>, bytes: &Bytes, meta_type: &str
         .into_response()
 }
 
+pub async fn analyze_nzb_url_for_bot(
+    state: &AppState,
+    nzb_url: &str,
+    meta_type: &str,
+) -> serde_json::Value {
+    let bytes = match state
+        .http
+        .get(nzb_url)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => match r.bytes().await {
+            Ok(b) => b,
+            Err(e) => {
+                return json!({"success": false, "error": format!("Failed to read NZB: {e}")});
+            }
+        },
+        Ok(r) => {
+            return json!({
+                "success": false,
+                "error": format!("Failed to fetch NZB URL (HTTP {}).", r.status())
+            });
+        }
+        Err(e) => {
+            return json!({"success": false, "error": format!("Failed to fetch NZB URL: {e}")});
+        }
+    };
+
+    let info = match parse_nzb(bytes.as_ref()) {
+        Ok(i) => i,
+        Err(e) => return json!({"success": false, "error": e}),
+    };
+    let parsed = parser::parse_title(&info.title);
+    let search_title = parsed.title.as_deref().unwrap_or(&info.title);
+    let matches =
+        super::import_helpers::search_analyze_matches(state, search_title, parsed.year, meta_type)
+            .await;
+    let mut resp = nzb_info_to_response(&info, false, matches, &parsed);
+    resp["success"] = json!(true);
+    resp["parsed_title"] = json!(parsed.title);
+    resp
+}
+
 pub async fn import_nzb(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,

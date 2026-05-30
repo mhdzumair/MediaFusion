@@ -15,6 +15,10 @@ path = "src/main.rs"
 name = "mediafusion-worker"
 path = "src/bin/worker.rs"
 
+[[bin]]
+name = "telegram_session"
+path = "src/bin/telegram_session.rs"
+
 [dependencies]
 # Global allocator: dramatically reduces RSS growth vs glibc malloc on long-running services
 tikv-jemallocator = "0.6"

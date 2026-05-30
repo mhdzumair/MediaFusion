@@ -77,7 +77,7 @@ use super::import_helpers::{
 
 // ─── Magnet URI helpers ───────────────────────────────────────────────────────
 
-fn extract_info_hash_from_magnet(magnet: &str) -> Option<String> {
+pub fn extract_info_hash_from_magnet(magnet: &str) -> Option<String> {
     static BTIH_RE: OnceLock<regex::Regex> = OnceLock::new();
     let re = BTIH_RE.get_or_init(|| {
         regex::Regex::new(r"xt=urn:btih:([0-9a-fA-F]{40}|[A-Z2-7]{32}|[a-z2-7]{32})").unwrap()
@@ -684,6 +684,125 @@ pub async fn analyze_torrent(
         })),
     )
         .into_response()
+}
+
+// ─── Bot / shared analyze helpers ─────────────────────────────────────────────
+
+pub async fn analyze_magnet_for_bot(
+    state: &AppState,
+    magnet_link: &str,
+    meta_type: &str,
+) -> serde_json::Value {
+    let info_hash = match extract_info_hash_from_magnet(magnet_link) {
+        Some(h) => h,
+        None => {
+            return json!({"success": false, "error": "Invalid magnet link format."});
+        }
+    };
+
+    let torrent_name = extract_dn(magnet_link).unwrap_or_default();
+    if !torrent_name.is_empty() && is_adult_content(&torrent_name) {
+        return json!({"success": false, "error": "Adult content is not allowed"});
+    }
+
+    let parsed = if parser::is_sports_title(&torrent_name) {
+        parser::parse_sports_title(&torrent_name)
+    } else {
+        parser::parse_title(&torrent_name)
+    };
+    let search_title = parsed.title.as_deref().unwrap_or(&torrent_name);
+    let matches =
+        super::import_helpers::search_analyze_matches(state, search_title, parsed.year, meta_type)
+            .await;
+
+    let mut result = json!({
+        "success": true,
+        "info_hash": info_hash,
+        "torrent_name": torrent_name,
+        "parsed_title": parsed.title,
+        "year": parsed.year,
+        "resolution": parsed.resolution,
+        "quality": parsed.quality,
+        "codec": parsed.codec,
+        "matches": matches,
+    });
+
+    if let Ok(meta) = crate::demagnetize::resolve(&info_hash, std::time::Duration::from_secs(30)).await {
+        let files: Vec<serde_json::Value> = meta
+            .files
+            .iter()
+            .map(|f| json!({"path": f.path, "size": f.size, "filename": f.path}))
+            .collect();
+        result["total_size"] = json!(meta.total_size);
+        result["files"] = json!(files);
+        result["file_count"] = json!(files.len());
+        if result.get("torrent_name").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+            result["torrent_name"] = json!(meta.name);
+        }
+    }
+
+    result
+}
+
+pub async fn analyze_torrent_bytes(
+    state: &AppState,
+    bytes: &[u8],
+    meta_type: &str,
+) -> Result<serde_json::Value, String> {
+    let torrent: LavaTorrent = LavaTorrent::read_from_bytes(bytes)
+        .map_err(|e| format!("Failed to parse .torrent: {e}"))?;
+
+    let info_hash = torrent
+        .info_hash_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    let name = torrent.name.clone();
+
+    if is_adult_content(&name) {
+        return Err("Adult content is not allowed".to_string());
+    }
+
+    let parsed = if parser::is_sports_title(&name) {
+        parser::parse_sports_title(&name)
+    } else {
+        parser::parse_title(&name)
+    };
+    let search_title = parsed.title.as_deref().unwrap_or(&name);
+    let matches =
+        super::import_helpers::search_analyze_matches(state, search_title, parsed.year, meta_type)
+            .await;
+
+    let files: Vec<serde_json::Value> = torrent
+        .files
+        .as_ref()
+        .map(|fs| {
+            fs.iter()
+                .map(|f| {
+                    json!({
+                        "path": f.path.to_string_lossy(),
+                        "size": f.length,
+                        "filename": f.path.to_string_lossy(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(json!({
+        "success": true,
+        "info_hash": info_hash,
+        "torrent_name": name,
+        "total_size": torrent.length,
+        "file_count": torrent.files.as_ref().map(|f| f.len()).unwrap_or(1),
+        "files": files,
+        "parsed_title": parsed.title,
+        "year": parsed.year,
+        "resolution": parsed.resolution,
+        "quality": parsed.quality,
+        "codec": parsed.codec,
+        "matches": matches,
+    }))
 }
 
 pub async fn import_magnet(

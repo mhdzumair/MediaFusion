@@ -203,6 +203,36 @@ pub async fn analyze_youtube_url(
     Json(response).into_response()
 }
 
+pub async fn analyze_youtube_for_bot(
+    state: &AppState,
+    url: &str,
+    meta_type: &str,
+) -> serde_json::Value {
+    let video_id = match extract_video_id(url) {
+        Some(id) => id,
+        None => {
+            return json!({"success": false, "error": "Could not extract YouTube video ID"});
+        }
+    };
+    let (title, channel_name) = fetch_oembed(&state.http, &video_id)
+        .await
+        .unwrap_or_else(|| (String::new(), String::new()));
+    let matches = if !title.is_empty() {
+        super::import_helpers::search_analyze_matches(&state, &title, None, meta_type).await
+    } else {
+        vec![]
+    };
+    json!({
+        "success": true,
+        "video_id": video_id,
+        "url": format!("https://www.youtube.com/watch?v={video_id}"),
+        "title": title,
+        "channel_name": channel_name,
+        "parsed_title": title,
+        "matches": matches,
+    })
+}
+
 /// POST /api/v1/import/youtube
 pub async fn import_youtube_video(
     headers: HeaderMap,

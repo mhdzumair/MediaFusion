@@ -5,6 +5,7 @@ pub mod meta;
 pub mod pool;
 pub mod streams;
 pub mod telegram;
+pub mod telegram_channels;
 pub mod torznab;
 pub mod watch_history;
 

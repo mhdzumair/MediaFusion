@@ -196,3 +196,35 @@ pub async fn get_user_telegram_id(pool: &PgPool, user_id: i64) -> Option<i64> {
         .flatten()
         .flatten()
 }
+
+/// Look up MediaFusion user by linked Telegram user ID (for /status and bot imports).
+pub async fn get_user_by_telegram_id(
+    pool: &PgPool,
+    telegram_user_id: i64,
+) -> Option<(i64, String)> {
+    let row: Option<(i64, String)> = sqlx::query_as(
+        "SELECT id, COALESCE(NULLIF(username, ''), NULLIF(email, ''), 'User #' || id::text) \
+         FROM users WHERE telegram_user_id = $1 LIMIT 1",
+    )
+    .bind(telegram_user_id)
+    .fetch_optional(pool)
+    .await
+    .ok()?;
+    row
+}
+
+/// Resolve MediaFusion user_id from Telegram user_id via DB or Redis mapping cache.
+pub async fn resolve_mediafusion_user_id(
+    pool: &PgPool,
+    redis: &fred::clients::Client,
+    telegram_user_id: i64,
+) -> Option<i64> {
+    use fred::prelude::KeysInterface;
+
+    if let Some((uid, _)) = get_user_by_telegram_id(pool, telegram_user_id).await {
+        return Some(uid);
+    }
+    let key = format!("telegram:user_mapping:{telegram_user_id}");
+    let cached: Option<String> = redis.get(&key).await.ok()?;
+    cached.and_then(|s| s.parse().ok())
+}

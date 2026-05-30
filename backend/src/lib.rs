@@ -1,5 +1,6 @@
 pub mod api_error_middleware;
 pub mod api_key_middleware;
+pub mod bot;
 pub mod cache;
 pub mod config;
 pub mod crypto;

@@ -101,6 +101,8 @@ pub struct AppConfig {
     pub telegram_webhook_secret_token: Option<String>,
     /// Chat ID for moderation notifications (TELEGRAM_CHAT_ID env var).
     pub telegram_chat_id: Option<String>,
+    /// Backup channel for storing contributed Telegram video files (TELEGRAM_BACKUP_CHANNEL_ID).
+    pub telegram_backup_channel_id: Option<String>,
 
     // ── Auth ────────────────────────────────────────────────────────────────
     /// SMTP host for sending verification/reset emails (optional).
@@ -458,6 +460,7 @@ impl AppConfig {
             telegram_bot_username: env("TELEGRAM_BOT_USERNAME").ok().filter(|s| !s.is_empty()),
             telegram_webhook_secret_token: env("TELEGRAM_WEBHOOK_SECRET_TOKEN").ok().filter(|s| !s.is_empty()),
             telegram_chat_id: env("TELEGRAM_CHAT_ID").ok().filter(|s| !s.is_empty()),
+            telegram_backup_channel_id: env("TELEGRAM_BACKUP_CHANNEL_ID").ok().filter(|s| !s.is_empty()),
             smtp_host: env("SMTP_HOST").ok().filter(|s| !s.is_empty()),
             smtp_port: env("SMTP_PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(587),
             smtp_username: env("SMTP_USERNAME").ok().filter(|s| !s.is_empty()),
