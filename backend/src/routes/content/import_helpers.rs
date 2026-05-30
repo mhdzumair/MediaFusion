@@ -853,8 +853,11 @@ pub async fn link_media_catalogs(
         if cat_name.is_empty() {
             continue;
         }
+        // `is_system` and `display_order` are NOT NULL with no default, so they
+        // must be supplied when creating a new catalog.
         let cat_id: Option<i32> = sqlx::query_scalar(
-            "INSERT INTO catalog(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
+            "INSERT INTO catalog(name, is_system, display_order) VALUES($1, false, 0) \
+             ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
         )
         .bind(cat_name)
         .fetch_optional(pool)
@@ -1349,7 +1352,9 @@ pub async fn ensure_series_episode_metadata(
         return;
     }
 
-    let series_id: Option<i64> = sqlx::query_scalar(
+    // NOTE: series_metadata.id / season.id / episode.id are `integer` (i32) — decoding
+    // them as i64 fails at runtime, so these must be i32.
+    let series_id: Option<i32> = match sqlx::query_scalar(
         "INSERT INTO series_metadata (media_id, total_seasons, total_episodes, created_at) \
          VALUES ($1, 0, 0, NOW()) ON CONFLICT (media_id) DO UPDATE SET media_id = EXCLUDED.media_id \
          RETURNING id",
@@ -1357,8 +1362,13 @@ pub async fn ensure_series_episode_metadata(
     .bind(media_id as i32)
     .fetch_optional(pool)
     .await
-    .ok()
-    .flatten();
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("ensure_series_episode_metadata series_metadata media_id={media_id}: {e}");
+            None
+        }
+    };
     let Some(series_id) = series_id else {
         return;
     };
@@ -1387,7 +1397,7 @@ pub async fn ensure_series_episode_metadata(
             .and_then(|v| v.as_str())
             .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
 
-        let season_id: Option<i64> = sqlx::query_scalar(
+        let season_id: Option<i32> = sqlx::query_scalar(
             "INSERT INTO season (series_id, season_number, name, episode_count) \
              VALUES ($1, $2, $3, 0) \
              ON CONFLICT (series_id, season_number) DO UPDATE SET series_id = EXCLUDED.series_id \
@@ -1398,14 +1408,13 @@ pub async fn ensure_series_episode_metadata(
         .bind(format!("Season {season_number}"))
         .fetch_optional(pool)
         .await
-        .ok()
-        .flatten();
+        .unwrap_or(None);
         let Some(season_id) = season_id else {
             continue;
         };
         touched_seasons.insert(season_number);
 
-        let _ = sqlx::query(
+        if let Err(e) = sqlx::query(
             "INSERT INTO episode \
                (season_id, episode_number, title, air_date, is_user_created, is_user_addition, created_at, updated_at) \
              VALUES ($1, $2, $3, $4, true, true, NOW(), NOW()) \
@@ -1414,16 +1423,19 @@ pub async fn ensure_series_episode_metadata(
                            air_date = COALESCE(EXCLUDED.air_date, episode.air_date), \
                            updated_at = NOW()",
         )
-        .bind(season_id as i32)
+        .bind(season_id)
         .bind(episode_number)
         .bind(&episode_title)
         .bind(air_date)
         .execute(pool)
-        .await;
+        .await
+        {
+            tracing::warn!("ensure_series_episode_metadata episode s{season_number}e{episode_number}: {e}");
+        }
     }
 
     if touched_seasons.is_empty() {
-        let season_id: Option<i64> = sqlx::query_scalar(
+        let season_id: Option<i32> = sqlx::query_scalar(
             "INSERT INTO season (series_id, season_number, name, episode_count) \
              VALUES ($1, 1, 'Season 1', 0) \
              ON CONFLICT (series_id, season_number) DO UPDATE SET series_id = EXCLUDED.series_id \
@@ -1432,8 +1444,7 @@ pub async fn ensure_series_episode_metadata(
         .bind(series_id)
         .fetch_optional(pool)
         .await
-        .ok()
-        .flatten();
+        .unwrap_or(None);
         if let Some(season_id) = season_id {
             let _ = sqlx::query(
                 "INSERT INTO episode \
@@ -1441,7 +1452,7 @@ pub async fn ensure_series_episode_metadata(
                  VALUES ($1, 1, $2, true, true, NOW(), NOW()) \
                  ON CONFLICT (season_id, episode_number) DO NOTHING",
             )
-            .bind(season_id as i32)
+            .bind(season_id)
             .bind(fallback_title)
             .execute(pool)
             .await;
