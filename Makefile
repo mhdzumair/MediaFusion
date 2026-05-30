@@ -288,6 +288,11 @@ rust-fmt:
 rust-lint:
 	cd backend && cargo clippy --all-targets -- -D warnings
 
+install-hooks:  ## Install version-controlled git hooks (run once per clone)
+	git config core.hooksPath .githooks
+	chmod +x .githooks/pre-commit
+	@echo "Git hooks installed from .githooks/ — cargo check will now run on staged Rust files."
+
 exception-videos:
 	python3 python-deprecated/utils/exception_video.py
 

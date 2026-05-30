@@ -199,6 +199,22 @@ jobs:
     defaults:
       run:
         working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: mediafusion
+          POSTGRES_PASSWORD: mediafusion
+          POSTGRES_DB: mediafusion
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U mediafusion"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -210,16 +226,36 @@ jobs:
         with:
           workspaces: backend
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+      - name: Install cargo-audit and sqlx-cli
+        run: |
+          cargo install cargo-audit --locked
+          cargo install sqlx-cli --locked --no-default-features --features postgres,native-tls
 
       - name: Security audit
         # RUSTSEC-2023-0071 (rsa Marvin Attack) has no upstream fix; it is pulled
         # in by sqlx-mysql but MediaFusion uses Postgres only — never exercised at runtime.
         run: cargo audit --ignore RUSTSEC-2023-0071
 
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgresql://mediafusion:mediafusion@localhost:5432/mediafusion
+        run: cargo sqlx migrate run
+
+      - name: Validate sqlx query cache
+        # Ensures .sqlx/ offline cache matches the real schema.
+        # Fails if a query! macro was changed without running `cargo sqlx prepare`.
+        # See AGENTS.md for the required developer workflow.
+        env:
+          DATABASE_URL: postgresql://mediafusion:mediafusion@localhost:5432/mediafusion
+        run: cargo sqlx prepare --check
+
       - name: Build (release)
+        env:
+          SQLX_OFFLINE: "true"
         run: cargo build --release --bin mediafusion-api --bin mediafusion-worker
 
       - name: Test
+        env:
+          SQLX_OFFLINE: "true"
+          TEST_DATABASE_URL: postgresql://mediafusion:mediafusion@localhost:5432/mediafusion
         run: cargo test

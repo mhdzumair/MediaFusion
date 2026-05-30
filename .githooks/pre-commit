@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Ensure PATH includes tool locations (needed when invoked from GUI clients)
+export PATH="$HOME/.local/bin:$HOME/.nvm/versions/node/v22.21.0/bin:$PATH"
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# Get only the staged files (excluding deleted files)
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=d)
+
+if [ -z "$STAGED_FILES" ]; then
+  echo "No staged files, skipping pre-commit hooks."
+  exit 0
+fi
+
+# Filter staged files by type
+STAGED_RUST_FILES=$(echo "$STAGED_FILES" | grep '^backend/.*\.rs$' || true)
+STAGED_PY_FILES=$(echo "$STAGED_FILES" | grep '\.py$' | grep -v '^python-deprecated/' || true)
+STAGED_FRONTEND_FILES=$(echo "$STAGED_FILES" | grep '^clients/frontend/' || true)
+
+# --- Rust checks (only on staged .rs files) ---
+# Uses SQLX_OFFLINE=true so no live database is required locally.
+# The CI rust-build job runs `cargo sqlx prepare --check` against a real DB
+# and will catch any query!/schema drift that this check cannot.
+if [ -n "$STAGED_RUST_FILES" ]; then
+  echo "==> Running cargo check on staged Rust files..."
+  (cd "$REPO_ROOT/backend" && SQLX_OFFLINE=true cargo check --quiet 2>&1) \
+    && echo "==> cargo check passed!" \
+    || { echo "==> cargo check FAILED — fix compilation errors before committing."; exit 1; }
+else
+  echo "==> No staged Rust files, skipping cargo check."
+fi
+
+# --- Python checks (only on staged .py files) ---
+if [ -n "$STAGED_PY_FILES" ]; then
+  echo "==> Running ruff format on staged Python files..."
+  echo "$STAGED_PY_FILES" | xargs uv run ruff format
+
+  echo "==> Running ruff check --fix on staged Python files..."
+  echo "$STAGED_PY_FILES" | xargs uv run ruff check --fix
+
+  echo "==> Re-staging formatted Python files..."
+  echo "$STAGED_PY_FILES" | xargs git add
+else
+  echo "==> No staged Python files, skipping ruff."
+fi
+
+# --- Frontend checks (only on staged frontend files) ---
+if [ -n "$STAGED_FRONTEND_FILES" ]; then
+  STAGED_FRONTEND_RELATIVE=$(echo "$STAGED_FRONTEND_FILES" | sed 's|^clients/frontend/||')
+
+  # Filter to only Prettier-supported file types (exclude images, fonts, etc.)
+  PRETTIER_FILES=$(echo "$STAGED_FRONTEND_RELATIVE" | grep -E '\.(ts|tsx|js|jsx|css|scss|html|json|yaml|yml)$' || true)
+
+  cd "$REPO_ROOT/clients/frontend"
+  if [ -n "$PRETTIER_FILES" ]; then
+    echo "==> Running frontend format on staged files..."
+    echo "$PRETTIER_FILES" | xargs pnpm prettier --write
+  fi
+
+  echo "==> Running frontend lint on staged files..."
+  STAGED_TS_TSX_FILES=$(echo "$STAGED_FRONTEND_RELATIVE" | grep -E '\.(ts|tsx|js|jsx)$' || true)
+  if [ -n "$STAGED_TS_TSX_FILES" ]; then
+    echo "$STAGED_TS_TSX_FILES" | xargs pnpm eslint --fix
+  fi
+
+  cd "$REPO_ROOT"
+  echo "==> Re-staging formatted frontend files..."
+  echo "$STAGED_FRONTEND_FILES" | xargs git add
+else
+  echo "==> No staged frontend files, skipping frontend checks."
+fi
+
+echo "==> Pre-commit checks passed!"

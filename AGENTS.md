@@ -88,8 +88,8 @@ Everything in this directory has been fully replaced by Rust equivalents. It is 
 
 - **Unified stream table**: A base `Stream` table with type-specific sub-tables (`TorrentStream`, `HTTPStream`, `YouTubeStream`, etc.) linked by ID.
 - **`StreamMediaLink`**: Many-to-many table that links streams to media, supporting specific file granularity within multi-file torrents.
-- **sqlx over ORMs**: All SQL queries are compile-time validated. Query cache lives in `backend/.sqlx/`. Run `cargo sqlx prepare` after changing queries.
-- **No ORM magic**: Schema changes require explicit migration files; `sqlx::query!` macros validate against the live DB at compile time.
+- **sqlx over ORMs**: Queries in `src/db/` use compile-time-validated `sqlx::query!`/`query_as!` macros. Dynamic/route-level queries use runtime sqlx but must use the typed structs from `src/db/types.rs`. Query cache lives in `backend/.sqlx/`.
+- **No ORM magic**: Schema changes require explicit migration files; `sqlx::query!` macros validate against the live DB at compile time via `cargo sqlx prepare`.
 - **Multi-provider metadata**: Movies/series can have IDs from TMDB, TVDB, IMDb, MAL, Kitsu simultaneously.
 - **Explicit quality columns**: Stream quality (resolution, codec, audio, HDR) stored as typed columns, not JSONB.
 
@@ -120,10 +120,42 @@ MEDIAFUSION_MIGRATE=status ./mediafusion-api
 MEDIAFUSION_MIGRATE_ROLLBACK_TO=4 ./mediafusion-api  # Roll back to migration 4
 ```
 
-After adding or changing `sqlx::query!` macros, regenerate the query cache:
+### SQL Type Rules
+
+These rules prevent the class of runtime `mismatched types` errors. CI enforces them for
+macro-based queries; they must be followed manually for runtime queries.
+
+**Integer columns:**
+- Every internal primary-key (`id`) and foreign-key (`*_id`) column in the schema is
+  `integer` (INT4). Always use **`i32`** (or the newtype, e.g. `MediaId`) — never `i64`.
+- The only legitimate `i64` (bigint) columns are: `stream_file.size`, `http_stream.size`,
+  `torrent_stream.total_size`, `usenet_stream.size`, `telegram_stream.size`,
+  `telegram_stream.document_id`, `telegram_user_forward.telegram_user_id`,
+  `stream_media_link.file_size`.
+
+**Postgres enum columns:**
+- Always use the Rust enum types from `src/db/types.rs` (`MediaType`, `StreamType`,
+  `WatchAction`, etc.) as struct field types and bind parameters.
+- Never bind/decode enums as `String` with inline `::enumname` or `::text` SQL casts.
+- All 14 Postgres enums (`mediatype`, `streamtype`, `watchaction`, `historysource`,
+  `integrationtype`, `linksource`, `filetype`, `nuditystatus`, `torrenttype`,
+  `trackerstatus`, `userrole`, `contributionstatus`, `iptvsourcetype`, `downloadstatus`)
+  have native Rust counterparts in `src/db/types.rs`.
+
+**After adding or changing `sqlx::query!` macros**, regenerate the offline cache and
+commit the result — CI will fail if the cache is stale:
 
 ```bash
-cd backend && cargo sqlx prepare
+cd backend
+DATABASE_URL=postgresql://mediafusion:mediafusion@127.0.0.1:5432/mediafusion \
+  cargo sqlx prepare
+git add .sqlx/
+```
+
+**Install git hooks** (once per clone — runs `cargo check` on staged Rust files):
+
+```bash
+make install-hooks
 ```
 
 ## Required Environment Variables
