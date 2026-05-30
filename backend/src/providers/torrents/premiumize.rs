@@ -703,31 +703,34 @@ pub async fn list_downloaded_torrents(
 
 /// Check which hashes are cached on Premiumize.
 pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]) -> Vec<String> {
+    // Premiumize returns one boolean per hash in the same order; batch to avoid HTTP 414.
+    const CHUNK: usize = 80;
     let kind = decode_token(token);
-    let params: Vec<(&str, &str)> = hashes.iter().map(|h| ("items[]", h.as_str())).collect();
-    let body = match pm_get(http, &kind, "/cache/check", &params, None).await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!("premiumize cache/check: {e}");
-            return vec![];
-        }
-    };
-    if body.get("status").and_then(|v| v.as_str()) != Some("success") {
-        return vec![];
-    }
-    let responses = match body.get("response").and_then(|v| v.as_array()) {
-        Some(a) => a.clone(),
-        None => return vec![],
-    };
-    hashes
-        .iter()
-        .zip(responses.iter())
-        .filter_map(|(h, v)| {
-            if v.as_bool().unwrap_or(false) {
-                Some(h.clone())
-            } else {
-                None
+    let mut cached = Vec::new();
+
+    for chunk in hashes.chunks(CHUNK) {
+        let params: Vec<(&str, &str)> = chunk.iter().map(|h| ("items[]", h.as_str())).collect();
+        let body = match pm_get(http, &kind, "/cache/check", &params, None).await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("premiumize cache/check: {e}");
+                continue;
             }
-        })
-        .collect()
+        };
+        if body.get("status").and_then(|v| v.as_str()) != Some("success") {
+            continue;
+        }
+        let responses = match body.get("response").and_then(|v| v.as_array()) {
+            Some(a) => a.clone(),
+            None => continue,
+        };
+        // zip is per-chunk so indices align correctly
+        for (h, v) in chunk.iter().zip(responses.iter()) {
+            if v.as_bool().unwrap_or(false) {
+                cached.push(h.clone());
+            }
+        }
+    }
+
+    cached
 }

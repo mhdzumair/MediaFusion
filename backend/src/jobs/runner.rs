@@ -66,7 +66,10 @@ impl QueueRunner {
         self.reclaim_stale_jobs().await;
 
         let pool = self.state.pool.clone();
-        let mut listener = match PgListener::connect_with(&pool).await {
+        // Use a dedicated standalone connection for LISTEN/NOTIFY so it is never
+        // returned to the shared pool (which would cause NotificationResponse errors
+        // on unrelated query connections).
+        let mut listener = match PgListener::connect(&self.state.config.postgres_uri).await {
             Ok(l) => l,
             Err(e) => {
                 error!(queue = self.queue, "PgListener connect failed: {e}");

@@ -1231,19 +1231,19 @@ pub async fn user_update_rss_feed(
 
     // Build update query dynamically
     let check_result = if let Some(uid) = user_id_filter {
-        sqlx::query_scalar::<_, i64>("SELECT id FROM rss_feed WHERE id::text = $1 AND user_id = $2")
+        sqlx::query_scalar::<_, i32>("SELECT id FROM rss_feed WHERE id::text = $1 AND user_id = $2")
             .bind(&feed_id)
             .bind(uid)
             .fetch_optional(&state.pool)
             .await
     } else {
-        sqlx::query_scalar::<_, i64>("SELECT id FROM rss_feed WHERE id::text = $1")
+        sqlx::query_scalar::<_, i32>("SELECT id FROM rss_feed WHERE id::text = $1")
             .bind(&feed_id)
             .fetch_optional(&state.pool)
             .await
     };
 
-    let db_id = match check_result {
+    let db_id: i32 = match check_result {
         Ok(Some(id)) => id,
         Ok(None) => {
             return (

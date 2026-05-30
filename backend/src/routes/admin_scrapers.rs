@@ -635,10 +635,15 @@ pub async fn migrate_media(
 
     for from_id in &from_ids {
         let res = sqlx::query(
-            "UPDATE stream_media_link SET media_id = $1 WHERE media_id = $2 ON CONFLICT DO NOTHING",
+            r#"UPDATE stream_media_link s SET media_id = $1
+               WHERE media_id = $2
+                 AND NOT EXISTS (
+                   SELECT 1 FROM stream_media_link t
+                   WHERE t.stream_id = s.stream_id AND t.media_id = $1
+                 )"#,
         )
-        .bind(to_id)
-        .bind(from_id)
+        .bind(to_id as i32)
+        .bind(*from_id as i32)
         .execute(&state.pool)
         .await;
         match res {

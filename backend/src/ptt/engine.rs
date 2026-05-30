@@ -212,8 +212,8 @@ impl Parser {
             let raw_len = ret.raw_match.len();
 
             if ret.remove {
-                let start = idx.min(ctx.title.len());
-                let end = (idx + raw_len).min(ctx.title.len());
+                let start = ctx.title.floor_char_boundary(idx.min(ctx.title.len()));
+                let end = ctx.title.floor_char_boundary((idx + raw_len).min(ctx.title.len()));
                 ctx.title = format!("{}{}", &ctx.title[..start], &ctx.title[end..]);
             }
 
@@ -236,7 +236,7 @@ impl Parser {
             .entry("languages".into())
             .or_insert(FieldValue::Strs(vec![]));
 
-        let title_str = &ctx.title[..end_of_title.min(ctx.title.len())];
+        let title_str = &ctx.title[..ctx.title.floor_char_boundary(end_of_title.min(ctx.title.len()))];
         ctx.result.insert(
             "title".into(),
             FieldValue::Str(super::clean::clean_title(title_str)),

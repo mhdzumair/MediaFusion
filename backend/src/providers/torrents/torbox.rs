@@ -558,10 +558,16 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
                 continue;
             }
         };
+        // Skip non-success responses (e.g. 429 rate-limit returning HTML/plain text)
+        // before attempting JSON decode to avoid noisy "error decoding response body" logs.
+        if !resp.status().is_success() {
+            tracing::debug!("torbox checkcached HTTP {}: skipping chunk", resp.status());
+            continue;
+        }
         let body: Value = match resp.json().await {
             Ok(v) => v,
             Err(e) => {
-                tracing::warn!("torbox checkcached json: {e}");
+                tracing::debug!("torbox checkcached json: {e}");
                 continue;
             }
         };

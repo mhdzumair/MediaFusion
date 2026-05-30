@@ -6,7 +6,7 @@ use axum::{
     http::{header, StatusCode},
     response::{IntoResponse, Response},
 };
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::{cache, poster::AnnotateParams, state::AppState};
 
@@ -242,7 +242,9 @@ async fn fetch_annotate_cache(
             }
         },
         Ok(r) => {
-            warn!("poster upstream {url}: HTTP {}", r.status());
+            // Downgrade to debug: upstream 404/non-2xx for external image hosts is common
+            // and expected (missing posters). Not a backend bug.
+            debug!("poster upstream {url}: HTTP {}", r.status());
             return StatusCode::NOT_FOUND.into_response();
         }
         Err(e) => {
@@ -264,7 +266,9 @@ async fn fetch_annotate_cache(
     let final_bytes: Vec<u8> = match annotated {
         Ok(Ok(b)) => b,
         Ok(Err(e)) => {
-            warn!("poster annotate failed ({e}), serving unannotated");
+            // Downgrade to debug: image-format failures from external hosts are expected
+            // (WebP/AVIF/truncated), the code already falls back to the raw image gracefully.
+            debug!("poster annotate failed ({e}), serving unannotated");
             raw_bytes.to_vec()
         }
         Err(e) => {

@@ -253,7 +253,7 @@ struct MediaBasicRow {
 #[allow(clippy::type_complexity)]
 async fn media_row_to_json(
     pool: &sqlx::PgPool,
-    media_id: i64,
+    media_id: i32,
     include_seasons: bool,
 ) -> serde_json::Value {
     let row = sqlx::query_as::<_, MediaBasicRow>(
@@ -513,9 +513,9 @@ pub async fn create_user_metadata(
         }
     };
 
-    let media_id: i64 = match sqlx::query_scalar(
+    let media_id: i32 = match sqlx::query_scalar(
         r#"INSERT INTO media (type, title, year, description, runtime_minutes, is_user_created, created_by_user_id, is_public, total_streams, created_at)
-           VALUES ($1::media_type_enum, $2, $3, $4, $5, true, $6, $7, 0, NOW())
+           VALUES ($1::mediatype, $2, $3, $4, $5, true, $6, $7, 0, NOW())
            RETURNING id"#,
     )
     .bind(media_type_db)
@@ -552,7 +552,7 @@ pub async fn create_user_metadata(
     // Add genres
     if let Some(ref genres) = body.genres {
         for genre_name in genres {
-            let genre_id: Option<i64> = sqlx::query_scalar(
+            let genre_id: Option<i32> = sqlx::query_scalar(
                 "INSERT INTO genre (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
             )
             .bind(genre_name)
@@ -604,7 +604,7 @@ pub async fn create_user_metadata(
             .unwrap_or(0);
         let total_seasons_count: i32 = body.seasons.as_ref().map(|s| s.len() as i32).unwrap_or(0);
 
-        let series_id: i64 = match sqlx::query_scalar(
+        let series_id: i32 = match sqlx::query_scalar(
             "INSERT INTO series_metadata (media_id, total_seasons, total_episodes) VALUES ($1, $2, $3) RETURNING id",
         )
         .bind(media_id)
@@ -622,7 +622,7 @@ pub async fn create_user_metadata(
 
         if let Some(ref seasons) = body.seasons {
             for season_data in seasons {
-                let season_id: i64 = match sqlx::query_scalar(
+                let season_id: i32 = match sqlx::query_scalar(
                     "INSERT INTO season (series_id, season_number, name, overview, episode_count) VALUES ($1, $2, $3, $4, $5) RETURNING id",
                 )
                 .bind(series_id)
@@ -699,9 +699,9 @@ pub async fn list_user_metadata(
         };
         if !db_type.is_empty() {
             count_sql.push_str(&format!(" AND type = '{}'::", db_type));
-            count_sql.push_str("media_type_enum");
+            count_sql.push_str("mediatype");
             fetch_sql.push_str(&format!(" AND type = '{}'::", db_type));
-            fetch_sql.push_str("media_type_enum");
+            fetch_sql.push_str("mediatype");
         }
     }
 
@@ -717,7 +717,7 @@ pub async fn list_user_metadata(
     ));
 
     let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id);
-    let mut fetch_q = sqlx::query_scalar::<_, i64>(&fetch_sql).bind(user_id);
+    let mut fetch_q = sqlx::query_scalar::<_, i32>(&fetch_sql).bind(user_id);
 
     if let Some(ref s) = params.search {
         let pattern = format!("%{}%", s);
@@ -728,7 +728,7 @@ pub async fn list_user_metadata(
     fetch_q = fetch_q.bind(per_page).bind(offset);
 
     let total: i64 = count_q.fetch_one(&state.pool_ro).await.unwrap_or(0);
-    let ids: Vec<i64> = fetch_q.fetch_all(&state.pool_ro).await.unwrap_or_default();
+    let ids: Vec<i32> = fetch_q.fetch_all(&state.pool_ro).await.unwrap_or_default();
 
     let mut items = Vec::new();
     for id in ids {
@@ -872,10 +872,10 @@ pub async fn get_user_metadata(
         }
     };
 
-    let row = sqlx::query_as::<_, (bool, Option<i64>)>(
+    let row = sqlx::query_as::<_, (bool, Option<i32>)>(
         "SELECT is_public, created_by_user_id FROM media WHERE id = $1",
     )
-    .bind(media_id)
+    .bind(media_id as i32)
     .fetch_optional(&state.pool_ro)
     .await
     .ok()
@@ -890,7 +890,7 @@ pub async fn get_user_metadata(
                 .into_response()
         }
         Some((is_public, creator_id)) => {
-            if creator_id != Some(user_id) && !is_public {
+            if creator_id != Some(user_id as i32) && !is_public {
                 return (
                     StatusCode::FORBIDDEN,
                     Json(json!({"detail": "Access denied"})),
@@ -900,7 +900,7 @@ pub async fn get_user_metadata(
         }
     }
 
-    let resp = media_row_to_json(&state.pool_ro, media_id, true).await;
+    let resp = media_row_to_json(&state.pool_ro, media_id as i32, true).await;
     Json(resp).into_response()
 }
 
@@ -922,9 +922,9 @@ pub async fn update_user_metadata(
         }
     };
 
-    let creator_id: Option<Option<i64>> =
+    let creator_id: Option<Option<i32>> =
         sqlx::query_scalar("SELECT created_by_user_id FROM media WHERE id = $1")
-            .bind(media_id)
+            .bind(media_id as i32)
             .fetch_optional(&state.pool)
             .await
             .unwrap_or(None);
@@ -937,7 +937,7 @@ pub async fn update_user_metadata(
             )
                 .into_response()
         }
-        Some(cid) if cid != Some(user_id) => {
+        Some(cid) if cid != Some(user_id as i32) => {
             return (
                 StatusCode::FORBIDDEN,
                 Json(json!({"detail": "Can only update your own metadata"})),
@@ -1033,7 +1033,7 @@ pub async fn update_user_metadata(
             .execute(&state.pool)
             .await;
         for genre_name in genres {
-            let genre_id: Option<i64> = sqlx::query_scalar(
+            let genre_id: Option<i32> = sqlx::query_scalar(
                 "INSERT INTO genre (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
             )
             .bind(genre_name)
@@ -1050,7 +1050,7 @@ pub async fn update_user_metadata(
         }
     }
 
-    let resp = media_row_to_json(&state.pool, media_id, true).await;
+    let resp = media_row_to_json(&state.pool, media_id as i32, true).await;
     Json(resp).into_response()
 }
 
@@ -1072,9 +1072,9 @@ pub async fn delete_user_metadata(
         }
     };
 
-    let creator_id: Option<Option<i64>> =
+    let creator_id: Option<Option<i32>> =
         sqlx::query_scalar("SELECT created_by_user_id FROM media WHERE id = $1")
-            .bind(media_id)
+            .bind(media_id as i32)
             .fetch_optional(&state.pool)
             .await
             .unwrap_or(None);
@@ -1087,7 +1087,7 @@ pub async fn delete_user_metadata(
             )
                 .into_response()
         }
-        Some(cid) if cid != Some(user_id) => {
+        Some(cid) if cid != Some(user_id as i32) => {
             return (
                 StatusCode::FORBIDDEN,
                 Json(json!({"detail": "Can only delete your own metadata"})),
@@ -2048,7 +2048,7 @@ pub async fn import_from_external(
     }
 
     // Check if media already exists
-    let existing: Option<i64> = sqlx::query_scalar(
+    let existing: Option<i32> = sqlx::query_scalar(
         r#"SELECT m.id FROM media m
            JOIN media_external_id meid ON m.id = meid.media_id
            WHERE meid.provider = $1 AND meid.external_id = $2
@@ -2062,7 +2062,7 @@ pub async fn import_from_external(
 
     match existing {
         Some(media_id) => {
-            let media_json = media_row_to_json(&state.pool_ro, media_id, false).await;
+            let media_json = media_row_to_json(&state.pool_ro, media_id as i32, false).await;
             Json(media_json).into_response()
         }
         None => {
@@ -2109,7 +2109,7 @@ pub async fn import_from_external(
 
             match entry {
                 Some(m) => {
-                    let media_json = media_row_to_json(&state.pool_ro, m.id as i64, false).await;
+                    let media_json = media_row_to_json(&state.pool_ro, m.id, false).await;
                     Json(media_json).into_response()
                 }
                 None => (

@@ -441,9 +441,9 @@ pub async fn add_to_library(
     };
 
     // Verify media exists
-    let media: Option<(i64, String)> =
+    let media: Option<(i32, String)> =
         match sqlx::query_as("SELECT id, title FROM media WHERE id = $1")
-            .bind(body.media_id)
+            .bind(body.media_id as i32)
             .fetch_optional(&state.pool)
             .await
         {
@@ -466,11 +466,11 @@ pub async fn add_to_library(
     };
 
     // Check for existing entry
-    let existing: Option<i64> = sqlx::query_scalar(
+    let existing: Option<i32> = sqlx::query_scalar(
         "SELECT id FROM user_library_item WHERE user_id = $1 AND media_id = $2 LIMIT 1",
     )
     .bind(user_id as i32)
-    .bind(body.media_id)
+    .bind(body.media_id as i32)
     .fetch_optional(&state.pool)
     .await
     .unwrap_or(None);
@@ -493,14 +493,14 @@ pub async fn add_to_library(
     .unwrap_or(None);
 
     // Insert
-    let row: (i64, i64, String, String, Option<String>, DateTime<Utc>) =
+    let row: (i32, i32, String, String, Option<String>, DateTime<Utc>) =
         match sqlx::query_as(
             r#"INSERT INTO user_library_item (user_id, media_id, catalog_type, title_cached, poster_cached, added_at)
                VALUES ($1, $2, $3, $4, $5, NOW())
                RETURNING id, media_id, catalog_type, title_cached, poster_cached, added_at"#,
         )
         .bind(user_id as i32)
-        .bind(body.media_id)
+        .bind(body.media_id as i32)
         .bind(&body.catalog_type)
         .bind(&media_title)
         .bind(&poster_cached)
@@ -516,8 +516,8 @@ pub async fn add_to_library(
 
     let ext = get_external_ids(&state.pool, body.media_id as i32).await;
     let item = build_library_item(
-        row.0,
-        row.1,
+        row.0 as i64,
+        row.1 as i64,
         &row.2,
         &row.3,
         row.4.as_deref(),

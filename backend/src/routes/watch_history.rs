@@ -398,7 +398,7 @@ pub async fn list_watch_history(
             idx += 1;
         }
         if params.action.is_some() {
-            count_sql.push_str(&format!(" AND action = ${idx}"));
+            count_sql.push_str(&format!(" AND action = ${idx}::watchaction"));
             idx += 1;
         }
         let _ = idx; // suppress unused_assignments: idx is only needed while building the SQL string
@@ -453,7 +453,7 @@ pub async fn list_watch_history(
             idx += 1;
         }
         if params.action.is_some() {
-            sql.push_str(&format!(" AND action = ${idx}"));
+            sql.push_str(&format!(" AND action = ${idx}::watchaction"));
             idx += 1;
         }
         sql.push_str(&format!(

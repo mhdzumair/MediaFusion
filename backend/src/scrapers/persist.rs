@@ -7,6 +7,17 @@
 use sqlx::PgPool;
 use tracing::{debug, warn};
 
+/// Strip NUL bytes (0x00) from text before inserting into Postgres.
+/// Postgres UTF-8 encoding rejects NUL bytes in text/varchar columns.
+#[inline]
+fn strip_nul(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.contains('\0') {
+        std::borrow::Cow::Owned(s.replace('\0', ""))
+    } else {
+        std::borrow::Cow::Borrowed(s)
+    }
+}
+
 use crate::scrapers::{
     media_resolve, ScrapedStream, ScrapedTelegramStream, ScrapedUsenetStream, SearchMeta,
 };
@@ -315,8 +326,8 @@ async fn upsert_usenet_stream(
         RETURNING id
         "#,
     )
-    .bind(&s.name)
-    .bind(&s.source)
+    .bind(strip_nul(&s.name))
+    .bind(strip_nul(&s.source))
     .bind(&s.parsed.resolution)
     .bind(&s.parsed.codec)
     .bind(&s.parsed.quality)
@@ -348,8 +359,8 @@ async fn upsert_usenet_stream(
     .bind(&s.nzb_guid)
     .bind(&s.nzb_url)
     .bind(s.size)
-    .bind(&s.indexer)
-    .bind(&s.group_name)
+    .bind(strip_nul(&s.indexer))
+    .bind(s.group_name.as_deref().map(strip_nul))
     .execute(pool)
     .await;
 
@@ -378,7 +389,7 @@ async fn upsert_usenet_stream(
             )
             .bind(stream_id)
             .bind(f.file_index)
-            .bind(&f.filename)
+            .bind(strip_nul(&f.filename))
             .fetch_one(pool)
             .await;
 

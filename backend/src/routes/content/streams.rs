@@ -79,7 +79,7 @@ pub async fn delete_stream(
 
     // 2. Check stream exists and get stream_type
     let stream_type: Option<String> =
-        match sqlx::query_scalar("SELECT stream_type FROM stream WHERE id = $1")
+        match sqlx::query_scalar("SELECT stream_type::text FROM stream WHERE id = $1")
             .bind(stream_id_i32)
             .fetch_optional(&state.pool)
             .await

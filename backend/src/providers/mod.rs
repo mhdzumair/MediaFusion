@@ -32,7 +32,12 @@ impl ProviderError {
     pub fn video_file(&self) -> &'static str {
         match self {
             Self::Api { video_file, .. } => video_file,
-            Self::Http(e) if e.is_timeout() || e.is_connect() => "debrid_service_down_error.mp4",
+            // Treat transient HTTP errors (timeout, connect, or body-decode failures from
+            // non-JSON upstream responses such as rate-limit pages) as service-down rather
+            // than api_error so they route to the debug log branch instead of warn.
+            Self::Http(e) if e.is_timeout() || e.is_connect() || e.is_decode() => {
+                "debrid_service_down_error.mp4"
+            }
             _ => "api_error.mp4",
         }
     }

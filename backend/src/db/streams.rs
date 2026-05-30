@@ -711,8 +711,11 @@ pub async fn upsert_stream_files(
             if let (Some(s), Some(e)) = (f.season, f.episode) {
                 sqlx::query(
                     r#"
-                    INSERT INTO file_media_link(file_id, media_id, season_number, episode_number)
-                    VALUES ($1, $2, $3, $4)
+                    INSERT INTO file_media_link(
+                        file_id, media_id, season_number, episode_number,
+                        is_primary, confidence, link_source, created_at
+                    )
+                    VALUES ($1, $2, $3, $4, false, 1.0, 'TORRENT_METADATA'::linksource, NOW())
                     ON CONFLICT DO NOTHING
                     "#,
                 )
