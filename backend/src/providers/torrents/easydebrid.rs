@@ -6,7 +6,7 @@
 /// IP forwarding: `X-Forwarded-For: {user_ip}` when user_ip is set.
 use serde_json::Value;
 
-use crate::providers::{torrents::transport::MediaFlowForward, ProviderError};
+use crate::providers::{response_json, torrents::transport::MediaFlowForward, ProviderError};
 
 const BASE_URL: &str = "https://easydebrid.com/api/v1";
 
@@ -161,7 +161,7 @@ pub async fn get_video_url(
     let status = generate_resp.status();
 
     if status.is_success() {
-        let body: Value = generate_resp.json().await?;
+        let body: Value = response_json(generate_resp, "easydebrid link/generate").await?;
 
         // EasyDebrid returns { "link": "..." } on success
         if let Some(link) = body.get("link").and_then(|v| v.as_str()) {
@@ -244,12 +244,9 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
                 continue;
             }
         };
-        let body: Value = match resp.json().await {
+        let body: Value = match response_json(resp, "easydebrid link/lookup").await {
             Ok(v) => v,
-            Err(e) => {
-                tracing::warn!("easydebrid link/lookup json: {e}");
-                continue;
-            }
+            Err(_) => continue,
         };
         if let Some(arr) = body.get("cached").and_then(|v| v.as_array()) {
             for (hash, is_cached) in chunk.iter().zip(arr.iter()) {

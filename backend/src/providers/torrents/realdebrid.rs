@@ -8,6 +8,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::providers::{
+    response_json,
     torrents::transport::{encode_form_body, MediaFlowForward},
     ProviderError,
 };
@@ -138,7 +139,7 @@ async fn get_access_token(
         .send()
         .await?;
 
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "rd get_access_token").await?;
     check_rd_error(&body)?;
     body.get("access_token")
         .and_then(|v| v.as_str())
@@ -178,7 +179,7 @@ async fn rd_get(
     if resp.status() == 204 {
         return Ok(Value::Null);
     }
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "rd_get").await?;
     check_rd_error(&body)?;
     Ok(body)
 }
@@ -217,7 +218,7 @@ async fn rd_post(
     if resp.status() == 204 {
         return Ok(Value::Null);
     }
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "rd_post").await?;
     check_rd_error(&body)?;
     Ok(body)
 }

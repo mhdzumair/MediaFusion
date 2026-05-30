@@ -7,6 +7,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use serde_json::Value;
 
 use crate::providers::{
+    response_json,
     torrents::transport::{append_query, encode_form_body, MediaFlowForward},
     ProviderError,
 };
@@ -129,7 +130,7 @@ async fn pm_post_form(
         req.send().await?
     };
     check_status_code(resp.status())?;
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "pm_post_form").await?;
     check_pm_error(&body)?;
     Ok(body)
 }

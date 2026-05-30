@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::sync::OnceLock;
 
 use crate::providers::{
+    response_json,
     torrents::transport::{encode_form_body, MediaFlowForward},
     ProviderError,
 };
@@ -145,7 +146,7 @@ async fn tb_get(
     } else {
         http.get(url).bearer_auth(token).send().await?
     };
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "tb_get").await?;
     check_torbox_error(&body)?;
     Ok(body)
 }
@@ -163,7 +164,7 @@ async fn tb_post_form(
     } else {
         http.post(url).bearer_auth(token).form(form).send().await?
     };
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "tb_post_form").await?;
     check_torbox_error(&body)?;
     Ok(body)
 }
@@ -180,7 +181,7 @@ async fn tb_post_json(
         .json(payload)
         .send()
         .await?;
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "tb_post_json").await?;
     check_torbox_error(&body)?;
     Ok(body)
 }
@@ -558,18 +559,9 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
                 continue;
             }
         };
-        // Skip non-success responses (e.g. 429 rate-limit returning HTML/plain text)
-        // before attempting JSON decode to avoid noisy "error decoding response body" logs.
-        if !resp.status().is_success() {
-            tracing::debug!("torbox checkcached HTTP {}: skipping chunk", resp.status());
-            continue;
-        }
-        let body: Value = match resp.json().await {
+        let body: Value = match response_json(resp, "torbox checkcached").await {
             Ok(v) => v,
-            Err(e) => {
-                tracing::debug!("torbox checkcached json: {e}");
-                continue;
-            }
+            Err(_) => continue,
         };
         match body.get("data") {
             Some(Value::Object(obj)) => {

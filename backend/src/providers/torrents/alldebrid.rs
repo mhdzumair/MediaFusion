@@ -4,8 +4,11 @@
 /// All requests require `?agent=mediafusion` appended and a Bearer token.
 use serde_json::Value;
 
-use crate::providers::torrents::transport::{append_query, encode_form_body, MediaFlowForward};
-use crate::providers::ProviderError;
+use crate::providers::{
+    response_json,
+    torrents::transport::{append_query, encode_form_body, MediaFlowForward},
+    ProviderError,
+};
 
 const BASE_URL: &str = "https://api.alldebrid.com/v4.1";
 const AGENT: &str = "mediafusion";
@@ -84,7 +87,7 @@ async fn ad_get(
             .await?
     };
 
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "ad_get").await?;
     check_ad_error(&body)?;
     Ok(body)
 }
@@ -121,7 +124,7 @@ async fn ad_post_form(
             .await?
     };
 
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "ad_post_form").await?;
     check_ad_error(&body)?;
     Ok(body)
 }
@@ -677,12 +680,9 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
             return vec![];
         }
     };
-    let body: Value = match resp.json().await {
+    let body: Value = match response_json(resp, "alldebrid magnet/status").await {
         Ok(v) => v,
-        Err(e) => {
-            tracing::warn!("alldebrid magnet/status json: {e}");
-            return vec![];
-        }
+        Err(_) => return vec![],
     };
     if body.get("status").and_then(|v| v.as_str()) != Some("success") {
         return vec![];

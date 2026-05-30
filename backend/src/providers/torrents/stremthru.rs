@@ -9,7 +9,7 @@
 use serde_json::Value;
 use std::sync::OnceLock;
 
-use crate::providers::ProviderError;
+use crate::providers::{response_json, ProviderError};
 
 const DEFAULT_BASE_URL: &str = "https://stremthru.432hz.dev";
 const USER_AGENT: &str = "mediafusion";
@@ -199,7 +199,7 @@ async fn st_get(
     let req = http.get(&url).header("User-Agent", USER_AGENT);
     let req = apply_auth(req, &cfg.auth);
     let resp = req.send().await?;
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "st_get").await?;
     check_stremthru_error(&body)?;
     Ok(body)
 }
@@ -217,7 +217,7 @@ async fn st_post(
         .json(payload);
     let req = apply_auth(req, &cfg.auth);
     let resp = req.send().await?;
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "st_post").await?;
     check_stremthru_error(&body)?;
     Ok(body)
 }
@@ -464,19 +464,18 @@ pub async fn check_cached(
             .header("User-Agent", USER_AGENT)
             .query(&[("magnet", magnet_list.as_str()), ("sid", sid.as_str())]);
         let req = apply_auth(req, &cfg.auth);
-        let body: serde_json::Value = match req.send().await {
-            Ok(r) => match r.json().await {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::warn!("stremthru magnets/check json: {e}");
-                    continue;
-                }
-            },
+        let resp = match req.send().await {
+            Ok(r) => r,
             Err(e) => {
                 tracing::warn!("stremthru magnets/check: {e}");
                 continue;
             }
         };
+        let body: serde_json::Value =
+            match response_json(resp, "stremthru magnets/check").await {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
         if let Some(items) = body
             .get("data")
             .and_then(|d| d.get("items"))

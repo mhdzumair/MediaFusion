@@ -7,6 +7,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use serde_json::{json, Value};
 
 use crate::providers::{
+    response_json,
     torrents::transport::{append_query, MediaFlowForward},
     ProviderError,
 };
@@ -60,7 +61,7 @@ async fn exchange_refresh_token(
         .send()
         .await?;
 
-    let json: Value = resp.json().await?;
+    let json: Value = response_json(resp, "dl_refresh_token").await?;
     check_dl_error(&json)?;
 
     json.get("access_token")
@@ -140,7 +141,7 @@ async fn dl_get(
     } else {
         http.get(&dest).bearer_auth(bearer).send().await?
     };
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "dl_get").await?;
     check_dl_error(&body)?;
     Ok(body)
 }
@@ -163,7 +164,7 @@ async fn dl_post(
             .send()
             .await?
     };
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "dl_post").await?;
     check_dl_error(&body)?;
     Ok(body)
 }
@@ -719,13 +720,11 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
                 break;
             }
         };
-        let body: serde_json::Value = match resp.json().await {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!("debridlink seedbox/list json page {page}: {e}");
-                break;
-            }
-        };
+        let body: serde_json::Value =
+            match response_json(resp, &format!("debridlink seedbox/list page {page}")).await {
+                Ok(v) => v,
+                Err(_) => break,
+            };
         let arr = match body.get("value").and_then(|v| v.as_array()) {
             Some(a) if !a.is_empty() => a.clone(),
             _ => break,

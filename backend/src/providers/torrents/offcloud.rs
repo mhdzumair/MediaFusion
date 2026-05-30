@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::sync::OnceLock;
 
 use crate::providers::{
+    response_json,
     torrents::transport::{append_query, encode_form_body, MediaFlowForward},
     ProviderError,
 };
@@ -143,7 +144,7 @@ async fn oc_get(
         ));
     }
 
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "oc_get").await?;
     check_offcloud_error(&body)?;
     Ok(body)
 }
@@ -192,7 +193,7 @@ async fn oc_post_form(
         ));
     }
 
-    let body: Value = resp.json().await?;
+    let body: Value = response_json(resp, "oc_post_form").await?;
     check_offcloud_error(&body)?;
     Ok(body)
 }
@@ -660,12 +661,9 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
             return vec![];
         }
     };
-    let body: serde_json::Value = match resp.json().await {
+    let body: serde_json::Value = match response_json(resp, "offcloud cache").await {
         Ok(v) => v,
-        Err(e) => {
-            tracing::warn!("offcloud cache json: {e}");
-            return vec![];
-        }
+        Err(_) => return vec![],
     };
     body.get("cachedItems")
         .and_then(|v| v.as_array())
