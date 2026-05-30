@@ -913,6 +913,51 @@ static RACING_SESSIONS: &[&str] = &[
     "race",
 ];
 
+/// Map a racing session name (or a filename/title containing one) to its canonical
+/// episode slot and a normalised display title.
+///
+/// A Grand Prix weekend is modelled as a 5-episode "season", with sprint weekends
+/// reusing the same slots:
+///
+/// | slot | normal weekend       | sprint weekend        |
+/// |------|----------------------|-----------------------|
+/// | 1    | Free Practice 1      | Free Practice 1       |
+/// | 2    | Free Practice 2      | Sprint Qualifying     |
+/// | 3    | Free Practice 3      | Sprint                |
+/// | 4    | Qualifying           | Qualifying            |
+/// | 5    | Race                 | Race                  |
+///
+/// Using fixed slots keeps episode numbers stable across separate imports of the
+/// same Grand Prix (e.g. importing Qualifying first, then the Race later).
+/// Returns `None` when no known session is recognised.
+pub fn racing_session_episode(session_or_name: &str) -> Option<(i32, String)> {
+    let s = session_or_name.to_lowercase();
+    // Most-specific patterns first to avoid "qualifying"/"race" shadowing.
+    let table: &[(&[&str], i32, &str)] = &[
+        (&["sprint qualifying", "sprint shootout"], 2, "Sprint Qualifying"),
+        (&["sprint race", "sprint"], 3, "Sprint"),
+        (&["free practice 1", "practice 1", "fp1"], 1, "Free Practice 1"),
+        (&["free practice 2", "practice 2", "fp2"], 2, "Free Practice 2"),
+        (&["free practice 3", "practice 3", "fp3"], 3, "Free Practice 3"),
+        (&["qualifying", "quali"], 4, "Qualifying"),
+        (&["grand prix", "race", " gp "], 5, "Race"),
+    ];
+    let padded = format!(" {s} ");
+    for (keywords, episode, title) in table {
+        for kw in *keywords {
+            let hit = if kw.starts_with(' ') {
+                padded.contains(kw)
+            } else {
+                s.contains(kw)
+            };
+            if hit {
+                return Some((*episode, (*title).to_string()));
+            }
+        }
+    }
+    None
+}
+
 /// Split a date-less title into `(event, session)` by detecting a trailing session keyword.
 fn split_trailing_session(s: &str) -> (String, String) {
     let lower = s.to_lowercase();
@@ -978,5 +1023,25 @@ mod racing_tests {
     #[test]
     fn non_racing_returns_none() {
         assert!(parse_racing_title("WWE Raw 23 05 2026").is_none());
+    }
+
+    #[test]
+    fn session_episode_slots() {
+        let ep = |s: &str| racing_session_episode(s).unwrap();
+        // Normal weekend ordering.
+        assert_eq!(ep("Free Practice 1"), (1, "Free Practice 1".to_string()));
+        assert_eq!(ep("FP2"), (2, "Free Practice 2".to_string()));
+        assert_eq!(ep("FP3"), (3, "Free Practice 3".to_string()));
+        assert_eq!(ep("Qualifying"), (4, "Qualifying".to_string()));
+        assert_eq!(ep("Race"), (5, "Race".to_string()));
+        // Sprint weekend reuses slots 2 and 3.
+        assert_eq!(ep("Sprint Qualifying"), (2, "Sprint Qualifying".to_string()));
+        assert_eq!(ep("Sprint Shootout"), (2, "Sprint Qualifying".to_string()));
+        assert_eq!(ep("Sprint Race"), (3, "Sprint".to_string()));
+        assert_eq!(ep("Sprint"), (3, "Sprint".to_string()));
+        // "Grand Prix" without a session word is the race.
+        assert_eq!(ep("Canadian Grand Prix"), (5, "Race".to_string()));
+        // Unknown.
+        assert!(racing_session_episode("Pit Lane Channel").is_none());
     }
 }

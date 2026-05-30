@@ -1152,92 +1152,30 @@ fn extract_provider_token(config: &serde_json::Value, provider: &str) -> Option<
     None
 }
 
-// ─── Debrid import DB helper ──────────────────────────────────────────────────
-
-/// Insert a single torrent stream row; returns true if newly inserted, false if already existed.
-async fn upsert_debrid_torrent(
-    pool: &sqlx::PgPool,
-    info_hash: &str,
-    name: &str,
-    source: &str,
-    size: i64,
-) -> Result<bool, sqlx::Error> {
-    // Check for existing entry first to avoid unnecessary inserts
-    let exists: Option<i64> =
-        sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
-            .bind(info_hash)
-            .fetch_optional(pool)
-            .await?;
-    if exists.is_some() {
-        return Ok(false);
-    }
-
-    let parsed = crate::parser::parse_title(name);
-    let mut txn = pool.begin().await?;
-
-    let stream_id: i64 = sqlx::query_scalar(
-        r#"INSERT INTO stream(
-               stream_type, name, source, resolution, codec, quality,
-               is_proper, is_repack, is_extended, is_complete, is_dubbed, release_group,
-               is_active, is_blocked, is_public, playback_count, created_at
-           ) VALUES(
-               'TORRENT'::streamtype, $1, $2, $3, $4, $5,
-               $6, $7, $8, $9, $10, $11,
-               true, false, true, 0, NOW()
-           ) RETURNING id"#,
-    )
-    .bind(name)
-    .bind(source)
-    .bind(parsed.resolution.as_deref())
-    .bind(parsed.codec.as_deref())
-    .bind(parsed.quality.as_deref())
-    .bind(parsed.is_proper)
-    .bind(parsed.is_repack)
-    .bind(parsed.is_extended)
-    .bind(parsed.is_complete)
-    .bind(parsed.is_dubbed)
-    .bind(parsed.release_group.as_deref())
-    .fetch_one(&mut *txn)
-    .await?;
-
-    let inserted = sqlx::query(
-        r#"INSERT INTO torrent_stream(stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at)
-           VALUES($1, $2, $3, NULL, 'PUBLIC'::torrenttype, 0, NOW())
-           ON CONFLICT (info_hash) DO NOTHING"#,
-    )
-    .bind(stream_id as i32)
-    .bind(info_hash)
-    .bind(size)
-    .execute(&mut *txn)
-    .await?
-    .rows_affected()
-        > 0;
-
-    if !inserted {
-        sqlx::query("DELETE FROM stream WHERE id = $1")
-            .bind(stream_id as i32)
-            .execute(&mut *txn)
-            .await
-            .ok();
-    }
-
-    txn.commit().await?;
-    Ok(inserted)
-}
-
 // ─── Import body shapes ───────────────────────────────────────────────────────
+// Mirrors the Python `ImportRequest` / `TorrentOverride`.
+
+#[derive(Deserialize, Default, Clone)]
+pub struct TorrentOverride {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub year: Option<i32>,
+    #[serde(default)]
+    pub r#type: Option<String>, // movie | series | sports
+    #[serde(default)]
+    pub sports_category: Option<String>,
+}
 
 #[derive(Deserialize)]
 pub struct ImportBody {
-    items: Vec<ImportItem>,
-}
-
-#[derive(Deserialize)]
-pub struct ImportItem {
-    info_hash: String,
-    name: String,
+    pub info_hashes: Vec<String>,
     #[serde(default)]
-    size: i64,
+    pub overrides: Option<std::collections::HashMap<String, TorrentOverride>>,
+    #[serde(default)]
+    pub is_anonymous: Option<bool>,
+    #[serde(default)]
+    pub anonymous_display_name: Option<String>,
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -1453,14 +1391,74 @@ pub async fn get_missing_torrents(
     Json(json!({"items": missing, "total": total, "provider": provider})).into_response()
 }
 
+/// Resolve per-torrent raw file JSON (containing `files`) for the given torrents.
+/// RealDebrid needs a per-torrent info fetch; other providers embed files in `raw`.
+async fn resolve_import_file_data(
+    state: &AppState,
+    provider: &str,
+    token: &str,
+    torrents: &[crate::providers::torrents::realdebrid::DownloadedTorrent],
+) -> std::collections::HashMap<String, serde_json::Value> {
+    use std::collections::HashMap;
+    if provider == "realdebrid" {
+        let bearer =
+            match crate::providers::torrents::realdebrid::resolve_bearer(&state.http, token).await {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!("resolve_import_file_data rd bearer: {e}");
+                    return HashMap::new();
+                }
+            };
+        let mut map = HashMap::new();
+        for t in torrents {
+            if t.id.is_empty() {
+                continue;
+            }
+            if let Ok(info) = crate::providers::torrents::realdebrid::get_torrent_info(
+                &state.http,
+                &bearer,
+                &t.id,
+            )
+            .await
+            {
+                map.insert(t.info_hash.clone(), info);
+            }
+        }
+        map
+    } else {
+        torrents
+            .iter()
+            .map(|t| (t.info_hash.clone(), t.raw.clone()))
+            .collect()
+    }
+}
+
+/// Pick a usable external meta_id (imdb → tmdb → tvdb) from a `find_metadata_match` blob.
+fn meta_id_from_external_ids(ext: &serde_json::Value) -> Option<String> {
+    if let Some(imdb) = ext.get("imdb").and_then(|v| v.as_str()) {
+        return Some(imdb.to_string());
+    }
+    if let Some(tmdb) = ext.get("tmdb").and_then(|v| v.as_str()) {
+        return Some(format!("tmdb:{tmdb}"));
+    }
+    if let Some(tvdb) = ext.get("tvdb").and_then(|v| v.as_str()) {
+        return Some(format!("tvdb:{tvdb}"));
+    }
+    None
+}
+
 /// POST /api/v1/watchlist/{provider}/import
+///
+/// Quick import: analyzes each selected torrent, matches movies/series against the
+/// metadata DB, creates stubs for sports, and persists with organized episodes.
 pub async fn import_torrents(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Path(provider): Path<String>,
+    Query(params): Query<MissingQuery>,
     Json(body): Json<ImportBody>,
 ) -> Response {
-    let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
             return (
@@ -1471,27 +1469,188 @@ pub async fn import_torrents(
         }
     };
 
+    if body.info_hashes.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "No torrents provided for import"})),
+        )
+            .into_response();
+    }
+
+    let config = match get_profile_config(
+        &state.pool_ro,
+        user_id,
+        params.profile_id,
+        &state.config.secret_key,
+    )
+    .await
+    {
+        Some(c) => c,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Profile not found"})),
+            )
+                .into_response();
+        }
+    };
+    let token = match extract_provider_token(&config, &provider) {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": format!("Provider '{}' not configured in profile", provider)})),
+            )
+                .into_response();
+        }
+    };
+
+    let torrents = match fetch_downloaded_torrents(&state, &provider, &token).await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::warn!("import_torrents fetch {provider}: {e}");
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({"detail": format!("Provider error: {e}")})),
+            )
+                .into_response();
+        }
+    };
+    let by_hash: std::collections::HashMap<String, _> = torrents
+        .iter()
+        .map(|t| (t.info_hash.clone(), t.clone()))
+        .collect();
+    let file_data_map = resolve_import_file_data(&state, &provider, &token, &torrents).await;
+
+    let overrides = body.overrides.unwrap_or_default();
+    let video_extensions = [".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v"];
+    let sample_re = regex::Regex::new(r"(?i)(?:^|[._\-\s])sample(?:[._\-\s]|$)").unwrap();
+
     let mut imported = 0u32;
     let mut skipped = 0u32;
     let mut failed = 0u32;
     let mut details: Vec<serde_json::Value> = Vec::new();
 
-    for item in body.items {
-        let hash = item.info_hash.to_lowercase();
-        match upsert_debrid_torrent(&state.pool, &hash, &item.name, &provider, item.size).await {
-            Ok(true) => {
-                imported += 1;
-                details.push(json!({"info_hash": hash, "status": "imported"}));
+    for raw_hash in &body.info_hashes {
+        let hash = raw_hash.to_lowercase();
+
+        // Already in DB?
+        let exists: Option<i64> =
+            sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
+                .bind(&hash)
+                .fetch_optional(&state.pool_ro)
+                .await
+                .unwrap_or(None);
+        if exists.is_some() {
+            skipped += 1;
+            details.push(json!({"info_hash": hash, "status": "skipped", "message": "Already exists in database"}));
+            continue;
+        }
+
+        let Some(torrent) = by_hash.get(&hash) else {
+            failed += 1;
+            details.push(json!({"info_hash": hash, "status": "failed", "message": "Torrent not found in debrid account"}));
+            continue;
+        };
+        let torrent_name = torrent.name.clone();
+        let total_size = torrent.size;
+
+        // Extract video files for this torrent.
+        let raw = file_data_map.get(&hash).cloned().unwrap_or(torrent.raw.clone());
+        let video_files = extract_video_files(&raw, &provider, &video_extensions, &sample_re);
+        if video_files.is_empty() {
+            failed += 1;
+            details.push(json!({"info_hash": hash, "status": "failed", "message": "No valid video files found (non-video/sample files are excluded)"}));
+            continue;
+        }
+        let file_data: Vec<AdvancedImportFileEntry> = video_files
+            .iter()
+            .enumerate()
+            .map(|(idx, f)| {
+                let path = f.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                let filename = path.rsplit('/').next().unwrap_or(path).to_string();
+                AdvancedImportFileEntry {
+                    filename,
+                    size: f.get("size").and_then(|v| v.as_i64()),
+                    index: idx as i32,
+                    season_number: None,
+                    episode_number: None,
+                    episode_end: None,
+                    included: true,
+                    episode_title: None,
+                    release_date: None,
+                    meta_id: None,
+                    meta_title: None,
+                    meta_type: None,
+                }
+            })
+            .collect();
+
+        // Determine metadata (apply user override, else auto-detect).
+        let ov = overrides.get(raw_hash).or_else(|| overrides.get(&hash));
+        let meta = parse_torrent_meta(&torrent_name, video_files.len());
+        let meta_type = ov
+            .and_then(|o| o.r#type.clone())
+            .unwrap_or_else(|| meta.parsed_type.clone());
+        let title = ov
+            .and_then(|o| o.title.clone())
+            .or_else(|| meta.title.clone())
+            .unwrap_or_else(|| torrent_name.clone());
+        let year = ov.and_then(|o| o.year).or(meta.year);
+
+        // For movie/series, match against the metadata DB to obtain an external id.
+        let mut meta_id: Option<String> = None;
+        if meta_type != "sports" {
+            let (_, ext_ids) =
+                find_metadata_match(&state.pool_ro, &title, year, &meta_type).await;
+            meta_id = ext_ids.as_ref().and_then(meta_id_from_external_ids);
+            if meta_id.is_none() {
+                failed += 1;
+                details.push(json!({"info_hash": hash, "status": "failed",
+                    "message": format!("No metadata match found for '{title}'")}));
+                continue;
             }
-            Ok(false) => {
+        }
+
+        let sports_category = if meta_type == "sports" {
+            ov.and_then(|o| o.sports_category.clone())
+        } else {
+            None
+        };
+
+        let item = AdvancedImportItem {
+            info_hash: hash.clone(),
+            meta_type,
+            meta_id,
+            title: Some(title),
+            sports_category,
+            poster: None,
+            background: None,
+            logo: None,
+            release_date: None,
+            resolution: None,
+            quality: None,
+            codec: None,
+            languages: None,
+            catalogs: None,
+            file_data: Some(file_data),
+        };
+
+        match process_advanced_import(&state, &provider, &item, &hash, &torrent_name, total_size)
+            .await
+        {
+            Ok(Some(media_id)) => {
+                imported += 1;
+                details.push(json!({"info_hash": hash, "status": "success", "media_id": media_id}));
+            }
+            Ok(None) => {
                 skipped += 1;
                 details.push(json!({"info_hash": hash, "status": "skipped"}));
             }
             Err(e) => {
                 failed += 1;
-                tracing::warn!("import_torrents upsert {hash}: {e}");
-                details
-                    .push(json!({"info_hash": hash, "status": "failed", "error": e.to_string()}));
+                tracing::warn!("import_torrents {hash}: {e}");
+                details.push(json!({"info_hash": hash, "status": "failed", "message": e}));
             }
         }
     }

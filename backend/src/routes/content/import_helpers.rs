@@ -1064,6 +1064,181 @@ pub async fn insert_torrent_import_files(
     Ok(())
 }
 
+/// Extract an ISO `YYYY-MM-DD` date from a torrent/file name. Supports
+/// `DD.MM.YYYY`, `YYYY.MM.DD` and `.`/`-`/`_`/space separators.
+pub fn extract_iso_date(text: &str) -> Option<String> {
+    static DMY: OnceLock<regex::Regex> = OnceLock::new();
+    static YMD: OnceLock<regex::Regex> = OnceLock::new();
+    let dmy = DMY.get_or_init(|| {
+        regex::Regex::new(r"\b(\d{1,2})[._\- ](\d{1,2})[._\- ]((?:19|20)\d{2})\b").unwrap()
+    });
+    let ymd = YMD.get_or_init(|| {
+        regex::Regex::new(r"\b((?:19|20)\d{2})[._\- ](\d{1,2})[._\- ](\d{1,2})\b").unwrap()
+    });
+
+    let valid = |y: i32, m: u32, d: u32| -> Option<String> {
+        if (1..=12).contains(&m) && (1..=31).contains(&d) {
+            Some(format!("{y:04}-{m:02}-{d:02}"))
+        } else {
+            None
+        }
+    };
+
+    if let Some(c) = ymd.captures(text) {
+        let y: i32 = c[1].parse().ok()?;
+        let m: u32 = c[2].parse().ok()?;
+        let d: u32 = c[3].parse().ok()?;
+        if let Some(s) = valid(y, m, d) {
+            return Some(s);
+        }
+    }
+    if let Some(c) = dmy.captures(text) {
+        let d: u32 = c[1].parse().ok()?;
+        let m: u32 = c[2].parse().ok()?;
+        let y: i32 = c[3].parse().ok()?;
+        if let Some(s) = valid(y, m, d) {
+            return Some(s);
+        }
+    }
+    None
+}
+
+/// Organize episode metadata for a *user-created* (non-IMDb/TMDb/TVDb) series whose
+/// files lack explicit episode numbers. No-op for non-series media, for media that
+/// already has external IDs (provider supplies episodes), and for files that
+/// already carry an `episode_number`.
+///
+/// Strategy (per the import requirements):
+///   1. Racing sessions (F1/MotoGP) → canonical fixed slots (FP1, FP2/SprintQ, …).
+///   2. Files with a detectable date → ordered chronologically; dates already
+///      present in the series reuse their episode number (stable re-imports).
+///   3. Remaining files → ordered by filename, numbered after the current max.
+///
+/// Mutates `file_rows` in place, filling `season_number` / `episode_number` /
+/// `episode_title` / `release_date`.
+pub async fn organize_user_series_episodes(
+    pool: &PgPool,
+    media_id: i64,
+    file_rows: &mut [Value],
+    sports_category: Option<&str>,
+) {
+    // Only for series-type media without external IDs (i.e. user-created).
+    let is_user_series: bool = sqlx::query_scalar(
+        "SELECT m.type = 'SERIES'::mediatype \
+              AND NOT EXISTS (SELECT 1 FROM media_external_id e WHERE e.media_id = m.id) \
+         FROM media m WHERE m.id = $1",
+    )
+    .bind(media_id as i32)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(false);
+    if !is_user_series {
+        return;
+    }
+
+    let is_racing = matches!(sports_category, Some("formula_racing") | Some("motogp_racing"));
+
+    // Existing episodes in season 1 → align re-imports (date → number, and current max).
+    let existing: Vec<(i32, Option<chrono::NaiveDate>)> = sqlx::query_as(
+        "SELECT e.episode_number, e.air_date FROM episode e \
+         JOIN season s ON e.season_id = s.id \
+         JOIN series_metadata sm ON s.series_id = sm.id \
+         WHERE sm.media_id = $1 AND s.season_number = 1",
+    )
+    .bind(media_id as i32)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let mut date_to_num: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
+    let mut max_num = 0i32;
+    for (num, air) in &existing {
+        max_num = max_num.max(*num);
+        if let Some(d) = air {
+            date_to_num.insert(d.to_string(), *num);
+        }
+    }
+
+    // Pass 1: racing slots + collect undated/dated leftovers (preserving original index).
+    let mut dated: Vec<(usize, String)> = Vec::new();
+    let mut undated: Vec<usize> = Vec::new();
+    for (idx, f) in file_rows.iter_mut().enumerate() {
+        if let Some(obj) = f.as_object_mut() {
+            obj.entry("season_number").or_insert(json!(1));
+            if obj.get("season_number").map(|v| v.is_null()).unwrap_or(false) {
+                obj.insert("season_number".to_string(), json!(1));
+            }
+        }
+        // Respect an explicit episode number.
+        if f.get("episode_number").and_then(|v| v.as_i64()).is_some() {
+            continue;
+        }
+        let filename = f
+            .get("filename")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        if is_racing {
+            if let Some((ep, title)) = crate::parser::racing_session_episode(&filename) {
+                if let Some(obj) = f.as_object_mut() {
+                    obj.insert("episode_number".to_string(), json!(ep));
+                    obj.entry("episode_title").or_insert(json!(title));
+                    if obj.get("episode_title").map(|v| v.is_null()).unwrap_or(false) {
+                        obj.insert("episode_title".to_string(), json!(title));
+                    }
+                }
+                continue;
+            }
+        }
+
+        // Date-based organization.
+        let existing_date = f
+            .get("release_date")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        if let Some(date) = existing_date.or_else(|| extract_iso_date(&filename)) {
+            dated.push((idx, date));
+        } else {
+            undated.push(idx);
+        }
+    }
+
+    // Pass 2: dated files in chronological order.
+    dated.sort_by(|a, b| a.1.cmp(&b.1));
+    for (idx, date) in dated {
+        let number = match date_to_num.get(&date) {
+            Some(n) => *n,
+            None => {
+                max_num += 1;
+                date_to_num.insert(date.clone(), max_num);
+                max_num
+            }
+        };
+        if let Some(obj) = file_rows[idx].as_object_mut() {
+            obj.insert("episode_number".to_string(), json!(number));
+            obj.insert("release_date".to_string(), json!(date));
+            obj.entry("episode_title")
+                .or_insert(json!(null));
+        }
+    }
+
+    // Pass 3: remaining files by filename order.
+    undated.sort_by(|&a, &b| {
+        let fa = file_rows[a].get("filename").and_then(|v| v.as_str()).unwrap_or("");
+        let fb = file_rows[b].get("filename").and_then(|v| v.as_str()).unwrap_or("");
+        fa.cmp(fb)
+    });
+    for idx in undated {
+        max_num += 1;
+        if let Some(obj) = file_rows[idx].as_object_mut() {
+            obj.insert("episode_number".to_string(), json!(max_num));
+        }
+    }
+}
+
 /// Insert a `stream` + `torrent_stream` row (all NOT NULL columns populated) and
 /// link it to `media_id`. On info_hash conflict, returns the existing stream id
 /// (and links media). This is the single source of truth for torrent stream rows.
@@ -1373,8 +1548,15 @@ pub async fn persist_torrent_import(
         let _ = link_stream_audio_channels(pool, stream_id, &input.parsed.channels).await;
     }
 
+    // Organize episodes for user-created series (date/session ordering) before
+    // any file/episode links are written, so both use the same numbers.
+    let mut file_rows: Vec<Value> = input.file_rows.to_vec();
+    if let Some(mid) = input.media_id {
+        organize_user_series_episodes(pool, mid, &mut file_rows, input.sports_category).await;
+    }
+
     // Per-file metadata (creates stream_file + file_media_link with season/episode).
-    if !input.file_rows.is_empty() {
+    if !file_rows.is_empty() {
         let _ = insert_torrent_import_files(
             pool,
             http,
@@ -1383,7 +1565,7 @@ pub async fn persist_torrent_import(
             stream_id,
             input.meta_type,
             input.media_id.map(|m| m as i32),
-            input.file_rows,
+            &file_rows,
             input.sports_category,
             input.prefetch,
         )
@@ -1395,7 +1577,7 @@ pub async fn persist_torrent_import(
         if !input.catalogs.is_empty() {
             let _ = link_media_catalogs(pool, mid as i32, input.catalogs).await;
         }
-        ensure_series_episode_metadata(pool, mid, input.file_rows, input.fallback_title).await;
+        ensure_series_episode_metadata(pool, mid, &file_rows, input.fallback_title).await;
     }
 
     Ok(stream_id)
