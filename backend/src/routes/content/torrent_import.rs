@@ -35,10 +35,6 @@ use sha2::Sha256;
 
 use crate::{parser, state::AppState};
 
-use super::import_helpers::{
-    link_stream_audio_channels, link_stream_audio_formats, link_stream_hdr_formats,
-};
-
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
 fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
@@ -156,172 +152,6 @@ fn extract_trackers_from_magnet(magnet: &str) -> Vec<String> {
             }
         })
         .collect()
-}
-
-/// Upsert tracker URLs and link them to the torrent stream row.
-async fn insert_trackers(
-    pool: &sqlx::PgPool,
-    torrent_stream_id: i32,
-    tracker_urls: &[String],
-) -> Result<(), sqlx::Error> {
-    for url in tracker_urls {
-        let tracker_id: Option<i32> = sqlx::query_scalar(
-            "INSERT INTO tracker(url) VALUES($1) ON CONFLICT(url) DO UPDATE SET url = EXCLUDED.url RETURNING id",
-        )
-        .bind(url)
-        .fetch_optional(pool)
-        .await?;
-
-        if let Some(tid) = tracker_id {
-            sqlx::query(
-                "INSERT INTO torrent_tracker_link(torrent_id, tracker_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
-            )
-            .bind(torrent_stream_id)
-            .bind(tid)
-            .execute(pool)
-            .await?;
-        }
-    }
-    Ok(())
-}
-
-/// Insert audio language links for a stream.
-async fn link_parsed_stream_extras(
-    pool: &sqlx::PgPool,
-    stream_id: i32,
-    parsed: &parser::ParsedTitle,
-) {
-    if !parsed.audio.is_empty() {
-        let _ = link_stream_audio_formats(pool, stream_id, &parsed.audio).await;
-    }
-    if !parsed.hdr.is_empty() {
-        let _ = link_stream_hdr_formats(pool, stream_id, &parsed.hdr).await;
-    }
-    if !parsed.channels.is_empty() {
-        let _ = link_stream_audio_channels(pool, stream_id, &parsed.channels).await;
-    }
-}
-
-async fn insert_languages(
-    pool: &sqlx::PgPool,
-    stream_id: i32,
-    languages: &[String],
-) -> Result<(), sqlx::Error> {
-    for lang in languages {
-        if lang.is_empty() {
-            continue;
-        }
-        let lang_id: Option<i32> = sqlx::query_scalar(
-            "INSERT INTO language(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
-        )
-        .bind(lang)
-        .fetch_optional(pool)
-        .await?;
-
-        if let Some(lid) = lang_id {
-            sqlx::query(
-                "INSERT INTO stream_language_link(stream_id, language_id, language_type) VALUES($1, $2, 'AUDIO') ON CONFLICT DO NOTHING",
-            )
-            .bind(stream_id)
-            .bind(lid)
-            .execute(pool)
-            .await?;
-        }
-    }
-    Ok(())
-}
-
-// ─── DB insert helper ─────────────────────────────────────────────────────────
-
-#[allow(clippy::too_many_arguments)]
-async fn insert_torrent_stream(
-    pool: &sqlx::PgPool,
-    info_hash: &str,
-    name: &str,
-    source: &str,
-    size: Option<i64>,
-    seeders: Option<i32>,
-    file_count: i32,
-    parsed: &parser::ParsedTitle,
-    media_id: Option<i64>,
-    is_public: bool,
-) -> Result<i32, sqlx::Error> {
-    let mut txn = pool.begin().await?;
-
-    let stream_id: i32 = sqlx::query_scalar(
-        r#"INSERT INTO stream(
-               stream_type, name, source, resolution, codec, quality,
-               is_proper, is_repack, is_remastered, is_upscaled, is_extended, is_complete, is_dubbed, is_subbed, release_group,
-               is_active, is_blocked, is_public, playback_count, created_at
-           ) VALUES(
-               'TORRENT'::streamtype, $1, $2, $3, $4, $5,
-               $6, $7, $8, $9, $10, $11, $12, $13, $14,
-               true, false, $15, 0, NOW()
-           )
-           RETURNING id"#,
-    )
-    .bind(name)
-    .bind(source)
-    .bind(parsed.resolution.as_deref())
-    .bind(parsed.codec.as_deref())
-    .bind(parsed.quality.as_deref())
-    .bind(parsed.is_proper)
-    .bind(parsed.is_repack)
-    .bind(parsed.is_remastered)
-    .bind(parsed.is_upscaled)
-    .bind(parsed.is_extended)
-    .bind(parsed.is_complete)
-    .bind(parsed.is_dubbed)
-    .bind(parsed.is_subbed)
-    .bind(parsed.release_group.as_deref())
-    .bind(is_public)
-    .fetch_one(&mut *txn)
-    .await?;
-
-    let ts_result = sqlx::query(
-        r#"INSERT INTO torrent_stream(stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at)
-           VALUES($1, $2, $3, $4, 'PUBLIC'::torrenttype, $5, NOW())
-           ON CONFLICT (info_hash) DO NOTHING"#,
-    )
-    .bind(stream_id as i32)
-    .bind(info_hash)
-    .bind(size.unwrap_or(0_i64))
-    .bind(seeders)
-    .bind(file_count)
-    .execute(&mut *txn)
-    .await;
-
-    if let Ok(r) = &ts_result {
-        if r.rows_affected() == 0 {
-            sqlx::query("DELETE FROM stream WHERE id = $1")
-                .bind(stream_id as i32)
-                .execute(&mut *txn)
-                .await
-                .ok();
-            txn.commit().await?;
-            // Return the existing stream_id and link media if provided.
-            let existing: i32 =
-                sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
-                    .bind(info_hash)
-                    .fetch_one(pool)
-                    .await
-                    .unwrap_or(stream_id);
-            if let Some(mid) = media_id {
-                let _ =
-                    super::import_helpers::link_stream_to_media(pool, existing, mid as i32).await;
-            }
-            return Ok(existing);
-        }
-    }
-    ts_result?;
-
-    txn.commit().await?;
-
-    if let Some(mid) = media_id {
-        let _ = super::import_helpers::link_stream_to_media(pool, stream_id, mid as i32).await;
-    }
-
-    Ok(stream_id)
 }
 
 // ─── Request / response shapes ────────────────────────────────────────────────
@@ -1196,17 +1026,31 @@ pub async fn import_magnet(
     };
 
     let is_public = super::import_helpers::stream_is_public_on_submit(auto_approve, true);
-    let stream_id = match insert_torrent_stream(
+    let magnet_trackers = extract_trackers_from_magnet(&magnet_link);
+    let stream_id = match super::import_helpers::persist_torrent_import(
         &state.pool,
-        &info_hash,
-        &torrent_name,
-        &source,
-        total_size,
-        None,
-        file_count,
-        &parsed,
-        media_id,
-        is_public,
+        &state.http,
+        super::import_helpers::TorrentImportPersist {
+            info_hash: &info_hash,
+            name: &torrent_name,
+            source: &source,
+            total_size,
+            seeders: None,
+            file_count,
+            parsed: &parsed,
+            media_id,
+            meta_type: &meta_type,
+            is_public,
+            file_rows: &file_rows,
+            languages: &effective_languages,
+            catalogs: &effective_catalogs,
+            trackers: &magnet_trackers,
+            sports_category: sports_category.as_deref(),
+            fallback_title: title.as_deref().unwrap_or(&torrent_name),
+            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
+            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+            prefetch: &prefetch,
+        },
     )
     .await
     {
@@ -1221,72 +1065,6 @@ pub async fn import_magnet(
         }
     };
 
-    // Insert trackers from magnet URI
-    let trackers = extract_trackers_from_magnet(&magnet_link);
-    if !trackers.is_empty() {
-        let ts_id: Option<i32> =
-            sqlx::query_scalar("SELECT id FROM torrent_stream WHERE stream_id = $1 LIMIT 1")
-                .bind(stream_id as i32)
-                .fetch_optional(&state.pool)
-                .await
-                .unwrap_or(None);
-        if let Some(tsid) = ts_id {
-            insert_trackers(&state.pool, tsid, &trackers).await.ok();
-        }
-    }
-
-    // Insert language links and audio/HDR/channel extras (Python process_torrent_import parity)
-    if !effective_languages.is_empty() {
-        insert_languages(&state.pool, stream_id, &effective_languages)
-            .await
-            .ok();
-    }
-    link_parsed_stream_extras(&state.pool, stream_id, &parsed).await;
-
-    // Per-file metadata with prefetched provider payloads
-    if !file_rows.is_empty() {
-        let _ = super::import_helpers::insert_torrent_import_files(
-            &state.pool,
-            &state.http,
-            state.config.tmdb_api_key.as_deref(),
-            state.config.tvdb_api_key.as_deref(),
-            stream_id,
-            &meta_type,
-            media_id.map(|m| m as i32),
-            &file_rows,
-            sports_category.as_deref(),
-            &prefetch,
-        )
-        .await;
-    }
-
-    // Link media to caller-specified catalogs
-    if let Some(mid) = media_id {
-        let _ = super::import_helpers::link_stream_to_media(&state.pool, stream_id, mid as i32).await;
-        for cat_name in &effective_catalogs {
-            if cat_name.is_empty() {
-                continue;
-            }
-            let cat_id: Option<i32> = sqlx::query_scalar(
-                "INSERT INTO catalog(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
-            )
-            .bind(cat_name)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None);
-            if let Some(cid) = cat_id {
-                let _ = sqlx::query(
-                    "INSERT INTO media_catalog_link(media_id, catalog_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
-                )
-                .bind(mid as i32)
-                .bind(cid)
-                .execute(&state.pool)
-                .await;
-            }
-        }
-    }
-
-    let magnet_trackers = extract_trackers_from_magnet(&magnet_link);
     let contribution_data = build_torrent_contribution_data(
         &info_hash,
         &torrent_name,
@@ -1694,21 +1472,30 @@ pub async fn import_torrent(
     }
 
     let is_public = super::import_helpers::stream_is_public_on_submit(auto_approve, true);
-    let stream_id = match insert_torrent_stream(
+    let stream_id = match super::import_helpers::persist_torrent_import(
         &state.pool,
-        &info_hash,
-        &torrent_name,
-        &source,
-        if total_size > 0 {
-            Some(total_size)
-        } else {
-            None
+        &state.http,
+        super::import_helpers::TorrentImportPersist {
+            info_hash: &info_hash,
+            name: &torrent_name,
+            source: &source,
+            total_size: if total_size > 0 { Some(total_size) } else { None },
+            seeders: None,
+            file_count,
+            parsed: &parsed,
+            media_id,
+            meta_type: &meta_type,
+            is_public,
+            file_rows: &file_rows,
+            languages: &effective_languages,
+            catalogs: &effective_catalogs,
+            trackers: &tracker_urls,
+            sports_category: sports_category.as_deref(),
+            fallback_title: title.as_deref().unwrap_or(&torrent_name),
+            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
+            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+            prefetch: &prefetch,
         },
-        None,
-        file_count,
-        &parsed,
-        media_id,
-        is_public,
     )
     .await
     {
@@ -1722,69 +1509,6 @@ pub async fn import_torrent(
                 .into_response();
         }
     };
-
-    // Insert trackers
-    if !tracker_urls.is_empty() {
-        let ts_id: Option<i32> =
-            sqlx::query_scalar("SELECT id FROM torrent_stream WHERE stream_id = $1 LIMIT 1")
-                .bind(stream_id as i32)
-                .fetch_optional(&state.pool)
-                .await
-                .unwrap_or(None);
-        if let Some(tsid) = ts_id {
-            insert_trackers(&state.pool, tsid, &tracker_urls).await.ok();
-        }
-    }
-
-    // Insert language links and audio/HDR/channel extras
-    if !effective_languages.is_empty() {
-        insert_languages(&state.pool, stream_id, &effective_languages)
-            .await
-            .ok();
-    }
-    link_parsed_stream_extras(&state.pool, stream_id, &parsed).await;
-
-    if !file_rows.is_empty() {
-        let _ = super::import_helpers::insert_torrent_import_files(
-            &state.pool,
-            &state.http,
-            state.config.tmdb_api_key.as_deref(),
-            state.config.tvdb_api_key.as_deref(),
-            stream_id,
-            &meta_type,
-            media_id.map(|m| m as i32),
-            &file_rows,
-            sports_category.as_deref(),
-            &prefetch,
-        )
-        .await;
-    }
-
-    // Link media to caller-specified catalogs
-    if let Some(mid) = media_id {
-        let _ = super::import_helpers::link_stream_to_media(&state.pool, stream_id, mid as i32).await;
-        for cat_name in &effective_catalogs {
-            if cat_name.is_empty() {
-                continue;
-            }
-            let cat_id: Option<i32> = sqlx::query_scalar(
-                "INSERT INTO catalog(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
-            )
-            .bind(cat_name)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None);
-            if let Some(cid) = cat_id {
-                let _ = sqlx::query(
-                    "INSERT INTO media_catalog_link(media_id, catalog_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
-                )
-                .bind(mid as i32)
-                .bind(cid)
-                .execute(&state.pool)
-                .await;
-            }
-        }
-    }
 
     let contribution_data = build_torrent_contribution_data(
         &info_hash,

@@ -1889,39 +1889,6 @@ async fn process_advanced_import(
         return Err("No valid video files found (non-video/sample files are excluded)".to_string());
     }
 
-    // ── Insert the stream + torrent_stream and link to the primary media ─────
-    let file_count = file_rows.len() as i32;
-    let source = item.meta_id.as_deref().unwrap_or(provider).to_string();
-    let stream_id =
-        insert_debrid_stream(&state.pool, hash, torrent_name, &source, total_size, file_count,
-            &parsed, media_id)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    // ── Per-file metadata (creates file_media_link with season/episode) ──────
-    let prefetch = crate::scrapers::media_resolve::ImportMetadataCache::default();
-    let _ = super::content::import_helpers::insert_torrent_import_files(
-        &state.pool,
-        &state.http,
-        state.config.tmdb_api_key.as_deref(),
-        state.config.tvdb_api_key.as_deref(),
-        stream_id,
-        &item.meta_type,
-        Some(media_id as i32),
-        &file_rows,
-        sports_category.as_deref(),
-        &prefetch,
-    )
-    .await;
-
-    // ── Languages ───────────────────────────────────────────────────────────
-    let languages = item.languages.clone().unwrap_or_else(|| parsed.languages.clone());
-    if !languages.is_empty() {
-        let _ =
-            super::content::import_helpers::link_stream_languages(&state.pool, stream_id, &languages)
-                .await;
-    }
-
     // ── Catalogs (sports category prepended for sports) ─────────────────────
     let mut catalogs = item.catalogs.clone().unwrap_or_default();
     if let Some(cat) = &sports_category {
@@ -1929,249 +1896,45 @@ async fn process_advanced_import(
             catalogs.insert(0, cat.clone());
         }
     }
-    if !catalogs.is_empty() {
-        let _ = super::content::import_helpers::link_media_catalogs(
-            &state.pool,
-            media_id as i32,
-            &catalogs,
-        )
-        .await;
-    }
 
-    // ── Series episode metadata (season/episode rows for the detail page) ────
-    ensure_series_episode_metadata(&state.pool, media_id, &file_rows, title).await;
+    let languages = item
+        .languages
+        .clone()
+        .unwrap_or_else(|| parsed.languages.clone());
+    let file_count = file_rows.len() as i32;
+    let source = item.meta_id.as_deref().unwrap_or(provider).to_string();
+    let prefetch = crate::scrapers::media_resolve::ImportMetadataCache::default();
+
+    // ── Persist everything via the shared import routine ─────────────────────
+    super::content::import_helpers::persist_torrent_import(
+        &state.pool,
+        &state.http,
+        super::content::import_helpers::TorrentImportPersist {
+            info_hash: hash,
+            name: torrent_name,
+            source: &source,
+            total_size: if total_size > 0 { Some(total_size) } else { None },
+            seeders: None,
+            file_count,
+            parsed: &parsed,
+            media_id: Some(media_id),
+            meta_type: &item.meta_type,
+            is_public: true,
+            file_rows: &file_rows,
+            languages: &languages,
+            catalogs: &catalogs,
+            trackers: &[],
+            sports_category: sports_category.as_deref(),
+            fallback_title: title,
+            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
+            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+            prefetch: &prefetch,
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(Some(media_id))
-}
-
-/// Populate `series_metadata` / `season` / `episode` rows so series detail pages
-/// list the imported episodes. No-op for non-series media. Mirrors the Python
-/// `_ensure_series_episode_metadata`.
-async fn ensure_series_episode_metadata(
-    pool: &sqlx::PgPool,
-    media_id: i64,
-    file_rows: &[serde_json::Value],
-    fallback_title: &str,
-) {
-    let is_series: bool = sqlx::query_scalar("SELECT type = 'SERIES'::mediatype FROM media WHERE id = $1")
-        .bind(media_id as i32)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or(false);
-    if !is_series {
-        return;
-    }
-
-    // Get or create the series_metadata row (media_id is unique).
-    let series_id: Option<i64> = sqlx::query_scalar(
-        "INSERT INTO series_metadata (media_id, total_seasons, total_episodes, created_at) \
-         VALUES ($1, 0, 0, NOW()) ON CONFLICT (media_id) DO UPDATE SET media_id = EXCLUDED.media_id \
-         RETURNING id",
-    )
-    .bind(media_id as i32)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
-    let Some(series_id) = series_id else {
-        return;
-    };
-
-    let mut touched_seasons: std::collections::HashSet<i32> = std::collections::HashSet::new();
-    for (idx, f) in file_rows.iter().enumerate() {
-        let season_number = f
-            .get("season_number")
-            .and_then(|v| v.as_i64())
-            .map(|n| n as i32)
-            .unwrap_or(1);
-        let episode_number = f
-            .get("episode_number")
-            .and_then(|v| v.as_i64())
-            .map(|n| n as i32)
-            .unwrap_or((idx as i32) + 1);
-        let episode_title = f
-            .get("episode_title")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.trim().is_empty())
-            .map(str::to_string)
-            .or_else(|| {
-                f.get("filename")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string)
-            })
-            .unwrap_or_else(|| format!("Episode {episode_number}"));
-        let air_date = f
-            .get("release_date")
-            .and_then(|v| v.as_str())
-            .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
-
-        // Get or create the season.
-        let season_id: Option<i64> = sqlx::query_scalar(
-            "INSERT INTO season (series_id, season_number, name, episode_count) \
-             VALUES ($1, $2, $3, 0) \
-             ON CONFLICT (series_id, season_number) DO UPDATE SET series_id = EXCLUDED.series_id \
-             RETURNING id",
-        )
-        .bind(series_id)
-        .bind(season_number)
-        .bind(format!("Season {season_number}"))
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
-        let Some(season_id) = season_id else {
-            continue;
-        };
-        touched_seasons.insert(season_number);
-
-        // Insert the episode (or update title/air_date if it already exists).
-        let _ = sqlx::query(
-            "INSERT INTO episode \
-               (season_id, episode_number, title, air_date, is_user_created, is_user_addition, created_at, updated_at) \
-             VALUES ($1, $2, $3, $4, true, true, NOW(), NOW()) \
-             ON CONFLICT (season_id, episode_number) \
-             DO UPDATE SET title = EXCLUDED.title, \
-                           air_date = COALESCE(EXCLUDED.air_date, episode.air_date), \
-                           updated_at = NOW()",
-        )
-        .bind(season_id as i32)
-        .bind(episode_number)
-        .bind(&episode_title)
-        .bind(air_date)
-        .execute(pool)
-        .await;
-    }
-
-    // If no files produced episodes, create a single placeholder episode.
-    if touched_seasons.is_empty() {
-        let season_id: Option<i64> = sqlx::query_scalar(
-            "INSERT INTO season (series_id, season_number, name, episode_count) \
-             VALUES ($1, 1, 'Season 1', 0) \
-             ON CONFLICT (series_id, season_number) DO UPDATE SET series_id = EXCLUDED.series_id \
-             RETURNING id",
-        )
-        .bind(series_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
-        if let Some(season_id) = season_id {
-            let _ = sqlx::query(
-                "INSERT INTO episode \
-                   (season_id, episode_number, title, is_user_created, is_user_addition, created_at, updated_at) \
-                 VALUES ($1, 1, $2, true, true, NOW(), NOW()) \
-                 ON CONFLICT (season_id, episode_number) DO NOTHING",
-            )
-            .bind(season_id as i32)
-            .bind(fallback_title)
-            .execute(pool)
-            .await;
-            touched_seasons.insert(1);
-        }
-    }
-
-    // Refresh aggregate counters.
-    for season_number in &touched_seasons {
-        let _ = sqlx::query(
-            "UPDATE season SET episode_count = \
-               (SELECT COUNT(*) FROM episode e WHERE e.season_id = season.id) \
-             WHERE series_id = $1 AND season_number = $2",
-        )
-        .bind(series_id)
-        .bind(season_number)
-        .execute(pool)
-        .await;
-    }
-    let _ = sqlx::query(
-        "UPDATE series_metadata SET \
-           total_seasons = (SELECT COUNT(*) FROM season WHERE series_id = $1), \
-           total_episodes = (SELECT COUNT(*) FROM episode e JOIN season s ON e.season_id = s.id WHERE s.series_id = $1), \
-           updated_at = NOW() \
-         WHERE id = $1",
-    )
-    .bind(series_id)
-    .execute(pool)
-    .await;
-}
-
-/// Insert a debrid stream + torrent_stream row and link it to `media_id`.
-/// Returns the `stream.id`. Mirrors `upsert_debrid_torrent` but captures the id
-/// and links media.
-#[allow(clippy::too_many_arguments)]
-async fn insert_debrid_stream(
-    pool: &sqlx::PgPool,
-    info_hash: &str,
-    name: &str,
-    source: &str,
-    size: i64,
-    file_count: i32,
-    parsed: &crate::parser::ParsedTitle,
-    media_id: i64,
-) -> Result<i32, sqlx::Error> {
-    let mut txn = pool.begin().await?;
-
-    let stream_id: i32 = sqlx::query_scalar(
-        r#"INSERT INTO stream(
-               stream_type, name, source, resolution, codec, quality,
-               is_proper, is_repack, is_extended, is_complete, is_dubbed, release_group,
-               is_active, is_blocked, is_public, playback_count, created_at
-           ) VALUES(
-               'TORRENT'::streamtype, $1, $2, $3, $4, $5,
-               $6, $7, $8, $9, $10, $11,
-               true, false, true, 0, NOW()
-           ) RETURNING id"#,
-    )
-    .bind(name)
-    .bind(source)
-    .bind(parsed.resolution.as_deref())
-    .bind(parsed.codec.as_deref())
-    .bind(parsed.quality.as_deref())
-    .bind(parsed.is_proper)
-    .bind(parsed.is_repack)
-    .bind(parsed.is_extended)
-    .bind(parsed.is_complete)
-    .bind(parsed.is_dubbed)
-    .bind(parsed.release_group.as_deref())
-    .fetch_one(&mut *txn)
-    .await?;
-
-    let inserted = sqlx::query(
-        r#"INSERT INTO torrent_stream(stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at)
-           VALUES($1, $2, $3, NULL, 'PUBLIC'::torrenttype, $4, NOW())
-           ON CONFLICT (info_hash) DO NOTHING"#,
-    )
-    .bind(stream_id)
-    .bind(info_hash)
-    .bind(size)
-    .bind(file_count)
-    .execute(&mut *txn)
-    .await?
-    .rows_affected()
-        > 0;
-
-    if !inserted {
-        sqlx::query("DELETE FROM stream WHERE id = $1")
-            .bind(stream_id)
-            .execute(&mut *txn)
-            .await
-            .ok();
-        txn.commit().await?;
-        let existing: i32 =
-            sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
-                .bind(info_hash)
-                .fetch_one(pool)
-                .await?;
-        let _ = super::content::import_helpers::link_stream_to_media(pool, existing, media_id as i32)
-            .await;
-        return Ok(existing);
-    }
-
-    txn.commit().await?;
-    let _ =
-        super::content::import_helpers::link_stream_to_media(pool, stream_id, media_id as i32).await;
-    Ok(stream_id)
 }
 
 /// POST /api/v1/watchlist/{provider}/remove
