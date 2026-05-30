@@ -3,6 +3,54 @@ use tracing::warn;
 
 use crate::scrapers::SearchMeta;
 
+#[derive(sqlx::FromRow)]
+pub struct MediaCandidate {
+    pub media_id: i64,
+    pub title: String,
+    pub year: Option<i32>,
+    pub imdb_id: Option<String>,
+    pub tmdb_id: Option<String>,
+    pub tvdb_id: Option<String>,
+}
+
+/// Full-text search for media candidates matching `title` and `media_type`.
+/// Returns up to 12 candidates ordered by popularity, with all known external IDs.
+/// Used for metadata enrichment in the missing-torrent import flow.
+pub async fn search_media_candidates(
+    pool: &PgPool,
+    media_type: &str,
+    title: &str,
+) -> Vec<MediaCandidate> {
+    sqlx::query_as::<_, MediaCandidate>(
+        r#"
+        SELECT
+            m.id::bigint AS media_id,
+            m.title,
+            m.year,
+            MAX(CASE WHEN mei.provider = 'imdb' THEN mei.external_id END) AS imdb_id,
+            MAX(CASE WHEN mei.provider = 'tmdb' THEN mei.external_id END) AS tmdb_id,
+            MAX(CASE WHEN mei.provider = 'tvdb' THEN mei.external_id END) AS tvdb_id
+        FROM media m
+        LEFT JOIN media_external_id mei
+               ON mei.media_id = m.id
+              AND mei.provider IN ('imdb', 'tmdb', 'tvdb')
+        WHERE m.type = upper($1)::mediatype
+          AND m.title_tsv @@ plainto_tsquery('simple', $2)
+        GROUP BY m.id, m.title, m.year
+        ORDER BY m.popularity DESC NULLS LAST
+        LIMIT 12
+        "#,
+    )
+    .bind(media_type)
+    .bind(title)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_else(|e| {
+        warn!("search_media_candidates title={title}: {e}");
+        vec![]
+    })
+}
+
 /// Fetch title, year, and imdb_id for a known media_id.
 /// Returns None if the row doesn't exist.
 pub async fn get_media_meta(

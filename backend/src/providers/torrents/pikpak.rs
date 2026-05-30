@@ -2042,6 +2042,106 @@ pub async fn delete_torrent_by_hash(
     }
 }
 
+// ─── Torrent list ────────────────────────────────────────────────────────────
+
+fn extract_btih(s: &str) -> Option<String> {
+    let lower = s.to_lowercase();
+    let prefix = "urn:btih:";
+    let pos = lower.find(prefix)?;
+    let rest = &s[pos + prefix.len()..];
+    let hash: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric())
+        .collect();
+    if hash.len() >= 32 {
+        Some(hash.to_lowercase())
+    } else {
+        None
+    }
+}
+
+fn extract_task_hash(task: &Value) -> Option<String> {
+    if let Some(h) = task["hash"].as_str().filter(|s| s.len() >= 32) {
+        return Some(h.to_lowercase());
+    }
+    if let Some(url) = magnet_or_resource_url(task) {
+        if let Some(h) = extract_btih(url) {
+            return Some(h);
+        }
+    }
+    if let Some(h) = task["reference_resource"]["hash"]
+        .as_str()
+        .filter(|s| s.len() >= 32)
+    {
+        return Some(h.to_lowercase());
+    }
+    if let Some(url) = magnet_or_resource_url(&task["reference_resource"]) {
+        if let Some(h) = extract_btih(url) {
+            return Some(h);
+        }
+    }
+    None
+}
+
+/// Return all completed offline tasks with their files, ready for the missing-import flow.
+pub async fn list_downloaded_torrents(
+    http: &Client,
+    token: &str,
+) -> Result<
+    Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>,
+    ProviderError,
+> {
+    let mut tokens = decode_token(token)?;
+    let tasks = offline_list(http, &mut tokens, &["PHASE_TYPE_COMPLETE"], None).await?;
+
+    let mut results = Vec::new();
+    for task in &tasks {
+        let info_hash = match extract_task_hash(task) {
+            Some(h) => h,
+            None => continue,
+        };
+        let id = task["id"].as_str().unwrap_or("").to_string();
+        let name = task["name"]
+            .as_str()
+            .unwrap_or(&info_hash)
+            .to_string();
+        let size = parse_pikpak_size(&task["file_size"]);
+
+        let folder_id = task_file_id(task);
+        let raw_files: Vec<Value> = if let Some(fid) =
+            folder_id.as_deref().filter(|s| !s.is_empty())
+        {
+            if task["reference_resource"]["kind"].as_str() == Some("drive#file") {
+                vec![task["reference_resource"].clone()]
+            } else {
+                get_files_from_folder(http, &mut tokens, fid, None)
+                    .await
+                    .unwrap_or_default()
+            }
+        } else {
+            vec![]
+        };
+
+        let files: Vec<Value> = raw_files
+            .iter()
+            .filter_map(|f| {
+                let n = f["name"].as_str()?;
+                let s = parse_pikpak_size(&f["size"]);
+                Some(serde_json::json!({"name": n, "size": s}))
+            })
+            .collect();
+
+        results.push(crate::providers::torrents::realdebrid::DownloadedTorrent {
+            id,
+            info_hash,
+            name,
+            size,
+            raw: serde_json::json!({ "files": files }),
+        });
+    }
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

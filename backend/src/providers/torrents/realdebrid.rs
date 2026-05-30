@@ -42,6 +42,21 @@ fn decode_token(token: &str) -> TokenKind {
     TokenKind::Private(token.to_string())
 }
 
+/// Resolve a user-supplied token string to a usable bearer token.
+pub async fn resolve_bearer(
+    http: &reqwest::Client,
+    token: &str,
+) -> Result<String, ProviderError> {
+    match decode_token(token) {
+        TokenKind::Private(t) => Ok(t),
+        TokenKind::OAuth {
+            client_id,
+            client_secret,
+            code,
+        } => get_access_token(http, &client_id, &client_secret, &code, None).await,
+    }
+}
+
 // ─── API error code mapping ───────────────────────────────────────────────────
 
 fn map_error_code(code: i64) -> Option<(&'static str, &'static str)> {
@@ -264,7 +279,7 @@ async fn find_torrent_by_hash(
     Ok(None)
 }
 
-async fn get_torrent_info(
+pub async fn get_torrent_info(
     http: &reqwest::Client,
     bearer: &str,
     torrent_id: &str,
@@ -898,10 +913,17 @@ pub async fn get_video_url(
 /// A torrent that has been fully downloaded in the user's debrid account.
 #[derive(Debug, Clone)]
 pub struct DownloadedTorrent {
+    pub id: String,
     pub info_hash: String,
     pub name: String,
     pub size: i64,
+    /// Raw torrent JSON from the list call — set by providers that embed file data in the list
+    /// so `get_missing_torrents` doesn't need a second round-trip.
+    /// Left as `Null` for Real-Debrid (files fetched separately via `/torrents/info/{id}`).
+    pub raw: serde_json::Value,
 }
+
+
 
 /// Return all fully-downloaded torrents in the user's RD account with name and size.
 pub async fn list_downloaded_torrents(
@@ -932,6 +954,11 @@ pub async fn list_downloaded_torrents(
                     Some(h) => h.to_lowercase(),
                     None => continue,
                 };
+                let id = t
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let name = t
                     .get("filename")
                     .and_then(|v| v.as_str())
@@ -939,9 +966,11 @@ pub async fn list_downloaded_torrents(
                     .to_string();
                 let size = t.get("bytes").and_then(|v| v.as_i64()).unwrap_or(0);
                 result.push(DownloadedTorrent {
+                    id,
                     info_hash: hash,
                     name,
                     size,
+                    raw: serde_json::Value::Null,
                 });
             }
         }

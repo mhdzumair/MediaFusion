@@ -565,6 +565,49 @@ pub async fn get_video_url(
 
 /// Delete the magnet matching `info_hash` from AllDebrid.
 /// Returns `true` if found and deleted, `false` if not found.
+/// Return all ready magnets with their files for the missing-import flow.
+pub async fn list_downloaded_torrents(
+    http: &reqwest::Client,
+    token: &str,
+) -> Result<Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>, ProviderError> {
+    let body = get_magnet_status(http, token, None, None, None).await?;
+    let magnets = body
+        .get("data")
+        .and_then(|d| d.get("magnets"))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    Ok(magnets
+        .into_iter()
+        .filter(|m| {
+            m.get("statusCode").and_then(|v| v.as_i64()).unwrap_or(0) == 4 // 4 = Ready
+        })
+        .filter_map(|m| {
+            let hash = m.get("hash")?.as_str()?.to_lowercase();
+            let id = m
+                .get("id")
+                .and_then(|v| v.as_i64())
+                .map(|v| v.to_string())
+                .unwrap_or_default();
+            let name = m
+                .get("filename")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&hash)
+                .to_string();
+            let size = m.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
+            let raw = m.clone();
+            Some(crate::providers::torrents::realdebrid::DownloadedTorrent {
+                id,
+                info_hash: hash,
+                name,
+                size,
+                raw,
+            })
+        })
+        .collect())
+}
+
 pub async fn delete_torrent_by_hash(
     http: &reqwest::Client,
     token: &str,

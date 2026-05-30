@@ -840,20 +840,268 @@ async fn get_profile_config(
     let mut full_config: serde_json::Value = config.unwrap_or_else(|| json!({}));
     if let Some(enc) = encrypted_secrets {
         let secrets = crate::crypto::profile::decrypt_secrets(&enc, secret_key);
-        deep_merge_cfg(&mut full_config, secrets);
+        crate::crypto::profile::merge_secrets(&mut full_config, &secrets);
     }
     Some(full_config)
 }
 
-fn deep_merge_cfg(base: &mut serde_json::Value, overlay: serde_json::Value) {
-    match (base, overlay) {
-        (serde_json::Value::Object(b), serde_json::Value::Object(o)) => {
-            for (k, v) in o {
-                deep_merge_cfg(b.entry(k).or_insert(serde_json::Value::Null), v);
+
+/// Extract video files from a raw torrent JSON object, handling per-provider field names.
+fn extract_video_files(
+    raw: &serde_json::Value,
+    provider: &str,
+    video_extensions: &[&str],
+    sample_re: &regex::Regex,
+) -> Vec<serde_json::Value> {
+    let files_val = match raw.get("files") {
+        Some(v) => v,
+        None => return vec![],
+    };
+
+    match provider {
+        "realdebrid" => {
+            // Files: [{path, bytes, selected}] — only selected == 1
+            files_val
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter(|f| f.get("selected").and_then(|s| s.as_i64()).unwrap_or(0) == 1)
+                        .filter_map(|f| {
+                            let path = f.get("path")?.as_str()?;
+                            let size = f.get("bytes").and_then(|v| v.as_i64()).unwrap_or(0);
+                            is_wanted_video(path, video_extensions, sample_re)
+                                .then(|| json!({"path": path, "size": size}))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
+        "torbox" => {
+            // Files: [{short_name/name, size}]
+            files_val
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|f| {
+                            let path = f
+                                .get("short_name")
+                                .or_else(|| f.get("name"))
+                                .and_then(|v| v.as_str())?;
+                            let size = f.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
+                            is_wanted_video(path, video_extensions, sample_re)
+                                .then(|| json!({"path": path, "size": size}))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
+        "alldebrid" => {
+            // Files: nested tree with {n, s, e, l} — flatten recursively
+            let mut flat: Vec<(String, i64)> = Vec::new();
+            flatten_ad_files_simple(files_val, &mut flat);
+            flat.into_iter()
+                .filter_map(|(path, size)| {
+                    is_wanted_video(&path, video_extensions, sample_re)
+                        .then(|| json!({"path": path, "size": size}))
+                })
+                .collect()
+        }
+        "debridlink" | "premiumize" | "offcloud" | "pikpak" | "seedr" => {
+            // Files: [{name, size}]
+            files_val
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|f| {
+                            let path = f.get("name").and_then(|v| v.as_str())?;
+                            let size = f.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
+                            is_wanted_video(path, video_extensions, sample_re)
+                                .then(|| json!({"path": path, "size": size}))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
+        _ => vec![],
+    }
+}
+
+fn is_wanted_video(path: &str, video_extensions: &[&str], sample_re: &regex::Regex) -> bool {
+    let path_lc = path.to_lowercase();
+    let is_video = video_extensions.iter().any(|e| path_lc.ends_with(e));
+    let filename = path.rsplit('/').next().unwrap_or(path);
+    is_video && !sample_re.is_match(filename)
+}
+
+/// Recursively flatten the AllDebrid nested file tree into (name, size) pairs.
+fn flatten_ad_files_simple(node: &serde_json::Value, out: &mut Vec<(String, i64)>) {
+    match node {
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                flatten_ad_files_simple(item, out);
             }
         }
-        (base, overlay) => *base = overlay,
+        serde_json::Value::Object(_) => {
+            if node.get("l").is_some() {
+                // Leaf file
+                let name = node.get("n").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let size = node.get("s").and_then(|v| v.as_i64()).unwrap_or(0);
+                out.push((name, size));
+            } else if let Some(entries) = node.get("e") {
+                flatten_ad_files_simple(entries, out);
+            }
+        }
+        _ => {}
     }
+}
+
+/// Parsed torrent metadata for the missing-import flow.
+struct TorrentMeta {
+    title: Option<String>,
+    year: Option<i32>,
+    /// "movie" | "series" | "sports" — the *display* type shown in the UI.
+    parsed_type: String,
+    /// DB media type to search against: "movie" | "series".
+    db_type: String,
+    /// Title to use for the DB full-text search (may differ from the display title).
+    search_title: Option<String>,
+    /// Detected sports category key (e.g. "formula_racing"), `None` for non-sports.
+    sports_category: Option<String>,
+}
+
+/// Parse torrent name into metadata. `video_file_count` is the number of video
+/// files already extracted — >3 files implies a series.
+fn parse_torrent_meta(name: &str, video_file_count: usize) -> TorrentMeta {
+    // Racing (F1/F2/F3, MotoGP) is stored as a *series*; the series title is
+    // "{league} {event} {year}" and the session is the episode.
+    if let Some(cat) = crate::parser::detect_sports_category(name) {
+        if matches!(cat, "formula_racing" | "motogp_racing") {
+            if let Some(racing) = crate::parser::parse_racing_title(name) {
+                return TorrentMeta {
+                    title: Some(racing.series_title.clone()),
+                    year: racing.year,
+                    parsed_type: "sports".to_string(),
+                    db_type: "series".to_string(),
+                    search_title: Some(racing.series_title),
+                    sports_category: Some(cat.to_string()),
+                };
+            }
+        }
+
+        // Other sports → stored as a movie. Strip the date so FTS can match.
+        let sports = crate::parser::parse_sports_title(name);
+        let title = sports.title.or_else(|| crate::parser::parse_title(name).title);
+        let search = title.as_deref().map(strip_date_tokens);
+        return TorrentMeta {
+            title,
+            year: sports.year,
+            parsed_type: "sports".to_string(),
+            db_type: "movie".to_string(),
+            search_title: search,
+            sports_category: Some(cat.to_string()),
+        };
+    }
+
+    let parsed = crate::parser::parse_title(name);
+    let is_series =
+        !parsed.seasons.is_empty() || !parsed.episodes.is_empty() || video_file_count > 3;
+    let parsed_type = if is_series { "series" } else { "movie" };
+    TorrentMeta {
+        search_title: parsed.title.clone(),
+        title: parsed.title,
+        year: parsed.year,
+        parsed_type: parsed_type.to_string(),
+        db_type: parsed_type.to_string(),
+        sports_category: None,
+    }
+}
+
+/// Strip DD MM YYYY date tokens from a title so FTS can match DB entries.
+/// e.g. "WWE Raw 23 05 2026" → "WWE Raw"
+fn strip_date_tokens(title: &str) -> String {
+    static DATE_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = DATE_RE
+        .get_or_init(|| regex::Regex::new(r"\s+\d{1,2}\s+\d{1,2}\s+\d{4}\b").unwrap());
+    let s = re.replace_all(title, "").trim().to_string();
+    if s.is_empty() {
+        title.to_string()
+    } else {
+        s
+    }
+}
+
+/// Find the best-matching media in the DB for `title`/`year`/`media_type`.
+/// Returns `(matched_title, external_ids_json)` — both are `None` when no confident match found.
+async fn find_metadata_match(
+    pool: &sqlx::PgPool,
+    title: &str,
+    year: Option<i32>,
+    media_type: &str,
+) -> (Option<String>, Option<serde_json::Value>) {
+    let db_type = if media_type == "series" { "series" } else { "movie" };
+    let candidates = crate::db::search_media_candidates(pool, db_type, title).await;
+    if candidates.is_empty() {
+        return (None, None);
+    }
+
+    // Dynamic threshold mirrors the Python implementation.
+    let compact_len = title
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .count();
+    let min_score: i32 = if compact_len <= 4 {
+        90
+    } else if compact_len <= 8 {
+        80
+    } else {
+        68
+    };
+
+    let mut best_score = -1i32;
+    let mut best_title: Option<String> = None;
+    let mut best_ext: Option<serde_json::Value> = None;
+
+    for c in &candidates {
+        // Skip candidates with no external IDs (mirrors Python build_missing_external_ids).
+        if c.imdb_id.is_none() && c.tmdb_id.is_none() && c.tvdb_id.is_none() {
+            continue;
+        }
+
+        let sim = crate::parser::similarity_ratio(title, &c.title) as i32;
+        if sim < min_score {
+            continue;
+        }
+
+        let mut score = sim;
+        if let Some(y) = year {
+            if let Some(cy) = c.year {
+                if cy == y {
+                    score += 8;
+                } else if (cy - y).abs() <= 1 {
+                    score += 2;
+                }
+            }
+        }
+        if c.imdb_id.is_some() {
+            score += 2;
+        }
+        if c.tmdb_id.is_some() {
+            score += 1;
+        }
+
+        if score > best_score {
+            best_score = score;
+            best_title = Some(c.title.clone());
+            best_ext = Some(json!({
+                "imdb": c.imdb_id,
+                "tmdb": c.tmdb_id,
+                "tvdb": c.tvdb_id,
+            }));
+        }
+    }
+
+    (best_title, best_ext)
 }
 
 /// Extract the token for a named provider from a decrypted profile config.
@@ -1036,18 +1284,15 @@ pub async fn get_missing_torrents(
         }
     };
 
-    // Only Real-Debrid is implemented; others fall back to empty list
-    let all_torrents = match provider.as_str() {
-        "realdebrid" => {
-            match crate::providers::torrents::realdebrid::list_downloaded_torrents(
-                &state.http,
-                &token,
-            )
-            .await
-            {
+    // Fetch all torrents for the provider. Providers that embed files in their list
+    // (TorBox, AllDebrid, Debrid-Link) populate `raw`; RD leaves it Null and we
+    // fetch file details separately.
+    macro_rules! fetch_list {
+        ($call:expr) => {
+            match $call.await {
                 Ok(t) => t,
                 Err(e) => {
-                    tracing::warn!("get_missing_torrents realdebrid: {e}");
+                    tracing::warn!("get_missing_torrents {provider} list: {e}");
                     return (
                         StatusCode::BAD_GATEWAY,
                         Json(json!({"detail": format!("Provider error: {e}")})),
@@ -1055,7 +1300,34 @@ pub async fn get_missing_torrents(
                         .into_response();
                 }
             }
-        }
+        };
+    }
+
+    let all_torrents = match provider.as_str() {
+        "realdebrid" => fetch_list!(crate::providers::torrents::realdebrid::list_downloaded_torrents(
+            &state.http, &token
+        )),
+        "torbox" => fetch_list!(crate::providers::torrents::torbox::list_downloaded_torrents(
+            &state.http, &token
+        )),
+        "alldebrid" => fetch_list!(crate::providers::torrents::alldebrid::list_downloaded_torrents(
+            &state.http, &token
+        )),
+        "debridlink" => fetch_list!(crate::providers::torrents::debridlink::list_downloaded_torrents(
+                &state.http, &token
+        )),
+        "premiumize" => fetch_list!(crate::providers::torrents::premiumize::list_downloaded_torrents(
+            &state.http, &token
+        )),
+        "offcloud" => fetch_list!(crate::providers::torrents::offcloud::list_downloaded_torrents(
+            &state.http, &token
+        )),
+        "pikpak" => fetch_list!(crate::providers::torrents::pikpak::list_downloaded_torrents(
+            &state.http, &token
+        )),
+        "seedr" => fetch_list!(crate::providers::torrents::seedr::list_downloaded_torrents(
+            &state.http, &token
+        )),
         _ => {
             return Json(json!({"items": [], "total": 0, "provider": provider})).into_response();
         }
@@ -1068,17 +1340,90 @@ pub async fn get_missing_torrents(
             .into_iter()
             .collect();
 
-    let missing: Vec<serde_json::Value> = all_torrents
+    let missing_torrents: Vec<_> = all_torrents
         .into_iter()
         .filter(|t| !existing.contains(&t.info_hash))
-        .map(|t| {
-            json!({
-                "info_hash": t.info_hash,
-                "name": t.name,
-                "size": t.size,
-            })
-        })
         .collect();
+
+    // For RD, fetch file details per-torrent (requires separate API calls).
+    // For other providers, files are already in `t.raw`.
+    let file_infos: Vec<serde_json::Value> = if provider == "realdebrid" {
+        let bearer = match crate::providers::torrents::realdebrid::resolve_bearer(&state.http, &token).await {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!("get_missing_torrents rd bearer: {e}");
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(json!({"detail": format!("Provider error: {e}")})),
+                )
+                    .into_response();
+            }
+        };
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(6));
+        let http = state.http.clone();
+        let bearer = std::sync::Arc::new(bearer);
+        let futs: Vec<_> = missing_torrents
+            .iter()
+            .map(|t| {
+                let http = http.clone();
+                let bearer = bearer.clone();
+                let id = t.id.clone();
+                let sem = semaphore.clone();
+                async move {
+                    let _permit = sem.acquire().await.ok();
+                    if id.is_empty() { return serde_json::Value::Null; }
+                    crate::providers::torrents::realdebrid::get_torrent_info(&http, &bearer, &id)
+                        .await
+                        .unwrap_or(serde_json::Value::Null)
+                }
+            })
+            .collect();
+        futures::future::join_all(futs).await
+    } else {
+        // Files embedded — just clone the raw torrent objects.
+        missing_torrents.iter().map(|t| t.raw.clone()).collect()
+    };
+
+    let video_extensions = [".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v"];
+    let sample_re = regex::Regex::new(r"(?i)(?:^|[._\-\s])sample(?:[._\-\s]|$)").unwrap();
+
+    // Build items with parsed metadata, retaining lookup hints (db_type, search_title).
+    let mut missing: Vec<serde_json::Value> = Vec::with_capacity(missing_torrents.len());
+    let mut lookups: Vec<TorrentMeta> = Vec::with_capacity(missing_torrents.len());
+    for (t, raw) in missing_torrents.into_iter().zip(file_infos) {
+        let video_files = extract_video_files(&raw, &provider, &video_extensions, &sample_re);
+        let meta = parse_torrent_meta(&t.name, video_files.len());
+        missing.push(json!({
+            "info_hash": t.info_hash,
+            "name": t.name,
+            "size": t.size,
+            "files": video_files,
+            "parsed_title": meta.title,
+            "parsed_year": meta.year,
+            "parsed_type": meta.parsed_type,
+            "sports_category": meta.sports_category,
+            "matched_title": null,
+            "external_ids": null,
+        }));
+        lookups.push(meta);
+    }
+
+    // Enrich each item with matched_title and external_ids from DB.
+    for (item, meta) in missing.iter_mut().zip(&lookups) {
+        let search_title = match meta.search_title.as_deref() {
+            Some(t) if !t.is_empty() => t,
+            _ => continue,
+        };
+        let (matched_title, ext_ids) =
+            find_metadata_match(&state.pool_ro, search_title, meta.year, &meta.db_type).await;
+
+        if let Some(mt) = matched_title {
+            item["matched_title"] = json!(mt);
+        }
+        if let Some(ids) = ext_ids {
+            item["external_ids"] = ids;
+        }
+    }
 
     let total = missing.len();
     Json(json!({"items": missing, "total": total, "provider": provider})).into_response()
@@ -1137,29 +1482,116 @@ pub async fn import_torrents(
 }
 
 // ─── Advanced import body shapes ─────────────────────────────────────────────
+// Mirrors the Python `AdvancedImportRequest` / `AdvancedTorrentImport` /
+// `FileAnnotationData` schemas so the frontend's advanced-import payload
+// deserializes correctly.
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct AdvancedImportFileEntry {
-    pub index: i32,
     pub filename: String,
-    pub size: i64,
+    #[serde(default)]
+    pub size: Option<i64>,
+    pub index: i32,
+    #[serde(default)]
     pub season_number: Option<i32>,
+    #[serde(default)]
     pub episode_number: Option<i32>,
+    #[serde(default)]
+    pub episode_end: Option<i32>,
+    #[serde(default = "default_true")]
+    pub included: bool,
+    #[serde(default)]
+    pub meta_id: Option<String>,
+    #[serde(default)]
+    pub meta_title: Option<String>,
+    #[serde(default)]
+    pub meta_type: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Deserialize)]
 pub struct AdvancedImportItem {
     pub info_hash: String,
-    pub name: String,
+    pub meta_type: String, // movie, series, sports
     #[serde(default)]
-    pub size: i64,
+    pub meta_id: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub sports_category: Option<String>,
+    #[serde(default)]
+    pub poster: Option<String>,
+    #[serde(default)]
+    pub background: Option<String>,
+    #[serde(default)]
+    pub logo: Option<String>,
+    #[serde(default)]
+    pub release_date: Option<String>,
+    #[serde(default)]
+    pub resolution: Option<String>,
+    #[serde(default)]
+    pub quality: Option<String>,
+    #[serde(default)]
+    pub codec: Option<String>,
+    #[serde(default)]
     pub languages: Option<Vec<String>>,
+    #[serde(default)]
+    pub catalogs: Option<Vec<String>>,
+    #[serde(default)]
     pub file_data: Option<Vec<AdvancedImportFileEntry>>,
 }
 
 #[derive(Deserialize)]
 pub struct AdvancedImportBody {
-    pub items: Vec<AdvancedImportItem>,
+    pub advanced_imports: Vec<AdvancedImportItem>,
+    #[serde(default)]
+    pub is_anonymous: Option<bool>,
+    #[serde(default)]
+    pub anonymous_display_name: Option<String>,
+}
+
+/// Map a sports category key to its genre display name (mirrors scraper `category_to_genre`).
+fn sports_category_to_genre(category: &str) -> &'static str {
+    match category {
+        "football" => "Football",
+        "basketball" => "Basketball",
+        "hockey" => "Hockey",
+        "american_football" => "American Football",
+        "baseball" => "Baseball",
+        "rugby" => "Rugby/AFL",
+        "formula_racing" => "Formula Racing",
+        "motogp_racing" => "MotoGP Racing",
+        "fighting" => "Fighting/Wrestling",
+        "tennis" => "Tennis",
+        "golf" => "Golf",
+        "cycling" => "Cycling",
+        "athletics" => "Athletics",
+        _ => "Other Sports",
+    }
+}
+
+/// Fetch the provider's downloaded torrents (used to resolve names/sizes on import).
+async fn fetch_downloaded_torrents(
+    state: &AppState,
+    provider: &str,
+    token: &str,
+) -> Result<Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>, String> {
+    use crate::providers::torrents as t;
+    let res = match provider {
+        "realdebrid" => t::realdebrid::list_downloaded_torrents(&state.http, token).await,
+        "torbox" => t::torbox::list_downloaded_torrents(&state.http, token).await,
+        "alldebrid" => t::alldebrid::list_downloaded_torrents(&state.http, token).await,
+        "debridlink" => t::debridlink::list_downloaded_torrents(&state.http, token).await,
+        "premiumize" => t::premiumize::list_downloaded_torrents(&state.http, token).await,
+        "offcloud" => t::offcloud::list_downloaded_torrents(&state.http, token).await,
+        "pikpak" => t::pikpak::list_downloaded_torrents(&state.http, token).await,
+        "seedr" => t::seedr::list_downloaded_torrents(&state.http, token).await,
+        _ => return Err(format!("Unsupported provider: {provider}")),
+    };
+    res.map_err(|e| e.to_string())
 }
 
 // ─── Remove / clear-all body shapes ─────────────────────────────────────────
@@ -1182,9 +1614,10 @@ pub async fn advanced_import_torrents(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Path(provider): Path<String>,
+    Query(params): Query<MissingQuery>,
     Json(body): Json<AdvancedImportBody>,
 ) -> Response {
-    let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
             return (
@@ -1195,107 +1628,112 @@ pub async fn advanced_import_torrents(
         }
     };
 
+    if body.advanced_imports.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "No torrents provided for import"})),
+        )
+            .into_response();
+    }
+
+    // Resolve provider token from the user's profile.
+    let config = match get_profile_config(
+        &state.pool_ro,
+        user_id,
+        params.profile_id,
+        &state.config.secret_key,
+    )
+    .await
+    {
+        Some(c) => c,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Profile not found"})),
+            )
+                .into_response();
+        }
+    };
+    let token = match extract_provider_token(&config, &provider) {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": format!("Provider '{}' not configured in profile", provider)})),
+            )
+                .into_response();
+        }
+    };
+
+    // Fetch the provider's downloaded torrents to resolve names/sizes.
+    let torrents = match fetch_downloaded_torrents(&state, &provider, &token).await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::warn!("advanced_import_torrents fetch {provider}: {e}");
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({"detail": format!("Provider error: {e}")})),
+            )
+                .into_response();
+        }
+    };
+    let by_hash: std::collections::HashMap<String, _> = torrents
+        .into_iter()
+        .map(|t| (t.info_hash.clone(), t))
+        .collect();
+
     let mut imported = 0u32;
     let mut skipped = 0u32;
     let mut failed = 0u32;
     let mut details: Vec<serde_json::Value> = Vec::new();
 
-    for item in body.items {
+    for item in &body.advanced_imports {
         let hash = item.info_hash.to_lowercase();
 
-        match upsert_debrid_torrent(&state.pool, &hash, &item.name, &provider, item.size).await {
-            Ok(newly_inserted) => {
-                if newly_inserted {
-                    // Insert languages
-                    if let Some(langs) = &item.languages {
-                        for lang in langs {
-                            if lang.is_empty() {
-                                continue;
-                            }
-                            let lid: Option<i32> = sqlx::query_scalar(
-                                "INSERT INTO language(name) VALUES($1) \
-                                 ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
-                            )
-                            .bind(lang)
-                            .fetch_optional(&state.pool)
-                            .await
-                            .unwrap_or(None);
-                            if let Some(lid) = lid {
-                                sqlx::query(
-                                    "INSERT INTO stream_language_link(stream_id, language_id, language_type) \
-                                     VALUES((SELECT stream_id FROM torrent_stream WHERE info_hash = $1 LIMIT 1), $2, 'AUDIO') \
-                                     ON CONFLICT DO NOTHING",
-                                )
-                                .bind(&hash)
-                                .bind(lid)
-                                .execute(&state.pool)
-                                .await
-                                .ok();
-                            }
-                        }
-                    }
+        // movie / series imports require an external meta_id; sports may create a stub.
+        if item.meta_type != "sports" && item.meta_id.as_deref().unwrap_or("").is_empty() {
+            failed += 1;
+            details.push(json!({"info_hash": hash, "status": "failed",
+                "message": "meta_id is required for movie and series imports"}));
+            continue;
+        }
 
-                    // Insert per-file metadata
-                    if let Some(files) = &item.file_data {
-                        // Look up stream_id for this hash
-                        let stream_id: Option<i64> = sqlx::query_scalar(
-                            "SELECT stream_id FROM torrent_stream WHERE info_hash = $1 LIMIT 1",
-                        )
-                        .bind(&hash)
-                        .fetch_optional(&state.pool)
-                        .await
-                        .unwrap_or(None);
+        // Skip if already in the DB.
+        let exists: Option<i64> =
+            sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
+                .bind(&hash)
+                .fetch_optional(&state.pool_ro)
+                .await
+                .unwrap_or(None);
+        if exists.is_some() {
+            skipped += 1;
+            details.push(json!({"info_hash": hash, "status": "skipped",
+                "message": "Already exists in database"}));
+            continue;
+        }
 
-                        if let Some(sid) = stream_id {
-                            for f in files {
-                                let fid: Option<i32> = sqlx::query_scalar(
-                                    r#"INSERT INTO stream_file(stream_id, file_index, filename, size, file_type, is_archive)
-                                       VALUES($1, $2, $3, $4, 'VIDEO', false)
-                                       ON CONFLICT DO NOTHING RETURNING id"#,
-                                )
-                                .bind(sid as i32)
-                                .bind(f.index)
-                                .bind(&f.filename)
-                                .bind(f.size)
-                                .fetch_optional(&state.pool)
-                                .await
-                                .unwrap_or(None);
+        let torrent = by_hash.get(&hash);
+        let torrent_name = torrent
+            .map(|t| t.name.clone())
+            .or_else(|| item.title.clone())
+            .unwrap_or_else(|| hash.clone());
+        let total_size = torrent.map(|t| t.size).unwrap_or(0);
 
-                                if let (Some(fid), Some(s), Some(e)) =
-                                    (fid, f.season_number, f.episode_number)
-                                {
-                                    sqlx::query(
-                                        r#"INSERT INTO file_media_link(file_id, media_id, season_number, episode_number)
-                                           SELECT $1,
-                                                  (SELECT media_id FROM stream_media_link WHERE stream_id = $2 LIMIT 1),
-                                                  $3, $4
-                                           WHERE (SELECT media_id FROM stream_media_link WHERE stream_id = $2 LIMIT 1) IS NOT NULL
-                                           ON CONFLICT DO NOTHING"#,
-                                    )
-                                    .bind(fid)
-                                    .bind(sid as i32)
-                                    .bind(s)
-                                    .bind(e)
-                                    .execute(&state.pool)
-                                    .await
-                                    .ok();
-                                }
-                            }
-                        }
-                    }
-
-                    imported += 1;
-                    details.push(json!({"info_hash": hash, "status": "imported"}));
-                } else {
-                    skipped += 1;
-                    details.push(json!({"info_hash": hash, "status": "skipped"}));
-                }
+        match process_advanced_import(&state, &provider, item, &hash, &torrent_name, total_size)
+            .await
+        {
+            Ok(Some(media_id)) => {
+                imported += 1;
+                details.push(json!({"info_hash": hash, "status": "success", "media_id": media_id}));
+            }
+            Ok(None) => {
+                skipped += 1;
+                details.push(json!({"info_hash": hash, "status": "skipped"}));
             }
             Err(e) => {
                 failed += 1;
-                tracing::warn!("advanced_import_torrents upsert {hash}: {e}");
-                details
-                    .push(json!({"info_hash": hash, "status": "failed", "error": e.to_string()}));
+                tracing::warn!("advanced_import_torrents {hash}: {e}");
+                details.push(json!({"info_hash": hash, "status": "failed", "message": e}));
             }
         }
     }
@@ -1307,6 +1745,248 @@ pub async fn advanced_import_torrents(
         "details": details,
     }))
     .into_response()
+}
+
+/// Persist a single advanced import: resolve/create media, insert the stream,
+/// link files (with season/episode), languages, and catalogs.
+/// Returns `Ok(Some(media_id))` on success, `Ok(None)` if it already existed.
+async fn process_advanced_import(
+    state: &AppState,
+    provider: &str,
+    item: &AdvancedImportItem,
+    hash: &str,
+    torrent_name: &str,
+    total_size: i64,
+) -> Result<Option<i64>, String> {
+    let title = item.title.as_deref().unwrap_or(torrent_name);
+
+    // Parse the torrent name for technical metadata; UI overrides take precedence.
+    let mut parsed = if crate::parser::is_sports_title(torrent_name) {
+        crate::parser::parse_sports_title(torrent_name)
+    } else {
+        crate::parser::parse_title(torrent_name)
+    };
+    if let Some(r) = item.resolution.clone() {
+        parsed.resolution = Some(r);
+    }
+    if let Some(q) = item.quality.clone() {
+        parsed.quality = Some(q);
+    }
+    if let Some(c) = item.codec.clone() {
+        parsed.codec = Some(c);
+    }
+
+    // Resolve the sports category and catalogs.
+    let sports_category: Option<String> = if item.meta_type == "sports" {
+        item.sports_category
+            .clone()
+            .or_else(|| crate::parser::detect_sports_category(torrent_name).map(str::to_string))
+            .or(Some("other_sports".to_string()))
+    } else {
+        None
+    };
+
+    // ── Resolve / create the primary media ──────────────────────────────────
+    let media_id: i64 = if item.meta_type == "sports" {
+        let cat = sports_category.as_deref().unwrap_or("other_sports");
+        // F1/MotoGP are stored as series; everything else as a movie.
+        let db_type = if matches!(cat, "formula_racing" | "motogp_racing") {
+            "SERIES"
+        } else {
+            "MOVIE"
+        };
+        let genre = sports_category_to_genre(cat);
+        crate::scrapers::media_resolve::find_or_create_sports_stub(
+            &state.pool,
+            title,
+            parsed.year,
+            genre,
+            item.poster.as_deref(),
+            db_type,
+        )
+        .await
+        .ok_or_else(|| "Failed to create sports media".to_string())? as i64
+    } else {
+        let meta_id = item.meta_id.as_deref().unwrap_or("");
+        super::content::import_helpers::resolve_media_for_import(
+            &state.pool,
+            &state.http,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            meta_id,
+            &item.meta_type,
+            crate::scrapers::media_resolve::ImportMediaOverrides {
+                title: item.title.as_deref(),
+                poster: item.poster.as_deref(),
+                background: item.background.as_deref(),
+                release_date: item.release_date.as_deref(),
+                year: parsed.year,
+            },
+            None,
+        )
+        .await
+        .ok_or_else(|| format!("Could not resolve media for {meta_id}"))?
+            as i64
+    };
+
+    // ── Build the file rows (annotations → video files only) ────────────────
+    let sample_re = regex::Regex::new(r"(?i)(?:^|[._\-\s])sample(?:[._\-\s]|$)").unwrap();
+    let video_extensions = [".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v"];
+    let mut file_rows: Vec<serde_json::Value> = Vec::new();
+    if let Some(files) = &item.file_data {
+        for f in files {
+            if !f.included {
+                continue;
+            }
+            if !is_wanted_video(&f.filename, &video_extensions, &sample_re) {
+                continue;
+            }
+            file_rows.push(json!({
+                "index": f.index,
+                "filename": f.filename,
+                "size": f.size.unwrap_or(0),
+                "season_number": f.season_number,
+                "episode_number": f.episode_number,
+                "episode_end": f.episode_end,
+                "meta_id": f.meta_id,
+                "meta_type": f.meta_type,
+                "meta_title": f.meta_title,
+                "sports_category": sports_category,
+            }));
+        }
+    }
+    if file_rows.is_empty() {
+        return Err("No valid video files found (non-video/sample files are excluded)".to_string());
+    }
+
+    // ── Insert the stream + torrent_stream and link to the primary media ─────
+    let file_count = file_rows.len() as i32;
+    let source = item.meta_id.as_deref().unwrap_or(provider).to_string();
+    let stream_id =
+        insert_debrid_stream(&state.pool, hash, torrent_name, &source, total_size, file_count,
+            &parsed, media_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    // ── Per-file metadata (creates file_media_link with season/episode) ──────
+    let prefetch = crate::scrapers::media_resolve::ImportMetadataCache::default();
+    let _ = super::content::import_helpers::insert_torrent_import_files(
+        &state.pool,
+        &state.http,
+        state.config.tmdb_api_key.as_deref(),
+        state.config.tvdb_api_key.as_deref(),
+        stream_id,
+        &item.meta_type,
+        Some(media_id as i32),
+        &file_rows,
+        sports_category.as_deref(),
+        &prefetch,
+    )
+    .await;
+
+    // ── Languages ───────────────────────────────────────────────────────────
+    let languages = item.languages.clone().unwrap_or_else(|| parsed.languages.clone());
+    if !languages.is_empty() {
+        let _ =
+            super::content::import_helpers::link_stream_languages(&state.pool, stream_id, &languages)
+                .await;
+    }
+
+    // ── Catalogs (sports category prepended for sports) ─────────────────────
+    let mut catalogs = item.catalogs.clone().unwrap_or_default();
+    if let Some(cat) = &sports_category {
+        if !catalogs.iter().any(|c| c == cat) {
+            catalogs.insert(0, cat.clone());
+        }
+    }
+    if !catalogs.is_empty() {
+        let _ = super::content::import_helpers::link_media_catalogs(
+            &state.pool,
+            media_id as i32,
+            &catalogs,
+        )
+        .await;
+    }
+
+    Ok(Some(media_id))
+}
+
+/// Insert a debrid stream + torrent_stream row and link it to `media_id`.
+/// Returns the `stream.id`. Mirrors `upsert_debrid_torrent` but captures the id
+/// and links media.
+#[allow(clippy::too_many_arguments)]
+async fn insert_debrid_stream(
+    pool: &sqlx::PgPool,
+    info_hash: &str,
+    name: &str,
+    source: &str,
+    size: i64,
+    file_count: i32,
+    parsed: &crate::parser::ParsedTitle,
+    media_id: i64,
+) -> Result<i32, sqlx::Error> {
+    let mut txn = pool.begin().await?;
+
+    let stream_id: i32 = sqlx::query_scalar(
+        r#"INSERT INTO stream(
+               stream_type, name, source, resolution, codec, quality,
+               is_proper, is_repack, is_extended, is_complete, is_dubbed, release_group,
+               is_active, is_blocked, is_public, playback_count, created_at
+           ) VALUES(
+               'TORRENT'::streamtype, $1, $2, $3, $4, $5,
+               $6, $7, $8, $9, $10, $11,
+               true, false, true, 0, NOW()
+           ) RETURNING id"#,
+    )
+    .bind(name)
+    .bind(source)
+    .bind(parsed.resolution.as_deref())
+    .bind(parsed.codec.as_deref())
+    .bind(parsed.quality.as_deref())
+    .bind(parsed.is_proper)
+    .bind(parsed.is_repack)
+    .bind(parsed.is_extended)
+    .bind(parsed.is_complete)
+    .bind(parsed.is_dubbed)
+    .bind(parsed.release_group.as_deref())
+    .fetch_one(&mut *txn)
+    .await?;
+
+    let inserted = sqlx::query(
+        r#"INSERT INTO torrent_stream(stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at)
+           VALUES($1, $2, $3, NULL, 'PUBLIC'::torrenttype, $4, NOW())
+           ON CONFLICT (info_hash) DO NOTHING"#,
+    )
+    .bind(stream_id)
+    .bind(info_hash)
+    .bind(size)
+    .bind(file_count)
+    .execute(&mut *txn)
+    .await?
+    .rows_affected()
+        > 0;
+
+    if !inserted {
+        sqlx::query("DELETE FROM stream WHERE id = $1")
+            .bind(stream_id)
+            .execute(&mut *txn)
+            .await
+            .ok();
+        txn.commit().await?;
+        let existing: i32 =
+            sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
+                .bind(info_hash)
+                .fetch_one(pool)
+                .await?;
+        let _ = super::content::import_helpers::link_stream_to_media(pool, existing, media_id as i32)
+            .await;
+        return Ok(existing);
+    }
+
+    txn.commit().await?;
+    let _ =
+        super::content::import_helpers::link_stream_to_media(pool, stream_id, media_id as i32).await;
+    Ok(stream_id)
 }
 
 /// POST /api/v1/watchlist/{provider}/remove

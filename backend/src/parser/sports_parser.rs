@@ -760,3 +760,215 @@ pub fn parse_sports_title(raw: &str) -> super::ParsedTitle {
 
     parsed
 }
+
+// ─── Racing (Formula 1/2/3, MotoGP) parsing ─────────────────────────────────────
+
+/// Result of parsing a racing torrent name.
+///
+/// Racing content (F1/F2/F3, MotoGP) is stored in the DB as a *series* whose title
+/// is `"{league} {event} {year}"`; the session (Qualifying / Race / Sprint / …) is
+/// the individual episode.
+#[derive(Debug, Clone)]
+pub struct RacingParsed {
+    /// Series title, e.g. "Formula 1 Canadian Grand Prix 2026".
+    pub series_title: String,
+    pub year: Option<i32>,
+    /// Session / episode label, e.g. "Qualifying". `None` when not present.
+    pub session: Option<String>,
+}
+
+/// Canonical league prefix at the start of a racing title (Formula 1/2/3, MotoGP, …).
+fn racing_league(s: &str) -> Option<String> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        Regex::new(r"(?i)\b(formula\s*[123]|f[123]|moto\s*gp|moto2|moto3|indycar|nascar)\b")
+            .expect("racing_league_re")
+    });
+    let m = re.find(s)?;
+    let raw = m.as_str().to_lowercase();
+    let canonical = match raw.replace(' ', "").as_str() {
+        "formula1" | "f1" => "Formula 1",
+        "formula2" | "f2" => "Formula 2",
+        "formula3" | "f3" => "Formula 3",
+        "motogp" => "MotoGP",
+        "moto2" => "Moto2",
+        "moto3" => "Moto3",
+        "indycar" => "IndyCar",
+        "nascar" => "NASCAR",
+        _ => return None,
+    };
+    Some(canonical.to_string())
+}
+
+/// Strip a DD MM YYYY / YYYY MM DD date from `s` (space-separated form) and return
+/// `(year, remainder)`. Falls back to a standalone 4-digit year token.
+fn racing_year_and_strip(s: &str) -> (Option<i32>, String) {
+    static DMY_RE: OnceLock<Regex> = OnceLock::new();
+    static YMD_RE: OnceLock<Regex> = OnceLock::new();
+    let dmy = DMY_RE.get_or_init(|| {
+        Regex::new(r"\b\d{1,2}\s+\d{1,2}\s+((?:19|20)\d{2})\b").expect("dmy_re")
+    });
+    let ymd = YMD_RE.get_or_init(|| {
+        Regex::new(r"\b((?:19|20)\d{2})\s+\d{1,2}\s+\d{1,2}\b").expect("ymd_re")
+    });
+
+    if let Some(c) = dmy.captures(s) {
+        let year = c.get(1).and_then(|m| m.as_str().parse().ok());
+        let stripped = dmy.replace(s, "").to_string();
+        return (year, stripped);
+    }
+    if let Some(c) = ymd.captures(s) {
+        let year = c.get(1).and_then(|m| m.as_str().parse().ok());
+        let stripped = ymd.replace(s, "").to_string();
+        return (year, stripped);
+    }
+    // Standalone year token — strip it so it isn't duplicated when re-appended.
+    if let Some(c) = year_re().captures(s) {
+        let year = c.get(1).and_then(|m| m.as_str().parse().ok());
+        let stripped = year_re().replace(s, "").to_string();
+        return (year, stripped);
+    }
+    (None, s.to_string())
+}
+
+/// Parse a Formula/MotoGP racing torrent name into a series title, year, and session.
+///
+/// ```text
+/// "Formula 1 Canadian Grand Prix Qualifying 23.05.2026"
+///   → series_title="Formula 1 Canadian Grand Prix 2026",
+///     year=Some(2026), session=Some("Qualifying")
+/// ```
+///
+/// Returns `None` when the title is not recognisably a Formula/MotoGP racing release.
+pub fn parse_racing_title(raw: &str) -> Option<RacingParsed> {
+    // Strip broadcaster / quality / codec tokens and normalise separators to spaces.
+    let cleaned = clean_sports_title(raw);
+
+    // Must be a racing release with a known league (checked on the normalised form,
+    // since the raw name may use dot/underscore separators, e.g. "Formula.1").
+    let league = racing_league(&cleaned)?;
+
+    // Pull out the year and remove the date so it doesn't pollute the event name.
+    let (year, no_date) = racing_year_and_strip(&cleaned);
+    let no_date = multi_space_re().replace_all(no_date.trim(), " ").into_owned();
+
+    // Split around "Grand Prix": the event is everything up to & including it,
+    // and the remaining trailing text is the session (episode).
+    let lower = no_date.to_lowercase();
+    let (event, session) = if let Some(idx) = lower.find("grand prix") {
+        let end = idx + "grand prix".len();
+        let event = no_date[..end].trim().to_string();
+        let session = no_date[end..].trim().to_string();
+        (event, session)
+    } else {
+        // No "Grand Prix" marker — strip a trailing session keyword if present.
+        let (event, session) = split_trailing_session(&no_date);
+        (event, session)
+    };
+
+    // Ensure the event begins with the canonical league name.
+    let event = if event.to_lowercase().starts_with(&league.to_lowercase()) {
+        event
+    } else {
+        format!("{league} {event}").trim().to_string()
+    };
+
+    let series_title = match year {
+        Some(y) => format!("{event} {y}"),
+        None => event,
+    };
+
+    let session = if session.is_empty() {
+        None
+    } else {
+        Some(session)
+    };
+
+    Some(RacingParsed {
+        series_title,
+        year,
+        session,
+    })
+}
+
+/// Known racing session keywords (longest/most-specific first).
+static RACING_SESSIONS: &[&str] = &[
+    "sprint qualifying",
+    "sprint shootout",
+    "sprint race",
+    "free practice 1",
+    "free practice 2",
+    "free practice 3",
+    "practice 1",
+    "practice 2",
+    "practice 3",
+    "qualifying",
+    "sprint",
+    "fp1",
+    "fp2",
+    "fp3",
+    "practice",
+    "warm up",
+    "warmup",
+    "race",
+];
+
+/// Split a date-less title into `(event, session)` by detecting a trailing session keyword.
+fn split_trailing_session(s: &str) -> (String, String) {
+    let lower = s.to_lowercase();
+    for kw in RACING_SESSIONS {
+        // Match the keyword as a trailing token.
+        if let Some(idx) = lower.rfind(kw) {
+            let after = lower[idx + kw.len()..].trim();
+            // Only treat as session if it's at/near the end of the string.
+            if after.is_empty() {
+                let event = s[..idx].trim().to_string();
+                let session = s[idx..].trim().to_string();
+                if !event.is_empty() {
+                    return (event, session);
+                }
+            }
+        }
+    }
+    (s.to_string(), String::new())
+}
+
+#[cfg(test)]
+mod racing_tests {
+    use super::*;
+
+    #[test]
+    fn f1_grand_prix_with_date() {
+        let r = parse_racing_title("Formula 1 Canadian Grand Prix Qualifying 23 05 2026").unwrap();
+        assert_eq!(r.series_title, "Formula 1 Canadian Grand Prix 2026");
+        assert_eq!(r.year, Some(2026));
+        assert_eq!(r.session.as_deref(), Some("Qualifying"));
+    }
+
+    #[test]
+    fn f1_dotted_with_race_session() {
+        let r = parse_racing_title("Formula.1.Canadian.Grand.Prix.Race.23.05.2026.1080p").unwrap();
+        assert_eq!(r.series_title, "Formula 1 Canadian Grand Prix 2026");
+        assert_eq!(r.year, Some(2026));
+        assert_eq!(r.session.as_deref(), Some("Race"));
+    }
+
+    #[test]
+    fn f1_no_session() {
+        let r = parse_racing_title("Formula 1 Miami Grand Prix 2026").unwrap();
+        assert_eq!(r.series_title, "Formula 1 Miami Grand Prix 2026");
+        assert_eq!(r.session, None);
+    }
+
+    #[test]
+    fn motogp_grand_prix() {
+        let r = parse_racing_title("MotoGP Spanish Grand Prix Sprint 04 05 2026").unwrap();
+        assert_eq!(r.series_title, "MotoGP Spanish Grand Prix 2026");
+        assert_eq!(r.session.as_deref(), Some("Sprint"));
+    }
+
+    #[test]
+    fn non_racing_returns_none() {
+        assert!(parse_racing_title("WWE Raw 23 05 2026").is_none());
+    }
+}

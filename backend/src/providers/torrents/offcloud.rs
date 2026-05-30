@@ -570,6 +570,76 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
     Ok(())
 }
 
+// ─── Torrent list ────────────────────────────────────────────────────────────
+
+fn extract_btih(s: &str) -> Option<String> {
+    let lower = s.to_lowercase();
+    let prefix = "urn:btih:";
+    let pos = lower.find(prefix)?;
+    let rest = &s[pos + prefix.len()..];
+    let hash: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric())
+        .collect();
+    if hash.len() >= 32 {
+        Some(hash.to_lowercase())
+    } else {
+        None
+    }
+}
+
+/// Return all cloud history items that have a btih hash, ready for the missing-import flow.
+pub async fn list_downloaded_torrents(
+    http: &reqwest::Client,
+    token: &str,
+) -> Result<
+    Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>,
+    crate::providers::ProviderError,
+> {
+    let body = oc_get(http, token, "/api/cloud/history", None).await?;
+    let items = match body.as_array() {
+        Some(a) => a.clone(),
+        None => return Ok(vec![]),
+    };
+
+    Ok(items
+        .into_iter()
+        .filter_map(|item| {
+            let original_link = item
+                .get("originalLink")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let info_hash = extract_btih(original_link)?;
+            let request_id = item
+                .get("requestId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let file_name = item
+                .get("fileName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let fv = item.get("fileSize");
+            let file_size = fv
+                .and_then(|v| v.as_i64())
+                .or_else(|| {
+                    fv.and_then(|v| v.as_str())
+                        .and_then(|s| s.parse().ok())
+                })
+                .unwrap_or(0);
+
+            Some(crate::providers::torrents::realdebrid::DownloadedTorrent {
+                id: request_id,
+                info_hash,
+                name: file_name.clone(),
+                size: file_size,
+                raw: serde_json::json!({"files": [{"name": file_name, "size": file_size}]}),
+            })
+        })
+        .collect())
+}
+
 // ─── Debrid cache check ───────────────────────────────────────────────────────
 
 /// Check which hashes are cached on OffCloud (form-encoded POST /api/cache).

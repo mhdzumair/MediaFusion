@@ -452,6 +452,45 @@ pub async fn get_video_url(
 
 /// Delete the torrent matching `info_hash` from TorBox.
 /// Returns `true` if found and deleted, `false` if not found.
+/// Return all downloaded torrents with their files, ready for the missing-import flow.
+pub async fn list_downloaded_torrents(
+    http: &reqwest::Client,
+    token: &str,
+) -> Result<Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>, ProviderError> {
+    let list = get_mylist(http, token, None).await?;
+    let arr = list
+        .get("data")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    Ok(arr
+        .into_iter()
+        .filter_map(|t| {
+            let hash = t.get("hash")?.as_str()?.to_lowercase();
+            let id = t
+                .get("id")
+                .and_then(|v| v.as_i64())
+                .map(|v| v.to_string())
+                .unwrap_or_default();
+            let name = t
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&hash)
+                .to_string();
+            let size = t.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
+            let raw = t.clone();
+            Some(crate::providers::torrents::realdebrid::DownloadedTorrent {
+                id,
+                info_hash: hash,
+                name,
+                size,
+                raw,
+            })
+        })
+        .collect())
+}
+
 pub async fn delete_torrent_by_hash(
     http: &reqwest::Client,
     token: &str,

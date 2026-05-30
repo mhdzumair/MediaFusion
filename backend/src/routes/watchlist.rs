@@ -120,7 +120,7 @@ pub async fn get_providers(
     let mut full_config = config.clone();
     if let Some(enc) = encrypted_secrets {
         let secrets = crate::crypto::profile::decrypt_secrets(&enc, &state.config.secret_key);
-        deep_merge(&mut full_config, secrets);
+        crate::crypto::profile::merge_secrets(&mut full_config, &secrets);
     }
 
     let providers = extract_watchlist_providers(&full_config);
@@ -211,16 +211,6 @@ fn provider_display_name(service: &str) -> &str {
     }
 }
 
-fn deep_merge(base: &mut serde_json::Value, overlay: serde_json::Value) {
-    match (base, overlay) {
-        (serde_json::Value::Object(b), serde_json::Value::Object(o)) => {
-            for (k, v) in o {
-                deep_merge(b.entry(k).or_insert(serde_json::Value::Null), v);
-            }
-        }
-        (base, overlay) => *base = overlay,
-    }
-}
 
 // ─── GET /api/v1/watchlist/{provider} ────────────────────────────────────────
 

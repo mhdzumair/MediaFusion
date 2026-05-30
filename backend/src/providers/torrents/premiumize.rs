@@ -614,6 +614,91 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
     Ok(())
 }
 
+// ─── Torrent list ────────────────────────────────────────────────────────────
+
+fn extract_btih(s: &str) -> Option<String> {
+    let lower = s.to_lowercase();
+    let prefix = "urn:btih:";
+    let pos = lower.find(prefix)?;
+    let rest = &s[pos + prefix.len()..];
+    let hash: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric())
+        .collect();
+    if hash.len() >= 32 {
+        Some(hash.to_lowercase())
+    } else {
+        None
+    }
+}
+
+/// Return all finished transfers with their files, ready for the missing-import flow.
+pub async fn list_downloaded_torrents(
+    http: &reqwest::Client,
+    token: &str,
+) -> Result<
+    Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>,
+    crate::providers::ProviderError,
+> {
+    let kind = decode_token(token);
+    let body = pm_get(http, &kind, "/transfer/list", &[], None).await?;
+    let transfers = body
+        .get("transfers")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut results = Vec::new();
+    for t in transfers {
+        if t.get("status").and_then(|v| v.as_str()) != Some("finished") {
+            continue;
+        }
+        let info_hash = t
+            .get("hash")
+            .and_then(|v| v.as_str())
+            .filter(|s| s.len() >= 32)
+            .map(|s| s.to_lowercase())
+            .or_else(|| t.get("src").and_then(|v| v.as_str()).and_then(extract_btih));
+        let info_hash = match info_hash {
+            Some(h) => h,
+            None => continue,
+        };
+
+        let id = t
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let name = t
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let size = t.get("filesize").and_then(|v| v.as_i64()).unwrap_or(0);
+
+        let folder_id = t
+            .get("folder_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let files = if !folder_id.is_empty() {
+            get_folder_contents(http, &kind, folder_id, None)
+                .await
+                .unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        results.push(crate::providers::torrents::realdebrid::DownloadedTorrent {
+            id,
+            info_hash,
+            name,
+            size,
+            raw: serde_json::json!({ "files": files }),
+        });
+    }
+    Ok(results)
+}
+
 // ─── Debrid cache check ───────────────────────────────────────────────────────
 
 /// Check which hashes are cached on Premiumize.

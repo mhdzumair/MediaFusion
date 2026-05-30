@@ -914,3 +914,61 @@ pub async fn delete_torrent_by_hash(
 
     Ok(deleted)
 }
+
+// ─── Torrent list ────────────────────────────────────────────────────────────
+
+/// Return all completed tasks with their video files, ready for the missing-import flow.
+pub async fn list_downloaded_torrents(
+    http: &Client,
+    token: &str,
+) -> Result<
+    Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>,
+    ProviderError,
+> {
+    let bearer = resolve_token(token);
+    let tasks = list_tasks(http, &bearer, None).await.unwrap_or_default();
+
+    let mut results = Vec::new();
+    for task in &tasks {
+        if !task_is_complete(task) {
+            continue;
+        }
+        let info_hash = match task_info_hash(task) {
+            Some(h) => h,
+            None => continue,
+        };
+        let id = task["id"]
+            .as_i64()
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        let name = task["name"]
+            .as_str()
+            .unwrap_or(&info_hash)
+            .to_string();
+        let size = task["size"].as_i64().unwrap_or(0);
+
+        let folder_id = match task["folder_created_id"].as_i64() {
+            Some(id) => id,
+            None => continue,
+        };
+
+        let all_files = folder_files_recursive(http, &bearer, folder_id, None)
+            .await
+            .unwrap_or_default();
+
+        let files: Vec<serde_json::Value> = all_files
+            .iter()
+            .filter(|(name, _, _)| is_video(name))
+            .map(|(name, size, _)| serde_json::json!({"name": name, "size": size}))
+            .collect();
+
+        results.push(crate::providers::torrents::realdebrid::DownloadedTorrent {
+            id,
+            info_hash,
+            name,
+            size,
+            raw: serde_json::json!({ "files": files }),
+        });
+    }
+    Ok(results)
+}

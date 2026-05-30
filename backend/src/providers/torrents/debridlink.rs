@@ -545,6 +545,79 @@ pub async fn get_video_url(
 
 /// Delete the seedbox torrent matching `info_hash` from the Debrid-Link account.
 /// Returns `true` if found and deleted, `false` if not found.
+/// Return all fully-downloaded seedbox torrents with their files.
+pub async fn list_downloaded_torrents(
+    http: &reqwest::Client,
+    token: &str,
+) -> Result<Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>, ProviderError> {
+    let bearer = resolve_bearer(http, token).await?;
+    let mut page = 0usize;
+    let per_page = 50usize;
+    let mut result = Vec::new();
+
+    loop {
+        let body = dl_get(
+            http,
+            &bearer,
+            "/seedbox/list",
+            &[
+                ("page", &page.to_string()),
+                ("perPage", &per_page.to_string()),
+            ],
+            None,
+        )
+        .await?;
+
+        let items = body
+            .get("value")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        if items.is_empty() {
+            break;
+        }
+
+        for item in &items {
+            let pct = item
+                .get("downloadPercent")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            if pct < 100 {
+                continue;
+            }
+            if let Some(hash) = item.get("hashString").and_then(|v| v.as_str()) {
+                let id = item
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let name = item
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(hash)
+                    .to_string();
+                let size = item.get("totalSize").and_then(|v| v.as_i64()).unwrap_or(0);
+                let raw = item.clone();
+                result.push(crate::providers::torrents::realdebrid::DownloadedTorrent {
+                    id,
+                    info_hash: hash.to_lowercase(),
+                    name,
+                    size,
+                    raw,
+                });
+            }
+        }
+
+        if items.len() < per_page {
+            break;
+        }
+        page += 1;
+    }
+
+    Ok(result)
+}
+
 pub async fn delete_torrent_by_hash(
     http: &reqwest::Client,
     token: &str,
