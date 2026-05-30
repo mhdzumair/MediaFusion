@@ -60,6 +60,8 @@ export interface MissingTorrentItem {
   parsed_title?: string
   parsed_year?: number
   parsed_type?: 'movie' | 'series' | 'sports'
+  /** Detected sports category key (e.g. "formula_racing"); set only for sports. */
+  sports_category?: string
   matched_title?: string
   external_ids?: MissingExternalIds
 }
@@ -120,6 +122,10 @@ export interface FileAnnotationData {
   episode_number?: number | null
   episode_end?: number | null
   included?: boolean
+  /** Episode title (e.g. the F1 session name "Qualifying") for sports/series. */
+  episode_title?: string | null
+  /** Episode air date (sports). */
+  release_date?: string | null
   // Multi-content: link this file to a different media
   meta_id?: string
   meta_title?: string

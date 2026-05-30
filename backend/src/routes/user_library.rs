@@ -1501,6 +1501,10 @@ pub struct AdvancedImportFileEntry {
     #[serde(default = "default_true")]
     pub included: bool,
     #[serde(default)]
+    pub episode_title: Option<String>,
+    #[serde(default)]
+    pub release_date: Option<String>,
+    #[serde(default)]
     pub meta_id: Option<String>,
     #[serde(default)]
     pub meta_title: Option<String>,
@@ -1848,6 +1852,8 @@ async fn process_advanced_import(
                 "season_number": f.season_number,
                 "episode_number": f.episode_number,
                 "episode_end": f.episode_end,
+                "episode_title": f.episode_title,
+                "release_date": f.release_date,
                 "meta_id": f.meta_id,
                 "meta_type": f.meta_type,
                 "meta_title": f.meta_title,
@@ -1908,7 +1914,162 @@ async fn process_advanced_import(
         .await;
     }
 
+    // ── Series episode metadata (season/episode rows for the detail page) ────
+    ensure_series_episode_metadata(&state.pool, media_id, &file_rows, title).await;
+
     Ok(Some(media_id))
+}
+
+/// Populate `series_metadata` / `season` / `episode` rows so series detail pages
+/// list the imported episodes. No-op for non-series media. Mirrors the Python
+/// `_ensure_series_episode_metadata`.
+async fn ensure_series_episode_metadata(
+    pool: &sqlx::PgPool,
+    media_id: i64,
+    file_rows: &[serde_json::Value],
+    fallback_title: &str,
+) {
+    let is_series: bool = sqlx::query_scalar("SELECT type = 'SERIES'::mediatype FROM media WHERE id = $1")
+        .bind(media_id as i32)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(false);
+    if !is_series {
+        return;
+    }
+
+    // Get or create the series_metadata row (media_id is unique).
+    let series_id: Option<i64> = sqlx::query_scalar(
+        "INSERT INTO series_metadata (media_id, total_seasons, total_episodes, created_at) \
+         VALUES ($1, 0, 0, NOW()) ON CONFLICT (media_id) DO UPDATE SET media_id = EXCLUDED.media_id \
+         RETURNING id",
+    )
+    .bind(media_id as i32)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    let Some(series_id) = series_id else {
+        return;
+    };
+
+    let mut touched_seasons: std::collections::HashSet<i32> = std::collections::HashSet::new();
+    for (idx, f) in file_rows.iter().enumerate() {
+        let season_number = f
+            .get("season_number")
+            .and_then(|v| v.as_i64())
+            .map(|n| n as i32)
+            .unwrap_or(1);
+        let episode_number = f
+            .get("episode_number")
+            .and_then(|v| v.as_i64())
+            .map(|n| n as i32)
+            .unwrap_or((idx as i32) + 1);
+        let episode_title = f
+            .get("episode_title")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                f.get("filename")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| format!("Episode {episode_number}"));
+        let air_date = f
+            .get("release_date")
+            .and_then(|v| v.as_str())
+            .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+
+        // Get or create the season.
+        let season_id: Option<i64> = sqlx::query_scalar(
+            "INSERT INTO season (series_id, season_number, name, episode_count) \
+             VALUES ($1, $2, $3, 0) \
+             ON CONFLICT (series_id, season_number) DO UPDATE SET series_id = EXCLUDED.series_id \
+             RETURNING id",
+        )
+        .bind(series_id)
+        .bind(season_number)
+        .bind(format!("Season {season_number}"))
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+        let Some(season_id) = season_id else {
+            continue;
+        };
+        touched_seasons.insert(season_number);
+
+        // Insert the episode (or update title/air_date if it already exists).
+        let _ = sqlx::query(
+            "INSERT INTO episode \
+               (season_id, episode_number, title, air_date, is_user_created, is_user_addition, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, true, true, NOW(), NOW()) \
+             ON CONFLICT (season_id, episode_number) \
+             DO UPDATE SET title = EXCLUDED.title, \
+                           air_date = COALESCE(EXCLUDED.air_date, episode.air_date), \
+                           updated_at = NOW()",
+        )
+        .bind(season_id as i32)
+        .bind(episode_number)
+        .bind(&episode_title)
+        .bind(air_date)
+        .execute(pool)
+        .await;
+    }
+
+    // If no files produced episodes, create a single placeholder episode.
+    if touched_seasons.is_empty() {
+        let season_id: Option<i64> = sqlx::query_scalar(
+            "INSERT INTO season (series_id, season_number, name, episode_count) \
+             VALUES ($1, 1, 'Season 1', 0) \
+             ON CONFLICT (series_id, season_number) DO UPDATE SET series_id = EXCLUDED.series_id \
+             RETURNING id",
+        )
+        .bind(series_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+        if let Some(season_id) = season_id {
+            let _ = sqlx::query(
+                "INSERT INTO episode \
+                   (season_id, episode_number, title, is_user_created, is_user_addition, created_at, updated_at) \
+                 VALUES ($1, 1, $2, true, true, NOW(), NOW()) \
+                 ON CONFLICT (season_id, episode_number) DO NOTHING",
+            )
+            .bind(season_id as i32)
+            .bind(fallback_title)
+            .execute(pool)
+            .await;
+            touched_seasons.insert(1);
+        }
+    }
+
+    // Refresh aggregate counters.
+    for season_number in &touched_seasons {
+        let _ = sqlx::query(
+            "UPDATE season SET episode_count = \
+               (SELECT COUNT(*) FROM episode e WHERE e.season_id = season.id) \
+             WHERE series_id = $1 AND season_number = $2",
+        )
+        .bind(series_id)
+        .bind(season_number)
+        .execute(pool)
+        .await;
+    }
+    let _ = sqlx::query(
+        "UPDATE series_metadata SET \
+           total_seasons = (SELECT COUNT(*) FROM season WHERE series_id = $1), \
+           total_episodes = (SELECT COUNT(*) FROM episode e JOIN season s ON e.season_id = s.id WHERE s.series_id = $1), \
+           updated_at = NOW() \
+         WHERE id = $1",
+    )
+    .bind(series_id)
+    .execute(pool)
+    .await;
 }
 
 /// Insert a debrid stream + torrent_stream row and link it to `media_id`.

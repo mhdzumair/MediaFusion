@@ -220,7 +220,9 @@ function EditPanel({
     (edit?.type || torrent.parsed_type || 'movie') as 'movie' | 'series' | 'sports',
   )
   const [sportsCategory, setSportsCategory] = useState<SportsCategory | ''>(
-    (edit?.sports_category as SportsCategory | undefined) || '',
+    (edit?.sports_category as SportsCategory | undefined) ||
+      (torrent.sports_category as SportsCategory | undefined) ||
+      '',
   )
 
   const handleSave = () => {

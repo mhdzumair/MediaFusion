@@ -94,6 +94,10 @@ function inferInitialContentType(torrent: MissingTorrentItem): 'movie' | 'series
 }
 
 function inferInitialSportsCategory(torrent: MissingTorrentItem): SportsCategory | '' {
+  // Prefer the category detected by the backend.
+  if (torrent.sports_category) {
+    return torrent.sports_category as SportsCategory
+  }
   const source = `${torrent.name || ''} ${torrent.parsed_title || ''}`.toLowerCase()
   if (/\bmotogp\b|\bmoto\s*gp\b|\bmoto2\b|\bmoto3\b/.test(source)) {
     return 'motogp_racing'
@@ -102,6 +106,11 @@ function inferInitialSportsCategory(torrent: MissingTorrentItem): SportsCategory
     return 'formula_racing'
   }
   return ''
+}
+
+/** Racing sports (F1/MotoGP) are stored as series, so each file is an episode. */
+function isRacingSeriesCategory(category: SportsCategory | ''): boolean {
+  return category === 'formula_racing' || category === 'motogp_racing'
 }
 
 export function AdvancedImportDialog({
@@ -184,8 +193,11 @@ export function AdvancedImportDialog({
       }))
   }, [torrent.files])
 
+  // Racing sports (F1/MotoGP) are series — allow per-file episode annotation.
+  const isRacingSeries = contentType === 'sports' && isRacingSeriesCategory(sportsCategory)
   const showAnnotationButton =
-    contentType !== 'sports' && (torrentFiles.length > 1 || (contentType === 'series' && torrentFiles.length > 0))
+    (contentType !== 'sports' && (torrentFiles.length > 1 || (contentType === 'series' && torrentFiles.length > 0))) ||
+    (isRacingSeries && torrentFiles.length > 0)
 
   // Create a mock analysis object for the MultiContentWizard
   const mockAnalysis: TorrentAnalyzeResponse = useMemo(
@@ -312,6 +324,8 @@ export function AdvancedImportDialog({
               episode_number: f.episode_number,
               episode_end: f.episode_end,
               included: f.included,
+              episode_title: f.title ?? undefined,
+              release_date: f.release_date ?? undefined,
               meta_id: f.meta_id,
               meta_title: f.meta_title,
               meta_type: f.meta_type,
