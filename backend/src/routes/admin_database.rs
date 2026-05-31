@@ -86,7 +86,9 @@ fn forbidden() -> axum::response::Response {
 pub struct TableDataQuery {
     pub page: Option<i64>,
     pub per_page: Option<i64>,
+    #[serde(alias = "order_by")]
     pub sort_by: Option<String>,
+    #[serde(alias = "order_dir")]
     pub sort_order: Option<String>,
     pub search: Option<String>,
 }
