@@ -1,7 +1,7 @@
 services:
   # ── Primary API (Rust) ────────────────────────────────────────────────────
   mediafusion-api:
-    image: mhdzumair/mediafusion:6.0.0-beta.12
+    image: mhdzumair/mediafusion:6.0.0-beta.13
     ports:
       - "8000:8000"
     env_file: .env
