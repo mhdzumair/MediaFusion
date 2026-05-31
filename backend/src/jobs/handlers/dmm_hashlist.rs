@@ -31,11 +31,7 @@ use crate::{
         handler::{JobCtx, JobHandler},
     },
     parser,
-    scrapers::{
-        media_resolve,
-        persist,
-        ScrapedStream, SearchMeta, StreamFile,
-    },
+    scrapers::{media_resolve, persist, ScrapedStream, SearchMeta, StreamFile},
 };
 
 // ─── Redis key constants (must match Python side) ─────────────────────────────
@@ -618,7 +614,10 @@ struct RunStats {
 
 impl RunStats {
     fn made_progress(&self) -> bool {
-        self.incr_commits + self.incr_files + self.incr_streams + self.bf_commits
+        self.incr_commits
+            + self.incr_files
+            + self.incr_streams
+            + self.bf_commits
             + self.bf_files
             + self.bf_streams
             > 0
@@ -693,7 +692,9 @@ async fn run_ingestion(
     let github_token = app_cfg.dmm_hashlist_github_token.as_deref();
     let mut stats = RunStats::default();
 
-    if app_cfg.dmm_hashlist_commits_per_run == 0 && app_cfg.dmm_hashlist_backfill_commits_per_run == 0 {
+    if app_cfg.dmm_hashlist_commits_per_run == 0
+        && app_cfg.dmm_hashlist_backfill_commits_per_run == 0
+    {
         info!("dmm_hashlist: both incremental and backfill limits are 0, nothing to do");
         return Ok(stats);
     }
@@ -906,10 +907,7 @@ impl JobHandler for DmmHashlistScraper {
     type Args = serde_json::Value;
 
     async fn run(&self, args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        let full = args
-            .get("full")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let full = args.get("full").and_then(|v| v.as_bool()).unwrap_or(false);
         let reset = args
             .get("reset_checkpoints")
             .and_then(|v| v.as_bool())
@@ -950,7 +948,8 @@ impl JobHandler for DmmHashlistScraper {
                 totals.absorb(&iteration_stats);
                 write_dmm_status(redis, app_cfg).await?;
 
-                let backfill_sha: Option<String> = redis.get(BACKFILL_SHA_KEY).await.unwrap_or(None);
+                let backfill_sha: Option<String> =
+                    redis.get(BACKFILL_SHA_KEY).await.unwrap_or(None);
                 if backfill_sha.as_deref() == Some(BACKFILL_DONE) {
                     break;
                 }

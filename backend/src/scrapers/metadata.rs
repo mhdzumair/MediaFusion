@@ -286,9 +286,7 @@ async fn search_import_db_matches(
         if results.len() >= limit {
             break;
         }
-        if candidate.imdb_id.is_none()
-            && candidate.tmdb_id.is_none()
-            && candidate.tvdb_id.is_none()
+        if candidate.imdb_id.is_none() && candidate.tmdb_id.is_none() && candidate.tvdb_id.is_none()
         {
             continue;
         }
@@ -804,9 +802,8 @@ pub async fn fetch_by_external_id_with_opts(
                     };
                     let tmdb_id = results.first()?["id"].as_i64()?.to_string();
                     let kind = if is_series { "tv" } else { "movie" };
-                    let detail_url = format!(
-                        "https://api.themoviedb.org/3/{kind}/{tmdb_id}?api_key={api_key}"
-                    );
+                    let detail_url =
+                        format!("https://api.themoviedb.org/3/{kind}/{tmdb_id}?api_key={api_key}");
                     http.get(&detail_url)
                         .timeout(std::time::Duration::from_secs(10))
                         .send()

@@ -807,10 +807,7 @@ fn dmm_candidate_has_external_id(candidate: &crate::db::media::MediaCandidate) -
     candidate.imdb_id.is_some() || candidate.tmdb_id.is_some() || candidate.tvdb_id.is_some()
 }
 
-fn dmm_effective_year(
-    parsed_year: Option<i32>,
-    torrent_title: Option<&str>,
-) -> Option<i32> {
+fn dmm_effective_year(parsed_year: Option<i32>, torrent_title: Option<&str>) -> Option<i32> {
     parsed_year.or_else(|| torrent_title.and_then(extract_bracket_air_year))
 }
 
@@ -904,7 +901,10 @@ async fn pick_best_dmm_db_candidate(
             title: candidate.title,
             year: candidate.year,
         };
-        if best.as_ref().is_none_or(|(best_score, _)| score > *best_score) {
+        if best
+            .as_ref()
+            .is_none_or(|(best_score, _)| score > *best_score)
+        {
             best = Some((score, meta));
         }
     }
@@ -932,14 +932,8 @@ pub async fn search_meta_for_dmm_hashlist(
     let media_type = if is_series { "series" } else { "movie" };
     let effective_year = dmm_effective_year(year, torrent_title);
 
-    if let Some(meta) = pick_best_dmm_db_candidate(
-        pool,
-        title,
-        effective_year,
-        media_type,
-        episode_number,
-    )
-    .await
+    if let Some(meta) =
+        pick_best_dmm_db_candidate(pool, title, effective_year, media_type, episode_number).await
     {
         return Some(meta);
     }
@@ -1023,7 +1017,10 @@ pub async fn search_meta_for_dmm_hashlist(
             year: candidate_year.or(effective_year),
         };
 
-        if best.as_ref().is_none_or(|(best_score, _)| score > *best_score) {
+        if best
+            .as_ref()
+            .is_none_or(|(best_score, _)| score > *best_score)
+        {
             best = Some((score, meta));
         }
     }
