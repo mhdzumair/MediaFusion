@@ -3,7 +3,7 @@
 /// Flow:
 ///   1. GET  /usenet/mylist                  — check if already downloaded
 ///   2. POST /usenet/createusenetdownload    — submit NZB (URL first; file-upload fallback)
-///   3. GET  /usenet/requestdl              — obtain time-limited CDN URL
+///   3. Return `/usenet/requestdl?redirect=true` — player follows straight to CDN
 ///
 /// Submission strategy:
 ///   a) Submit the NZB URL directly — works when TorBox can fetch it (public or with embedded key).
@@ -78,49 +78,21 @@ pub async fn get_url(
         }
     };
 
-    // Step 3: request CDN download link
     let usenet_id = usenet_info
         .get("id")
         .and_then(|v| v.as_i64())
         .ok_or_else(|| ProviderError::api("TorBox: item has no id", "usenet_transfer_error.mp4"))?;
     let file_id = select_file(&usenet_info, name, season, episode);
 
-    let requestdl_url = format!("{BASE}/usenet/requestdl");
-    let resp: Value = if let Some(fwd) = forward {
-        // token= is a query param, not Bearer — embed all params in dest URL
-        let dest = append_query(
-            &requestdl_url,
-            &[
-                ("token", token),
-                ("usenet_id", &usenet_id.to_string()),
-                ("file_id", &file_id.to_string()),
-                ("zip_link", "false"),
-            ],
-        );
-        fwd.get_no_auth(http, &dest).await?.json().await?
-    } else {
-        http.get(&requestdl_url)
-            .query(&[
-                ("token", token.to_string()),
-                ("usenet_id", usenet_id.to_string()),
-                ("file_id", file_id.to_string()),
-                ("zip_link", "false".to_string()),
-            ])
-            .send()
-            .await?
-            .json()
-            .await?
-    };
+    // Step 3: return redirect URL — avoids a server-side JSON round trip
+    Ok(build_usenet_download_link(token, usenet_id, file_id))
+}
 
-    resp.get("data")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| {
-            ProviderError::api(
-                format!("TorBox: no data in requestdl response: {resp}"),
-                "usenet_transfer_error.mp4",
-            )
-        })
+fn build_usenet_download_link(token: &str, usenet_id: i64, file_id: i64) -> String {
+    format!(
+        "{BASE}/usenet/requestdl?token={}&usenet_id={usenet_id}&file_id={file_id}&zip_link=false&redirect=true",
+        urlencoding::encode(token)
+    )
 }
 
 // ─── NZB submission (URL → file-upload fallback) ──────────────────────────────

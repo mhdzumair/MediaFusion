@@ -245,27 +245,22 @@ async fn create_torrent(
     tb_post_form(http, token, &url, &[("magnet", magnet)], forward).await
 }
 
-async fn request_download_link(
-    http: &reqwest::Client,
+/// Build a TorBox `requestdl` URL with `redirect=true` so the player follows
+/// straight to the CDN without an extra server-side JSON round trip.
+fn request_download_link(
     token: &str,
     torrent_id: i64,
     file_id: i64,
     user_ip: Option<&str>,
-    forward: Option<&MediaFlowForward>,
-) -> Result<String, ProviderError> {
+) -> String {
     let mut url = format!(
-        "{BASE_URL}/torrents/requestdl?token={token}&torrent_id={torrent_id}&file_id={file_id}"
+        "{BASE_URL}/torrents/requestdl?token={}&torrent_id={torrent_id}&file_id={file_id}&redirect=true",
+        urlencoding::encode(token)
     );
     if let Some(ip) = user_ip {
         url.push_str(&format!("&user_ip={}", urlencoding::encode(ip)));
     }
-    let body = tb_get(http, token, &url, forward).await?;
-    body.get("data")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-        .ok_or_else(|| {
-            ProviderError::api("Missing download URL in TorBox response", "api_error.mp4")
-        })
+    url
 }
 
 fn extract_files_from_torrent(torrent: &Value) -> Vec<(i64, String, i64)> {
@@ -291,9 +286,7 @@ fn extract_files_from_torrent(torrent: &Value) -> Vec<(i64, String, i64)> {
         .unwrap_or_default()
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn build_download_link_from_torrent(
-    http: &reqwest::Client,
+fn build_download_link_from_torrent(
     token: &str,
     torrent: &Value,
     filename: Option<&str>,
@@ -301,7 +294,6 @@ async fn build_download_link_from_torrent(
     season: Option<i32>,
     episode: Option<i32>,
     user_ip: Option<&str>,
-    forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     let torrent_id = torrent.get("id").and_then(|v| v.as_i64()).ok_or_else(|| {
         ProviderError::api("Missing torrent id in TorBox response", "api_error.mp4")
@@ -323,7 +315,7 @@ async fn build_download_link_from_torrent(
     let idx = select_video_file(&name_size, filename, file_index, season, episode);
     let file_id = raw_files[idx].0;
 
-    request_download_link(http, token, torrent_id, file_id, user_ip, forward).await
+    Ok(request_download_link(token, torrent_id, file_id, user_ip))
 }
 
 // ─── Public entry points ──────────────────────────────────────────────────────
@@ -366,9 +358,8 @@ pub async fn get_video_url(
 
         if finished && present {
             return build_download_link_from_torrent(
-                http, token, &torrent, filename, file_index, season, episode, user_ip, forward,
-            )
-            .await;
+                token, &torrent, filename, file_index, season, episode, user_ip,
+            );
         }
         // Torrent exists but not ready yet
         return Err(ProviderError::api(
@@ -405,10 +396,8 @@ pub async fn get_video_url(
                     .unwrap_or(false);
                 if finished && present {
                     return build_download_link_from_torrent(
-                        http, token, &torrent, filename, file_index, season, episode, user_ip,
-                        forward,
-                    )
-                    .await;
+                        token, &torrent, filename, file_index, season, episode, user_ip,
+                    );
                 }
             }
             return Err(ProviderError::api(
@@ -438,9 +427,8 @@ pub async fn get_video_url(
                 .unwrap_or(false);
             if finished && present {
                 return build_download_link_from_torrent(
-                    http, token, &torrent, filename, file_index, season, episode, user_ip, forward,
-                )
-                .await;
+                    token, &torrent, filename, file_index, season, episode, user_ip,
+                );
             }
         }
     }
@@ -536,20 +524,46 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
 
 // ─── Debrid cache check ───────────────────────────────────────────────────────
 
+fn collect_cached_hashes(data: &Value, cached: &mut Vec<String>) {
+    match data {
+        Value::Object(obj) => {
+            for hash in obj.keys() {
+                cached.push(hash.clone());
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr {
+                if let Some(h) = v.get("hash").and_then(|v| v.as_str()) {
+                    cached.push(h.to_string());
+                } else if let Some(h) = v.as_str() {
+                    cached.push(h.to_string());
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Check which hashes are instantly cached on TorBox.
 ///
-/// Uses `format=object` — only cached hashes appear as object keys in `data`.
+/// Uses the POST batch endpoint (`{ hashes: [...] }`) so large stream lists are
+/// not limited by URL length. `format=object` — only cached hashes appear as keys.
 pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]) -> Vec<String> {
-    const CHUNK: usize = 80;
+    if hashes.is_empty() {
+        return Vec::new();
+    }
+
+    // POST accepts far more hashes per request than GET query params.
+    const CHUNK: usize = 500;
     let mut cached = Vec::new();
+    let url = format!("{BASE_URL}/torrents/checkcached?format=object");
 
     for chunk in hashes.chunks(CHUNK) {
-        let params: Vec<(&str, &str)> = chunk.iter().map(|h| ("hash", h.as_str())).collect();
+        let payload = serde_json::json!({ "hashes": chunk });
         let resp = match http
-            .get(format!("{BASE_URL}/torrents/checkcached"))
+            .post(&url)
             .bearer_auth(token)
-            .query(&[("format", "object")])
-            .query(&params)
+            .json(&payload)
             .send()
             .await
         {
@@ -563,20 +577,8 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
             Ok(v) => v,
             Err(_) => continue,
         };
-        match body.get("data") {
-            Some(Value::Object(obj)) => {
-                for hash in obj.keys() {
-                    cached.push(hash.clone());
-                }
-            }
-            Some(Value::Array(arr)) => {
-                for v in arr {
-                    if let Some(h) = v.as_str() {
-                        cached.push(h.to_string());
-                    }
-                }
-            }
-            _ => {}
+        if let Some(data) = body.get("data") {
+            collect_cached_hashes(data, &mut cached);
         }
     }
     cached
