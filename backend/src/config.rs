@@ -57,6 +57,19 @@ pub struct AppConfig {
     pub is_scrap_from_mediafusion: bool,
     pub is_scrap_from_dmm_hashlist: bool,
     pub disable_dmm_hashlist_scraper: bool,
+    /// GitHub repo owner for DMM hashlist ingestion.
+    pub dmm_hashlist_repo_owner: String,
+    /// GitHub repo name for DMM hashlist ingestion.
+    pub dmm_hashlist_repo_name: String,
+    /// Git branch to read DMM hashlist commits from.
+    pub dmm_hashlist_branch: String,
+    /// Max new commits to process per incremental DMM hashlist run.
+    pub dmm_hashlist_commits_per_run: usize,
+    /// Max backfill commits to walk per DMM hashlist run.
+    pub dmm_hashlist_backfill_commits_per_run: usize,
+    /// Optional GitHub token for DMM hashlist fetches (`DMM_HASHLIST_GITHUB_TOKEN`, else `GITHUB_TOKEN`).
+    /// Unauthenticated requests still work against the public GitHub API with lower rate limits.
+    pub dmm_hashlist_github_token: Option<String>,
     pub is_scrap_from_public_indexers: bool,
     pub is_scrap_from_public_usenet_indexers: bool,
     pub is_scrap_from_jackett: bool,
@@ -431,6 +444,24 @@ impl AppConfig {
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
             disable_dmm_hashlist_scraper: env("DISABLE_DMM_HASHLIST_SCRAPER")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            dmm_hashlist_repo_owner: env("DMM_HASHLIST_REPO_OWNER")
+                .unwrap_or_else(|_| "debridmediamanager".into()),
+            dmm_hashlist_repo_name: env("DMM_HASHLIST_REPO_NAME")
+                .unwrap_or_else(|_| "hashlists".into()),
+            dmm_hashlist_branch: env("DMM_HASHLIST_BRANCH")
+                .unwrap_or_else(|_| "main".into()),
+            dmm_hashlist_commits_per_run: env("DMM_HASHLIST_COMMITS_PER_RUN")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(20),
+            dmm_hashlist_backfill_commits_per_run: env("DMM_HASHLIST_BACKFILL_COMMITS_PER_RUN")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(20),
+            dmm_hashlist_github_token: env("DMM_HASHLIST_GITHUB_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .or_else(|| env("GITHUB_TOKEN").ok().filter(|s| !s.is_empty())),
             is_scrap_from_public_indexers: env("IS_SCRAP_FROM_PUBLIC_INDEXERS")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
             is_scrap_from_public_usenet_indexers: env("IS_SCRAP_FROM_PUBLIC_USENET_INDEXERS")

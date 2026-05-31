@@ -1764,26 +1764,6 @@ pub struct AdvancedImportBody {
     pub anonymous_display_name: Option<String>,
 }
 
-/// Map a sports category key to its genre display name (mirrors scraper `category_to_genre`).
-fn sports_category_to_genre(category: &str) -> &'static str {
-    match category {
-        "football" => "Football",
-        "basketball" => "Basketball",
-        "hockey" => "Hockey",
-        "american_football" => "American Football",
-        "baseball" => "Baseball",
-        "rugby" => "Rugby/AFL",
-        "formula_racing" => "Formula Racing",
-        "motogp_racing" => "MotoGP Racing",
-        "fighting" => "Fighting/Wrestling",
-        "tennis" => "Tennis",
-        "golf" => "Golf",
-        "cycling" => "Cycling",
-        "athletics" => "Athletics",
-        _ => "Other Sports",
-    }
-}
-
 /// Fetch the provider's downloaded torrents (used to resolve names/sizes on import).
 async fn fetch_downloaded_torrents(
     state: &AppState,
@@ -2008,7 +1988,7 @@ async fn process_advanced_import(
         } else {
             "MOVIE"
         };
-        let genre = sports_category_to_genre(cat);
+        let genre = crate::parser::sports_category_to_genre(cat);
         crate::scrapers::media_resolve::find_or_create_sports_stub(
             &state.pool,
             title,

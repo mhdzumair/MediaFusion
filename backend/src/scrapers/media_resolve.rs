@@ -227,24 +227,12 @@ pub async fn find_or_create_media_with_anime(
     }
 
     // 4. No external match — create a minimal stub so the stream is not lost.
+    // Internal identity is `media.id` only; `mf:{id}` is derived at read time and
+    // must not be persisted in `media_external_id`.
     let media_id = insert_media_row(pool, media_type, title, year).await?;
-
-    let clean: String = title
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '_' })
-        .collect();
-    let clean = clean.trim_matches('_');
-    let clean: String = clean.chars().take(40).collect();
-    let year_str = year.map(|y| format!("_{y}")).unwrap_or_default();
-    let mf_prefix = if is_series { "mfs" } else { "mfm" };
-    let short_hash = format!("{:x}", md5_short(&format!("{clean}{year_str}")));
-    let mf_id = format!("{mf_prefix}_{short_hash}");
-
-    store_external_id(pool, media_id, "mediafusion", &mf_id).await;
     link_to_catalogs(pool, media_id, catalog_ids).await;
 
-    info!("media_resolve: created stub media {media_id} (id={mf_id}) for '{title}'");
+    info!("media_resolve: created stub media {media_id} for '{title}'");
     Some(MediaEntry {
         id: media_id,
         title: title.to_string(),
@@ -722,6 +710,332 @@ pub async fn link_stream_to_media(
     Ok(())
 }
 
+/// Minimum title similarity for DMM hashlist metadata linking (Python parity).
+pub const DMM_METADATA_MIN_SIMILARITY: u32 = 87;
+
+/// Dynamic similarity floor for short/generic titles (mirrors user_library).
+pub fn dmm_dynamic_min_similarity(title: &str) -> u32 {
+    let compact_len = title
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .count();
+    if compact_len <= 4 {
+        90
+    } else if compact_len <= 8 {
+        80
+    } else {
+        DMM_METADATA_MIN_SIMILARITY
+    }
+}
+
+/// Extract a calendar year from a DMM-style broadcast date tag, e.g. `[250504]` → 2025.
+pub fn extract_bracket_air_year(torrent_title: &str) -> Option<i32> {
+    static AIR_DATE_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = AIR_DATE_RE.get_or_init(|| regex::Regex::new(r"\[(\d{6})\]").unwrap());
+    let caps = re.captures(torrent_title)?;
+    let tag = caps.get(1)?.as_str();
+    let yy: i32 = tag.get(0..2)?.parse().ok()?;
+    let mm: i32 = tag.get(2..4)?.parse().ok()?;
+    let dd: i32 = tag.get(4..6)?.parse().ok()?;
+    if !(1..=12).contains(&mm) || !(1..=31).contains(&dd) {
+        return None;
+    }
+    Some(if yy >= 50 { 1900 + yy } else { 2000 + yy })
+}
+
+/// Validate a metadata candidate before linking a DMM hashlist stream.
+pub fn is_valid_dmm_metadata_match(
+    parsed_title: &str,
+    parsed_year: Option<i32>,
+    media_type: &str,
+    candidate_title: &str,
+    candidate_year: Option<i32>,
+    candidate_end_year: Option<i32>,
+    episode_number: Option<i32>,
+) -> bool {
+    let min_similarity = dmm_dynamic_min_similarity(parsed_title);
+    let similarity = crate::parser::max_similarity_ratio(parsed_title, candidate_title, &[]);
+    if similarity < min_similarity {
+        return false;
+    }
+
+    if let (Some(episode), Some(start_year), Some(air_year)) =
+        (episode_number, candidate_year, parsed_year)
+    {
+        if episode > 0 {
+            let max_reasonable = (air_year - start_year + 1).saturating_mul(60);
+            if max_reasonable > 0 && episode > max_reasonable {
+                return false;
+            }
+        }
+    }
+
+    let Some(parsed_year) = parsed_year else {
+        return true;
+    };
+
+    let Some(candidate_year) = candidate_year else {
+        return true;
+    };
+
+    if media_type == "movie" {
+        return candidate_year == parsed_year;
+    }
+
+    if let Some(end_year) = candidate_end_year {
+        return candidate_year <= parsed_year && parsed_year <= end_year;
+    }
+
+    parsed_year >= candidate_year
+}
+
+fn dmm_import_meta_id(entry: &serde_json::Value) -> Option<String> {
+    if let Some(imdb) = entry.get("imdb_id").and_then(|v| v.as_str()) {
+        if !imdb.is_empty() {
+            return Some(imdb.to_string());
+        }
+    }
+    entry
+        .get("id")
+        .and_then(|v| v.as_str())
+        .filter(|id| !id.is_empty() && !id.starts_with("media:") && !id.starts_with("mf:"))
+        .map(str::to_string)
+}
+
+fn dmm_candidate_has_external_id(candidate: &crate::db::media::MediaCandidate) -> bool {
+    candidate.imdb_id.is_some() || candidate.tmdb_id.is_some() || candidate.tvdb_id.is_some()
+}
+
+fn dmm_effective_year(
+    parsed_year: Option<i32>,
+    torrent_title: Option<&str>,
+) -> Option<i32> {
+    parsed_year.or_else(|| torrent_title.and_then(extract_bracket_air_year))
+}
+
+fn dmm_score_candidate(
+    parsed_title: &str,
+    effective_year: Option<i32>,
+    candidate: &crate::db::media::MediaCandidate,
+    akas: &[String],
+) -> i32 {
+    let sim = crate::parser::max_similarity_ratio(parsed_title, &candidate.title, akas) as i32;
+    let mut score = sim;
+    if let Some(y) = effective_year {
+        if let Some(cy) = candidate.year {
+            if cy == y {
+                score += 8;
+            } else if (cy - y).abs() <= 1 {
+                score += 2;
+            }
+        }
+        if let Some(end) = candidate.end_year {
+            if cy_in_range(y, candidate.year, Some(end)) {
+                score += 4;
+            }
+        } else if candidate
+            .year
+            .is_some_and(|cy| effective_year.is_some_and(|y| y >= cy))
+        {
+            score += 2;
+        }
+    }
+    if candidate.imdb_id.is_some() {
+        score += 2;
+    }
+    if candidate.tmdb_id.is_some() {
+        score += 1;
+    }
+    score
+}
+
+fn cy_in_range(year: i32, start: Option<i32>, end: Option<i32>) -> bool {
+    let Some(start) = start else {
+        return false;
+    };
+    if let Some(end) = end {
+        start <= year && year <= end
+    } else {
+        year >= start
+    }
+}
+
+async fn pick_best_dmm_db_candidate(
+    pool: &PgPool,
+    title: &str,
+    effective_year: Option<i32>,
+    media_type: &str,
+    episode_number: Option<i32>,
+) -> Option<crate::scrapers::SearchMeta> {
+    let mut best: Option<(i32, crate::scrapers::SearchMeta)> = None;
+
+    for candidate in crate::db::search_media_candidates(pool, media_type, title).await {
+        if !dmm_candidate_has_external_id(&candidate) {
+            continue;
+        }
+        let akas = crate::db::load_aka_titles(pool, candidate.media_id).await;
+        if !is_valid_dmm_metadata_match(
+            title,
+            effective_year,
+            media_type,
+            &candidate.title,
+            candidate.year,
+            candidate.end_year,
+            episode_number,
+        ) && !akas.iter().any(|aka| {
+            is_valid_dmm_metadata_match(
+                title,
+                effective_year,
+                media_type,
+                aka,
+                candidate.year,
+                candidate.end_year,
+                episode_number,
+            )
+        }) {
+            continue;
+        }
+
+        let score = dmm_score_candidate(title, effective_year, &candidate, &akas);
+        let meta = crate::scrapers::SearchMeta {
+            media_id: candidate.media_id,
+            imdb_id: candidate.imdb_id,
+            title: candidate.title,
+            year: candidate.year,
+        };
+        if best.as_ref().is_none_or(|(best_score, _)| score > *best_score) {
+            best = Some((score, meta));
+        }
+    }
+
+    best.map(|(_, meta)| meta)
+}
+
+/// Resolve DMM hashlist metadata without creating title-only stubs.
+///
+/// Mirrors Python `_resolve_meta_id`: DB search → external providers → `None` when
+/// no confident match (similarity ≥ 87, year sanity). Requires real provider IDs
+/// (imdb/tmdb/tvdb) — internal `media.id` is never written to `media_external_id`.
+pub async fn search_meta_for_dmm_hashlist(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    title: &str,
+    year: Option<i32>,
+    is_series: bool,
+    tmdb_api_key: Option<&str>,
+    tvdb_api_key: Option<&str>,
+    cinemeta_fallback_enabled: bool,
+    torrent_title: Option<&str>,
+    episode_number: Option<i32>,
+) -> Option<crate::scrapers::SearchMeta> {
+    let media_type = if is_series { "series" } else { "movie" };
+    let effective_year = dmm_effective_year(year, torrent_title);
+
+    if let Some(meta) = pick_best_dmm_db_candidate(
+        pool,
+        title,
+        effective_year,
+        media_type,
+        episode_number,
+    )
+    .await
+    {
+        return Some(meta);
+    }
+
+    let matches = crate::scrapers::metadata::search_import_matches(
+        http,
+        pool,
+        title,
+        effective_year,
+        media_type,
+        tmdb_api_key,
+        tvdb_api_key,
+        cinemeta_fallback_enabled,
+    )
+    .await;
+
+    let mut best: Option<(i32, crate::scrapers::SearchMeta)> = None;
+
+    for entry in matches {
+        let candidate_title = match entry.get("title").and_then(|v| v.as_str()) {
+            Some(t) if !t.is_empty() => t,
+            _ => continue,
+        };
+        let candidate_year = entry.get("year").and_then(|v| v.as_i64()).map(|y| y as i32);
+        let candidate_end_year = entry
+            .get("end_year")
+            .and_then(|v| v.as_i64())
+            .map(|y| y as i32);
+        if !is_valid_dmm_metadata_match(
+            title,
+            effective_year,
+            media_type,
+            candidate_title,
+            candidate_year,
+            candidate_end_year,
+            episode_number,
+        ) {
+            continue;
+        }
+
+        let Some(meta_id) = dmm_import_meta_id(&entry) else {
+            continue;
+        };
+
+        let media_id = ensure_media_for_import(
+            pool,
+            http,
+            &meta_id,
+            media_type,
+            tmdb_api_key,
+            tvdb_api_key,
+            ImportMediaOverrides {
+                title: Some(candidate_title),
+                poster: entry.get("poster").and_then(|v| v.as_str()),
+                background: None,
+                release_date: None,
+                year: candidate_year.or(effective_year),
+            },
+            None,
+        )
+        .await?;
+
+        let sim = crate::parser::max_similarity_ratio(title, candidate_title, &[]) as i32;
+        let mut score = sim;
+        if let Some(y) = effective_year {
+            if candidate_year == Some(y) {
+                score += 8;
+            }
+        }
+        if entry.get("imdb_id").and_then(|v| v.as_str()).is_some() {
+            score += 2;
+        }
+
+        let meta = crate::scrapers::SearchMeta {
+            media_id: crate::db::MediaId(media_id),
+            imdb_id: entry
+                .get("imdb_id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            title: candidate_title.to_string(),
+            year: candidate_year.or(effective_year),
+        };
+
+        if best.as_ref().is_none_or(|(best_score, _)| score > *best_score) {
+            best = Some((score, meta));
+        }
+    }
+
+    if let Some((_, meta)) = best {
+        return Some(meta);
+    }
+
+    debug!("media_resolve: no confident DMM match for '{title}' ({media_type})");
+    None
+}
+
 /// Resolve media from a parsed title before persisting scraped streams.
 pub async fn search_meta_for_title(
     pool: &PgPool,
@@ -980,13 +1294,6 @@ pub async fn link_genre(pool: &PgPool, media_id: i32, genre_name: &str) {
         .execute(pool)
         .await;
     }
-}
-
-fn md5_short(s: &str) -> u32 {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    s.hash(&mut h);
-    h.finish() as u32
 }
 
 #[cfg(test)]

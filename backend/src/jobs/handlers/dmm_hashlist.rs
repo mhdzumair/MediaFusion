@@ -15,27 +15,27 @@
 /// Backfill pass (optional, walks parents of the oldest known commit):
 ///   Uses `dmm_hashlist_scraper:backfill_next_commit_sha`.
 ///
-/// The GitHub repo and branch are read from env vars:
-///   DMM_HASHLIST_REPO_OWNER  (default: "debridmediamanager")
-///   DMM_HASHLIST_REPO_NAME   (default: "stash")
-///   DMM_HASHLIST_BRANCH      (default: "main")
-///   DMM_HASHLIST_COMMITS_PER_RUN         (default: 30)
-///   DMM_HASHLIST_BACKFILL_COMMITS_PER_RUN (default: 30)
-///   GITHUB_TOKEN             (optional, for higher rate-limits)
+/// GitHub repo settings come from `AppConfig` (`DMM_HASHLIST_*`, optional
+/// `DMM_HASHLIST_GITHUB_TOKEN` / `GITHUB_TOKEN` for authenticated API access).
 use async_trait::async_trait;
 use fred::prelude::{KeysInterface, SetsInterface};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use tracing::{debug, info, warn};
 
-use crate::db::{StreamType, TorrentType};
+use crate::config::AppConfig;
+use crate::db::{MediaId, TorrentType};
 use crate::{
     jobs::{
         error::JobError,
         handler::{JobCtx, JobHandler},
     },
     parser,
-    scrapers::media_resolve,
+    scrapers::{
+        media_resolve,
+        persist,
+        ScrapedStream, SearchMeta, StreamFile,
+    },
 };
 
 // ─── Redis key constants (must match Python side) ─────────────────────────────
@@ -43,8 +43,10 @@ use crate::{
 const LATEST_SHA_KEY: &str = "dmm_hashlist_scraper:latest_commit_sha";
 const BACKFILL_SHA_KEY: &str = "dmm_hashlist_scraper:backfill_next_commit_sha";
 const PROCESSED_FILES_KEY: &str = "dmm_hashlist_scraper:processed_file_shas";
+const STATUS_KEY: &str = "dmm_hashlist:status";
 
 const BACKFILL_DONE: &str = "__done__";
+const FULL_INGEST_MAX_ITERATIONS: usize = 200;
 
 // ─── Regex ────────────────────────────────────────────────────────────────────
 
@@ -57,37 +59,6 @@ static IFRAME_FRAG_RE: Lazy<Regex> = Lazy::new(|| {
 
 static INFO_HASH_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^[0-9a-fA-F]{40}$").expect("info hash regex"));
-
-// ─── Config helpers ───────────────────────────────────────────────────────────
-
-struct DmmConfig {
-    owner: String,
-    repo: String,
-    branch: String,
-    max_incremental: usize,
-    max_backfill: usize,
-    github_token: Option<String>,
-}
-
-impl DmmConfig {
-    fn from_env() -> Self {
-        fn env(key: &str) -> Option<String> {
-            std::env::var(key).ok().filter(|s| !s.is_empty())
-        }
-        DmmConfig {
-            owner: env("DMM_HASHLIST_REPO_OWNER").unwrap_or_else(|| "debridmediamanager".into()),
-            repo: env("DMM_HASHLIST_REPO_NAME").unwrap_or_else(|| "stash".into()),
-            branch: env("DMM_HASHLIST_BRANCH").unwrap_or_else(|| "main".into()),
-            max_incremental: env("DMM_HASHLIST_COMMITS_PER_RUN")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(30),
-            max_backfill: env("DMM_HASHLIST_BACKFILL_COMMITS_PER_RUN")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(30),
-            github_token: env("GITHUB_TOKEN"),
-        }
-    }
-}
 
 // ─── GitHub API helpers ───────────────────────────────────────────────────────
 
@@ -232,21 +203,136 @@ fn decode_hashlist_payload(encoded: &str) -> Vec<HashlistEntry> {
     entries
 }
 
+// ─── Stream building ────────────────────────────────────────────────────────────
+
+fn build_series_files(entry: &HashlistEntry, parsed: &parser::ParsedTitle) -> Vec<StreamFile> {
+    let mut files = Vec::new();
+    if parsed.seasons.is_empty() {
+        return files;
+    }
+
+    if !parsed.episodes.is_empty() {
+        for &episode in &parsed.episodes {
+            files.push(StreamFile {
+                file_index: 0,
+                filename: entry.filename.clone(),
+                season_number: parsed.seasons[0],
+                episode_number: episode,
+            });
+        }
+    } else {
+        for &season in &parsed.seasons {
+            files.push(StreamFile {
+                file_index: 0,
+                filename: entry.filename.clone(),
+                season_number: season,
+                episode_number: 1,
+            });
+        }
+    }
+
+    files
+}
+
+struct ResolvedStream {
+    meta: SearchMeta,
+    media_type: String,
+    parsed: parser::ParsedTitle,
+    files: Vec<StreamFile>,
+    season: Option<i32>,
+    episode: Option<i32>,
+    catalog: Option<String>,
+}
+
+fn resolve_sports_stream(filename: &str, parsed: &parser::ParsedTitle) -> Option<ResolvedStream> {
+    let category = parser::detect_sports_category(filename).unwrap_or("other_sports");
+
+    if let Some(wwe) = parser::classify_wwe_title(filename) {
+        let files = vec![StreamFile {
+            file_index: 0,
+            filename: parser::clean_sports_title(filename),
+            season_number: wwe.season_number,
+            episode_number: wwe.episode_number,
+        }];
+        return Some(ResolvedStream {
+            meta: SearchMeta {
+                media_id: MediaId(0),
+                imdb_id: None,
+                title: wwe.series_title.to_string(),
+                year: None,
+            },
+            media_type: "series".to_string(),
+            parsed: parsed.clone(),
+            files,
+            season: None,
+            episode: None,
+            catalog: Some(category.to_string()),
+        });
+    }
+
+    if matches!(category, "formula_racing" | "motogp_racing") {
+        if let Some(racing) = parser::parse_racing_title(filename) {
+            let session_src = racing.session.as_deref().unwrap_or(filename);
+            if let Some((episode, episode_title)) = parser::racing_session_episode(session_src) {
+                let files = vec![StreamFile {
+                    file_index: 0,
+                    filename: episode_title,
+                    season_number: 1,
+                    episode_number: episode,
+                }];
+                return Some(ResolvedStream {
+                    meta: SearchMeta {
+                        media_id: MediaId(0),
+                        imdb_id: None,
+                        title: racing.series_title,
+                        year: racing.year,
+                    },
+                    media_type: "series".to_string(),
+                    parsed: parsed.clone(),
+                    files,
+                    season: None,
+                    episode: None,
+                    catalog: Some(category.to_string()),
+                });
+            }
+        }
+    }
+
+    let clean_title = parsed
+        .title
+        .clone()
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| parser::clean_sports_title(filename));
+
+    Some(ResolvedStream {
+        meta: SearchMeta {
+            media_id: MediaId(0),
+            imdb_id: None,
+            title: clean_title,
+            year: parsed.year,
+        },
+        media_type: "movie".to_string(),
+        parsed: parsed.clone(),
+        files: vec![],
+        season: None,
+        episode: None,
+        catalog: Some(category.to_string()),
+    })
+}
+
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 
-/// Store a single torrent stream with resolved media linking (Python `dmm_hashlist` parity).
+/// Parse, resolve, validate, and persist a single hashlist entry.
 ///
-/// Returns true if a new row was inserted, false if already present.
+/// Returns true if a new row was inserted, false if skipped or already present.
 async fn store_torrent_stream(
     pool: &sqlx::PgPool,
     http: &reqwest::Client,
     entry: &HashlistEntry,
     tmdb_api_key: Option<&str>,
+    tvdb_api_key: Option<&str>,
     cinemeta_fallback: bool,
-    anime_source_order: &[String],
-    metadata_primary_source: &str,
 ) -> Result<bool, sqlx::Error> {
-    // Check existing
     let existing: Option<(i32,)> =
         sqlx::query_as("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
             .bind(&entry.info_hash)
@@ -257,80 +343,116 @@ async fn store_torrent_stream(
         return Ok(false);
     }
 
-    // Insert base stream
-    let row: Option<(i32,)> = sqlx::query_as(
-        r#"INSERT INTO stream (
-            stream_type, name, source,
-            is_active, is_blocked, is_public, playback_count,
-            is_remastered, is_upscaled, is_proper, is_repack,
-            is_extended, is_complete, is_dubbed, is_subbed,
-            created_at, updated_at
-        ) VALUES (
-            $1, $2, 'dmm_hashlist',
-            true, false, true, 0,
-            false, false, false, false,
-            false, false, false, false,
-            NOW(), NOW()
-        ) RETURNING id"#,
-    )
-    .bind(StreamType::Torrent)
-    .bind(&entry.filename)
-    .fetch_optional(pool)
-    .await?;
-
-    let stream_id = match row {
-        Some((id,)) => id,
-        None => return Ok(false),
-    };
-
-    let ts = sqlx::query(
-        r#"INSERT INTO torrent_stream (stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at)
-           VALUES ($1, $2, $3, 0, $4, 1, NOW())
-           ON CONFLICT (info_hash) DO NOTHING"#,
-    )
-    .bind(stream_id)
-    .bind(&entry.info_hash)
-    .bind(entry.size)
-    .bind(TorrentType::Public)
-    .execute(pool)
-    .await?;
-
-    if ts.rows_affected() == 0 {
-        // Hash raced in between our SELECT and INSERT — clean up orphan stream row
-        let _ = sqlx::query("DELETE FROM stream WHERE id = $1")
-            .bind(stream_id)
-            .execute(pool)
-            .await;
+    if parser::contains_adult_keywords(&entry.filename) {
         return Ok(false);
     }
 
-    let parsed = parser::parse_title(&entry.filename);
-    let is_series = !parsed.seasons.is_empty() || !parsed.episodes.is_empty();
-    let title = parsed
-        .title
-        .as_deref()
-        .filter(|t| !t.is_empty())
-        .unwrap_or(entry.filename.as_str());
-    if let Some(meta) = media_resolve::search_meta_for_title_with_anime(
-        pool,
-        http,
-        title,
-        parsed.year,
-        is_series,
-        tmdb_api_key,
-        cinemeta_fallback,
-        anime_source_order,
-        metadata_primary_source,
-    )
-    .await
-    {
-        let _ = media_resolve::link_stream_to_media(
+    let is_sports = parser::is_sports_title(&entry.filename);
+    let parsed = if is_sports {
+        parser::parse_sports_title(&entry.filename)
+    } else {
+        parser::parse_title(&entry.filename)
+    };
+
+    let resolved = if is_sports {
+        let Some(mut sports) = resolve_sports_stream(&entry.filename, &parsed) else {
+            return Ok(false);
+        };
+
+        let category = sports.catalog.as_deref().unwrap_or("other_sports");
+        let genre = parser::sports_category_to_genre(category);
+        let stub_type = if sports.media_type == "series" {
+            "SERIES"
+        } else {
+            "MOVIE"
+        };
+
+        let media_id = media_resolve::find_or_create_sports_stub(
             pool,
-            crate::db::StreamId(stream_id),
-            meta.media_id,
+            &sports.meta.title,
+            sports.meta.year,
+            genre,
+            None,
+            stub_type,
         )
-        .await;
-    }
+        .await
+        .unwrap_or(0);
+
+        if media_id <= 0 {
+            return Ok(false);
+        }
+
+        media_resolve::link_to_catalogs(pool, media_id, &[category]).await;
+        sports.meta.media_id = MediaId(media_id);
+        sports
+    } else {
+        let is_series = !parsed.seasons.is_empty() || !parsed.episodes.is_empty();
+        let media_type = if is_series { "series" } else { "movie" };
+        let title = parsed
+            .title
+            .as_deref()
+            .filter(|t| !t.is_empty())
+            .unwrap_or(entry.filename.as_str());
+
+        let Some(meta) = media_resolve::search_meta_for_dmm_hashlist(
+            pool,
+            http,
+            title,
+            parsed.year,
+            is_series,
+            tmdb_api_key,
+            tvdb_api_key,
+            cinemeta_fallback,
+            Some(entry.filename.as_str()),
+            parsed.episodes.first().copied(),
+        )
+        .await
+        else {
+            return Ok(false);
+        };
+
+        let files = if is_series {
+            build_series_files(entry, &parsed)
+        } else {
+            vec![]
+        };
+        let season = parsed.seasons.first().copied();
+        let episode = parsed.episodes.first().copied();
+
+        ResolvedStream {
+            meta,
+            media_type: media_type.to_string(),
+            parsed,
+            files,
+            season,
+            episode,
+            catalog: None,
+        }
+    };
+
+    let stream = ScrapedStream {
+        info_hash: entry.info_hash.clone(),
+        name: entry.filename.clone(),
+        source: "dmm_hashlist".to_string(),
+        seeders: Some(0),
+        size: Some(entry.size),
+        parsed: resolved.parsed,
+        files: resolved.files,
+        is_cached: false,
+        torrent_type: TorrentType::Public,
+        torrent_file: None,
+        announce_list: vec![],
+    };
+
+    persist::write_back(
+        &[stream],
+        pool,
+        &resolved.meta,
+        &resolved.media_type,
+        resolved.season,
+        resolved.episode,
+    )
+    .await;
 
     Ok(true)
 }
@@ -347,18 +469,18 @@ async fn process_commit(
     http: &reqwest::Client,
     pool: &sqlx::PgPool,
     redis: &fred::clients::Client,
-    cfg: &DmmConfig,
+    app_cfg: &AppConfig,
     commit_sha: &str,
     tmdb_api_key: Option<&str>,
+    tvdb_api_key: Option<&str>,
     cinemeta_fallback: bool,
-    anime_source_order: &[String],
-    metadata_primary_source: &str,
+    github_token: Option<&str>,
 ) -> Result<CommitStats, JobError> {
     let commit_url = format!(
         "https://api.github.com/repos/{}/{}/commits/{}",
-        cfg.owner, cfg.repo, commit_sha
+        app_cfg.dmm_hashlist_repo_owner, app_cfg.dmm_hashlist_repo_name, commit_sha
     );
-    let commit_data = github_get_json(http, &commit_url, cfg.github_token.as_deref()).await?;
+    let commit_data = github_get_json(http, &commit_url, github_token).await?;
 
     let next_parent_sha = commit_data
         .get("parents")
@@ -408,11 +530,14 @@ async fn process_commit(
             .unwrap_or_else(|| {
                 format!(
                     "https://raw.githubusercontent.com/{}/{}/{}/{}",
-                    cfg.owner, cfg.repo, cfg.branch, file_path
+                    app_cfg.dmm_hashlist_repo_owner,
+                    app_cfg.dmm_hashlist_repo_name,
+                    app_cfg.dmm_hashlist_branch,
+                    file_path
                 )
             });
 
-        let html = match github_get_text(http, &raw_url, cfg.github_token.as_deref()).await {
+        let html = match github_get_text(http, &raw_url, github_token).await {
             Ok(h) => h,
             Err(e) => {
                 warn!("dmm_hashlist: failed to fetch {}: {e}", file_path);
@@ -444,9 +569,8 @@ async fn process_commit(
                 http,
                 entry,
                 tmdb_api_key,
+                tvdb_api_key,
                 cinemeta_fallback,
-                anime_source_order,
-                metadata_primary_source,
             )
             .await
             {
@@ -480,6 +604,297 @@ async fn process_commit(
     })
 }
 
+// ─── Run stats + status ───────────────────────────────────────────────────────
+
+#[derive(Default, Clone)]
+struct RunStats {
+    incr_commits: usize,
+    incr_files: usize,
+    incr_streams: usize,
+    bf_commits: usize,
+    bf_files: usize,
+    bf_streams: usize,
+}
+
+impl RunStats {
+    fn made_progress(&self) -> bool {
+        self.incr_commits + self.incr_files + self.incr_streams + self.bf_commits
+            + self.bf_files
+            + self.bf_streams
+            > 0
+    }
+
+    fn absorb(&mut self, other: &RunStats) {
+        self.incr_commits += other.incr_commits;
+        self.incr_files += other.incr_files;
+        self.incr_streams += other.incr_streams;
+        self.bf_commits += other.bf_commits;
+        self.bf_files += other.bf_files;
+        self.bf_streams += other.bf_streams;
+    }
+}
+
+async fn write_dmm_status(
+    redis: &fred::clients::Client,
+    app_cfg: &AppConfig,
+) -> Result<(), JobError> {
+    let latest_commit_sha: Option<String> = redis.get(LATEST_SHA_KEY).await.unwrap_or(None);
+    let backfill_next_raw: Option<String> = redis.get(BACKFILL_SHA_KEY).await.unwrap_or(None);
+    let backfill_complete = backfill_next_raw.as_deref() == Some(BACKFILL_DONE);
+    let backfill_next_commit_sha = if backfill_complete {
+        None
+    } else {
+        backfill_next_raw
+    };
+    let processed_file_sha_count: i64 = redis.scard(PROCESSED_FILES_KEY).await.unwrap_or(0);
+
+    let status = serde_json::json!({
+        "enabled": app_cfg.is_scrap_from_dmm_hashlist,
+        "scheduler_disabled": app_cfg.disable_dmm_hashlist_scraper,
+        "cron_expression": app_cfg.dmm_hashlist_scraper_crontab,
+        "repo": format!(
+            "{}/{}",
+            app_cfg.dmm_hashlist_repo_owner, app_cfg.dmm_hashlist_repo_name
+        ),
+        "branch": app_cfg.dmm_hashlist_branch,
+        "sync_interval_hours": app_cfg.dmm_hashlist_sync_ttl / 3600,
+        "commits_per_run": app_cfg.dmm_hashlist_commits_per_run,
+        "backfill_commits_per_run": app_cfg.dmm_hashlist_backfill_commits_per_run,
+        "latest_commit_sha": latest_commit_sha,
+        "backfill_next_commit_sha": backfill_next_commit_sha,
+        "backfill_complete": backfill_complete,
+        "processed_file_sha_count": processed_file_sha_count,
+    });
+
+    let payload =
+        serde_json::to_string(&status).map_err(|e| JobError::other(format!("status JSON: {e}")))?;
+    let _ = redis
+        .set::<(), _, _>(STATUS_KEY, payload.as_str(), None, None, false)
+        .await;
+    Ok(())
+}
+
+async fn reset_checkpoints(redis: &fred::clients::Client) {
+    let _ = redis.del::<(), _>(LATEST_SHA_KEY).await;
+    let _ = redis.del::<(), _>(BACKFILL_SHA_KEY).await;
+    let _ = redis.del::<(), _>(PROCESSED_FILES_KEY).await;
+}
+
+async fn run_ingestion(
+    http: &reqwest::Client,
+    pool: &sqlx::PgPool,
+    redis: &fred::clients::Client,
+    app_cfg: &AppConfig,
+    ctx: &JobCtx,
+    tmdb_api_key: Option<&str>,
+    tvdb_api_key: Option<&str>,
+    cinemeta_fallback: bool,
+) -> Result<RunStats, JobError> {
+    let github_token = app_cfg.dmm_hashlist_github_token.as_deref();
+    let mut stats = RunStats::default();
+
+    if app_cfg.dmm_hashlist_commits_per_run == 0 && app_cfg.dmm_hashlist_backfill_commits_per_run == 0 {
+        info!("dmm_hashlist: both incremental and backfill limits are 0, nothing to do");
+        return Ok(stats);
+    }
+
+    // ── Incremental pass ────────────────────────────────────────────────
+
+    if app_cfg.dmm_hashlist_commits_per_run > 0 {
+        let per_page = app_cfg.dmm_hashlist_commits_per_run.min(100);
+        let commits_url = format!(
+            "https://api.github.com/repos/{}/{}/commits?sha={}&per_page={}",
+            app_cfg.dmm_hashlist_repo_owner,
+            app_cfg.dmm_hashlist_repo_name,
+            app_cfg.dmm_hashlist_branch,
+            per_page
+        );
+
+        let commits = github_get_json(http, &commits_url, github_token)
+            .await
+            .unwrap_or(serde_json::Value::Array(vec![]));
+
+        let commit_list = match commits.as_array() {
+            Some(arr) => arr.clone(),
+            None => vec![],
+        };
+
+        if !commit_list.is_empty() {
+            let latest_known_sha: Option<String> = redis
+                .get::<Option<String>, _>(LATEST_SHA_KEY)
+                .await
+                .unwrap_or(None);
+
+            let head_sha = commit_list
+                .first()
+                .and_then(|c| c.get("sha"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+
+            let mut to_process: Vec<String> = Vec::new();
+            for commit in &commit_list {
+                let sha = match commit.get("sha").and_then(|v| v.as_str()) {
+                    Some(s) => s.to_string(),
+                    None => continue,
+                };
+                if let Some(ref known) = latest_known_sha {
+                    if sha == *known {
+                        break;
+                    }
+                }
+                to_process.push(sha);
+            }
+
+            for commit_sha in to_process.into_iter().rev() {
+                if ctx.is_cancelled() {
+                    return Err(JobError::Cancelled);
+                }
+
+                match process_commit(
+                    http,
+                    pool,
+                    redis,
+                    app_cfg,
+                    &commit_sha,
+                    tmdb_api_key,
+                    tvdb_api_key,
+                    cinemeta_fallback,
+                    github_token,
+                )
+                .await
+                {
+                    Ok(commit_stats) => {
+                        stats.incr_commits += 1;
+                        stats.incr_files += commit_stats.files_processed;
+                        stats.incr_streams += commit_stats.streams_created;
+                    }
+                    Err(e) => {
+                        warn!("dmm_hashlist: commit {} failed: {e}", commit_sha);
+                    }
+                }
+            }
+
+            if let Some(ref sha) = head_sha {
+                let _ = redis
+                    .set::<(), _, _>(LATEST_SHA_KEY, sha.as_str(), None, None, false)
+                    .await;
+            }
+        }
+    }
+
+    // ── Backfill pass ────────────────────────────────────────────────────
+
+    if app_cfg.dmm_hashlist_backfill_commits_per_run > 0 {
+        let backfill_sha: Option<String> = redis
+            .get::<Option<String>, _>(BACKFILL_SHA_KEY)
+            .await
+            .unwrap_or(None);
+
+        let next_sha = match backfill_sha.as_deref() {
+            Some(BACKFILL_DONE) => {
+                debug!("dmm_hashlist: backfill already complete");
+                None
+            }
+            Some(sha) => Some(sha.to_string()),
+            None => {
+                let latest_sha: Option<String> = redis
+                    .get::<Option<String>, _>(LATEST_SHA_KEY)
+                    .await
+                    .unwrap_or(None);
+
+                if let Some(ref sha) = latest_sha {
+                    let commit_url = format!(
+                        "https://api.github.com/repos/{}/{}/commits/{}",
+                        app_cfg.dmm_hashlist_repo_owner, app_cfg.dmm_hashlist_repo_name, sha
+                    );
+                    match github_get_json(http, &commit_url, github_token).await {
+                        Ok(data) => {
+                            let parent = data
+                                .get("parents")
+                                .and_then(|v| v.as_array())
+                                .and_then(|arr| arr.first())
+                                .and_then(|p| p.get("sha"))
+                                .and_then(|v| v.as_str())
+                                .map(str::to_string);
+
+                            if let Some(ref p) = parent {
+                                let _ = redis
+                                    .set::<(), _, _>(
+                                        BACKFILL_SHA_KEY,
+                                        p.as_str(),
+                                        None,
+                                        None,
+                                        false,
+                                    )
+                                    .await;
+                            }
+                            parent
+                        }
+                        Err(e) => {
+                            warn!("dmm_hashlist: backfill seed fetch failed: {e}");
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+        };
+
+        let mut current_sha = next_sha;
+        while let Some(ref sha) = current_sha.clone() {
+            if ctx.is_cancelled() {
+                return Err(JobError::Cancelled);
+            }
+            if stats.bf_commits >= app_cfg.dmm_hashlist_backfill_commits_per_run {
+                break;
+            }
+
+            match process_commit(
+                http,
+                pool,
+                redis,
+                app_cfg,
+                sha,
+                tmdb_api_key,
+                tvdb_api_key,
+                cinemeta_fallback,
+                github_token,
+            )
+            .await
+            {
+                Ok(commit_stats) => {
+                    stats.bf_commits += 1;
+                    stats.bf_files += commit_stats.files_processed;
+                    stats.bf_streams += commit_stats.streams_created;
+                    current_sha = commit_stats.next_parent_sha;
+                }
+                Err(e) => {
+                    warn!("dmm_hashlist: backfill commit {} failed: {e}", sha);
+                    break;
+                }
+            }
+        }
+
+        let sentinel = current_sha.as_deref().unwrap_or(BACKFILL_DONE);
+        let _ = redis
+            .set::<(), _, _>(BACKFILL_SHA_KEY, sentinel, None, None, false)
+            .await;
+    }
+
+    info!(
+        "dmm_hashlist: incremental commits={} files={} streams={} | backfill commits={} files={} streams={}",
+        stats.incr_commits,
+        stats.incr_files,
+        stats.incr_streams,
+        stats.bf_commits,
+        stats.bf_files,
+        stats.bf_streams,
+    );
+
+    Ok(stats)
+}
+
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 pub struct DmmHashlistScraper;
@@ -490,218 +905,201 @@ impl JobHandler for DmmHashlistScraper {
     const CONCURRENCY: usize = 1;
     type Args = serde_json::Value;
 
-    async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        let cfg = DmmConfig::from_env();
+    async fn run(&self, args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
+        let full = args
+            .get("full")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let reset = args
+            .get("reset_checkpoints")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
-        if cfg.max_incremental == 0 && cfg.max_backfill == 0 {
-            info!("dmm_hashlist: both incremental and backfill limits are 0, nothing to do");
-            return Ok(());
-        }
-
+        let app_cfg = &ctx.state.config;
         let http = &ctx.state.http;
         let pool = &ctx.state.pool;
         let redis = &ctx.state.redis;
 
-        // ── Incremental pass ────────────────────────────────────────────────
-
-        let mut incr_commits = 0usize;
-        let mut incr_files = 0usize;
-        let mut incr_streams = 0usize;
-
-        if cfg.max_incremental > 0 {
-            let per_page = cfg.max_incremental.min(100);
-            let commits_url = format!(
-                "https://api.github.com/repos/{}/{}/commits?sha={}&per_page={}",
-                cfg.owner, cfg.repo, cfg.branch, per_page
-            );
-
-            let commits = github_get_json(http, &commits_url, cfg.github_token.as_deref())
-                .await
-                .unwrap_or(serde_json::Value::Array(vec![]));
-
-            let commit_list = match commits.as_array() {
-                Some(arr) => arr.clone(),
-                None => vec![],
-            };
-
-            if !commit_list.is_empty() {
-                let latest_known_sha: Option<String> = redis
-                    .get::<Option<String>, _>(LATEST_SHA_KEY)
-                    .await
-                    .unwrap_or(None);
-
-                let head_sha = commit_list
-                    .first()
-                    .and_then(|c| c.get("sha"))
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string);
-
-                // Collect SHAs to process (stop at last known)
-                let mut to_process: Vec<String> = Vec::new();
-                for commit in &commit_list {
-                    let sha = match commit.get("sha").and_then(|v| v.as_str()) {
-                        Some(s) => s.to_string(),
-                        None => continue,
-                    };
-                    if let Some(ref known) = latest_known_sha {
-                        if sha == *known {
-                            break;
-                        }
-                    }
-                    to_process.push(sha);
-                }
-
-                // Process oldest-first
-                for commit_sha in to_process.into_iter().rev() {
-                    if ctx.is_cancelled() {
-                        return Err(JobError::Cancelled);
-                    }
-
-                    match process_commit(
-                        http,
-                        pool,
-                        redis,
-                        &cfg,
-                        &commit_sha,
-                        ctx.state.config.tmdb_api_key.as_deref(),
-                        ctx.state.config.imdb_cinemeta_fallback_enabled,
-                        &ctx.state.config.anime_metadata_source_order,
-                        &ctx.state.config.metadata_primary_source,
-                    )
-                    .await
-                    {
-                        Ok(stats) => {
-                            incr_commits += 1;
-                            incr_files += stats.files_processed;
-                            incr_streams += stats.streams_created;
-                        }
-                        Err(e) => {
-                            warn!("dmm_hashlist: commit {} failed: {e}", commit_sha);
-                        }
-                    }
-                }
-
-                // Update head SHA
-                if let Some(ref sha) = head_sha {
-                    let _ = redis
-                        .set::<(), _, _>(LATEST_SHA_KEY, sha.as_str(), None, None, false)
-                        .await;
-                }
-            }
+        if reset {
+            reset_checkpoints(redis).await;
         }
 
-        // ── Backfill pass ────────────────────────────────────────────────────
+        let tmdb_api_key = app_cfg.tmdb_api_key.as_deref();
+        let tvdb_api_key = app_cfg.tvdb_api_key.as_deref();
+        let cinemeta_fallback = app_cfg.imdb_cinemeta_fallback_enabled;
 
-        let mut bf_commits = 0usize;
-        let mut bf_files = 0usize;
-        let mut bf_streams = 0usize;
+        let mut totals = RunStats::default();
 
-        if cfg.max_backfill > 0 {
-            let backfill_sha: Option<String> = redis
-                .get::<Option<String>, _>(BACKFILL_SHA_KEY)
-                .await
-                .unwrap_or(None);
-
-            let next_sha = match backfill_sha.as_deref() {
-                Some(BACKFILL_DONE) => {
-                    debug!("dmm_hashlist: backfill already complete");
-                    None
-                }
-                Some(sha) => Some(sha.to_string()),
-                None => {
-                    // Seed backfill from parent of the latest known SHA
-                    let latest_sha: Option<String> = redis
-                        .get::<Option<String>, _>(LATEST_SHA_KEY)
-                        .await
-                        .unwrap_or(None);
-
-                    if let Some(ref sha) = latest_sha {
-                        let commit_url = format!(
-                            "https://api.github.com/repos/{}/{}/commits/{}",
-                            cfg.owner, cfg.repo, sha
-                        );
-                        match github_get_json(http, &commit_url, cfg.github_token.as_deref()).await
-                        {
-                            Ok(data) => {
-                                let parent = data
-                                    .get("parents")
-                                    .and_then(|v| v.as_array())
-                                    .and_then(|arr| arr.first())
-                                    .and_then(|p| p.get("sha"))
-                                    .and_then(|v| v.as_str())
-                                    .map(str::to_string);
-
-                                if let Some(ref p) = parent {
-                                    let _ = redis
-                                        .set::<(), _, _>(
-                                            BACKFILL_SHA_KEY,
-                                            p.as_str(),
-                                            None,
-                                            None,
-                                            false,
-                                        )
-                                        .await;
-                                }
-                                parent
-                            }
-                            Err(e) => {
-                                warn!("dmm_hashlist: backfill seed fetch failed: {e}");
-                                None
-                            }
-                        }
-                    } else {
-                        None
-                    }
-                }
-            };
-
-            let mut current_sha = next_sha;
-            while let Some(ref sha) = current_sha.clone() {
+        if full {
+            for _ in 0..FULL_INGEST_MAX_ITERATIONS {
                 if ctx.is_cancelled() {
                     return Err(JobError::Cancelled);
                 }
-                if bf_commits >= cfg.max_backfill {
-                    break;
-                }
 
-                match process_commit(
+                let iteration_stats = run_ingestion(
                     http,
                     pool,
                     redis,
-                    &cfg,
-                    sha,
-                    ctx.state.config.tmdb_api_key.as_deref(),
-                    ctx.state.config.imdb_cinemeta_fallback_enabled,
-                    &ctx.state.config.anime_metadata_source_order,
-                    &ctx.state.config.metadata_primary_source,
+                    app_cfg,
+                    &ctx,
+                    tmdb_api_key,
+                    tvdb_api_key,
+                    cinemeta_fallback,
                 )
-                .await
-                {
-                    Ok(stats) => {
-                        bf_commits += 1;
-                        bf_files += stats.files_processed;
-                        bf_streams += stats.streams_created;
-                        current_sha = stats.next_parent_sha;
-                    }
-                    Err(e) => {
-                        warn!("dmm_hashlist: backfill commit {} failed: {e}", sha);
-                        break;
-                    }
+                .await?;
+                totals.absorb(&iteration_stats);
+                write_dmm_status(redis, app_cfg).await?;
+
+                let backfill_sha: Option<String> = redis.get(BACKFILL_SHA_KEY).await.unwrap_or(None);
+                if backfill_sha.as_deref() == Some(BACKFILL_DONE) {
+                    break;
+                }
+                if !iteration_stats.made_progress() {
+                    break;
                 }
             }
-
-            let sentinel = current_sha.as_deref().unwrap_or(BACKFILL_DONE);
-            let _ = redis
-                .set::<(), _, _>(BACKFILL_SHA_KEY, sentinel, None, None, false)
-                .await;
+        } else {
+            let iteration_stats = run_ingestion(
+                http,
+                pool,
+                redis,
+                app_cfg,
+                &ctx,
+                tmdb_api_key,
+                tvdb_api_key,
+                cinemeta_fallback,
+            )
+            .await?;
+            totals.absorb(&iteration_stats);
+            write_dmm_status(redis, app_cfg).await?;
         }
 
         info!(
-            "dmm_hashlist: incremental commits={} files={} streams={} | backfill commits={} files={} streams={}",
-            incr_commits, incr_files, incr_streams,
-            bf_commits, bf_files, bf_streams,
+            "dmm_hashlist: run complete — incremental commits={} files={} streams={} | backfill commits={} files={} streams={}",
+            totals.incr_commits,
+            totals.incr_files,
+            totals.incr_streams,
+            totals.bf_commits,
+            totals.bf_files,
+            totals.bf_streams,
         );
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_valid_metadata_match_accepts_confident_series_year() {
+        assert!(media_resolve::is_valid_dmm_metadata_match(
+            "Breaking Bad",
+            Some(2010),
+            "series",
+            "Breaking Bad",
+            Some(2008),
+            Some(2013),
+            None,
+        ));
+    }
+
+    #[test]
+    fn is_valid_metadata_match_rejects_movie_year_mismatch() {
+        assert!(!media_resolve::is_valid_dmm_metadata_match(
+            "Inception",
+            Some(2012),
+            "movie",
+            "Inception",
+            Some(2010),
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn is_valid_metadata_match_rejects_low_similarity() {
+        assert!(!media_resolve::is_valid_dmm_metadata_match(
+            "Totally Different Film",
+            Some(1999),
+            "movie",
+            "The Matrix",
+            Some(1999),
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn is_valid_metadata_match_rejects_implausible_episode_for_young_series() {
+        assert!(!media_resolve::is_valid_dmm_metadata_match(
+            "Running Man",
+            Some(2025),
+            "series",
+            "Running Man",
+            Some(2017),
+            None,
+            Some(751),
+        ));
+    }
+
+    #[test]
+    fn extract_bracket_air_year_parses_yymmdd() {
+        assert_eq!(
+            media_resolve::extract_bracket_air_year("Running Man - 751 [250504].mp4"),
+            Some(2025)
+        );
+    }
+
+    #[test]
+    fn build_series_files_expands_episodes() {
+        let entry = HashlistEntry {
+            filename: "Show.S01E02.mkv".to_string(),
+            info_hash: "a".repeat(40),
+            size: 1,
+        };
+        let parsed = parser::parse_title(&entry.filename);
+        let files = build_series_files(&entry, &parsed);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].season_number, 1);
+        assert_eq!(files[0].episode_number, 2);
+    }
+
+    #[test]
+    fn resolve_sports_stream_wwe_weekly_is_series() {
+        let title = "WWE Monday Night Raw 2026 05 23 1080p";
+        let parsed = parser::parse_sports_title(title);
+        let resolved = resolve_sports_stream(title, &parsed).unwrap();
+        assert_eq!(resolved.media_type, "series");
+        assert_eq!(resolved.files.len(), 1);
+        assert_eq!(resolved.files[0].season_number, 2026);
+        assert_eq!(resolved.files[0].episode_number, 523);
+    }
+
+    #[test]
+    fn resolve_sports_stream_wwe_ppv_is_movie() {
+        let title = "WWE WrestleMania 40 2024 1080p";
+        let parsed = parser::parse_sports_title(title);
+        let resolved = resolve_sports_stream(title, &parsed).unwrap();
+        assert_eq!(resolved.media_type, "movie");
+        assert!(resolved.files.is_empty());
+    }
+
+    #[test]
+    fn resolve_sports_stream_racing_session_is_series() {
+        let title = "Formula 1 Canadian Grand Prix Qualifying 23.05.2026 1080p";
+        let parsed = parser::parse_sports_title(title);
+        let resolved = resolve_sports_stream(title, &parsed).unwrap();
+        assert_eq!(resolved.media_type, "series");
+        assert_eq!(resolved.files.len(), 1);
+        assert_eq!(resolved.files[0].episode_number, 4);
+    }
+
+    #[test]
+    fn adult_keywords_filter_matches() {
+        assert!(parser::contains_adult_keywords(
+            "Some.Adult.Title.Brazzers.1080p"
+        ));
     }
 }

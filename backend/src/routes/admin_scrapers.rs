@@ -907,15 +907,21 @@ pub async fn run_dmm_hashlist(
 pub async fn run_dmm_hashlist_full(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Json(_body): Json<Value>,
+    Json(body): Json<Value>,
 ) -> impl IntoResponse {
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
+    let mut args = body;
+    if let Some(obj) = args.as_object_mut() {
+        obj.insert("full".into(), json!(true));
+    } else {
+        args = json!({"full": true});
+    }
     match crate::jobs::enqueue::enqueue_simple(
         &state.pool,
         "dmm_hashlist",
-        &serde_json::json!({"full": true}),
+        &args,
         Default::default(),
     )
     .await

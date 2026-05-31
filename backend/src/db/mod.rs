@@ -40,7 +40,8 @@ pub mod torznab;
 pub mod watch_history;
 
 pub use media::{
-    get_media_id_by_external_id, get_media_meta, resolve_media_ids, search_media_candidates,
+    get_media_id_by_external_id, get_media_meta, load_aka_titles, resolve_media_ids,
+    search_media_candidates,
 };
 pub use streams::{
     fetch_acestream_streams_bulk, fetch_http_streams_bulk, fetch_stream_playback_info,

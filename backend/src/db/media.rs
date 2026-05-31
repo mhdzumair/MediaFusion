@@ -10,6 +10,7 @@ pub struct MediaCandidate {
     pub media_id: MediaId,
     pub title: String,
     pub year: Option<i32>,
+    pub end_year: Option<i32>,
     pub imdb_id: Option<String>,
     pub tmdb_id: Option<String>,
     pub tvdb_id: Option<String>,
@@ -33,6 +34,7 @@ pub async fn search_media_candidates(
             m.id AS media_id,
             m.title,
             m.year,
+            EXTRACT(YEAR FROM m.end_date)::int AS end_year,
             MAX(CASE WHEN mei.provider = 'imdb' THEN mei.external_id END) AS imdb_id,
             MAX(CASE WHEN mei.provider = 'tmdb' THEN mei.external_id END) AS tmdb_id,
             MAX(CASE WHEN mei.provider = 'tvdb' THEN mei.external_id END) AS tvdb_id
@@ -41,9 +43,16 @@ pub async fn search_media_candidates(
                ON mei.media_id = m.id
               AND mei.provider IN ('imdb', 'tmdb', 'tvdb')
         WHERE m.type = $1
-          AND m.title_tsv @@ plainto_tsquery('simple', $2)
-        GROUP BY m.id, m.title, m.year
-        ORDER BY m.popularity DESC NULLS LAST
+          AND (
+              m.title_tsv @@ plainto_tsquery('simple', $2)
+              OR EXISTS (
+                  SELECT 1 FROM aka_title at
+                  WHERE at.media_id = m.id
+                    AND at.title_tsv @@ plainto_tsquery('simple', $2)
+              )
+          )
+        GROUP BY m.id, m.title, m.year, m.end_date
+        ORDER BY m.popularity DESC NULLS LAST, m.id
         LIMIT 12
         "#,
     )
@@ -55,6 +64,18 @@ pub async fn search_media_candidates(
         warn!("search_media_candidates title={title}: {e}");
         vec![]
     })
+}
+
+/// Load alternate titles for metadata matching (e.g. IMDB AKAs).
+pub async fn load_aka_titles(pool: &PgPool, media_id: MediaId) -> Vec<String> {
+    sqlx::query_scalar("SELECT title FROM aka_title WHERE media_id = $1")
+        .bind(media_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_else(|e| {
+            warn!("load_aka_titles media_id={media_id}: {e}");
+            vec![]
+        })
 }
 
 /// Fetch title, year, and imdb_id for a known media_id.

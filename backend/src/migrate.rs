@@ -110,6 +110,11 @@ pub async fn run(pool: &PgPool) -> Result<(), MigrateError> {
     // the server doesn't crash on startup after an upgrade.
     repair_checksums(pool, &migrator).await?;
 
+    // Remove rows for migrations that were manually inserted or applied by an
+    // older binary that did not embed the migration file.  Without this, sqlx
+    // returns VersionMissing and the API panics on startup.
+    remove_orphaned_migration_rows(pool, &migrator).await?;
+
     migrator.run(pool).await?;
     info!("database migrations complete");
     Ok(())
@@ -150,6 +155,42 @@ pub async fn status(pool: &PgPool) -> Result<(), MigrateError> {
             None => "pending",
         };
         println!("{:<6} {:<8} {}", m.version, status, m.description);
+    }
+    Ok(())
+}
+
+/// Drop `_sqlx_migrations` rows whose version is absent from the compiled
+/// migrator (typically from a manual INSERT or running an old binary after a
+/// manual SQL apply).  The migration will be re-applied on the next run when
+/// the current binary includes it.
+async fn remove_orphaned_migration_rows(
+    pool: &PgPool,
+    migrator: &sqlx::migrate::Migrator,
+) -> Result<(), sqlx::Error> {
+    let stored: Vec<i64> =
+        sqlx::query_scalar("SELECT version FROM _sqlx_migrations ORDER BY version")
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+    let known: std::collections::HashSet<i64> = migrator
+        .iter()
+        .filter(|m| !m.migration_type.is_down_migration())
+        .map(|m| m.version)
+        .collect();
+
+    for version in stored {
+        if known.contains(&version) {
+            continue;
+        }
+        sqlx::query("DELETE FROM _sqlx_migrations WHERE version = $1")
+            .bind(version)
+            .execute(pool)
+            .await?;
+        warn!(
+            version,
+            "removed orphaned _sqlx_migrations row (migration missing from binary — rebuild and restart to apply)"
+        );
     }
     Ok(())
 }

@@ -761,6 +761,26 @@ pub fn parse_sports_title(raw: &str) -> super::ParsedTitle {
     parsed
 }
 
+/// Map a sports category key to its genre display name (mirrors scraper `category_to_genre`).
+pub fn sports_category_to_genre(category: &str) -> &'static str {
+    match category {
+        "football" => "Football",
+        "basketball" => "Basketball",
+        "hockey" => "Hockey",
+        "american_football" => "American Football",
+        "baseball" => "Baseball",
+        "rugby" => "Rugby/AFL",
+        "formula_racing" => "Formula Racing",
+        "motogp_racing" => "MotoGP Racing",
+        "fighting" => "Fighting/Wrestling",
+        "tennis" => "Tennis",
+        "golf" => "Golf",
+        "cycling" => "Cycling",
+        "athletics" => "Athletics",
+        _ => "Other Sports",
+    }
+}
+
 // ─── Racing (Formula 1/2/3, MotoGP) parsing ─────────────────────────────────────
 
 /// Result of parsing a racing torrent name.

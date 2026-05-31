@@ -81,25 +81,6 @@ fn load_sport_video_categories(config_path: &str) -> Vec<(String, String)> {
     ]
 }
 
-fn category_to_genre(category: &str) -> &'static str {
-    match category {
-        "football" => "Football",
-        "basketball" => "Basketball",
-        "hockey" => "Hockey",
-        "american_football" => "American Football",
-        "baseball" => "Baseball",
-        "rugby" => "Rugby/AFL",
-        "formula_racing" => "Formula Racing",
-        "motogp_racing" => "MotoGP Racing",
-        "fighting" => "Fighting/Wrestling",
-        "tennis" => "Tennis",
-        "golf" => "Golf",
-        "cycling" => "Cycling",
-        "athletics" => "Athletics",
-        _ => "Other Sports",
-    }
-}
-
 // ─── URL helpers ─────────────────────────────────────────────────────────────
 
 fn resolve_url(base: &str, href: &str) -> String {
@@ -423,7 +404,7 @@ impl JobHandler for SportVideoCrawl {
                 // with its true catalog key (e.g. "formula_racing").
                 let detected_category: &str =
                     parser::detect_sports_category(&block.title).unwrap_or(category.as_str());
-                let display_genre = category_to_genre(detected_category);
+                let display_genre = parser::sports_category_to_genre(detected_category);
 
                 let media_id = media_resolve::find_or_create_sports_stub(
                     pool,

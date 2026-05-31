@@ -1,0 +1,1 @@
+-- Irreversible cleanup: deleted internal mediafusion external_id rows are not restored.

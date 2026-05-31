@@ -269,23 +269,9 @@ async fn search_import_db_matches(
     meta_type: &str,
     limit: usize,
 ) -> Vec<serde_json::Value> {
-    let pattern = format!("%{title}%");
-    let Some(media_type) = crate::db::MediaType::from_wire(meta_type) else {
+    let Some(_) = crate::db::MediaType::from_wire(meta_type) else {
         return vec![];
     };
-    let rows: Vec<(i32, String, Option<i32>)> = sqlx::query_as(
-        r#"SELECT m.id, m.title, m.year
-           FROM media m
-           WHERE LOWER(m.title) LIKE LOWER($1)
-             AND m.type = $2
-           LIMIT $3"#,
-    )
-    .bind(&pattern)
-    .bind(media_type)
-    .bind(limit as i64)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
 
     let media_type = if meta_type == "series" {
         "series"
@@ -293,12 +279,25 @@ async fn search_import_db_matches(
         "movie"
     };
 
-    let mut results = Vec::with_capacity(rows.len());
-    for (id, title, year) in rows {
+    let candidates = crate::db::search_media_candidates(pool, media_type, title).await;
+    let mut results = Vec::with_capacity(candidates.len().min(limit));
+
+    for candidate in candidates {
+        if results.len() >= limit {
+            break;
+        }
+        if candidate.imdb_id.is_none()
+            && candidate.tmdb_id.is_none()
+            && candidate.tvdb_id.is_none()
+        {
+            continue;
+        }
+
+        let id = candidate.media_id.0;
         let external_ids = load_media_external_ids(pool, id).await;
-        let imdb_id = external_ids.get("imdb").cloned();
-        let tmdb_id = external_ids.get("tmdb").cloned();
-        let tvdb_id = external_ids.get("tvdb").cloned();
+        let imdb_id = external_ids.get("imdb").cloned().or(candidate.imdb_id);
+        let tmdb_id = external_ids.get("tmdb").cloned().or(candidate.tmdb_id);
+        let tvdb_id = external_ids.get("tvdb").cloned().or(candidate.tvdb_id);
         let mal_id = external_ids.get("mal").cloned();
         let kitsu_id = external_ids.get("kitsu").cloned();
         let primary_id = imdb_id
@@ -315,8 +314,9 @@ async fn search_import_db_matches(
             "mal_id": mal_id,
             "kitsu_id": kitsu_id,
             "media_id": id,
-            "title": title,
-            "year": year,
+            "title": candidate.title,
+            "year": candidate.year,
+            "end_year": candidate.end_year,
             "type": media_type,
         }));
     }
