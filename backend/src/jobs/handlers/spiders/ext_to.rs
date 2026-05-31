@@ -652,6 +652,9 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                     parsed,
                     files,
                     is_cached: false,
+                    torrent_type: crate::db::TorrentType::Public,
+                    torrent_file: None,
+                    announce_list: vec![],
                 };
 
                 let meta = SearchMeta {

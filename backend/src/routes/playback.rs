@@ -402,6 +402,28 @@ async fn resolve_playback_url(
         }};
     }
 
+    macro_rules! call_provider_with_torrent_file {
+        ($module:path) => {{
+            use $module as p;
+            let url = p::get_video_url(
+                &state.http,
+                token,
+                info_hash,
+                &stream_info.announce_list,
+                resolved_filename,
+                stream_info.file_index,
+                season,
+                episode,
+                None,
+                stream_info.torrent_file.as_deref(),
+                Some(stream_info.name.as_str()),
+                fwd,
+            )
+            .await?;
+            (url, Vec::<ProviderFile>::new())
+        }};
+    }
+
     // ip= hint: only for providers with fully wired forward transport.
     let ip_hint = |has_ip_hint: bool| -> Option<&str> {
         if has_ip_hint && fwd.is_some() {
@@ -424,6 +446,7 @@ async fn resolve_playback_url(
                 season,
                 episode,
                 ip_hint(true),
+                stream_info.torrent_file.as_deref(),
                 fwd,
             )
             .await?
@@ -441,15 +464,17 @@ async fn resolve_playback_url(
                 season,
                 episode,
                 ip_hint(true),
+                stream_info.torrent_file.as_deref(),
+                Some(stream_info.name.as_str()),
                 fwd,
             )
             .await?;
             (url, Vec::<ProviderFile>::new())
         }
         // Providers below make API calls through forward when wired.
-        "premiumize" => call_provider_simple!(providers::torrents::premiumize),
+        "premiumize" => call_provider_with_torrent_file!(providers::torrents::premiumize),
         // debridlink: forward wired for API calls; CDN ip= fetched from /proxy/ip internally
-        "debridlink" => call_provider_simple!(providers::torrents::debridlink),
+        "debridlink" => call_provider_with_torrent_file!(providers::torrents::debridlink),
         "torbox" => {
             // forward wired + user_ip= query param supported — pass placeholder
             use providers::torrents::torbox as p;
@@ -486,6 +511,8 @@ async fn resolve_playback_url(
                 season,
                 episode,
                 stream_info.size_bytes,
+                stream_info.torrent_file.as_deref(),
+                Some(stream_info.name.as_str()),
                 None,
                 fwd,
             )

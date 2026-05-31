@@ -18,7 +18,7 @@ fn strip_nul(s: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
-use crate::db::{FileType, LinkSource, StreamId, StreamType, TorrentType};
+use crate::db::{FileType, LinkSource, StreamId, StreamType};
 use crate::scrapers::{
     media_resolve, ScrapedStream, ScrapedTelegramStream, ScrapedUsenetStream, SearchMeta,
 };
@@ -145,9 +145,9 @@ async fn upsert_stream(
     let ts_result = sqlx::query(
         r#"
         INSERT INTO torrent_stream (
-            stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at
+            stream_id, info_hash, total_size, seeders, torrent_type, file_count, torrent_file, created_at
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, NOW()
+            $1, $2, $3, $4, $5, $6, $7, NOW()
         )
         ON CONFLICT (info_hash) DO NOTHING
         "#,
@@ -156,8 +156,9 @@ async fn upsert_stream(
     .bind(&s.info_hash)
     .bind(s.size.unwrap_or(0))
     .bind(s.seeders)
-    .bind(TorrentType::Public)
+    .bind(s.torrent_type)
     .bind(file_count)
+    .bind(s.torrent_file.as_deref())
     .execute(pool)
     .await;
 
@@ -175,6 +176,10 @@ async fn upsert_stream(
         }
     }
     ts_result?;
+
+    if !s.announce_list.is_empty() {
+        let _ = crate::db::link_torrent_trackers(pool, StreamId(stream_id), &s.announce_list).await;
+    }
 
     // Link stream to media
     if media_type == "series" && !s.files.is_empty() {

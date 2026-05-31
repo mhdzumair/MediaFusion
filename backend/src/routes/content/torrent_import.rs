@@ -1173,6 +1173,8 @@ pub async fn import_magnet(
             tmdb_api_key: state.config.tmdb_api_key.as_deref(),
             tvdb_api_key: state.config.tvdb_api_key.as_deref(),
             prefetch: &prefetch,
+            torrent_type: crate::db::TorrentType::Public,
+            torrent_file: None,
         },
     )
     .await
@@ -1622,6 +1624,8 @@ pub async fn import_torrent(
             tmdb_api_key: state.config.tmdb_api_key.as_deref(),
             tvdb_api_key: state.config.tvdb_api_key.as_deref(),
             prefetch: &prefetch,
+            torrent_type: crate::db::TorrentType::Public,
+            torrent_file: Some(bytes.as_ref()),
         },
     )
     .await

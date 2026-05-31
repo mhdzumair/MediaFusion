@@ -14,8 +14,9 @@ use std::collections::HashMap;
 use crate::{
     cache::{self, codec, stream_cache},
     crypto, db,
+    db::TorrentType,
     models::user_data::SortingOption,
-    scrapers::orchestrator,
+    scrapers::{orchestrator, torrent_metadata},
     state::AppState,
     template,
 };
@@ -358,7 +359,18 @@ pub async fn resolve(
     let torrent_pairs: Vec<(Value, usize)> = if torrent_providers_refs.is_empty() {
         // No debrid: include torrents only if P2P is allowed for this user/instance.
         if p.show_p2p {
-            p.all_torrents.iter().cloned().map(|t| (t, 0)).collect()
+            p.all_torrents
+                .iter()
+                .filter(|t| {
+                    torrent_metadata::private_torrent_visible_for_provider(
+                        torrent_metadata::torrent_type_from_json_value(t),
+                        "p2p",
+                        false,
+                    )
+                })
+                .cloned()
+                .map(|t| (t, 0))
+                .collect()
         } else {
             vec![]
         }
@@ -413,12 +425,22 @@ pub async fn resolve(
                 return true;
             };
             if !provider.only_show_cached_streams {
-                return true;
+                // fall through to private-tracker filter below
+            } else {
+                let hash = t.get("info_hash").and_then(|v| v.as_str()).unwrap_or("");
+                if !p
+                    .per_provider_cached
+                    .get(*pi)
+                    .is_some_and(|m| m.get(hash).copied().unwrap_or(false))
+                {
+                    return false;
+                }
             }
-            let hash = t.get("info_hash").and_then(|v| v.as_str()).unwrap_or("");
-            p.per_provider_cached
-                .get(*pi)
-                .is_some_and(|m| m.get(hash).copied().unwrap_or(false))
+            torrent_metadata::private_torrent_visible_for_provider(
+                torrent_metadata::torrent_type_from_json_value(t),
+                &provider.service,
+                true,
+            )
         })
         .collect();
 
@@ -1892,6 +1914,7 @@ fn scraped_usenet_to_value(s: &crate::scrapers::ScrapedUsenetStream) -> Value {
 }
 
 fn scraped_to_json(s: &crate::scrapers::ScrapedStream) -> Value {
+    let torrent_type = s.torrent_type;
     json!({
         "info_hash": s.info_hash,
         "name": s.name,
@@ -1901,7 +1924,8 @@ fn scraped_to_json(s: &crate::scrapers::ScrapedStream) -> Value {
         "codec": s.parsed.codec,
         "seeders": s.seeders,
         "size": s.size,
-        "is_public": true,
+        "torrent_type": torrent_type.as_wire(),
+        "is_public": matches!(torrent_type, TorrentType::Public | TorrentType::WebSeed),
     })
 }
 

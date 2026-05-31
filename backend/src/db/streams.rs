@@ -41,6 +41,7 @@ pub async fn fetch_streams_bulk(
                             'source',     st.source,
                             'seeders',    ts.seeders,
                             'size',       ts.total_size,
+                            'torrent_type', ts.torrent_type::text,
                             'file_index', sf.file_index,
                             'filename',   sf.filename,
                             'is_public',  st.is_public,
@@ -89,6 +90,7 @@ pub async fn fetch_streams_bulk(
                             'source',     st.source,
                             'seeders',    ts.seeders,
                             'size',       ts.total_size,
+                            'torrent_type', ts.torrent_type::text,
                             'is_public',  st.is_public,
                             'created_at', st.created_at,
                             'languages',  COALESCE((
@@ -804,6 +806,60 @@ pub async fn filter_existing_hashes(pool: &PgPool, hashes: &[String]) -> Vec<Str
             .await
             .unwrap_or_default();
     rows.into_iter().map(|(h,)| h).collect()
+}
+
+/// Link announce tracker URLs to a torrent via `stream.id`.
+pub async fn link_torrent_trackers(
+    pool: &PgPool,
+    stream_id: StreamId,
+    tracker_urls: &[String],
+) -> Result<(), sqlx::Error> {
+    let torrent_id: Option<i32> =
+        sqlx::query_scalar("SELECT id FROM torrent_stream WHERE stream_id = $1 LIMIT 1")
+            .bind(stream_id.0)
+            .fetch_optional(pool)
+            .await?;
+    let Some(torrent_id) = torrent_id else {
+        return Ok(());
+    };
+
+    let urls: Vec<String> = tracker_urls
+        .iter()
+        .map(|u| u.trim())
+        .filter(|u| !u.is_empty())
+        .map(str::to_string)
+        .collect();
+    if urls.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        r#"
+        WITH input AS (SELECT unnest($1::text[]) AS url)
+        INSERT INTO tracker(url)
+        SELECT url FROM input
+        ON CONFLICT(url) DO NOTHING
+        "#,
+    )
+    .bind(&urls)
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO torrent_tracker_link(torrent_id, tracker_id)
+        SELECT $1, t.id
+        FROM tracker t
+        WHERE t.url = ANY($2::text[])
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(torrent_id)
+    .bind(&urls)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 fn readable_size(bytes: i64) -> String {

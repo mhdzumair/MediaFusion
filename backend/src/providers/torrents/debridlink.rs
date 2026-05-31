@@ -169,6 +169,52 @@ async fn dl_post(
     Ok(body)
 }
 
+async fn dl_post_multipart(
+    http: &reqwest::Client,
+    bearer: &str,
+    path: &str,
+    torrent_bytes: &[u8],
+    torrent_name: Option<&str>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    let url = format!("{BASE_URL}{path}");
+    let filename = torrent_name
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| "torrent.torrent".to_string());
+    let boundary = "mediafusion_debridlink_upload";
+
+    let mut body: Vec<u8> = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: application/x-bittorrent\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(torrent_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    let content_type = format!("multipart/form-data; boundary={boundary}");
+
+    let resp = if let Some(fwd) = forward {
+        fwd.post_raw(http, &url, bearer, &content_type, body)
+            .await?
+    } else {
+        let part = reqwest::multipart::Part::bytes(torrent_bytes.to_vec())
+            .file_name(filename)
+            .mime_str("application/x-bittorrent")
+            .map_err(|e| ProviderError::Other(format!("Debrid-Link: mime error: {e}")))?;
+        let form = reqwest::multipart::Form::new().part("file", part);
+        http.post(&url)
+            .bearer_auth(bearer)
+            .multipart(form)
+            .send()
+            .await?
+    };
+    let body: Value = response_json(resp, "dl_post_multipart").await?;
+    check_dl_error(&body)?;
+    Ok(body)
+}
+
 async fn dl_delete(
     http: &reqwest::Client,
     bearer: &str,
@@ -263,6 +309,30 @@ async fn add_torrent(
     body.get("value").cloned().ok_or_else(|| {
         ProviderError::api(
             "No torrent info in Debrid-Link add response",
+            "transfer_error.mp4",
+        )
+    })
+}
+
+async fn add_torrent_file(
+    http: &reqwest::Client,
+    bearer: &str,
+    torrent_bytes: &[u8],
+    torrent_name: Option<&str>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    let body = dl_post_multipart(
+        http,
+        bearer,
+        "/seedbox/add",
+        torrent_bytes,
+        torrent_name,
+        forward,
+    )
+    .await?;
+    body.get("value").cloned().ok_or_else(|| {
+        ProviderError::api(
+            "No torrent info in Debrid-Link file upload response",
             "transfer_error.mp4",
         )
     })
@@ -418,6 +488,8 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     user_ip: Option<&str>,
+    torrent_file: Option<&[u8]>,
+    torrent_name: Option<&str>,
     forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     const MAX_RETRIES: u32 = 5;
@@ -446,12 +518,22 @@ pub async fn get_video_url(
                         .await
                         .ok();
                 }
-                add_torrent(http, &bearer, &magnet, forward).await?
+                if let Some(bytes) = torrent_file.filter(|b| !b.is_empty()) {
+                    add_torrent_file(http, &bearer, bytes, torrent_name, forward).await?
+                } else {
+                    add_torrent(http, &bearer, &magnet, forward).await?
+                }
             } else {
                 existing
             }
         }
-        None => add_torrent(http, &bearer, &magnet, forward).await?,
+        None => {
+            if let Some(bytes) = torrent_file.filter(|b| !b.is_empty()) {
+                add_torrent_file(http, &bearer, bytes, torrent_name, forward).await?
+            } else {
+                add_torrent(http, &bearer, &magnet, forward).await?
+            }
+        }
     };
 
     let torrent_id = torrent

@@ -449,41 +449,33 @@ pub async fn get_video_url(
 
     // Add the torrent; DIFF_ISSUE means TorBox already has it (caching race with
     // our earlier mylist/queued check) — treat it like "Found Cached" by retrying.
-    let create_resp = match submit_torrent(
-        http,
-        token,
-        &magnet,
-        torrent_file,
-        torrent_name,
-        forward,
-    )
-    .await
-    {
-        Ok(r) => r,
-        Err(ProviderError::Api { ref message, .. }) if message.contains("DIFF_ISSUE") => {
-            let mylist2 = get_mylist(http, token, forward).await?;
-            if let Some(torrent) = find_torrent_in_list(&mylist2, info_hash) {
-                let finished = torrent
-                    .get("download_finished")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                let present = torrent
-                    .get("download_present")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                if finished && present {
-                    return build_download_link_from_torrent(
-                        token, &torrent, filename, file_index, season, episode, user_ip,
-                    );
+    let create_resp =
+        match submit_torrent(http, token, &magnet, torrent_file, torrent_name, forward).await {
+            Ok(r) => r,
+            Err(ProviderError::Api { ref message, .. }) if message.contains("DIFF_ISSUE") => {
+                let mylist2 = get_mylist(http, token, forward).await?;
+                if let Some(torrent) = find_torrent_in_list(&mylist2, info_hash) {
+                    let finished = torrent
+                        .get("download_finished")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let present = torrent
+                        .get("download_present")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if finished && present {
+                        return build_download_link_from_torrent(
+                            token, &torrent, filename, file_index, season, episode, user_ip,
+                        );
+                    }
                 }
+                return Err(ProviderError::api(
+                    "Torrent is queued on TorBox but not yet downloaded",
+                    "torrent_not_downloaded.mp4",
+                ));
             }
-            return Err(ProviderError::api(
-                "Torrent is queued on TorBox but not yet downloaded",
-                "torrent_not_downloaded.mp4",
-            ));
-        }
-        Err(e) => return Err(e),
-    };
+            Err(e) => return Err(e),
+        };
 
     let detail = create_resp
         .get("detail")

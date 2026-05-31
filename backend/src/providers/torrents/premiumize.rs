@@ -135,6 +135,78 @@ async fn pm_post_form(
     Ok(body)
 }
 
+async fn pm_post_multipart(
+    http: &reqwest::Client,
+    kind: &TokenKind,
+    path: &str,
+    folder_id: &str,
+    torrent_bytes: &[u8],
+    torrent_name: Option<&str>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    let url = format!("{BASE_URL}{path}");
+    let filename = torrent_name
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| "torrent.torrent".to_string());
+    let boundary = "mediafusion_premiumize_upload";
+
+    let mut body: Vec<u8> = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: application/x-bittorrent\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(torrent_bytes);
+    body.extend_from_slice(
+        format!(
+            "\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"folder_id\"\r\n\r\n{folder_id}\r\n--{boundary}--\r\n"
+        )
+        .as_bytes(),
+    );
+    let content_type = format!("multipart/form-data; boundary={boundary}");
+
+    let resp = if let Some(fwd) = forward {
+        match kind {
+            TokenKind::Bearer(t) => fwd.post_raw(http, &url, t, &content_type, body).await?,
+            TokenKind::ApiKey(k) => {
+                let dest = append_query(&url, &[("apikey", k.as_str())]);
+                fwd.post_raw_no_auth(http, &dest, &content_type, body)
+                    .await?
+            }
+        }
+    } else {
+        let part = reqwest::multipart::Part::bytes(torrent_bytes.to_vec())
+            .file_name(filename)
+            .mime_str("application/x-bittorrent")
+            .map_err(|e| ProviderError::Other(format!("Premiumize: mime error: {e}")))?;
+        let form = reqwest::multipart::Form::new()
+            .part("file", part)
+            .text("folder_id", folder_id.to_string());
+        match kind {
+            TokenKind::Bearer(t) => {
+                http.post(&url)
+                    .bearer_auth(t)
+                    .multipart(form)
+                    .send()
+                    .await?
+            }
+            TokenKind::ApiKey(k) => {
+                http.post(&url)
+                    .query(&[("apikey", k.as_str())])
+                    .multipart(form)
+                    .send()
+                    .await?
+            }
+        }
+    };
+    check_status_code(resp.status())?;
+    let body: Value = response_json(resp, "pm_post_multipart").await?;
+    check_pm_error(&body)?;
+    Ok(body)
+}
+
 fn check_status_code(status: reqwest::StatusCode) -> Result<(), ProviderError> {
     if status == 403 || status == 401 {
         return Err(ProviderError::api(
@@ -368,6 +440,26 @@ async fn create_transfer(
     .await
 }
 
+async fn create_transfer_file(
+    http: &reqwest::Client,
+    kind: &TokenKind,
+    torrent_bytes: &[u8],
+    folder_id: &str,
+    torrent_name: Option<&str>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    pm_post_multipart(
+        http,
+        kind,
+        "/transfer/create",
+        folder_id,
+        torrent_bytes,
+        torrent_name,
+        forward,
+    )
+    .await
+}
+
 async fn wait_for_transfer(
     http: &reqwest::Client,
     kind: &TokenKind,
@@ -481,6 +573,8 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     _user_ip: Option<&str>,
+    torrent_file: Option<&[u8]>,
+    torrent_name: Option<&str>,
     forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     const MAX_RETRIES: u32 = 5;
@@ -515,7 +609,11 @@ pub async fn get_video_url(
 
     // Not cached — use transfer flow
     let folder_id = get_or_create_folder(http, &kind, info_hash, forward).await?;
-    let transfer_resp = create_transfer(http, &kind, &magnet, &folder_id, forward).await?;
+    let transfer_resp = if let Some(bytes) = torrent_file.filter(|b| !b.is_empty()) {
+        create_transfer_file(http, &kind, bytes, &folder_id, torrent_name, forward).await?
+    } else {
+        create_transfer(http, &kind, &magnet, &folder_id, forward).await?
+    };
 
     // If the transfer already has content (immediate), skip waiting
     if let Some(content) = transfer_resp.get("content").and_then(|v| v.as_array()) {

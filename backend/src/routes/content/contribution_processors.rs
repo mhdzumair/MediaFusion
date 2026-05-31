@@ -274,19 +274,43 @@ async fn process_torrent(
 
     let total_size = data.get("total_size").and_then(|v| v.as_i64()).unwrap_or(0);
     let file_count = data.get("file_count").and_then(|v| v.as_i64()).unwrap_or(1) as i32;
+    let torrent_type = data
+        .get("torrent_type")
+        .and_then(|v| v.as_str())
+        .map(crate::scrapers::torrent_metadata::parse_torrent_type_str)
+        .unwrap_or(TorrentType::Public);
+    let torrent_file_bytes = data
+        .get("torrent_file")
+        .and_then(|v| v.as_str())
+        .and_then(|s| base64::Engine::decode(&base64::engine::general_purpose::STANDARD, s).ok());
+    let torrent_file = crate::scrapers::torrent_metadata::torrent_file_for_storage(
+        torrent_type,
+        torrent_file_bytes,
+    );
 
     sqlx::query(
-        r#"INSERT INTO torrent_stream(stream_id, info_hash, total_size, torrent_type, file_count, created_at)
-           VALUES($1, $2, $3, $4, $5, NOW())"#,
+        r#"INSERT INTO torrent_stream(stream_id, info_hash, total_size, torrent_type, file_count, torrent_file, created_at)
+           VALUES($1, $2, $3, $4, $5, $6, NOW())"#,
     )
     .bind(stream_id)
     .bind(&info_hash)
     .bind(total_size)
-    .bind(TorrentType::Public)
+    .bind(torrent_type)
     .bind(file_count)
+    .bind(torrent_file.as_deref())
     .execute(&state.pool)
     .await
     .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+
+    if let Some(list) = data.get("announce_list").and_then(|v| v.as_array()) {
+        let trackers: Vec<String> = list
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect();
+        if !trackers.is_empty() {
+            let _ = import_helpers::link_torrent_trackers(&state.pool, stream_id, &trackers).await;
+        }
+    }
 
     if let Some(mid) = media_id {
         let _ =

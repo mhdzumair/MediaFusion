@@ -297,6 +297,9 @@ async fn scrape_rss(
                 parsed,
                 files,
                 is_cached: false,
+                torrent_type: crate::db::TorrentType::Public,
+                torrent_file: None,
+                announce_list: vec![],
             });
         }
     }
@@ -393,6 +396,9 @@ async fn scrape_subsplease(
                 parsed,
                 files,
                 is_cached: false,
+                torrent_type: crate::db::TorrentType::Public,
+                torrent_file: None,
+                announce_list: vec![],
             });
         }
     }
@@ -605,6 +611,9 @@ async fn process_row_data(
         parsed,
         files,
         is_cached: false,
+        torrent_type: crate::db::TorrentType::Public,
+        torrent_file: None,
+        announce_list: vec![],
     })
 }
 

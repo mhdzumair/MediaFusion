@@ -20,12 +20,13 @@ struct RssFeedRow {
     parsing_patterns: Option<serde_json::Value>,
     filters: Option<serde_json::Value>,
     auto_detect_catalog: bool,
+    torrent_type: String,
 }
 
 async fn fetch_active_feeds(pool: &sqlx::PgPool) -> Result<Vec<RssFeedRow>, JobError> {
     let rows = sqlx::query(
         r#"
-        SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog
+        SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type::text
         FROM rss_feed WHERE is_active = true
         "#,
     )
@@ -43,6 +44,7 @@ async fn fetch_active_feeds(pool: &sqlx::PgPool) -> Result<Vec<RssFeedRow>, JobE
             parsing_patterns: row.try_get("parsing_patterns")?,
             filters: row.try_get("filters")?,
             auto_detect_catalog: row.try_get("auto_detect_catalog")?,
+            torrent_type: row.try_get("torrent_type")?,
         });
     }
     Ok(feeds)
@@ -70,6 +72,8 @@ impl JobHandler for RssFeedScraper {
                 return Err(JobError::Cancelled);
             }
 
+            let feed_torrent_type =
+                crate::scrapers::torrent_metadata::parse_torrent_type_str(&feed.torrent_type);
             let result = scrape_feed(
                 &ctx.state.pool,
                 &ctx.state.http,
@@ -80,6 +84,7 @@ impl JobHandler for RssFeedScraper {
                 feed.parsing_patterns.as_ref(),
                 feed.filters.as_ref(),
                 feed.auto_detect_catalog,
+                feed_torrent_type,
                 ctx.state.config.tmdb_api_key.as_deref(),
                 ctx.state.config.imdb_cinemeta_fallback_enabled,
             )

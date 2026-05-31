@@ -9,8 +9,7 @@ use crate::{
         error::JobError,
         handler::{JobCtx, JobHandler},
     },
-    parser,
-    scrapers::{media_resolve, persist, ScrapedStream, StreamFile},
+    scrapers::{media_resolve, persist, prowlarr},
 };
 
 pub struct ProwlarrFeedScraper;
@@ -33,97 +32,11 @@ struct IndexerStatus {
     disabled_till: Option<String>,
 }
 
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct FeedResult {
-    #[serde(default)]
-    info_hash: Option<String>,
-    #[serde(default)]
-    magnet_url: Option<String>,
-    #[serde(default)]
-    title: Option<String>,
-    #[serde(default)]
-    indexer: Option<String>,
-    #[serde(default)]
-    seeders: Option<i32>,
-    #[serde(default)]
-    size: Option<i64>,
-    #[serde(default)]
-    categories: Vec<serde_json::Value>,
-}
-
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const SEEN_KEY: &str = "prowlarr_feed:seen";
 const SEEN_TTL: i64 = 259_200; // 3 days
 const BATCH_SIZE: usize = 5;
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-fn media_type_from_categories(categories: &[serde_json::Value]) -> &'static str {
-    for cat in categories {
-        let id = cat
-            .get("id")
-            .and_then(|v| v.as_i64())
-            .unwrap_or_else(|| cat.as_i64().unwrap_or(-1));
-        if (2000..3000).contains(&id) {
-            return "movie";
-        }
-        if (5000..6000).contains(&id) {
-            return "series";
-        }
-    }
-    "movie"
-}
-
-fn resolve_info_hash(result: &FeedResult) -> Option<String> {
-    result
-        .info_hash
-        .as_deref()
-        .map(|h| h.to_lowercase())
-        .filter(|h| h.len() == 40)
-        .or_else(|| {
-            result
-                .magnet_url
-                .as_deref()
-                .and_then(parser::extract_info_hash)
-        })
-}
-
-fn build_scraped_stream(result: &FeedResult) -> Option<ScrapedStream> {
-    let title = result.title.as_deref().unwrap_or("").trim().to_string();
-    if title.is_empty() {
-        return None;
-    }
-
-    let info_hash = resolve_info_hash(result)?;
-
-    let media_type = media_type_from_categories(&result.categories);
-    let parsed = parser::parse_title(&title);
-
-    let files: Vec<StreamFile> = if media_type == "series" {
-        crate::scrapers::prowlarr::build_series_files(&parsed, None, None)
-    } else {
-        vec![]
-    };
-
-    let source = result
-        .indexer
-        .clone()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "Prowlarr".to_string());
-
-    Some(ScrapedStream {
-        info_hash,
-        name: title,
-        source,
-        seeders: result.seeders,
-        size: result.size,
-        parsed,
-        files,
-        is_cached: false,
-    })
-}
 
 // ─── Job handler ──────────────────────────────────────────────────────────────
 
@@ -147,6 +60,9 @@ impl JobHandler for ProwlarrFeedScraper {
         let client = &ctx.state.http;
         let redis = &ctx.state.redis;
         let pool = &ctx.state.pool;
+        let query_timeout = std::time::Duration::from_secs(15);
+
+        let privacy_by_id = prowlarr::fetch_indexer_privacy_map(client, &base_url, &api_key).await;
 
         // Fetch enabled indexers
         let indexers: Vec<IndexerInfo> = match client
@@ -211,7 +127,6 @@ impl JobHandler for ProwlarrFeedScraper {
                 return Err(JobError::Cancelled);
             }
 
-            // Build query params: empty query, video categories, batch of indexer IDs
             let mut params: Vec<(&str, String)> =
                 vec![("query", String::new()), ("type", "search".to_string())];
             for &id in batch {
@@ -220,7 +135,7 @@ impl JobHandler for ProwlarrFeedScraper {
             params.push(("categories[]", "2000".to_string()));
             params.push(("categories[]", "5000".to_string()));
 
-            let results: Vec<FeedResult> = match client
+            let results: Vec<prowlarr::SearchResult> = match client
                 .get(format!("{base_url}/api/v1/search"))
                 .header("X-Api-Key", &api_key)
                 .query(&params)
@@ -235,15 +150,12 @@ impl JobHandler for ProwlarrFeedScraper {
                 }
             };
 
-            let mut new_streams: Vec<(ScrapedStream, &'static str)> = Vec::new();
-
-            for result in &results {
-                let info_hash = match resolve_info_hash(result) {
-                    Some(h) => h,
-                    None => continue,
+            let mut candidates: Vec<prowlarr::SearchResult> = Vec::new();
+            for result in results {
+                let Some(info_hash) = prowlarr::resolve_result_info_hash(&result) else {
+                    continue;
                 };
 
-                // Dedup via Redis
                 let seen: bool = redis
                     .sismember::<bool, _, _>(SEEN_KEY, &info_hash)
                     .await
@@ -252,23 +164,24 @@ impl JobHandler for ProwlarrFeedScraper {
                     continue;
                 }
 
-                if let Some(stream) = build_scraped_stream(result) {
-                    let media_type = media_type_from_categories(&result.categories);
-                    new_streams.push((stream, media_type));
-                }
+                candidates.push(result);
             }
 
+            let processed =
+                prowlarr::process_feed_results(client, candidates, &privacy_by_id, query_timeout)
+                    .await;
+
             let cfg = &ctx.state.config;
-            for (stream, media_type) in &new_streams {
+            for (stream, media_type) in processed {
                 let hash = stream.info_hash.clone();
                 let _ = redis.sadd::<(), _, _>(SEEN_KEY, hash.clone()).await;
                 let _ = redis.expire::<i64, _>(SEEN_KEY, SEEN_TTL, None).await;
 
-                let is_series = *media_type == "series";
+                let is_series = media_type == "series";
                 if let Some(meta) = media_resolve::search_meta_for_scraped(
                     pool,
                     &ctx.state.http,
-                    stream,
+                    &stream,
                     is_series,
                     cfg.tmdb_api_key.as_deref(),
                     cfg.imdb_cinemeta_fallback_enabled,
@@ -278,7 +191,7 @@ impl JobHandler for ProwlarrFeedScraper {
                 .await
                 {
                     persist::write_back(
-                        std::slice::from_ref(stream),
+                        std::slice::from_ref(&stream),
                         pool,
                         &meta,
                         media_type,

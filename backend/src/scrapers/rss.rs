@@ -10,8 +10,11 @@ use serde_json::Value;
 use sqlx::PgPool;
 use tracing::{debug, info, warn};
 
-use crate::db::{FileType, LinkSource, StreamType, TorrentType};
+use crate::db::{FileType, LinkSource, StreamId, StreamType, TorrentType};
 use crate::parser::{self, ParsedTitle};
+use crate::scrapers::torrent_metadata::{
+    self, parse_torrent_bytes, should_persist_torrent_file, torrent_file_for_storage,
+};
 
 // ─── RSS XML parsing ──────────────────────────────────────────────────────────
 
@@ -162,24 +165,69 @@ fn apply_regex(text: &str, pattern: &str) -> Option<String> {
     })
 }
 
-/// Download a .torrent file and extract its info_hash.
-async fn info_hash_from_torrent_url(http: &reqwest::Client, url: &str) -> Option<String> {
-    let bytes = http
-        .get(url)
-        .timeout(std::time::Duration::from_secs(15))
-        .send()
-        .await
-        .ok()?
-        .bytes()
-        .await
-        .ok()?;
-    let torrent = lava_torrent::torrent::v1::Torrent::read_from_bytes(&bytes).ok()?;
-    let hash = torrent.info_hash();
-    if hash.len() == 40 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
-        Some(hash.to_lowercase())
+/// Download a .torrent file and extract metadata.
+async fn torrent_from_url(
+    http: &reqwest::Client,
+    url: &str,
+) -> Option<torrent_metadata::ParsedTorrent> {
+    let bytes =
+        torrent_metadata::download_torrent_bytes(http, url, std::time::Duration::from_secs(15))
+            .await?;
+    parse_torrent_bytes(&bytes)
+}
+
+/// Parsed torrent metadata extracted from an RSS item.
+struct ExtractedTorrent {
+    info_hash: String,
+    torrent_file: Option<Vec<u8>>,
+    announce_list: Vec<String>,
+}
+
+async fn extract_torrent_metadata(
+    http: &reqwest::Client,
+    item: &RssItem,
+    patterns: &Value,
+    feed_torrent_type: TorrentType,
+) -> Option<ExtractedTorrent> {
+    if let Some(hash) = extract_info_hash(item, patterns) {
+        let magnet_candidates = [
+            item.link.as_deref(),
+            item.enclosure_url.as_deref(),
+            item.description.as_deref(),
+        ];
+        let announce_list = magnet_candidates
+            .iter()
+            .flatten()
+            .find(|c| c.contains("magnet:"))
+            .map(|m| torrent_metadata::announce_list_from_magnet(m))
+            .unwrap_or_default();
+        return Some(ExtractedTorrent {
+            info_hash: hash,
+            torrent_file: None,
+            announce_list,
+        });
+    }
+
+    let torrent_url = item
+        .link
+        .as_deref()
+        .or(item.enclosure_url.as_deref())
+        .filter(|u| {
+            let l = u.to_lowercase();
+            l.ends_with(".torrent") || l.contains("/torrent") || l.contains("torrent?")
+        })?;
+
+    let parsed = torrent_from_url(http, torrent_url).await?;
+    let torrent_file = if should_persist_torrent_file(feed_torrent_type) {
+        torrent_file_for_storage(feed_torrent_type, Some(parsed.raw_bytes.clone()))
     } else {
         None
-    }
+    };
+    Some(ExtractedTorrent {
+        info_hash: parsed.info_hash,
+        torrent_file,
+        announce_list: parsed.announce_list,
+    })
 }
 
 /// Extract the info_hash from an item using the feed's parsing_patterns.
@@ -356,6 +404,9 @@ async fn upsert_rss_stream(
     media_id: i32,
     is_series: bool,
     parsed: &ParsedTitle,
+    torrent_type: TorrentType,
+    torrent_file: Option<Vec<u8>>,
+    announce_list: &[String],
 ) -> bool {
     // Check existing
     let existing: Option<(i32,)> =
@@ -425,8 +476,8 @@ async fn upsert_rss_stream(
     let ts = sqlx::query(
         r#"
         INSERT INTO torrent_stream (
-            stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at
-        ) VALUES ($1, $2, $3, $4, $5, 1, NOW())
+            stream_id, info_hash, total_size, seeders, torrent_type, file_count, torrent_file, created_at
+        ) VALUES ($1, $2, $3, $4, $5, 1, $6, NOW())
         ON CONFLICT (info_hash) DO NOTHING
         "#,
     )
@@ -434,7 +485,8 @@ async fn upsert_rss_stream(
     .bind(info_hash)
     .bind(size)
     .bind(seeders)
-    .bind(TorrentType::Public)
+    .bind(torrent_type)
+    .bind(torrent_file.as_deref())
     .execute(pool)
     .await;
 
@@ -448,6 +500,10 @@ async fn upsert_rss_stream(
         }
     } else {
         return false;
+    }
+
+    if !announce_list.is_empty() {
+        let _ = crate::db::link_torrent_trackers(pool, StreamId(stream_id), announce_list).await;
     }
 
     // Link stream → media
@@ -562,6 +618,7 @@ pub async fn scrape_feed(
     parsing_patterns: Option<&Value>,
     _filters: Option<&Value>,
     _auto_detect_catalog: bool,
+    feed_torrent_type: TorrentType,
     tmdb_api_key: Option<&str>,
     cinemeta_fallback_enabled: bool,
 ) -> ScrapeResult {
@@ -648,35 +705,17 @@ pub async fn scrape_feed(
             continue;
         }
 
-        // Extract info_hash — fall back to downloading torrent file if needed
-        let info_hash = match extract_info_hash(item, patterns) {
-            Some(h) => h,
-            None => {
-                // Try torrent download from link or enclosure_url
-                let torrent_url = item
-                    .link
-                    .as_deref()
-                    .or(item.enclosure_url.as_deref())
-                    .filter(|u| {
-                        let l = u.to_lowercase();
-                        l.ends_with(".torrent") || l.contains("/torrent") || l.contains("torrent?")
-                    });
-                if let Some(url) = torrent_url {
-                    match info_hash_from_torrent_url(http, url).await {
-                        Some(h) => h,
-                        None => {
-                            debug!("rss_scraper: could not extract info_hash for '{title}'");
-                            skipped += 1;
-                            continue;
-                        }
-                    }
-                } else {
+        // Extract torrent metadata — fall back to downloading .torrent file if needed
+        let extracted =
+            match extract_torrent_metadata(http, item, patterns, feed_torrent_type).await {
+                Some(e) => e,
+                None => {
                     debug!("rss_scraper: no info_hash or torrent URL for '{title}'");
                     skipped += 1;
                     continue;
                 }
-            }
-        };
+            };
+        let info_hash = extracted.info_hash;
 
         if seen_hashes.contains(&info_hash) {
             skipped += 1;
@@ -722,7 +761,18 @@ pub async fn scrape_feed(
 
         // Upsert stream
         let inserted = upsert_rss_stream(
-            pool, &info_hash, &title, &source, seeders, size, media.id, is_series, &parsed,
+            pool,
+            &info_hash,
+            &title,
+            &source,
+            seeders,
+            size,
+            media.id,
+            is_series,
+            &parsed,
+            feed_torrent_type,
+            extracted.torrent_file,
+            &extracted.announce_list,
         )
         .await;
 

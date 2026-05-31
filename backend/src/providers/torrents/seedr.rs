@@ -618,6 +618,105 @@ async fn add_torrent_to_folder(
         })
 }
 
+async fn add_torrent_file_to_folder(
+    http: &Client,
+    token: &str,
+    torrent_bytes: &[u8],
+    folder_id: i64,
+    torrent_name: Option<&str>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<i64, ProviderError> {
+    let url = format!("{BASE_URL}/tasks");
+    let filename = torrent_name
+        .filter(|n| !n.is_empty())
+        .map(|n| {
+            if n.ends_with(".torrent") {
+                n.to_string()
+            } else {
+                format!("{n}.torrent")
+            }
+        })
+        .unwrap_or_else(|| "torrent.torrent".to_string());
+    let boundary = "mediafusion_seedr_upload";
+
+    let mut body: Vec<u8> = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"torrent_file\"; filename=\"{filename}\"\r\nContent-Type: application/x-bittorrent\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(torrent_bytes);
+    body.extend_from_slice(
+        format!(
+            "\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"folder_id\"\r\n\r\n{folder_id}\r\n--{boundary}--\r\n"
+        )
+        .as_bytes(),
+    );
+    let content_type = format!("multipart/form-data; boundary={boundary}");
+
+    let resp = if let Some(fwd) = forward {
+        fwd.post_raw(http, &url, token, &content_type, body).await?
+    } else {
+        let part = reqwest::multipart::Part::bytes(torrent_bytes.to_vec())
+            .file_name(filename)
+            .mime_str("application/x-bittorrent")
+            .map_err(|e| ProviderError::Other(format!("Seedr: mime error: {e}")))?;
+        let form = reqwest::multipart::Form::new()
+            .part("torrent_file", part)
+            .text("folder_id", folder_id.to_string());
+        http.post(&url)
+            .bearer_auth(token)
+            .multipart(form)
+            .send()
+            .await?
+    };
+
+    let add_resp = handle_response(resp).await.map_err(|e| {
+        ProviderError::api(
+            format!("Failed to add torrent file to Seedr: {e}"),
+            "transfer_error.mp4",
+        )
+    })?;
+
+    let error_code = add_resp["reason_phrase"]
+        .as_str()
+        .or_else(|| add_resp["error"].as_str())
+        .unwrap_or("");
+    match error_code {
+        "not_enough_space" | "not_enough_space_added_to_wishlist" => {
+            return Err(ProviderError::api(
+                "Not enough storage space in your Seedr account.",
+                "not_enough_space.mp4",
+            ))
+        }
+        "queue_full" | "queue_full_added_to_wishlist" => {
+            return Err(ProviderError::api(
+                "Seedr download queue is full. Please wait for current downloads to finish.",
+                "queue_full.mp4",
+            ))
+        }
+        "" => {}
+        other => {
+            return Err(ProviderError::api(
+                format!("Seedr rejected the torrent file: {other}"),
+                "transfer_error.mp4",
+            ))
+        }
+    }
+
+    add_resp["user_torrent_id"]
+        .as_i64()
+        .or_else(|| add_resp["id"].as_i64())
+        .or_else(|| add_resp["task"]["id"].as_i64())
+        .ok_or_else(|| {
+            ProviderError::api(
+                "Seedr did not return a task ID after adding torrent file.",
+                "transfer_error.mp4",
+            )
+        })
+}
+
 // ─── Storage management ───────────────────────────────────────────────────────
 
 /// Ensure at least `required_bytes` are free in the Seedr account.
@@ -703,6 +802,8 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     size_bytes: Option<i64>,
+    torrent_file: Option<&[u8]>,
+    torrent_name: Option<&str>,
     _user_ip: Option<&str>,
     forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
@@ -724,7 +825,12 @@ pub async fn get_video_url(
 
             // Create a named folder for tracking, then submit the torrent into it.
             let folder_id = ensure_hash_folder(http, &token, &hash, forward).await?;
-            let task_id = add_torrent_to_folder(http, &token, &magnet, folder_id, forward).await?;
+            let task_id = if let Some(bytes) = torrent_file.filter(|b| !b.is_empty()) {
+                add_torrent_file_to_folder(http, &token, bytes, folder_id, torrent_name, forward)
+                    .await?
+            } else {
+                add_torrent_to_folder(http, &token, &magnet, folder_id, forward).await?
+            };
 
             // Poll until the content sub-folder appears inside the hash folder.
             let mut content_id: Option<i64> = None;

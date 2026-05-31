@@ -2117,6 +2117,8 @@ async fn process_advanced_import(
             tmdb_api_key: state.config.tmdb_api_key.as_deref(),
             tvdb_api_key: state.config.tvdb_api_key.as_deref(),
             prefetch: &prefetch,
+            torrent_type: crate::db::TorrentType::Public,
+            torrent_file: None,
         },
     )
     .await

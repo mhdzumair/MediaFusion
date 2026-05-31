@@ -46,5 +46,6 @@ pub use streams::{
     fetch_acestream_streams_bulk, fetch_http_streams_bulk, fetch_stream_playback_info,
     fetch_streams_bulk, fetch_telegram_streams_bulk, fetch_tv_streams_for_media,
     fetch_usenet_streams_bulk, fetch_youtube_streams_bulk, filter_existing_hashes,
-    upsert_stream_files, usenet_row_to_stremio, StreamPlaybackInfo, TorrentFileEntry,
+    link_torrent_trackers, upsert_stream_files, usenet_row_to_stremio, StreamPlaybackInfo,
+    TorrentFileEntry,
 };

@@ -775,16 +775,17 @@ pub async fn run_rss_feed_scraper(
         Option<Value>,
         Option<Value>,
         bool,
+        String,
     );
     let row: Option<FeedRow> = sqlx::query_as(
-        "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog FROM rss_feed WHERE id = $1",
+        "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type::text FROM rss_feed WHERE id = $1",
     )
     .bind(feed_id)
     .fetch_optional(&state.pool_ro)
     .await
     .unwrap_or(None);
 
-    let (db_id, url, name, source, patterns, filters, auto_detect) = match row {
+    let (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type) = match row {
         Some(r) => r,
         None => {
             return (
@@ -799,6 +800,7 @@ pub async fn run_rss_feed_scraper(
     let http = state.http.clone();
     let tmdb_key = state.config.tmdb_api_key.clone();
     let cinemeta_fallback = state.config.imdb_cinemeta_fallback_enabled;
+    let feed_type = crate::scrapers::torrent_metadata::parse_torrent_type_str(&feed_torrent_type);
     tokio::spawn(async move {
         crate::scrapers::rss::scrape_feed(
             &pool,
@@ -810,6 +812,7 @@ pub async fn run_rss_feed_scraper(
             patterns.as_ref(),
             filters.as_ref(),
             auto_detect,
+            feed_type,
             tmdb_key.as_deref(),
             cinemeta_fallback,
         )
@@ -1542,22 +1545,23 @@ pub async fn user_scrape_single_feed(
         Option<serde_json::Value>,
         Option<serde_json::Value>,
         bool,
+        String,
     );
     let row: Option<FeedRow> = if let Some(uid) = user_id_filter {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog FROM rss_feed WHERE id::text = $1 AND user_id = $2",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type::text FROM rss_feed WHERE id::text = $1 AND user_id = $2",
         )
         .bind(&feed_id).bind(uid)
         .fetch_optional(&state.pool_ro).await.ok().flatten()
     } else {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog FROM rss_feed WHERE id::text = $1",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type::text FROM rss_feed WHERE id::text = $1",
         )
         .bind(&feed_id)
         .fetch_optional(&state.pool_ro).await.ok().flatten()
     };
 
-    let (db_id, url, name, source, patterns, filters, auto_detect) = match row {
+    let (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type) = match row {
         Some(r) => r,
         None => {
             return (
@@ -1573,6 +1577,7 @@ pub async fn user_scrape_single_feed(
     let http = state.http.clone();
     let tmdb_key = state.config.tmdb_api_key.clone();
     let cinemeta_fallback = state.config.imdb_cinemeta_fallback_enabled;
+    let feed_type = crate::scrapers::torrent_metadata::parse_torrent_type_str(&feed_torrent_type);
     tokio::spawn(async move {
         crate::scrapers::rss::scrape_feed(
             &pool,
@@ -1584,6 +1589,7 @@ pub async fn user_scrape_single_feed(
             patterns.as_ref(),
             filters.as_ref(),
             auto_detect,
+            feed_type,
             tmdb_key.as_deref(),
             cinemeta_fallback,
         )
@@ -1621,15 +1627,16 @@ pub async fn user_run_all_scrapers(
         Option<serde_json::Value>,
         Option<serde_json::Value>,
         bool,
+        String,
     );
     let feeds: Vec<FeedRow> = if role == "admin" {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog FROM rss_feed WHERE is_active = true",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type::text FROM rss_feed WHERE is_active = true",
         )
         .fetch_all(&state.pool_ro).await.unwrap_or_default()
     } else {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog FROM rss_feed WHERE is_active = true AND user_id = $1",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type::text FROM rss_feed WHERE is_active = true AND user_id = $1",
         )
         .bind(user_id)
         .fetch_all(&state.pool_ro).await.unwrap_or_default()
@@ -1641,7 +1648,9 @@ pub async fn user_run_all_scrapers(
     let tmdb_key = state.config.tmdb_api_key.clone();
     let cinemeta_fallback = state.config.imdb_cinemeta_fallback_enabled;
     tokio::spawn(async move {
-        for (db_id, url, name, source, patterns, filters, auto_detect) in feeds {
+        for (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type) in feeds {
+            let feed_type =
+                crate::scrapers::torrent_metadata::parse_torrent_type_str(&feed_torrent_type);
             crate::scrapers::rss::scrape_feed(
                 &pool,
                 &http,
@@ -1652,6 +1661,7 @@ pub async fn user_run_all_scrapers(
                 patterns.as_ref(),
                 filters.as_ref(),
                 auto_detect,
+                feed_type,
                 tmdb_key.as_deref(),
                 cinemeta_fallback,
             )

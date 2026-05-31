@@ -323,6 +323,9 @@ async fn scrape_tamil_forum(
                         parsed: parsed.clone(),
                         files,
                         is_cached: false,
+                        torrent_type: crate::db::TorrentType::Public,
+                        torrent_file: None,
+                        announce_list: vec![],
                     };
                     persist::write_back(&[stream], pool, &meta, media_type_str, None, None).await;
                     all_streams.push(());

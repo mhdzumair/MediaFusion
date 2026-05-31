@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::providers::{
     response_json,
-    torrents::transport::{encode_form_body, MediaFlowForward},
+    torrents::transport::{append_query, encode_form_body, MediaFlowForward},
     ProviderError,
 };
 
@@ -220,6 +220,46 @@ async fn rd_post(
     Ok(body)
 }
 
+async fn rd_put(
+    http: &reqwest::Client,
+    bearer: &str,
+    url: &str,
+    torrent_bytes: &[u8],
+    user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    let resp = if let Some(fwd) = forward {
+        let mut dest = url.to_string();
+        if let Some(ip) = user_ip {
+            dest = append_query(&dest, &[("ip", ip)]);
+        }
+        fwd.put_raw(
+            http,
+            &dest,
+            bearer,
+            "application/x-bittorrent",
+            torrent_bytes.to_vec(),
+        )
+        .await?
+    } else {
+        let mut req = http
+            .put(url)
+            .bearer_auth(bearer)
+            .header("Content-Type", "application/x-bittorrent")
+            .body(torrent_bytes.to_vec());
+        if let Some(ip) = user_ip {
+            req = req.query(&[("ip", ip)]);
+        }
+        req.send().await?
+    };
+    if resp.status() == 204 {
+        return Ok(Value::Null);
+    }
+    let body: Value = response_json(resp, "rd_put").await?;
+    check_rd_error(&body)?;
+    Ok(body)
+}
+
 async fn rd_delete(http: &reqwest::Client, bearer: &str, url: &str) -> Result<(), ProviderError> {
     http.delete(url).bearer_auth(bearer).send().await?;
     Ok(())
@@ -319,6 +359,33 @@ async fn add_magnet(
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| ProviderError::api("Failed to add magnet: missing id", "transfer_error.mp4"))
+}
+
+async fn add_torrent_file(
+    http: &reqwest::Client,
+    bearer: &str,
+    torrent_bytes: &[u8],
+    user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<String, ProviderError> {
+    let body = rd_put(
+        http,
+        bearer,
+        &format!("{BASE_URL}/torrents/addTorrent"),
+        torrent_bytes,
+        user_ip,
+        forward,
+    )
+    .await?;
+    body.get("id")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            ProviderError::api(
+                "Failed to add torrent file: missing id",
+                "transfer_error.mp4",
+            )
+        })
 }
 
 async fn select_files(
@@ -478,6 +545,7 @@ async fn add_new_torrent(
     bearer: &str,
     magnet: &str,
     info_hash: &str,
+    torrent_file: Option<&[u8]>,
     user_ip: Option<&str>,
     forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
@@ -506,7 +574,11 @@ async fn add_new_torrent(
 
     // Try adding the magnet up to 2 times; fetch torrent info with retries.
     for create_attempt in 0..2u32 {
-        let torrent_id = add_magnet(http, bearer, magnet, user_ip, forward).await?;
+        let torrent_id = if let Some(bytes) = torrent_file.filter(|b| !b.is_empty()) {
+            add_torrent_file(http, bearer, bytes, user_ip, forward).await?
+        } else {
+            add_magnet(http, bearer, magnet, user_ip, forward).await?
+        };
         for info_attempt in 0..3u32 {
             match get_torrent_info(http, bearer, &torrent_id).await {
                 Ok(info) => return Ok(info),
@@ -761,6 +833,7 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     user_ip: Option<&str>,
+    torrent_file: Option<&[u8]>,
     forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<
     (
@@ -799,12 +872,32 @@ pub async fn get_video_url(
             if matches!(status, "magnet_error" | "error" | "virus" | "dead") {
                 let torrent_id = existing.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 delete_torrent(http, &bearer, torrent_id).await.ok();
-                add_new_torrent(http, &bearer, &magnet, info_hash, user_ip, forward).await?
+                add_new_torrent(
+                    http,
+                    &bearer,
+                    &magnet,
+                    info_hash,
+                    torrent_file,
+                    user_ip,
+                    forward,
+                )
+                .await?
             } else {
                 existing
             }
         }
-        None => add_new_torrent(http, &bearer, &magnet, info_hash, user_ip, forward).await?,
+        None => {
+            add_new_torrent(
+                http,
+                &bearer,
+                &magnet,
+                info_hash,
+                torrent_file,
+                user_ip,
+                forward,
+            )
+            .await?
+        }
     };
 
     let torrent_id = torrent_info

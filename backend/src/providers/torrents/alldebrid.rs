@@ -129,6 +129,55 @@ async fn ad_post_form(
     Ok(body)
 }
 
+async fn ad_post_multipart(
+    http: &reqwest::Client,
+    token: &str,
+    path: &str,
+    field_name: &str,
+    filename: &str,
+    torrent_bytes: &[u8],
+    user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    let url = format!("{BASE_URL}{path}");
+    let query = build_query(user_ip);
+    let boundary = "mediafusion_alldebrid_upload";
+
+    let mut body: Vec<u8> = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"{field_name}\"; filename=\"{filename}\"\r\nContent-Type: application/x-bittorrent\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(torrent_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    let content_type = format!("multipart/form-data; boundary={boundary}");
+
+    let resp = if let Some(fwd) = forward {
+        let query_refs: Vec<(&str, &str)> = query.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let dest = append_query(&url, &query_refs);
+        fwd.post_raw(http, &dest, token, &content_type, body)
+            .await?
+    } else {
+        let part = reqwest::multipart::Part::bytes(torrent_bytes.to_vec())
+            .file_name(filename.to_string())
+            .mime_str("application/x-bittorrent")
+            .map_err(|e| ProviderError::Other(format!("AllDebrid: mime error: {e}")))?;
+        let form = reqwest::multipart::Form::new().part(field_name.to_string(), part);
+        http.post(&url)
+            .bearer_auth(token)
+            .query(&query)
+            .multipart(form)
+            .send()
+            .await?
+    };
+
+    let body: Value = response_json(resp, "ad_post_multipart").await?;
+    check_ad_error(&body)?;
+    Ok(body)
+}
+
 // ─── File selection helper ─────────────────────────────────────────────────────
 
 static VIDEO_EXTS: &[&str] = &["mkv", "mp4", "avi", "webm", "mov", "flv", "m4v", "wmv"];
@@ -318,6 +367,67 @@ async fn upload_magnet(
     })
 }
 
+async fn upload_torrent_file(
+    http: &reqwest::Client,
+    token: &str,
+    torrent_bytes: &[u8],
+    torrent_name: Option<&str>,
+    user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<i64, ProviderError> {
+    let filename = torrent_name
+        .filter(|n| !n.is_empty())
+        .map(|n| {
+            if n.ends_with(".torrent") {
+                n.to_string()
+            } else {
+                format!("{n}.torrent")
+            }
+        })
+        .unwrap_or_else(|| "torrent.torrent".to_string());
+    let body = ad_post_multipart(
+        http,
+        token,
+        "/magnet/upload/file",
+        "files[]",
+        &filename,
+        torrent_bytes,
+        user_ip,
+        forward,
+    )
+    .await?;
+
+    let magnets = body
+        .get("data")
+        .and_then(|d| d.get("magnets"))
+        .ok_or_else(|| {
+            ProviderError::api(
+                "Missing data.magnets in file upload response",
+                "transfer_error.mp4",
+            )
+        })?;
+
+    let first = match magnets {
+        Value::Array(arr) => arr.first().ok_or_else(|| {
+            ProviderError::api(
+                "Empty magnets array in file upload response",
+                "transfer_error.mp4",
+            )
+        })?,
+        Value::Object(_) => magnets,
+        _ => {
+            return Err(ProviderError::api(
+                "Unexpected magnets shape in file upload response",
+                "transfer_error.mp4",
+            ))
+        }
+    };
+
+    first.get("id").and_then(|v| v.as_i64()).ok_or_else(|| {
+        ProviderError::api("Missing id in file upload response", "transfer_error.mp4")
+    })
+}
+
 /// GET /magnet/files?id[]={id} — returns flattened `(name, size, link)` triples.
 async fn get_magnet_files(
     http: &reqwest::Client,
@@ -483,6 +593,8 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     user_ip: Option<&str>,
+    torrent_file: Option<&[u8]>,
+    torrent_name: Option<&str>,
     forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     const MAX_RETRIES: u32 = 5;
@@ -509,7 +621,11 @@ pub async fn get_video_url(
             if status_code == 7 {
                 // Error state — delete and re-add
                 delete_magnet(http, token, id, user_ip, forward).await.ok();
-                upload_magnet(http, token, &magnet, user_ip, forward).await?
+                if let Some(bytes) = torrent_file.filter(|b| !b.is_empty()) {
+                    upload_torrent_file(http, token, bytes, torrent_name, user_ip, forward).await?
+                } else {
+                    upload_magnet(http, token, &magnet, user_ip, forward).await?
+                }
             } else if status_code == 4 {
                 // Already ready — skip polling
                 id
@@ -517,7 +633,13 @@ pub async fn get_video_url(
                 id
             }
         }
-        None => upload_magnet(http, token, &magnet, user_ip, forward).await?,
+        None => {
+            if let Some(bytes) = torrent_file.filter(|b| !b.is_empty()) {
+                upload_torrent_file(http, token, bytes, torrent_name, user_ip, forward).await?
+            } else {
+                upload_magnet(http, token, &magnet, user_ip, forward).await?
+            }
+        }
     };
 
     // Wait for the torrent to be ready

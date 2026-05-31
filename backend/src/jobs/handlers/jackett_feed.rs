@@ -7,8 +7,7 @@ use crate::{
         error::JobError,
         handler::{JobCtx, JobHandler},
     },
-    parser,
-    scrapers::{media_resolve, persist, prowlarr::build_series_files, ScrapedStream, StreamFile},
+    scrapers::{jackett, media_resolve, persist},
 };
 
 pub struct JackettFeedScraper;
@@ -16,105 +15,15 @@ pub struct JackettFeedScraper;
 // ─── Jackett API response shapes ──────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
-struct IndexerEntry {
-    #[serde(rename = "id")]
-    id: String,
-}
-
-#[derive(Debug, serde::Deserialize)]
 struct JackettResponse {
     #[serde(rename = "Results", default)]
-    results: Vec<JackettResult>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct JackettResult {
-    #[serde(rename = "Title")]
-    title: Option<String>,
-    #[serde(rename = "InfoHash")]
-    info_hash: Option<String>,
-    #[serde(rename = "MagnetUri")]
-    magnet_uri: Option<String>,
-    #[serde(rename = "Tracker")]
-    tracker: Option<String>,
-    #[serde(rename = "Seeders")]
-    seeders: Option<i32>,
-    #[serde(rename = "Size")]
-    size: Option<i64>,
-    #[serde(rename = "CategoryDesc")]
-    category_desc: Option<String>,
+    results: Vec<jackett::JackettResult>,
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const SEEN_KEY: &str = "jackett_feed:seen";
 const SEEN_TTL: i64 = 259_200; // 3 days
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-fn resolve_info_hash_jackett(result: &JackettResult) -> Option<String> {
-    result
-        .info_hash
-        .as_deref()
-        .map(|h| h.to_lowercase())
-        .filter(|h| h.len() == 40)
-        .or_else(|| {
-            result
-                .magnet_uri
-                .as_deref()
-                .and_then(parser::extract_info_hash)
-        })
-}
-
-fn media_type_from_category_desc(desc: Option<&str>) -> &'static str {
-    match desc {
-        Some(d) => {
-            let lower = d.to_lowercase();
-            if lower.contains("tv") || lower.contains("series") || lower.contains("episode") {
-                "series"
-            } else {
-                "movie"
-            }
-        }
-        None => "movie",
-    }
-}
-
-fn build_scraped_stream_jackett(result: &JackettResult) -> Option<ScrapedStream> {
-    let title = result.title.as_deref().unwrap_or("").trim().to_string();
-    if title.is_empty() {
-        return None;
-    }
-
-    let info_hash = resolve_info_hash_jackett(result)?;
-
-    let media_type = media_type_from_category_desc(result.category_desc.as_deref());
-    let parsed = parser::parse_title(&title);
-
-    let files: Vec<StreamFile> = if media_type == "series" {
-        build_series_files(&parsed, None, None)
-    } else {
-        vec![]
-    };
-
-    let source = result
-        .tracker
-        .clone()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "Jackett".to_string());
-
-    Some(ScrapedStream {
-        info_hash,
-        name: title,
-        source,
-        seeders: result.seeders,
-        size: result.size,
-        parsed,
-        files,
-        is_cached: false,
-    })
-}
 
 // ─── Job handler ──────────────────────────────────────────────────────────────
 
@@ -138,12 +47,12 @@ impl JobHandler for JackettFeedScraper {
         let client = &ctx.state.http;
         let redis = &ctx.state.redis;
         let pool = &ctx.state.pool;
+        let query_timeout = std::time::Duration::from_secs(15);
 
         if ctx.cancel.is_cancelled() {
             return Err(JobError::Cancelled);
         }
 
-        // Use the all-indexers aggregation JSON endpoint
         let resp = match client
             .get(format!("{base_url}/api/v2.0/indexers/all/results"))
             .query(&[
@@ -173,18 +82,18 @@ impl JobHandler for JackettFeedScraper {
 
         debug!("jackett_feed: received {} results", feed.results.len());
 
-        for result in &feed.results {
+        let mut candidates: Vec<jackett::JackettResult> = Vec::new();
+        for result in feed.results {
             if ctx.cancel.is_cancelled() {
                 debug!("jackett_feed: cancelled during processing");
                 return Err(JobError::Cancelled);
             }
 
-            let info_hash = match resolve_info_hash_jackett(result) {
-                Some(h) => h,
-                None => continue,
+            let info_hash = jackett::resolve_result_info_hash(&result);
+            let Some(info_hash) = info_hash else {
+                continue;
             };
 
-            // Dedup via Redis
             let seen: bool = redis
                 .sismember::<bool, _, _>(SEEN_KEY, &info_hash)
                 .await
@@ -193,40 +102,44 @@ impl JobHandler for JackettFeedScraper {
                 continue;
             }
 
-            let _ = redis.sadd::<(), _, _>(SEEN_KEY, info_hash.clone()).await;
+            candidates.push(result);
+        }
+
+        let processed = jackett::process_feed_results(client, candidates, query_timeout).await;
+
+        let cfg = &ctx.state.config;
+        for (stream, media_type) in processed {
+            let hash = stream.info_hash.clone();
+            let _ = redis.sadd::<(), _, _>(SEEN_KEY, hash.clone()).await;
             let _ = redis.expire::<i64, _>(SEEN_KEY, SEEN_TTL, None).await;
 
-            if let Some(stream) = build_scraped_stream_jackett(result) {
-                let media_type = media_type_from_category_desc(result.category_desc.as_deref());
-                let is_series = media_type == "series";
-                let cfg = &ctx.state.config;
-                if let Some(meta) = media_resolve::search_meta_for_scraped(
+            let is_series = media_type == "series";
+            if let Some(meta) = media_resolve::search_meta_for_scraped(
+                pool,
+                &ctx.state.http,
+                &stream,
+                is_series,
+                cfg.tmdb_api_key.as_deref(),
+                cfg.imdb_cinemeta_fallback_enabled,
+                &cfg.anime_metadata_source_order,
+                &cfg.metadata_primary_source,
+            )
+            .await
+            {
+                persist::write_back(
+                    std::slice::from_ref(&stream),
                     pool,
-                    &ctx.state.http,
-                    &stream,
-                    is_series,
-                    cfg.tmdb_api_key.as_deref(),
-                    cfg.imdb_cinemeta_fallback_enabled,
-                    &cfg.anime_metadata_source_order,
-                    &cfg.metadata_primary_source,
+                    &meta,
+                    media_type,
+                    None,
+                    None,
                 )
-                .await
-                {
-                    persist::write_back(
-                        std::slice::from_ref(&stream),
-                        pool,
-                        &meta,
-                        media_type,
-                        None,
-                        None,
-                    )
-                    .await;
-                } else {
-                    debug!(
-                        "jackett_feed: skipped {} ({}) — metadata unresolved",
-                        info_hash, media_type
-                    );
-                }
+                .await;
+            } else {
+                debug!(
+                    "jackett_feed: skipped {} ({}) — metadata unresolved",
+                    hash, media_type
+                );
             }
         }
 

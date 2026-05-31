@@ -18,11 +18,13 @@ pub mod rss;
 pub mod source_health;
 pub mod telegram;
 pub mod torbox_search;
+pub mod torrent_metadata;
 pub mod torrentio;
 pub mod torznab;
 pub mod tvdb;
 pub mod zilean;
 
+use crate::db::TorrentType;
 use crate::parser::ParsedTitle;
 
 /// A usenet stream result (e.g. from Easynews).
@@ -52,6 +54,38 @@ pub struct ScrapedStream {
     /// For series: one entry per episode this torrent covers.
     pub files: Vec<StreamFile>,
     pub is_cached: bool,
+    pub torrent_type: TorrentType,
+    /// Raw `.torrent` bytes — only populated for private/semi-private indexers.
+    pub torrent_file: Option<Vec<u8>>,
+    pub announce_list: Vec<String>,
+}
+
+impl ScrapedStream {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        info_hash: String,
+        name: String,
+        source: String,
+        seeders: Option<i32>,
+        size: Option<i64>,
+        parsed: ParsedTitle,
+        files: Vec<StreamFile>,
+        is_cached: bool,
+    ) -> Self {
+        Self {
+            info_hash,
+            name,
+            source,
+            seeders,
+            size,
+            parsed,
+            files,
+            is_cached,
+            torrent_type: TorrentType::Public,
+            torrent_file: None,
+            announce_list: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

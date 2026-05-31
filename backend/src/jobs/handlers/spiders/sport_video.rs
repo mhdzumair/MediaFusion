@@ -406,6 +406,9 @@ impl JobHandler for SportVideoCrawl {
                         parsed,
                         files: vec![],
                         is_cached: false,
+                        torrent_type: crate::db::TorrentType::Public,
+                        torrent_file: None,
+                        announce_list: vec![],
                     });
                 }
 

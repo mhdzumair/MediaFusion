@@ -149,6 +149,9 @@ fn parse_stream(stream: &Value) -> Option<ScrapedStream> {
         parsed,
         files: vec![],
         is_cached,
+        torrent_type: crate::db::TorrentType::Public,
+        torrent_file: None,
+        announce_list: vec![],
     })
 }
 

@@ -804,41 +804,13 @@ pub async fn link_stream_languages(
     Ok(())
 }
 
-/// Link announce trackers to a torrent (`torrent_stream.id`, not `stream.id`).
+/// Link announce trackers to a torrent (`stream.id`).
 pub async fn link_torrent_trackers(
     pool: &PgPool,
     stream_id: i32,
     tracker_urls: &[String],
 ) -> Result<(), sqlx::Error> {
-    let torrent_id: Option<i32> =
-        sqlx::query_scalar("SELECT id FROM torrent_stream WHERE stream_id = $1 LIMIT 1")
-            .bind(stream_id)
-            .fetch_optional(pool)
-            .await?;
-    let Some(torrent_id) = torrent_id else {
-        return Ok(());
-    };
-    for url in tracker_urls {
-        if url.is_empty() {
-            continue;
-        }
-        let tracker_id: Option<i32> = sqlx::query_scalar(
-            "INSERT INTO tracker(url) VALUES($1) ON CONFLICT(url) DO UPDATE SET url = EXCLUDED.url RETURNING id",
-        )
-        .bind(url)
-        .fetch_optional(pool)
-        .await?;
-        if let Some(tid) = tracker_id {
-            sqlx::query(
-                "INSERT INTO torrent_tracker_link(torrent_id, tracker_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
-            )
-            .bind(torrent_id)
-            .bind(tid)
-            .execute(pool)
-            .await?;
-        }
-    }
-    Ok(())
+    crate::db::link_torrent_trackers(pool, crate::db::StreamId(stream_id), tracker_urls).await
 }
 
 /// Attach catalog names to media (Python import catalog linking).
@@ -1272,6 +1244,8 @@ pub async fn insert_torrent_stream_row(
     parsed: &crate::parser::ParsedTitle,
     media_id: Option<i64>,
     is_public: bool,
+    torrent_type: TorrentType,
+    torrent_file: Option<&[u8]>,
 ) -> Result<i32, sqlx::Error> {
     let mut txn = pool.begin().await?;
 
@@ -1307,16 +1281,17 @@ pub async fn insert_torrent_stream_row(
     .await?;
 
     let inserted = sqlx::query(
-        r#"INSERT INTO torrent_stream(stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at)
-           VALUES($1, $2, $3, $4, $5, $6, NOW())
+        r#"INSERT INTO torrent_stream(stream_id, info_hash, total_size, seeders, torrent_type, file_count, torrent_file, created_at)
+           VALUES($1, $2, $3, $4, $5, $6, $7, NOW())
            ON CONFLICT (info_hash) DO NOTHING"#,
     )
     .bind(stream_id)
     .bind(info_hash)
     .bind(size.unwrap_or(0))
     .bind(seeders)
-    .bind(TorrentType::Public)
+    .bind(torrent_type)
     .bind(file_count)
+    .bind(torrent_file)
     .execute(&mut *txn)
     .await?
     .rows_affected()
@@ -1528,6 +1503,8 @@ pub struct TorrentImportPersist<'a> {
     pub tmdb_api_key: Option<&'a str>,
     pub tvdb_api_key: Option<&'a str>,
     pub prefetch: &'a crate::scrapers::media_resolve::ImportMetadataCache,
+    pub torrent_type: TorrentType,
+    pub torrent_file: Option<&'a [u8]>,
 }
 
 /// Persist a torrent stream and all of its links in one place: the stream +
@@ -1550,20 +1527,16 @@ pub async fn persist_torrent_import(
         input.parsed,
         input.media_id,
         input.is_public,
+        input.torrent_type,
+        input.torrent_file,
     )
     .await?;
 
     // Trackers (resolve torrent_stream.id from the stream).
     if !input.trackers.is_empty() {
-        let ts_id: Option<i32> =
-            sqlx::query_scalar("SELECT id FROM torrent_stream WHERE stream_id = $1 LIMIT 1")
-                .bind(stream_id)
-                .fetch_optional(pool)
-                .await
-                .unwrap_or(None);
-        if let Some(tsid) = ts_id {
-            let _ = link_torrent_trackers(pool, tsid, input.trackers).await;
-        }
+        let _ =
+            crate::db::link_torrent_trackers(pool, crate::db::StreamId(stream_id), input.trackers)
+                .await;
     }
 
     // Languages + audio/HDR/channel extras.

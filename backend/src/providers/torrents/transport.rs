@@ -123,6 +123,24 @@ impl MediaFlowForward {
             .await
     }
 
+    /// Route a PUT request through /proxy/forward with a raw body and explicit Content-Type.
+    pub async fn put_raw(
+        &self,
+        http: &reqwest::Client,
+        dest: &str,
+        bearer: &str,
+        content_type: &str,
+        body: Vec<u8>,
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        http.put(self.forward_url())
+            .query(&[("d", dest), ("api_password", &self.api_password)])
+            .query(&[("h_authorization", format!("Bearer {}", bearer))])
+            .query(&[("h_content-type", content_type)])
+            .body(body)
+            .send()
+            .await
+    }
+
     /// Route a GET request through /proxy/forward without an Authorization header.
     /// Use this when authentication is embedded as a query parameter in `dest`.
     pub async fn get_no_auth(
@@ -136,7 +154,7 @@ impl MediaFlowForward {
             .await
     }
 
-    /// Route a form POST through /proxy/forward without an Authorization header.
+    /// Route a POST request through /proxy/forward without an Authorization header.
     /// Use this when authentication is embedded as a query parameter in `dest`.
     pub async fn post_form_no_auth(
         &self,
@@ -148,6 +166,22 @@ impl MediaFlowForward {
             .query(&[("d", dest), ("api_password", &self.api_password)])
             .query(&[("h_content-type", "application/x-www-form-urlencoded")])
             .body(form_body)
+            .send()
+            .await
+    }
+
+    /// Route a POST with a raw binary body through /proxy/forward without Authorization.
+    pub async fn post_raw_no_auth(
+        &self,
+        http: &reqwest::Client,
+        dest: &str,
+        content_type: &str,
+        body: Vec<u8>,
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        http.post(self.forward_url())
+            .query(&[("d", dest), ("api_password", &self.api_password)])
+            .query(&[("h_content-type", content_type)])
+            .body(body)
             .send()
             .await
     }
