@@ -43,7 +43,12 @@ JOB_ARGS ?=
 # overlapping restarts that race for the same port (ADDRINUSE).
 CARGO_WATCH_FLAGS = --watch-when-idle -d 1
 
-.PHONY: build build-multi tag push prompt update-version generate-notes generate-reddit-post generate-baseline frontend-install frontend-build frontend-dev frontend-lint frontend-fmt dev backend-dev python-lint python-fmt python-test rust-build rust-dev rust-test rust-fmt rust-lint lint fmt test worker-list-jobs worker-run-job worker-run-sport-video exception-videos
+# Parity harness hosts (override on command line or in qa/.env)
+RUST_HOST  ?= http://localhost:8000
+PYTHON_HOST ?= http://localhost:8001
+PYTHON_PORT ?= 8001
+
+.PHONY: build build-multi tag push prompt update-version generate-notes generate-reddit-post generate-baseline frontend-install frontend-build frontend-dev frontend-lint frontend-fmt dev backend-dev python-lint python-fmt python-test rust-build rust-dev rust-test rust-fmt rust-lint lint fmt test worker-list-jobs worker-run-job worker-run-sport-video exception-videos python-golden parity-seed parity-check parity-e2e parity grafana-dev grafana-dev-stop
 
 build:
 	docker build --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE) -f deployment/Dockerfile .
@@ -295,6 +300,95 @@ install-hooks:  ## Install version-controlled git hooks (run once per clone)
 
 exception-videos:
 	python3 python-deprecated/utils/exception_video.py
+
+# ── Python golden reference server ────────────────────────────────────────────
+#
+# Starts the deprecated Python API on PYTHON_PORT (default 8001) so the parity
+# harness can diff Rust vs Python responses side by side.
+#
+# How it works:
+#   1. Creates python-deprecated/reference -> api symlink (gitignored).
+#      This restores the import alias that was removed when migrating to Rust.
+#   2. Reads credentials from the repo-root .env (same file the Rust server uses).
+#   3. Runs uvicorn from the python-deprecated/ directory.
+#
+# Prerequisites:
+#   uv sync           (installs Python deps into .venv)
+#   Postgres + Redis  (already running for the Rust server)
+#
+python-golden:
+	@echo "→ Setting up Python golden reference server on port $(PYTHON_PORT)..."
+	@if [ ! -e python-deprecated/reference ]; then \
+		ln -sf api python-deprecated/reference; \
+		echo "  Created python-deprecated/reference -> api symlink"; \
+	fi
+	@if [ ! -e python-deprecated/resources ]; then \
+		ln -sf ../resources python-deprecated/resources; \
+		echo "  Created python-deprecated/resources -> ../resources symlink"; \
+	fi
+	@echo "  Loading .env and starting uvicorn (Ctrl-C to stop)..."
+	@PYTHONPATH="$(PWD)/python-deprecated" \
+		HOST_URL="http://127.0.0.1:$(PYTHON_PORT)" \
+		POSTER_HOST_URL="http://127.0.0.1:$(PYTHON_PORT)" \
+		STREAM_RS_PORT=$(PYTHON_PORT) \
+		uv run uvicorn api.main:app --host 0.0.0.0 --port $(PYTHON_PORT) --reload --app-dir python-deprecated
+
+# ── Parity harness targets ─────────────────────────────────────────────────────
+#
+# Requires:
+#   - Rust server running at RUST_HOST (default :8000), e.g. via `make rust-dev`
+#   - Python golden running at PYTHON_HOST (default :8001), e.g. via `make python-golden`
+#   - qa/.env populated from qa/.env.example
+#
+# Usage:
+#   make parity                  # full run: seed → parity-check → e2e
+#   make parity-seed             # warm Redis cache only
+#   make parity-check            # route/status parity (Rust vs Python)
+#   make parity-e2e              # structural response parity
+#
+#   RUST_HOST=http://myhost:8000 make parity-check   # override hosts inline
+
+parity-seed:
+	@echo "→ Pre-warming stream cache on $(RUST_HOST)..."
+	uv run python qa/seed_cache.py --host $(RUST_HOST)
+
+parity-check:
+	@echo "→ Running parity check: Rust=$(RUST_HOST)  Python=$(PYTHON_HOST)..."
+	uv run python qa/parity_test.py \
+		--rust $(RUST_HOST) \
+		--python $(PYTHON_HOST)
+
+parity-e2e:
+	@echo "→ Running e2e structural parity: Rust=$(RUST_HOST)  Python=$(PYTHON_HOST)..."
+	uv run python qa/e2e_verify.py \
+		--rust $(RUST_HOST) \
+		--python $(PYTHON_HOST)
+
+parity: parity-seed parity-check parity-e2e
+
+# ── Grafana / Prometheus dev observability ─────────────────────────────────────
+#
+# Starts standalone Prometheus + Grafana containers that scrape the Rust server
+# running on your local machine (host.docker.internal:8001).
+#
+# Grafana:    http://localhost:3001  (anonymous viewer, no login needed)
+# Prometheus: http://localhost:9091
+#
+# Dashboards are auto-provisioned from qa/dashboards/ — no manual import needed.
+# The "MediaFusion — Rust Backend" dashboard loads automatically.
+#
+grafana-dev:
+	@echo "→ Starting Prometheus + Grafana for local dev..."
+	docker compose -f deployment/docker-compose/docker-compose-grafana-dev.yml up -d
+	@echo ""
+	@echo "  Grafana:    http://localhost:3001"
+	@echo "  Prometheus: http://localhost:9091"
+	@echo ""
+	@echo "  Dashboards auto-load from qa/dashboards/."
+	@echo "  Make sure the Rust server is running: make rust-dev"
+
+grafana-dev-stop:
+	docker compose -f deployment/docker-compose/docker-compose-grafana-dev.yml down
 
 # Aggregate targets
 lint: rust-lint frontend-lint

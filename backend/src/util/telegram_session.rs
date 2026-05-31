@@ -66,8 +66,10 @@ fn extract_data_from_telethon(session_string: &str) -> Result<SessionData, Strin
     let mut auth_key = [0u8; 256];
     auth_key.copy_from_slice(&bytes[7..263]);
 
-    let mut data = SessionData::default();
-    data.home_dc = dc_id;
+    let mut data = SessionData {
+        home_dc: dc_id,
+        ..Default::default()
+    };
     if let Some(opt) = data.dc_options.get_mut(&dc_id) {
         opt.ipv4 = SocketAddrV4::new(ip, port);
         opt.auth_key = Some(auth_key);

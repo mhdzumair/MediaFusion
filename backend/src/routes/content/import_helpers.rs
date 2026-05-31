@@ -11,7 +11,11 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{parser::detect_sports_category, state::AppState};
+use crate::{
+    db::{MediaType, StreamType, TorrentType},
+    parser::detect_sports_category,
+    state::AppState,
+};
 
 // ─── Adult content filter ─────────────────────────────────────────────────────
 
@@ -332,16 +336,6 @@ pub async fn notify_pending_contribution(
 
 // ─── Metadata search / resolve (Python meta_fetcher + get_or_create_metadata parity) ─
 
-/// Map import UI `meta_type` to DB `mediatype` enum text.
-pub fn db_media_type(meta_type: &str) -> &'static str {
-    match meta_type {
-        "series" => "SERIES",
-        "tv" => "TV",
-        "events" => "EVENT",
-        _ => "MOVIE",
-    }
-}
-
 /// Stable synthetic meta id when the user did not pick an external id (Python `http_{hash}` style).
 pub fn synthetic_import_meta_id(prefix: &str, seed: &str) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -350,7 +344,11 @@ pub fn synthetic_import_meta_id(prefix: &str, seed: &str) -> String {
 }
 
 /// Look up existing media for analyze `meta_match` (supports `tmdb:123`, `tt…`, etc.).
-pub async fn lookup_import_media_id(pool: &PgPool, meta_id: &str, meta_type: &str) -> Option<i32> {
+pub async fn lookup_import_media_id(
+    pool: &PgPool,
+    meta_id: &str,
+    meta_type: &str,
+) -> Option<crate::db::MediaId> {
     crate::db::get_media_id_by_external_id(pool, meta_id, Some(meta_type))
         .await
         .ok()
@@ -364,38 +362,38 @@ pub async fn lookup_import_media_id_with_fallback(
     meta_type: &str,
     parsed_title: &str,
     parsed_year: Option<i32>,
-) -> Option<i64> {
+) -> Option<crate::db::MediaId> {
     if let Some(id) = lookup_import_media_id(pool, meta_id, meta_type).await {
-        return Some(id as i64);
+        return Some(id);
     }
 
-    let type_upper = db_media_type(meta_type);
+    let media_type = MediaType::from_wire(meta_type)?;
     if let Some(year) = parsed_year {
         let row: Option<(i32,)> = sqlx::query_as(
-            "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND year = $2 AND UPPER(type::text) = $3 LIMIT 1",
+            "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND year = $2 AND type = $3 LIMIT 1",
         )
         .bind(parsed_title)
         .bind(year)
-        .bind(type_upper)
+        .bind(media_type)
         .fetch_optional(pool)
         .await
         .unwrap_or(None);
         if let Some((id,)) = row {
-            return Some(id as i64);
+            return Some(crate::db::MediaId(id));
         }
     }
 
     let pattern = format!("%{parsed_title}%");
     let row: Option<(i32,)> = sqlx::query_as(
-        "SELECT id FROM media WHERE LOWER(title) LIKE LOWER($1) AND UPPER(type::text) = $2 LIMIT 1",
+        "SELECT id FROM media WHERE LOWER(title) LIKE LOWER($1) AND type = $2 LIMIT 1",
     )
     .bind(&pattern)
-    .bind(type_upper)
+    .bind(media_type)
     .fetch_optional(pool)
     .await
     .unwrap_or(None);
 
-    row.map(|(id,)| id as i64)
+    row.map(|(id,)| crate::db::MediaId(id))
 }
 
 /// External metadata search for import analyze UIs (Python `search_multiple_results`).
@@ -579,9 +577,10 @@ pub async fn prefetch_torrent_import_metadata(
 pub async fn link_stream_to_media(
     pool: &PgPool,
     stream_id: i32,
-    media_id: i32,
+    media_id: crate::db::MediaId,
 ) -> Result<(), sqlx::Error> {
-    crate::scrapers::media_resolve::link_stream_to_media(pool, stream_id, media_id).await
+    crate::scrapers::media_resolve::link_stream_to_media(pool, crate::db::StreamId(stream_id), media_id)
+        .await
 }
 
 fn import_meta_id_candidates<'a>(
@@ -593,7 +592,7 @@ fn import_meta_id_candidates<'a>(
         let Some(id) = candidate.map(str::trim).filter(|s| !s.is_empty()) else {
             continue;
         };
-        if id == "manual" || out.iter().any(|existing| *existing == id) {
+        if id == "manual" || out.contains(&id) {
             continue;
         }
         out.push(id);
@@ -625,7 +624,7 @@ pub async fn try_link_orphan_torrent_stream(
     for meta_id in import_meta_id_candidates(request_meta_id, stream_source.as_deref()) {
         if let Some(media_id) = lookup_import_media_id(pool, meta_id, meta_type).await {
             match link_stream_to_media(pool, stream_id, media_id).await {
-                Ok(()) => return Some(media_id),
+                Ok(()) => return Some(media_id.0),
                 Err(e) => tracing::warn!(
                     "try_link_orphan_torrent_stream: link failed stream={stream_id} media={media_id} meta_id={meta_id}: {e}"
                 ),
@@ -636,7 +635,7 @@ pub async fn try_link_orphan_torrent_stream(
             crate::db::get_media_id_by_external_id(pool, meta_id, None).await
         {
             match link_stream_to_media(pool, stream_id, media_id).await {
-                Ok(()) => return Some(media_id),
+                Ok(()) => return Some(media_id.0),
                 Err(e) => tracing::warn!(
                     "try_link_orphan_torrent_stream: link failed stream={stream_id} media={media_id} (no type filter) meta_id={meta_id}: {e}"
                 ),
@@ -661,7 +660,7 @@ pub async fn try_link_orphan_torrent_stream(
         )
         .await
         {
-            match link_stream_to_media(pool, stream_id, media_id).await {
+            match link_stream_to_media(pool, stream_id, crate::db::MediaId(media_id)).await {
                 Ok(()) => return Some(media_id),
                 Err(e) => tracing::warn!(
                     "try_link_orphan_torrent_stream: link failed stream={stream_id} media={media_id} (resolved) meta_id={meta_id}: {e}"
@@ -1061,7 +1060,7 @@ pub async fn insert_torrent_import_files(
         }
 
         if target_media != primary_media_id.unwrap_or(-1) {
-            let _ = link_stream_to_media(pool, stream_id, target_media).await;
+            let _ = link_stream_to_media(pool, stream_id, crate::db::MediaId(target_media)).await;
         }
     }
     Ok(())
@@ -1127,11 +1126,12 @@ pub async fn organize_user_series_episodes(
 ) {
     // Only for series-type media without external IDs (i.e. user-created).
     let is_user_series: bool = sqlx::query_scalar(
-        "SELECT m.type = 'SERIES'::mediatype \
+        "SELECT m.type = $2 \
               AND NOT EXISTS (SELECT 1 FROM media_external_id e WHERE e.media_id = m.id) \
          FROM media m WHERE m.id = $1",
     )
     .bind(media_id as i32)
+    .bind(MediaType::Series)
     .fetch_optional(pool)
     .await
     .ok()
@@ -1266,12 +1266,13 @@ pub async fn insert_torrent_stream_row(
                is_proper, is_repack, is_remastered, is_upscaled, is_extended, is_complete, is_dubbed, is_subbed, release_group,
                is_active, is_blocked, is_public, playback_count, created_at
            ) VALUES(
-               'TORRENT'::streamtype, $1, $2, $3, $4, $5,
-               $6, $7, $8, $9, $10, $11, $12, $13, $14,
-               true, false, $15, 0, NOW()
+               $1, $2, $3, $4, $5, $6,
+               $7, $8, $9, $10, $11, $12, $13, $14, $15,
+               true, false, $16, 0, NOW()
            )
            RETURNING id"#,
     )
+    .bind(StreamType::Torrent)
     .bind(name)
     .bind(source)
     .bind(parsed.resolution.as_deref())
@@ -1292,13 +1293,14 @@ pub async fn insert_torrent_stream_row(
 
     let inserted = sqlx::query(
         r#"INSERT INTO torrent_stream(stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at)
-           VALUES($1, $2, $3, $4, 'PUBLIC'::torrenttype, $5, NOW())
+           VALUES($1, $2, $3, $4, $5, $6, NOW())
            ON CONFLICT (info_hash) DO NOTHING"#,
     )
     .bind(stream_id)
     .bind(info_hash)
     .bind(size.unwrap_or(0))
     .bind(seeders)
+    .bind(TorrentType::Public)
     .bind(file_count)
     .execute(&mut *txn)
     .await?
@@ -1319,14 +1321,14 @@ pub async fn insert_torrent_stream_row(
                 .fetch_one(pool)
                 .await?;
         if let Some(mid) = media_id {
-            let _ = link_stream_to_media(pool, existing, mid as i32).await;
+            let _ = link_stream_to_media(pool, existing, crate::db::MediaId(mid as i32)).await;
         }
         return Ok(existing);
     }
 
     txn.commit().await?;
     if let Some(mid) = media_id {
-        let _ = link_stream_to_media(pool, stream_id, mid as i32).await;
+        let _ = link_stream_to_media(pool, stream_id, crate::db::MediaId(mid as i32)).await;
     }
     Ok(stream_id)
 }
@@ -1341,8 +1343,9 @@ pub async fn ensure_series_episode_metadata(
     fallback_title: &str,
 ) {
     let is_series: bool =
-        sqlx::query_scalar("SELECT type = 'SERIES'::mediatype FROM media WHERE id = $1")
+        sqlx::query_scalar("SELECT type = $2 FROM media WHERE id = $1")
             .bind(media_id as i32)
+            .bind(MediaType::Series)
             .fetch_optional(pool)
             .await
             .ok()

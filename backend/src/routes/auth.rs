@@ -460,13 +460,14 @@ pub async fn register(
         r#"INSERT INTO users (uuid, email, username, password_hash, role, is_verified, is_active, last_login, created_at,
                               contribution_points, metadata_edits_approved, stream_edits_approved,
                               contribution_level, contribute_anonymously, uploads_restricted)
-           VALUES ($1, $2, $3, $4, 'USER'::userrole, $5, true, $6, NOW(), 0, 0, 0, 'beginner', false, false)
+           VALUES ($1, $2, $3, $4, $5, true, $6, NOW(), 0, 0, 0, 'beginner', false, false)
            RETURNING id"#,
     )
     .bind(&user_uuid)
     .bind(&req.email)
     .bind(&req.username)
     .bind(&password_hash)
+    .bind(crate::db::UserRole::User)
     .bind(auto_verify)
     .bind(if auto_verify { Some(Utc::now()) } else { None })
     .fetch_optional(&state.pool)

@@ -69,7 +69,8 @@ pub async fn run(
     // ── Telegram live scraper (Phase 2c) ─────────────────────────────────────
     if let Some(ref tg_client) = state.telegram {
         let user_channel_list = if let Some(uid) = user_data.user_id {
-            crate::db::telegram_channels::user_scraping_channels(&state.pool, uid).await
+            crate::db::telegram_channels::user_scraping_channels(&state.pool, uid)
+                .await
         } else {
             vec![]
         };
@@ -152,7 +153,8 @@ pub async fn run_forced(
 
     if let Some(ref tg_client) = state.telegram {
         let user_channel_list = if let Some(uid) = user_data.user_id {
-            crate::db::telegram_channels::user_scraping_channels(&state.pool, uid).await
+            crate::db::telegram_channels::user_scraping_channels(&state.pool, uid)
+                .await
         } else {
             vec![]
         };
@@ -252,7 +254,29 @@ pub async fn run_usenet(
 
     // ── Public Usenet indexers (NZBIndex + Binsearch) ─────────────────────────
     if state.config.is_scrap_from_public_usenet_indexers {
-        let pu = public_usenet::scrape(&state.http, meta, media_type, season, episode).await;
+        let cfg = &state.config;
+        let usenet_hg = HealthGateConfig {
+            redis: state.redis.clone(),
+            enabled: cfg.public_indexers_source_health_gates_enabled,
+            min_samples: cfg.public_indexers_source_health_min_samples,
+            min_success_rate: cfg.public_indexers_source_min_success_rate,
+            max_timeout_rate: cfg.public_indexers_source_max_timeout_rate,
+            counter_soft_cap: cfg.public_indexers_source_health_counter_soft_cap,
+            decay_factor: cfg.public_indexers_source_health_decay_factor,
+            recovery_success_streak: cfg.public_indexers_source_health_recovery_success_streak,
+            scope_mode: cfg.public_indexers_source_health_scope_mode.clone(),
+            scope_override: cfg.public_indexers_source_health_scope.clone(),
+            metrics_ttl_seconds: cfg.public_indexers_source_health_metrics_ttl_seconds,
+        };
+        let pu = public_usenet::scrape(
+            &state.http,
+            meta,
+            media_type,
+            season,
+            episode,
+            Some(&usenet_hg),
+        )
+        .await;
         results.extend(pu);
     }
 
@@ -620,7 +644,10 @@ async fn fan_out(
         let http = http.clone();
         let meta = meta.clone();
         let mt = media_type.to_string();
-        let byparr = cfg.byparr_url.clone();
+        // CF bypass (byparr) must NOT run during live API requests — it launches
+        // Chromium sessions and causes severe CPU/latency spikes. Background workers
+        // call public_indexers::scrape directly with the full byparr URL.
+        let byparr: Option<String> = None;
         let sites = cfg.public_indexers_live_search_sites.clone();
         let hg = health_gate.clone();
         set.spawn(async move {

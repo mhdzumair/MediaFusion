@@ -147,6 +147,11 @@ kodi/*.zip
 .claude/
 *.tar
 *.nzb
-perf/
+# qa/ — local-only test harness (load, parity, e2e, seed scripts); never committed
+qa/
+
+# Python golden reference: symlinks created by `make python-golden`, must not be committed
+python-deprecated/reference
+python-deprecated/resources
 # .sqlx/ tracked for offline sqlx query verification in CI
 !backend/migrations/*.sql

@@ -98,7 +98,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/ready", get(health::handler))
         // ── Configure ────────────────────────────────────────────────────────
         .route("/configure", get(configure::handler))
-        .route("/{secret_str}/configure", get(configure::handler))
+        .route("/{secret_str}/configure", get(configure::user_handler))
         // ── Manifest ─────────────────────────────────────────────────────────
         .route("/manifest.json", get(manifest::public_manifest))
         .route("/{secret_str}/manifest.json", get(manifest::user_manifest))
@@ -456,8 +456,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/api/v1/content/{media_id}/likes",
             get(content::voting::get_content_likes),
         )
-        // ── Prometheus metrics ────────────────────────────────────────────────
-        .route("/metrics", get(metrics::handler))
+        // ── Prometheus metrics (protected by api_key_middleware on private instances) ─
         .route("/api/v1/metrics", get(metrics::handler))
         // ── Admin ─────────────────────────────────────────────────────────────
         .route("/api/v1/admin/cache/stats", get(admin::cache_stats))

@@ -438,7 +438,7 @@ impl JobHandler for SportVideoCrawl {
                 }
 
                 let meta = SearchMeta {
-                    media_id: media_id as i64,
+                    media_id: crate::db::MediaId(media_id),
                     imdb_id: None,
                     title: block.title.clone(),
                     year: parsed_title.year,

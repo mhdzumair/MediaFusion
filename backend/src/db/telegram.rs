@@ -1,9 +1,11 @@
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
+use super::types::UserId;
+
 /// Minimal TelegramStream data needed for playback.
 pub struct TelegramStreamRow {
-    pub id: i64,
+    pub id: i32,
     pub file_id: Option<String>,
     pub file_unique_id: Option<String>,
     pub document_id: Option<i64>,
@@ -14,9 +16,9 @@ pub struct TelegramStreamRow {
 
 /// TelegramUserForward row — maps (telegram_stream_id, user_id) to the forwarded copy.
 pub struct TelegramUserForwardRow {
-    pub id: i64,
-    pub telegram_stream_id: i64,
-    pub user_id: i64,
+    pub id: i32,
+    pub telegram_stream_id: i32,
+    pub user_id: UserId,
     pub telegram_user_id: i64,
     pub forwarded_chat_id: String,
     pub forwarded_message_id: i64,
@@ -24,7 +26,7 @@ pub struct TelegramUserForwardRow {
 }
 
 type TgStreamTuple = (
-    i64,
+    i32,
     Option<String>,
     Option<String>,
     Option<i64>,
@@ -32,7 +34,7 @@ type TgStreamTuple = (
     Option<i64>,
     Option<String>,
 );
-type TgForwardTuple = (i64, i64, i64, i64, String, i64, DateTime<Utc>);
+type TgForwardTuple = (i32, i32, UserId, i64, String, i64, DateTime<Utc>);
 
 fn tuple_to_stream_row(r: TgStreamTuple) -> TelegramStreamRow {
     TelegramStreamRow {
@@ -97,7 +99,7 @@ pub async fn fetch_telegram_stream_by_id(
         LIMIT 1
         "#,
     )
-    .bind(telegram_stream_id)
+    .bind(telegram_stream_id as i32)
     .fetch_optional(pool)
     .await
     .unwrap_or(None)
@@ -108,7 +110,7 @@ pub async fn fetch_telegram_stream_by_id(
 pub async fn get_telegram_user_forward(
     pool: &PgPool,
     telegram_stream_id: i64,
-    user_id: i64,
+    user_id: UserId,
 ) -> Option<TelegramUserForwardRow> {
     sqlx::query_as::<_, TgForwardTuple>(
         r#"
@@ -119,7 +121,7 @@ pub async fn get_telegram_user_forward(
         LIMIT 1
         "#,
     )
-    .bind(telegram_stream_id)
+    .bind(telegram_stream_id as i32)
     .bind(user_id)
     .fetch_optional(pool)
     .await
@@ -131,7 +133,7 @@ pub async fn get_telegram_user_forward(
 pub async fn create_telegram_user_forward(
     pool: &PgPool,
     telegram_stream_id: i64,
-    user_id: i64,
+    user_id: UserId,
     telegram_user_id: i64,
     forwarded_chat_id: &str,
     forwarded_message_id: i64,
@@ -147,7 +149,7 @@ pub async fn create_telegram_user_forward(
                   forwarded_chat_id, forwarded_message_id, created_at
         "#,
     )
-    .bind(telegram_stream_id)
+    .bind(telegram_stream_id as i32)
     .bind(user_id)
     .bind(telegram_user_id)
     .bind(forwarded_chat_id)
@@ -168,7 +170,7 @@ pub async fn create_telegram_user_forward(
         WHERE telegram_stream_id = $1 AND user_id = $2
         "#,
     )
-    .bind(telegram_stream_id)
+    .bind(telegram_stream_id as i32)
     .bind(user_id)
     .fetch_one(pool)
     .await
@@ -176,18 +178,18 @@ pub async fn create_telegram_user_forward(
 }
 
 /// Delete a TelegramUserForward row (used when refreshing stale forwards).
-pub async fn delete_telegram_user_forward(pool: &PgPool, telegram_stream_id: i64, user_id: i64) {
+pub async fn delete_telegram_user_forward(pool: &PgPool, telegram_stream_id: i64, user_id: UserId) {
     let _ = sqlx::query(
         "DELETE FROM telegram_user_forward WHERE telegram_stream_id = $1 AND user_id = $2",
     )
-    .bind(telegram_stream_id)
+    .bind(telegram_stream_id as i32)
     .bind(user_id)
     .execute(pool)
     .await;
 }
 
 /// Get the telegram_user_id for a given MediaFusion user_id.
-pub async fn get_user_telegram_id(pool: &PgPool, user_id: i64) -> Option<i64> {
+pub async fn get_user_telegram_id(pool: &PgPool, user_id: UserId) -> Option<i64> {
     sqlx::query_scalar::<_, Option<i64>>("SELECT telegram_user_id FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(pool)
@@ -201,8 +203,8 @@ pub async fn get_user_telegram_id(pool: &PgPool, user_id: i64) -> Option<i64> {
 pub async fn get_user_by_telegram_id(
     pool: &PgPool,
     telegram_user_id: i64,
-) -> Option<(i64, String)> {
-    let row: Option<(i64, String)> = sqlx::query_as(
+) -> Option<(UserId, String)> {
+    let row: Option<(UserId, String)> = sqlx::query_as(
         "SELECT id, COALESCE(NULLIF(username, ''), NULLIF(email, ''), 'User #' || id::text) \
          FROM users WHERE telegram_user_id = $1 LIMIT 1",
     )
@@ -218,7 +220,7 @@ pub async fn resolve_mediafusion_user_id(
     pool: &PgPool,
     redis: &fred::clients::Client,
     telegram_user_id: i64,
-) -> Option<i64> {
+) -> Option<UserId> {
     use fred::prelude::KeysInterface;
 
     if let Some((uid, _)) = get_user_by_telegram_id(pool, telegram_user_id).await {
@@ -226,5 +228,5 @@ pub async fn resolve_mediafusion_user_id(
     }
     let key = format!("telegram:user_mapping:{telegram_user_id}");
     let cached: Option<String> = redis.get(&key).await.ok()?;
-    cached.and_then(|s| s.parse().ok())
+    cached.and_then(|s| s.parse::<i32>().ok()).map(UserId)
 }

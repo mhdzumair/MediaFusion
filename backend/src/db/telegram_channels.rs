@@ -3,8 +3,10 @@
 use serde_json::Value;
 use sqlx::PgPool;
 
+use super::types::UserId;
+
 /// Load enabled per-user channel identifiers from profile `tgc` config.
-pub async fn user_scraping_channels(pool: &PgPool, user_id: i64) -> Vec<String> {
+pub async fn user_scraping_channels(pool: &PgPool, user_id: UserId) -> Vec<String> {
     let row: Option<Value> = sqlx::query_scalar(
         "SELECT config->'tgc' FROM user_profiles WHERE user_id = $1 AND is_default = true LIMIT 1",
     )

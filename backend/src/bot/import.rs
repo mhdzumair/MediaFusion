@@ -28,37 +28,36 @@ pub async fn execute_import(
     )
     .await;
 
-    let user_info = if let Some(uid) = mf_user_id {
-        import_helpers::fetch_user_info(&state.pool, uid)
-            .await
-            .ok_or_else(|| "User not found".to_string())?
-    } else {
+    let Some(uid) = mf_user_id else {
         return Err("Link your MediaFusion account with `/login` before importing.".to_string());
     };
 
-    if mf_user_id.is_some() {
-        import_helpers::enforce_upload_permissions(
-            &state.pool,
-            &state.redis,
-            mf_user_id.unwrap(),
-            user_info.uploads_restricted,
-            &user_info.role,
-        )
+    let user_info = import_helpers::fetch_user_info(&state.pool, i64::from(i32::from(uid)))
         .await
-        .map_err(|(_, m)| m)?;
-    }
+        .ok_or_else(|| "User not found".to_string())?;
 
-    let uid = mf_user_id.unwrap();
+    import_helpers::enforce_upload_permissions(
+        &state.pool,
+        &state.redis,
+        i64::from(i32::from(uid)),
+        user_info.uploads_restricted,
+        &user_info.role,
+    )
+    .await
+    .map_err(|(_, m)| m)?;
+
+    let uid_i64 = i64::from(i32::from(uid));
     let is_privileged = matches!(user_info.role.as_str(), "moderator" | "admin");
     let is_anonymous = user_info.contribute_anonymously;
     let auto_approve =
         import_helpers::should_auto_approve_import(is_privileged, user_info.is_active, is_anonymous);
 
     let content_type = conv.content_type.ok_or("Missing content type")?;
-    let (contrib_type, mut data) = build_contribution_data(state, api, conv, uid, is_anonymous)?;
+    let (contrib_type, mut data) =
+        build_contribution_data(state, api, conv, uid_i64, is_anonymous)?;
 
     if content_type == ContentType::Video {
-        forwarded::store_forwarded_video(state, api, conv, uid, &user_info, &data).await?;
+        forwarded::store_forwarded_video(state, api, conv, uid_i64, &user_info, &data).await?;
     }
 
     let target_id = data
@@ -69,7 +68,7 @@ pub async fn execute_import(
 
     let contribution_id = import_helpers::create_contribution_record(
         &state.pool,
-        Some(uid),
+        Some(uid_i64),
         contrib_type,
         target_id.as_deref(),
         &data,
@@ -84,13 +83,14 @@ pub async fn execute_import(
             state,
             contrib_type,
             &mut data,
-            Some(uid),
+            Some(uid_i64),
             &user_info.username,
         )
         .await
         {
             Ok(result) => {
-                import_helpers::award_contribution_points(&state.pool, uid, contrib_type).await;
+                import_helpers::award_contribution_points(&state.pool, uid_i64, contrib_type)
+                    .await;
                 Ok(format!(
                     "✅ *Import Successful!*\n\nContribution `{contribution_id}` approved.\n{}",
                     result.message.unwrap_or_default()

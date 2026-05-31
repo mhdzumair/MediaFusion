@@ -22,7 +22,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
 
-use crate::state::AppState;
+use crate::{db::WatchAction, state::AppState};
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -182,7 +182,7 @@ fn build_download_response(
 }
 
 // The action value used in watch_history for downloads
-const DOWNLOADED_ACTION: &str = "DOWNLOADED";
+const DOWNLOADED_ACTION: WatchAction = WatchAction::Downloaded;
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -226,7 +226,7 @@ pub async fn list_downloads(
     }
 
     let mut count_sql = String::from(
-        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2::watchaction",
+        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2",
     );
     let mut idx = 3i32;
     if params.profile_id.is_some() {
@@ -275,7 +275,7 @@ pub async fn list_downloads(
         r#"SELECT id, user_id, profile_id, media_id, title, media_type,
                   season, episode, stream_info, watched_at
            FROM watch_history
-           WHERE user_id = $1 AND action = $2::watchaction"#,
+           WHERE user_id = $1 AND action = $2"#,
     );
     let mut idx = 3i32;
     if params.profile_id.is_some() {
@@ -389,7 +389,7 @@ pub async fn get_download_stats(
     };
 
     let total: i64 = sqlx::query_scalar(&format!(
-        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2::watchaction{profile_filter}"
+        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2{profile_filter}"
     ))
     .bind(user_id)
     .bind(DOWNLOADED_ACTION)
@@ -398,7 +398,7 @@ pub async fn get_download_stats(
     .unwrap_or(0);
 
     let movies: i64 = sqlx::query_scalar(&format!(
-        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2::watchaction AND media_type = 'MOVIE'{profile_filter}"
+        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2 AND media_type = 'MOVIE'{profile_filter}"
     ))
     .bind(user_id)
     .bind(DOWNLOADED_ACTION)
@@ -407,7 +407,7 @@ pub async fn get_download_stats(
     .unwrap_or(0);
 
     let series: i64 = sqlx::query_scalar(&format!(
-        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2::watchaction AND media_type = 'SERIES'{profile_filter}"
+        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2 AND media_type = 'SERIES'{profile_filter}"
     ))
     .bind(user_id)
     .bind(DOWNLOADED_ACTION)
@@ -416,7 +416,7 @@ pub async fn get_download_stats(
     .unwrap_or(0);
 
     let this_month: i64 = sqlx::query_scalar(&format!(
-        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2::watchaction \
+        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2 \
          AND watched_at >= date_trunc('month', NOW()){profile_filter}"
     ))
     .bind(user_id)
@@ -567,7 +567,7 @@ pub async fn delete_download(
     };
 
     let result = sqlx::query(
-        "DELETE FROM watch_history WHERE id = $1 AND user_id = $2 AND action = $3::watchaction",
+        "DELETE FROM watch_history WHERE id = $1 AND user_id = $2 AND action = $3",
     )
     .bind(download_id)
     .bind(user_id)
@@ -623,7 +623,7 @@ pub async fn clear_downloads(
         }
 
         match sqlx::query(
-            "DELETE FROM watch_history WHERE user_id = $1 AND action = $2::watchaction AND profile_id = $3",
+            "DELETE FROM watch_history WHERE user_id = $1 AND action = $2 AND profile_id = $3",
         )
         .bind(user_id)
         .bind(DOWNLOADED_ACTION)
@@ -639,7 +639,7 @@ pub async fn clear_downloads(
         }
     } else {
         match sqlx::query(
-            "DELETE FROM watch_history WHERE user_id = $1 AND action = $2::watchaction",
+            "DELETE FROM watch_history WHERE user_id = $1 AND action = $2",
         )
         .bind(user_id)
         .bind(DOWNLOADED_ACTION)
@@ -676,7 +676,7 @@ pub async fn retry_download(
         }
     };
     let exists: Option<(i32,)> = sqlx::query_as(
-        "SELECT id FROM watch_history WHERE id = $1 AND user_id = $2 AND action = $3::watchaction",
+        "SELECT id FROM watch_history WHERE id = $1 AND user_id = $2 AND action = $3",
     )
     .bind(id)
     .bind(user_id as i32)

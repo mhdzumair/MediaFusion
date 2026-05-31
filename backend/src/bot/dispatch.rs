@@ -110,7 +110,7 @@ async fn handle_callback(
 
     if action.target_user_id() != user_id {
         let _ = api
-            .answer_callback_query(&cb.id, Some("❌ Unauthorized"), true)
+            .answer_callback_query(&cb.id, Some(&super::text::unauthorized()), true)
             .await;
         return;
     }
@@ -177,7 +177,7 @@ async fn handle_callback(
         CallbackAction::BatchSetSeries { .. } => {
             super::batch::handle_set_series_prompt(state, api, user_id, chat_id, message_id).await;
         }
-        CallbackAction::Cached(_) | CallbackAction::LegacySelect { .. } => {}
+        CallbackAction::LegacySelect { .. } => {}
     }
 }
 

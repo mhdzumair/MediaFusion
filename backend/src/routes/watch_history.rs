@@ -23,7 +23,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
 
-use crate::state::AppState;
+use crate::{db::{HistorySource, WatchAction}, state::AppState};
 
 // ─── Auth helper ─────────────────────────────────────────────────────────────
 
@@ -398,7 +398,7 @@ pub async fn list_watch_history(
             idx += 1;
         }
         if params.action.is_some() {
-            count_sql.push_str(&format!(" AND action = ${idx}::watchaction"));
+            count_sql.push_str(&format!(" AND action = ${idx}"));
             idx += 1;
         }
         let _ = idx; // suppress unused_assignments: idx is only needed while building the SQL string
@@ -410,7 +410,9 @@ pub async fn list_watch_history(
             q = q.bind(mt.clone());
         }
         if let Some(ref act) = params.action {
-            q = q.bind(act.clone());
+            if let Some(wa) = WatchAction::from_wire(act) {
+                q = q.bind(wa);
+            }
         }
         match q.fetch_one(&state.pool_ro).await {
             Ok(c) => c,
@@ -453,7 +455,7 @@ pub async fn list_watch_history(
             idx += 1;
         }
         if params.action.is_some() {
-            sql.push_str(&format!(" AND action = ${idx}::watchaction"));
+            sql.push_str(&format!(" AND action = ${idx}"));
             idx += 1;
         }
         sql.push_str(&format!(
@@ -487,7 +489,9 @@ pub async fn list_watch_history(
             q = q.bind(mt.clone());
         }
         if let Some(ref act) = params.action {
-            q = q.bind(act.clone());
+            if let Some(wa) = WatchAction::from_wire(act) {
+                q = q.bind(wa);
+            }
         }
         q = q.bind(page_size).bind(offset);
         match q.fetch_all(&state.pool_ro).await {
@@ -767,7 +771,7 @@ pub async fn create_watch_history(
             r#"INSERT INTO watch_history
                    (user_id, profile_id, media_id, title, media_type, season, episode,
                     duration, progress, watched_at, action, source)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), 'WATCHED'::watchaction, 'MEDIAFUSION'::historysource)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), $10, $11)
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
                          action::text, source::text, stream_info"#,
@@ -781,6 +785,8 @@ pub async fn create_watch_history(
         .bind(body.episode)
         .bind(body.duration)
         .bind(body.progress)
+        .bind(WatchAction::Watched)
+        .bind(HistorySource::Mediafusion)
         .fetch_one(&state.pool)
         .await
         {
@@ -993,9 +999,9 @@ pub async fn track_action(
 
     // Normalize action to the watchaction enum values (client may send lowercase/short form).
     let action = match body.action.to_uppercase().as_str() {
-        "WATCH" | "WATCHED" => "WATCHED",
-        "DOWNLOAD" | "DOWNLOADED" => "DOWNLOADED",
-        "QUEUE" | "QUEUED" => "QUEUED",
+        "WATCH" | "WATCHED" => WatchAction::Watched,
+        "DOWNLOAD" | "DOWNLOADED" => WatchAction::Downloaded,
+        "QUEUE" | "QUEUED" => WatchAction::Queued,
         other => {
             return (
                 StatusCode::BAD_REQUEST,
@@ -1111,7 +1117,7 @@ pub async fn track_action(
     ) = if let Some(eid) = existing_id {
         match sqlx::query_as(
             r#"UPDATE watch_history
-               SET action = $1::watchaction, stream_info = COALESCE($2, stream_info), watched_at = NOW(), title = $3
+               SET action = $1, stream_info = COALESCE($2, stream_info), watched_at = NOW(), title = $3
                WHERE id = $4
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
@@ -1135,7 +1141,7 @@ pub async fn track_action(
             r#"INSERT INTO watch_history
                    (user_id, profile_id, media_id, title, media_type, season, episode,
                     progress, watched_at, action, source, stream_info)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, 0, NOW(), $8::watchaction, 'MEDIAFUSION'::historysource, $9)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, 0, NOW(), $8, $9, $10)
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
                          action::text, source::text, stream_info"#,
@@ -1148,6 +1154,7 @@ pub async fn track_action(
         .bind(body.season)
         .bind(body.episode)
         .bind(action)
+        .bind(HistorySource::Mediafusion)
         .bind(&body.stream_info)
         .fetch_one(&state.pool)
         .await

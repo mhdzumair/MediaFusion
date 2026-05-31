@@ -150,6 +150,13 @@ class Settings(BaseSettings):
     # Database and Cache Settings
     postgres_uri: str  # Primary read-write PostgreSQL URI
     postgres_read_uri: str | None = None  # Optional read replica URI (if None, uses primary)
+
+    @field_validator("postgres_uri", "postgres_read_uri", mode="before")
+    @classmethod
+    def _ensure_asyncpg_driver(cls, v: object) -> object:
+        if isinstance(v, str) and v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
     # Set to True when postgres_uri points at PgBouncer in transaction mode.
     # Disables asyncpg's prepared-statement cache which is incompatible with
     # PgBouncer transaction pooling (causes "cached statement ... cannot be

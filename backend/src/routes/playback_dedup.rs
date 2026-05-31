@@ -272,6 +272,6 @@ mod tests {
 
     #[test]
     fn client_wait_fits_player_timeout() {
-        assert!(CLIENT_WAIT_BUDGET_SECS <= 20);
+        const _: () = assert!(CLIENT_WAIT_BUDGET_SECS <= 20);
     }
 }

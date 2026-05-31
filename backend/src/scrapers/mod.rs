@@ -83,7 +83,7 @@ pub struct ScrapedTelegramStream {
 /// Metadata passed to scrapers at request time.
 #[derive(Debug, Clone)]
 pub struct SearchMeta {
-    pub media_id: i64,
+    pub media_id: crate::db::MediaId,
     pub imdb_id: Option<String>,
     pub title: String,
     pub year: Option<i32>,

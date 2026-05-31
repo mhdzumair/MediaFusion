@@ -29,7 +29,7 @@ use serde_json::json;
 use sha2::Sha256;
 use uuid::Uuid;
 
-use crate::state::AppState;
+use crate::{db::StreamId, state::AppState};
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -313,7 +313,7 @@ async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_j
 pub async fn create_stream_suggestion(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(stream_id): Path<i32>,
+    Path(stream_id): Path<StreamId>,
     Json(body): Json<StreamSuggestionCreateRequest>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
@@ -441,7 +441,7 @@ pub async fn create_stream_suggestion(
     if can_auto_approve {
         apply_stream_field_change(
             &state.pool,
-            stream_id,
+            stream_id.0,
             &body.suggestion_type,
             body.field_name.as_deref(),
             suggested_value.as_deref(),
@@ -1206,7 +1206,7 @@ pub async fn triage_stream_suggestion(
 pub async fn get_stream_editable_fields(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(stream_id): Path<i32>,
+    Path(stream_id): Path<StreamId>,
 ) -> Response {
     let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -1264,7 +1264,7 @@ pub async fn get_stream_editable_fields(
 pub async fn get_stream_signals(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(stream_id): Path<i32>,
+    Path(stream_id): Path<StreamId>,
 ) -> Response {
     let user_id = validate_token_optional(&headers, &state.config.secret_key_raw);
 
@@ -1379,7 +1379,7 @@ pub async fn get_stream_signals(
 pub async fn list_stream_suggestions(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(stream_id): Path<i64>,
+    Path(stream_id): Path<StreamId>,
     Query(params): Query<ListSuggestionsQuery>,
 ) -> Response {
     let _user_id = validate_token_optional(&headers, &state.config.secret_key_raw);
@@ -1426,7 +1426,7 @@ pub async fn list_stream_suggestions(
 pub async fn get_stream_broken_status(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(stream_id): Path<i32>,
+    Path(stream_id): Path<StreamId>,
 ) -> Response {
     let _user_id = validate_token_optional(&headers, &state.config.secret_key_raw);
 
@@ -1465,7 +1465,7 @@ pub async fn get_stream_broken_status(
 pub async fn update_stream_broken_status(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(stream_id): Path<i32>,
+    Path(stream_id): Path<StreamId>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,

@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;
 
-use crate::state::AppState;
+use crate::{db::MediaType, state::AppState};
 
 use super::import_helpers;
 
@@ -730,10 +730,13 @@ pub async fn search_metadata(
             let count: i64 = match sqlx::query_scalar(
                 "SELECT COUNT(*) FROM media
                  WHERE title ILIKE '%' || $1 || '%'
-                   AND type = upper($2)::mediatype",
+                   AND type = $2",
             )
             .bind(q)
-            .bind(media_type)
+            .bind(
+                MediaType::from_wire(&media_type.to_ascii_lowercase())
+                    .unwrap_or(MediaType::Movie),
+            )
             .fetch_one(&state.pool_ro)
             .await
             {
@@ -752,7 +755,7 @@ pub async fn search_metadata(
                 "SELECT id, title, type::text, year, is_blocked
                  FROM media
                  WHERE title ILIKE '%' || $1 || '%'
-                   AND type = upper($2)::mediatype
+                   AND type = $2
                  ORDER BY
                    CASE WHEN LOWER(title) = LOWER($1) THEN 0
                         WHEN LOWER(title) LIKE LOWER($1) || '%' THEN 1
@@ -761,7 +764,10 @@ pub async fn search_metadata(
                  LIMIT $3 OFFSET $4",
             )
             .bind(q)
-            .bind(media_type)
+            .bind(
+                MediaType::from_wire(&media_type.to_ascii_lowercase())
+                    .unwrap_or(MediaType::Movie),
+            )
             .bind(page_size)
             .bind(offset)
             .fetch_all(&state.pool_ro)

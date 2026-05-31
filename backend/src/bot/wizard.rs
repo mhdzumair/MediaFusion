@@ -41,7 +41,7 @@ pub async fn start_wizard(
 
     let preview = detect::content_preview(content_type, &raw_input);
     let (msg, keyboard) =
-        matches::show_media_type_picker(state, chat_id, 0, user_id, content_type, &preview).await;
+        matches::show_media_type_picker(state, user_id, content_type, &preview).await;
 
     let message_id = match api.send_message(chat_id, &msg, Some(keyboard)).await {
         Ok(id) => id,
@@ -319,7 +319,12 @@ pub async fn handle_confirm_import(
     // Check if user contributes anonymously and hasn't provided a display name yet
     if conv.anonymous_display_name.is_none() {
         if let Some(uid) = crate::db::telegram::resolve_mediafusion_user_id(&state.pool, &state.redis, conv.user_id).await {
-            if let Some(user_info) = crate::routes::content::import_helpers::fetch_user_info(&state.pool, uid).await {
+            if let Some(user_info) = crate::routes::content::import_helpers::fetch_user_info(
+                &state.pool,
+                i64::from(i32::from(uid)),
+            )
+            .await
+            {
                 if user_info.contribute_anonymously {
                     conv.step = ConversationStep::AwaitingAnonymousName;
                     conv.touch();

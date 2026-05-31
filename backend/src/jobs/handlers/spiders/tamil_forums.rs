@@ -276,7 +276,7 @@ async fn scrape_tamil_forum(
                 };
 
                 let meta = SearchMeta {
-                    media_id: media_id as i64,
+                    media_id: crate::db::MediaId(media_id),
                     imdb_id,
                     title: clean_title.clone(),
                     year: parsed.year,

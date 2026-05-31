@@ -270,16 +270,18 @@ async fn search_import_db_matches(
     limit: usize,
 ) -> Vec<serde_json::Value> {
     let pattern = format!("%{title}%");
-    let type_upper = meta_type.to_uppercase();
+    let Some(media_type) = crate::db::MediaType::from_wire(meta_type) else {
+        return vec![];
+    };
     let rows: Vec<(i32, String, Option<i32>)> = sqlx::query_as(
         r#"SELECT m.id, m.title, m.year
            FROM media m
            WHERE LOWER(m.title) LIKE LOWER($1)
-             AND UPPER(m.type::text) = $2
+             AND m.type = $2
            LIMIT $3"#,
     )
     .bind(&pattern)
-    .bind(&type_upper)
+    .bind(media_type)
     .bind(limit as i64)
     .fetch_all(pool)
     .await

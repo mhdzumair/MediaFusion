@@ -218,7 +218,7 @@ pub async fn analyze_youtube_for_bot(
         .await
         .unwrap_or_else(|| (String::new(), String::new()));
     let matches = if !title.is_empty() {
-        super::import_helpers::search_analyze_matches(&state, &title, None, meta_type).await
+        super::import_helpers::search_analyze_matches(state, &title, None, meta_type).await
     } else {
         vec![]
     };
@@ -417,7 +417,7 @@ pub async fn import_youtube_video(
 
     if let Some(mid) = media_id {
         let _ =
-            super::import_helpers::link_stream_to_media(&state.pool, stream_id as i32, mid as i32)
+            super::import_helpers::link_stream_to_media(&state.pool, stream_id as i32, crate::db::MediaId(mid as i32))
                 .await;
     }
 

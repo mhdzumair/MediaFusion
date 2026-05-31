@@ -2,9 +2,12 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use tracing::{info, warn};
 
-use crate::jobs::{
-    error::JobError,
-    handler::{JobCtx, JobHandler},
+use crate::{
+    db::MediaType,
+    jobs::{
+        error::JobError,
+        handler::{JobCtx, JobHandler},
+    },
 };
 
 pub struct DiscoverPrewarm;
@@ -100,14 +103,14 @@ async fn upsert_media(
             is_public, is_user_created, adult, is_blocked,
             total_streams, created_at
         ) VALUES (
-            $1::mediatype, $2, $3,
+            $1, $2, $3,
             true, false, false, false,
             0, NOW()
         )
         RETURNING id
         "#,
     )
-    .bind(db_type)
+    .bind(MediaType::from_wire(db_type).unwrap_or(MediaType::Movie))
     .bind(title)
     .bind(year)
     .fetch_one(pool)

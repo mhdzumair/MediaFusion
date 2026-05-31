@@ -223,13 +223,14 @@ async fn insert_usenet_stream(
                is_proper, is_repack, is_extended, is_complete, is_dubbed, release_group,
                is_active, is_blocked, is_public, playback_count, created_at
            ) VALUES(
-               'USENET'::streamtype, $1, $2, $3, $4,
-               $5, $6, $7,
-               $8, $9, $10, $11, $12, $13,
-               true, false, $14, 0, NOW()
+               $1, $2, $3, $4, $5,
+               $6, $7, $8,
+               $9, $10, $11, $12, $13, $14,
+               true, false, $15, 0, NOW()
            )
            RETURNING id"#,
     )
+    .bind(crate::db::StreamType::Usenet)
     .bind(name)
     .bind(source)
     .bind(uploader)
@@ -278,7 +279,7 @@ async fn insert_usenet_stream(
                     .unwrap_or(stream_id);
             if let Some(mid) = media_id {
                 let _ =
-                    super::import_helpers::link_stream_to_media(pool, existing as i32, mid as i32)
+                    super::import_helpers::link_stream_to_media(pool, existing as i32, crate::db::MediaId(mid as i32))
                         .await;
             }
             return Ok(existing);

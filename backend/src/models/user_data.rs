@@ -295,9 +295,9 @@ pub struct CatalogConfig {
 pub struct UserData {
     // User identification
     #[serde(default, rename = "uid", alias = "user_id")]
-    pub user_id: Option<i64>,
+    pub user_id: Option<crate::db::UserId>,
     #[serde(default, rename = "pid", alias = "profile_id")]
-    pub profile_id: Option<i64>,
+    pub profile_id: Option<crate::db::ProfileId>,
     #[serde(default, rename = "uuuid", alias = "user_uuid", skip_serializing)]
     pub user_uuid: Option<String>,
     #[serde(default, rename = "puuid", alias = "profile_uuid", skip_serializing)]

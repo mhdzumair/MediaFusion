@@ -9,7 +9,12 @@ use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{parser, scrapers::media_resolve::ImportMediaOverrides, state::AppState};
+use crate::{
+    db::{FileType, IptvSourceType, LinkSource, StreamType},
+    parser,
+    scrapers::media_resolve::ImportMediaOverrides,
+    state::AppState,
+};
 
 use super::{
     import_helpers,
@@ -216,10 +221,11 @@ pub async fn insert_http_stream_for_media(
             playback_count, is_remastered, is_upscaled, is_proper, is_repack, is_extended,
             is_complete, is_dubbed, is_subbed, created_at, updated_at
         ) VALUES (
-            'HTTP'::streamtype, $1, $2, $3, true, false, $4, 0,
+            $1, $2, $3, $4, true, false, $5, 0,
             false, false, false, false, false, false, false, false, NOW(), NOW()
         ) RETURNING id"#,
     )
+    .bind(StreamType::Http)
     .bind(stream_name)
     .bind(source_label)
     .bind(uploader_user_id.map(|id| id as i32))
@@ -245,7 +251,7 @@ pub async fn insert_http_stream_for_media(
         return Ok(false);
     }
 
-    import_helpers::link_stream_to_media(pool, stream_id, media_id).await?;
+    import_helpers::link_stream_to_media(pool, stream_id, crate::db::MediaId(media_id)).await?;
     Ok(true)
 }
 
@@ -341,9 +347,10 @@ pub async fn import_series_entry(
             stream_type, name, source, uploader_user_id, is_active, is_blocked, is_public,
             playback_count, created_at, updated_at
         ) VALUES (
-            'HTTP'::streamtype, $1, $2, $3, true, false, $4, 0, NOW(), NOW()
+            $1, $2, $3, $4, true, false, $5, 0, NOW(), NOW()
         ) RETURNING id"#,
     )
+    .bind(StreamType::Http)
     .bind(&entry.name)
     .bind(source)
     .bind(user_id as i32)
@@ -363,29 +370,31 @@ pub async fn import_series_entry(
 
     let file_id: i32 = sqlx::query_scalar(
         r#"INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive)
-           VALUES ($1, 0, $2, 'VIDEO'::filetype, false)
+           VALUES ($1, 0, $2, $3, false)
            ON CONFLICT (stream_id, file_index) DO UPDATE SET filename = EXCLUDED.filename
            RETURNING id"#,
     )
     .bind(stream_id)
     .bind(&entry.name)
+    .bind(FileType::Video)
     .fetch_one(ctx.pool)
     .await?;
 
     sqlx::query(
         r#"INSERT INTO file_media_link (
                file_id, media_id, season_number, episode_number, is_primary, confidence, link_source
-           ) VALUES ($1, $2, $3, $4, true, 1.0, 'MANUAL'::linksource)
+           ) VALUES ($1, $2, $3, $4, true, 1.0, $5)
            ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING"#,
     )
     .bind(file_id)
     .bind(media_id)
     .bind(season)
     .bind(episode)
+    .bind(LinkSource::Manual)
     .execute(ctx.pool)
     .await?;
 
-    import_helpers::link_stream_to_media(ctx.pool, stream_id, media_id).await?;
+    import_helpers::link_stream_to_media(ctx.pool, stream_id, crate::db::MediaId(media_id)).await?;
     Ok(true)
 }
 
@@ -818,13 +827,14 @@ pub async fn save_xtream_iptv_source(
                live_category_ids, vod_category_ids, series_category_ids,
                last_synced_at, last_sync_stats, is_active, created_at, updated_at
            ) VALUES (
-               $1, 'XTREAM'::iptvsourcetype, $2, $3, $4,
-               $5, $6, $7, $8,
-               $9::jsonb, $10::jsonb, $11::jsonb,
-               NOW(), $12::jsonb, true, NOW(), NOW()
+               $1, $2, $3, $4, $5,
+               $6, $7, $8, $9,
+               $10::jsonb, $11::jsonb, $12::jsonb,
+               NOW(), $13::jsonb, true, NOW(), NOW()
            ) RETURNING id"#,
     )
     .bind(user_id as i32)
+    .bind(IptvSourceType::Xtream)
     .bind(name)
     .bind(server_url)
     .bind(encrypted_credentials)
@@ -855,12 +865,13 @@ pub async fn save_m3u_iptv_source(
                import_live, import_vod, import_series,
                last_synced_at, last_sync_stats, is_active, created_at, updated_at
            ) VALUES (
-               $1, 'M3U'::iptvsourcetype, $2, $3, $4,
+               $1, $2, $3, $4, $5,
                true, true, true,
-               NOW(), $5::jsonb, true, NOW(), NOW()
+               NOW(), $6::jsonb, true, NOW(), NOW()
            ) RETURNING id"#,
     )
     .bind(user_id as i32)
+    .bind(IptvSourceType::M3u)
     .bind(name)
     .bind(m3u_url)
     .bind(is_public)

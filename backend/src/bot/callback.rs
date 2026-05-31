@@ -26,7 +26,6 @@ pub enum CallbackAction {
     BatchSkip { user_id: i64, item_id: String },
     BatchSetSeries { user_id: i64 },
     LegacySelect { user_id: i64, msg_id: i64, external_id: String },
-    Cached(String),
 }
 
 impl CallbackAction {
@@ -54,7 +53,6 @@ impl CallbackAction {
                 msg_id,
                 external_id,
             } => format!("select:{user_id}:{msg_id}:{external_id}"),
-            Self::Cached(s) => s.clone(),
         };
 
         if raw.len() <= MAX_CALLBACK_BYTES {
@@ -65,8 +63,7 @@ impl CallbackAction {
     }
 
     pub async fn decode(data: &str, state: &AppState) -> Option<Self> {
-        if data.starts_with("cache:") {
-            let suffix = &data["cache:".len()..];
+        if let Some(suffix) = data.strip_prefix("cache:") {
             let key = format!("telegram:search_result:{suffix}");
             let raw: Option<String> = state.redis.get(&key).await.ok()?;
             return raw.as_deref().and_then(Self::parse);
@@ -158,7 +155,6 @@ impl CallbackAction {
             | Self::BatchSkip { user_id, .. }
             | Self::BatchSetSeries { user_id }
             | Self::LegacySelect { user_id, .. } => *user_id,
-            Self::Cached(_) => 0,
         }
     }
 }

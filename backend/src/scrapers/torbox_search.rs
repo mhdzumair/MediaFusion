@@ -281,13 +281,16 @@ pub async fn scrape_usenet(
     let mut results: Vec<ScrapedUsenetStream> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    // 1. IMDb ID search
+    // 1. IMDb ID search — returns None on 429 (rate-limited); skip title query in that case
     if let Some(ref imdb_id) = meta.imdb_id {
-        let by_id =
-            search_usenet_by_imdb(client, &headers, imdb_id, media_type, season, episode).await;
-        for s in by_id {
-            if seen.insert(s.nzb_guid.clone()) {
-                results.push(s);
+        match search_usenet_by_imdb(client, &headers, imdb_id, media_type, season, episode).await {
+            None => return results, // rate-limited; skip title query to avoid another 429
+            Some(by_id) => {
+                for s in by_id {
+                    if seen.insert(s.nzb_guid.clone()) {
+                        results.push(s);
+                    }
+                }
             }
         }
     }
@@ -318,6 +321,9 @@ pub async fn scrape_usenet(
                 }
             }
         }
+        Ok(r) if r.status().as_u16() == 429 => {
+            tracing::warn!("torbox_usenet query '{query}': rate-limited (429)");
+        }
         Ok(r) => tracing::debug!("torbox_usenet query {query}: HTTP {}", r.status()),
         Err(e) => tracing::debug!("torbox_usenet query {query}: {e}"),
     }
@@ -325,6 +331,8 @@ pub async fn scrape_usenet(
     results
 }
 
+/// Returns `None` when TorBox signals rate-limiting (429) so the caller can
+/// short-circuit and skip the follow-up title query.
 async fn search_usenet_by_imdb(
     client: &Client,
     headers: &reqwest::header::HeaderMap,
@@ -332,7 +340,7 @@ async fn search_usenet_by_imdb(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-) -> Vec<ScrapedUsenetStream> {
+) -> Option<Vec<ScrapedUsenetStream>> {
     let url = format!("{BASE_URL}/usenet/{imdb_id}");
     let mut params: Vec<(&str, String)> = vec![
         ("metadata", "true".into()),
@@ -357,18 +365,22 @@ async fn search_usenet_by_imdb(
         .await;
 
     match resp {
-        Ok(r) if r.status().as_u16() == 404 || r.status().as_u16() == 418 => vec![],
+        Ok(r) if r.status().as_u16() == 404 || r.status().as_u16() == 418 => Some(vec![]),
         Ok(r) if r.status().is_success() => {
             let json: serde_json::Value = r.json().await.unwrap_or_default();
-            parse_usenet_json(&json, media_type, season, episode, None)
+            Some(parse_usenet_json(&json, media_type, season, episode, None))
+        }
+        Ok(r) if r.status().as_u16() == 429 => {
+            tracing::warn!("torbox_usenet imdb {imdb_id}: rate-limited (429) — skipping title query");
+            None
         }
         Ok(r) => {
             tracing::debug!("torbox_usenet imdb {imdb_id}: HTTP {}", r.status());
-            vec![]
+            Some(vec![])
         }
         Err(e) => {
             tracing::debug!("torbox_usenet imdb {imdb_id}: {e}");
-            vec![]
+            Some(vec![])
         }
     }
 }

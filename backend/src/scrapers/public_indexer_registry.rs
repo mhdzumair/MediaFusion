@@ -591,7 +591,9 @@ pub fn get_indexers_for_media(
             .collect()
     });
 
-    ALL_INDEXERS
+    // Non-CF indexers first so cheap scrapes consume the budget before any
+    // Chromium/byparr session is launched. CF indexers run only if budget remains.
+    let mut indexers: Vec<&'static IndexerDef> = ALL_INDEXERS
         .iter()
         .filter(|def| {
             let type_ok = match media_type {
@@ -614,5 +616,8 @@ pub fn get_indexers_for_media(
             }
             true
         })
-        .collect()
+        .collect();
+    // Stable sort: non-CF first, CF (byparr) last.
+    indexers.sort_by_key(|def| def.solve_cloudflare);
+    indexers
 }

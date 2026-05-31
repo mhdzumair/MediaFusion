@@ -9,7 +9,7 @@ use serde_json::json;
 
 use crate::{
     cache, crypto,
-    db::meta as db_meta,
+    db::{self, meta as db_meta},
     models::{
         stremio::{Meta, MetaItem, Video},
         user_data::UserData,
@@ -35,23 +35,26 @@ async fn build_meta(state: &AppState, media_type: &str, meta_id: &str) -> Option
         .map(str::to_owned)
         .unwrap_or_else(|| format!("mf{id}"));
 
+    let media_type_wire = row.media_type.as_wire();
     let poster = row.poster_url.or_else(|| {
         Some(format!(
-            "{}/poster/{}/mf{id}.jpg",
-            state.config.host_url, row.media_type
+            "{}/poster/{media_type_wire}/mf{id}.jpg",
+            state.config.host_url
         ))
     });
 
-    let release_info = match (row.media_type.as_str(), row.year, row.end_year) {
-        ("series", Some(start), Some(end)) if end > start => Some(format!("{start}-{end}")),
-        ("series", Some(start), _) => Some(format!("{start}-")),
+    let release_info = match (row.media_type, row.year, row.end_year) {
+        (db::MediaType::Series, Some(start), Some(end)) if end > start => {
+            Some(format!("{start}-{end}"))
+        }
+        (db::MediaType::Series, Some(start), _) => Some(format!("{start}-")),
         (_, Some(y), _) => Some(y.to_string()),
         _ => None,
     };
 
     let runtime = row.runtime_minutes.map(|r| format!("{r} min"));
 
-    let videos = if row.media_type == "series" {
+    let videos = if row.media_type == db::MediaType::Series {
         let eps = db_meta::get_episodes(&state.pool_ro, id).await;
         eps.into_iter()
             .map(|e| {
@@ -81,7 +84,7 @@ async fn build_meta(state: &AppState, media_type: &str, meta_id: &str) -> Option
 
     Some(Meta {
         id: canonical_id,
-        media_type: row.media_type,
+        media_type: media_type_wire.to_string(),
         name: row.title,
         release_info,
         description: row.description,

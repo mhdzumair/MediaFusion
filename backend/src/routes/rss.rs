@@ -383,7 +383,8 @@ pub async fn create_rss_feed(
 
     // Get admin user id for user_id FK — use first admin user
     let admin_id: Option<i32> =
-        sqlx::query_scalar("SELECT id FROM users WHERE role = 'ADMIN'::userrole LIMIT 1")
+        sqlx::query_scalar("SELECT id FROM users WHERE role = $1 LIMIT 1")
+            .bind(crate::db::UserRole::Admin)
             .fetch_optional(&state.pool_ro)
             .await
             .unwrap_or(None);
@@ -686,7 +687,8 @@ pub async fn bulk_import_rss_feeds(
     }
 
     let admin_id: Option<i32> =
-        sqlx::query_scalar("SELECT id FROM users WHERE role = 'ADMIN'::userrole LIMIT 1")
+        sqlx::query_scalar("SELECT id FROM users WHERE role = $1 LIMIT 1")
+            .bind(crate::db::UserRole::Admin)
             .fetch_optional(&state.pool_ro)
             .await
             .unwrap_or(None);

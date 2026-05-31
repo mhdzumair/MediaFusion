@@ -334,6 +334,7 @@ pub async fn list_contributions(
     enum ListContribBind {
         Int(i32),
         Str(String),
+        Status(crate::db::ContributionStatus),
     }
 
     let mut filter_binds: Vec<ListContribBind> = Vec::new();
@@ -352,10 +353,12 @@ pub async fn list_contributions(
         idx += 1;
     }
     if let Some(ref cs) = params.contribution_status {
-        count_sql.push_str(&format!(" AND status::text = ${idx}"));
-        fetch_sql.push_str(&format!(" AND status::text = ${idx}"));
-        filter_binds.push(ListContribBind::Str(cs.to_uppercase()));
-        idx += 1;
+        if let Some(status) = crate::db::ContributionStatus::from_wire(cs) {
+            count_sql.push_str(&format!(" AND status = ${idx}"));
+            fetch_sql.push_str(&format!(" AND status = ${idx}"));
+            filter_binds.push(ListContribBind::Status(status));
+            idx += 1;
+        }
     }
     if let Some(ref c) = params.contributor {
         if c != "all" {
@@ -414,6 +417,7 @@ pub async fn list_contributions(
         match b {
             ListContribBind::Int(v) => cq = cq.bind(*v),
             ListContribBind::Str(v) => cq = cq.bind(v.as_str()),
+            ListContribBind::Status(v) => cq = cq.bind(*v),
         }
     }
     let total: i64 = cq.fetch_one(&state.pool_ro).await.unwrap_or(0);
@@ -440,6 +444,7 @@ pub async fn list_contributions(
         match b {
             ListContribBind::Int(v) => fq = fq.bind(*v),
             ListContribBind::Str(v) => fq = fq.bind(v.as_str()),
+            ListContribBind::Status(v) => fq = fq.bind(*v),
         }
     }
     let rows: Vec<ContribTuple> = fq
@@ -624,6 +629,9 @@ pub async fn list_contribution_contributors(
 
     let limit = params.limit.clamp(1, 200);
 
+    let mut status_bind: Option<crate::db::ContributionStatus> = None;
+    let mut bind_idx: i32 = 0;
+
     let mut sql = String::from(
         r#"SELECT c.user_id, u.username,
                   COUNT(*) as total,
@@ -642,10 +650,11 @@ pub async fn list_contribution_contributors(
         ));
     }
     if let Some(ref cs) = params.contribution_status {
-        sql.push_str(&format!(
-            " AND c.status::text = '{}'",
-            cs.to_uppercase().replace('\'', "''")
-        ));
+        if let Some(status) = crate::db::ContributionStatus::from_wire(cs) {
+            bind_idx += 1;
+            sql.push_str(&format!(" AND c.status = ${bind_idx}"));
+            status_bind = Some(status);
+        }
     }
     if let Some(ref q) = params.query {
         let esc = q.replace('\'', "''");
@@ -658,10 +667,19 @@ pub async fn list_contribution_contributors(
         " GROUP BY c.user_id, u.username ORDER BY total DESC, u.username ASC LIMIT {limit}"
     ));
 
-    let rows: Vec<(Option<i32>, Option<String>, i64, i64, i64, i64)> = sqlx::query_as(&sql)
-        .fetch_all(&state.pool_ro)
-        .await
-        .unwrap_or_default();
+    let rows: Vec<(Option<i32>, Option<String>, i64, i64, i64, i64)> =
+        if let Some(status) = status_bind {
+            sqlx::query_as(&sql)
+                .bind(status)
+                .fetch_all(&state.pool_ro)
+                .await
+                .unwrap_or_default()
+        } else {
+            sqlx::query_as(&sql)
+                .fetch_all(&state.pool_ro)
+                .await
+                .unwrap_or_default()
+        };
 
     let contributors: Vec<serde_json::Value> = rows
         .into_iter()

@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.id, p.name, COUNT(mc.media_id) as \"usage_count!\"\n               FROM person p\n               LEFT JOIN media_cast mc ON p.id = mc.person_id\n               GROUP BY p.id, p.name\n               ORDER BY p.name\n               LIMIT $1 OFFSET $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "usage_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "64aad3eaa0baa00250795e369a4900d5bffefb0aa4f50b792fd037716c5d18fd"
+}

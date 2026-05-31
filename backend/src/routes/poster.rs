@@ -8,7 +8,12 @@ use axum::{
 };
 use tracing::{debug, warn};
 
-use crate::{cache, poster::AnnotateParams, state::AppState};
+use crate::{
+    cache,
+    db::MediaType,
+    poster::AnnotateParams,
+    state::AppState,
+};
 
 pub async fn handler(
     Path((media_type, id_jpg)): Path<(String, String)>,
@@ -120,12 +125,15 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
                 WHERE r.media_id = m.id AND rp.name = 'imdb'
                 LIMIT 1
             ) mr ON true
-            WHERE m.id = $1 AND m.type = upper($2)::mediatype
+            WHERE m.id = $1 AND m.type = $2
             LIMIT 1
             "#,
             )
             .bind(internal_id)
-            .bind(media_type)
+            .bind(
+                MediaType::from_wire(&media_type.to_ascii_lowercase())
+                    .unwrap_or(MediaType::Movie),
+            )
             .fetch_optional(&state.pool_ro)
             .await
             .unwrap_or_else(|e| {
@@ -154,12 +162,15 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
                 LIMIT 1
             ) mr ON true
             WHERE meid.external_id = $1
-              AND m.type = upper($2)::mediatype
+              AND m.type = $2
             LIMIT 1
             "#,
             )
             .bind(id)
-            .bind(media_type)
+            .bind(
+                MediaType::from_wire(&media_type.to_ascii_lowercase())
+                    .unwrap_or(MediaType::Movie),
+            )
             .fetch_optional(&state.pool_ro)
             .await
             .unwrap_or_else(|e| {

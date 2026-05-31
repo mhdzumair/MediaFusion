@@ -221,7 +221,7 @@ async fn dispatch_tv(
         }
     };
 
-    if media_id == 0 {
+    if media_id == db::MediaId(0) {
         return Json(json!({"streams": []})).into_response();
     }
 
@@ -314,7 +314,7 @@ pub async fn resolve(
     )
     .await?;
 
-    if p.media_id == 0
+    if p.media_id == db::MediaId(0)
         && p.all_torrents.is_empty()
         && p.http_rows.is_empty()
         && p.youtube_rows.is_empty()
@@ -708,7 +708,7 @@ struct StreamPipeline {
     acestream_rows: Vec<Value>,
     live_usenet_raw: Vec<crate::scrapers::ScrapedUsenetStream>,
     user_data: crate::models::user_data::UserData,
-    media_id: i64,
+    media_id: db::MediaId,
     /// Whether P2P/WebTorrent streams should be shown (mirrors Python's P2P decision).
     show_p2p: bool,
 }
@@ -742,7 +742,7 @@ async fn build_pipeline(
         serde_json::from_value(raw_user_data).unwrap_or_default();
 
     let scope = match user_data.user_id {
-        Some(id) if id > 0 => format!("user:{id}"),
+        Some(id) if id.0 > 0 => format!("user:{id}"),
         _ => "public".into(),
     };
 
@@ -758,7 +758,7 @@ async fn build_pipeline(
 
     let disabled = &state.config.disabled_providers;
 
-    if media_id == 0 && related_ids.is_empty() {
+    if media_id == db::MediaId(0) && related_ids.is_empty() {
         let torrent_providers: Vec<crate::models::user_data::StreamingProvider> = user_data
             .streaming_providers
             .iter()
@@ -794,13 +794,13 @@ async fn build_pipeline(
             acestream_rows: vec![],
             live_usenet_raw: vec![],
             user_data,
-            media_id: 0,
+            media_id: db::MediaId(0),
             show_p2p,
         });
     }
 
     // 3. Build unique ID list + Redis keys
-    let mut all_ids: Vec<i64> = std::iter::once(media_id)
+    let mut all_ids: Vec<db::MediaId> = std::iter::once(media_id)
         .chain(related_ids.iter().copied())
         .collect();
     all_ids.dedup();
@@ -814,7 +814,7 @@ async fn build_pipeline(
     let blobs = stream_cache::mget(&state.redis, &redis_keys).await?;
 
     let mut all_torrents: Vec<Value> = Vec::new();
-    let mut misses: Vec<i64> = Vec::new();
+    let mut misses: Vec<db::MediaId> = Vec::new();
 
     for (idx, blob_opt) in blobs.into_iter().enumerate() {
         match blob_opt {
@@ -982,7 +982,7 @@ async fn build_pipeline(
                             &svc,
                             &tok,
                             &uncached,
-                            media_id as i32,
+                            i32::from(media_id),
                         )
                         .await;
                         for (hash, is_cached) in live {
@@ -1854,12 +1854,13 @@ pub(crate) fn is_rd_blocked_filename(filename: &str) -> bool {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 fn stream_key(
-    id: i64,
+    id: db::MediaId,
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
     scope: &str,
 ) -> String {
+    let id = i32::from(id);
     match (media_type, season, episode) {
         ("series", Some(s), Some(e)) => format!("stream_data:series:{id}:{s}:{e}:{scope}"),
         _ => format!("stream_data:movie:{id}:{scope}"),

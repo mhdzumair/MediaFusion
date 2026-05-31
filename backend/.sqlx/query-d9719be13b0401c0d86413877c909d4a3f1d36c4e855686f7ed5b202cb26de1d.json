@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT g.id, g.name, COUNT(mgl.media_id) as \"usage_count!\"\n               FROM genre g\n               LEFT JOIN media_genre_link mgl ON g.id = mgl.genre_id\n               GROUP BY g.id, g.name\n               ORDER BY g.name\n               LIMIT $1 OFFSET $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "usage_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "d9719be13b0401c0d86413877c909d4a3f1d36c4e855686f7ed5b202cb26de1d"
+}

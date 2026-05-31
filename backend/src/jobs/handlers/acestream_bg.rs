@@ -7,6 +7,7 @@ use serde_json::Value;
 use tracing::{info, warn};
 
 use crate::{
+    db::{MediaId, MediaType, StreamId, StreamType},
     jobs::{
         error::JobError,
         handler::{JobCtx, JobHandler},
@@ -584,11 +585,12 @@ async fn fetch_source_candidates(
     all
 }
 
-async fn ensure_tv_media(pool: &sqlx::PgPool, title: &str, poster: Option<&str>) -> Option<i32> {
-    let existing: Option<i32> = sqlx::query_scalar(
-        "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = 'TV'::mediatype LIMIT 1",
+async fn ensure_tv_media(pool: &sqlx::PgPool, title: &str, poster: Option<&str>) -> Option<MediaId> {
+    let existing: Option<MediaId> = sqlx::query_scalar(
+        "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
     )
     .bind(title)
+    .bind(MediaType::Tv)
     .fetch_optional(pool)
     .await
     .ok()
@@ -605,11 +607,12 @@ async fn ensure_tv_media(pool: &sqlx::PgPool, title: &str, poster: Option<&str>)
         }
         return Some(id);
     }
-    let id: Option<i32> = sqlx::query_scalar(
+    let id: Option<MediaId> = sqlx::query_scalar(
         "INSERT INTO media (title, type, created_at, adult, is_blocked, total_streams, popularity) \
-         VALUES ($1, 'TV'::mediatype, NOW(), false, false, 0, 0.0) RETURNING id",
+         VALUES ($1, $2, NOW(), false, false, 0, 0.0) RETURNING id",
     )
     .bind(title)
+    .bind(MediaType::Tv)
     .fetch_optional(pool)
     .await
     .ok()
@@ -626,7 +629,7 @@ async fn ensure_tv_media(pool: &sqlx::PgPool, title: &str, poster: Option<&str>)
     id
 }
 
-async fn find_by_content_id(pool: &sqlx::PgPool, content_id: &str) -> Option<i64> {
+async fn find_by_content_id(pool: &sqlx::PgPool, content_id: &str) -> Option<StreamId> {
     sqlx::query_scalar("SELECT stream_id FROM acestream_stream WHERE content_id = $1 LIMIT 1")
         .bind(content_id)
         .fetch_optional(pool)
@@ -635,13 +638,14 @@ async fn find_by_content_id(pool: &sqlx::PgPool, content_id: &str) -> Option<i64
         .flatten()
 }
 
-async fn find_by_source(pool: &sqlx::PgPool, source: &str) -> Option<(i64, String)> {
+async fn find_by_source(pool: &sqlx::PgPool, source: &str) -> Option<(StreamId, String)> {
     sqlx::query_as(
         "SELECT s.id, ac.content_id FROM stream s \
          JOIN acestream_stream ac ON ac.stream_id = s.id \
-         WHERE s.source = $1 AND s.stream_type = 'ACESTREAM'::streamtype LIMIT 1",
+         WHERE s.source = $1 AND s.stream_type = $2 LIMIT 1",
     )
     .bind(source)
+    .bind(StreamType::Acestream)
     .fetch_optional(pool)
     .await
     .ok()
@@ -657,8 +661,8 @@ async fn upsert_acestream(
     release_group: Option<&str>,
     content_id: &str,
     info_hash: Option<&str>,
-    media_id: Option<i32>,
-) -> Result<Option<i64>, sqlx::Error> {
+    media_id: Option<MediaId>,
+) -> Result<Option<StreamId>, sqlx::Error> {
     if let Some(existing) = find_by_content_id(pool, content_id).await {
         sqlx::query(
             "UPDATE stream SET name = $1, source = $2, resolution = $3, release_group = $4, updated_at = NOW() WHERE id = $5",
@@ -667,23 +671,23 @@ async fn upsert_acestream(
         .bind(source)
         .bind(resolution)
         .bind(release_group)
-        .bind(existing as i32)
+        .bind(existing)
         .execute(pool)
         .await?;
         sqlx::query(
             "UPDATE acestream_stream SET info_hash = COALESCE($1, info_hash) WHERE stream_id = $2",
         )
         .bind(info_hash)
-        .bind(existing as i32)
+        .bind(existing)
         .execute(pool)
         .await?;
         if let Some(mid) = media_id {
-            let _ = media_resolve::link_stream_to_media(pool, existing as i32, mid).await;
+            let _ = media_resolve::link_stream_to_media(pool, existing, mid).await;
         }
         return Ok(Some(existing));
     }
 
-    let stream_id: Option<i64> = sqlx::query_scalar(
+    let stream_id: Option<StreamId> = sqlx::query_scalar(
         r#"INSERT INTO stream (
             stream_type, name, source, resolution, release_group,
             is_active, is_blocked, is_public, playback_count,
@@ -691,13 +695,14 @@ async fn upsert_acestream(
             is_extended, is_complete, is_dubbed, is_subbed,
             created_at, updated_at
         ) VALUES (
-            'ACESTREAM'::streamtype, $1, $2, $3, $4,
+            $1, $2, $3, $4, $5,
             true, false, true, 0,
             false, false, false, false,
             false, false, false, false,
             NOW(), NOW()
         ) RETURNING id"#,
     )
+    .bind(StreamType::Acestream)
     .bind(name)
     .bind(source)
     .bind(resolution)
@@ -713,14 +718,14 @@ async fn upsert_acestream(
         "INSERT INTO acestream_stream (stream_id, content_id, info_hash) VALUES ($1, $2, $3) \
          ON CONFLICT (stream_id) DO UPDATE SET content_id = EXCLUDED.content_id, info_hash = COALESCE(EXCLUDED.info_hash, acestream_stream.info_hash)",
     )
-    .bind(stream_id as i32)
+    .bind(stream_id)
     .bind(content_id)
     .bind(info_hash)
     .execute(pool)
     .await?;
 
     if let Some(mid) = media_id {
-        let _ = media_resolve::link_stream_to_media(pool, stream_id as i32, mid).await;
+        let _ = media_resolve::link_stream_to_media(pool, stream_id, mid).await;
     }
 
     Ok(Some(stream_id))
@@ -795,7 +800,7 @@ async fn resolve_media_for_candidate(
     candidate: &AceCandidate,
     title: &str,
     cfg: &crate::config::AppConfig,
-) -> Option<i32> {
+) -> Option<MediaId> {
     let media_type = candidate
         .metadata_media_type
         .as_deref()
@@ -819,7 +824,7 @@ async fn resolve_media_for_candidate(
         &cfg.metadata_primary_source,
     )
     .await?;
-    Some(meta.media_id as i32)
+    Some(meta.media_id)
 }
 
 fn dedupe_key(candidate: &AceCandidate) -> String {

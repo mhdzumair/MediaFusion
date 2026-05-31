@@ -353,7 +353,7 @@ pub async fn import_http_stream(
             let _ = super::import_helpers::link_stream_to_media(
                 &state.pool,
                 existing_id as i32,
-                mid as i32,
+                crate::db::MediaId(mid as i32),
             )
             .await;
             if is_public {
@@ -416,7 +416,7 @@ pub async fn import_http_stream(
 
     if let Some(mid) = media_id {
         let _ =
-            super::import_helpers::link_stream_to_media(&state.pool, stream_id as i32, mid as i32)
+            super::import_helpers::link_stream_to_media(&state.pool, stream_id as i32, crate::db::MediaId(mid as i32))
                 .await;
     }
 

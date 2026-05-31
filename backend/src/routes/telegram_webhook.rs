@@ -7,7 +7,6 @@
 use std::sync::Arc;
 
 use axum::{
-    body::Bytes,
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},

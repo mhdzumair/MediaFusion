@@ -19,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     crypto::profile::{decrypt_secrets, encrypt_secrets},
+    db::{HistorySource, WatchAction},
     jobs::{
         error::JobError,
         handler::{JobCtx, JobHandler},
@@ -864,11 +865,13 @@ async fn local_history(
         sqlx::query(
             "SELECT media_id, media_type, season, episode, watched_at \
              FROM watch_history \
-             WHERE profile_id=$1 AND action='WATCHED'::watchaction \
-             AND source='MEDIAFUSION'::historysource AND watched_at > $2 \
+             WHERE profile_id=$1 AND action=$2 \
+             AND source=$3 AND watched_at > $4 \
              ORDER BY watched_at ASC",
         )
         .bind(profile_id)
+        .bind(WatchAction::Watched)
+        .bind(HistorySource::Mediafusion)
         .bind(since)
         .fetch_all(pool)
         .await
@@ -876,11 +879,13 @@ async fn local_history(
         sqlx::query(
             "SELECT media_id, media_type, season, episode, watched_at \
              FROM watch_history \
-             WHERE profile_id=$1 AND action='WATCHED'::watchaction \
-             AND source='MEDIAFUSION'::historysource \
+             WHERE profile_id=$1 AND action=$2 \
+             AND source=$3 \
              ORDER BY watched_at ASC",
         )
         .bind(profile_id)
+        .bind(WatchAction::Watched)
+        .bind(HistorySource::Mediafusion)
         .fetch_all(pool)
         .await
     };
@@ -947,8 +952,8 @@ async fn upsert_watch(
         INSERT INTO watch_history
             (user_id, profile_id, media_id, title, media_type,
              season, episode, progress, watched_at, action, source, stream_info)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 100, $8, 'WATCHED'::watchaction,
-                $9::historysource, '{}')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 100, $8, $9,
+                $10, '{}')
         ON CONFLICT DO NOTHING
         "#,
     )
@@ -960,7 +965,10 @@ async fn upsert_watch(
     .bind(season)
     .bind(episode)
     .bind(watched_at)
-    .bind(source)
+    .bind(WatchAction::Watched)
+    .bind(
+        HistorySource::from_wire(source).unwrap_or(HistorySource::Mediafusion),
+    )
     .execute(pool)
     .await
     .map(|r| r.rows_affected() > 0)

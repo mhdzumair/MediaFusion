@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
+use super::types::MediaType;
+
 /// A torrent row returned for Torznab search results.
 pub struct TorznabRow {
     pub info_hash: String,
@@ -26,7 +28,7 @@ struct Row {
     leechers: Option<i32>,
     uploaded_at: Option<DateTime<Utc>>,
     resolution: Option<String>,
-    media_type: String,
+    media_type: MediaType,
     imdb_id: Option<String>,
     tmdb_id: Option<String>,
     source: Option<String>,
@@ -43,7 +45,7 @@ impl From<Row> for TorznabRow {
             leechers: r.leechers,
             uploaded_at: r.uploaded_at,
             resolution: r.resolution,
-            media_type: r.media_type,
+            media_type: r.media_type.as_wire().to_string(),
             imdb_id: r.imdb_id,
             tmdb_id: r.tmdb_id,
             source: r.source,
@@ -60,7 +62,7 @@ const SELECT_COLS: &str = r#"
     ts.leechers,
     COALESCE(ts.uploaded_at, st.created_at) AS uploaded_at,
     st.resolution,
-    m.type::text AS media_type,
+    m.type AS media_type,
     MAX(CASE WHEN mei.provider = 'imdb' THEN mei.external_id END) AS imdb_id,
     MAX(CASE WHEN mei.provider = 'tmdb' THEN mei.external_id END) AS tmdb_id,
     st.source,
@@ -91,17 +93,18 @@ pub async fn search_by_imdb(
     episode: Option<i32>,
     limit: i64,
 ) -> Vec<TorznabRow> {
-    let mt = media_type_sql(media_type);
+    let mt = parse_media_type_filter(media_type);
     let ep = episode_filter_sql(season, episode);
+    let (mt_clause, limit_ph) = media_type_limit_placeholders(mt.is_some());
     let sql = format!(
         "SELECT {SELECT_COLS}
          AND EXISTS (
              SELECT 1 FROM media_external_id x
              WHERE x.media_id = m.id AND x.provider = 'imdb' AND x.external_id = $1
-         ){mt}{ep}{GROUP_BY}
-         LIMIT $2"
+         ){mt_clause}{ep}{GROUP_BY}
+         LIMIT {limit_ph}"
     );
-    run(pool, &sql, imdb_id, limit).await
+    run(pool, &sql, imdb_id, mt, limit).await
 }
 
 pub async fn search_by_tmdb(
@@ -112,17 +115,18 @@ pub async fn search_by_tmdb(
     episode: Option<i32>,
     limit: i64,
 ) -> Vec<TorznabRow> {
-    let mt = media_type_sql(media_type);
+    let mt = parse_media_type_filter(media_type);
     let ep = episode_filter_sql(season, episode);
+    let (mt_clause, limit_ph) = media_type_limit_placeholders(mt.is_some());
     let sql = format!(
         "SELECT {SELECT_COLS}
          AND EXISTS (
              SELECT 1 FROM media_external_id x
              WHERE x.media_id = m.id AND x.provider = 'tmdb' AND x.external_id = $1
-         ){mt}{ep}{GROUP_BY}
-         LIMIT $2"
+         ){mt_clause}{ep}{GROUP_BY}
+         LIMIT {limit_ph}"
     );
-    run(pool, &sql, tmdb_id, limit).await
+    run(pool, &sql, tmdb_id, mt, limit).await
 }
 
 pub async fn search_by_title(
@@ -131,23 +135,28 @@ pub async fn search_by_title(
     media_type: Option<&str>,
     limit: i64,
 ) -> Vec<TorznabRow> {
-    let mt = media_type_sql(media_type);
+    let mt = parse_media_type_filter(media_type);
+    let (mt_clause, limit_ph) = media_type_limit_placeholders(mt.is_some());
     let pattern = format!("%{query}%");
     let sql = format!(
         "SELECT {SELECT_COLS}
-         AND (m.title ILIKE $1 OR st.name ILIKE $1){mt}{GROUP_BY}
-         LIMIT $2"
+         AND (m.title ILIKE $1 OR st.name ILIKE $1){mt_clause}{GROUP_BY}
+         LIMIT {limit_ph}"
     );
-    run(pool, &sql, &pattern, limit).await
+    run(pool, &sql, &pattern, mt, limit).await
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-fn media_type_sql(mt: Option<&str>) -> &'static str {
-    match mt {
-        Some("movie") => "\n  AND m.type = 'MOVIE'::mediatype",
-        Some("series") => "\n  AND m.type = 'SERIES'::mediatype",
-        _ => "",
+fn parse_media_type_filter(mt: Option<&str>) -> Option<MediaType> {
+    mt.and_then(|s| MediaType::from_wire(&s.to_ascii_lowercase()))
+}
+
+fn media_type_limit_placeholders(has_mt: bool) -> (&'static str, &'static str) {
+    if has_mt {
+        ("\n  AND m.type = $2", "$3")
+    } else {
+        ("", "$2")
     }
 }
 
@@ -175,13 +184,18 @@ fn episode_filter_sql(season: Option<i32>, episode: Option<i32>) -> String {
     )
 }
 
-async fn run(pool: &PgPool, sql: &str, param: &str, limit: i64) -> Vec<TorznabRow> {
-    match sqlx::query_as::<_, Row>(sql)
-        .bind(param)
-        .bind(limit)
-        .fetch_all(pool)
-        .await
-    {
+async fn run(
+    pool: &PgPool,
+    sql: &str,
+    param: &str,
+    media_type: Option<MediaType>,
+    limit: i64,
+) -> Vec<TorznabRow> {
+    let mut q = sqlx::query_as::<_, Row>(sql).bind(param);
+    if let Some(mt) = media_type {
+        q = q.bind(mt);
+    }
+    match q.bind(limit).fetch_all(pool).await {
         Ok(rows) => rows.into_iter().map(TorznabRow::from).collect(),
         Err(e) => {
             tracing::warn!("torznab db query failed: {e}");

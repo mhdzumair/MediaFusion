@@ -8,6 +8,7 @@ use tracing::{debug, info, warn};
 use fred::prelude::*;
 
 use crate::{
+    db::StreamType,
     jobs::{
         error::JobError,
         handler::{JobCtx, JobHandler},
@@ -209,10 +210,11 @@ impl JobHandler for YoutubeBgScraper {
                         playback_count, is_remastered, is_upscaled, is_proper, is_repack,
                         is_extended, is_complete, is_dubbed, is_subbed, updated_at, created_at
                     ) VALUES (
-                        'YOUTUBE'::streamtype, $1, 'youtube_bg', true, false, true, 0,
+                        $1, $2, 'youtube_bg', true, false, true, 0,
                         false, false, false, false, false, false, false, false, NOW(), NOW()
                     ) RETURNING id"#,
                 )
+                .bind(StreamType::Youtube)
                 .bind(title)
                 .fetch_optional(&ctx.state.pool)
                 .await
@@ -258,7 +260,7 @@ impl JobHandler for YoutubeBgScraper {
                 let _ = import_helpers::link_stream_to_media(
                     &ctx.state.pool,
                     stream_id,
-                    candidate.media_id,
+                    crate::db::MediaId(candidate.media_id),
                 )
                 .await;
             }

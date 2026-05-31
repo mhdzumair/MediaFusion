@@ -3,9 +3,11 @@ use tracing::warn;
 
 use crate::scrapers::SearchMeta;
 
+use super::types::{MediaId, MediaType};
+
 #[derive(sqlx::FromRow)]
 pub struct MediaCandidate {
-    pub media_id: i64,
+    pub media_id: MediaId,
     pub title: String,
     pub year: Option<i32>,
     pub imdb_id: Option<String>,
@@ -21,10 +23,14 @@ pub async fn search_media_candidates(
     media_type: &str,
     title: &str,
 ) -> Vec<MediaCandidate> {
+    let Some(mt) = MediaType::from_wire(media_type) else {
+        return vec![];
+    };
+
     sqlx::query_as::<_, MediaCandidate>(
         r#"
         SELECT
-            m.id::bigint AS media_id,
+            m.id AS media_id,
             m.title,
             m.year,
             MAX(CASE WHEN mei.provider = 'imdb' THEN mei.external_id END) AS imdb_id,
@@ -34,14 +40,14 @@ pub async fn search_media_candidates(
         LEFT JOIN media_external_id mei
                ON mei.media_id = m.id
               AND mei.provider IN ('imdb', 'tmdb', 'tvdb')
-        WHERE m.type = upper($1)::mediatype
+        WHERE m.type = $1
           AND m.title_tsv @@ plainto_tsquery('simple', $2)
         GROUP BY m.id, m.title, m.year
         ORDER BY m.popularity DESC NULLS LAST
         LIMIT 12
         "#,
     )
-    .bind(media_type)
+    .bind(mt)
     .bind(title)
     .fetch_all(pool)
     .await
@@ -55,12 +61,12 @@ pub async fn search_media_candidates(
 /// Returns None if the row doesn't exist.
 pub async fn get_media_meta(
     pool: &PgPool,
-    media_id: i64,
+    media_id: MediaId,
     imdb_id: &str,
 ) -> Result<Option<SearchMeta>, Box<dyn std::error::Error + Send + Sync>> {
     let row: Option<(String, Option<i32>)> =
         sqlx::query_as(r#"SELECT title, year FROM media WHERE id = $1 LIMIT 1"#)
-            .bind(media_id as i32)
+            .bind(media_id)
             .fetch_optional(pool)
             .await
             .map_err(|e| format!("get_media_meta: {e}"))?;
@@ -79,26 +85,30 @@ pub async fn get_media_meta(
 
 /// Resolve a Stremio video ID to (primary_media_id, related_media_ids).
 /// Handles: tt{imdb}, mf{internal_id}, tmdb:{id}, tvdb:{id}, mal:{id}, dl prefix.
-/// Returns (0, []) if not found.
+/// Returns (MediaId(0), []) if not found.
 pub async fn resolve_media_ids(
     pool: &PgPool,
     video_id: &str,
     media_type: &str,
-) -> Result<(i64, Vec<i64>), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(MediaId, Vec<MediaId>), Box<dyn std::error::Error + Send + Sync>> {
+    let Some(mt) = MediaType::from_wire(media_type) else {
+        return Ok((MediaId(0), vec![]));
+    };
+
     // mf{internal_id} — direct media.id lookup, no external ID join needed.
     if let Some(raw) = video_id.strip_prefix("mf") {
         if let Ok(id) = raw.parse::<i32>() {
-            let exists: Option<(i32,)> = sqlx::query_as(
-                "SELECT id FROM media WHERE id = $1 AND type = upper($2)::mediatype LIMIT 1",
+            let exists: Option<(MediaId,)> = sqlx::query_as(
+                "SELECT id FROM media WHERE id = $1 AND type = $2 LIMIT 1",
             )
-            .bind(id)
-            .bind(media_type)
+            .bind(MediaId(id))
+            .bind(mt)
             .fetch_optional(pool)
             .await
             .map_err(|e| format!("mf lookup: {e}"))?;
             return Ok(match exists {
-                Some((media_id,)) => (media_id as i64, vec![]),
-                None => (0, vec![]),
+                Some((media_id,)) => (media_id, vec![]),
+                None => (MediaId(0), vec![]),
             });
         }
     }
@@ -117,42 +127,41 @@ pub async fn resolve_media_ids(
         ("imdb", video_id)
     };
 
-    let row: Option<(i32,)> = sqlx::query_as(
+    let row: Option<(MediaId,)> = sqlx::query_as(
         r#"
         SELECT m.id FROM media m
         JOIN media_external_id meid ON m.id = meid.media_id
         WHERE meid.provider = $1
           AND meid.external_id = $2
-          AND m.type = upper($3)::mediatype
+          AND m.type = $3
         LIMIT 1
         "#,
     )
     .bind(provider)
     .bind(external_id)
-    .bind(media_type)
+    .bind(mt)
     .fetch_optional(pool)
     .await
     .map_err(|e| format!("media lookup: {e}"))?;
 
-    let Some((media_id_i32,)) = row else {
-        return Ok((0, vec![]));
+    let Some((media_id,)) = row else {
+        return Ok((MediaId(0), vec![]));
     };
-    let media_id = media_id_i32 as i64;
 
-    let related: Vec<(i32,)> = sqlx::query_as(
+    let related: Vec<(MediaId,)> = sqlx::query_as(
         r#"
         SELECT m.id FROM media m
         JOIN media_external_id meid ON m.id = meid.media_id
         WHERE meid.provider = $1
           AND meid.external_id = $2
-          AND m.type = upper($3)::mediatype
+          AND m.type = $3
           AND m.id != $4
         "#,
     )
     .bind(provider)
     .bind(external_id)
-    .bind(media_type)
-    .bind(media_id_i32)
+    .bind(mt)
+    .bind(media_id)
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {
@@ -160,7 +169,7 @@ pub async fn resolve_media_ids(
         vec![]
     });
 
-    let related_ids = related.into_iter().map(|(id,)| id as i64).collect();
+    let related_ids = related.into_iter().map(|(id,)| id).collect();
     Ok((media_id, related_ids))
 }
 
@@ -172,11 +181,13 @@ pub async fn get_media_id_by_external_id(
     pool: &PgPool,
     external_id: &str,
     media_type: Option<&str>,
-) -> Result<Option<i32>, sqlx::Error> {
+) -> Result<Option<MediaId>, sqlx::Error> {
     let external_id = external_id.trim();
     if external_id.is_empty() {
         return Ok(None);
     }
+
+    let mt = media_type.and_then(MediaType::from_wire);
 
     if let Some(raw) = external_id
         .strip_prefix("mf:")
@@ -185,17 +196,18 @@ pub async fn get_media_id_by_external_id(
         let Ok(internal_id) = raw.parse::<i32>() else {
             return Ok(None);
         };
-        if let Some(mt) = media_type {
+        let mid = MediaId(internal_id);
+        if let Some(mt) = mt {
             return sqlx::query_scalar(
-                "SELECT id FROM media WHERE id = $1 AND type = upper($2)::mediatype LIMIT 1",
+                "SELECT id FROM media WHERE id = $1 AND type = $2 LIMIT 1",
             )
-            .bind(internal_id)
+            .bind(mid)
             .bind(mt)
             .fetch_optional(pool)
             .await;
         }
         return sqlx::query_scalar("SELECT id FROM media WHERE id = $1 LIMIT 1")
-            .bind(internal_id)
+            .bind(mid)
             .fetch_optional(pool)
             .await;
     }
@@ -210,14 +222,14 @@ pub async fn get_media_id_by_external_id(
         return Ok(None);
     };
 
-    if let Some(mt) = media_type {
+    if let Some(mt) = mt {
         sqlx::query_scalar(
             r#"
             SELECT m.id FROM media m
             JOIN media_external_id meid ON m.id = meid.media_id
             WHERE meid.provider = $1
               AND meid.external_id = $2
-              AND m.type = upper($3)::mediatype
+              AND m.type = $3
             LIMIT 1
             "#,
         )

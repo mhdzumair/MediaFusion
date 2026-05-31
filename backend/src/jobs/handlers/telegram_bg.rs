@@ -115,7 +115,7 @@ async fn scrape_and_persist_channel(
 
     let channel_title = channel.trim_start_matches('@');
     let probe_meta = crate::scrapers::SearchMeta {
-        media_id: 0,
+        media_id: crate::db::MediaId(0),
         imdb_id: None,
         title: channel_title.to_string(),
         year: None,

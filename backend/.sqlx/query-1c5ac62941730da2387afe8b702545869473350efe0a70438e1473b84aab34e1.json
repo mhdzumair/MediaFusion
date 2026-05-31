@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT p.name\n        FROM person p\n        JOIN media_cast mc ON mc.person_id = p.id\n        WHERE mc.media_id = $1\n        ORDER BY mc.display_order\n        LIMIT 10\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1c5ac62941730da2387afe8b702545869473350efe0a70438e1473b84aab34e1"
+}

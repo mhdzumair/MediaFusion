@@ -506,7 +506,7 @@ pub async fn analyze_magnet(
             .and_then(|id| {
                 matches
                     .iter()
-                    .find(|m| m["media_id"].as_i64() == Some(id))
+                    .find(|m| m["media_id"].as_i64() == Some(i64::from(i32::from(id))))
                     .cloned()
             })
         } else {

@@ -2,23 +2,31 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use tracing::warn;
 
+use super::types::{FileType, LinkSource, MediaId, MediaType, StreamFileId, StreamId};
+
+fn is_series_episode(media_type: &str, season: Option<i32>, episode: Option<i32>) -> bool {
+    matches!(
+        (MediaType::from_wire(media_type), season, episode),
+        (Some(MediaType::Series), Some(_), Some(_))
+    )
+}
+
 /// Fetch raw stream data for a set of media IDs (cold path).
 /// Returns Vec of (media_id, JSON object with "torrents" key).
 pub async fn fetch_streams_bulk(
     pool: &PgPool,
-    media_ids: &[i64],
+    media_ids: &[MediaId],
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-) -> Result<Vec<(i64, Value)>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Vec<(MediaId, Value)>, Box<dyn std::error::Error + Send + Sync>> {
     if media_ids.is_empty() {
         return Ok(vec![]);
     }
 
-    let ids_i32: Vec<i32> = media_ids.iter().map(|&x| x as i32).collect();
-
-    let rows: Vec<(i32, Value)> = match (media_type, season, episode) {
-        ("series", Some(s), Some(e)) => sqlx::query_as(
+    let rows: Vec<(MediaId, Value)> = if is_series_episode(media_type, season, episode) {
+        let (s, e) = (season.unwrap(), episode.unwrap());
+        sqlx::query_as(
             r#"
             SELECT
                 fml.media_id,
@@ -56,7 +64,7 @@ pub async fn fetch_streams_bulk(
             GROUP BY fml.media_id
             "#,
         )
-        .bind(&ids_i32)
+        .bind(media_ids)
         .bind(s)
         .bind(e)
         .fetch_all(pool)
@@ -64,9 +72,9 @@ pub async fn fetch_streams_bulk(
         .unwrap_or_else(|e| {
             warn!("series streams query: {e}");
             vec![]
-        }),
-
-        _ => sqlx::query_as(
+        })
+    } else {
+        sqlx::query_as(
             r#"
             SELECT
                 sml.media_id,
@@ -99,36 +107,35 @@ pub async fn fetch_streams_bulk(
             GROUP BY sml.media_id
             "#,
         )
-        .bind(&ids_i32)
+        .bind(media_ids)
         .fetch_all(pool)
         .await
         .unwrap_or_else(|e| {
             warn!("movie streams query: {e}");
             vec![]
-        }),
+        })
     };
 
-    Ok(rows.into_iter().map(|(id, v)| (id as i64, v)).collect())
+    Ok(rows)
 }
 
 /// Fetch usenet streams for a set of media IDs.
 /// Returns Vec of (media_id, JSON array of usenet stream objects).
 pub async fn fetch_usenet_streams_bulk(
     pool: &PgPool,
-    media_ids: &[i64],
+    media_ids: &[MediaId],
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-) -> Vec<(i64, Vec<Value>)> {
+) -> Vec<(MediaId, Vec<Value>)> {
     if media_ids.is_empty() {
         return vec![];
     }
 
-    let ids_i32: Vec<i32> = media_ids.iter().map(|&x| x as i32).collect();
-
     // Series: join via file_media_link; movies: join via stream_media_link
-    let rows: Vec<(i32, Value)> = match (media_type, season, episode) {
-        ("series", Some(s), Some(e)) => sqlx::query_as(
+    let rows: Vec<(MediaId, Value)> = if is_series_episode(media_type, season, episode) {
+        let (s, e) = (season.unwrap(), episode.unwrap());
+        sqlx::query_as(
             r#"
             SELECT
                 fml.media_id,
@@ -155,7 +162,7 @@ pub async fn fetch_usenet_streams_bulk(
             ORDER BY us.size DESC
             "#,
         )
-        .bind(&ids_i32)
+        .bind(media_ids)
         .bind(s)
         .bind(e)
         .fetch_all(pool)
@@ -163,9 +170,9 @@ pub async fn fetch_usenet_streams_bulk(
         .unwrap_or_else(|e| {
             warn!("usenet series streams query: {e}");
             vec![]
-        }),
-
-        _ => sqlx::query_as(
+        })
+    } else {
+        sqlx::query_as(
             r#"
             SELECT
                 sml.media_id,
@@ -189,19 +196,19 @@ pub async fn fetch_usenet_streams_bulk(
             ORDER BY us.size DESC
             "#,
         )
-        .bind(&ids_i32)
+        .bind(media_ids)
         .fetch_all(pool)
         .await
         .unwrap_or_else(|e| {
             warn!("usenet movie streams query: {e}");
             vec![]
-        }),
+        })
     };
 
     // Group by media_id
-    let mut map: std::collections::HashMap<i64, Vec<Value>> = std::collections::HashMap::new();
+    let mut map: std::collections::HashMap<MediaId, Vec<Value>> = std::collections::HashMap::new();
     for (id, item) in rows {
-        map.entry(id as i64).or_default().push(item);
+        map.entry(id).or_default().push(item);
     }
     map.into_iter().collect()
 }
@@ -209,19 +216,18 @@ pub async fn fetch_usenet_streams_bulk(
 /// Fetch HTTP streams for a set of media IDs.
 pub async fn fetch_http_streams_bulk(
     pool: &PgPool,
-    media_ids: &[i64],
+    media_ids: &[MediaId],
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-) -> Vec<(i64, Vec<Value>)> {
+) -> Vec<(MediaId, Vec<Value>)> {
     if media_ids.is_empty() {
         return vec![];
     }
-    let ids_i32: Vec<i32> = media_ids.iter().map(|&x| x as i32).collect();
-    let rows: Vec<(i32, Value)> = match (media_type, season, episode) {
-        ("series", Some(s), Some(e)) => {
-            sqlx::query_as(
-                r#"
+    let rows: Vec<(MediaId, Value)> = if is_series_episode(media_type, season, episode) {
+        let (s, e) = (season.unwrap(), episode.unwrap());
+        sqlx::query_as(
+            r#"
             SELECT fml.media_id,
                 jsonb_build_object(
                     'name', st.name, 'url', hs.url, 'format', hs.format,
@@ -241,16 +247,15 @@ pub async fn fetch_http_streams_bulk(
             WHERE fml.media_id = ANY($1) AND fml.season_number = $2 AND fml.episode_number = $3
               AND st.is_active AND NOT st.is_blocked
         "#,
-            )
-            .bind(&ids_i32)
-            .bind(s)
-            .bind(e)
-            .fetch_all(pool)
-            .await
-        }
-        _ => {
-            sqlx::query_as(
-                r#"
+        )
+        .bind(media_ids)
+        .bind(s)
+        .bind(e)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query_as(
+            r#"
             SELECT sml.media_id,
                 jsonb_build_object(
                     'name', st.name, 'url', hs.url, 'format', hs.format,
@@ -268,19 +273,18 @@ pub async fn fetch_http_streams_bulk(
             JOIN http_stream hs ON hs.stream_id = st.id
             WHERE sml.media_id = ANY($1) AND st.is_active AND NOT st.is_blocked
         "#,
-            )
-            .bind(&ids_i32)
-            .fetch_all(pool)
-            .await
-        }
+        )
+        .bind(media_ids)
+        .fetch_all(pool)
+        .await
     }
     .unwrap_or_else(|e| {
         warn!("http streams query: {e}");
         vec![]
     });
-    let mut map: std::collections::HashMap<i64, Vec<Value>> = std::collections::HashMap::new();
+    let mut map: std::collections::HashMap<MediaId, Vec<Value>> = std::collections::HashMap::new();
     for (id, item) in rows {
-        map.entry(id as i64).or_default().push(item);
+        map.entry(id).or_default().push(item);
     }
     map.into_iter().collect()
 }
@@ -288,13 +292,12 @@ pub async fn fetch_http_streams_bulk(
 /// Fetch YouTube streams for a set of media IDs.
 pub async fn fetch_youtube_streams_bulk(
     pool: &PgPool,
-    media_ids: &[i64],
-) -> Vec<(i64, Vec<Value>)> {
+    media_ids: &[MediaId],
+) -> Vec<(MediaId, Vec<Value>)> {
     if media_ids.is_empty() {
         return vec![];
     }
-    let ids_i32: Vec<i32> = media_ids.iter().map(|&x| x as i32).collect();
-    let rows: Vec<(i32, Value)> = sqlx::query_as(
+    let rows: Vec<(MediaId, Value)> = sqlx::query_as(
         r#"
         SELECT sml.media_id,
             jsonb_build_object(
@@ -316,16 +319,16 @@ pub async fn fetch_youtube_streams_bulk(
         WHERE sml.media_id = ANY($1) AND st.is_active AND NOT st.is_blocked
     "#,
     )
-    .bind(&ids_i32)
+    .bind(media_ids)
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {
         warn!("youtube streams query: {e}");
         vec![]
     });
-    let mut map: std::collections::HashMap<i64, Vec<Value>> = std::collections::HashMap::new();
+    let mut map: std::collections::HashMap<MediaId, Vec<Value>> = std::collections::HashMap::new();
     for (id, item) in rows {
-        map.entry(id as i64).or_default().push(item);
+        map.entry(id).or_default().push(item);
     }
     map.into_iter().collect()
 }
@@ -333,19 +336,18 @@ pub async fn fetch_youtube_streams_bulk(
 /// Fetch Telegram streams for a set of media IDs.
 pub async fn fetch_telegram_streams_bulk(
     pool: &PgPool,
-    media_ids: &[i64],
+    media_ids: &[MediaId],
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-) -> Vec<(i64, Vec<Value>)> {
+) -> Vec<(MediaId, Vec<Value>)> {
     if media_ids.is_empty() {
         return vec![];
     }
-    let ids_i32: Vec<i32> = media_ids.iter().map(|&x| x as i32).collect();
-    let rows: Vec<(i32, Value)> = match (media_type, season, episode) {
-        ("series", Some(s), Some(e)) => {
-            sqlx::query_as(
-                r#"
+    let rows: Vec<(MediaId, Value)> = if is_series_episode(media_type, season, episode) {
+        let (s, e) = (season.unwrap(), episode.unwrap());
+        sqlx::query_as(
+            r#"
             SELECT fml.media_id,
                 jsonb_build_object(
                     'name', st.name, 'chat_id', ts.chat_id, 'message_id', ts.message_id,
@@ -365,16 +367,15 @@ pub async fn fetch_telegram_streams_bulk(
             WHERE fml.media_id = ANY($1) AND fml.season_number = $2 AND fml.episode_number = $3
               AND st.is_active AND NOT st.is_blocked
         "#,
-            )
-            .bind(&ids_i32)
-            .bind(s)
-            .bind(e)
-            .fetch_all(pool)
-            .await
-        }
-        _ => {
-            sqlx::query_as(
-                r#"
+        )
+        .bind(media_ids)
+        .bind(s)
+        .bind(e)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query_as(
+            r#"
             SELECT sml.media_id,
                 jsonb_build_object(
                     'name', st.name, 'chat_id', ts.chat_id, 'message_id', ts.message_id,
@@ -392,19 +393,18 @@ pub async fn fetch_telegram_streams_bulk(
             JOIN telegram_stream ts ON ts.stream_id = st.id
             WHERE sml.media_id = ANY($1) AND st.is_active AND NOT st.is_blocked
         "#,
-            )
-            .bind(&ids_i32)
-            .fetch_all(pool)
-            .await
-        }
+        )
+        .bind(media_ids)
+        .fetch_all(pool)
+        .await
     }
     .unwrap_or_else(|e| {
         warn!("telegram streams query: {e}");
         vec![]
     });
-    let mut map: std::collections::HashMap<i64, Vec<Value>> = std::collections::HashMap::new();
+    let mut map: std::collections::HashMap<MediaId, Vec<Value>> = std::collections::HashMap::new();
     for (id, item) in rows {
-        map.entry(id as i64).or_default().push(item);
+        map.entry(id).or_default().push(item);
     }
     map.into_iter().collect()
 }
@@ -412,13 +412,12 @@ pub async fn fetch_telegram_streams_bulk(
 /// Fetch AceStream streams for a set of media IDs.
 pub async fn fetch_acestream_streams_bulk(
     pool: &PgPool,
-    media_ids: &[i64],
-) -> Vec<(i64, Vec<Value>)> {
+    media_ids: &[MediaId],
+) -> Vec<(MediaId, Vec<Value>)> {
     if media_ids.is_empty() {
         return vec![];
     }
-    let ids_i32: Vec<i32> = media_ids.iter().map(|&x| x as i32).collect();
-    let rows: Vec<(i32, Value)> = sqlx::query_as(
+    let rows: Vec<(MediaId, Value)> = sqlx::query_as(
         r#"
         SELECT sml.media_id,
             jsonb_build_object(
@@ -437,16 +436,16 @@ pub async fn fetch_acestream_streams_bulk(
         WHERE sml.media_id = ANY($1) AND st.is_active AND NOT st.is_blocked
     "#,
     )
-    .bind(&ids_i32)
+    .bind(media_ids)
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {
         warn!("acestream streams query: {e}");
         vec![]
     });
-    let mut map: std::collections::HashMap<i64, Vec<Value>> = std::collections::HashMap::new();
+    let mut map: std::collections::HashMap<MediaId, Vec<Value>> = std::collections::HashMap::new();
     for (id, item) in rows {
-        map.entry(id as i64).or_default().push(item);
+        map.entry(id).or_default().push(item);
     }
     map.into_iter().collect()
 }
@@ -657,7 +656,7 @@ pub async fn upsert_stream_files(
     }
 
     // Fetch stream_id + media_id in one query
-    let row: Option<(i32, i32, i32)> = sqlx::query_as(
+    let row: Option<(StreamId, i32, MediaId)> = sqlx::query_as(
         r#"
         SELECT ts.stream_id, ts.id, sml.media_id
         FROM torrent_stream ts
@@ -691,10 +690,10 @@ pub async fn upsert_stream_files(
     let total_size: i64 = files.iter().map(|f| f.size).sum();
 
     for f in files {
-        let file_id: i32 = sqlx::query_scalar(
+        let file_id: Option<StreamFileId> = sqlx::query_scalar(
             r#"
             INSERT INTO stream_file(stream_id, file_index, filename, size, file_type, is_archive)
-            VALUES ($1, $2, $3, $4, 'VIDEO', false)
+            VALUES ($1, $2, $3, $4, $5, false)
             ON CONFLICT DO NOTHING
             RETURNING id
             "#,
@@ -703,11 +702,11 @@ pub async fn upsert_stream_files(
         .bind(f.file_index)
         .bind(&f.filename)
         .bind(f.size)
+        .bind(FileType::Video)
         .fetch_optional(&mut *txn)
-        .await?
-        .unwrap_or(0);
+        .await?;
 
-        if file_id > 0 {
+        if let Some(file_id) = file_id {
             if let (Some(s), Some(e)) = (f.season, f.episode) {
                 sqlx::query(
                     r#"
@@ -715,7 +714,7 @@ pub async fn upsert_stream_files(
                         file_id, media_id, season_number, episode_number,
                         is_primary, confidence, link_source, created_at
                     )
-                    VALUES ($1, $2, $3, $4, false, 1.0, 'TORRENT_METADATA'::linksource, NOW())
+                    VALUES ($1, $2, $3, $4, false, 1.0, $5, NOW())
                     ON CONFLICT DO NOTHING
                     "#,
                 )
@@ -723,6 +722,7 @@ pub async fn upsert_stream_files(
                 .bind(media_id)
                 .bind(s)
                 .bind(e)
+                .bind(LinkSource::TorrentMetadata)
                 .execute(&mut *txn)
                 .await?;
             }
@@ -746,7 +746,7 @@ pub async fn upsert_stream_files(
 }
 
 /// Fetch HTTP streams for a single media_id (used for live TV playback).
-pub async fn fetch_tv_streams_for_media(pool: &PgPool, media_id: i64) -> Vec<Value> {
+pub async fn fetch_tv_streams_for_media(pool: &PgPool, media_id: MediaId) -> Vec<Value> {
     let rows: Vec<(Value,)> = sqlx::query_as(
         r#"
         SELECT
@@ -775,7 +775,7 @@ pub async fn fetch_tv_streams_for_media(pool: &PgPool, media_id: i64) -> Vec<Val
         ORDER BY st.created_at DESC
         "#,
     )
-    .bind(media_id as i32)
+    .bind(media_id)
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {

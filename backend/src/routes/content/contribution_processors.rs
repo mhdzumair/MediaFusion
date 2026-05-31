@@ -2,7 +2,12 @@
 use serde_json::{json, Value};
 use sqlx::PgPool;
 
-use crate::{parser, scrapers::media_resolve::ImportMediaOverrides, state::AppState};
+use crate::{
+    db::{StreamType, TorrentType},
+    parser,
+    scrapers::media_resolve::ImportMediaOverrides,
+    state::AppState,
+};
 
 use super::import_helpers::{
     self, contribution_string_list, is_adult_content, link_media_catalogs,
@@ -137,7 +142,7 @@ async fn process_torrent(
             publish_stream(&state.pool, existing, true).await?;
             let mid = resolve_media(state, meta_id.as_str(), meta_type, name, data, None).await;
             if let Some(mid) = mid {
-                let _ = import_helpers::link_stream_to_media(&state.pool, existing, mid).await;
+                let _ = import_helpers::link_stream_to_media(&state.pool, existing, crate::db::MediaId(mid)).await;
             }
             return Ok(ImportProcessResult {
                 status: "success",
@@ -230,12 +235,13 @@ async fn process_torrent(
                is_extended, is_complete, is_dubbed, is_subbed, is_active, is_blocked, is_public,
                playback_count, created_at
            ) VALUES(
-               'TORRENT'::streamtype, $1, 'Contribution Stream', $2, $3,
-               $4, $5, $6, $7, $8,
-               $9, $10, $11, $12, $13, $14, $15, $16,
-               true, false, $17, 0, NOW()
+               $1, $2, 'Contribution Stream', $3, $4,
+               $5, $6, $7, $8, $9,
+               $10, $11, $12, $13, $14, $15, $16, $17,
+               true, false, $18, 0, NOW()
            ) RETURNING id"#,
     )
+    .bind(StreamType::Torrent)
     .bind(name)
     .bind(&uploader_name)
     .bind(uploader_user_id)
@@ -266,18 +272,19 @@ async fn process_torrent(
 
     sqlx::query(
         r#"INSERT INTO torrent_stream(stream_id, info_hash, total_size, torrent_type, file_count, created_at)
-           VALUES($1, $2, $3, 'PUBLIC'::torrenttype, $4, NOW())"#,
+           VALUES($1, $2, $3, $4, $5, NOW())"#,
     )
     .bind(stream_id)
     .bind(&info_hash)
     .bind(total_size)
+    .bind(TorrentType::Public)
     .bind(file_count)
     .execute(&state.pool)
     .await
     .map_err(|e| ImportProcessError::Other(e.to_string()))?;
 
     if let Some(mid) = media_id {
-        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, mid).await;
+        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid)).await;
     }
 
     if !file_rows.is_empty() {
@@ -343,7 +350,7 @@ async fn process_nzb(
         if want_public {
             publish_stream(&state.pool, existing, true).await?;
             if let Some(mid) = resolve_media(state, &meta_id, meta_type, name, data, None).await {
-                let _ = import_helpers::link_stream_to_media(&state.pool, existing, mid).await;
+                let _ = import_helpers::link_stream_to_media(&state.pool, existing, crate::db::MediaId(mid)).await;
             }
             return Ok(ImportProcessResult {
                 status: "success",
@@ -376,10 +383,11 @@ async fn process_nzb(
         r#"INSERT INTO stream(stream_type, name, source, uploader, uploader_user_id,
                resolution, codec, quality, is_proper, is_repack, release_group,
                is_active, is_blocked, is_public, playback_count, created_at)
-           VALUES('USENET'::streamtype, $1, $2, $3, $4,
-               $5, $6, $7, $8, $9, $10,
+           VALUES($1, $2, $3, $4, $5,
+               $6, $7, $8, $9, $10, $11,
                true, false, true, 0, NOW()) RETURNING id"#,
     )
+    .bind(StreamType::Usenet)
     .bind(name)
     .bind(data_str(data, "indexer").unwrap_or("User Import"))
     .bind(&uploader_name)
@@ -419,7 +427,7 @@ async fn process_nzb(
     .map_err(|e| ImportProcessError::Other(e.to_string()))?;
 
     if let Some(mid) = media_id {
-        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, mid).await;
+        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid)).await;
     }
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;
@@ -480,8 +488,9 @@ async fn process_http(
 
     let stream_id: i32 = sqlx::query_scalar(
         r#"INSERT INTO stream(stream_type, name, source, uploader, uploader_user_id, is_active, is_blocked, is_public, playback_count, created_at)
-           VALUES('HTTP'::streamtype, $1, 'user_import', $2, $3, true, false, true, 0, NOW()) RETURNING id"#,
+           VALUES($1, $2, 'user_import', $3, $4, true, false, true, 0, NOW()) RETURNING id"#,
     )
+    .bind(StreamType::Http)
     .bind(title)
     .bind(&uploader_name)
     .bind(uploader_user_id)
@@ -502,7 +511,7 @@ async fn process_http(
     .map_err(|e| ImportProcessError::Other(e.to_string()))?;
 
     if let Some(mid) = media_id {
-        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, mid).await;
+        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid)).await;
     }
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;
@@ -538,7 +547,7 @@ async fn process_youtube(
     {
         publish_stream(&state.pool, existing, true).await?;
         if let Some(mid) = resolve_media(state, &meta_id, meta_type, title, data, None).await {
-            let _ = import_helpers::link_stream_to_media(&state.pool, existing, mid).await;
+            let _ = import_helpers::link_stream_to_media(&state.pool, existing, crate::db::MediaId(mid)).await;
         }
         return Ok(ImportProcessResult {
             status: "success",
@@ -562,8 +571,9 @@ async fn process_youtube(
 
     let stream_id: i32 = sqlx::query_scalar(
         r#"INSERT INTO stream(stream_type, name, source, uploader, uploader_user_id, is_active, is_blocked, is_public, playback_count, created_at)
-           VALUES('YOUTUBE'::streamtype, $1, 'youtube', $2, $3, true, false, true, 0, NOW()) RETURNING id"#,
+           VALUES($1, $2, 'youtube', $3, $4, true, false, true, 0, NOW()) RETURNING id"#,
     )
+    .bind(StreamType::Youtube)
     .bind(title)
     .bind(&uploader_name)
     .bind(uploader_user_id)
@@ -586,7 +596,7 @@ async fn process_youtube(
     .map_err(|e| ImportProcessError::Other(e.to_string()))?;
 
     if let Some(mid) = media_id {
-        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, mid).await;
+        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid)).await;
     }
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;
@@ -624,7 +634,7 @@ async fn process_acestream(
     {
         publish_stream(&state.pool, existing, true).await?;
         if let Some(mid) = resolve_media(state, &meta_id, meta_type, title, data, None).await {
-            let _ = import_helpers::link_stream_to_media(&state.pool, existing, mid).await;
+            let _ = import_helpers::link_stream_to_media(&state.pool, existing, crate::db::MediaId(mid)).await;
         }
         return Ok(ImportProcessResult {
             status: "success",
@@ -648,8 +658,9 @@ async fn process_acestream(
 
     let stream_id: i32 = sqlx::query_scalar(
         r#"INSERT INTO stream(stream_type, name, source, uploader, uploader_user_id, is_active, is_blocked, is_public, playback_count, created_at)
-           VALUES('ACESTREAM'::streamtype, $1, 'user_import', $2, $3, true, false, true, 0, NOW()) RETURNING id"#,
+           VALUES($1, $2, 'user_import', $3, $4, true, false, true, 0, NOW()) RETURNING id"#,
     )
+    .bind(StreamType::Acestream)
     .bind(title)
     .bind(&uploader_name)
     .bind(uploader_user_id)
@@ -668,7 +679,7 @@ async fn process_acestream(
     .map_err(|e| ImportProcessError::Other(e.to_string()))?;
 
     if let Some(mid) = media_id {
-        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, mid).await;
+        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid)).await;
     }
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;

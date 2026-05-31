@@ -1,6 +1,8 @@
 use sqlx::PgPool;
 use tracing::warn;
 
+use super::types::{MediaId, MediaType};
+
 const ADULT_GENRES: &[&str] = &[
     "adult",
     "18+",
@@ -13,8 +15,8 @@ const ADULT_GENRES: &[&str] = &[
 
 #[derive(sqlx::FromRow, Debug)]
 pub struct MediaMetaRow {
-    pub media_id: i64,
-    pub media_type: String,
+    pub media_id: MediaId,
+    pub media_type: MediaType,
     pub title: String,
     pub year: Option<i32>,
     pub end_year: Option<i32>,
@@ -37,22 +39,22 @@ pub struct EpisodeRow {
     pub overview: Option<String>,
     pub air_date: Option<chrono::NaiveDate>,
     pub thumbnail_url: Option<String>,
-    pub media_id: Option<i64>,
+    pub media_id: Option<MediaId>,
 }
 
 /// Resolve a Stremio meta_id to an internal media_id.
 /// Handles both "tt1234567" (imdb) and "mf12345" (internal) formats.
 fn parse_meta_id(meta_id: &str) -> MetaIdKind<'_> {
     if let Some(num) = meta_id.strip_prefix("mf") {
-        if let Ok(id) = num.parse::<i64>() {
-            return MetaIdKind::Internal(id);
+        if let Ok(id) = num.parse::<i32>() {
+            return MetaIdKind::Internal(MediaId(id));
         }
     }
     MetaIdKind::External(meta_id)
 }
 
 enum MetaIdKind<'a> {
-    Internal(i64),
+    Internal(MediaId),
     External(&'a str),
 }
 
@@ -61,67 +63,106 @@ pub async fn get_media_meta(
     meta_id: &str,
     media_type: &str,
 ) -> Option<MediaMetaRow> {
-    let base_sql = r#"
-        SELECT
-            m.id::bigint AS media_id,
-            lower(m.type::text) AS media_type,
-            m.title,
-            m.year,
-            EXTRACT(YEAR FROM m.end_date)::int AS end_year,
-            m.description,
-            m.runtime_minutes,
-            m.website,
-            m.original_language AS language,
-            tv.country,
-            mei_imdb.external_id AS imdb_id,
-            mi_poster.url AS poster_url,
-            mi_bg.url AS background_url,
-            mr.rating AS imdb_rating
-        FROM media m
-        LEFT JOIN media_external_id mei_imdb
-            ON mei_imdb.media_id = m.id AND mei_imdb.provider = 'imdb'
-        LEFT JOIN tv_metadata tv ON tv.media_id = m.id
-        LEFT JOIN LATERAL (
-            SELECT url FROM media_image
-            WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
-            LIMIT 1
-        ) mi_poster ON true
-        LEFT JOIN LATERAL (
-            SELECT url FROM media_image
-            WHERE media_id = m.id AND image_type = 'background' AND is_primary = true
-            LIMIT 1
-        ) mi_bg ON true
-        LEFT JOIN LATERAL (
-            SELECT r.rating FROM media_rating r
-            JOIN rating_provider rp ON rp.id = r.rating_provider_id
-            WHERE r.media_id = m.id AND lower(rp.name) = 'imdb'
-            LIMIT 1
-        ) mr ON true
-    "#;
+    let media_type = MediaType::from_wire(media_type)?;
 
     let result = match parse_meta_id(meta_id) {
         MetaIdKind::Internal(id) => {
-            let sql =
-                format!("{base_sql} WHERE m.id = $1 AND m.type = upper($2)::mediatype LIMIT 1");
-            sqlx::query_as::<_, MediaMetaRow>(&sql)
-                .bind(id as i32)
-                .bind(media_type)
-                .fetch_optional(pool)
-                .await
+            sqlx::query_as!(
+                MediaMetaRow,
+                r#"
+                SELECT
+                    m.id AS "media_id: MediaId",
+                    m.type AS "media_type: MediaType",
+                    m.title,
+                    m.year,
+                    EXTRACT(YEAR FROM m.end_date)::int AS end_year,
+                    m.description,
+                    m.runtime_minutes,
+                    m.website,
+                    m.original_language AS language,
+                    tv.country,
+                    mei_imdb.external_id AS imdb_id,
+                    mi_poster.url AS poster_url,
+                    mi_bg.url AS background_url,
+                    mr.rating AS imdb_rating
+                FROM media m
+                LEFT JOIN media_external_id mei_imdb
+                    ON mei_imdb.media_id = m.id AND mei_imdb.provider = 'imdb'
+                LEFT JOIN tv_metadata tv ON tv.media_id = m.id
+                LEFT JOIN LATERAL (
+                    SELECT url FROM media_image
+                    WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
+                    LIMIT 1
+                ) mi_poster ON true
+                LEFT JOIN LATERAL (
+                    SELECT url FROM media_image
+                    WHERE media_id = m.id AND image_type = 'background' AND is_primary = true
+                    LIMIT 1
+                ) mi_bg ON true
+                LEFT JOIN LATERAL (
+                    SELECT r.rating FROM media_rating r
+                    JOIN rating_provider rp ON rp.id = r.rating_provider_id
+                    WHERE r.media_id = m.id AND lower(rp.name) = 'imdb'
+                    LIMIT 1
+                ) mr ON true
+                WHERE m.id = $1 AND m.type = $2
+                LIMIT 1
+                "#,
+                id as MediaId,
+                media_type as MediaType,
+            )
+            .fetch_optional(pool)
+            .await
         }
         MetaIdKind::External(ext_id) => {
-            let sql = format!(
-                r#"{base_sql}
+            sqlx::query_as!(
+                MediaMetaRow,
+                r#"
+                SELECT
+                    m.id AS "media_id: MediaId",
+                    m.type AS "media_type: MediaType",
+                    m.title,
+                    m.year,
+                    EXTRACT(YEAR FROM m.end_date)::int AS end_year,
+                    m.description,
+                    m.runtime_minutes,
+                    m.website,
+                    m.original_language AS language,
+                    tv.country,
+                    mei_imdb.external_id AS imdb_id,
+                    mi_poster.url AS poster_url,
+                    mi_bg.url AS background_url,
+                    mr.rating AS imdb_rating
+                FROM media m
+                LEFT JOIN media_external_id mei_imdb
+                    ON mei_imdb.media_id = m.id AND mei_imdb.provider = 'imdb'
+                LEFT JOIN tv_metadata tv ON tv.media_id = m.id
+                LEFT JOIN LATERAL (
+                    SELECT url FROM media_image
+                    WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
+                    LIMIT 1
+                ) mi_poster ON true
+                LEFT JOIN LATERAL (
+                    SELECT url FROM media_image
+                    WHERE media_id = m.id AND image_type = 'background' AND is_primary = true
+                    LIMIT 1
+                ) mi_bg ON true
+                LEFT JOIN LATERAL (
+                    SELECT r.rating FROM media_rating r
+                    JOIN rating_provider rp ON rp.id = r.rating_provider_id
+                    WHERE r.media_id = m.id AND lower(rp.name) = 'imdb'
+                    LIMIT 1
+                ) mr ON true
                 JOIN media_external_id mei_lookup
                     ON mei_lookup.media_id = m.id AND mei_lookup.external_id = $1
-                WHERE m.type = upper($2)::mediatype
-                LIMIT 1"#
-            );
-            sqlx::query_as::<_, MediaMetaRow>(&sql)
-                .bind(ext_id)
-                .bind(media_type)
-                .fetch_optional(pool)
-                .await
+                WHERE m.type = $2
+                LIMIT 1
+                "#,
+                ext_id,
+                media_type as MediaType,
+            )
+            .fetch_optional(pool)
+            .await
         }
     };
 
@@ -131,8 +172,8 @@ pub async fn get_media_meta(
     })
 }
 
-pub async fn get_genres(pool: &PgPool, media_id: i64) -> Vec<String> {
-    let rows: Vec<(String,)> = sqlx::query_as(
+pub async fn get_genres(pool: &PgPool, media_id: MediaId) -> Vec<String> {
+    sqlx::query_scalar!(
         r#"
         SELECT g.name
         FROM genre g
@@ -141,21 +182,19 @@ pub async fn get_genres(pool: &PgPool, media_id: i64) -> Vec<String> {
           AND lower(g.name) <> ALL($2)
         ORDER BY g.name
         "#,
+        media_id as MediaId,
+        ADULT_GENRES as &[&str],
     )
-    .bind(media_id as i32)
-    .bind(ADULT_GENRES)
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {
         warn!("genres for media {media_id}: {e}");
         vec![]
-    });
-
-    rows.into_iter().map(|(n,)| n).collect()
+    })
 }
 
-pub async fn get_cast(pool: &PgPool, media_id: i64) -> Vec<String> {
-    let rows: Vec<(String,)> = sqlx::query_as(
+pub async fn get_cast(pool: &PgPool, media_id: MediaId) -> Vec<String> {
+    sqlx::query_scalar!(
         r#"
         SELECT p.name
         FROM person p
@@ -164,20 +203,19 @@ pub async fn get_cast(pool: &PgPool, media_id: i64) -> Vec<String> {
         ORDER BY mc.display_order
         LIMIT 10
         "#,
+        media_id as MediaId,
     )
-    .bind(media_id as i32)
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {
         warn!("cast for media {media_id}: {e}");
         vec![]
-    });
-
-    rows.into_iter().map(|(n,)| n).collect()
+    })
 }
 
-pub async fn get_episodes(pool: &PgPool, media_id: i64) -> Vec<EpisodeRow> {
-    sqlx::query_as::<_, EpisodeRow>(
+pub async fn get_episodes(pool: &PgPool, media_id: MediaId) -> Vec<EpisodeRow> {
+    sqlx::query_as!(
+        EpisodeRow,
         r#"
         SELECT
             s.season_number,
@@ -186,7 +224,7 @@ pub async fn get_episodes(pool: &PgPool, media_id: i64) -> Vec<EpisodeRow> {
             e.overview,
             e.air_date,
             ei.url AS thumbnail_url,
-            fml.media_id::bigint AS media_id
+            fml.media_id AS "media_id: Option<MediaId>"
         FROM series_metadata sm
         JOIN season s ON s.series_id = sm.id
         JOIN episode e ON e.season_id = s.id
@@ -202,8 +240,8 @@ pub async fn get_episodes(pool: &PgPool, media_id: i64) -> Vec<EpisodeRow> {
         WHERE sm.media_id = $1
         ORDER BY s.season_number, e.episode_number
         "#,
+        media_id as MediaId,
     )
-    .bind(media_id as i32)
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {

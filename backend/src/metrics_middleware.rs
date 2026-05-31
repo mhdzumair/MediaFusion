@@ -27,6 +27,18 @@ fn normalize_route(path: &str) -> String {
     result.trim_end_matches('/').to_string()
 }
 
+/// RAII guard that decrements the in-flight counter when dropped.
+/// Ensures the decrement happens even when a future is cancelled (client disconnect).
+struct InFlightGuard<'a> {
+    counter: &'a std::sync::atomic::AtomicU64,
+}
+
+impl Drop for InFlightGuard<'_> {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 pub async fn metrics_middleware(
     State(state): State<Arc<AppState>>,
     req: axum::http::Request<axum::body::Body>,
@@ -37,11 +49,15 @@ pub async fn metrics_middleware(
     let route = normalize_route(&path);
 
     state.metrics.in_flight.fetch_add(1, Ordering::Relaxed);
+    // Guard ensures decrement on drop — covers both normal completion and future cancellation.
+    let _guard = InFlightGuard { counter: &state.metrics.in_flight };
+
     let start = std::time::Instant::now();
     let resp = next.run(req).await;
     let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
     let status = resp.status().as_u16();
-    state.metrics.in_flight.fetch_sub(1, Ordering::Relaxed);
+    // Guard drops here (or earlier on cancellation).
+    drop(_guard);
 
     state
         .metrics

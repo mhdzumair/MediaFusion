@@ -31,7 +31,7 @@ use serde::Deserialize;
 use serde_json::json;
 use sha2::Sha256;
 
-use crate::state::AppState;
+use crate::{db::{EpisodeId, MediaId}, state::AppState};
 
 // ─── Auth helper ─────────────────────────────────────────────────────────────
 
@@ -515,10 +515,13 @@ pub async fn create_user_metadata(
 
     let media_id: i32 = match sqlx::query_scalar(
         r#"INSERT INTO media (type, title, year, description, runtime_minutes, is_user_created, created_by_user_id, is_public, total_streams, created_at)
-           VALUES ($1::mediatype, $2, $3, $4, $5, true, $6, $7, 0, NOW())
+           VALUES ($1, $2, $3, $4, $5, true, $6, $7, 0, NOW())
            RETURNING id"#,
     )
-    .bind(media_type_db)
+    .bind(
+        crate::db::MediaType::from_wire(&media_type_db.to_ascii_lowercase())
+            .unwrap_or(crate::db::MediaType::Movie),
+    )
     .bind(&body.title)
     .bind(body.year)
     .bind(&body.description)
@@ -859,7 +862,7 @@ pub async fn search_all_metadata(
 pub async fn get_user_metadata(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<MediaId>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -875,7 +878,7 @@ pub async fn get_user_metadata(
     let row = sqlx::query_as::<_, (bool, Option<i32>)>(
         "SELECT is_public, created_by_user_id FROM media WHERE id = $1",
     )
-    .bind(media_id as i32)
+    .bind(media_id.0)
     .fetch_optional(&state.pool_ro)
     .await
     .ok()
@@ -900,7 +903,7 @@ pub async fn get_user_metadata(
         }
     }
 
-    let resp = media_row_to_json(&state.pool_ro, media_id as i32, true).await;
+    let resp = media_row_to_json(&state.pool_ro, media_id.0, true).await;
     Json(resp).into_response()
 }
 
@@ -908,7 +911,7 @@ pub async fn get_user_metadata(
 pub async fn update_user_metadata(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<MediaId>,
     Json(body): Json<UserMediaUpdate>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
@@ -924,7 +927,7 @@ pub async fn update_user_metadata(
 
     let creator_id: Option<Option<i32>> =
         sqlx::query_scalar("SELECT created_by_user_id FROM media WHERE id = $1")
-            .bind(media_id as i32)
+            .bind(media_id.0)
             .fetch_optional(&state.pool)
             .await
             .unwrap_or(None);
@@ -1050,7 +1053,7 @@ pub async fn update_user_metadata(
         }
     }
 
-    let resp = media_row_to_json(&state.pool, media_id as i32, true).await;
+    let resp = media_row_to_json(&state.pool, media_id.0, true).await;
     Json(resp).into_response()
 }
 
@@ -1058,7 +1061,7 @@ pub async fn update_user_metadata(
 pub async fn delete_user_metadata(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<MediaId>,
     Query(params): Query<DeleteMediaQuery>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
@@ -1074,7 +1077,7 @@ pub async fn delete_user_metadata(
 
     let creator_id: Option<Option<i32>> =
         sqlx::query_scalar("SELECT created_by_user_id FROM media WHERE id = $1")
-            .bind(media_id as i32)
+            .bind(media_id.0)
             .fetch_optional(&state.pool)
             .await
             .unwrap_or(None);
@@ -1129,7 +1132,7 @@ pub async fn delete_user_metadata(
 pub async fn add_season_to_series(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<MediaId>,
     Json(body): Json<SeasonAddRequest>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
@@ -1280,7 +1283,7 @@ pub async fn add_season_to_series(
 pub async fn add_episodes_to_series(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<MediaId>,
     Json(body): Json<EpisodeAddRequest>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
@@ -1411,7 +1414,7 @@ pub async fn add_episodes_to_series(
 pub async fn update_episode(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path((media_id, episode_id)): Path<(i64, i64)>,
+    Path((media_id, episode_id)): Path<(MediaId, EpisodeId)>,
     Json(body): Json<EpisodeUpdateRequest>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
@@ -1544,7 +1547,7 @@ pub async fn update_episode(
 pub async fn delete_episode(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path((media_id, episode_id)): Path<(i64, i64)>,
+    Path((media_id, episode_id)): Path<(MediaId, EpisodeId)>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -1638,7 +1641,7 @@ pub async fn delete_episode(
 pub async fn admin_delete_episode(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path((media_id, episode_id)): Path<(i64, i64)>,
+    Path((media_id, episode_id)): Path<(MediaId, EpisodeId)>,
     Query(params): Query<DeleteEpisodeAdminQuery>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
@@ -1734,7 +1737,7 @@ pub async fn admin_delete_episode(
 pub async fn delete_season(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path((media_id, season_number)): Path<(i64, i32)>,
+    Path((media_id, season_number)): Path<(MediaId, i32)>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -1827,7 +1830,7 @@ pub async fn delete_season(
 pub async fn admin_delete_season(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path((media_id, season_number)): Path<(i64, i32)>,
+    Path((media_id, season_number)): Path<(MediaId, i32)>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -2062,7 +2065,7 @@ pub async fn import_from_external(
 
     match existing {
         Some(media_id) => {
-            let media_json = media_row_to_json(&state.pool_ro, media_id as i32, false).await;
+            let media_json = media_row_to_json(&state.pool_ro, media_id, false).await;
             Json(media_json).into_response()
         }
         None => {

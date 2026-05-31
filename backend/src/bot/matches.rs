@@ -15,14 +15,13 @@ use super::{
 
 pub async fn show_media_type_picker(
     state: &AppState,
-    chat_id: i64,
-    message_id: i64,
     user_id: i64,
     content_type: ContentType,
     preview: &str,
 ) -> (String, Value) {
     let label = super::detect::content_type_label(content_type);
-    let msg = text::content_preview(label, preview);
+    let escaped_preview = text::escape_markdown(preview);
+    let msg = text::content_preview(label, &escaped_preview);
     let keyboard = json!({
         "inline_keyboard": [
             [
@@ -67,7 +66,11 @@ pub async fn show_matches(
             .and_then(|v| v.as_i64())
             .map(|y| format!(" ({y})"))
             .unwrap_or_default();
-        let btn_text = format!("{mtitle}{year}");
+        let btn_text = format!(
+            "{}{}",
+            text::escape_markdown(mtitle),
+            text::escape_markdown(&year)
+        );
         rows.push(json!([{
             "text": btn_text.chars().take(40).collect::<String>(),
             "callback_data": CallbackAction::Match {
@@ -88,8 +91,9 @@ pub async fn show_matches(
         "callback_data": CallbackAction::Cancel { user_id }.encode(state).await,
     }]));
 
+    let escaped_title = text::escape_markdown(title);
     let msg = format!(
-        "🔍 *Select Match*\n\n*Content:* `{title}`\n\nChoose the correct media or search manually:"
+        "🔍 *Select Match*\n\n*Content:* `{escaped_title}`\n\nChoose the correct media or search manually:"
     );
     (msg, json!({ "inline_keyboard": rows }))
 }
@@ -177,11 +181,14 @@ pub async fn show_metadata_review(
         })
         .unwrap_or_else(|| "Unknown".to_string());
 
+    let escaped_title = text::escape_markdown(title);
+    let escaped_ext_id = text::escape_markdown(ext_id);
+    let escaped_media_type = text::escape_markdown(media_type);
     let msg = format!(
         "📋 *Review Import*\n\n\
-         *Title:* {title}\n\
-         *ID:* `{ext_id}`\n\
-         *Type:* {media_type}\n\
+         *Title:* {escaped_title}\n\
+         *ID:* `{escaped_ext_id}`\n\
+         *Type:* {escaped_media_type}\n\
          *Size:* {size}\n\n\
          Confirm to submit this contribution."
     );

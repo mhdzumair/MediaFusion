@@ -13,6 +13,12 @@ use serde_json::Value;
 use sqlx::PgPool;
 use tracing::{debug, info, warn};
 
+use crate::db::MediaType;
+
+fn wire_media_type(s: &str) -> Option<MediaType> {
+    MediaType::from_wire(&s.to_ascii_lowercase())
+}
+
 pub struct MediaEntry {
     pub id: i32,
     pub title: String,
@@ -56,13 +62,17 @@ pub async fn find_or_create_media_with_anime(
     anime_source_order: &[String],
     metadata_primary_source: &str,
 ) -> Option<MediaEntry> {
-    let media_type = if is_series { "SERIES" } else { "MOVIE" };
+    let media_type = if is_series {
+        MediaType::Series
+    } else {
+        MediaType::Movie
+    };
 
     // 1. Exact title match (case-insensitive) with ±1 year tolerance.
     let row: Option<(i32, String, Option<i32>)> = if let Some(y) = year {
         sqlx::query_as(
             "SELECT id, title, year FROM media \
-             WHERE LOWER(title) = LOWER($1) AND type::text = $2 \
+             WHERE LOWER(title) = LOWER($1) AND type = $2 \
              AND (year = $3 OR year = $4 OR year IS NULL) LIMIT 1",
         )
         .bind(title)
@@ -76,7 +86,7 @@ pub async fn find_or_create_media_with_anime(
     } else {
         sqlx::query_as(
             "SELECT id, title, year FROM media \
-             WHERE LOWER(title) = LOWER($1) AND type::text = $2 LIMIT 1",
+             WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
         )
         .bind(title)
         .bind(media_type)
@@ -101,7 +111,7 @@ pub async fn find_or_create_media_with_anime(
     // can use the GIN trigram index — the function form causes a seq-scan.
     let fuzzy: Option<(i32, String, Option<i32>)> = sqlx::query_as(
         "SELECT id, title, year FROM media \
-         WHERE type::text = $1 AND title % $2 \
+         WHERE type = $1 AND title % $2 \
          ORDER BY similarity(title, $2) DESC LIMIT 1",
     )
     .bind(media_type)
@@ -145,7 +155,7 @@ pub async fn find_or_create_media_with_anime(
         // Check if this external_id is already in the DB (different local title).
         let existing: Option<(i32,)> = sqlx::query_as(
             "SELECT m.id FROM media m JOIN media_external_id mei ON mei.media_id = m.id \
-             WHERE mei.provider = $1 AND mei.external_id = $2 AND m.type::text = $3 LIMIT 1",
+             WHERE mei.provider = $1 AND mei.external_id = $2 AND m.type = $3 LIMIT 1",
         )
         .bind(&meta.provider)
         .bind(&meta.external_id)
@@ -244,10 +254,11 @@ pub async fn find_or_create_media_with_anime(
 
 pub async fn insert_media_row(
     pool: &PgPool,
-    media_type: &str,
+    media_type: MediaType,
     title: &str,
     year: Option<i32>,
 ) -> Option<i32> {
+    let mt = media_type;
     let insert: Option<(i32,)> = sqlx::query_as(
         r#"
         INSERT INTO media (
@@ -255,12 +266,12 @@ pub async fn insert_media_row(
             adult, is_blocked, is_public, is_user_created,
             total_streams, created_at
         )
-        VALUES ($1::mediatype, $2, $3, false, false, true, false, 0, NOW())
+        VALUES ($1, $2, $3, false, false, true, false, 0, NOW())
         ON CONFLICT DO NOTHING
         RETURNING id
         "#,
     )
-    .bind(media_type)
+    .bind(mt)
     .bind(title)
     .bind(year)
     .fetch_optional(pool)
@@ -271,10 +282,10 @@ pub async fn insert_media_row(
     match insert {
         Some((id,)) => Some(id),
         None => sqlx::query_scalar::<_, i32>(
-            "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type::text = $2 LIMIT 1",
+            "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
         )
         .bind(title)
-        .bind(media_type)
+        .bind(mt)
         .fetch_optional(pool)
         .await
         .ok()
@@ -558,7 +569,7 @@ pub async fn ensure_media_for_import(
     if let Ok(Some(id)) =
         crate::db::get_media_id_by_external_id(pool, meta_id, Some(meta_type)).await
     {
-        return Some(id);
+        return Some(id.0);
     }
 
     let fetch_meta_type = if meta_type == "sports" {
@@ -567,7 +578,11 @@ pub async fn ensure_media_for_import(
         meta_type
     };
     let is_series = fetch_meta_type == "series";
-    let db_type = if is_series { "SERIES" } else { "MOVIE" };
+    let db_type = if is_series {
+        MediaType::Series
+    } else {
+        MediaType::Movie
+    };
 
     let mut details = prefetched_details(prefetch, meta_id, fetch_meta_type);
     if details.is_none() && prefetch.is_none() {
@@ -676,8 +691,8 @@ async fn upsert_primary_image(pool: &PgPool, media_id: i32, image_type: &str, ur
 
 pub async fn link_stream_to_media(
     pool: &PgPool,
-    stream_id: i32,
-    media_id: i32,
+    stream_id: crate::db::StreamId,
+    media_id: crate::db::MediaId,
 ) -> Result<(), sqlx::Error> {
     let inserted: Option<(i32,)> = sqlx::query_as(
         r#"INSERT INTO stream_media_link(stream_id, media_id, is_primary, is_verified, created_at)
@@ -756,7 +771,7 @@ pub async fn search_meta_for_title_with_anime(
     )
     .await?;
     Some(crate::scrapers::SearchMeta {
-        media_id: media.id as i64,
+        media_id: crate::db::MediaId(media.id),
         imdb_id: None,
         title: media.title,
         year: media.year,
@@ -835,13 +850,14 @@ pub async fn find_or_create_sports_stub(
     media_type: &str,
 ) -> Option<i32> {
     // 1. Exact title match (case-insensitive).
+    let mt = wire_media_type(media_type)?;
     let row: Option<(i32,)> = if let Some(y) = year {
         sqlx::query_as(
             "SELECT id FROM media WHERE LOWER(title) = LOWER($1) \
-             AND type = $2::mediatype AND (year = $3 OR year IS NULL) LIMIT 1",
+             AND type = $2 AND (year = $3 OR year IS NULL) LIMIT 1",
         )
         .bind(title)
-        .bind(media_type)
+        .bind(mt)
         .bind(y)
         .fetch_optional(pool)
         .await
@@ -850,10 +866,10 @@ pub async fn find_or_create_sports_stub(
     } else {
         sqlx::query_as(
             "SELECT id FROM media WHERE LOWER(title) = LOWER($1) \
-             AND type = $2::mediatype LIMIT 1",
+             AND type = $2 LIMIT 1",
         )
         .bind(title)
-        .bind(media_type)
+        .bind(mt)
         .fetch_optional(pool)
         .await
         .ok()
@@ -867,10 +883,10 @@ pub async fn find_or_create_sports_stub(
 
     // 2. Fuzzy pg_trgm match (same threshold as find_or_create_media).
     let fuzzy: Option<(i32, String)> = sqlx::query_as(
-        "SELECT id, title FROM media WHERE type = $1::mediatype AND title % $2 \
+        "SELECT id, title FROM media WHERE type = $1 AND title % $2 \
          ORDER BY similarity(title, $2) DESC LIMIT 1",
     )
-    .bind(media_type)
+    .bind(mt)
     .bind(title)
     .fetch_optional(pool)
     .await
@@ -892,12 +908,12 @@ pub async fn find_or_create_sports_stub(
             adult, is_blocked, is_public, is_user_created,
             is_add_title_to_poster, total_streams, created_at
         )
-        VALUES ($1::mediatype, $2, $3, false, false, true, false, true, 0, NOW())
+        VALUES ($1, $2, $3, false, false, true, false, true, 0, NOW())
         ON CONFLICT DO NOTHING
         RETURNING id
         "#,
     )
-    .bind(media_type)
+    .bind(mt)
     .bind(title)
     .bind(year)
     .fetch_optional(pool)
@@ -910,10 +926,10 @@ pub async fn find_or_create_sports_stub(
         Some((id,)) => id,
         None => sqlx::query_scalar::<_, i32>(
             "SELECT id FROM media WHERE LOWER(title) = LOWER($1) \
-             AND type = $2::mediatype LIMIT 1",
+             AND type = $2 LIMIT 1",
         )
         .bind(title)
-        .bind(media_type)
+        .bind(mt)
         .fetch_optional(pool)
         .await
         .ok()

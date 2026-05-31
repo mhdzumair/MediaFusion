@@ -8,6 +8,7 @@ use moka::future::Cache;
 use sqlx::PgPool;
 
 use crate::config::AppConfig;
+use crate::db::MediaId;
 use crate::metrics::Metrics;
 
 #[derive(Debug, Default, Clone)]
@@ -25,7 +26,7 @@ pub struct AppState {
     pub pool_ro: PgPool,
     pub redis: RedisClient,
     /// L1 in-process cache: "{imdb_id}:{media_type}" → (primary_id, related_ids)
-    pub id_cache: Cache<String, (i64, Vec<i64>)>,
+    pub id_cache: Cache<String, (MediaId, Vec<MediaId>)>,
     /// HTTP client shared across all scrapers.
     pub http: reqwest::Client,
     /// HTTP request metrics collector.
@@ -61,7 +62,7 @@ impl AppState {
         tracing::info!("connecting to Redis…");
         let redis = redis_client::build(&config.redis_url).await?;
 
-        let id_cache: Cache<String, (i64, Vec<i64>)> = Cache::builder()
+        let id_cache: Cache<String, (MediaId, Vec<MediaId>)> = Cache::builder()
             .max_capacity(50_000)
             .time_to_live(Duration::from_secs(300))
             .build();

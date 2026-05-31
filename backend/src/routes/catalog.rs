@@ -9,7 +9,7 @@ use serde_json::json;
 
 use crate::{
     cache, crypto,
-    db::catalog as db_catalog,
+    db::{self, catalog as db_catalog},
     models::{
         stremio::{MetaPreview, Metas},
         user_data::UserData,
@@ -52,11 +52,16 @@ struct ExtraParams {
 
 fn preview_poster(
     host_url: &str,
-    media_type: &str,
-    media_id: i64,
+    media_type: db::MediaType,
+    media_id: db::MediaId,
     db_poster: Option<String>,
 ) -> Option<String> {
-    db_poster.or_else(|| Some(format!("{host_url}/poster/{media_type}/mf{media_id}.jpg")))
+    db_poster.or_else(|| {
+        Some(format!(
+            "{host_url}/poster/{}/mf{media_id}.jpg",
+            media_type.as_wire()
+        ))
+    })
 }
 
 fn rows_to_metas(rows: Vec<db_catalog::CatalogRow>, host_url: &str) -> Metas {
@@ -67,10 +72,10 @@ fn rows_to_metas(rows: Vec<db_catalog::CatalogRow>, host_url: &str) -> Metas {
                 .imdb_id
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| format!("mf{}", r.media_id));
-            let poster = preview_poster(host_url, &r.media_type, r.media_id, r.poster_url);
+            let poster = preview_poster(host_url, r.media_type, r.media_id, r.poster_url);
             MetaPreview {
                 id,
-                media_type: r.media_type,
+                media_type: r.media_type.as_wire().to_string(),
                 name: r.title,
                 release_info: r.year.map(|y| y.to_string()),
                 poster,

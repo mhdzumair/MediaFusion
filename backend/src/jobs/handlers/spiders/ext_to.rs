@@ -655,7 +655,7 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                 };
 
                 let meta = SearchMeta {
-                    media_id: media_id as i64,
+                    media_id: crate::db::MediaId(media_id),
                     imdb_id: None,
                     title: clean_title,
                     year,

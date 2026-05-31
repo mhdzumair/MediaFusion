@@ -56,28 +56,22 @@ pub async fn handler(State(state): State<Arc<AppState>>) -> Response {
         telegram_count.clone(),
     );
 
-    // Fetch counts concurrently
+    // Fetch counts concurrently.
+    // Large stream tables use pg_stat_user_tables estimates (fast catalog lookup)
+    // instead of COUNT(*) full-table scans — avoids holding DB connections during
+    // high-load Prometheus scrapes. Media counts use exact COUNT with the type index.
     let (tc, mc, sc, uc, tgc) = tokio::join!(
+        fetch_estimate(&state.pool_ro, "torrent_stream"),
         fetch_count(
             &state.pool_ro,
-            "SELECT COUNT(*) FROM torrent_stream WHERE 1=1"
+            "SELECT COUNT(*) FROM media WHERE type = 'MOVIE'"
         ),
         fetch_count(
             &state.pool_ro,
-            "SELECT COUNT(*) FROM media WHERE media_type = 'MOVIE'"
+            "SELECT COUNT(*) FROM media WHERE type = 'SERIES'"
         ),
-        fetch_count(
-            &state.pool_ro,
-            "SELECT COUNT(*) FROM media WHERE media_type = 'SERIES'"
-        ),
-        fetch_count(
-            &state.pool_ro,
-            "SELECT COUNT(*) FROM usenet_stream WHERE 1=1"
-        ),
-        fetch_count(
-            &state.pool_ro,
-            "SELECT COUNT(*) FROM telegram_stream WHERE 1=1"
-        ),
+        fetch_estimate(&state.pool_ro, "usenet_stream"),
+        fetch_estimate(&state.pool_ro, "telegram_stream"),
     );
 
     torrent_count.set(tc as f64);
@@ -148,4 +142,14 @@ async fn fetch_count(pool: &sqlx::PgPool, query: &str) -> i64 {
         .fetch_one(pool)
         .await
         .unwrap_or(0)
+}
+
+async fn fetch_estimate(pool: &sqlx::PgPool, table: &str) -> i64 {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT GREATEST(n_live_tup, 0) FROM pg_stat_user_tables WHERE relname = $1",
+    )
+    .bind(table)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0)
 }

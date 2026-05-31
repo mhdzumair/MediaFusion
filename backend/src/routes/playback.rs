@@ -345,7 +345,7 @@ async fn resolve_playback_url(
     provider: &crate::models::user_data::StreamingProvider,
     token: &str,
     pikpak_credentials: Option<&(String, String)>,
-    pikpak_profile_id: Option<i64>,
+    pikpak_profile_id: Option<crate::db::ProfileId>,
     pikpak_provider_index: Option<usize>,
     user_data: &UserData,
 ) -> Result<String, providers::ProviderError> {
@@ -600,7 +600,7 @@ async fn pikpak_resolve_token(
     state: &AppState,
     provider: &crate::models::user_data::StreamingProvider,
     credentials: Option<&(String, String)>,
-    profile_id: Option<i64>,
+    profile_id: Option<crate::db::ProfileId>,
     provider_index: Option<usize>,
 ) -> Result<String, providers::ProviderError> {
     use providers::torrents::pikpak as p;
@@ -647,7 +647,7 @@ async fn pikpak_clear_token(
     state: &AppState,
     email: &str,
     password: &str,
-    profile_id: Option<i64>,
+    profile_id: Option<crate::db::ProfileId>,
     provider_index: Option<usize>,
 ) {
     let cache_key = format!(
@@ -661,7 +661,7 @@ async fn pikpak_clear_token(
         let redis = state.redis.clone();
         let key = state.config.secret_key;
         tokio::spawn(async move {
-            crypto::profile::clear_provider_token(&pool, &redis, &key, pid, idx).await;
+            crypto::profile::clear_provider_token(&pool, &redis, &key, pid.0 as i64, idx).await;
         });
     }
 }
@@ -676,7 +676,7 @@ async fn pikpak_save_token(
     token: &str,
     email: &str,
     password: &str,
-    profile_id: Option<i64>,
+    profile_id: Option<crate::db::ProfileId>,
     provider_index: Option<usize>,
 ) {
     // Short-term Redis cache: covers D- inline profiles and the window before DB write lands.
@@ -702,7 +702,7 @@ async fn pikpak_save_token(
         let key = state.config.secret_key;
         let token_owned = token.to_string();
         tokio::spawn(async move {
-            crypto::profile::patch_provider_token(&pool, &redis, &key, pid, idx, &token_owned)
+            crypto::profile::patch_provider_token(&pool, &redis, &key, pid.0 as i64, idx, &token_owned)
                 .await;
         });
     }

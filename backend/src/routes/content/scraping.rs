@@ -523,7 +523,11 @@ pub async fn trigger_scrape_by_media(
     let imdb_id_str = imdb_id.as_deref().unwrap_or("");
 
     // ── SearchMeta ────────────────────────────────────────────────────────────
-    let meta = match crate::db::media::get_media_meta(&state.pool_ro, media_id as i64, imdb_id_str)
+    let meta = match crate::db::media::get_media_meta(
+        &state.pool_ro,
+        crate::db::MediaId(media_id),
+        imdb_id_str,
+    )
         .await
     {
         Ok(Some(m)) => m,

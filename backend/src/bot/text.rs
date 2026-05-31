@@ -96,7 +96,10 @@ pub fn unauthorized() -> String {
 }
 
 pub fn content_preview(content_type: &str, preview: &str) -> String {
-    format!("📥 *Content Detected*\n\n*Type:* {content_type}\n*Preview:* `{preview}`\n\nSelect the media type:")
+    let escaped_type = escape_markdown(content_type);
+    format!(
+        "📥 *Content Detected*\n\n*Type:* {escaped_type}\n*Preview:* `{preview}`\n\nSelect the media type:"
+    )
 }
 
 pub fn escape_markdown(text: &str) -> String {

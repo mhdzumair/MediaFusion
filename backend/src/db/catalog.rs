@@ -1,12 +1,14 @@
 use sqlx::PgPool;
 use tracing::warn;
 
+use super::types::{MediaId, MediaType, UserId};
+
 const LIMIT: i64 = 100;
 
 #[derive(sqlx::FromRow, Debug)]
 pub struct CatalogRow {
-    pub media_id: i64,
-    pub media_type: String,
+    pub media_id: MediaId,
+    pub media_type: MediaType,
     pub title: String,
     pub year: Option<i32>,
     pub description: Option<String>,
@@ -36,7 +38,7 @@ pub struct CatalogQuery<'a> {
     pub sort: &'a str,
     pub sort_dir: &'a str,
     /// Set for my_library_* catalogs; filters by user_library_item.user_id.
-    pub user_id: Option<i64>,
+    pub user_id: Option<UserId>,
 }
 
 pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<CatalogRow> {
@@ -52,16 +54,15 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
         user_id,
     } = q;
 
-    const VALID_MEDIA_TYPES: &[&str] = &["movie", "series", "tv", "events"];
-    if !VALID_MEDIA_TYPES.contains(&media_type.to_lowercase().as_str()) {
+    let Some(mt) = MediaType::from_wire(media_type) else {
         return vec![];
-    }
+    };
 
     // my_library_* catalogs join through user_library_item instead of catalog/media_catalog_link.
     if catalog_id.starts_with("my_library_") {
         return get_library_items(
             pool,
-            media_type,
+            mt,
             skip,
             nudity_excludes,
             cert_excludes,
@@ -74,8 +75,8 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
     let sql = format!(
         r#"
         SELECT
-            m.id::bigint AS media_id,
-            lower(m.type::text) AS media_type,
+            m.id AS media_id,
+            m.type AS media_type,
             m.title,
             m.year,
             m.description,
@@ -90,7 +91,7 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
             WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
             LIMIT 1
         ) mi ON true
-        WHERE m.type = upper($2)::mediatype
+        WHERE m.type = $2
           AND m.total_streams > 0
           AND NOT m.is_blocked
           AND ($4::text IS NULL OR EXISTS (
@@ -98,8 +99,8 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
               JOIN genre g ON g.id = mgl.genre_id
               WHERE mgl.media_id = m.id AND g.name = $4
           ))
-          AND (ARRAY_LENGTH($5::text[], 1) IS NULL OR m.nudity_status::text <> ALL($5))
-          AND (ARRAY_LENGTH($6::text[], 1) IS NULL OR NOT EXISTS (
+          AND (cardinality($5::text[]) IS NULL OR m.nudity_status::text <> ALL($5))
+          AND (cardinality($6::text[]) IS NULL OR NOT EXISTS (
               SELECT 1 FROM media_parental_certificate_link mpcl
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
               WHERE mpcl.media_id = m.id AND pc.name = ANY($6)
@@ -111,7 +112,7 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
 
     sqlx::query_as::<_, CatalogRow>(&sql)
         .bind(catalog_id) // $1
-        .bind(media_type) // $2
+        .bind(mt) // $2
         .bind(skip) // $3
         .bind(genre) // $4 - Option<&str> → NULL when None
         .bind(nudity_excludes) // $5 - &[String] → text[]
@@ -126,11 +127,11 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
 
 async fn get_library_items(
     pool: &PgPool,
-    media_type: &str,
+    media_type: MediaType,
     skip: i64,
     nudity_excludes: &[String],
     cert_excludes: &[String],
-    user_id: Option<i64>,
+    user_id: Option<UserId>,
 ) -> Vec<CatalogRow> {
     let Some(uid) = user_id else {
         return vec![];
@@ -138,8 +139,8 @@ async fn get_library_items(
     sqlx::query_as::<_, CatalogRow>(
         r#"
         SELECT
-            m.id::bigint AS media_id,
-            lower(m.type::text) AS media_type,
+            m.id AS media_id,
+            m.type AS media_type,
             m.title,
             m.year,
             m.description,
@@ -154,10 +155,10 @@ async fn get_library_items(
             LIMIT 1
         ) mi ON true
         WHERE uli.user_id = $1
-          AND m.type = upper($2)::mediatype
+          AND m.type = $2
           AND NOT m.is_blocked
-          AND (ARRAY_LENGTH($3::text[], 1) IS NULL OR m.nudity_status::text <> ALL($3))
-          AND (ARRAY_LENGTH($5::text[], 1) IS NULL OR NOT EXISTS (
+          AND (cardinality($3::text[]) IS NULL OR m.nudity_status::text <> ALL($3))
+          AND (cardinality($5::text[]) IS NULL OR NOT EXISTS (
               SELECT 1 FROM media_parental_certificate_link mpcl
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
               WHERE mpcl.media_id = m.id AND pc.name = ANY($5)
@@ -166,7 +167,7 @@ async fn get_library_items(
         LIMIT 100 OFFSET $4
         "#,
     )
-    .bind(uid as i32) // $1
+    .bind(uid) // $1
     .bind(media_type) // $2
     .bind(nudity_excludes) // $3
     .bind(skip) // $4
@@ -174,7 +175,10 @@ async fn get_library_items(
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {
-        warn!("library query [uid={uid} type={media_type}]: {e}");
+        warn!(
+            "library query [uid={uid} type={}]: {e}",
+            media_type.as_wire()
+        );
         vec![]
     })
 }
@@ -187,11 +191,15 @@ pub async fn search_metadata(
     nudity_excludes: &[String],
     cert_excludes: &[String],
 ) -> Vec<CatalogRow> {
+    let Some(mt) = MediaType::from_wire(media_type) else {
+        return vec![];
+    };
+
     sqlx::query_as::<_, CatalogRow>(
         r#"
         SELECT
-            m.id::bigint AS media_id,
-            lower(m.type::text) AS media_type,
+            m.id AS media_id,
+            m.type AS media_type,
             m.title,
             m.year,
             m.description,
@@ -204,11 +212,11 @@ pub async fn search_metadata(
             WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
             LIMIT 1
         ) mi ON true
-        WHERE m.type = upper($1)::mediatype
+        WHERE m.type = $1
           AND m.total_streams > 0
           AND NOT m.is_blocked
-          AND (ARRAY_LENGTH($3::text[], 1) IS NULL OR m.nudity_status::text <> ALL($3))
-          AND (ARRAY_LENGTH($5::text[], 1) IS NULL OR NOT EXISTS (
+          AND (cardinality($3::text[]) IS NULL OR m.nudity_status::text <> ALL($3))
+          AND (cardinality($5::text[]) IS NULL OR NOT EXISTS (
               SELECT 1 FROM media_parental_certificate_link mpcl
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
               WHERE mpcl.media_id = m.id AND pc.name = ANY($5)
@@ -217,7 +225,7 @@ pub async fn search_metadata(
               -- Phase 1: FTS on main title (uses GIN index)
               SELECT m2.id FROM media m2
               WHERE m2.title_tsv @@ plainto_tsquery('simple', $2)
-                AND m2.type = upper($1)::mediatype
+                AND m2.type = $1
               UNION
               -- Phase 2: FTS on aka_title
               SELECT at2.media_id FROM aka_title at2
@@ -226,7 +234,7 @@ pub async fn search_metadata(
               -- Phase 3: trigram similarity (uses GIN gin_trgm_ops index)
               SELECT m3.id FROM media m3
               WHERE m3.title % $2
-                AND m3.type = upper($1)::mediatype
+                AND m3.type = $1
           )
         ORDER BY
             ts_rank_cd(m.title_tsv, plainto_tsquery('simple', $2)) DESC,
@@ -234,7 +242,7 @@ pub async fn search_metadata(
         LIMIT 100 OFFSET $4
         "#,
     )
-    .bind(media_type) // $1
+    .bind(mt) // $1
     .bind(query) // $2
     .bind(nudity_excludes) // $3
     .bind(skip) // $4

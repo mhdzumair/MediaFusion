@@ -27,7 +27,7 @@ fn bool_opt_from_str<'de, D: Deserializer<'de>>(d: D) -> Result<Option<bool>, D:
     Ok(s.map(|v| !matches!(v.to_lowercase().as_str(), "false" | "0" | "no" | "")))
 }
 
-use crate::state::AppState;
+use crate::{db::MediaType, state::AppState};
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -318,9 +318,11 @@ pub async fn moderator_list_metadata(
 
     // Build WHERE clause
     let mut conditions: Vec<String> = Vec::new();
-    if let Some(ref mt) = params.media_type {
-        let mt_upper = mt.to_uppercase();
-        conditions.push(format!("m.type = '{mt_upper}'::mediatype"));
+    let media_type_filter = params.media_type.as_ref().and_then(|mt| {
+        MediaType::from_wire(&mt.to_ascii_lowercase())
+    });
+    if media_type_filter.is_some() {
+        conditions.push("m.type = $1".to_string());
     }
     if let Some(hs) = params.has_streams {
         if hs {
@@ -345,10 +347,11 @@ pub async fn moderator_list_metadata(
 
     // Count
     let count_sql = format!("SELECT COUNT(*) FROM media m {where_clause}");
-    let total: i64 = sqlx::query_scalar(&count_sql)
-        .fetch_one(&state.pool_ro)
-        .await
-        .unwrap_or(0);
+    let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
+    if let Some(mt) = media_type_filter {
+        count_q = count_q.bind(mt);
+    }
+    let total: i64 = count_q.fetch_one(&state.pool_ro).await.unwrap_or(0);
 
     // Fetch page
     type MediaRow = (
@@ -380,10 +383,11 @@ pub async fn moderator_list_metadata(
          LIMIT {per_page} OFFSET {offset}"
     );
 
-    let rows: Vec<MediaRow> = sqlx::query_as(&list_sql)
-        .fetch_all(&state.pool_ro)
-        .await
-        .unwrap_or_default();
+    let mut list_q = sqlx::query_as::<_, MediaRow>(&list_sql);
+    if let Some(mt) = media_type_filter {
+        list_q = list_q.bind(mt);
+    }
+    let rows: Vec<MediaRow> = list_q.fetch_all(&state.pool_ro).await.unwrap_or_default();
 
     let media_ids: Vec<i32> = rows.iter().map(|r| r.0).collect();
     let maps = fetch_relation_maps(&state, &media_ids).await;

@@ -28,6 +28,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use tracing::{debug, info, warn};
 
+use crate::db::{StreamType, TorrentType};
 use crate::{
     jobs::{
         error::JobError,
@@ -265,13 +266,14 @@ async fn store_torrent_stream(
             is_extended, is_complete, is_dubbed, is_subbed,
             created_at, updated_at
         ) VALUES (
-            'TORRENT'::streamtype, $1, 'dmm_hashlist',
+            $1, $2, 'dmm_hashlist',
             true, false, true, 0,
             false, false, false, false,
             false, false, false, false,
             NOW(), NOW()
         ) RETURNING id"#,
     )
+    .bind(StreamType::Torrent)
     .bind(&entry.filename)
     .fetch_optional(pool)
     .await?;
@@ -283,12 +285,13 @@ async fn store_torrent_stream(
 
     let ts = sqlx::query(
         r#"INSERT INTO torrent_stream (stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at)
-           VALUES ($1, $2, $3, 0, 'PUBLIC'::torrenttype, 1, NOW())
+           VALUES ($1, $2, $3, 0, $4, 1, NOW())
            ON CONFLICT (info_hash) DO NOTHING"#,
     )
     .bind(stream_id)
     .bind(&entry.info_hash)
     .bind(entry.size)
+    .bind(TorrentType::Public)
     .execute(pool)
     .await?;
 
@@ -321,7 +324,7 @@ async fn store_torrent_stream(
     )
     .await
     {
-        let _ = media_resolve::link_stream_to_media(pool, stream_id, meta.media_id as i32).await;
+        let _ = media_resolve::link_stream_to_media(pool, crate::db::StreamId(stream_id), meta.media_id).await;
     }
 
     Ok(true)

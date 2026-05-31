@@ -1,0 +1,64 @@
+# Standalone Grafana + Prometheus for local dev (Rust running on host, not Docker).
+#
+# Scrapes the Rust API on host.docker.internal:8001, plus local Redis and Postgres
+# exporters if they happen to be running.
+#
+# Usage (from repo root):
+#   make grafana-dev
+# OR directly:
+#   docker compose -f deployment/docker-compose/docker-compose-grafana-dev.yml up -d
+#
+# Then open:
+#   Grafana:    http://localhost:3001  (no login required — anonymous viewer)
+#   Prometheus: http://localhost:9091
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.4.0
+    container_name: mf-prometheus-dev
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=4h"
+      - "--web.enable-admin-api"
+    volumes:
+      - ./prometheus-dev.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-dev-data:/prometheus
+    ports:
+      - "9091:9090"
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - mf-grafana-dev
+
+  grafana-dev:
+    image: grafana/grafana:12.0.1
+    container_name: mf-grafana-dev
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_SERVER_HTTP_PORT=3001
+    volumes:
+      - grafana-dev-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../perf/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3001"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - mf-grafana-dev
+
+volumes:
+  prometheus-dev-data:
+    driver: local
+  grafana-dev-data:
+    driver: local
+
+networks:
+  mf-grafana-dev:
+    driver: bridge

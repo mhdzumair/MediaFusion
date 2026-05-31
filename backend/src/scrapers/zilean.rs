@@ -49,16 +49,28 @@ pub async fn scrape(
     let mut raw_items: Vec<Value> = Vec::new();
 
     match search_res {
-        Ok(resp) => match resp.json::<Vec<Value>>().await {
-            Ok(items) => raw_items.extend(items),
-            Err(e) => tracing::debug!("zilean /dmm/search parse error: {e}"),
+        Ok(resp) => match resp.text().await {
+            Ok(body) => match serde_json::from_str::<Vec<Value>>(&body) {
+                Ok(items) => raw_items.extend(items),
+                Err(e) => tracing::debug!(
+                    "zilean /dmm/search parse error: {e} — body: {}",
+                    body.chars().take(500).collect::<String>()
+                ),
+            },
+            Err(e) => tracing::debug!("zilean /dmm/search body error: {e}"),
         },
         Err(e) => tracing::debug!("zilean /dmm/search request error: {e}"),
     }
     match filtered_res {
-        Ok(resp) => match resp.json::<Vec<Value>>().await {
-            Ok(items) => raw_items.extend(items),
-            Err(e) => tracing::debug!("zilean /dmm/filtered parse error: {e}"),
+        Ok(resp) => match resp.text().await {
+            Ok(body) => match serde_json::from_str::<Vec<Value>>(&body) {
+                Ok(items) => raw_items.extend(items),
+                Err(e) => tracing::debug!(
+                    "zilean /dmm/filtered parse error: {e} — body: {}",
+                    body.chars().take(500).collect::<String>()
+                ),
+            },
+            Err(e) => tracing::debug!("zilean /dmm/filtered body error: {e}"),
         },
         Err(e) => tracing::debug!("zilean /dmm/filtered request error: {e}"),
     }

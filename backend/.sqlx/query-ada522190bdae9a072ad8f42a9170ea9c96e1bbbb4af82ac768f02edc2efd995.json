@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            s.season_number,\n            e.episode_number,\n            e.title AS ep_title,\n            e.overview,\n            e.air_date,\n            ei.url AS thumbnail_url,\n            fml.media_id AS \"media_id: Option<MediaId>\"\n        FROM series_metadata sm\n        JOIN season s ON s.series_id = sm.id\n        JOIN episode e ON e.season_id = s.id\n        LEFT JOIN LATERAL (\n            SELECT url FROM episode_image\n            WHERE episode_id = e.id AND image_type = 'still' AND is_primary = true\n            LIMIT 1\n        ) ei ON true\n        LEFT JOIN file_media_link fml\n            ON fml.media_id = $1\n            AND fml.season_number = s.season_number\n            AND fml.episode_number = e.episode_number\n        WHERE sm.media_id = $1\n        ORDER BY s.season_number, e.episode_number\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "season_number",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "episode_number",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "ep_title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "overview",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "air_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "thumbnail_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "media_id: Option<MediaId>",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "ada522190bdae9a072ad8f42a9170ea9c96e1bbbb4af82ac768f02edc2efd995"
+}

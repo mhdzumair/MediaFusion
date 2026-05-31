@@ -13,6 +13,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use tracing::{info, warn};
 
+use crate::db::{MediaType, StreamType};
 use crate::{
     crypto::decrypt::decrypt_user_data,
     jobs::{
@@ -207,10 +208,10 @@ async fn find_or_create_media(
 ) -> Result<i32, sqlx::Error> {
     // Try exact case-insensitive match first
     let existing: Option<(i32,)> = sqlx::query_as(
-        "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2::mediatype LIMIT 1",
+        "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
     )
     .bind(title)
-    .bind(media_type_str)
+    .bind(MediaType::from_wire(&media_type_str.to_ascii_lowercase()).unwrap_or(MediaType::Tv))
     .fetch_optional(pool)
     .await?;
 
@@ -222,12 +223,14 @@ async fn find_or_create_media(
     let res: Option<(i32,)> = sqlx::query_as(
         r#"INSERT INTO media (title, type, is_public, is_user_created, adult, is_blocked,
                               total_streams, playback_count, created_at, updated_at)
-           VALUES ($1, $2::mediatype, $3, true, false, false, 0, 0, NOW(), NOW())
+           VALUES ($1, $2, $3, true, false, false, 0, 0, NOW(), NOW())
            ON CONFLICT DO NOTHING
            RETURNING id"#,
     )
     .bind(title)
-    .bind(media_type_str)
+    .bind(
+        MediaType::from_wire(&media_type_str.to_ascii_lowercase()).unwrap_or(MediaType::Tv),
+    )
     .bind(is_public)
     .fetch_optional(pool)
     .await?;
@@ -237,10 +240,13 @@ async fn find_or_create_media(
         None => {
             // Race: fetch after conflict
             let row: (i32,) = sqlx::query_as(
-                "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2::mediatype LIMIT 1",
+                "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
             )
             .bind(title)
-            .bind(media_type_str)
+            .bind(
+                MediaType::from_wire(&media_type_str.to_ascii_lowercase())
+                    .unwrap_or(MediaType::Tv),
+            )
             .fetch_one(pool)
             .await?;
             Ok(row.0)
@@ -282,11 +288,12 @@ async fn insert_http_stream_for_media(
             is_remastered, is_upscaled, is_proper, is_repack, is_extended, is_complete,
             is_dubbed, is_subbed, created_at, updated_at
         ) VALUES (
-            'HTTP'::streamtype, $1, $2, true, false, $3, 0,
+            $1, $2, $3, true, false, $4, 0,
             false, false, false, false, false, false,
             false, false, NOW(), NOW()
         ) RETURNING id"#,
     )
+    .bind(StreamType::Http)
     .bind(stream_name)
     .bind(source_label)
     .bind(is_public)

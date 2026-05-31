@@ -50,7 +50,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::Sha256;
 
-use crate::state::AppState;
+use crate::{db::{MediaId, StreamId}, state::AppState};
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -149,13 +149,13 @@ pub struct BlockedMediaQuery {
 pub async fn delete_metadata(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<MediaId>,
 ) -> impl IntoResponse {
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
     match sqlx::query("DELETE FROM media WHERE id = $1")
-        .bind(media_id as i32)
+        .bind(media_id.0)
         .execute(&state.pool)
         .await
     {
@@ -177,7 +177,7 @@ pub async fn delete_metadata(
 pub async fn block_media(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<MediaId>,
     Json(body): Json<BlockMediaRequest>,
 ) -> impl IntoResponse {
     let user_id = match validate_moderator_or_admin(&headers, &state.config.secret_key_raw) {
@@ -194,7 +194,7 @@ pub async fn block_media(
     )
     .bind(user_id as i32)
     .bind(&body.reason)
-    .bind(media_id as i32)
+    .bind(media_id.0)
     .execute(&state.pool)
     .await
     {
@@ -224,7 +224,7 @@ pub async fn block_media(
 pub async fn unblock_media(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<MediaId>,
 ) -> impl IntoResponse {
     if validate_moderator_or_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
@@ -237,7 +237,7 @@ pub async fn unblock_media(
                block_reason = NULL
            WHERE id = $1"#,
     )
-    .bind(media_id as i32)
+    .bind(media_id.0)
     .execute(&state.pool)
     .await
     {
@@ -275,9 +275,11 @@ pub async fn list_blocked_media(
 
     // Build optional filter conditions
     let mut conditions: Vec<String> = vec!["is_blocked = true".to_string()];
-    if let Some(ref t) = params.media_type {
-        let t_upper = t.to_uppercase().replace('\'', "''");
-        conditions.push(format!("type = '{t_upper}'::mediatype"));
+    let media_type_filter = params.media_type.as_ref().and_then(|t| {
+        crate::db::MediaType::from_wire(&t.to_ascii_lowercase())
+    });
+    if media_type_filter.is_some() {
+        conditions.push("type = $1".to_string());
     }
     if let Some(ref s) = params.search {
         let escaped = s.replace('\'', "''");
@@ -287,10 +289,11 @@ pub async fn list_blocked_media(
 
     // Total count
     let count_sql = format!("SELECT COUNT(*) FROM media {where_clause}");
-    let total: i64 = sqlx::query_scalar(&count_sql)
-        .fetch_one(&state.pool_ro)
-        .await
-        .unwrap_or(0);
+    let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
+    if let Some(mt) = media_type_filter {
+        count_q = count_q.bind(mt);
+    }
+    let total: i64 = count_q.fetch_one(&state.pool_ro).await.unwrap_or(0);
 
     // Paged results
     type BlockedRow = (
@@ -312,10 +315,11 @@ pub async fn list_blocked_media(
          LIMIT {page_size} OFFSET {offset}"
     );
 
-    match sqlx::query_as::<_, BlockedRow>(&list_sql)
-        .fetch_all(&state.pool_ro)
-        .await
-    {
+    let mut list_q = sqlx::query_as::<_, BlockedRow>(&list_sql);
+    if let Some(mt) = media_type_filter {
+        list_q = list_q.bind(mt);
+    }
+    match list_q.fetch_all(&state.pool_ro).await {
         Ok(rows) => {
             let items: Vec<Value> = rows
                 .into_iter()
@@ -356,13 +360,13 @@ pub async fn list_blocked_media(
 pub async fn block_torrent_stream(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(stream_id): Path<i64>,
+    Path(stream_id): Path<StreamId>,
 ) -> impl IntoResponse {
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
     match sqlx::query("UPDATE stream SET is_blocked = true WHERE id = $1")
-        .bind(stream_id as i32)
+        .bind(stream_id.0)
         .execute(&state.pool)
         .await
     {

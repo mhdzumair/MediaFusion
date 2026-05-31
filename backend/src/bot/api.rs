@@ -1,7 +1,5 @@
 //! Raw Telegram Bot HTTP API client.
 
-use std::sync::Arc;
-
 use reqwest::Client;
 use serde_json::{json, Value};
 
@@ -211,8 +209,4 @@ impl BotApi {
             .cloned()
             .ok_or_else(|| BotApiError::Parse("missing result".into()))
     }
-}
-
-pub fn spawn_bot_task(state: Arc<AppState>, fut: impl std::future::Future<Output = ()> + Send + 'static) {
-    tokio::spawn(fut);
 }

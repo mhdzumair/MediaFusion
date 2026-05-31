@@ -10,6 +10,7 @@ use serde_json::Value;
 use sqlx::PgPool;
 use tracing::{debug, info, warn};
 
+use crate::db::{FileType, LinkSource, StreamType, TorrentType};
 use crate::parser::{self, ParsedTitle};
 
 // ─── RSS XML parsing ──────────────────────────────────────────────────────────
@@ -388,16 +389,17 @@ async fn upsert_rss_stream(
             is_active, is_blocked, is_public, playback_count,
             created_at, updated_at
         ) VALUES (
-            'TORRENT'::streamtype, $1, $2,
-            $3, $4, $5,
-            $6, $7, $8, $9, $10,
-            $11,
+            $1, $2, $3,
+            $4, $5, $6,
+            $7, $8, $9, $10, $11,
+            $12,
             true, false, true, 0,
             NOW(), NOW()
         )
         RETURNING id
         "#,
     )
+    .bind(StreamType::Torrent)
     .bind(name)
     .bind(source)
     .bind(&parsed.resolution)
@@ -424,7 +426,7 @@ async fn upsert_rss_stream(
         r#"
         INSERT INTO torrent_stream (
             stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at
-        ) VALUES ($1, $2, $3, $4, 'PUBLIC'::torrenttype, 1, NOW())
+        ) VALUES ($1, $2, $3, $4, $5, 1, NOW())
         ON CONFLICT (info_hash) DO NOTHING
         "#,
     )
@@ -432,6 +434,7 @@ async fn upsert_rss_stream(
     .bind(info_hash)
     .bind(size)
     .bind(seeders)
+    .bind(TorrentType::Public)
     .execute(pool)
     .await;
 
@@ -454,10 +457,11 @@ async fn upsert_rss_stream(
     if is_series {
         if let (Some(s), Some(e)) = (season, episode) {
             let sf: Option<(i32,)> = sqlx::query_as(
-                "INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive) VALUES ($1, 0, $2, 'VIDEO'::filetype, false) ON CONFLICT (stream_id, file_index) DO UPDATE SET is_archive = EXCLUDED.is_archive RETURNING id"
+                "INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive) VALUES ($1, 0, $2, $3, false) ON CONFLICT (stream_id, file_index) DO UPDATE SET is_archive = EXCLUDED.is_archive RETURNING id"
             )
             .bind(stream_id)
             .bind(name)
+            .bind(FileType::Video)
             .fetch_optional(pool)
             .await
             .ok()
@@ -465,22 +469,32 @@ async fn upsert_rss_stream(
 
             if let Some((file_id,)) = sf {
                 let _ = sqlx::query(
-                    "INSERT INTO file_media_link (file_id, media_id, season_number, episode_number, is_primary, confidence, link_source, created_at) VALUES ($1, $2, $3, $4, true, 1.0, 'PTT_PARSER'::linksource, NOW()) ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING"
+                    "INSERT INTO file_media_link (file_id, media_id, season_number, episode_number, is_primary, confidence, link_source, created_at) VALUES ($1, $2, $3, $4, true, 1.0, $5, NOW()) ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING"
                 )
                 .bind(file_id)
                 .bind(media_id)
                 .bind(s)
                 .bind(e)
+                .bind(LinkSource::PttParser)
                 .execute(pool)
                 .await;
             }
         } else {
-            let _ = crate::scrapers::media_resolve::link_stream_to_media(pool, stream_id, media_id)
+            let _ = crate::scrapers::media_resolve::link_stream_to_media(
+                pool,
+                crate::db::StreamId(stream_id),
+                crate::db::MediaId(media_id),
+            )
                 .await;
         }
     } else {
         let _ =
-            crate::scrapers::media_resolve::link_stream_to_media(pool, stream_id, media_id).await;
+            crate::scrapers::media_resolve::link_stream_to_media(
+                pool,
+                crate::db::StreamId(stream_id),
+                crate::db::MediaId(media_id),
+            )
+            .await;
     }
 
     true

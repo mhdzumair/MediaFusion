@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT g.name\n        FROM genre g\n        JOIN media_genre_link mgl ON mgl.genre_id = g.id\n        WHERE mgl.media_id = $1\n          AND lower(g.name) <> ALL($2)\n        ORDER BY g.name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0cd3b938adeb9a29b5831031d915dda5650c4d1d5b8d02b607ee589f57a5ecd6"
+}

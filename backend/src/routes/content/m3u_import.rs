@@ -21,6 +21,7 @@ use serde_json::json;
 use sha2::Sha256;
 use uuid::Uuid;
 
+use crate::db::{MediaType, StreamType};
 use crate::state::AppState;
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -208,9 +209,10 @@ pub async fn import_tv_channel(
 ) -> bool {
     // Find existing media by title+type
     let media_id: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = 'TV'::mediatype LIMIT 1",
+        "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
     )
     .bind(name)
+    .bind(MediaType::Tv)
     .fetch_optional(pool)
     .await
     .ok()
@@ -222,10 +224,11 @@ pub async fn import_tv_channel(
             // Insert new media
             let res: Option<(i64,)> = sqlx::query_as(
                 "INSERT INTO media (title, type, created_at, adult, is_blocked, total_streams, popularity) \
-                 VALUES ($1, 'TV'::mediatype, NOW(), false, false, 0, 0.0) \
+                 VALUES ($1, $2, NOW(), false, false, 0, 0.0) \
                  ON CONFLICT DO NOTHING RETURNING id",
             )
             .bind(name)
+            .bind(MediaType::Tv)
             .fetch_optional(pool)
             .await
             .ok()
@@ -236,9 +239,10 @@ pub async fn import_tv_channel(
                 None => {
                     // Conflict: fetch existing
                     match sqlx::query_scalar::<_, i64>(
-                        "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = 'TV'::mediatype LIMIT 1",
+                        "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
                     )
                     .bind(name)
+                    .bind(MediaType::Tv)
                     .fetch_optional(pool)
                     .await
                     .ok()
@@ -284,8 +288,9 @@ pub async fn import_tv_channel(
     // Insert stream row
     let stream_row: Option<(i32,)> = sqlx::query_as(
         "INSERT INTO stream (stream_type, name, source, is_active, is_blocked, is_public, playback_count, created_at, updated_at) \
-         VALUES ('HTTP'::streamtype, $1, $2, true, false, true, 0, NOW(), NOW()) RETURNING id",
+         VALUES ($1, $2, $3, true, false, true, 0, NOW(), NOW()) RETURNING id",
     )
+    .bind(StreamType::Http)
     .bind(name)
     .bind(source_name)
     .fetch_optional(pool)
@@ -318,7 +323,7 @@ pub async fn import_tv_channel(
         return false;
     }
 
-    let _ = super::import_helpers::link_stream_to_media(pool, stream_id, media_id as i32).await;
+    let _ = super::import_helpers::link_stream_to_media(pool, stream_id, crate::db::MediaId(media_id as i32)).await;
 
     true
 }

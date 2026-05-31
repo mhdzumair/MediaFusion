@@ -17,6 +17,13 @@ use serde_json::json;
 
 use crate::state::AppState;
 
+#[derive(Debug)]
+struct ReferenceListRow {
+    id: i32,
+    name: String,
+    usage_count: i64,
+}
+
 // ─── Query ────────────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -54,18 +61,19 @@ pub async fn list_genres(
             .await
             .unwrap_or(0);
 
-        let rows: Vec<(i32, String, i64)> = sqlx::query_as(
-            r#"SELECT g.id, g.name, COUNT(mgl.media_id) as usage_count
+        let rows = sqlx::query_as!(
+            ReferenceListRow,
+            r#"SELECT g.id, g.name, COUNT(mgl.media_id) as "usage_count!"
                FROM genre g
                LEFT JOIN media_genre_link mgl ON g.id = mgl.genre_id
                WHERE g.name ILIKE $1
                GROUP BY g.id, g.name
                ORDER BY g.name
                LIMIT $2 OFFSET $3"#,
+            pattern,
+            per_page,
+            offset,
         )
-        .bind(&pattern)
-        .bind(per_page)
-        .bind(offset)
         .fetch_all(&state.pool_ro)
         .await
         .unwrap_or_default();
@@ -77,16 +85,17 @@ pub async fn list_genres(
             .await
             .unwrap_or(0);
 
-        let rows: Vec<(i32, String, i64)> = sqlx::query_as(
-            r#"SELECT g.id, g.name, COUNT(mgl.media_id) as usage_count
+        let rows = sqlx::query_as!(
+            ReferenceListRow,
+            r#"SELECT g.id, g.name, COUNT(mgl.media_id) as "usage_count!"
                FROM genre g
                LEFT JOIN media_genre_link mgl ON g.id = mgl.genre_id
                GROUP BY g.id, g.name
                ORDER BY g.name
                LIMIT $1 OFFSET $2"#,
+            per_page,
+            offset,
         )
-        .bind(per_page)
-        .bind(offset)
         .fetch_all(&state.pool_ro)
         .await
         .unwrap_or_default();
@@ -96,11 +105,13 @@ pub async fn list_genres(
 
     let items: Vec<serde_json::Value> = rows
         .into_iter()
-        .filter(|(_, name, _)| {
-            let lower = name.to_lowercase();
+        .filter(|row| {
+            let lower = row.name.to_lowercase();
             lower != "adult" && lower != "18+"
         })
-        .map(|(id, name, usage_count)| json!({"id": id, "name": name, "usage_count": usage_count}))
+        .map(|row| {
+            json!({"id": row.id, "name": row.name, "usage_count": row.usage_count})
+        })
         .collect();
 
     let pages = if total > 0 {
@@ -136,18 +147,19 @@ pub async fn list_catalogs(
             .await
             .unwrap_or(0);
 
-        let rows: Vec<(i32, String, i64)> = sqlx::query_as(
-            r#"SELECT c.id, c.name, COUNT(mcl.media_id) as usage_count
+        let rows = sqlx::query_as!(
+            ReferenceListRow,
+            r#"SELECT c.id, c.name, COUNT(mcl.media_id) as "usage_count!"
                FROM catalog c
                LEFT JOIN media_catalog_link mcl ON c.id = mcl.catalog_id
                WHERE c.name ILIKE $1
                GROUP BY c.id, c.name
                ORDER BY c.name
                LIMIT $2 OFFSET $3"#,
+            pattern,
+            per_page,
+            offset,
         )
-        .bind(&pattern)
-        .bind(per_page)
-        .bind(offset)
         .fetch_all(&state.pool_ro)
         .await
         .unwrap_or_default();
@@ -159,16 +171,17 @@ pub async fn list_catalogs(
             .await
             .unwrap_or(0);
 
-        let rows: Vec<(i32, String, i64)> = sqlx::query_as(
-            r#"SELECT c.id, c.name, COUNT(mcl.media_id) as usage_count
+        let rows = sqlx::query_as!(
+            ReferenceListRow,
+            r#"SELECT c.id, c.name, COUNT(mcl.media_id) as "usage_count!"
                FROM catalog c
                LEFT JOIN media_catalog_link mcl ON c.id = mcl.catalog_id
                GROUP BY c.id, c.name
                ORDER BY c.name
                LIMIT $1 OFFSET $2"#,
+            per_page,
+            offset,
         )
-        .bind(per_page)
-        .bind(offset)
         .fetch_all(&state.pool_ro)
         .await
         .unwrap_or_default();
@@ -178,7 +191,7 @@ pub async fn list_catalogs(
 
     let items: Vec<serde_json::Value> = rows
         .into_iter()
-        .map(|(id, name, usage_count)| json!({"id": id, "name": name, "usage_count": usage_count}))
+        .map(|row| json!({"id": row.id, "name": row.name, "usage_count": row.usage_count}))
         .collect();
 
     let pages = if total > 0 {
@@ -214,18 +227,19 @@ pub async fn list_stars(
             .await
             .unwrap_or(0);
 
-        let rows: Vec<(i32, String, i64)> = sqlx::query_as(
-            r#"SELECT p.id, p.name, COUNT(mc.media_id) as usage_count
+        let rows = sqlx::query_as!(
+            ReferenceListRow,
+            r#"SELECT p.id, p.name, COUNT(mc.media_id) as "usage_count!"
                FROM person p
                LEFT JOIN media_cast mc ON p.id = mc.person_id
                WHERE p.name ILIKE $1
                GROUP BY p.id, p.name
                ORDER BY p.name
                LIMIT $2 OFFSET $3"#,
+            pattern,
+            per_page,
+            offset,
         )
-        .bind(&pattern)
-        .bind(per_page)
-        .bind(offset)
         .fetch_all(&state.pool_ro)
         .await
         .unwrap_or_default();
@@ -237,16 +251,17 @@ pub async fn list_stars(
             .await
             .unwrap_or(0);
 
-        let rows: Vec<(i32, String, i64)> = sqlx::query_as(
-            r#"SELECT p.id, p.name, COUNT(mc.media_id) as usage_count
+        let rows = sqlx::query_as!(
+            ReferenceListRow,
+            r#"SELECT p.id, p.name, COUNT(mc.media_id) as "usage_count!"
                FROM person p
                LEFT JOIN media_cast mc ON p.id = mc.person_id
                GROUP BY p.id, p.name
                ORDER BY p.name
                LIMIT $1 OFFSET $2"#,
+            per_page,
+            offset,
         )
-        .bind(per_page)
-        .bind(offset)
         .fetch_all(&state.pool_ro)
         .await
         .unwrap_or_default();
@@ -256,7 +271,7 @@ pub async fn list_stars(
 
     let items: Vec<serde_json::Value> = rows
         .into_iter()
-        .map(|(id, name, usage_count)| json!({"id": id, "name": name, "usage_count": usage_count}))
+        .map(|row| json!({"id": row.id, "name": row.name, "usage_count": row.usage_count}))
         .collect();
 
     let pages = if total > 0 {
@@ -293,18 +308,19 @@ pub async fn list_parental_certificates(
                 .await
                 .unwrap_or(0);
 
-        let rows: Vec<(i32, String, i64)> = sqlx::query_as(
-            r#"SELECT pc.id, pc.name, COUNT(mpcl.media_id) as usage_count
+        let rows = sqlx::query_as!(
+            ReferenceListRow,
+            r#"SELECT pc.id, pc.name, COUNT(mpcl.media_id) as "usage_count!"
                FROM parental_certificate pc
                LEFT JOIN media_parental_certificate_link mpcl ON pc.id = mpcl.certificate_id
                WHERE pc.name ILIKE $1
                GROUP BY pc.id, pc.name
                ORDER BY pc.name
                LIMIT $2 OFFSET $3"#,
+            pattern,
+            per_page,
+            offset,
         )
-        .bind(&pattern)
-        .bind(per_page)
-        .bind(offset)
         .fetch_all(&state.pool_ro)
         .await
         .unwrap_or_default();
@@ -316,16 +332,17 @@ pub async fn list_parental_certificates(
             .await
             .unwrap_or(0);
 
-        let rows: Vec<(i32, String, i64)> = sqlx::query_as(
-            r#"SELECT pc.id, pc.name, COUNT(mpcl.media_id) as usage_count
+        let rows = sqlx::query_as!(
+            ReferenceListRow,
+            r#"SELECT pc.id, pc.name, COUNT(mpcl.media_id) as "usage_count!"
                FROM parental_certificate pc
                LEFT JOIN media_parental_certificate_link mpcl ON pc.id = mpcl.certificate_id
                GROUP BY pc.id, pc.name
                ORDER BY pc.name
                LIMIT $1 OFFSET $2"#,
+            per_page,
+            offset,
         )
-        .bind(per_page)
-        .bind(offset)
         .fetch_all(&state.pool_ro)
         .await
         .unwrap_or_default();
@@ -335,7 +352,7 @@ pub async fn list_parental_certificates(
 
     let items: Vec<serde_json::Value> = rows
         .into_iter()
-        .map(|(id, name, usage_count)| json!({"id": id, "name": name, "usage_count": usage_count}))
+        .map(|row| json!({"id": row.id, "name": row.name, "usage_count": row.usage_count}))
         .collect();
 
     let pages = if total > 0 {

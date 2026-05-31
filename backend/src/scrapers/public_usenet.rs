@@ -11,8 +11,20 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     parser,
-    scrapers::{prowlarr::build_series_files, ScrapedUsenetStream, SearchMeta},
+    scrapers::{
+        prowlarr::build_series_files,
+        source_health::{self, HealthGateConfig},
+        ScrapedUsenetStream, SearchMeta,
+    },
 };
+
+/// Outcome of a single indexer fetch attempt, distinguishing rate-limits from
+/// normal empty results so the health gate can record failures accurately.
+enum IndexerOutcome {
+    Success(Vec<RawUsenetItem>),
+    RateLimited,
+    Error,
+}
 
 const NZBINDEX_ORIGIN: &str = "https://www.nzbindex.com";
 const BINSEARCH_BASE: &str = "https://www.binsearch.info";
@@ -25,36 +37,109 @@ pub async fn scrape(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    health_gate: Option<&HealthGateConfig>,
 ) -> Vec<ScrapedUsenetStream> {
     let queries = build_queries(meta, media_type, season, episode);
     let mut results: Vec<ScrapedUsenetStream> = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    for query in &queries {
-        // NZBIndex — 2 pages (0-indexed)
-        for page in 0..2_u32 {
-            for item in search_nzbindex(client, query, page).await {
-                if seen.insert(item.nzb_guid.clone()) {
-                    if let Some(s) = validate_and_build(item, meta, media_type, season, episode) {
-                        results.push(s);
+    // ── NZBIndex ──────────────────────────────────────────────────────────────
+    if is_allowed(health_gate, "nzbindex").await {
+        let mut rate_limited = false;
+        'nzb: for query in &queries {
+            for page in 0..2_u32 {
+                match search_nzbindex(client, query, page).await {
+                    IndexerOutcome::RateLimited => {
+                        rate_limited = true;
+                        break 'nzb;
                     }
+                    IndexerOutcome::Success(items) => {
+                        for item in items {
+                            if seen.insert(item.nzb_guid.clone()) {
+                                if let Some(s) =
+                                    validate_and_build(item, meta, media_type, season, episode)
+                                {
+                                    results.push(s);
+                                }
+                            }
+                        }
+                    }
+                    IndexerOutcome::Error => {}
                 }
             }
         }
+        record_outcome(health_gate, "nzbindex", !rate_limited).await;
+    } else {
+        tracing::debug!("public_usenet: nzbindex health gate blocked — skipping");
+    }
 
-        // Binsearch — 2 pages (1-indexed)
-        for page in 1..=2_u32 {
-            for item in search_binsearch(client, query, page).await {
-                if seen.insert(item.nzb_guid.clone()) {
-                    if let Some(s) = validate_and_build(item, meta, media_type, season, episode) {
-                        results.push(s);
+    // ── Binsearch ─────────────────────────────────────────────────────────────
+    if is_allowed(health_gate, "binsearch").await {
+        let mut rate_limited = false;
+        'bin: for query in &queries {
+            for page in 1..=2_u32 {
+                match search_binsearch(client, query, page).await {
+                    IndexerOutcome::RateLimited => {
+                        rate_limited = true;
+                        break 'bin;
                     }
+                    IndexerOutcome::Success(items) => {
+                        for item in items {
+                            if seen.insert(item.nzb_guid.clone()) {
+                                if let Some(s) =
+                                    validate_and_build(item, meta, media_type, season, episode)
+                                {
+                                    results.push(s);
+                                }
+                            }
+                        }
+                    }
+                    IndexerOutcome::Error => {}
                 }
             }
         }
+        record_outcome(health_gate, "binsearch", !rate_limited).await;
+    } else {
+        tracing::debug!("public_usenet: binsearch health gate blocked — skipping");
     }
 
     results
+}
+
+async fn is_allowed(hg: Option<&HealthGateConfig>, source: &str) -> bool {
+    let Some(hg) = hg else { return true };
+    if !hg.enabled {
+        return true;
+    }
+    source_health::is_source_within_budget(
+        &hg.redis,
+        source,
+        hg.min_samples,
+        hg.min_success_rate,
+        hg.max_timeout_rate,
+        "general",
+        &hg.scope_mode,
+        &hg.scope_override,
+    )
+    .await
+}
+
+async fn record_outcome(hg: Option<&HealthGateConfig>, source: &str, success: bool) {
+    let Some(hg) = hg else { return };
+    source_health::record_source_outcome(
+        &hg.redis,
+        source,
+        success,
+        false,
+        false,
+        "general",
+        &hg.scope_mode,
+        &hg.scope_override,
+        hg.counter_soft_cap,
+        hg.decay_factor,
+        hg.metrics_ttl_seconds,
+    )
+    .await;
 }
 
 // ─── Query builder ─────────────────────────────────────────────────────────────
@@ -149,7 +234,7 @@ fn validate_and_build(
 
 // ─── NZBIndex JSON API ────────────────────────────────────────────────────────
 
-async fn search_nzbindex(client: &Client, query: &str, page: u32) -> Vec<RawUsenetItem> {
+async fn search_nzbindex(client: &Client, query: &str, page: u32) -> IndexerOutcome {
     let url = format!(
         "{NZBINDEX_ORIGIN}/api/search?q={}&page={page}",
         urlencoding::encode(query)
@@ -164,16 +249,20 @@ async fn search_nzbindex(client: &Client, query: &str, page: u32) -> Vec<RawUsen
             Ok(v) => v,
             Err(e) => {
                 tracing::debug!("nzbindex json parse: {e}");
-                return vec![];
+                return IndexerOutcome::Error;
             }
         },
+        Ok(r) if r.status() == reqwest::StatusCode::TOO_MANY_REQUESTS => {
+            tracing::debug!("nzbindex HTTP {}", r.status());
+            return IndexerOutcome::RateLimited;
+        }
         Ok(r) => {
             tracing::debug!("nzbindex HTTP {}", r.status());
-            return vec![];
+            return IndexerOutcome::Error;
         }
         Err(e) => {
             tracing::debug!("nzbindex fetch: {e}");
-            return vec![];
+            return IndexerOutcome::Error;
         }
     };
 
@@ -183,7 +272,7 @@ async fn search_nzbindex(client: &Client, query: &str, page: u32) -> Vec<RawUsen
         .and_then(|c| c.as_array())
     {
         Some(a) => a,
-        None => return vec![],
+        None => return IndexerOutcome::Success(vec![]),
     };
 
     let mut items = Vec::new();
@@ -239,7 +328,7 @@ async fn search_nzbindex(client: &Client, query: &str, page: u32) -> Vec<RawUsen
             indexer: "NZBIndex",
         });
     }
-    items
+    IndexerOutcome::Success(items)
 }
 
 // ─── Binsearch HTML ───────────────────────────────────────────────────────────
@@ -269,7 +358,7 @@ fn group_re() -> &'static regex::Regex {
         .get_or_init(|| regex::Regex::new(r#"href="/search\?group=[^"]*">([^<]+)</a>"#).unwrap())
 }
 
-async fn search_binsearch(client: &Client, query: &str, page: u32) -> Vec<RawUsenetItem> {
+async fn search_binsearch(client: &Client, query: &str, page: u32) -> IndexerOutcome {
     let url = format!(
         "{BINSEARCH_BASE}/search?q={}&page={page}",
         urlencoding::encode(query)
@@ -286,19 +375,23 @@ async fn search_binsearch(client: &Client, query: &str, page: u32) -> Vec<RawUse
             Ok(t) => t,
             Err(e) => {
                 tracing::debug!("binsearch body: {e}");
-                return vec![];
+                return IndexerOutcome::Error;
             }
         },
+        Ok(r) if r.status() == reqwest::StatusCode::TOO_MANY_REQUESTS => {
+            tracing::debug!("binsearch HTTP {}", r.status());
+            return IndexerOutcome::RateLimited;
+        }
         Ok(r) => {
             tracing::debug!("binsearch HTTP {}", r.status());
-            return vec![];
+            return IndexerOutcome::Error;
         }
         Err(e) => {
             tracing::debug!("binsearch fetch: {e}");
-            return vec![];
+            return IndexerOutcome::Error;
         }
     };
-    parse_binsearch_html(&html)
+    IndexerOutcome::Success(parse_binsearch_html(&html))
 }
 
 fn parse_binsearch_html(html: &str) -> Vec<RawUsenetItem> {

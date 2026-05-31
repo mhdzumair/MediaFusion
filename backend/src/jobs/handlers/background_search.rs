@@ -262,7 +262,7 @@ async fn process_item(
     let imdb_id = lookup_imdb_id(pool, media.media_id).await;
 
     let meta = SearchMeta {
-        media_id: media.media_id as i64,
+        media_id: crate::db::MediaId(media.media_id),
         imdb_id,
         title: media.title,
         year: media.year,

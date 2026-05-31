@@ -33,7 +33,7 @@ use sha2::Sha256;
 
 use serde_json::json;
 
-use crate::{db, state::AppState};
+use crate::{db::{self, MediaId}, state::AppState};
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -590,7 +590,7 @@ pub async fn get_library_item(
 pub async fn check_in_library(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<MediaId>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -606,7 +606,7 @@ pub async fn check_in_library(
     let item_id: Option<i64> = sqlx::query_scalar(
         "SELECT id FROM user_library_item WHERE media_id = $1 AND user_id = $2 LIMIT 1",
     )
-    .bind(media_id)
+    .bind(i32::from(media_id))
     .bind(user_id as i32)
     .fetch_optional(&state.pool_ro)
     .await
@@ -660,7 +660,7 @@ pub async fn remove_from_library(
 pub async fn remove_from_library_by_media_id(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(media_id): Path<i64>,
+    Path(media_id): Path<MediaId>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -674,7 +674,7 @@ pub async fn remove_from_library_by_media_id(
     };
 
     let result = sqlx::query("DELETE FROM user_library_item WHERE media_id = $1 AND user_id = $2")
-        .bind(media_id)
+        .bind(i32::from(media_id))
         .bind(user_id as i32)
         .execute(&state.pool)
         .await;

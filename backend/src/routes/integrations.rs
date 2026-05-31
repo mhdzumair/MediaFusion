@@ -40,12 +40,17 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 
 use crate::{
+    db::IntegrationType,
     jobs::{
         enqueue::{enqueue_simple, EnqueueOpts},
         handlers::integration_syncs::sync_integration_inline,
     },
     state::AppState,
 };
+
+fn parse_integration_platform(platform: &str) -> Option<IntegrationType> {
+    IntegrationType::from_wire(platform)
+}
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -335,10 +340,10 @@ pub async fn get_sync_status(
     let row: Option<SyncRow> = match sqlx::query_as(
         r#"SELECT last_sync_at, last_sync_status, last_sync_error, last_sync_stats
            FROM profile_integration
-           WHERE profile_id = $1 AND platform = $2::integrationtype"#,
+           WHERE profile_id = $1 AND platform = $2"#,
     )
     .bind(params.profile_id.unwrap_or(0))
-    .bind(platform.to_ascii_uppercase())
+    .bind(parse_integration_platform(&platform).unwrap_or(IntegrationType::Trakt))
     .fetch_optional(&state.pool_ro)
     .await
     {
@@ -715,10 +720,10 @@ pub async fn disconnect_integration(
     }
 
     let exists: Option<(i32,)> = match sqlx::query_as(
-        "SELECT id FROM profile_integration WHERE profile_id = $1 AND platform = $2::integrationtype",
+        "SELECT id FROM profile_integration WHERE profile_id = $1 AND platform = $2",
     )
     .bind(params.profile_id.unwrap_or(0))
-    .bind(platform.to_ascii_uppercase())
+    .bind(parse_integration_platform(&platform).unwrap_or(IntegrationType::Trakt))
     .fetch_optional(&state.pool)
     .await
     {
@@ -731,9 +736,9 @@ pub async fn disconnect_integration(
     }
 
     if let Err(e) =
-        sqlx::query("DELETE FROM profile_integration WHERE profile_id = $1 AND platform = $2::integrationtype")
+        sqlx::query("DELETE FROM profile_integration WHERE profile_id = $1 AND platform = $2")
             .bind(params.profile_id.unwrap_or(0))
-            .bind(platform.to_ascii_uppercase())
+            .bind(parse_integration_platform(&platform).unwrap_or(IntegrationType::Trakt))
             .execute(&state.pool)
             .await
     {
@@ -776,10 +781,10 @@ pub async fn update_integration_settings(
     // Get current integration
     type IntegRow = (i32, serde_json::Value);
     let row: Option<IntegRow> = match sqlx::query_as(
-        "SELECT id, settings FROM profile_integration WHERE profile_id = $1 AND platform = $2::integrationtype",
+        "SELECT id, settings FROM profile_integration WHERE profile_id = $1 AND platform = $2",
     )
     .bind(params.profile_id.unwrap_or(0))
-    .bind(platform.to_ascii_uppercase())
+    .bind(parse_integration_platform(&platform).unwrap_or(IntegrationType::Trakt))
     .fetch_optional(&state.pool)
     .await
     {
@@ -875,10 +880,10 @@ pub async fn trigger_sync(
     }
 
     let row: Option<(i32,)> = match sqlx::query_as(
-        "SELECT id FROM profile_integration WHERE profile_id = $1 AND platform = $2::integrationtype AND is_enabled = true",
+        "SELECT id FROM profile_integration WHERE profile_id = $1 AND platform = $2 AND is_enabled = true",
     )
     .bind(profile_id)
-    .bind(platform.to_ascii_uppercase())
+    .bind(parse_integration_platform(&platform).unwrap_or(IntegrationType::Trakt))
     .fetch_optional(&state.pool_ro)
     .await
     {

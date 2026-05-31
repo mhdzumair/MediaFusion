@@ -32,6 +32,9 @@ pub async fn handle_command(
         }
         "/login" => {
             let result = login::handle_login_command(state, api, user_id, chat_id).await;
+            if !result.success {
+                tracing::warn!("telegram /login failed for user {user_id}");
+            }
             let _ = api.send_message(chat_id, &result.message, None).await;
         }
         "/status" => handle_status(state, api, user_id, chat_id).await,
@@ -45,7 +48,7 @@ async fn handle_status(state: &AppState, api: &BotApi, telegram_user_id: i64, ch
     let msg = if let Some((mf_id, username)) =
         tg_db::get_user_by_telegram_id(&state.pool_ro, telegram_user_id).await
     {
-        text::status_linked(&username, mf_id)
+        text::status_linked(&username, i64::from(i32::from(mf_id)))
     } else {
         text::status_not_linked()
     };

@@ -18,6 +18,7 @@ fn strip_nul(s: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+use crate::db::{FileType, LinkSource, StreamId, StreamType, TorrentType};
 use crate::scrapers::{
     media_resolve, ScrapedStream, ScrapedTelegramStream, ScrapedUsenetStream, SearchMeta,
 };
@@ -68,7 +69,7 @@ async fn upsert_stream(
     season: Option<i32>,
     episode: Option<i32>,
 ) -> Result<bool, sqlx::Error> {
-    if meta.media_id <= 0 {
+    if meta.media_id.0 <= 0 {
         return Ok(false);
     }
 
@@ -106,17 +107,18 @@ async fn upsert_stream(
             is_active, is_blocked, is_public, playback_count,
             created_at
         ) VALUES (
-            'TORRENT'::streamtype, $1, $2,
-            $3, $4, $5,
-            $6, $7, $8, $9, $10,
-            $11, $12, $13,
-            $14,
+            $1, $2, $3,
+            $4, $5, $6,
+            $7, $8, $9, $10, $11,
+            $12, $13, $14,
+            $15,
             true, false, true, 0,
             NOW()
         )
         RETURNING id
         "#,
     )
+    .bind(StreamType::Torrent)
     .bind(&s.name)
     .bind(&s.source)
     .bind(&s.parsed.resolution)
@@ -145,7 +147,7 @@ async fn upsert_stream(
         INSERT INTO torrent_stream (
             stream_id, info_hash, total_size, seeders, torrent_type, file_count, created_at
         ) VALUES (
-            $1, $2, $3, $4, 'PUBLIC'::torrenttype, $5, NOW()
+            $1, $2, $3, $4, $5, $6, NOW()
         )
         ON CONFLICT (info_hash) DO NOTHING
         "#,
@@ -154,6 +156,7 @@ async fn upsert_stream(
     .bind(&s.info_hash)
     .bind(s.size.unwrap_or(0))
     .bind(s.seeders)
+    .bind(TorrentType::Public)
     .bind(file_count)
     .execute(pool)
     .await;
@@ -181,7 +184,7 @@ async fn upsert_stream(
             let file_result: Result<(i32,), _> = sqlx::query_as(
                 r#"
                 INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive)
-                VALUES ($1, $2, $3, 'VIDEO'::filetype, false)
+                VALUES ($1, $2, $3, $4, false)
                 ON CONFLICT (stream_id, file_index) DO UPDATE SET is_archive = EXCLUDED.is_archive
                 RETURNING id
                 "#,
@@ -189,6 +192,7 @@ async fn upsert_stream(
             .bind(stream_id)
             .bind(f.file_index)
             .bind(&f.filename)
+            .bind(FileType::Video)
             .fetch_one(pool)
             .await;
 
@@ -198,21 +202,22 @@ async fn upsert_stream(
                     INSERT INTO file_media_link
                         (file_id, media_id, season_number, episode_number,
                          is_primary, confidence, link_source, created_at)
-                    VALUES ($1, $2, $3, $4, true, 1.0, 'PTT_PARSER'::linksource, NOW())
+                    VALUES ($1, $2, $3, $4, true, 1.0, $5, NOW())
                     ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING
                     "#,
                 )
                 .bind(file_id)
-                .bind(meta.media_id as i32)
+                .bind(meta.media_id)
                 .bind(f.season_number)
                 .bind(f.episode_number)
+                .bind(LinkSource::PttParser)
                 .execute(pool)
                 .await
                 .ok();
             }
         }
     } else {
-        let _ = media_resolve::link_stream_to_media(pool, stream_id, meta.media_id as i32).await;
+        let _ = media_resolve::link_stream_to_media(pool, StreamId(stream_id), meta.media_id).await;
 
         // If the request specified season/episode but no file breakdown, also add
         // a file_media_link via a synthetic stream_file row.
@@ -220,12 +225,13 @@ async fn upsert_stream(
             let sf_result: Result<(i32,), _> = sqlx::query_as(
                 r#"
                 INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive)
-                VALUES ($1, 0, '', 'VIDEO'::filetype, false)
+                VALUES ($1, 0, '', $2, false)
                 ON CONFLICT (stream_id, file_index) DO NOTHING
                 RETURNING id
                 "#,
             )
             .bind(stream_id)
+            .bind(FileType::Video)
             .fetch_one(pool)
             .await;
 
@@ -235,14 +241,15 @@ async fn upsert_stream(
                     INSERT INTO file_media_link
                         (file_id, media_id, season_number, episode_number,
                          is_primary, confidence, link_source, created_at)
-                    VALUES ($1, $2, $3, $4, true, 1.0, 'PTT_PARSER'::linksource, NOW())
+                    VALUES ($1, $2, $3, $4, true, 1.0, $5, NOW())
                     ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING
                     "#,
                 )
                 .bind(file_id)
-                .bind(meta.media_id as i32)
+                .bind(meta.media_id)
                 .bind(s_num)
                 .bind(e_num)
+                .bind(LinkSource::PttParser)
                 .execute(pool)
                 .await
                 .ok();
@@ -315,17 +322,18 @@ async fn upsert_usenet_stream(
             is_active, is_blocked, is_public, playback_count,
             created_at
         ) VALUES (
-            'USENET'::streamtype, $1, $2,
-            $3, $4, $5,
-            $6, $7, $8, $9, $10,
-            $11, $12, $13,
-            $14,
+            $1, $2, $3,
+            $4, $5, $6,
+            $7, $8, $9, $10, $11,
+            $12, $13, $14,
+            $15,
             true, false, true, 0,
             NOW()
         )
         RETURNING id
         "#,
     )
+    .bind(StreamType::Usenet)
     .bind(strip_nul(&s.name))
     .bind(strip_nul(&s.source))
     .bind(&s.parsed.resolution)
@@ -382,7 +390,7 @@ async fn upsert_usenet_stream(
             let sf: Result<(i32,), _> = sqlx::query_as(
                 r#"
                 INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive)
-                VALUES ($1, $2, $3, 'VIDEO'::filetype, false)
+                VALUES ($1, $2, $3, $4, false)
                 ON CONFLICT (stream_id, file_index) DO UPDATE SET is_archive = EXCLUDED.is_archive
                 RETURNING id
                 "#,
@@ -390,6 +398,7 @@ async fn upsert_usenet_stream(
             .bind(stream_id)
             .bind(f.file_index)
             .bind(strip_nul(&f.filename))
+            .bind(FileType::Video)
             .fetch_one(pool)
             .await;
 
@@ -399,14 +408,15 @@ async fn upsert_usenet_stream(
                     INSERT INTO file_media_link
                         (file_id, media_id, season_number, episode_number,
                          is_primary, confidence, link_source, created_at)
-                    VALUES ($1, $2, $3, $4, true, 1.0, 'PTT_PARSER'::linksource, NOW())
+                    VALUES ($1, $2, $3, $4, true, 1.0, $5, NOW())
                     ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING
                     "#,
                 )
                 .bind(file_id)
-                .bind(meta.media_id as i32)
+                .bind(meta.media_id)
                 .bind(f.season_number)
                 .bind(f.episode_number)
+                .bind(LinkSource::PttParser)
                 .execute(pool)
                 .await
                 .ok();
@@ -423,7 +433,7 @@ async fn upsert_usenet_stream(
             "#,
         )
         .bind(stream_id)
-        .bind(meta.media_id as i32)
+        .bind(meta.media_id)
         .execute(pool)
         .await
         .ok();
@@ -432,12 +442,13 @@ async fn upsert_usenet_stream(
             let sf: Result<(i32,), _> = sqlx::query_as(
                 r#"
                 INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive)
-                VALUES ($1, 0, '', 'VIDEO'::filetype, false)
+                VALUES ($1, 0, '', $2, false)
                 ON CONFLICT (stream_id, file_index) DO UPDATE SET is_archive = EXCLUDED.is_archive
                 RETURNING id
                 "#,
             )
             .bind(stream_id)
+            .bind(FileType::Video)
             .fetch_one(pool)
             .await;
 
@@ -447,14 +458,15 @@ async fn upsert_usenet_stream(
                     INSERT INTO file_media_link
                         (file_id, media_id, season_number, episode_number,
                          is_primary, confidence, link_source, created_at)
-                    VALUES ($1, $2, $3, $4, true, 1.0, 'PTT_PARSER'::linksource, NOW())
+                    VALUES ($1, $2, $3, $4, true, 1.0, $5, NOW())
                     ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING
                     "#,
                 )
                 .bind(file_id)
-                .bind(meta.media_id as i32)
+                .bind(meta.media_id)
                 .bind(s_num)
                 .bind(e_num)
+                .bind(LinkSource::PttParser)
                 .execute(pool)
                 .await
                 .ok();
@@ -537,17 +549,18 @@ async fn upsert_telegram_stream(
             is_active, is_blocked, is_public, playback_count,
             created_at
         ) VALUES (
-            'TELEGRAM'::streamtype, $1, 'Telegram',
-            $2, $3, $4,
-            $5, $6, $7, $8, $9,
-            $10, $11, $12,
-            $13,
+            $1, $2, 'Telegram',
+            $3, $4, $5,
+            $6, $7, $8, $9, $10,
+            $11, $12, $13,
+            $14,
             true, false, true, 0,
             NOW()
         )
         RETURNING id
         "#,
     )
+    .bind(StreamType::Telegram)
     .bind(&s.name)
     .bind(&s.parsed.resolution)
     .bind(&s.parsed.codec)
@@ -609,7 +622,7 @@ async fn upsert_telegram_stream(
         "#,
     )
     .bind(stream_id)
-    .bind(meta.media_id as i32)
+    .bind(meta.media_id)
     .execute(pool)
     .await
     .ok();

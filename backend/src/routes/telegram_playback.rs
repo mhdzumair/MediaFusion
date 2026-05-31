@@ -22,7 +22,12 @@ use axum::{
 use fred::prelude::{Expiration, KeysInterface};
 use serde::Deserialize;
 
-use crate::{crypto, db::telegram as tg_db, models::user_data::UserData, state::AppState};
+use crate::{
+    crypto,
+    db::{telegram as tg_db, UserId},
+    models::user_data::UserData,
+    state::AppState,
+};
 
 const FORWARD_LOCK_TTL: i64 = 60;
 
@@ -132,11 +137,13 @@ async fn build_mediaflow_url(
     let file_id = stream.file_id.as_deref().ok_or(PlaybackError::NoFileId)?;
 
     // 3. Require auth user
-    let user_id = user_data.user_id.ok_or(PlaybackError::Unauthorized)?;
+    let user_id = user_data
+        .user_id
+        .ok_or(PlaybackError::Unauthorized)?;
 
     // 4. Get or create per-user forward
     let forward =
-        get_or_create_forward(state, stream.id, file_id, user_id, &stream.stream_name).await?;
+        get_or_create_forward(state, stream.id as i64, file_id, user_id, &stream.stream_name).await?;
 
     // 5. Build MediaFlow URL
     let endpoint = if let Some(ref fname) = stream.file_name {
@@ -196,7 +203,7 @@ async fn get_or_create_forward(
     state: &AppState,
     telegram_stream_id: i64,
     file_id: &str,
-    user_id: i64,
+    user_id: UserId,
     stream_name: &Option<String>,
 ) -> Result<tg_db::TelegramUserForwardRow, PlaybackError> {
     // Fast path: existing record

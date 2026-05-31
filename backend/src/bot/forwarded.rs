@@ -2,6 +2,7 @@
 
 use serde_json::Value;
 
+use crate::db::StreamType;
 use crate::{
     parser,
     routes::content::import_helpers::{self, UserInfo},
@@ -13,6 +14,13 @@ use super::{
     model::ConversationState,
 };
 
+fn override_str<'a>(overrides: &'a Value, field: &str, fallback: Option<&'a str>) -> Option<&'a str> {
+    overrides
+        .get(field)
+        .and_then(|v| v.as_str())
+        .or(fallback)
+}
+
 pub async fn store_forwarded_video(
     state: &AppState,
     api: &BotApi,
@@ -21,6 +29,7 @@ pub async fn store_forwarded_video(
     user_info: &UserInfo,
     data: &Value,
 ) -> Result<(), String> {
+    let overrides = &conv.metadata_overrides;
     let meta_id = data
         .get("meta_id")
         .and_then(|v| v.as_str())
@@ -43,7 +52,7 @@ pub async fn store_forwarded_video(
         None,
     )
     .await
-    .map(|id| id as i32);
+    .map(i32::from);
 
     let media_id = media_id.ok_or_else(|| format!("Media not found for meta_id: {meta_id}"))?;
 
@@ -63,10 +72,24 @@ pub async fn store_forwarded_video(
     let parsed = parser::parse_title(file_name);
     let (uploader_name, uploader_user_id) = import_helpers::resolve_uploader_identity(
         user_info.contribute_anonymously,
-        None,
+        conv.anonymous_display_name.as_deref(),
         &user_info.username,
         mf_user_id,
     );
+
+    let stream_name = override_str(overrides, "title", None)
+        .or_else(|| {
+            conv.selected_match
+                .as_ref()
+                .and_then(|m| m.get("title").and_then(|v| v.as_str()))
+        })
+        .or(parsed.title.as_deref())
+        .unwrap_or(file_name);
+
+    let resolution =
+        override_str(overrides, "resolution", parsed.resolution.as_deref());
+    let codec = override_str(overrides, "codec", parsed.codec.as_deref());
+    let quality = override_str(overrides, "quality", parsed.quality.as_deref());
 
     let mut backup_chat_id: Option<String> = None;
     let mut backup_message_id: Option<i64> = None;
@@ -94,19 +117,20 @@ pub async fn store_forwarded_video(
                is_active, is_blocked, is_public, playback_count,
                uploader, uploader_user_id, created_at
            ) VALUES(
-               'TELEGRAM'::streamtype, $1, $2,
-               $3, $4, $5,
-               $6, $7, $8, $9, $10,
-               $11, $12, $13, $14,
-               true, false, $15, 0,
-               $16, $17, NOW()
+               $1, $2, $3,
+               $4, $5, $6,
+               $7, $8, $9, $10, $11,
+               $12, $13, $14, $15,
+               true, false, $16, 0,
+               $17, $18, NOW()
            ) RETURNING id"#,
     )
-    .bind(parsed.title.as_deref().unwrap_or(file_name))
+    .bind(StreamType::Telegram)
+    .bind(stream_name)
     .bind("telegram_bot")
-    .bind(parsed.resolution.as_deref())
-    .bind(parsed.codec.as_deref())
-    .bind(parsed.quality.as_deref())
+    .bind(resolution)
+    .bind(codec)
+    .bind(quality)
     .bind(parsed.is_proper)
     .bind(parsed.is_repack)
     .bind(parsed.is_remastered)
@@ -143,19 +167,21 @@ pub async fn store_forwarded_video(
     .await
     .map_err(|e| e.to_string())?;
 
-    let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, media_id).await;
+    let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(media_id))
+        .await;
+
+    if let Some(poster_url) = conv.custom_poster_url.as_deref().filter(|u| !u.is_empty()) {
+        let _ = sqlx::query(
+            "INSERT INTO media_image \
+             (media_id, provider_id, image_type, url, is_primary, display_order) \
+             VALUES ($1, 1, 'poster', $2, true, 0) \
+             ON CONFLICT (media_id, provider_id, image_type, url) DO NOTHING",
+        )
+        .bind(media_id)
+        .bind(poster_url)
+        .execute(&state.pool)
+        .await;
+    }
 
     Ok(())
-}
-
-/// Handle auto-ingest of forwarded videos (no wizard) when user sends/forwards video.
-pub async fn try_auto_ingest_forwarded(
-    state: &AppState,
-    api: &BotApi,
-    user_id: i64,
-    chat_id: i64,
-    raw_input: Value,
-) -> bool {
-    let _ = (state, api, user_id, chat_id, raw_input);
-    false
 }

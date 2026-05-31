@@ -1081,10 +1081,10 @@ async fn handle_torrent_status(
 
     match task_phase(&task) {
         "PHASE_TYPE_ERROR" => handle_torrent_error(http, tokens, &task, forward).await?,
-        "PHASE_TYPE_COMPLETE" => {
-            if offline_task_folder_exists(http, tokens, &task, forward).await {
-                return Ok(());
-            }
+        "PHASE_TYPE_COMPLETE"
+            if offline_task_folder_exists(http, tokens, &task, forward).await =>
+        {
+            return Ok(());
         }
         "PHASE_TYPE_RUNNING" | "PHASE_TYPE_PENDING" => {
             if resolve_torrent_folder_id(http, tokens, my_pack_folder_id, info_hash, forward)

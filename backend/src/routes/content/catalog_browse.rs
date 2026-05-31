@@ -25,6 +25,7 @@ use sha2::Sha256;
 
 use crate::{
     cache,
+    db::MediaType,
     models::user_data::{SortingOption, UserData},
     routes::{stream::torrent_sort_key, user_library::extract_streaming_providers},
     state::AppState,
@@ -238,17 +239,23 @@ pub async fn get_genres(
         return Json(cached).into_response();
     }
 
+    let Some(media_type) =
+        crate::db::MediaType::from_wire(&catalog_type.to_ascii_lowercase())
+    else {
+        return Json(json!([])).into_response();
+    };
+
     let rows: Vec<(i32, String)> = sqlx::query_as(
         r#"SELECT g.id, g.name
            FROM genre g
            WHERE EXISTS (
                SELECT 1 FROM media_genre_link mgl
                JOIN media m ON m.id = mgl.media_id
-               WHERE mgl.genre_id = g.id AND m.type = $1::mediatype
+               WHERE mgl.genre_id = g.id AND m.type = $1
            )
            ORDER BY g.name"#,
     )
-    .bind(&catalog_type)
+    .bind(media_type)
     .fetch_all(&state.pool_ro)
     .await
     .unwrap_or_default();
@@ -351,7 +358,7 @@ pub async fn browse_catalog(
     let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
 
     // Resolve external_id filter to a media_id (matches Python catalog browse)
-    let external_id_media: Option<i32> = if let Some(ref eid) = params.external_id {
+    let external_id_media: Option<crate::db::MediaId> = if let Some(ref eid) = params.external_id {
         match crate::db::get_media_id_by_external_id(&state.pool_ro, eid, Some(&catalog_type)).await
         {
             Ok(v) => v,
@@ -422,10 +429,23 @@ pub async fn browse_catalog(
         _ => format!("m.last_stream_added {sort_dir} {nulls}, m.id ASC"), // latest
     };
 
-    let catalog_type_upper = catalog_type.to_uppercase();
-    // Use EXISTS subqueries for catalog/genre filtering to avoid DISTINCT + ORDER BY conflicts
+    // Parse catalog_type into a native enum — VALID_CATALOG_TYPES guard ran above, so
+    // from_wire should always succeed here; early-return empty on any unexpected value.
+    let Some(catalog_media_type) = MediaType::from_wire(&catalog_type) else {
+        return Json(json!({
+            "items": [],
+            "total": 0,
+            "page": page,
+            "page_size": page_size,
+            "has_more": false,
+        }))
+        .into_response();
+    };
+
+    // Use EXISTS subqueries for catalog/genre filtering to avoid DISTINCT + ORDER BY conflicts.
+    // $1 is always the catalog media type enum bind.
     let mut where_parts: Vec<String> = vec![
-        format!("m.type::text = '{catalog_type_upper}'"),
+        "m.type = $1".to_string(),
         "m.adult = false".to_string(),
         "m.is_blocked = false".to_string(),
     ];
@@ -441,7 +461,8 @@ pub async fn browse_catalog(
     if params.has_streams.unwrap_or(true) {
         where_parts.push("m.total_streams > 0".to_string());
     }
-    let mut bind_idx: i32 = 0;
+    // bind_idx starts at 1 — $1 is already reserved for catalog_media_type above.
+    let mut bind_idx: i32 = 1;
 
     let mut catalog_name_bind: Option<String> = None;
     let mut genre_name_bind: Option<String> = None;
@@ -469,7 +490,7 @@ pub async fn browse_catalog(
         search_bind = Some(format!("%{}%", search));
     }
 
-    let mut external_id_media_bind: Option<i32> = None;
+    let mut external_id_media_bind: Option<crate::db::MediaId> = None;
     if let Some(mid) = external_id_media {
         bind_idx += 1;
         where_parts.push(format!("m.id = ${bind_idx}"));
@@ -515,6 +536,7 @@ pub async fn browse_catalog(
         cached_count
     } else {
         let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
+        count_q = count_q.bind(catalog_media_type);
         if let Some(ref v) = catalog_name_bind {
             count_q = count_q.bind(v.clone());
         }
@@ -554,6 +576,7 @@ pub async fn browse_catalog(
             Option<chrono::DateTime<chrono::Utc>>,
         ),
     >(&list_sql);
+    list_q = list_q.bind(catalog_media_type);
     if let Some(ref v) = catalog_name_bind {
         list_q = list_q.bind(v.clone());
     }

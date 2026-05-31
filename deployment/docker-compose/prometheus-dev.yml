@@ -1,0 +1,28 @@
+# Prometheus config for local dev — scrapes the Rust server on the host machine.
+# host.docker.internal resolves to the host IP from inside Docker.
+#
+# /api/v1/metrics requires X-API-Key on private instances; open on public instances.
+# Set MEDIAFUSION_API_KEY in the environment or pass an empty string for public instances.
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: mediafusion-rust
+    static_configs:
+      - targets: ["host.docker.internal:8001"]
+    metrics_path: /api/v1/metrics
+    params: {}
+    http_headers:
+      X-API-Key: ["${MEDIAFUSION_API_KEY:-}"]
+
+  # Optional: Redis exporter if running locally on the default port
+  - job_name: redis
+    static_configs:
+      - targets: ["host.docker.internal:9121"]
+
+  # Optional: Postgres exporter if running locally
+  - job_name: postgres
+    static_configs:
+      - targets: ["host.docker.internal:9187"]

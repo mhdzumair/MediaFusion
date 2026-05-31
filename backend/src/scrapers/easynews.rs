@@ -59,22 +59,27 @@ pub async fn scrape(
     };
 
     for (query, max_results) in queries {
-        let items = search(client, username, password, &query, max_results).await;
-        let (down_url, dl_farm, dl_port) = items
-            .first()
-            .map(|_| {
-                // These are top-level response fields, not per-item.
-                // We re-fetch them from the items (already extracted during parse).
-                (None::<String>, None::<String>, None::<String>)
-            })
-            .unwrap_or_default();
-        let _ = (down_url, dl_farm, dl_port);
-
-        for item in items {
-            let guid = &item.nzb_guid;
-            if seen.insert(guid.clone()) {
-                if let Some(stream) = parse_item(item, meta, media_type, season, episode) {
-                    results.push(stream);
+        match search(client, username, password, &query, max_results).await {
+            Err(SearchError::AuthFailed) => {
+                // 401 — credentials are invalid; no point trying the remaining queries.
+                tracing::warn!(
+                    "easynews: credentials rejected (401) for user '{}' — skipping all queries",
+                    username
+                );
+                return vec![];
+            }
+            Err(SearchError::Other) => {
+                // Transient error (network, 5xx, etc.) — skip this query variant, try next.
+                continue;
+            }
+            Ok(items) => {
+                for item in items {
+                    let guid = &item.nzb_guid;
+                    if seen.insert(guid.clone()) {
+                        if let Some(stream) = parse_item(item, meta, media_type, season, episode) {
+                            results.push(stream);
+                        }
+                    }
                 }
             }
         }
@@ -84,6 +89,13 @@ pub async fn scrape(
 }
 
 // ─── Internal search ──────────────────────────────────────────────────────────
+
+enum SearchError {
+    /// HTTP 401 — credentials are wrong; caller should stop all further queries.
+    AuthFailed,
+    /// Any other failure (network, 5xx, parse) — caller may try the next query.
+    Other,
+}
 
 struct RawItem {
     nzb_guid: String,
@@ -106,7 +118,7 @@ async fn search(
     password: &str,
     query: &str,
     max_results: usize,
-) -> Vec<RawItem> {
+) -> Result<Vec<RawItem>, SearchError> {
     let params = [
         ("st", "adv"),
         ("sb", "1"),
@@ -142,13 +154,17 @@ async fn search(
 
     let json: serde_json::Value = match resp {
         Ok(r) if r.status().is_success() => r.json().await.unwrap_or_default(),
+        Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED => {
+            tracing::debug!("easynews search '{query}': HTTP 401 Unauthorized");
+            return Err(SearchError::AuthFailed);
+        }
         Ok(r) => {
             tracing::debug!("easynews search '{query}': HTTP {}", r.status());
-            return vec![];
+            return Err(SearchError::Other);
         }
         Err(e) => {
             tracing::debug!("easynews search '{query}': {e}");
-            return vec![];
+            return Err(SearchError::Other);
         }
     };
 
@@ -168,7 +184,7 @@ async fn search(
 
     let data = match json.get("data").and_then(|d| d.as_array()) {
         Some(arr) => arr,
-        None => return vec![],
+        None => return Ok(vec![]),
     };
 
     let mut items = Vec::new();
@@ -250,7 +266,7 @@ async fn search(
         });
     }
 
-    items
+    Ok(items)
 }
 
 fn parse_item(
@@ -388,7 +404,17 @@ pub async fn scrape_with_credentials(
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for (query, max_results) in queries {
-        let raw_items = search(client, username, password, &query, max_results).await;
+        let raw_items = match search(client, username, password, &query, max_results).await {
+            Err(SearchError::AuthFailed) => {
+                tracing::warn!(
+                    "easynews: credentials rejected (401) for user '{}' — skipping all queries",
+                    username
+                );
+                return vec![];
+            }
+            Err(SearchError::Other) => continue,
+            Ok(items) => items,
+        };
         for mut item in raw_items {
             if !seen.insert(item.nzb_guid.clone()) {
                 continue;

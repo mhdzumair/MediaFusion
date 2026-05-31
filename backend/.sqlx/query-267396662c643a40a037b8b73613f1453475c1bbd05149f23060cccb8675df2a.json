@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pc.id, pc.name, COUNT(mpcl.media_id) as \"usage_count!\"\n               FROM parental_certificate pc\n               LEFT JOIN media_parental_certificate_link mpcl ON pc.id = mpcl.certificate_id\n               WHERE pc.name ILIKE $1\n               GROUP BY pc.id, pc.name\n               ORDER BY pc.name\n               LIMIT $2 OFFSET $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "usage_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "267396662c643a40a037b8b73613f1453475c1bbd05149f23060cccb8675df2a"
+}
