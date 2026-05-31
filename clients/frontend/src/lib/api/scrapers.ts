@@ -99,6 +99,49 @@ export interface RunDMMHashlistFullRequest {
   backfill_commits?: number
 }
 
+export interface ImdbDatasetImportStateRow {
+  dataset: string
+  etag: string | null
+  last_modified: string | null
+  rows_loaded: number | null
+  last_run_at: string | null
+}
+
+export interface ImdbDatasetImportConfigResponse {
+  job_id: string
+  enabled: boolean
+  schedule: string
+  datasets: string[]
+  include_adult: boolean
+  base_url: string
+  available_datasets: string[]
+  last_enqueued_at: string | null
+  import_state: ImdbDatasetImportStateRow[]
+}
+
+export interface UpdateImdbDatasetImportConfigRequest {
+  enabled?: boolean
+  schedule?: string
+  datasets?: string[]
+  include_adult?: boolean
+}
+
+export interface RunImdbDatasetImportRequest {
+  datasets?: string[]
+  force?: boolean
+  include_adult?: boolean
+  merge_only?: boolean
+}
+
+export interface ImdbDatasetImportStatusResponse {
+  phase: string
+  dataset?: string | null
+  rows_loaded?: number | null
+  rows_merged?: number | null
+  started_at?: string | null
+  message?: string | null
+}
+
 export interface MigrateMediaRequest {
   from_media_id?: number
   from_media_ids?: number[]
@@ -201,6 +244,22 @@ export const scrapersApi = {
    */
   runDMMHashlistFull: async (payload: RunDMMHashlistFullRequest): Promise<Record<string, unknown>> => {
     return apiClient.post('/admin/scrapers/dmm-hashlist/run-full', payload)
+  },
+
+  getImdbDatasetConfig: async (): Promise<ImdbDatasetImportConfigResponse> => {
+    return apiClient.get('/admin/scrapers/imdb-dataset/config')
+  },
+
+  updateImdbDatasetConfig: async (payload: UpdateImdbDatasetImportConfigRequest): Promise<Record<string, unknown>> => {
+    return apiClient.put('/admin/scrapers/imdb-dataset/config', payload)
+  },
+
+  getImdbDatasetStatus: async (): Promise<ImdbDatasetImportStatusResponse> => {
+    return apiClient.get('/admin/scrapers/imdb-dataset/status')
+  },
+
+  runImdbDatasetImport: async (payload: RunImdbDatasetImportRequest = {}): Promise<Record<string, unknown>> => {
+    return apiClient.post('/admin/scrapers/imdb-dataset/run', payload)
   },
 
   /**

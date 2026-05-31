@@ -8,6 +8,8 @@ export const schedulerKeys = {
   detail: (jobId: string) => [...schedulerKeys.all, 'detail', jobId] as const,
   history: (jobId: string, limit?: number) => [...schedulerKeys.all, 'history', jobId, limit] as const,
   dmmHashlistStatus: () => [...schedulerKeys.all, 'dmm-hashlist-status'] as const,
+  imdbDatasetConfig: () => [...schedulerKeys.all, 'imdb-dataset-config'] as const,
+  imdbDatasetStatus: () => [...schedulerKeys.all, 'imdb-dataset-status'] as const,
 }
 
 /**
@@ -77,10 +79,16 @@ export function useRunSchedulerJob() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ jobId, forceRun = false }: { jobId: string; forceRun?: boolean }) =>
-      schedulerApi.run(jobId, forceRun),
+    mutationFn: ({
+      jobId,
+      forceRun = false,
+      payload,
+    }: {
+      jobId: string
+      forceRun?: boolean
+      payload?: Record<string, unknown>
+    }) => schedulerApi.run(jobId, { forceRun, payload }),
     onSuccess: () => {
-      // Invalidate scheduler data to refresh running status
       queryClient.invalidateQueries({ queryKey: schedulerKeys.all })
     },
   })
@@ -119,6 +127,67 @@ export function useRunDmmHashlistFull() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: schedulerKeys.all })
       queryClient.invalidateQueries({ queryKey: schedulerKeys.dmmHashlistStatus() })
+    },
+  })
+}
+
+export function useImdbDatasetConfig() {
+  return useQuery({
+    queryKey: schedulerKeys.imdbDatasetConfig(),
+    queryFn: () => scrapersApi.getImdbDatasetConfig(),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useImdbDatasetStatus(enabled = true) {
+  return useQuery({
+    queryKey: schedulerKeys.imdbDatasetStatus(),
+    queryFn: () => scrapersApi.getImdbDatasetStatus(),
+    enabled,
+    staleTime: 5 * 1000,
+    refetchInterval: (query) => {
+      const phase = query.state.data?.phase
+      if (phase && phase !== 'idle' && phase !== 'complete' && phase !== 'error') {
+        return 3000
+      }
+      return 30 * 1000
+    },
+  })
+}
+
+export function useUpdateImdbDatasetConfig() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: scrapersApi.updateImdbDatasetConfig,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: schedulerKeys.imdbDatasetConfig() })
+      queryClient.invalidateQueries({ queryKey: schedulerKeys.all })
+    },
+  })
+}
+
+export function useRunImdbDatasetImport() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: scrapersApi.runImdbDatasetImport,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: schedulerKeys.all })
+      queryClient.invalidateQueries({ queryKey: schedulerKeys.imdbDatasetConfig() })
+      queryClient.invalidateQueries({ queryKey: schedulerKeys.imdbDatasetStatus() })
+    },
+  })
+}
+
+export function useUpdateSchedulerJob() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ jobId, payload }: { jobId: string; payload: Parameters<typeof schedulerApi.update>[1] }) =>
+      schedulerApi.update(jobId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: schedulerKeys.all })
     },
   })
 }

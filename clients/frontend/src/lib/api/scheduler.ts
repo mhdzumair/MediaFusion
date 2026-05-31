@@ -10,6 +10,8 @@ export interface SchedulerJobInfo {
   description: string
   crontab: string
   is_enabled: boolean
+  cron_configured?: boolean
+  payload?: Record<string, unknown>
   last_run: string | null
   last_run_timestamp: number | null
   time_since_last_run: string
@@ -72,6 +74,12 @@ export interface SchedulerListParams {
   enabled_only?: boolean
 }
 
+export interface UpdateSchedulerJobRequest {
+  enabled?: boolean
+  schedule?: string
+  payload?: Record<string, unknown>
+}
+
 // API functions
 export const schedulerApi = {
   /**
@@ -100,17 +108,27 @@ export const schedulerApi = {
     return apiClient.get<SchedulerJobInfo>(`/admin/schedulers/${jobId}`)
   },
 
+  update: async (jobId: string, payload: UpdateSchedulerJobRequest): Promise<SchedulerJobInfo> => {
+    return apiClient.patch<SchedulerJobInfo>(`/admin/schedulers/${jobId}`, payload)
+  },
+
   /**
    * Manually run a scheduler job (admin only)
    * This queues the job for execution in the background worker
    */
-  run: async (jobId: string, forceRun: boolean = false): Promise<ManualRunResponse> => {
+  run: async (
+    jobId: string,
+    options: { forceRun?: boolean; payload?: Record<string, unknown> } = {},
+  ): Promise<ManualRunResponse> => {
     const searchParams = new URLSearchParams()
-    if (forceRun) {
+    if (options.forceRun) {
       searchParams.set('force_run', 'true')
     }
     const query = searchParams.toString()
-    return apiClient.post<ManualRunResponse>(`/admin/schedulers/${jobId}/run${query ? `?${query}` : ''}`)
+    return apiClient.post<ManualRunResponse>(
+      `/admin/schedulers/${jobId}/run${query ? `?${query}` : ''}`,
+      options.payload ?? {},
+    )
   },
 
   /**

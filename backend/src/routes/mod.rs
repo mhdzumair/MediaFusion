@@ -569,6 +569,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/scrapers/status", get(admin_scrapers::get_scraper_status))
         .route("/api/v1/admin/scrapers/dmm-hashlist/status", get(admin_scrapers::get_dmm_hashlist_status))
         .route("/api/v1/admin/scrapers/imdb-dataset/status", get(admin_scrapers::get_imdb_dataset_status))
+        .route("/api/v1/admin/scrapers/imdb-dataset/config", get(admin_scrapers::get_imdb_dataset_config).put(admin_scrapers::update_imdb_dataset_config))
+        .route("/api/v1/admin/scrapers/imdb-dataset/run", post(admin_scrapers::run_imdb_dataset_import))
         .route("/api/v1/admin/scrapers/dmm-hashlist/run", post(admin_scrapers::run_dmm_hashlist))
         .route("/api/v1/admin/scrapers/dmm-hashlist/run-full", post(admin_scrapers::run_dmm_hashlist_full))
         .route("/api/v1/admin/scrapers/migrate-media", post(admin_scrapers::migrate_media))
@@ -580,7 +582,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         // ── Admin schedulers ──────────────────────────────────────────────────
         .route("/api/v1/admin/schedulers", get(admin_scrapers::list_schedulers))
         .route("/api/v1/admin/schedulers/stats", get(admin_scrapers::get_scheduler_stats))
-        .route("/api/v1/admin/schedulers/{job_id}", get(admin_scrapers::get_scheduler_job))
+        .route("/api/v1/admin/schedulers/{job_id}", get(admin_scrapers::get_scheduler_job).patch(admin_scrapers::update_scheduler_job))
         .route("/api/v1/admin/schedulers/{job_id}/run", post(admin_scrapers::run_scheduler_job))
         .route("/api/v1/admin/schedulers/{job_id}/run-inline", post(admin_scrapers::run_scheduler_job_inline))
         .route("/api/v1/admin/schedulers/{job_id}/history", get(admin_scrapers::get_job_history))

@@ -62,6 +62,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import type { SchedulerCategory, SchedulerJobInfo } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { ImdbDatasetImportPanel } from './ImdbDatasetImportPanel'
 
 function getCategoryIcon(category: SchedulerCategory) {
   switch (category) {
@@ -679,6 +680,8 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
           )}
         </CardContent>
       </Card>
+
+      <ImdbDatasetImportPanel />
 
       {/* Filters */}
       <div className="flex items-center gap-4">

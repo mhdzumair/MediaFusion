@@ -24,7 +24,7 @@ pub struct ImdbDatasetImport;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct ImdbImportArgs {
-    /// Subset of datasets to process (default: all, or `IMDB_IMPORT_DATASETS` env).
+    /// Subset of datasets to process (default: cron payload, then env, then all).
     pub datasets: Option<Vec<String>>,
     /// Re-download even when the server returns 304 Not Modified.
     #[serde(default)]

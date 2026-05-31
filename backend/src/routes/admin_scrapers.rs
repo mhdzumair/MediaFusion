@@ -10,7 +10,10 @@
 ///   POST /unblock-torrent                → unblock_torrent
 ///   GET  /catalogs                       → get_catalog_data
 ///   GET  /status                         → get_scraper_status
-///   GET  /dmm-hashlist/status            → get_dmm_hashlist_status
+///   GET  /imdb-dataset/status            → get_imdb_dataset_status
+///   GET  /imdb-dataset/config            → get_imdb_dataset_config
+///   PUT  /imdb-dataset/config            → update_imdb_dataset_config
+///   POST /imdb-dataset/run               → run_imdb_dataset_import
 ///   POST /dmm-hashlist/run               → run_dmm_hashlist
 ///   POST /dmm-hashlist/run-full          → run_dmm_hashlist_full
 ///   POST /migrate-media                  → migrate_media
@@ -24,6 +27,7 @@
 ///   GET  /schedulers                     → list_schedulers
 ///   GET  /schedulers/stats               → get_scheduler_stats
 ///   GET  /schedulers/{job_id}            → get_scheduler_job
+///   PATCH /schedulers/{job_id}           → update_scheduler_job
 ///   POST /schedulers/{job_id}/run        → run_scheduler_job
 ///   POST /schedulers/{job_id}/run-inline → run_scheduler_job_inline
 ///   GET  /schedulers/{job_id}/history    → get_job_history
@@ -530,6 +534,335 @@ pub async fn get_imdb_dataset_status(
         "message": "IMDb dataset import status not available"
     }))
     .into_response()
+}
+
+const IMDB_CRON_NAME: &str = "imdb_dataset_import";
+const IMDB_DATASET_KEYS: &[&str] = &[
+    "basics",
+    "names",
+    "ratings",
+    "akas",
+    "episode",
+    "crew",
+    "principals",
+];
+
+fn default_imdb_cron_payload() -> Value {
+    json!({
+        "datasets": IMDB_DATASET_KEYS,
+        "include_adult": false
+    })
+}
+
+fn parse_imdb_payload(payload: &Value) -> (Vec<String>, bool) {
+    let datasets: Vec<String> = payload
+        .get("datasets")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_ascii_lowercase))
+                .filter(|k| IMDB_DATASET_KEYS.contains(&k.as_str()))
+                .collect()
+        })
+        .filter(|v: &Vec<String>| !v.is_empty())
+        .unwrap_or_else(|| IMDB_DATASET_KEYS.iter().map(|s| (*s).to_string()).collect());
+
+    let include_adult = payload
+        .get("include_adult")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    (datasets, include_adult)
+}
+
+fn merge_json_objects(base: Value, overlay: Value) -> Value {
+    match (base, overlay) {
+        (Value::Object(mut base_map), Value::Object(overlay_map)) => {
+            for (k, v) in overlay_map {
+                base_map.insert(k, v);
+            }
+            Value::Object(base_map)
+        }
+        (_, overlay) => overlay,
+    }
+}
+
+/// GET /api/v1/admin/scrapers/imdb-dataset/config
+pub async fn get_imdb_dataset_config(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    use sqlx::Row as _;
+
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return forbidden();
+    }
+
+    let cron_row = sqlx::query(
+        "SELECT enabled, schedule, payload, last_enqueued_at FROM cron_jobs WHERE name = $1",
+    )
+    .bind(IMDB_CRON_NAME)
+    .fetch_optional(&state.pool_ro)
+    .await;
+
+    let (enabled, schedule, payload, last_enqueued_at) = match cron_row {
+        Ok(Some(row)) => (
+            row.try_get::<bool, _>("enabled").unwrap_or(false),
+            row.try_get::<String, _>("schedule")
+                .unwrap_or_else(|_| "0 4 * * 0".into()),
+            row.try_get::<Value, _>("payload")
+                .unwrap_or_else(|_| default_imdb_cron_payload()),
+            row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("last_enqueued_at")
+                .ok()
+                .flatten(),
+        ),
+        _ => (false, "0 4 * * 0".into(), default_imdb_cron_payload(), None),
+    };
+
+    let (datasets, include_adult) = parse_imdb_payload(&payload);
+
+    let import_state = sqlx::query(
+        r#"SELECT dataset, etag, last_modified, rows_loaded, last_run_at
+           FROM imdb_import_state
+           ORDER BY dataset"#,
+    )
+    .fetch_all(&state.pool_ro)
+    .await
+    .unwrap_or_default();
+
+    let state_rows: Vec<Value> = import_state
+        .iter()
+        .filter_map(|row| {
+            Some(json!({
+                "dataset": row.try_get::<String, _>("dataset").ok()?,
+                "etag": row.try_get::<Option<String>, _>("etag").ok()?,
+                "last_modified": row.try_get::<Option<String>, _>("last_modified").ok()?,
+                "rows_loaded": row.try_get::<Option<i64>, _>("rows_loaded").ok()?,
+                "last_run_at": row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("last_run_at").ok()?.map(|dt| dt.to_rfc3339()),
+            }))
+        })
+        .collect();
+
+    Json(json!({
+        "job_id": IMDB_CRON_NAME,
+        "enabled": enabled,
+        "schedule": schedule,
+        "datasets": datasets,
+        "include_adult": include_adult,
+        "base_url": state.config.imdb_datasets_base_url,
+        "available_datasets": IMDB_DATASET_KEYS,
+        "last_enqueued_at": last_enqueued_at.map(|dt| dt.to_rfc3339()),
+        "import_state": state_rows,
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+pub struct UpdateImdbDatasetConfigRequest {
+    pub enabled: Option<bool>,
+    pub schedule: Option<String>,
+    pub datasets: Option<Vec<String>>,
+    pub include_adult: Option<bool>,
+}
+
+/// PUT /api/v1/admin/scrapers/imdb-dataset/config
+pub async fn update_imdb_dataset_config(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<UpdateImdbDatasetConfigRequest>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return forbidden();
+    }
+
+    if let Some(ref schedule) = body.schedule {
+        if !is_valid_cron_schedule(schedule) {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({"detail": "schedule must be a 5-field cron expression"})),
+            )
+                .into_response();
+        }
+    }
+
+    if let Some(ref datasets) = body.datasets {
+        if datasets.is_empty() {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({"detail": "datasets must not be empty"})),
+            )
+                .into_response();
+        }
+        for key in datasets {
+            if !IMDB_DATASET_KEYS.contains(&key.to_ascii_lowercase().as_str()) {
+                return (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(json!({"detail": format!("unknown dataset: {key}")})),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    let existing = sqlx::query("SELECT enabled, schedule, payload FROM cron_jobs WHERE name = $1")
+        .bind(IMDB_CRON_NAME)
+        .fetch_optional(&state.pool)
+        .await;
+
+    use sqlx::Row as _;
+
+    let (current_enabled, current_schedule, mut payload) = match existing {
+        Ok(Some(row)) => (
+            row.try_get::<bool, _>("enabled").unwrap_or(false),
+            row.try_get::<String, _>("schedule")
+                .unwrap_or_else(|_| "0 4 * * 0".into()),
+            row.try_get::<Value, _>("payload")
+                .unwrap_or_else(|_| default_imdb_cron_payload()),
+        ),
+        _ => (false, "0 4 * * 0".into(), default_imdb_cron_payload()),
+    };
+
+    if let Some(datasets) = body.datasets {
+        let normalized: Vec<String> = datasets.iter().map(|s| s.to_ascii_lowercase()).collect();
+        if let Value::Object(ref mut map) = payload {
+            map.insert("datasets".into(), json!(normalized));
+        }
+    }
+    if let Some(include_adult) = body.include_adult {
+        if let Value::Object(ref mut map) = payload {
+            map.insert("include_adult".into(), json!(include_adult));
+        }
+    }
+
+    let schedule = body.schedule.as_deref().unwrap_or(&current_schedule);
+    let enabled = body.enabled.unwrap_or(current_enabled);
+
+    let result = sqlx::query(
+        r#"INSERT INTO cron_jobs (name, schedule, queue, payload, enabled)
+           VALUES ($1, $2, 'imdb_dataset_import', $3, $4)
+           ON CONFLICT (name) DO UPDATE SET
+             schedule = EXCLUDED.schedule,
+             payload = EXCLUDED.payload,
+             enabled = EXCLUDED.enabled"#,
+    )
+    .bind(IMDB_CRON_NAME)
+    .bind(schedule)
+    .bind(&payload)
+    .bind(enabled)
+    .execute(&state.pool)
+    .await;
+
+    match result {
+        Ok(_) => {
+            let (datasets, include_adult) = parse_imdb_payload(&payload);
+            Json(json!({
+                "status": "updated",
+                "enabled": enabled,
+                "schedule": schedule,
+                "datasets": datasets,
+                "include_adult": include_adult,
+                "payload": payload,
+            }))
+            .into_response()
+        }
+        Err(e) => {
+            tracing::error!("update_imdb_dataset_config: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": "Failed to update IMDb import config"})),
+            )
+                .into_response()
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct RunImdbDatasetImportRequest {
+    pub datasets: Option<Vec<String>>,
+    #[serde(default)]
+    pub force: bool,
+    pub include_adult: Option<bool>,
+    #[serde(default)]
+    pub merge_only: bool,
+}
+
+/// POST /api/v1/admin/scrapers/imdb-dataset/run
+pub async fn run_imdb_dataset_import(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<RunImdbDatasetImportRequest>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return forbidden();
+    }
+
+    if let Some(ref datasets) = body.datasets {
+        for key in datasets {
+            if !IMDB_DATASET_KEYS.contains(&key.to_ascii_lowercase().as_str()) {
+                return (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(json!({"detail": format!("unknown dataset: {key}")})),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    let cron_payload = load_cron_payload(&state.pool_ro, IMDB_CRON_NAME)
+        .await
+        .unwrap_or_else(default_imdb_cron_payload);
+
+    let mut payload = cron_payload;
+    let mut overlay = serde_json::Map::new();
+    if let Some(datasets) = body.datasets {
+        overlay.insert(
+            "datasets".into(),
+            json!(datasets
+                .iter()
+                .map(|s| s.to_ascii_lowercase())
+                .collect::<Vec<_>>()),
+        );
+    }
+    if let Some(include_adult) = body.include_adult {
+        overlay.insert("include_adult".into(), json!(include_adult));
+    }
+    if body.force {
+        overlay.insert("force".into(), json!(true));
+    }
+    if body.merge_only {
+        overlay.insert("merge_only".into(), json!(true));
+    }
+    if !overlay.is_empty() {
+        payload = merge_json_objects(payload, Value::Object(overlay));
+    }
+
+    match crate::jobs::enqueue::enqueue_simple(
+        &state.pool,
+        "imdb_dataset_import",
+        &payload,
+        Default::default(),
+    )
+    .await
+    {
+        Ok(Some(id)) => (
+            StatusCode::ACCEPTED,
+            Json(json!({"status": "accepted", "job_id": id, "payload": payload})),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::OK,
+            Json(json!({"status": "skipped", "reason": "dedupe"})),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("run_imdb_dataset_import: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": "enqueue failed"})),
+            )
+                .into_response()
+        }
+    }
 }
 
 /// POST /api/v1/admin/scrapers/dmm-hashlist/run
@@ -1544,12 +1877,13 @@ async fn fetch_job_info(
     display_name: &str,
     category: &str,
     description: &str,
-    crontab: &str,
+    default_crontab: &str,
 ) -> Value {
     use sqlx::Row as _;
 
     // Map job_id → Postgres queue name
     let queue_name = job_id_to_queue(job_id);
+    let cron_name = job_id_to_cron_name(job_id);
 
     // Query the most recent job for this queue
     let row = sqlx::query(
@@ -1564,17 +1898,35 @@ async fn fetch_job_info(
     .await
     .unwrap_or(None);
 
-    // Query cron_jobs for enabled state and last_enqueued_at
-    let cron_row = sqlx::query("SELECT enabled, last_enqueued_at FROM cron_jobs WHERE name = $1")
-        .bind(job_id)
+    // Query cron_jobs for schedule, payload, enabled state and last_enqueued_at
+    let cron_row = if let Some(ref name) = cron_name {
+        sqlx::query(
+            "SELECT enabled, schedule, payload, last_enqueued_at FROM cron_jobs WHERE name = $1",
+        )
+        .bind(name)
         .fetch_optional(pool)
         .await
-        .unwrap_or(None);
+        .unwrap_or(None)
+    } else {
+        None
+    };
 
     let is_enabled = cron_row
         .as_ref()
         .and_then(|r| r.try_get::<bool, _>("enabled").ok())
         .unwrap_or(true);
+
+    let crontab = cron_row
+        .as_ref()
+        .and_then(|r| r.try_get::<String, _>("schedule").ok())
+        .unwrap_or_else(|| default_crontab.to_string());
+
+    let payload = cron_row
+        .as_ref()
+        .and_then(|r| r.try_get::<Value, _>("payload").ok())
+        .unwrap_or_else(|| json!({}));
+
+    let cron_configured = cron_row.is_some();
 
     let (last_run, last_run_status, is_running, time_since_last_run) = if let Some(ref r) = row {
         let status: String = r.get::<String, _>("status");
@@ -1616,6 +1968,8 @@ async fn fetch_job_info(
         "description": description,
         "crontab": crontab,
         "is_enabled": is_enabled,
+        "cron_configured": cron_configured,
+        "payload": payload,
         "last_run": last_run,
         "last_run_status": last_run_status,
         "time_since_last_run": time_since_last_run,
@@ -1623,6 +1977,71 @@ async fn fetch_job_info(
         "next_run_timestamp": null,
         "is_running": is_running,
     })
+}
+
+fn is_valid_cron_schedule(schedule: &str) -> bool {
+    schedule.split_whitespace().count() == 5
+}
+
+fn job_id_to_cron_name(job_id: &str) -> Option<String> {
+    if SCRAPY_SPIDER_IDS.contains(&job_id) {
+        return match job_id {
+            "tamilmv" => Some("spider_tamilmv".into()),
+            "tamil_blasters" => Some("spider_tamil_blasters".into()),
+            "formula_ext" => Some("spider_formula_ext".into()),
+            "motogp_ext" => Some("spider_motogp_ext".into()),
+            "wwe_ext" => Some("spider_wwe_ext".into()),
+            "ufc_ext" => Some("spider_ufc_ext".into()),
+            "movies_tv_ext" => Some("spider_movies_tv_ext".into()),
+            "sport_video" => Some("spider_sport_video".into()),
+            "eztv_rss" => Some("spider_eztv_rss".into()),
+            "nyaa" | "animetosho" | "subsplease" | "animepahe" | "bt52" | "uindex" | "x1337"
+            | "thepiratebay" | "rutor" | "limetorrents" | "yts" | "bt4g" => {
+                Some(format!("spider_registry_{job_id}"))
+            }
+            _ => None,
+        };
+    }
+
+    Some(
+        match job_id {
+            "dmm_hashlist_scraper" => "dmm_hashlist",
+            "prowlarr_feed_scraper" => "prowlarr_feed",
+            "jackett_feed_scraper" => "jackett_feed",
+            "rss_feed_scraper" => "rss_feed",
+            "youtube_background_scraper" => "youtube_bg",
+            "acestream_background_scraper" => "acestream_bg",
+            "telegram_background_scraper" => "telegram_bg",
+            "validate_tv_streams_in_db" => "validate_tv",
+            "cleanup_expired_scraper_task" => "cleanup_scraper_task",
+            "cleanup_expired_cache_task" => "cleanup_cache",
+            "imdb_dataset_import" => "imdb_dataset_import",
+            id if job_id_to_queue(id) != "default" => id,
+            _ => return None,
+        }
+        .to_string(),
+    )
+}
+
+async fn load_cron_payload(pool: &sqlx::PgPool, cron_name: &str) -> Option<Value> {
+    use sqlx::Row as _;
+
+    sqlx::query("SELECT payload FROM cron_jobs WHERE name = $1")
+        .bind(cron_name)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|row| row.try_get::<Value, _>("payload").ok())
+}
+
+async fn load_dispatch_payload(pool: &sqlx::PgPool, job_id: &str, default_payload: Value) -> Value {
+    if let Some(cron_name) = job_id_to_cron_name(job_id) {
+        if let Some(stored) = load_cron_payload(pool, &cron_name).await {
+            return stored;
+        }
+    }
+    default_payload
 }
 
 /// Map a scheduler job_id to its Postgres queue name.
@@ -1784,6 +2203,123 @@ pub async fn get_scheduler_job(
     }
 }
 
+#[derive(Deserialize)]
+pub struct UpdateSchedulerJobRequest {
+    pub enabled: Option<bool>,
+    pub schedule: Option<String>,
+    pub payload: Option<Value>,
+}
+
+/// PATCH /api/v1/admin/schedulers/{job_id}
+pub async fn update_scheduler_job(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(job_id): Path<String>,
+    Json(body): Json<UpdateSchedulerJobRequest>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return forbidden();
+    }
+
+    let Some((_, _name, _cat, _desc, default_schedule)) = SCHEDULER_JOBS
+        .iter()
+        .find(|(id, ..)| *id == job_id.as_str())
+    else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Job not found"})),
+        )
+            .into_response();
+    };
+
+    let Some(cron_name) = job_id_to_cron_name(&job_id) else {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"detail": "Job is not backed by a cron_jobs row"})),
+        )
+            .into_response();
+    };
+
+    if let Some(ref schedule) = body.schedule {
+        if !is_valid_cron_schedule(schedule) {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({"detail": "schedule must be a 5-field cron expression"})),
+            )
+                .into_response();
+        }
+    }
+
+    use sqlx::Row as _;
+
+    let existing =
+        sqlx::query("SELECT enabled, schedule, payload, queue FROM cron_jobs WHERE name = $1")
+            .bind(&cron_name)
+            .fetch_optional(&state.pool)
+            .await;
+
+    let queue_name = job_id_to_queue(&job_id);
+    let (current_enabled, current_schedule, current_payload) = match existing {
+        Ok(Some(row)) => (
+            row.try_get::<bool, _>("enabled").unwrap_or(true),
+            row.try_get::<String, _>("schedule")
+                .unwrap_or_else(|_| default_schedule.to_string()),
+            row.try_get::<Value, _>("payload")
+                .unwrap_or_else(|_| json!({})),
+        ),
+        _ => (true, default_schedule.to_string(), json!({})),
+    };
+
+    let enabled = body.enabled.unwrap_or(current_enabled);
+    let schedule = body
+        .schedule
+        .as_deref()
+        .unwrap_or(current_schedule.as_str());
+    let payload = body
+        .payload
+        .map(|p| merge_json_objects(current_payload.clone(), p))
+        .unwrap_or(current_payload);
+
+    let result = sqlx::query(
+        r#"INSERT INTO cron_jobs (name, schedule, queue, payload, enabled)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (name) DO UPDATE SET
+             schedule = EXCLUDED.schedule,
+             payload = EXCLUDED.payload,
+             enabled = EXCLUDED.enabled"#,
+    )
+    .bind(&cron_name)
+    .bind(schedule)
+    .bind(queue_name)
+    .bind(&payload)
+    .bind(enabled)
+    .execute(&state.pool)
+    .await;
+
+    match result {
+        Ok(_) => {
+            let info = fetch_job_info(
+                &state.pool_ro,
+                &job_id,
+                _name,
+                _cat,
+                _desc,
+                default_schedule,
+            )
+            .await;
+            Json(info).into_response()
+        }
+        Err(e) => {
+            tracing::error!("update_scheduler_job: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": "Failed to update scheduler job"})),
+            )
+                .into_response()
+        }
+    }
+}
+
 /// POST /api/v1/admin/schedulers/{job_id}/run?force_run=...
 #[derive(Deserialize)]
 pub struct RunSchedulerQuery {
@@ -1793,38 +2329,48 @@ pub struct RunSchedulerQuery {
 async fn dispatch_scheduler_job(
     pool: &sqlx::PgPool,
     job_id: &str,
-    _force_run: Option<bool>,
+    force_run: Option<bool>,
+    run_payload: Option<Value>,
 ) -> Result<i64, ()> {
     // Verify job_id is known
     if !SCHEDULER_JOBS.iter().any(|(id, ..)| *id == job_id) {
         return Err(());
     }
 
-    let (queue_name, payload): (&str, serde_json::Value) = if SCRAPY_SPIDER_IDS.contains(&job_id) {
-        // Use spider_name_to_queue to get the correct queue+payload
-        match spider_name_to_queue(job_id) {
-            Some((q, Some(p))) => (q, p),
-            Some((q, None)) => (q, json!({})),
-            None => return Err(()),
-        }
-    } else {
-        match job_id {
-            "dmm_hashlist_scraper" => ("dmm_hashlist", json!({})),
-            "prowlarr_feed_scraper" => ("prowlarr_feed", json!({})),
-            "jackett_feed_scraper" => ("jackett_feed", json!({})),
-            "rss_feed_scraper" => ("rss_feed", json!({})),
-            "youtube_background_scraper" => ("youtube_bg", json!({})),
-            "acestream_background_scraper" => ("acestream_bg", json!({})),
-            "telegram_background_scraper" => ("telegram_bg", json!({})),
-            "validate_tv_streams_in_db" => ("validate_tv", json!({})),
-            "update_seeders" => ("update_seeders", json!({})),
-            "cleanup_expired_scraper_task" => ("cleanup", json!({"task": "scraper_task"})),
-            "cleanup_expired_cache_task" => ("cleanup", json!({"task": "cache"})),
-            "background_search" => ("background_search", json!({})),
-            "imdb_dataset_import" => ("imdb_dataset_import", json!({})),
-            _ => return Err(()),
-        }
-    };
+    let (queue_name, default_payload): (&str, serde_json::Value) =
+        if SCRAPY_SPIDER_IDS.contains(&job_id) {
+            // Use spider_name_to_queue to get the correct queue+payload
+            match spider_name_to_queue(job_id) {
+                Some((q, Some(p))) => (q, p),
+                Some((q, None)) => (q, json!({})),
+                None => return Err(()),
+            }
+        } else {
+            match job_id {
+                "dmm_hashlist_scraper" => ("dmm_hashlist", json!({})),
+                "prowlarr_feed_scraper" => ("prowlarr_feed", json!({})),
+                "jackett_feed_scraper" => ("jackett_feed", json!({})),
+                "rss_feed_scraper" => ("rss_feed", json!({})),
+                "youtube_background_scraper" => ("youtube_bg", json!({})),
+                "acestream_background_scraper" => ("acestream_bg", json!({})),
+                "telegram_background_scraper" => ("telegram_bg", json!({})),
+                "validate_tv_streams_in_db" => ("validate_tv", json!({})),
+                "update_seeders" => ("update_seeders", json!({})),
+                "cleanup_expired_scraper_task" => ("cleanup", json!({"task": "scraper_task"})),
+                "cleanup_expired_cache_task" => ("cleanup", json!({"task": "cache"})),
+                "background_search" => ("background_search", json!({})),
+                "imdb_dataset_import" => ("imdb_dataset_import", json!({})),
+                _ => return Err(()),
+            }
+        };
+
+    let mut payload = load_dispatch_payload(pool, job_id, default_payload).await;
+    if let Some(overlay) = run_payload {
+        payload = merge_json_objects(payload, overlay);
+    }
+    if force_run.unwrap_or(false) && job_id == "imdb_dataset_import" {
+        payload = merge_json_objects(payload, json!({"force": true}));
+    }
 
     crate::jobs::enqueue::enqueue_simple(pool, queue_name, &payload, Default::default())
         .await
@@ -1839,11 +2385,19 @@ pub async fn run_scheduler_job(
     State(state): State<Arc<AppState>>,
     Path(job_id): Path<String>,
     Query(params): Query<RunSchedulerQuery>,
+    body: Option<Json<Value>>,
 ) -> impl IntoResponse {
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    match dispatch_scheduler_job(&state.pool, &job_id, params.force_run).await {
+    match dispatch_scheduler_job(
+        &state.pool,
+        &job_id,
+        params.force_run,
+        body.map(|Json(v)| v),
+    )
+    .await
+    {
         Ok(job_id_pg) => (
             StatusCode::ACCEPTED,
             Json(json!({"status": "accepted", "job_id": job_id_pg, "scheduler_job_id": job_id})),
@@ -1866,7 +2420,7 @@ pub async fn run_scheduler_job_inline(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    match dispatch_scheduler_job(&state.pool, &job_id, None).await {
+    match dispatch_scheduler_job(&state.pool, &job_id, None, None).await {
         Ok(job_id_pg) => (
             StatusCode::ACCEPTED,
             Json(json!({"status": "accepted", "job_id": job_id_pg, "scheduler_job_id": job_id})),
