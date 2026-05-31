@@ -31,7 +31,10 @@ use serde::Deserialize;
 use serde_json::json;
 use sha2::Sha256;
 
-use crate::{db::{EpisodeId, MediaId}, state::AppState};
+use crate::{
+    db::{EpisodeId, MediaId},
+    state::AppState,
+};
 
 // ─── Auth helper ─────────────────────────────────────────────────────────────
 

@@ -190,10 +190,7 @@ pub enum DedupWaitResult {
 }
 
 /// Check cache, reclaim stale locks, or wait for an in-flight peer to finish.
-pub async fn prepare_resolve(
-    redis: &fred::clients::Client,
-    cache_key: &str,
-) -> DedupWaitResult {
+pub async fn prepare_resolve(redis: &fred::clients::Client, cache_key: &str) -> DedupWaitResult {
     if let Some(url) = read_cache_value(redis, cache_key).await {
         return DedupWaitResult::Cached(url);
     }
@@ -211,8 +208,12 @@ pub async fn prepare_resolve(
         "playback lock held by another request; waiting for cache"
     );
 
-    if let Some(url) =
-        wait_for_cached_url(redis, cache_key, Duration::from_secs(CLIENT_WAIT_BUDGET_SECS)).await
+    if let Some(url) = wait_for_cached_url(
+        redis,
+        cache_key,
+        Duration::from_secs(CLIENT_WAIT_BUDGET_SECS),
+    )
+    .await
     {
         return DedupWaitResult::Cached(url);
     }

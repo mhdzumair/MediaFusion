@@ -2,15 +2,7 @@
 
 use crate::{db::telegram as tg_db, state::AppState};
 
-use super::{
-    api::BotApi,
-    batch,
-    detect,
-    login,
-    state_store,
-    text,
-    wizard,
-};
+use super::{api::BotApi, batch, detect, login, state_store, text, wizard};
 
 pub async fn handle_command(
     state: &AppState,
@@ -66,7 +58,9 @@ async fn handle_cancel(state: &AppState, api: &BotApi, user_id: i64, chat_id: i6
                 .await;
             return;
         }
-        let _ = api.send_message(chat_id, &text::cancel_success(), None).await;
+        let _ = api
+            .send_message(chat_id, &text::cancel_success(), None)
+            .await;
         return;
     }
 
@@ -88,16 +82,12 @@ async fn handle_cancel(state: &AppState, api: &BotApi, user_id: i64, chat_id: i6
         return;
     }
 
-    let _ = api.send_message(chat_id, &text::cancel_nothing(), None).await;
+    let _ = api
+        .send_message(chat_id, &text::cancel_nothing(), None)
+        .await;
 }
 
-async fn handle_scrape(
-    state: &AppState,
-    api: &BotApi,
-    user_id: i64,
-    chat_id: i64,
-    text_msg: &str,
-) {
+async fn handle_scrape(state: &AppState, api: &BotApi, user_id: i64, chat_id: i64, text_msg: &str) {
     let parts: Vec<&str> = text_msg.split_whitespace().collect();
     let raw_channel = parts.get(1).copied().unwrap_or("");
     let channel = match detect::normalize_channel_identifier(raw_channel) {
@@ -208,7 +198,10 @@ pub async fn handle_content_message(
     content_type: super::model::ContentType,
     raw_input: serde_json::Value,
 ) {
-    if tg_db::get_user_by_telegram_id(&state.pool_ro, user_id).await.is_none() {
+    if tg_db::get_user_by_telegram_id(&state.pool_ro, user_id)
+        .await
+        .is_none()
+    {
         let _ = api.send_message(
             chat_id,
             "🔐 *Account Required*\n\nLink your MediaFusion account first.\n\nSend `/login` to get started.",

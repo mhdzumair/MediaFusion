@@ -12,19 +12,18 @@ pub async fn response_json(
     context: &str,
 ) -> Result<serde_json::Value, ProviderError> {
     let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| {
-            tracing::warn!("{context}: failed to read response body (HTTP {status}): {e}");
-            ProviderError::Http(e)
-        })?;
+    let text = resp.text().await.map_err(|e| {
+        tracing::warn!("{context}: failed to read response body (HTTP {status}): {e}");
+        ProviderError::Http(e)
+    })?;
     serde_json::from_str(&text).map_err(|e| {
         // Truncate very long bodies (e.g. full HTML error pages) in the log.
-        let preview: &str = if text.len() > 500 { &text[..500] } else { &text };
-        tracing::warn!(
-            "{context}: JSON decode failed (HTTP {status}): {e} — body: {preview}"
-        );
+        let preview: &str = if text.len() > 500 {
+            &text[..500]
+        } else {
+            &text
+        };
+        tracing::warn!("{context}: JSON decode failed (HTTP {status}): {e} — body: {preview}");
         ProviderError::Other(format!("JSON decode failed (HTTP {status}): {e}"))
     })
 }

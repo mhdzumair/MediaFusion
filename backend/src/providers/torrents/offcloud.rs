@@ -624,10 +624,7 @@ pub async fn list_downloaded_torrents(
             let fv = item.get("fileSize");
             let file_size = fv
                 .and_then(|v| v.as_i64())
-                .or_else(|| {
-                    fv.and_then(|v| v.as_str())
-                        .and_then(|s| s.parse().ok())
-                })
+                .or_else(|| fv.and_then(|v| v.as_str()).and_then(|s| s.parse().ok()))
                 .unwrap_or(0);
 
             Some(crate::providers::torrents::realdebrid::DownloadedTorrent {

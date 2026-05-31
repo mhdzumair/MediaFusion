@@ -60,15 +60,7 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
 
     // my_library_* catalogs join through user_library_item instead of catalog/media_catalog_link.
     if catalog_id.starts_with("my_library_") {
-        return get_library_items(
-            pool,
-            mt,
-            skip,
-            nudity_excludes,
-            cert_excludes,
-            user_id,
-        )
-        .await;
+        return get_library_items(pool, mt, skip, nudity_excludes, cert_excludes, user_id).await;
     }
 
     let ord = order_clause(sort, sort_dir);

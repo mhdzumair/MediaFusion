@@ -318,9 +318,10 @@ pub async fn moderator_list_metadata(
 
     // Build WHERE clause
     let mut conditions: Vec<String> = Vec::new();
-    let media_type_filter = params.media_type.as_ref().and_then(|mt| {
-        MediaType::from_wire(&mt.to_ascii_lowercase())
-    });
+    let media_type_filter = params
+        .media_type
+        .as_ref()
+        .and_then(|mt| MediaType::from_wire(&mt.to_ascii_lowercase()));
     if media_type_filter.is_some() {
         conditions.push("m.type = $1".to_string());
     }

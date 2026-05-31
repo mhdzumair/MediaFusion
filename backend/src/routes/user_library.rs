@@ -33,7 +33,10 @@ use sha2::Sha256;
 
 use serde_json::json;
 
-use crate::{db::{self, MediaId}, state::AppState};
+use crate::{
+    db::{self, MediaId},
+    state::AppState,
+};
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -845,7 +848,6 @@ async fn get_profile_config(
     Some(full_config)
 }
 
-
 /// Extract video files from a raw torrent JSON object, handling per-provider field names.
 fn extract_video_files(
     raw: &serde_json::Value,
@@ -944,7 +946,11 @@ fn flatten_ad_files_simple(node: &serde_json::Value, out: &mut Vec<(String, i64)
         serde_json::Value::Object(_) => {
             if node.get("l").is_some() {
                 // Leaf file
-                let name = node.get("n").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let name = node
+                    .get("n")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let size = node.get("s").and_then(|v| v.as_i64()).unwrap_or(0);
                 out.push((name, size));
             } else if let Some(entries) = node.get("e") {
@@ -990,7 +996,9 @@ fn parse_torrent_meta(name: &str, video_file_count: usize) -> TorrentMeta {
 
         // Other sports → stored as a movie. Strip the date so FTS can match.
         let sports = crate::parser::parse_sports_title(name);
-        let title = sports.title.or_else(|| crate::parser::parse_title(name).title);
+        let title = sports
+            .title
+            .or_else(|| crate::parser::parse_title(name).title);
         let search = title.as_deref().map(strip_date_tokens);
         return TorrentMeta {
             title,
@@ -1027,8 +1035,7 @@ fn racing_file_episode_title(path: &str) -> Option<String> {
 /// e.g. "WWE Raw 23 05 2026" → "WWE Raw"
 fn strip_date_tokens(title: &str) -> String {
     static DATE_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = DATE_RE
-        .get_or_init(|| regex::Regex::new(r"\s+\d{1,2}\s+\d{1,2}\s+\d{4}\b").unwrap());
+    let re = DATE_RE.get_or_init(|| regex::Regex::new(r"\s+\d{1,2}\s+\d{1,2}\s+\d{4}\b").unwrap());
     let s = re.replace_all(title, "").trim().to_string();
     if s.is_empty() {
         title.to_string()
@@ -1045,7 +1052,11 @@ async fn find_metadata_match(
     year: Option<i32>,
     media_type: &str,
 ) -> (Option<String>, Option<serde_json::Value>) {
-    let db_type = if media_type == "series" { "series" } else { "movie" };
+    let db_type = if media_type == "series" {
+        "series"
+    } else {
+        "movie"
+    };
     let candidates = crate::db::search_media_candidates(pool, db_type, title).await;
     if candidates.is_empty() {
         return (None, None);
@@ -1249,29 +1260,30 @@ pub async fn get_missing_torrents(
     }
 
     let all_torrents = match provider.as_str() {
-        "realdebrid" => fetch_list!(crate::providers::torrents::realdebrid::list_downloaded_torrents(
-            &state.http, &token
-        )),
-        "torbox" => fetch_list!(crate::providers::torrents::torbox::list_downloaded_torrents(
-            &state.http, &token
-        )),
-        "alldebrid" => fetch_list!(crate::providers::torrents::alldebrid::list_downloaded_torrents(
-            &state.http, &token
-        )),
-        "debridlink" => fetch_list!(crate::providers::torrents::debridlink::list_downloaded_torrents(
-                &state.http, &token
-        )),
-        "premiumize" => fetch_list!(crate::providers::torrents::premiumize::list_downloaded_torrents(
-            &state.http, &token
-        )),
-        "offcloud" => fetch_list!(crate::providers::torrents::offcloud::list_downloaded_torrents(
-            &state.http, &token
-        )),
-        "pikpak" => fetch_list!(crate::providers::torrents::pikpak::list_downloaded_torrents(
-            &state.http, &token
-        )),
+        "realdebrid" => fetch_list!(
+            crate::providers::torrents::realdebrid::list_downloaded_torrents(&state.http, &token)
+        ),
+        "torbox" => fetch_list!(
+            crate::providers::torrents::torbox::list_downloaded_torrents(&state.http, &token)
+        ),
+        "alldebrid" => fetch_list!(
+            crate::providers::torrents::alldebrid::list_downloaded_torrents(&state.http, &token)
+        ),
+        "debridlink" => fetch_list!(
+            crate::providers::torrents::debridlink::list_downloaded_torrents(&state.http, &token)
+        ),
+        "premiumize" => fetch_list!(
+            crate::providers::torrents::premiumize::list_downloaded_torrents(&state.http, &token)
+        ),
+        "offcloud" => fetch_list!(
+            crate::providers::torrents::offcloud::list_downloaded_torrents(&state.http, &token)
+        ),
+        "pikpak" => fetch_list!(
+            crate::providers::torrents::pikpak::list_downloaded_torrents(&state.http, &token)
+        ),
         "seedr" => fetch_list!(crate::providers::torrents::seedr::list_downloaded_torrents(
-            &state.http, &token
+            &state.http,
+            &token
         )),
         _ => {
             return Json(json!({"items": [], "total": 0, "provider": provider})).into_response();
@@ -1293,17 +1305,19 @@ pub async fn get_missing_torrents(
     // For RD, fetch file details per-torrent (requires separate API calls).
     // For other providers, files are already in `t.raw`.
     let file_infos: Vec<serde_json::Value> = if provider == "realdebrid" {
-        let bearer = match crate::providers::torrents::realdebrid::resolve_bearer(&state.http, &token).await {
-            Ok(b) => b,
-            Err(e) => {
-                tracing::warn!("get_missing_torrents rd bearer: {e}");
-                return (
-                    StatusCode::BAD_GATEWAY,
-                    Json(json!({"detail": format!("Provider error: {e}")})),
-                )
-                    .into_response();
-            }
-        };
+        let bearer =
+            match crate::providers::torrents::realdebrid::resolve_bearer(&state.http, &token).await
+            {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!("get_missing_torrents rd bearer: {e}");
+                    return (
+                        StatusCode::BAD_GATEWAY,
+                        Json(json!({"detail": format!("Provider error: {e}")})),
+                    )
+                        .into_response();
+                }
+            };
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(6));
         let http = state.http.clone();
         let bearer = std::sync::Arc::new(bearer);
@@ -1316,7 +1330,9 @@ pub async fn get_missing_torrents(
                 let sem = semaphore.clone();
                 async move {
                     let _permit = sem.acquire().await.ok();
-                    if id.is_empty() { return serde_json::Value::Null; }
+                    if id.is_empty() {
+                        return serde_json::Value::Null;
+                    }
                     crate::providers::torrents::realdebrid::get_torrent_info(&http, &bearer, &id)
                         .await
                         .unwrap_or(serde_json::Value::Null)
@@ -1401,14 +1417,18 @@ async fn resolve_import_file_data(
 ) -> std::collections::HashMap<String, serde_json::Value> {
     use std::collections::HashMap;
     if provider == "realdebrid" {
-        let bearer =
-            match crate::providers::torrents::realdebrid::resolve_bearer(&state.http, token).await {
-                Ok(b) => b,
-                Err(e) => {
-                    tracing::warn!("resolve_import_file_data rd bearer: {e}");
-                    return HashMap::new();
-                }
-            };
+        let bearer = match crate::providers::torrents::realdebrid::resolve_bearer(
+            &state.http,
+            token,
+        )
+        .await
+        {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!("resolve_import_file_data rd bearer: {e}");
+                return HashMap::new();
+            }
+        };
         let mut map = HashMap::new();
         for t in torrents {
             if t.id.is_empty() {
@@ -1499,7 +1519,9 @@ pub async fn import_torrents(
         None => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(json!({"detail": format!("Provider '{}' not configured in profile", provider)})),
+                Json(
+                    json!({"detail": format!("Provider '{}' not configured in profile", provider)}),
+                ),
             )
                 .into_response();
         }
@@ -1556,7 +1578,10 @@ pub async fn import_torrents(
         let total_size = torrent.size;
 
         // Extract video files for this torrent.
-        let raw = file_data_map.get(&hash).cloned().unwrap_or(torrent.raw.clone());
+        let raw = file_data_map
+            .get(&hash)
+            .cloned()
+            .unwrap_or(torrent.raw.clone());
         let video_files = extract_video_files(&raw, &provider, &video_extensions, &sample_re);
         if video_files.is_empty() {
             failed += 1;
@@ -1601,8 +1626,7 @@ pub async fn import_torrents(
         // For movie/series, match against the metadata DB to obtain an external id.
         let mut meta_id: Option<String> = None;
         if meta_type != "sports" {
-            let (_, ext_ids) =
-                find_metadata_match(&state.pool_ro, &title, year, &meta_type).await;
+            let (_, ext_ids) = find_metadata_match(&state.pool_ro, &title, year, &meta_type).await;
             meta_id = ext_ids.as_ref().and_then(meta_id_from_external_ids);
             if meta_id.is_none() {
                 failed += 1;
@@ -1846,7 +1870,9 @@ pub async fn advanced_import_torrents(
         None => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(json!({"detail": format!("Provider '{}' not configured in profile", provider)})),
+                Json(
+                    json!({"detail": format!("Provider '{}' not configured in profile", provider)}),
+                ),
             )
                 .into_response();
         }
@@ -2012,8 +2038,7 @@ async fn process_advanced_import(
             None,
         )
         .await
-        .ok_or_else(|| format!("Could not resolve media for {meta_id}"))?
-            as i64
+        .ok_or_else(|| format!("Could not resolve media for {meta_id}"))? as i64
     };
 
     // ── Build the file rows (annotations → video files only) ────────────────
@@ -2072,7 +2097,11 @@ async fn process_advanced_import(
             info_hash: hash,
             name: torrent_name,
             source: &source,
-            total_size: if total_size > 0 { Some(total_size) } else { None },
+            total_size: if total_size > 0 {
+                Some(total_size)
+            } else {
+                None
+            },
             seeders: None,
             file_count,
             parsed: &parsed,

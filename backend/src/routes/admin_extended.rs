@@ -50,7 +50,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::Sha256;
 
-use crate::{db::{MediaId, StreamId}, state::AppState};
+use crate::{
+    db::{MediaId, StreamId},
+    state::AppState,
+};
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -275,9 +278,10 @@ pub async fn list_blocked_media(
 
     // Build optional filter conditions
     let mut conditions: Vec<String> = vec!["is_blocked = true".to_string()];
-    let media_type_filter = params.media_type.as_ref().and_then(|t| {
-        crate::db::MediaType::from_wire(&t.to_ascii_lowercase())
-    });
+    let media_type_filter = params
+        .media_type
+        .as_ref()
+        .and_then(|t| crate::db::MediaType::from_wire(&t.to_ascii_lowercase()));
     if media_type_filter.is_some() {
         conditions.push("type = $1".to_string());
     }

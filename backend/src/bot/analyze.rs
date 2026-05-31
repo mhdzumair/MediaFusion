@@ -4,9 +4,7 @@ use serde_json::{json, Value};
 
 use crate::{
     parser,
-    routes::content::{
-        acestream_import, http_import, nzb_import, torrent_import, youtube_import,
-    },
+    routes::content::{acestream_import, http_import, nzb_import, torrent_import, youtube_import},
     state::AppState,
 };
 
@@ -24,18 +22,11 @@ pub async fn run_analysis(
             let magnet = raw_input.as_str().unwrap_or("");
             torrent_import::analyze_magnet_for_bot(state, magnet, media_type).await
         }
-        ContentType::TorrentFile => {
-            analyze_torrent_file(state, api, raw_input, media_type).await
-        }
-        ContentType::TorrentUrl => {
-            analyze_torrent_url(state, raw_input, media_type).await
-        }
+        ContentType::TorrentFile => analyze_torrent_file(state, api, raw_input, media_type).await,
+        ContentType::TorrentUrl => analyze_torrent_url(state, raw_input, media_type).await,
         ContentType::Video => analyze_video(raw_input, media_type),
         ContentType::Youtube => {
-            let url = raw_input
-                .get("url")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let url = raw_input.get("url").and_then(|v| v.as_str()).unwrap_or("");
             youtube_import::analyze_youtube_for_bot(state, url, media_type).await
         }
         ContentType::Http => {

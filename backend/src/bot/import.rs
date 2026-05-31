@@ -4,9 +4,7 @@ use serde_json::{json, Value};
 
 use crate::{
     db::telegram as tg_db,
-    routes::content::{
-        contribution_processors, import_helpers,
-    },
+    routes::content::{contribution_processors, import_helpers},
     state::AppState,
 };
 
@@ -21,12 +19,8 @@ pub async fn execute_import(
     api: &BotApi,
     conv: &ConversationState,
 ) -> Result<String, String> {
-    let mf_user_id = tg_db::resolve_mediafusion_user_id(
-        &state.pool,
-        &state.redis,
-        conv.user_id,
-    )
-    .await;
+    let mf_user_id =
+        tg_db::resolve_mediafusion_user_id(&state.pool, &state.redis, conv.user_id).await;
 
     let Some(uid) = mf_user_id else {
         return Err("Link your MediaFusion account with `/login` before importing.".to_string());
@@ -49,8 +43,11 @@ pub async fn execute_import(
     let uid_i64 = i64::from(i32::from(uid));
     let is_privileged = matches!(user_info.role.as_str(), "moderator" | "admin");
     let is_anonymous = user_info.contribute_anonymously;
-    let auto_approve =
-        import_helpers::should_auto_approve_import(is_privileged, user_info.is_active, is_anonymous);
+    let auto_approve = import_helpers::should_auto_approve_import(
+        is_privileged,
+        user_info.is_active,
+        is_anonymous,
+    );
 
     let content_type = conv.content_type.ok_or("Missing content type")?;
     let (contrib_type, mut data) =
@@ -89,8 +86,7 @@ pub async fn execute_import(
         .await
         {
             Ok(result) => {
-                import_helpers::award_contribution_points(&state.pool, uid_i64, contrib_type)
-                    .await;
+                import_helpers::award_contribution_points(&state.pool, uid_i64, contrib_type).await;
                 Ok(format!(
                     "✅ *Import Successful!*\n\nContribution `{contribution_id}` approved.\n{}",
                     result.message.unwrap_or_default()

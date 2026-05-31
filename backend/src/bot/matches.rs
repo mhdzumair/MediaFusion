@@ -2,10 +2,7 @@
 
 use serde_json::{json, Value};
 
-use crate::{
-    routes::content::import_helpers,
-    state::AppState,
-};
+use crate::{routes::content::import_helpers, state::AppState};
 
 use super::{
     callback::CallbackAction,
@@ -39,10 +36,7 @@ pub async fn show_media_type_picker(
     (msg, keyboard)
 }
 
-pub async fn show_matches(
-    state: &AppState,
-    conv: &ConversationState,
-) -> (String, Value) {
+pub async fn show_matches(state: &AppState, conv: &ConversationState) -> (String, Value) {
     let user_id = conv.user_id;
     let matches = conv.matches.clone().unwrap_or_default();
     let analysis = conv.analysis_result.clone().unwrap_or(json!({}));
@@ -148,10 +142,7 @@ pub async fn resolve_external_id(
     })
 }
 
-pub async fn show_metadata_review(
-    state: &AppState,
-    conv: &ConversationState,
-) -> (String, Value) {
+pub async fn show_metadata_review(state: &AppState, conv: &ConversationState) -> (String, Value) {
     let user_id = conv.user_id;
     let sel = conv.selected_match.clone().unwrap_or(json!({}));
     let analysis = conv.analysis_result.clone().unwrap_or(json!({}));

@@ -207,13 +207,14 @@ async fn find_or_create_media(
     is_public: bool,
 ) -> Result<i32, sqlx::Error> {
     // Try exact case-insensitive match first
-    let existing: Option<(i32,)> = sqlx::query_as(
-        "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
-    )
-    .bind(title)
-    .bind(MediaType::from_wire(&media_type_str.to_ascii_lowercase()).unwrap_or(MediaType::Tv))
-    .fetch_optional(pool)
-    .await?;
+    let existing: Option<(i32,)> =
+        sqlx::query_as("SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1")
+            .bind(title)
+            .bind(
+                MediaType::from_wire(&media_type_str.to_ascii_lowercase()).unwrap_or(MediaType::Tv),
+            )
+            .fetch_optional(pool)
+            .await?;
 
     if let Some((id,)) = existing {
         return Ok(id);
@@ -228,9 +229,7 @@ async fn find_or_create_media(
            RETURNING id"#,
     )
     .bind(title)
-    .bind(
-        MediaType::from_wire(&media_type_str.to_ascii_lowercase()).unwrap_or(MediaType::Tv),
-    )
+    .bind(MediaType::from_wire(&media_type_str.to_ascii_lowercase()).unwrap_or(MediaType::Tv))
     .bind(is_public)
     .fetch_optional(pool)
     .await?;
@@ -244,8 +243,7 @@ async fn find_or_create_media(
             )
             .bind(title)
             .bind(
-                MediaType::from_wire(&media_type_str.to_ascii_lowercase())
-                    .unwrap_or(MediaType::Tv),
+                MediaType::from_wire(&media_type_str.to_ascii_lowercase()).unwrap_or(MediaType::Tv),
             )
             .fetch_one(pool)
             .await?;

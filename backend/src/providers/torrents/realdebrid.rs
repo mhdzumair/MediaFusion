@@ -44,10 +44,7 @@ fn decode_token(token: &str) -> TokenKind {
 }
 
 /// Resolve a user-supplied token string to a usable bearer token.
-pub async fn resolve_bearer(
-    http: &reqwest::Client,
-    token: &str,
-) -> Result<String, ProviderError> {
+pub async fn resolve_bearer(http: &reqwest::Client, token: &str) -> Result<String, ProviderError> {
     match decode_token(token) {
         TokenKind::Private(t) => Ok(t),
         TokenKind::OAuth {
@@ -923,8 +920,6 @@ pub struct DownloadedTorrent {
     /// Left as `Null` for Real-Debrid (files fetched separately via `/torrents/info/{id}`).
     pub raw: serde_json::Value,
 }
-
-
 
 /// Return all fully-downloaded torrents in the user's RD account with name and size.
 pub async fn list_downloaded_torrents(

@@ -133,13 +133,7 @@ pub async fn cache_callback_payload(state: &AppState, payload: &str) -> String {
     let key = format!("telegram:search_result:{id}");
     let _: Result<(), _> = state
         .redis
-        .set::<(), _, _>(
-            &key,
-            payload,
-            Some(Expiration::EX(3600)),
-            None,
-            false,
-        )
+        .set::<(), _, _>(&key, payload, Some(Expiration::EX(3600)), None, false)
         .await;
     format!("cache:{id}")
 }

@@ -416,9 +416,12 @@ pub async fn import_youtube_video(
     }
 
     if let Some(mid) = media_id {
-        let _ =
-            super::import_helpers::link_stream_to_media(&state.pool, stream_id as i32, crate::db::MediaId(mid as i32))
-                .await;
+        let _ = super::import_helpers::link_stream_to_media(
+            &state.pool,
+            stream_id as i32,
+            crate::db::MediaId(mid as i32),
+        )
+        .await;
     }
 
     let effective_meta_id = body

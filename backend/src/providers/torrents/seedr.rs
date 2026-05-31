@@ -921,10 +921,7 @@ pub async fn delete_torrent_by_hash(
 pub async fn list_downloaded_torrents(
     http: &Client,
     token: &str,
-) -> Result<
-    Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>,
-    ProviderError,
-> {
+) -> Result<Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>, ProviderError> {
     let bearer = resolve_token(token);
     let tasks = list_tasks(http, &bearer, None).await.unwrap_or_default();
 
@@ -941,10 +938,7 @@ pub async fn list_downloaded_torrents(
             .as_i64()
             .map(|v| v.to_string())
             .unwrap_or_default();
-        let name = task["name"]
-            .as_str()
-            .unwrap_or(&info_hash)
-            .to_string();
+        let name = task["name"].as_str().unwrap_or(&info_hash).to_string();
         let size = task["size"].as_i64().unwrap_or(0);
 
         let folder_id = match task["folder_created_id"].as_i64() {

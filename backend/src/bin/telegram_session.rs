@@ -64,7 +64,10 @@ fn main() {
     println!("Convert an existing Telethon StringSession instead:");
     println!("  cargo run --bin telegram_session -- --convert-telethon \"YOUR_STRING_SESSION\"");
     println!();
-    println!("Required env: TELEGRAM_API_ID={}, TELEGRAM_API_HASH=<set>", api_id);
+    println!(
+        "Required env: TELEGRAM_API_ID={}, TELEGRAM_API_HASH=<set>",
+        api_id
+    );
     let _ = api_hash;
 }
 

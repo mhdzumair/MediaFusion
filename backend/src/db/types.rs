@@ -138,9 +138,7 @@ db_id!(
 
 /// `media.type` column.  Postgres type: `mediatype`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "mediatype", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -160,9 +158,7 @@ wire_enum_lower!(MediaType {
 
 /// `stream.stream_type` column.  Postgres type: `streamtype`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[sqlx(type_name = "streamtype", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -190,9 +186,7 @@ wire_enum_screaming!(StreamType {
 
 /// `watch_history.action` column.  Postgres type: `watchaction`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[sqlx(type_name = "watchaction", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -210,9 +204,7 @@ wire_enum_screaming!(WatchAction {
 
 /// `watch_history.source` column.  Postgres type: `historysource`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[sqlx(type_name = "historysource", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -232,9 +224,7 @@ wire_enum_screaming!(HistorySource {
 
 /// `profile_integration.platform` column.  Postgres type: `integrationtype`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "integrationtype", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -258,9 +248,7 @@ wire_enum_lower!(IntegrationType {
 
 /// `file_media_link.link_source` column.  Postgres type: `linksource`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[sqlx(type_name = "linksource", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -306,9 +294,7 @@ wire_enum_screaming!(LinkSource {
 
 /// `stream_file.file_type` column.  Postgres type: `filetype`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[sqlx(type_name = "filetype", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -336,9 +322,7 @@ wire_enum_screaming!(FileType {
 
 /// `media.nudity_status` column.  Postgres type: `nuditystatus`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[sqlx(type_name = "nuditystatus", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -362,9 +346,7 @@ wire_enum_screaming!(NudityStatus {
 
 /// `torrent_stream.torrent_type` column.  Postgres type: `torrenttype`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[sqlx(type_name = "torrenttype", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -384,9 +366,7 @@ wire_enum_screaming!(TorrentType {
 
 /// `tracker.status` column.  Postgres type: `trackerstatus`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[sqlx(type_name = "trackerstatus", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -404,9 +384,7 @@ wire_enum_screaming!(TrackerStatus {
 
 /// `users.role` column.  Postgres type: `userrole`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[sqlx(type_name = "userrole", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -426,9 +404,7 @@ wire_enum_screaming!(UserRole {
 
 /// `contributions.status` column.  Postgres type: `contributionstatus`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[sqlx(type_name = "contributionstatus", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -446,9 +422,7 @@ wire_enum_screaming!(ContributionStatus {
 
 /// `iptv_source.source_type` column.  Postgres type: `iptvsourcetype`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[sqlx(type_name = "iptvsourcetype", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -467,9 +441,7 @@ wire_enum_screaming!(IptvSourceType {
 /// Declared in the schema but not yet used as a column type.
 /// Postgres type: `downloadstatus`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    serde::Serialize, serde::Deserialize,
-    sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[sqlx(type_name = "downloadstatus", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -493,7 +465,10 @@ mod tests {
     #[test]
     fn media_id_serializes_as_bare_integer() {
         assert_eq!(to_string(&MediaId(5)).unwrap(), "5");
-        assert_eq!(to_string(&json!({"id": MediaId(42)})).unwrap(), r#"{"id":42}"#);
+        assert_eq!(
+            to_string(&json!({"id": MediaId(42)})).unwrap(),
+            r#"{"id":42}"#
+        );
     }
 
     #[test]
@@ -508,14 +483,20 @@ mod tests {
     fn integration_type_wire_round_trip() {
         assert_eq!(IntegrationType::Trakt.as_wire(), "trakt");
         assert_eq!(to_string(&IntegrationType::Trakt).unwrap(), r#""trakt""#);
-        assert_eq!(IntegrationType::from_wire("TRAKT"), Some(IntegrationType::Trakt));
+        assert_eq!(
+            IntegrationType::from_wire("TRAKT"),
+            Some(IntegrationType::Trakt)
+        );
     }
 
     #[test]
     fn watch_action_wire_round_trip() {
         assert_eq!(WatchAction::Watched.as_wire(), "WATCHED");
         assert_eq!(to_string(&WatchAction::Watched).unwrap(), r#""WATCHED""#);
-        assert_eq!(WatchAction::from_wire("watched"), Some(WatchAction::Watched));
+        assert_eq!(
+            WatchAction::from_wire("watched"),
+            Some(WatchAction::Watched)
+        );
     }
 
     #[test]

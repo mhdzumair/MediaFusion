@@ -1,11 +1,30 @@
 pub mod types;
 pub use types::{
-    // ID newtypes (all INT4 — use i32 via these, never i64 for internal IDs)
-    EpisodeId, GenreId, IntegrationId, MediaId, ProfileId, SeasonId, SeriesId, StreamFileId,
-    StreamId, UserId,
     // Postgres enum types (bind/decode directly — no ::enumname or ::text casts needed)
-    ContributionStatus, DownloadStatus, FileType, HistorySource, IntegrationType, IptvSourceType,
-    LinkSource, MediaType, NudityStatus, StreamType, TorrentType, TrackerStatus, UserRole,
+    ContributionStatus,
+    DownloadStatus,
+    // ID newtypes (all INT4 — use i32 via these, never i64 for internal IDs)
+    EpisodeId,
+    FileType,
+    GenreId,
+    HistorySource,
+    IntegrationId,
+    IntegrationType,
+    IptvSourceType,
+    LinkSource,
+    MediaId,
+    MediaType,
+    NudityStatus,
+    ProfileId,
+    SeasonId,
+    SeriesId,
+    StreamFileId,
+    StreamId,
+    StreamType,
+    TorrentType,
+    TrackerStatus,
+    UserId,
+    UserRole,
     WatchAction,
 };
 

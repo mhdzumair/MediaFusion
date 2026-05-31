@@ -323,7 +323,12 @@ pub async fn import_tv_channel(
         return false;
     }
 
-    let _ = super::import_helpers::link_stream_to_media(pool, stream_id, crate::db::MediaId(media_id as i32)).await;
+    let _ = super::import_helpers::link_stream_to_media(
+        pool,
+        stream_id,
+        crate::db::MediaId(media_id as i32),
+    )
+    .await;
 
     true
 }

@@ -239,8 +239,7 @@ pub async fn get_genres(
         return Json(cached).into_response();
     }
 
-    let Some(media_type) =
-        crate::db::MediaType::from_wire(&catalog_type.to_ascii_lowercase())
+    let Some(media_type) = crate::db::MediaType::from_wire(&catalog_type.to_ascii_lowercase())
     else {
         return Json(json!([])).into_response();
     };

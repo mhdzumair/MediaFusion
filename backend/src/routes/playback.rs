@@ -702,8 +702,15 @@ async fn pikpak_save_token(
         let key = state.config.secret_key;
         let token_owned = token.to_string();
         tokio::spawn(async move {
-            crypto::profile::patch_provider_token(&pool, &redis, &key, pid.0 as i64, idx, &token_owned)
-                .await;
+            crypto::profile::patch_provider_token(
+                &pool,
+                &redis,
+                &key,
+                pid.0 as i64,
+                idx,
+                &token_owned,
+            )
+            .await;
         });
     }
 }

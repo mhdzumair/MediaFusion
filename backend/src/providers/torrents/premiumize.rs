@@ -677,10 +677,7 @@ pub async fn list_downloaded_torrents(
             .to_string();
         let size = t.get("filesize").and_then(|v| v.as_i64()).unwrap_or(0);
 
-        let folder_id = t
-            .get("folder_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let folder_id = t.get("folder_id").and_then(|v| v.as_str()).unwrap_or("");
         let files = if !folder_id.is_empty() {
             get_folder_contents(http, &kind, folder_id, None)
                 .await

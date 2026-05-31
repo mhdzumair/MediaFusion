@@ -485,16 +485,15 @@ async fn upsert_rss_stream(
                 crate::db::StreamId(stream_id),
                 crate::db::MediaId(media_id),
             )
-                .await;
+            .await;
         }
     } else {
-        let _ =
-            crate::scrapers::media_resolve::link_stream_to_media(
-                pool,
-                crate::db::StreamId(stream_id),
-                crate::db::MediaId(media_id),
-            )
-            .await;
+        let _ = crate::scrapers::media_resolve::link_stream_to_media(
+            pool,
+            crate::db::StreamId(stream_id),
+            crate::db::MediaId(media_id),
+        )
+        .await;
     }
 
     true

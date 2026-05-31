@@ -142,7 +142,12 @@ async fn process_torrent(
             publish_stream(&state.pool, existing, true).await?;
             let mid = resolve_media(state, meta_id.as_str(), meta_type, name, data, None).await;
             if let Some(mid) = mid {
-                let _ = import_helpers::link_stream_to_media(&state.pool, existing, crate::db::MediaId(mid)).await;
+                let _ = import_helpers::link_stream_to_media(
+                    &state.pool,
+                    existing,
+                    crate::db::MediaId(mid),
+                )
+                .await;
             }
             return Ok(ImportProcessResult {
                 status: "success",
@@ -284,7 +289,9 @@ async fn process_torrent(
     .map_err(|e| ImportProcessError::Other(e.to_string()))?;
 
     if let Some(mid) = media_id {
-        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid)).await;
+        let _ =
+            import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid))
+                .await;
     }
 
     if !file_rows.is_empty() {
@@ -350,7 +357,12 @@ async fn process_nzb(
         if want_public {
             publish_stream(&state.pool, existing, true).await?;
             if let Some(mid) = resolve_media(state, &meta_id, meta_type, name, data, None).await {
-                let _ = import_helpers::link_stream_to_media(&state.pool, existing, crate::db::MediaId(mid)).await;
+                let _ = import_helpers::link_stream_to_media(
+                    &state.pool,
+                    existing,
+                    crate::db::MediaId(mid),
+                )
+                .await;
             }
             return Ok(ImportProcessResult {
                 status: "success",
@@ -427,7 +439,9 @@ async fn process_nzb(
     .map_err(|e| ImportProcessError::Other(e.to_string()))?;
 
     if let Some(mid) = media_id {
-        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid)).await;
+        let _ =
+            import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid))
+                .await;
     }
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;
@@ -511,7 +525,9 @@ async fn process_http(
     .map_err(|e| ImportProcessError::Other(e.to_string()))?;
 
     if let Some(mid) = media_id {
-        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid)).await;
+        let _ =
+            import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid))
+                .await;
     }
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;
@@ -547,7 +563,12 @@ async fn process_youtube(
     {
         publish_stream(&state.pool, existing, true).await?;
         if let Some(mid) = resolve_media(state, &meta_id, meta_type, title, data, None).await {
-            let _ = import_helpers::link_stream_to_media(&state.pool, existing, crate::db::MediaId(mid)).await;
+            let _ = import_helpers::link_stream_to_media(
+                &state.pool,
+                existing,
+                crate::db::MediaId(mid),
+            )
+            .await;
         }
         return Ok(ImportProcessResult {
             status: "success",
@@ -596,7 +617,9 @@ async fn process_youtube(
     .map_err(|e| ImportProcessError::Other(e.to_string()))?;
 
     if let Some(mid) = media_id {
-        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid)).await;
+        let _ =
+            import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid))
+                .await;
     }
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;
@@ -634,7 +657,12 @@ async fn process_acestream(
     {
         publish_stream(&state.pool, existing, true).await?;
         if let Some(mid) = resolve_media(state, &meta_id, meta_type, title, data, None).await {
-            let _ = import_helpers::link_stream_to_media(&state.pool, existing, crate::db::MediaId(mid)).await;
+            let _ = import_helpers::link_stream_to_media(
+                &state.pool,
+                existing,
+                crate::db::MediaId(mid),
+            )
+            .await;
         }
         return Ok(ImportProcessResult {
             status: "success",
@@ -679,7 +707,9 @@ async fn process_acestream(
     .map_err(|e| ImportProcessError::Other(e.to_string()))?;
 
     if let Some(mid) = media_id {
-        let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid)).await;
+        let _ =
+            import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid))
+                .await;
     }
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;

@@ -23,7 +23,10 @@ use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
 
-use crate::{db::{HistorySource, WatchAction}, state::AppState};
+use crate::{
+    db::{HistorySource, WatchAction},
+    state::AppState,
+};
 
 // ─── Auth helper ─────────────────────────────────────────────────────────────
 

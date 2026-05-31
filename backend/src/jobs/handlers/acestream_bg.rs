@@ -585,7 +585,11 @@ async fn fetch_source_candidates(
     all
 }
 
-async fn ensure_tv_media(pool: &sqlx::PgPool, title: &str, poster: Option<&str>) -> Option<MediaId> {
+async fn ensure_tv_media(
+    pool: &sqlx::PgPool,
+    title: &str,
+    poster: Option<&str>,
+) -> Option<MediaId> {
     let existing: Option<MediaId> = sqlx::query_scalar(
         "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
     )

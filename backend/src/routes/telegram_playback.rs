@@ -137,13 +137,17 @@ async fn build_mediaflow_url(
     let file_id = stream.file_id.as_deref().ok_or(PlaybackError::NoFileId)?;
 
     // 3. Require auth user
-    let user_id = user_data
-        .user_id
-        .ok_or(PlaybackError::Unauthorized)?;
+    let user_id = user_data.user_id.ok_or(PlaybackError::Unauthorized)?;
 
     // 4. Get or create per-user forward
-    let forward =
-        get_or_create_forward(state, stream.id as i64, file_id, user_id, &stream.stream_name).await?;
+    let forward = get_or_create_forward(
+        state,
+        stream.id as i64,
+        file_id,
+        user_id,
+        &stream.stream_name,
+    )
+    .await?;
 
     // 5. Build MediaFlow URL
     let endpoint = if let Some(ref fname) = stream.file_name {

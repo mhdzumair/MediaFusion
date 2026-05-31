@@ -471,11 +471,10 @@ pub async fn check_cached(
                 continue;
             }
         };
-        let body: serde_json::Value =
-            match response_json(resp, "stremthru magnets/check").await {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
+        let body: serde_json::Value = match response_json(resp, "stremthru magnets/check").await {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
         if let Some(items) = body
             .get("data")
             .and_then(|d| d.get("items"))

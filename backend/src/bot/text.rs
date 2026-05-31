@@ -103,7 +103,9 @@ pub fn content_preview(content_type: &str, preview: &str) -> String {
 }
 
 pub fn escape_markdown(text: &str) -> String {
-    text.replace('_', "\\_").replace('*', "\\*").replace('`', "'")
+    text.replace('_', "\\_")
+        .replace('*', "\\*")
+        .replace('`', "'")
 }
 
 pub fn bytes_readable(size: i64) -> String {

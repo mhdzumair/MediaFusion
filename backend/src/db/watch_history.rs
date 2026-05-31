@@ -1,9 +1,7 @@
 use sqlx::PgPool;
 use tracing::warn;
 
-use super::types::{
-    HistorySource, MediaId, MediaType, ProfileId, StreamType, UserId, WatchAction,
-};
+use super::types::{HistorySource, MediaId, MediaType, ProfileId, StreamType, UserId, WatchAction};
 
 /// Fire-and-forget: insert a watch_history row if we have a user.
 /// Silently ignores errors (best-effort tracking).

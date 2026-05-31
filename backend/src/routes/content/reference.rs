@@ -109,9 +109,7 @@ pub async fn list_genres(
             let lower = row.name.to_lowercase();
             lower != "adult" && lower != "18+"
         })
-        .map(|row| {
-            json!({"id": row.id, "name": row.name, "usage_count": row.usage_count})
-        })
+        .map(|row| json!({"id": row.id, "name": row.name, "usage_count": row.usage_count}))
         .collect();
 
     let pages = if total > 0 {

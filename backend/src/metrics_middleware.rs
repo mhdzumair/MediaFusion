@@ -50,7 +50,9 @@ pub async fn metrics_middleware(
 
     state.metrics.in_flight.fetch_add(1, Ordering::Relaxed);
     // Guard ensures decrement on drop — covers both normal completion and future cancellation.
-    let _guard = InFlightGuard { counter: &state.metrics.in_flight };
+    let _guard = InFlightGuard {
+        counter: &state.metrics.in_flight,
+    };
 
     let start = std::time::Instant::now();
     let resp = next.run(req).await;

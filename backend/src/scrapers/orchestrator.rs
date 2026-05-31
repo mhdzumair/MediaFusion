@@ -69,8 +69,7 @@ pub async fn run(
     // ── Telegram live scraper (Phase 2c) ─────────────────────────────────────
     if let Some(ref tg_client) = state.telegram {
         let user_channel_list = if let Some(uid) = user_data.user_id {
-            crate::db::telegram_channels::user_scraping_channels(&state.pool, uid)
-                .await
+            crate::db::telegram_channels::user_scraping_channels(&state.pool, uid).await
         } else {
             vec![]
         };
@@ -153,8 +152,7 @@ pub async fn run_forced(
 
     if let Some(ref tg_client) = state.telegram {
         let user_channel_list = if let Some(uid) = user_data.user_id {
-            crate::db::telegram_channels::user_scraping_channels(&state.pool, uid)
-                .await
+            crate::db::telegram_channels::user_scraping_channels(&state.pool, uid).await
         } else {
             vec![]
         };

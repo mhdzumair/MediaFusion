@@ -324,7 +324,12 @@ async fn store_torrent_stream(
     )
     .await
     {
-        let _ = media_resolve::link_stream_to_media(pool, crate::db::StreamId(stream_id), meta.media_id).await;
+        let _ = media_resolve::link_stream_to_media(
+            pool,
+            crate::db::StreamId(stream_id),
+            meta.media_id,
+        )
+        .await;
     }
 
     Ok(true)

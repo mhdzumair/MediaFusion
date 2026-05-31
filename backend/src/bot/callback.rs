@@ -10,34 +10,86 @@ pub const MAX_CALLBACK_BYTES: usize = 64;
 
 #[derive(Debug, Clone)]
 pub enum CallbackAction {
-    MediaType { user_id: i64, media_type: String },
-    Match { user_id: i64, external_id: String },
-    Sport { user_id: i64, category: String },
-    SearchTitle { user_id: i64 },
-    Manual { user_id: i64 },
-    MetaEdit { user_id: i64, field: String },
-    MetaVal { user_id: i64, field: String, value: String },
-    Confirm { user_id: i64 },
-    Cancel { user_id: i64 },
-    Back { user_id: i64 },
-    BackReview { user_id: i64 },
-    BatchReview { user_id: i64, item_id: String },
-    BatchImport { user_id: i64 },
-    BatchSkip { user_id: i64, item_id: String },
-    BatchSetSeries { user_id: i64 },
-    LegacySelect { user_id: i64, msg_id: i64, external_id: String },
+    MediaType {
+        user_id: i64,
+        media_type: String,
+    },
+    Match {
+        user_id: i64,
+        external_id: String,
+    },
+    Sport {
+        user_id: i64,
+        category: String,
+    },
+    SearchTitle {
+        user_id: i64,
+    },
+    Manual {
+        user_id: i64,
+    },
+    MetaEdit {
+        user_id: i64,
+        field: String,
+    },
+    MetaVal {
+        user_id: i64,
+        field: String,
+        value: String,
+    },
+    Confirm {
+        user_id: i64,
+    },
+    Cancel {
+        user_id: i64,
+    },
+    Back {
+        user_id: i64,
+    },
+    BackReview {
+        user_id: i64,
+    },
+    BatchReview {
+        user_id: i64,
+        item_id: String,
+    },
+    BatchImport {
+        user_id: i64,
+    },
+    BatchSkip {
+        user_id: i64,
+        item_id: String,
+    },
+    BatchSetSeries {
+        user_id: i64,
+    },
+    LegacySelect {
+        user_id: i64,
+        msg_id: i64,
+        external_id: String,
+    },
 }
 
 impl CallbackAction {
     pub async fn encode(&self, state: &AppState) -> String {
         let raw = match self {
-            Self::MediaType { user_id, media_type } => format!("mtype:{user_id}:{media_type}"),
-            Self::Match { user_id, external_id } => format!("match:{user_id}:{external_id}"),
+            Self::MediaType {
+                user_id,
+                media_type,
+            } => format!("mtype:{user_id}:{media_type}"),
+            Self::Match {
+                user_id,
+                external_id,
+            } => format!("match:{user_id}:{external_id}"),
             Self::Sport { user_id, category } => format!("sport:{user_id}:{category}"),
             Self::SearchTitle { user_id } => format!("search_title:{user_id}"),
             Self::Manual { user_id } => format!("manual:{user_id}"),
             Self::MetaEdit { user_id, field } => format!("meta_edit:{user_id}:{field}"),
-            Self::MetaVal { user_id, field, value } => {
+            Self::MetaVal {
+                user_id,
+                field,
+                value,
+            } => {
                 format!("meta_val:{user_id}:{field}:{value}")
             }
             Self::Confirm { user_id } => format!("confirm:{user_id}"),

@@ -805,12 +805,10 @@ fn racing_league(s: &str) -> Option<String> {
 fn racing_year_and_strip(s: &str) -> (Option<i32>, String) {
     static DMY_RE: OnceLock<Regex> = OnceLock::new();
     static YMD_RE: OnceLock<Regex> = OnceLock::new();
-    let dmy = DMY_RE.get_or_init(|| {
-        Regex::new(r"\b\d{1,2}\s+\d{1,2}\s+((?:19|20)\d{2})\b").expect("dmy_re")
-    });
-    let ymd = YMD_RE.get_or_init(|| {
-        Regex::new(r"\b((?:19|20)\d{2})\s+\d{1,2}\s+\d{1,2}\b").expect("ymd_re")
-    });
+    let dmy = DMY_RE
+        .get_or_init(|| Regex::new(r"\b\d{1,2}\s+\d{1,2}\s+((?:19|20)\d{2})\b").expect("dmy_re"));
+    let ymd = YMD_RE
+        .get_or_init(|| Regex::new(r"\b((?:19|20)\d{2})\s+\d{1,2}\s+\d{1,2}\b").expect("ymd_re"));
 
     if let Some(c) = dmy.captures(s) {
         let year = c.get(1).and_then(|m| m.as_str().parse().ok());
@@ -850,7 +848,9 @@ pub fn parse_racing_title(raw: &str) -> Option<RacingParsed> {
 
     // Pull out the year and remove the date so it doesn't pollute the event name.
     let (year, no_date) = racing_year_and_strip(&cleaned);
-    let no_date = multi_space_re().replace_all(no_date.trim(), " ").into_owned();
+    let no_date = multi_space_re()
+        .replace_all(no_date.trim(), " ")
+        .into_owned();
 
     // Split around "Grand Prix": the event is everything up to & including it,
     // and the remaining trailing text is the session (episode).
@@ -934,11 +934,27 @@ pub fn racing_session_episode(session_or_name: &str) -> Option<(i32, String)> {
     let s = session_or_name.to_lowercase();
     // Most-specific patterns first to avoid "qualifying"/"race" shadowing.
     let table: &[(&[&str], i32, &str)] = &[
-        (&["sprint qualifying", "sprint shootout"], 2, "Sprint Qualifying"),
+        (
+            &["sprint qualifying", "sprint shootout"],
+            2,
+            "Sprint Qualifying",
+        ),
         (&["sprint race", "sprint"], 3, "Sprint"),
-        (&["free practice 1", "practice 1", "fp1"], 1, "Free Practice 1"),
-        (&["free practice 2", "practice 2", "fp2"], 2, "Free Practice 2"),
-        (&["free practice 3", "practice 3", "fp3"], 3, "Free Practice 3"),
+        (
+            &["free practice 1", "practice 1", "fp1"],
+            1,
+            "Free Practice 1",
+        ),
+        (
+            &["free practice 2", "practice 2", "fp2"],
+            2,
+            "Free Practice 2",
+        ),
+        (
+            &["free practice 3", "practice 3", "fp3"],
+            3,
+            "Free Practice 3",
+        ),
         (&["qualifying", "quali"], 4, "Qualifying"),
         (&["grand prix", "race", " gp "], 5, "Race"),
     ];
@@ -1014,7 +1030,8 @@ mod racing_tests {
 
     #[test]
     fn f1_filename_with_dots_and_extension() {
-        let r = parse_racing_title("Formula 1 Canadian Grand Prix Qualifying 23.05.2026.mkv").unwrap();
+        let r =
+            parse_racing_title("Formula 1 Canadian Grand Prix Qualifying 23.05.2026.mkv").unwrap();
         assert_eq!(r.series_title, "Formula 1 Canadian Grand Prix 2026");
         assert_eq!(r.year, Some(2026));
         assert_eq!(r.session.as_deref(), Some("Qualifying"));
@@ -1035,7 +1052,10 @@ mod racing_tests {
         assert_eq!(ep("Qualifying"), (4, "Qualifying".to_string()));
         assert_eq!(ep("Race"), (5, "Race".to_string()));
         // Sprint weekend reuses slots 2 and 3.
-        assert_eq!(ep("Sprint Qualifying"), (2, "Sprint Qualifying".to_string()));
+        assert_eq!(
+            ep("Sprint Qualifying"),
+            (2, "Sprint Qualifying".to_string())
+        );
         assert_eq!(ep("Sprint Shootout"), (2, "Sprint Qualifying".to_string()));
         assert_eq!(ep("Sprint Race"), (3, "Sprint".to_string()));
         assert_eq!(ep("Sprint"), (3, "Sprint".to_string()));

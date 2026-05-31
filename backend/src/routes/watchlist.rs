@@ -211,7 +211,6 @@ fn provider_display_name(service: &str) -> &str {
     }
 }
 
-
 // ─── GET /api/v1/watchlist/{provider} ────────────────────────────────────────
 
 #[derive(Deserialize)]

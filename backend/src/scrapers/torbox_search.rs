@@ -371,7 +371,9 @@ async fn search_usenet_by_imdb(
             Some(parse_usenet_json(&json, media_type, season, episode, None))
         }
         Ok(r) if r.status().as_u16() == 429 => {
-            tracing::warn!("torbox_usenet imdb {imdb_id}: rate-limited (429) — skipping title query");
+            tracing::warn!(
+                "torbox_usenet imdb {imdb_id}: rate-limited (429) — skipping title query"
+            );
             None
         }
         Ok(r) => {

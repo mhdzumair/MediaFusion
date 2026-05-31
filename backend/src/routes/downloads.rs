@@ -225,9 +225,8 @@ pub async fn list_downloads(
         }
     }
 
-    let mut count_sql = String::from(
-        "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2",
-    );
+    let mut count_sql =
+        String::from("SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2");
     let mut idx = 3i32;
     if params.profile_id.is_some() {
         count_sql.push_str(&format!(" AND profile_id = ${idx}"));
@@ -566,14 +565,13 @@ pub async fn delete_download(
         }
     };
 
-    let result = sqlx::query(
-        "DELETE FROM watch_history WHERE id = $1 AND user_id = $2 AND action = $3",
-    )
-    .bind(download_id)
-    .bind(user_id)
-    .bind(DOWNLOADED_ACTION)
-    .execute(&state.pool)
-    .await;
+    let result =
+        sqlx::query("DELETE FROM watch_history WHERE id = $1 AND user_id = $2 AND action = $3")
+            .bind(download_id)
+            .bind(user_id)
+            .bind(DOWNLOADED_ACTION)
+            .execute(&state.pool)
+            .await;
 
     match result {
         Ok(r) if r.rows_affected() == 0 => (
@@ -638,13 +636,11 @@ pub async fn clear_downloads(
             }
         }
     } else {
-        match sqlx::query(
-            "DELETE FROM watch_history WHERE user_id = $1 AND action = $2",
-        )
-        .bind(user_id)
-        .bind(DOWNLOADED_ACTION)
-        .execute(&state.pool)
-        .await
+        match sqlx::query("DELETE FROM watch_history WHERE user_id = $1 AND action = $2")
+            .bind(user_id)
+            .bind(DOWNLOADED_ACTION)
+            .execute(&state.pool)
+            .await
         {
             Ok(_) => StatusCode::NO_CONTENT.into_response(),
             Err(e) => {

@@ -278,9 +278,12 @@ async fn insert_usenet_stream(
                     .await
                     .unwrap_or(stream_id);
             if let Some(mid) = media_id {
-                let _ =
-                    super::import_helpers::link_stream_to_media(pool, existing as i32, crate::db::MediaId(mid as i32))
-                        .await;
+                let _ = super::import_helpers::link_stream_to_media(
+                    pool,
+                    existing as i32,
+                    crate::db::MediaId(mid as i32),
+                )
+                .await;
             }
             return Ok(existing);
         }

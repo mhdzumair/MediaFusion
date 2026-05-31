@@ -279,13 +279,12 @@ async fn torrent_already_exists_response(
     release_date: Option<&str>,
     year: Option<i32>,
 ) -> Response {
-    let link_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint FROM stream_media_link WHERE stream_id = $1",
-    )
-    .bind(stream_id)
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(0);
+    let link_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM stream_media_link WHERE stream_id = $1")
+            .bind(stream_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(0);
 
     let mut relinked = false;
     if link_count == 0 {
@@ -322,10 +321,8 @@ async fn torrent_already_exists_response(
         .unwrap_or_else(|| json!([]));
 
     if relinked && attached_count > 0 {
-        let message = super::import_helpers::build_existing_torrent_warning_message(
-            info_hash,
-            &attachments,
-        );
+        let message =
+            super::import_helpers::build_existing_torrent_warning_message(info_hash, &attachments);
         return (
             StatusCode::OK,
             Json(json!({
@@ -389,27 +386,27 @@ async fn record_torrent_contribution(
     .await
     {
         Ok(contrib_id) => {
-        if auto_approve {
-            if let Some(uid) = uploader_user_id {
-                award_contribution_points(&state.pool, uid, "torrent").await;
+            if auto_approve {
+                if let Some(uid) = uploader_user_id {
+                    award_contribution_points(&state.pool, uid, "torrent").await;
+                }
+            } else if let (Some(bot_token), Some(chat_id)) = (
+                &state.config.telegram_bot_token,
+                &state.config.telegram_chat_id,
+            ) {
+                notify_pending_contribution(
+                    &state.http,
+                    bot_token,
+                    chat_id,
+                    &state.config.host_url,
+                    "torrent",
+                    uploader_name,
+                    contribution_data,
+                )
+                .await;
             }
-        } else if let (Some(bot_token), Some(chat_id)) = (
-            &state.config.telegram_bot_token,
-            &state.config.telegram_chat_id,
-        ) {
-            notify_pending_contribution(
-                &state.http,
-                bot_token,
-                chat_id,
-                &state.config.host_url,
-                "torrent",
-                uploader_name,
-                contribution_data,
-            )
-            .await;
-        }
-        tracing::debug!("contribution created: {contrib_id}");
-        return Some(contrib_id);
+            tracing::debug!("contribution created: {contrib_id}");
+            return Some(contrib_id);
         }
         Err(e) => {
             tracing::error!("failed to create torrent contribution record: {e}");
@@ -727,7 +724,9 @@ pub async fn analyze_magnet_for_bot(
         "matches": matches,
     });
 
-    if let Ok(meta) = crate::demagnetize::resolve(&info_hash, std::time::Duration::from_secs(30)).await {
+    if let Ok(meta) =
+        crate::demagnetize::resolve(&info_hash, std::time::Duration::from_secs(30)).await
+    {
         let files: Vec<serde_json::Value> = meta
             .files
             .iter()
@@ -736,7 +735,12 @@ pub async fn analyze_magnet_for_bot(
         result["total_size"] = json!(meta.total_size);
         result["files"] = json!(files);
         result["file_count"] = json!(files.len());
-        if result.get("torrent_name").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+        if result
+            .get("torrent_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .is_empty()
+        {
             result["torrent_name"] = json!(meta.name);
         }
     }
@@ -1598,7 +1602,11 @@ pub async fn import_torrent(
             info_hash: &info_hash,
             name: &torrent_name,
             source: &source,
-            total_size: if total_size > 0 { Some(total_size) } else { None },
+            total_size: if total_size > 0 {
+                Some(total_size)
+            } else {
+                None
+            },
             seeders: None,
             file_count,
             parsed: &parsed,

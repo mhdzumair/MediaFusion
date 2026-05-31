@@ -68,7 +68,7 @@ impl BotApi {
         self.post("getMe", json!({})).await
     }
 
-    pub async fn set_my_commands(&self, commands: &[( &str, &str)]) -> Result<(), BotApiError> {
+    pub async fn set_my_commands(&self, commands: &[(&str, &str)]) -> Result<(), BotApiError> {
         let cmds: Vec<Value> = commands
             .iter()
             .map(|(command, description)| {
@@ -144,9 +144,7 @@ impl BotApi {
     }
 
     pub async fn get_file(&self, file_id: &str) -> Result<Value, BotApiError> {
-        let data = self
-            .post("getFile", json!({ "file_id": file_id }))
-            .await?;
+        let data = self.post("getFile", json!({ "file_id": file_id })).await?;
         data.get("result")
             .cloned()
             .ok_or_else(|| BotApiError::Parse("missing result".into()))

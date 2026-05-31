@@ -7,13 +7,7 @@ use tracing::warn;
 use crate::state::AppState;
 
 use super::{
-    api::BotApi,
-    callback::CallbackAction,
-    commands,
-    detect,
-    model::Message,
-    state_store,
-    wizard,
+    api::BotApi, callback::CallbackAction, commands, detect, model::Message, state_store, wizard,
 };
 
 pub async fn dispatch_update(state: Arc<AppState>, update: super::model::Update) {
@@ -50,7 +44,10 @@ async fn handle_message(state: &AppState, api: &BotApi, message: Message) {
             return;
         }
 
-        if state_store::get_conversation(state, user_id).await.is_some() {
+        if state_store::get_conversation(state, user_id)
+            .await
+            .is_some()
+        {
             wizard::handle_text_input(state, api, user_id, chat_id, text).await;
             return;
         }
@@ -69,8 +66,13 @@ async fn handle_message(state: &AppState, api: &BotApi, message: Message) {
     }
 
     if let Some((content_type, raw)) = detect::detect_content_type(&message) {
-        let is_forwarded = message.forward_from_chat.is_some() || message.forward_from_message_id.is_some();
-        if is_forwarded && state_store::get_conversation(state, user_id).await.is_none() {
+        let is_forwarded =
+            message.forward_from_chat.is_some() || message.forward_from_message_id.is_some();
+        if is_forwarded
+            && state_store::get_conversation(state, user_id)
+                .await
+                .is_none()
+        {
             super::batch::append_forwarded_video(state, api, user_id, chat_id, raw).await;
             return;
         }
@@ -87,11 +89,7 @@ async fn handle_message(state: &AppState, api: &BotApi, message: Message) {
     }
 }
 
-async fn handle_callback(
-    state: &AppState,
-    api: &BotApi,
-    cb: super::model::CallbackQuery,
-) {
+async fn handle_callback(state: &AppState, api: &BotApi, cb: super::model::CallbackQuery) {
     let user_id = cb.from.id;
     let data = match cb.data.as_deref() {
         Some(d) => d,
@@ -127,15 +125,18 @@ async fn handle_callback(
     match action {
         CallbackAction::MediaType { media_type, .. } => {
             wizard::handle_media_type_selection(
-                state, api, user_id, chat_id, message_id, &media_type,
+                state,
+                api,
+                user_id,
+                chat_id,
+                message_id,
+                &media_type,
             )
             .await;
         }
         CallbackAction::Match { external_id, .. } => {
-            wizard::handle_match_selection(
-                state, api, user_id, chat_id, message_id, &external_id,
-            )
-            .await;
+            wizard::handle_match_selection(state, api, user_id, chat_id, message_id, &external_id)
+                .await;
         }
         CallbackAction::Sport { category, .. } => {
             wizard::handle_sports_category(state, api, user_id, chat_id, message_id, &category)
@@ -192,7 +193,10 @@ pub async fn register_commands(state: Arc<AppState>) {
         ("login", "Link your Telegram account to MediaFusion"),
         ("status", "Check account link status"),
         ("cancel", "Cancel current operation"),
-        ("scrape", "Scrape a public Telegram channel (@channel or t.me link)"),
+        (
+            "scrape",
+            "Scrape a public Telegram channel (@channel or t.me link)",
+        ),
     ];
     match api.set_my_commands(&commands).await {
         Ok(()) => tracing::info!("telegram bot commands registered"),

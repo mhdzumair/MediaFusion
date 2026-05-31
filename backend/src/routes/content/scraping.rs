@@ -528,7 +528,7 @@ pub async fn trigger_scrape_by_media(
         crate::db::MediaId(media_id),
         imdb_id_str,
     )
-        .await
+    .await
     {
         Ok(Some(m)) => m,
         Ok(None) => {

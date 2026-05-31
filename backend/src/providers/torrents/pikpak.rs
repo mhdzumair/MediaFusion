@@ -776,7 +776,10 @@ fn magnet_or_resource_url(value: &Value) -> Option<&str> {
     value
         .get("params")
         .and_then(|p| p.get("url"))
-        .and_then(|u| u.as_str().or_else(|| u.get("url").and_then(|inner| inner.as_str())))
+        .and_then(|u| {
+            u.as_str()
+                .or_else(|| u.get("url").and_then(|inner| inner.as_str()))
+        })
         .or_else(|| value.get("original_url").and_then(|u| u.as_str()))
 }
 
@@ -789,8 +792,7 @@ fn item_has_info_hash(item: &Value, info_hash: &str) -> bool {
     {
         return true;
     }
-    magnet_or_resource_url(item)
-        .is_some_and(|url| url.to_lowercase().contains(&hash))
+    magnet_or_resource_url(item).is_some_and(|url| url.to_lowercase().contains(&hash))
 }
 
 fn task_has_info_hash(task: &Value, info_hash: &str) -> bool {
@@ -869,15 +871,8 @@ async fn resolve_torrent_folder_id(
     }
 
     let files = {
-        let complete = file_list_all(
-            http,
-            tokens,
-            Some(my_pack_folder_id),
-            "1000",
-            None,
-            forward,
-        )
-        .await?;
+        let complete =
+            file_list_all(http, tokens, Some(my_pack_folder_id), "1000", None, forward).await?;
         if complete.iter().any(|f| item_has_info_hash(f, info_hash)) {
             complete
         } else {
@@ -1026,9 +1021,15 @@ async fn wait_for_torrent_to_complete(
             }
             Some(task) if task["progress"].as_str() == Some("100") => {
                 if offline_task_folder_exists(http, tokens, &task, forward).await
-                    || resolve_torrent_folder_id(http, tokens, my_pack_folder_id, info_hash, forward)
-                        .await?
-                        .is_some()
+                    || resolve_torrent_folder_id(
+                        http,
+                        tokens,
+                        my_pack_folder_id,
+                        info_hash,
+                        forward,
+                    )
+                    .await?
+                    .is_some()
                 {
                     return Ok(());
                 }
@@ -1039,9 +1040,15 @@ async fn wait_for_torrent_to_complete(
             }
             Some(task) if task_phase(&task) == "PHASE_TYPE_COMPLETE" => {
                 if offline_task_folder_exists(http, tokens, &task, forward).await
-                    || resolve_torrent_folder_id(http, tokens, my_pack_folder_id, info_hash, forward)
-                        .await?
-                        .is_some()
+                    || resolve_torrent_folder_id(
+                        http,
+                        tokens,
+                        my_pack_folder_id,
+                        info_hash,
+                        forward,
+                    )
+                    .await?
+                    .is_some()
                 {
                     return Ok(());
                 }
@@ -1081,9 +1088,7 @@ async fn handle_torrent_status(
 
     match task_phase(&task) {
         "PHASE_TYPE_ERROR" => handle_torrent_error(http, tokens, &task, forward).await?,
-        "PHASE_TYPE_COMPLETE"
-            if offline_task_folder_exists(http, tokens, &task, forward).await =>
-        {
+        "PHASE_TYPE_COMPLETE" if offline_task_folder_exists(http, tokens, &task, forward).await => {
             return Ok(());
         }
         "PHASE_TYPE_RUNNING" | "PHASE_TYPE_PENDING" => {
@@ -1561,7 +1566,10 @@ async fn fetch_file_playback_data(
 
     for params in playback_query_sets(premium) {
         let data = api_get(http, tokens, &path, params, forward).await?;
-        if data["medias"].as_array().is_some_and(|medias| !medias.is_empty()) {
+        if data["medias"]
+            .as_array()
+            .is_some_and(|medias| !medias.is_empty())
+        {
             let usage = params
                 .iter()
                 .find(|(key, _)| *key == "usage")
@@ -1597,7 +1605,9 @@ async fn get_download_url(
     invalidate_captcha(tokens);
     ensure_captcha(http, tokens, &action).await?;
 
-    let premium = account_is_premium(http, tokens, forward).await.unwrap_or(false);
+    let premium = account_is_premium(http, tokens, forward)
+        .await
+        .unwrap_or(false);
     let data = fetch_file_playback_data(http, tokens, file_id, premium, forward).await?;
 
     if let Some(medias) = data["medias"].as_array().filter(|m| !m.is_empty()) {
@@ -1914,10 +1924,9 @@ async fn free_up_space(
         return;
     }
 
-    let mut contents =
-        file_list(http, tokens, Some("*"), "1000", None, forward)
-            .await
-            .unwrap_or_default();
+    let mut contents = file_list(http, tokens, Some("*"), "1000", None, forward)
+        .await
+        .unwrap_or_default();
     let trashed = file_list(
         http,
         tokens,
@@ -1935,9 +1944,7 @@ async fn free_up_space(
         let b_trashed = b["trashed"].as_bool().unwrap_or(false);
         let a_size = parse_pikpak_size(&a["size"]);
         let b_size = parse_pikpak_size(&b["size"]);
-        b_trashed
-            .cmp(&a_trashed)
-            .then(b_size.cmp(&a_size))
+        b_trashed.cmp(&a_trashed).then(b_size.cmp(&a_size))
     });
 
     for file in contents {
@@ -2087,10 +2094,7 @@ fn extract_task_hash(task: &Value) -> Option<String> {
 pub async fn list_downloaded_torrents(
     http: &Client,
     token: &str,
-) -> Result<
-    Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>,
-    ProviderError,
-> {
+) -> Result<Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>, ProviderError> {
     let mut tokens = decode_token(token)?;
     let tasks = offline_list(http, &mut tokens, &["PHASE_TYPE_COMPLETE"], None).await?;
 
@@ -2101,26 +2105,22 @@ pub async fn list_downloaded_torrents(
             None => continue,
         };
         let id = task["id"].as_str().unwrap_or("").to_string();
-        let name = task["name"]
-            .as_str()
-            .unwrap_or(&info_hash)
-            .to_string();
+        let name = task["name"].as_str().unwrap_or(&info_hash).to_string();
         let size = parse_pikpak_size(&task["file_size"]);
 
         let folder_id = task_file_id(task);
-        let raw_files: Vec<Value> = if let Some(fid) =
-            folder_id.as_deref().filter(|s| !s.is_empty())
-        {
-            if task["reference_resource"]["kind"].as_str() == Some("drive#file") {
-                vec![task["reference_resource"].clone()]
+        let raw_files: Vec<Value> =
+            if let Some(fid) = folder_id.as_deref().filter(|s| !s.is_empty()) {
+                if task["reference_resource"]["kind"].as_str() == Some("drive#file") {
+                    vec![task["reference_resource"].clone()]
+                } else {
+                    get_files_from_folder(http, &mut tokens, fid, None)
+                        .await
+                        .unwrap_or_default()
+                }
             } else {
-                get_files_from_folder(http, &mut tokens, fid, None)
-                    .await
-                    .unwrap_or_default()
-            }
-        } else {
-            vec![]
-        };
+                vec![]
+            };
 
         let files: Vec<Value> = raw_files
             .iter()

@@ -200,11 +200,7 @@ pub async fn create_contribution_record(
     is_privileged: bool,
 ) -> Result<String, sqlx::Error> {
     let id = Uuid::new_v4().to_string();
-    let status = if auto_approve {
-        "APPROVED"
-    } else {
-        "PENDING"
-    };
+    let status = if auto_approve { "APPROVED" } else { "PENDING" };
     let reviewed_by: Option<&str> = if auto_approve { Some("auto") } else { None };
     let review_notes: Option<String> = if is_privileged {
         Some("Auto-approved: Privileged reviewer".to_string())
@@ -579,8 +575,12 @@ pub async fn link_stream_to_media(
     stream_id: i32,
     media_id: crate::db::MediaId,
 ) -> Result<(), sqlx::Error> {
-    crate::scrapers::media_resolve::link_stream_to_media(pool, crate::db::StreamId(stream_id), media_id)
-        .await
+    crate::scrapers::media_resolve::link_stream_to_media(
+        pool,
+        crate::db::StreamId(stream_id),
+        media_id,
+    )
+    .await
 }
 
 fn import_meta_id_candidates<'a>(
@@ -612,14 +612,13 @@ pub async fn try_link_orphan_torrent_stream(
     overrides: crate::scrapers::media_resolve::ImportMediaOverrides<'_>,
     prefetch: Option<&crate::scrapers::media_resolve::ImportMetadataCache>,
 ) -> Option<i32> {
-    let stream_source: Option<String> = sqlx::query_scalar(
-        "SELECT NULLIF(TRIM(source), '') FROM stream WHERE id = $1",
-    )
-    .bind(stream_id)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
+    let stream_source: Option<String> =
+        sqlx::query_scalar("SELECT NULLIF(TRIM(source), '') FROM stream WHERE id = $1")
+            .bind(stream_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
 
     for meta_id in import_meta_id_candidates(request_meta_id, stream_source.as_deref()) {
         if let Some(media_id) = lookup_import_media_id(pool, meta_id, meta_type).await {
@@ -1141,7 +1140,10 @@ pub async fn organize_user_series_episodes(
         return;
     }
 
-    let is_racing = matches!(sports_category, Some("formula_racing") | Some("motogp_racing"));
+    let is_racing = matches!(
+        sports_category,
+        Some("formula_racing") | Some("motogp_racing")
+    );
 
     // Existing episodes in season 1 → align re-imports (date → number, and current max).
     let existing: Vec<(i32, Option<chrono::NaiveDate>)> = sqlx::query_as(
@@ -1170,7 +1172,11 @@ pub async fn organize_user_series_episodes(
     for (idx, f) in file_rows.iter_mut().enumerate() {
         if let Some(obj) = f.as_object_mut() {
             obj.entry("season_number").or_insert(json!(1));
-            if obj.get("season_number").map(|v| v.is_null()).unwrap_or(false) {
+            if obj
+                .get("season_number")
+                .map(|v| v.is_null())
+                .unwrap_or(false)
+            {
                 obj.insert("season_number".to_string(), json!(1));
             }
         }
@@ -1189,7 +1195,11 @@ pub async fn organize_user_series_episodes(
                 if let Some(obj) = f.as_object_mut() {
                     obj.insert("episode_number".to_string(), json!(ep));
                     obj.entry("episode_title").or_insert(json!(title));
-                    if obj.get("episode_title").map(|v| v.is_null()).unwrap_or(false) {
+                    if obj
+                        .get("episode_title")
+                        .map(|v| v.is_null())
+                        .unwrap_or(false)
+                    {
                         obj.insert("episode_title".to_string(), json!(title));
                     }
                 }
@@ -1223,15 +1233,20 @@ pub async fn organize_user_series_episodes(
         if let Some(obj) = file_rows[idx].as_object_mut() {
             obj.insert("episode_number".to_string(), json!(number));
             obj.insert("release_date".to_string(), json!(date));
-            obj.entry("episode_title")
-                .or_insert(json!(null));
+            obj.entry("episode_title").or_insert(json!(null));
         }
     }
 
     // Pass 3: remaining files by filename order.
     undated.sort_by(|&a, &b| {
-        let fa = file_rows[a].get("filename").and_then(|v| v.as_str()).unwrap_or("");
-        let fb = file_rows[b].get("filename").and_then(|v| v.as_str()).unwrap_or("");
+        let fa = file_rows[a]
+            .get("filename")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let fb = file_rows[b]
+            .get("filename")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         fa.cmp(fb)
     });
     for idx in undated {
@@ -1342,15 +1357,14 @@ pub async fn ensure_series_episode_metadata(
     file_rows: &[Value],
     fallback_title: &str,
 ) {
-    let is_series: bool =
-        sqlx::query_scalar("SELECT type = $2 FROM media WHERE id = $1")
-            .bind(media_id as i32)
-            .bind(MediaType::Series)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or(false);
+    let is_series: bool = sqlx::query_scalar("SELECT type = $2 FROM media WHERE id = $1")
+        .bind(media_id as i32)
+        .bind(MediaType::Series)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(false);
     if !is_series {
         return;
     }
@@ -1393,7 +1407,11 @@ pub async fn ensure_series_episode_metadata(
             .and_then(|v| v.as_str())
             .filter(|s| !s.trim().is_empty())
             .map(str::to_string)
-            .or_else(|| f.get("filename").and_then(|v| v.as_str()).map(str::to_string))
+            .or_else(|| {
+                f.get("filename")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            })
             .unwrap_or_else(|| format!("Episode {episode_number}"));
         let air_date = f
             .get("release_date")

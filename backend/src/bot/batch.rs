@@ -9,9 +9,11 @@ use super::{
     api::BotApi,
     callback::CallbackAction,
     import,
-    model::{BatchItem, BatchItemStatus, BatchSeriesContext, BatchState, ContentType, ConversationState, ConversationStep},
-    state_store,
-    wizard,
+    model::{
+        BatchItem, BatchItemStatus, BatchSeriesContext, BatchState, ContentType, ConversationState,
+        ConversationStep,
+    },
+    state_store, wizard,
 };
 
 pub async fn append_forwarded_video(
@@ -151,8 +153,10 @@ pub async fn handle_batch_import(state: &AppState, api: &BotApi, user_id: i64, c
         .items
         .iter()
         .filter(|i| {
-            matches!(i.status, BatchItemStatus::PendingAnalysis | BatchItemStatus::AutoMatched)
-                && i.selected_match.is_some()
+            matches!(
+                i.status,
+                BatchItemStatus::PendingAnalysis | BatchItemStatus::AutoMatched
+            ) && i.selected_match.is_some()
         })
         .cloned()
         .collect();
@@ -189,7 +193,10 @@ pub async fn handle_batch_import(state: &AppState, api: &BotApi, user_id: i64, c
 
         let api_ref = match super::api::BotApi::from_state(state) {
             Ok(a) => a,
-            Err(_) => { failed += 1; continue; }
+            Err(_) => {
+                failed += 1;
+                continue;
+            }
         };
 
         match import::execute_import(state, &api_ref, &conv).await {
@@ -280,7 +287,11 @@ pub async fn handle_series_input(
 
     let selected = if matches.is_empty() {
         crate::routes::content::import_helpers::lookup_import_media_id_with_fallback(
-            &state.pool, input, "series", input, None,
+            &state.pool,
+            input,
+            "series",
+            input,
+            None,
         )
         .await
         .map(|_media_id| {
@@ -424,7 +435,12 @@ async fn render_batch_summary(state: &AppState, api: &BotApi, batch: &BatchState
     let pending = batch
         .items
         .iter()
-        .filter(|i| matches!(i.status, BatchItemStatus::PendingAnalysis | BatchItemStatus::NeedsReview))
+        .filter(|i| {
+            matches!(
+                i.status,
+                BatchItemStatus::PendingAnalysis | BatchItemStatus::NeedsReview
+            )
+        })
         .count();
     let imported = batch
         .items
@@ -438,8 +454,19 @@ async fn render_batch_summary(state: &AppState, api: &BotApi, batch: &BatchState
 
     // Build per-item buttons
     let mut rows: Vec<serde_json::Value> = vec![];
-    for item in batch.items.iter().filter(|i| matches!(i.status, BatchItemStatus::PendingAnalysis | BatchItemStatus::NeedsReview)) {
-        let label: String = item.file_name.as_deref().unwrap_or("Video").chars().take(40).collect();
+    for item in batch.items.iter().filter(|i| {
+        matches!(
+            i.status,
+            BatchItemStatus::PendingAnalysis | BatchItemStatus::NeedsReview
+        )
+    }) {
+        let label: String = item
+            .file_name
+            .as_deref()
+            .unwrap_or("Video")
+            .chars()
+            .take(40)
+            .collect();
         rows.push(json!([{"text": format!("📹 {label}"), "callback_data": CallbackAction::BatchReview { user_id: batch.user_id, item_id: item.item_id.clone() }.encode(state).await}]));
     }
     if !rows.is_empty() {

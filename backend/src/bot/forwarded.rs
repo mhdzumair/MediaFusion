@@ -9,16 +9,14 @@ use crate::{
     state::AppState,
 };
 
-use super::{
-    api::BotApi,
-    model::ConversationState,
-};
+use super::{api::BotApi, model::ConversationState};
 
-fn override_str<'a>(overrides: &'a Value, field: &str, fallback: Option<&'a str>) -> Option<&'a str> {
-    overrides
-        .get(field)
-        .and_then(|v| v.as_str())
-        .or(fallback)
+fn override_str<'a>(
+    overrides: &'a Value,
+    field: &str,
+    fallback: Option<&'a str>,
+) -> Option<&'a str> {
+    overrides.get(field).and_then(|v| v.as_str()).or(fallback)
 }
 
 pub async fn store_forwarded_video(
@@ -47,8 +45,12 @@ pub async fn store_forwarded_video(
     let media_id: Option<i32> = import_helpers::lookup_import_media_id_with_fallback(
         &state.pool,
         meta_id,
-        data.get("meta_type").and_then(|v| v.as_str()).unwrap_or("movie"),
-        data.get("title").and_then(|v| v.as_str()).unwrap_or(file_name),
+        data.get("meta_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("movie"),
+        data.get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or(file_name),
         None,
     )
     .await
@@ -86,8 +88,7 @@ pub async fn store_forwarded_video(
         .or(parsed.title.as_deref())
         .unwrap_or(file_name);
 
-    let resolution =
-        override_str(overrides, "resolution", parsed.resolution.as_deref());
+    let resolution = override_str(overrides, "resolution", parsed.resolution.as_deref());
     let codec = override_str(overrides, "codec", parsed.codec.as_deref());
     let quality = override_str(overrides, "quality", parsed.quality.as_deref());
 
@@ -95,18 +96,22 @@ pub async fn store_forwarded_video(
     let mut backup_message_id: Option<i64> = None;
 
     if let Some(backup_channel) = &state.config.telegram_backup_channel_id {
-        if let Ok(result) = api.send_video(backup_channel.as_str(), file_id, Some(file_name)).await {
+        if let Ok(result) = api
+            .send_video(backup_channel.as_str(), file_id, Some(file_name))
+            .await
+        {
             backup_chat_id = Some(backup_channel.clone());
-            backup_message_id = result
-                .get("message_id")
-                .and_then(|v| v.as_i64());
+            backup_message_id = result.get("message_id").and_then(|v| v.as_i64());
         }
     }
 
     let primary_chat_id = backup_chat_id.as_deref().unwrap_or("bot_contribution");
     let primary_message_id = backup_message_id.unwrap_or(0);
 
-    let is_public = data.get("is_public").and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_public = data
+        .get("is_public")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let stream_id: i32 = sqlx::query_scalar(
         r#"INSERT INTO stream(
@@ -167,8 +172,9 @@ pub async fn store_forwarded_video(
     .await
     .map_err(|e| e.to_string())?;
 
-    let _ = import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(media_id))
-        .await;
+    let _ =
+        import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(media_id))
+            .await;
 
     if let Some(poster_url) = conv.custom_poster_url.as_deref().filter(|u| !u.is_empty()) {
         let _ = sqlx::query(

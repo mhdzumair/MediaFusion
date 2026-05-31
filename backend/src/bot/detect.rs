@@ -29,9 +29,7 @@ const VIDEO_MIMES: &[&str] = &[
 const VIDEO_EXTENSIONS: &[&str] = &[".mkv", ".mp4", ".avi", ".webm", ".mov"];
 
 fn magnet_re() -> &'static Regex {
-    MAGNET_RE.get_or_init(|| {
-        Regex::new(r"magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,40}[^\s]*").unwrap()
-    })
+    MAGNET_RE.get_or_init(|| Regex::new(r"magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,40}[^\s]*").unwrap())
 }
 
 fn nzb_re() -> &'static Regex {

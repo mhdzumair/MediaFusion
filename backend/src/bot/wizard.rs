@@ -8,12 +8,9 @@ use super::{
     analyze,
     api::BotApi,
     callback::CallbackAction,
-    detect,
-    import,
-    matches,
+    detect, import, matches,
     model::{ContentType, ConversationState, ConversationStep},
-    state_store,
-    text,
+    state_store, text,
 };
 
 pub async fn start_wizard(
@@ -82,14 +79,8 @@ pub async fn handle_media_type_selection(
         .await;
 
     let content_type = conv.content_type.unwrap_or(ContentType::Magnet);
-    let analysis = analyze::run_analysis(
-        state,
-        api,
-        content_type,
-        &conv.raw_input,
-        media_type,
-    )
-    .await;
+    let analysis =
+        analyze::run_analysis(state, api, content_type, &conv.raw_input, media_type).await;
 
     if analysis.get("success").and_then(|v| v.as_bool()) == Some(false) {
         let err = analysis
@@ -116,7 +107,9 @@ pub async fn handle_media_type_selection(
         conv.touch();
         state_store::save_conversation(state, &conv).await;
         let (msg, kb) = matches::show_sports_category_picker(state, user_id).await;
-        let _ = api.edit_message_text(chat_id, message_id, &msg, Some(kb)).await;
+        let _ = api
+            .edit_message_text(chat_id, message_id, &msg, Some(kb))
+            .await;
         return;
     }
 
@@ -124,7 +117,9 @@ pub async fn handle_media_type_selection(
     conv.touch();
     state_store::save_conversation(state, &conv).await;
     let (msg, kb) = matches::show_matches(state, &conv).await;
-    let _ = api.edit_message_text(chat_id, message_id, &msg, Some(kb)).await;
+    let _ = api
+        .edit_message_text(chat_id, message_id, &msg, Some(kb))
+        .await;
 }
 
 pub async fn handle_sports_category(
@@ -154,7 +149,9 @@ pub async fn handle_sports_category(
     conv.touch();
     state_store::save_conversation(state, &conv).await;
     let (msg, kb) = matches::show_metadata_review(state, &conv).await;
-    let _ = api.edit_message_text(chat_id, message_id, &msg, Some(kb)).await;
+    let _ = api
+        .edit_message_text(chat_id, message_id, &msg, Some(kb))
+        .await;
 }
 
 pub async fn handle_match_selection(
@@ -175,24 +172,26 @@ pub async fn handle_match_selection(
         .or_else(|| analysis.get("torrent_name"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let year = analysis.get("year").and_then(|v| v.as_i64()).map(|y| y as i32);
+    let year = analysis
+        .get("year")
+        .and_then(|v| v.as_i64())
+        .map(|y| y as i32);
 
-    let selected = matches::resolve_external_id(
-        state,
-        external_id,
-        media_type,
-        fallback_title,
-        year,
-    )
-    .await
-    .or_else(|| {
-        conv.matches.as_ref()?.iter().find(|m| {
-            m.get("external_id")
-                .and_then(|v| v.as_str())
-                .map(|id| id == external_id)
-                .unwrap_or(false)
-        }).cloned()
-    });
+    let selected =
+        matches::resolve_external_id(state, external_id, media_type, fallback_title, year)
+            .await
+            .or_else(|| {
+                conv.matches
+                    .as_ref()?
+                    .iter()
+                    .find(|m| {
+                        m.get("external_id")
+                            .and_then(|v| v.as_str())
+                            .map(|id| id == external_id)
+                            .unwrap_or(false)
+                    })
+                    .cloned()
+            });
 
     let Some(selected) = selected else {
         let _ = api
@@ -206,7 +205,9 @@ pub async fn handle_match_selection(
     conv.touch();
     state_store::save_conversation(state, &conv).await;
     let (msg, kb) = matches::show_metadata_review(state, &conv).await;
-    let _ = api.edit_message_text(chat_id, message_id, &msg, Some(kb)).await;
+    let _ = api
+        .edit_message_text(chat_id, message_id, &msg, Some(kb))
+        .await;
 }
 
 pub async fn handle_text_input(
@@ -225,7 +226,8 @@ pub async fn handle_text_input(
         ConversationStep::AwaitingManualImdb | ConversationStep::AwaitingTitleSearch => {
             if conv.step == ConversationStep::AwaitingTitleSearch {
                 let media_type = conv.media_type.as_deref().unwrap_or("movie");
-                let results = matches::search_by_title(state, text_input.trim(), None, media_type).await;
+                let results =
+                    matches::search_by_title(state, text_input.trim(), None, media_type).await;
                 conv.matches = Some(results);
                 conv.step = ConversationStep::AwaitingMatch;
             } else if let Some(ext_id) = matches::parse_external_id_from_text(text_input) {
@@ -242,7 +244,9 @@ pub async fn handle_text_input(
             conv.touch();
             state_store::save_conversation(state, &conv).await;
             let (msg, kb) = matches::show_matches(state, &conv).await;
-            let _ = api.edit_message_text(chat_id, message_id, &msg, Some(kb)).await;
+            let _ = api
+                .edit_message_text(chat_id, message_id, &msg, Some(kb))
+                .await;
         }
         ConversationStep::AwaitingAnonymousName => {
             if text_input.trim().to_lowercase() != "skip" {
@@ -318,7 +322,13 @@ pub async fn handle_confirm_import(
 
     // Check if user contributes anonymously and hasn't provided a display name yet
     if conv.anonymous_display_name.is_none() {
-        if let Some(uid) = crate::db::telegram::resolve_mediafusion_user_id(&state.pool, &state.redis, conv.user_id).await {
+        if let Some(uid) = crate::db::telegram::resolve_mediafusion_user_id(
+            &state.pool,
+            &state.redis,
+            conv.user_id,
+        )
+        .await
+        {
             if let Some(user_info) = crate::routes::content::import_helpers::fetch_user_info(
                 &state.pool,
                 i64::from(i32::from(uid)),
@@ -374,12 +384,7 @@ pub async fn handle_cancel(
 ) {
     state_store::clear_conversation(state, user_id).await;
     let _ = api
-        .edit_message_text(
-            chat_id,
-            message_id,
-            &text::cancel_success(),
-            None,
-        )
+        .edit_message_text(chat_id, message_id, &text::cancel_success(), None)
         .await;
 }
 
@@ -397,7 +402,9 @@ pub async fn handle_back(
     conv.touch();
     state_store::save_conversation(state, &conv).await;
     let (msg, kb) = matches::show_matches(state, &conv).await;
-    let _ = api.edit_message_text(chat_id, message_id, &msg, Some(kb)).await;
+    let _ = api
+        .edit_message_text(chat_id, message_id, &msg, Some(kb))
+        .await;
 }
 
 pub async fn handle_back_to_review(
@@ -415,7 +422,9 @@ pub async fn handle_back_to_review(
     conv.touch();
     state_store::save_conversation(state, &conv).await;
     let (msg, kb) = matches::show_metadata_review(state, &conv).await;
-    let _ = api.edit_message_text(chat_id, message_id, &msg, Some(kb)).await;
+    let _ = api
+        .edit_message_text(chat_id, message_id, &msg, Some(kb))
+        .await;
 }
 
 pub async fn handle_meta_edit(
@@ -436,9 +445,9 @@ pub async fn handle_meta_edit(
 
     let options: &[&str] = match field {
         "resolution" => &["4K", "1080p", "720p", "480p", "360p"],
-        "quality"    => &["BluRay", "WEBRip", "WEB-DL", "HDTV", "CAM"],
-        "codec"      => &["x265", "x264", "AV1", "HEVC", "H.264"],
-        _            => &[],
+        "quality" => &["BluRay", "WEBRip", "WEB-DL", "HDTV", "CAM"],
+        "codec" => &["x265", "x264", "AV1", "HEVC", "H.264"],
+        _ => &[],
     };
 
     let mut rows: Vec<serde_json::Value> = vec![];
@@ -461,12 +470,14 @@ pub async fn handle_meta_edit(
         "callback_data": CallbackAction::BackReview { user_id }.encode(state).await,
     }]));
 
-    let _ = api.edit_message_text(
-        chat_id,
-        message_id,
-        &format!("✏️ *Select {field}:*"),
-        Some(json!({ "inline_keyboard": rows })),
-    ).await;
+    let _ = api
+        .edit_message_text(
+            chat_id,
+            message_id,
+            &format!("✏️ *Select {field}:*"),
+            Some(json!({ "inline_keyboard": rows })),
+        )
+        .await;
 }
 
 pub async fn handle_meta_val(
@@ -489,5 +500,7 @@ pub async fn handle_meta_val(
     conv.touch();
     state_store::save_conversation(state, &conv).await;
     let (msg, kb) = matches::show_metadata_review(state, &conv).await;
-    let _ = api.edit_message_text(chat_id, message_id, &msg, Some(kb)).await;
+    let _ = api
+        .edit_message_text(chat_id, message_id, &msg, Some(kb))
+        .await;
 }

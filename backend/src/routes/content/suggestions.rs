@@ -287,14 +287,18 @@ async fn apply_metadata_field_change(
                 &["NONE", "MILD", "MODERATE", "SEVERE", "UNKNOWN", "DISABLE"];
             let nudity_val = suggested_value.to_ascii_uppercase();
             if !VALID_NUDITY.contains(&nudity_val.as_str()) {
-                tracing::warn!("apply_metadata_field_change: invalid nudity_status value: {suggested_value}");
-            } else if let Err(e) = sqlx::query(
-                "UPDATE media SET nudity_status = $1, updated_at = NOW() WHERE id = $2",
-            )
-            .bind(crate::db::NudityStatus::from_wire(&nudity_val).unwrap_or(crate::db::NudityStatus::Unknown))
-            .bind(media_id)
-            .execute(pool)
-            .await
+                tracing::warn!(
+                    "apply_metadata_field_change: invalid nudity_status value: {suggested_value}"
+                );
+            } else if let Err(e) =
+                sqlx::query("UPDATE media SET nudity_status = $1, updated_at = NOW() WHERE id = $2")
+                    .bind(
+                        crate::db::NudityStatus::from_wire(&nudity_val)
+                            .unwrap_or(crate::db::NudityStatus::Unknown),
+                    )
+                    .bind(media_id)
+                    .execute(pool)
+                    .await
             {
                 tracing::warn!("apply_metadata_field_change: nudity_status update failed: {e}");
             }

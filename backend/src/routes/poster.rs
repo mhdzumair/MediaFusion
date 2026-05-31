@@ -8,12 +8,7 @@ use axum::{
 };
 use tracing::{debug, warn};
 
-use crate::{
-    cache,
-    db::MediaType,
-    poster::AnnotateParams,
-    state::AppState,
-};
+use crate::{cache, db::MediaType, poster::AnnotateParams, state::AppState};
 
 pub async fn handler(
     Path((media_type, id_jpg)): Path<(String, String)>,
@@ -103,11 +98,12 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
     type Row = (Option<String>, Option<f64>, Option<String>, Option<bool>);
 
     // Frontend uses "mf:{id}", Stremio catalog uses "mf{id}" — accept both.
-    let row: Option<Row> =
-        if let Some(num_str) = id.strip_prefix("mf:").or_else(|| id.strip_prefix("mf")) {
-            let internal_id: i32 = num_str.parse().ok()?;
-            sqlx::query_as(
-                r#"
+    let row: Option<Row> = if let Some(num_str) =
+        id.strip_prefix("mf:").or_else(|| id.strip_prefix("mf"))
+    {
+        let internal_id: i32 = num_str.parse().ok()?;
+        sqlx::query_as(
+            r#"
             SELECT
                 mi.url,
                 mr.rating,
@@ -128,21 +124,18 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
             WHERE m.id = $1 AND m.type = $2
             LIMIT 1
             "#,
-            )
-            .bind(internal_id)
-            .bind(
-                MediaType::from_wire(&media_type.to_ascii_lowercase())
-                    .unwrap_or(MediaType::Movie),
-            )
-            .fetch_optional(&state.pool_ro)
-            .await
-            .unwrap_or_else(|e| {
-                warn!("poster meta mf{internal_id}: {e}");
-                None
-            })
-        } else {
-            sqlx::query_as(
-                r#"
+        )
+        .bind(internal_id)
+        .bind(MediaType::from_wire(&media_type.to_ascii_lowercase()).unwrap_or(MediaType::Movie))
+        .fetch_optional(&state.pool_ro)
+        .await
+        .unwrap_or_else(|e| {
+            warn!("poster meta mf{internal_id}: {e}");
+            None
+        })
+    } else {
+        sqlx::query_as(
+            r#"
             SELECT
                 mi.url,
                 mr.rating,
@@ -165,19 +158,16 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
               AND m.type = $2
             LIMIT 1
             "#,
-            )
-            .bind(id)
-            .bind(
-                MediaType::from_wire(&media_type.to_ascii_lowercase())
-                    .unwrap_or(MediaType::Movie),
-            )
-            .fetch_optional(&state.pool_ro)
-            .await
-            .unwrap_or_else(|e| {
-                warn!("poster meta {id}: {e}");
-                None
-            })
-        };
+        )
+        .bind(id)
+        .bind(MediaType::from_wire(&media_type.to_ascii_lowercase()).unwrap_or(MediaType::Movie))
+        .fetch_optional(&state.pool_ro)
+        .await
+        .unwrap_or_else(|e| {
+            warn!("poster meta {id}: {e}");
+            None
+        })
+    };
 
     row.map(|(url, rating, title, add_title)| PosterMeta {
         poster_url: url,

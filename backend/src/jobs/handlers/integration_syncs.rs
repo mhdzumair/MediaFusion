@@ -225,7 +225,12 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
     let result = match row.platform.as_str() {
         "trakt" => {
             let default_cid = ctx.state.config.trakt_client_id.as_deref().unwrap_or("");
-            let default_csec = ctx.state.config.trakt_client_secret.as_deref().unwrap_or("");
+            let default_csec = ctx
+                .state
+                .config
+                .trakt_client_secret
+                .as_deref()
+                .unwrap_or("");
             let Some(mut creds) = Creds::from_json(&raw, default_cid, default_csec) else {
                 mark_status(
                     &ctx.state.pool,
@@ -278,7 +283,12 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
         }
         "simkl" => {
             let default_cid = ctx.state.config.simkl_client_id.as_deref().unwrap_or("");
-            let default_csec = ctx.state.config.simkl_client_secret.as_deref().unwrap_or("");
+            let default_csec = ctx
+                .state
+                .config
+                .simkl_client_secret
+                .as_deref()
+                .unwrap_or("");
             let Some(mut creds) = Creds::from_json(&raw, default_cid, default_csec) else {
                 mark_status(
                     &ctx.state.pool,
@@ -599,8 +609,8 @@ async fn trakt_refresh(http: &reqwest::Client, creds: &Creds) -> Result<Creds, S
         return Err(format!("Trakt HTTP {status}: {snippet}"));
     }
 
-    let resp: Value = serde_json::from_str(&body)
-        .map_err(|e| format!("invalid JSON from Trakt: {e}"))?;
+    let resp: Value =
+        serde_json::from_str(&body).map_err(|e| format!("invalid JSON from Trakt: {e}"))?;
 
     let access_token = resp["access_token"]
         .as_str()
@@ -824,8 +834,8 @@ async fn simkl_refresh(http: &reqwest::Client, creds: &Creds) -> Result<Creds, S
         return Err(format!("Simkl HTTP {status}: {snippet}"));
     }
 
-    let resp: Value = serde_json::from_str(&body)
-        .map_err(|e| format!("invalid JSON from Simkl: {e}"))?;
+    let resp: Value =
+        serde_json::from_str(&body).map_err(|e| format!("invalid JSON from Simkl: {e}"))?;
 
     let access_token = resp["access_token"]
         .as_str()
@@ -966,9 +976,7 @@ async fn upsert_watch(
     .bind(episode)
     .bind(watched_at)
     .bind(WatchAction::Watched)
-    .bind(
-        HistorySource::from_wire(source).unwrap_or(HistorySource::Mediafusion),
-    )
+    .bind(HistorySource::from_wire(source).unwrap_or(HistorySource::Mediafusion))
     .execute(pool)
     .await
     .map(|r| r.rows_affected() > 0)

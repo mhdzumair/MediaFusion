@@ -734,8 +734,7 @@ pub async fn search_metadata(
             )
             .bind(q)
             .bind(
-                MediaType::from_wire(&media_type.to_ascii_lowercase())
-                    .unwrap_or(MediaType::Movie),
+                MediaType::from_wire(&media_type.to_ascii_lowercase()).unwrap_or(MediaType::Movie),
             )
             .fetch_one(&state.pool_ro)
             .await
@@ -765,8 +764,7 @@ pub async fn search_metadata(
             )
             .bind(q)
             .bind(
-                MediaType::from_wire(&media_type.to_ascii_lowercase())
-                    .unwrap_or(MediaType::Movie),
+                MediaType::from_wire(&media_type.to_ascii_lowercase()).unwrap_or(MediaType::Movie),
             )
             .bind(page_size)
             .bind(offset)
