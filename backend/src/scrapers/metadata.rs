@@ -787,39 +787,47 @@ pub async fn fetch_by_external_id_with_opts(
                 let url = format!(
                 "https://api.themoviedb.org/3/find/{external_id}?api_key={api_key}&external_source=imdb_id"
             );
-                let data: serde_json::Value = http
-                    .get(&url)
-                    .timeout(std::time::Duration::from_secs(10))
-                    .send()
-                    .await
-                    .ok()?
-                    .json()
-                    .await
-                    .ok()?;
-                let results = if is_series {
-                    data["tv_results"].as_array()
-                } else {
-                    data["movie_results"].as_array()
-                }?;
-                let tmdb_id = results.first()?["id"].as_i64()?.to_string();
-                let kind = if is_series { "tv" } else { "movie" };
-                let detail_url =
-                    format!("https://api.themoviedb.org/3/{kind}/{tmdb_id}?api_key={api_key}");
-                let detail: serde_json::Value = http
-                    .get(&detail_url)
-                    .timeout(std::time::Duration::from_secs(10))
-                    .send()
-                    .await
-                    .ok()?
-                    .json()
-                    .await
-                    .ok()?;
-                let mut result = parse_tmdb_details(&detail, is_series)?;
-                // Preserve the original IMDb ID the caller passed in.
-                if result.imdb_id.is_none() {
-                    result.imdb_id = Some(external_id.to_string());
+                let tmdb_result: Option<serde_json::Value> = async {
+                    let data: serde_json::Value = http
+                        .get(&url)
+                        .timeout(std::time::Duration::from_secs(10))
+                        .send()
+                        .await
+                        .ok()?
+                        .json()
+                        .await
+                        .ok()?;
+                    let results = if is_series {
+                        data["tv_results"].as_array()?.to_owned()
+                    } else {
+                        data["movie_results"].as_array()?.to_owned()
+                    };
+                    let tmdb_id = results.first()?["id"].as_i64()?.to_string();
+                    let kind = if is_series { "tv" } else { "movie" };
+                    let detail_url = format!(
+                        "https://api.themoviedb.org/3/{kind}/{tmdb_id}?api_key={api_key}"
+                    );
+                    http.get(&detail_url)
+                        .timeout(std::time::Duration::from_secs(10))
+                        .send()
+                        .await
+                        .ok()?
+                        .json()
+                        .await
+                        .ok()
                 }
-                return Some(result);
+                .await;
+
+                if let Some(detail) = tmdb_result {
+                    if let Some(mut result) = parse_tmdb_details(&detail, is_series) {
+                        // Preserve the original IMDb ID the caller passed in.
+                        if result.imdb_id.is_none() {
+                            result.imdb_id = Some(external_id.to_string());
+                        }
+                        return Some(result);
+                    }
+                }
+                // TMDB lookup failed or returned no results — fall through to Cinemeta.
             }
             if opts.cinemeta_fallback {
                 return cinemeta_fetch_details(http, external_id, is_series).await;

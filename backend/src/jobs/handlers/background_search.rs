@@ -7,6 +7,7 @@ use serde::Deserialize;
 use tracing::{debug, warn};
 
 use crate::{
+    db::MediaType,
     jobs::{
         error::JobError,
         handler::{JobCtx, JobHandler},
@@ -44,9 +45,10 @@ struct MediaRow {
 async fn lookup_movie(pool: &sqlx::PgPool, id: &str) -> Option<MediaRow> {
     let parsed_id: i32 = id.parse().ok()?;
     sqlx::query_as::<_, (i32, String, Option<i32>)>(
-        "SELECT id, title, year FROM media WHERE id = $1 AND type = 'movie'",
+        "SELECT id, title, year FROM media WHERE id = $1 AND type = $2",
     )
     .bind(parsed_id)
+    .bind(MediaType::Movie)
     .fetch_optional(pool)
     .await
     .ok()?
@@ -59,9 +61,10 @@ async fn lookup_movie(pool: &sqlx::PgPool, id: &str) -> Option<MediaRow> {
 
 async fn lookup_series_media(pool: &sqlx::PgPool, media_id: i32) -> Option<MediaRow> {
     sqlx::query_as::<_, (i32, String, Option<i32>)>(
-        "SELECT id, title, year FROM media WHERE id = $1 AND type = 'series'",
+        "SELECT id, title, year FROM media WHERE id = $1 AND type = $2",
     )
     .bind(media_id)
+    .bind(MediaType::Series)
     .fetch_optional(pool)
     .await
     .ok()?

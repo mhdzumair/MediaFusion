@@ -770,13 +770,52 @@ async fn build_pipeline(
 
     // 2. Resolve imdb_id → (primary_id, related_ids)
     let cache_key = format!("{imdb_id}:{media_type}");
-    let (media_id, related_ids) = if let Some(ids) = state.id_cache.get(&cache_key).await {
+    let (mut media_id, mut related_ids) = if let Some(ids) = state.id_cache.get(&cache_key).await {
         ids
     } else {
         let ids = db::resolve_media_ids(&state.pool, imdb_id, media_type).await?;
-        state.id_cache.insert(cache_key, ids.clone()).await;
+        state.id_cache.insert(cache_key.clone(), ids.clone()).await;
         ids
     };
+
+    // 2b. On-demand fetch-and-create when the id is unknown but live search is active.
+    // Mirrors the Python `_fetch_missing_media_for_live_search` path: fetch metadata from
+    // TMDB (via find/{imdb_id}) / Cinemeta and insert a media row so the live-scrape step
+    // below (Prowlarr / Jackett) can run.  We only do this when `live_search_streams` is on
+    // to preserve Python parity — it was always gated on that flag.
+    if media_id == db::MediaId(0)
+        && related_ids.is_empty()
+        && user_data.live_search_streams
+        && crate::scrapers::metadata::parse_import_meta_id(imdb_id).is_some()
+    {
+        if let Some(created_raw_id) = crate::scrapers::media_resolve::ensure_media_for_import(
+            &state.pool,
+            &state.http,
+            imdb_id,
+            media_type,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            crate::scrapers::media_resolve::ImportMediaOverrides {
+                title: None,
+                poster: None,
+                background: None,
+                release_date: None,
+                year: None,
+            },
+            None,
+        )
+        .await
+        {
+            let new_id = db::MediaId(created_raw_id);
+            // Update the id cache so subsequent requests hit the DB row directly.
+            state.id_cache.insert(cache_key, (new_id, vec![])).await;
+            media_id = new_id;
+            related_ids = vec![];
+            tracing::info!(
+                "stream: on-demand metadata created for {imdb_id} (media_id={created_raw_id})"
+            );
+        }
+    }
 
     let disabled = &state.config.disabled_providers;
 
