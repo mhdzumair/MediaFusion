@@ -12,6 +12,7 @@ use mediafusion_api::{
             cleanup::Cleanup,
             discover_prewarm::DiscoverPrewarm,
             dmm_hashlist::DmmHashlistScraper,
+            imdb_dataset_import::ImdbDatasetImport,
             integration_syncs::IntegrationSyncs,
             jackett_feed::JackettFeedScraper,
             m3u_import::M3uImport,
@@ -182,6 +183,7 @@ async fn main() {
     reg.register(Arc::new(UpdateSeeders));
     reg.register(Arc::new(UpdateTvPosters));
     reg.register(Arc::new(DiscoverPrewarm));
+    reg.register(Arc::new(ImdbDatasetImport));
     reg.register(Arc::new(Cleanup));
     reg.register(Arc::new(IntegrationSyncs));
     reg.register(Arc::new(M3uImport));

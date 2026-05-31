@@ -64,6 +64,7 @@ sha2 = "0.11"
 
 # Compression
 flate2 = "1"
+tempfile = "3"
 
 # Random bytes for AES IV generation + sports poster selection
 rand_core = "0.10"

@@ -233,6 +233,12 @@ pub struct AppConfig {
     pub tvdb_api_key: Option<String>,
     /// When false, do not call v3-cinemeta.strem.io (mirrors Python `imdb_cinemeta_fallback_enabled`).
     pub imdb_cinemeta_fallback_enabled: bool,
+    /// Base URL for IMDb non-commercial dataset files.
+    pub imdb_datasets_base_url: String,
+    /// Include adult titles when importing IMDb basics (default: false).
+    pub imdb_import_include_adult: bool,
+    /// Optional allowlist of dataset keys to import (empty = all).
+    pub imdb_import_datasets: Vec<String>,
     /// Primary metadata source for scrapers (`imdb` or `tmdb`, Python `metadata_primary_source`).
     pub metadata_primary_source: String,
     /// Ordered anime provider chain for search/fetch (`kitsu`, `anilist`).
@@ -650,6 +656,24 @@ impl AppConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(true),
+            imdb_datasets_base_url: env("IMDB_DATASETS_BASE_URL")
+                .unwrap_or_else(|_| "https://datasets.imdbws.com".into())
+                .trim_end_matches('/')
+                .to_string(),
+            imdb_import_include_adult: env("IMDB_IMPORT_INCLUDE_ADULT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(false),
+            imdb_import_datasets: env("IMDB_IMPORT_DATASETS")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(|s| {
+                    s.split(',')
+                        .map(|p| p.trim().to_ascii_lowercase())
+                        .filter(|p| !p.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default(),
             metadata_primary_source: env("METADATA_PRIMARY_SOURCE")
                 .unwrap_or_else(|_| "imdb".into())
                 .to_lowercase(),

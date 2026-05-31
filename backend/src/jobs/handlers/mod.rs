@@ -3,6 +3,7 @@ pub mod background_search;
 pub mod cleanup;
 pub mod discover_prewarm;
 pub mod dmm_hashlist;
+pub mod imdb_dataset_import;
 pub mod integration_syncs;
 pub mod jackett_feed;
 pub mod m3u_import;

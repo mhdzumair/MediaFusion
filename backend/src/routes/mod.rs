@@ -568,6 +568,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/scrapers/catalogs", get(admin_scrapers::get_catalog_data))
         .route("/api/v1/admin/scrapers/status", get(admin_scrapers::get_scraper_status))
         .route("/api/v1/admin/scrapers/dmm-hashlist/status", get(admin_scrapers::get_dmm_hashlist_status))
+        .route("/api/v1/admin/scrapers/imdb-dataset/status", get(admin_scrapers::get_imdb_dataset_status))
         .route("/api/v1/admin/scrapers/dmm-hashlist/run", post(admin_scrapers::run_dmm_hashlist))
         .route("/api/v1/admin/scrapers/dmm-hashlist/run-full", post(admin_scrapers::run_dmm_hashlist_full))
         .route("/api/v1/admin/scrapers/migrate-media", post(admin_scrapers::migrate_media))

@@ -506,6 +506,32 @@ pub async fn get_dmm_hashlist_status(
     .into_response()
 }
 
+/// GET /api/v1/admin/scrapers/imdb-dataset/status
+pub async fn get_imdb_dataset_status(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    use fred::prelude::KeysInterface;
+
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return forbidden();
+    }
+
+    let raw: Option<String> = state.redis.get("imdb_import:status").await.unwrap_or(None);
+
+    if let Some(s) = raw {
+        if let Ok(v) = serde_json::from_str::<Value>(&s) {
+            return Json(v).into_response();
+        }
+    }
+
+    Json(json!({
+        "phase": "idle",
+        "message": "IMDb dataset import status not available"
+    }))
+    .into_response()
+}
+
 /// POST /api/v1/admin/scrapers/dmm-hashlist/run
 pub async fn run_dmm_hashlist(
     headers: HeaderMap,
@@ -1473,6 +1499,13 @@ const SCHEDULER_JOBS: &[(&str, &str, &str, &str, &str)] = &[
         "Runs background searches for missing content",
         "*/3 * * * *",
     ),
+    (
+        "imdb_dataset_import",
+        "IMDb Dataset Import",
+        "background",
+        "Bulk import of IMDb non-commercial metadata datasets",
+        "0 4 * * 0",
+    ),
 ];
 
 /// Scrapy spider job IDs — use `background_tasks:run_spider:spider_name={id}` Redis key.
@@ -1622,6 +1655,7 @@ fn job_id_to_queue(job_id: &str) -> &'static str {
         "cleanup_expired_scraper_task" => "cleanup",
         "cleanup_expired_cache_task" => "cleanup",
         "background_search" => "background_search",
+        "imdb_dataset_import" => "imdb_dataset_import",
         _ => "default",
     }
 }
@@ -1787,6 +1821,7 @@ async fn dispatch_scheduler_job(
             "cleanup_expired_scraper_task" => ("cleanup", json!({"task": "scraper_task"})),
             "cleanup_expired_cache_task" => ("cleanup", json!({"task": "cache"})),
             "background_search" => ("background_search", json!({})),
+            "imdb_dataset_import" => ("imdb_dataset_import", json!({})),
             _ => return Err(()),
         }
     };

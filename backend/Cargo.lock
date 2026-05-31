@@ -2881,6 +2881,7 @@ dependencies = [
  "sha2 0.11.0",
  "sqlx",
  "strsim",
+ "tempfile",
  "thiserror 2.0.18",
  "tikv-jemallocator",
  "tokio",
