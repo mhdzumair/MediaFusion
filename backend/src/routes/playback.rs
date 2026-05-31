@@ -463,6 +463,8 @@ async fn resolve_playback_url(
                 season,
                 episode,
                 ip_hint(true),
+                stream_info.torrent_file.as_deref(),
+                Some(stream_info.name.as_str()),
                 fwd,
             )
             .await?;

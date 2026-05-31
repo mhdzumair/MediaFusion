@@ -537,6 +537,8 @@ pub struct StreamPlaybackInfo {
     pub has_no_files: bool,
     /// Total torrent size in bytes (from torrent_stream.total_size), if known.
     pub size_bytes: Option<i64>,
+    /// Raw .torrent bytes for private/semi-private streams (when stored in DB).
+    pub torrent_file: Option<Vec<u8>>,
 }
 
 /// Fetch stream playback info for the given info_hash.
@@ -556,6 +558,7 @@ pub async fn fetch_stream_playback_info(
         Option<String>,
         Option<i64>,
         Option<i64>,
+        Option<Vec<u8>>,
     ) = match (season, episode) {
         (Some(s), Some(e)) => {
             sqlx::query_as(
@@ -566,7 +569,8 @@ pub async fn fetch_stream_playback_info(
                     sf.file_index,
                     sf.filename,
                     COUNT(sf2.id) AS total_files,
-                    ts.total_size
+                    ts.total_size,
+                    ts.torrent_file
                 FROM torrent_stream ts
                 JOIN stream st ON st.id = ts.stream_id
                 LEFT JOIN torrent_tracker_link ttl ON ttl.torrent_id = ts.id
@@ -580,7 +584,7 @@ pub async fn fetch_stream_playback_info(
                     LIMIT 1
                 ) sf ON sf.stream_id = st.id
                 WHERE ts.info_hash = $1
-                GROUP BY st.id, st.name, sf.file_index, sf.filename, ts.total_size
+                GROUP BY st.id, st.name, sf.file_index, sf.filename, ts.total_size, ts.torrent_file
                 "#,
             )
             .bind(info_hash)
@@ -607,7 +611,8 @@ pub async fn fetch_stream_playback_info(
                      ORDER BY sf.file_index ASC NULLS LAST
                      LIMIT 1) AS filename,
                     (SELECT COUNT(*) FROM stream_file sf WHERE sf.stream_id = st.id) AS total_files,
-                    ts.total_size
+                    ts.total_size,
+                    ts.torrent_file
                 FROM torrent_stream ts
                 JOIN stream st ON st.id = ts.stream_id
                 LEFT JOIN torrent_tracker_link ttl ON ttl.torrent_id = ts.id
@@ -632,6 +637,7 @@ pub async fn fetch_stream_playback_info(
         filename: row.3,
         has_no_files: total_files == 0,
         size_bytes: row.5.filter(|&s| s > 0),
+        torrent_file: row.6.filter(|bytes| !bytes.is_empty()),
     })
 }
 

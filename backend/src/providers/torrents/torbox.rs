@@ -245,6 +245,72 @@ async fn create_torrent(
     tb_post_form(http, token, &url, &[("magnet", magnet)], forward).await
 }
 
+async fn create_torrent_file(
+    http: &reqwest::Client,
+    token: &str,
+    torrent_bytes: &[u8],
+    torrent_name: Option<&str>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    let url = format!("{BASE_URL}/torrents/createtorrent");
+    let filename = torrent_name
+        .filter(|n| !n.is_empty())
+        .map(|n| {
+            if n.ends_with(".torrent") {
+                n.to_string()
+            } else {
+                format!("{n}.torrent")
+            }
+        })
+        .unwrap_or_else(|| "torrent.torrent".to_string());
+
+    let resp = if let Some(fwd) = forward {
+        let boundary = "mediafusion_boundary_torrent_upload";
+        let mut body: Vec<u8> = Vec::new();
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: application/x-bittorrent\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(torrent_bytes);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        let content_type = format!("multipart/form-data; boundary={boundary}");
+        fwd.post_raw(http, &url, token, &content_type, body).await?
+    } else {
+        let part = reqwest::multipart::Part::bytes(torrent_bytes.to_vec())
+            .file_name(filename)
+            .mime_str("application/x-bittorrent")
+            .map_err(|e| ProviderError::Other(format!("TorBox: mime error: {e}")))?;
+        let form = reqwest::multipart::Form::new().part("file", part);
+        http.post(&url)
+            .bearer_auth(token)
+            .multipart(form)
+            .send()
+            .await?
+    };
+
+    let body: Value = response_json(resp, "torbox create_torrent_file").await?;
+    check_torbox_error(&body)?;
+    Ok(body)
+}
+
+async fn submit_torrent(
+    http: &reqwest::Client,
+    token: &str,
+    magnet: &str,
+    torrent_file: Option<&[u8]>,
+    torrent_name: Option<&str>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Value, ProviderError> {
+    if let Some(bytes) = torrent_file.filter(|b| !b.is_empty()) {
+        create_torrent_file(http, token, bytes, torrent_name, forward).await
+    } else {
+        create_torrent(http, token, magnet, forward).await
+    }
+}
+
 /// Build a TorBox `requestdl` URL with `redirect=true` so the player follows
 /// straight to the CDN without an extra server-side JSON round trip.
 fn request_download_link(
@@ -332,6 +398,8 @@ pub async fn get_video_url(
     season: Option<i32>,
     episode: Option<i32>,
     user_ip: Option<&str>,
+    torrent_file: Option<&[u8]>,
+    torrent_name: Option<&str>,
     forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
     let magnet = format!(
@@ -381,7 +449,16 @@ pub async fn get_video_url(
 
     // Add the torrent; DIFF_ISSUE means TorBox already has it (caching race with
     // our earlier mylist/queued check) — treat it like "Found Cached" by retrying.
-    let create_resp = match create_torrent(http, token, &magnet, forward).await {
+    let create_resp = match submit_torrent(
+        http,
+        token,
+        &magnet,
+        torrent_file,
+        torrent_name,
+        forward,
+    )
+    .await
+    {
         Ok(r) => r,
         Err(ProviderError::Api { ref message, .. }) if message.contains("DIFF_ISSUE") => {
             let mylist2 = get_mylist(http, token, forward).await?;
