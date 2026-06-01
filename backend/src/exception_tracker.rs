@@ -109,10 +109,38 @@ impl tracing::field::Visit for MessageVisitor {
 
 // ─── Fingerprint ──────────────────────────────────────────────────────────────
 
+/// Normalize a message so that variable parts (numbers, hex hashes) collapse to
+/// a placeholder, allowing similar errors from the same site to share a bucket.
+///
+/// Examples:
+///   "realdebrid torrents page 3: HTTP 401"  →  "realdebrid torrents page N: HTTP NNN"
+///   "meta query [tt12345]: decode error"     →  "meta query [ttNNNNN]: decode error"
+fn normalize_message(msg: &str) -> String {
+    let mut out = String::with_capacity(msg.len().min(80));
+    let mut chars = msg.chars().peekable();
+    while out.len() < 80 {
+        match chars.next() {
+            None => break,
+            Some(c) if c.is_ascii_digit() => {
+                out.push('N');
+                // consume the rest of the digit run
+                while chars.peek().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                    chars.next();
+                }
+            }
+            Some(c) => out.push(c),
+        }
+    }
+    out
+}
+
 fn fingerprint(file: Option<&str>, line: Option<u32>, msg: &str) -> String {
+    // Include a normalized message prefix so errors at the same source location
+    // but with different messages (different error classes) get distinct fingerprints.
+    let normalized = normalize_message(msg);
     let raw = match (file, line) {
-        (Some(f), Some(l)) => format!("{f}:{l}"),
-        _ => msg.chars().take(100).collect::<String>(),
+        (Some(f), Some(l)) => format!("{f}:{l}:{normalized}"),
+        _ => normalized,
     };
     let hash = Sha256::digest(raw.as_bytes());
     hash.iter().take(8).map(|b| format!("{b:02x}")).collect()
@@ -173,11 +201,15 @@ async fn store_event(redis: &fred::clients::Client, ev: ExcEvent, ttl: i64, max_
             .and_then(|c| c.parse().ok())
             .unwrap_or(1)
             + 1;
+        // Keep `traceback` in sync with the stored message so the detail view is
+        // consistent. The message shown in the list is always the latest occurrence.
+        let traceback = format!("{} at {source}\n{}", ev.level, ev.message);
         let mut fields: HashMap<String, String> = HashMap::new();
         fields.insert("count".into(), count.to_string());
         fields.insert("last_seen".into(), now);
         fields.insert("message".into(), ev.message);
         fields.insert("source".into(), source);
+        fields.insert("traceback".into(), traceback);
         let _ = redis.hset::<(), _, _>(&key, fields).await;
     }
 
