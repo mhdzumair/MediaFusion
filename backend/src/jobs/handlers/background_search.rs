@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use fred::prelude::{HashesInterface, SetsInterface};
@@ -12,19 +13,14 @@ use crate::{
         error::JobError,
         handler::{JobCtx, JobHandler},
     },
-    scrapers::{persist, SearchMeta},
+    models::user_data::UserData,
+    scrapers::{background_queue, orchestrator, SearchMeta},
+    state::AppState,
 };
 
 pub struct BackgroundSearch;
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const MOVIES_KEY: &str = "background_search:movies";
-const SERIES_KEY: &str = "background_search:series";
-const PROCESSING_KEY: &str = "background_search:processing";
 const BATCH_SIZE: usize = 10;
-/// Default re-scrape interval: 24 hours in seconds.
-const DEFAULT_INTERVAL_SECS: f64 = 86_400.0;
 
 // ─── Queue item value shape ───────────────────────────────────────────────────
 
@@ -105,36 +101,20 @@ impl JobHandler for BackgroundSearch {
 
     async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
         let redis = &ctx.state.redis;
-        let pool = &ctx.state.pool;
         let config = &ctx.state.config;
-        let client = &ctx.state.http;
-
         let now = now_f64();
+        let interval_secs = (config.background_search_interval_hours * 3600) as f64;
 
-        // Re-scrape interval: use the configured prowlarr/jackett TTL as proxy,
-        // falling back to 24 h.
-        let interval_secs = if config.prowlarr_url.is_some() {
-            config.prowlarr_search_ttl as f64
-        } else if config.jackett_url.is_some() {
-            config.jackett_search_ttl as f64
-        } else {
-            DEFAULT_INTERVAL_SECS
-        };
-
-        // Collect due items from both queues
         let movies_raw: HashMap<String, String> = redis
-            .hgetall::<HashMap<String, String>, _>(MOVIES_KEY)
+            .hgetall::<HashMap<String, String>, _>(background_queue::MOVIES_KEY)
             .await
             .unwrap_or_default();
 
         let series_raw: HashMap<String, String> = redis
-            .hgetall::<HashMap<String, String>, _>(SERIES_KEY)
+            .hgetall::<HashMap<String, String>, _>(background_queue::SERIES_KEY)
             .await
             .unwrap_or_default();
 
-        // Each item in the work queue: (key, media_type_queue_key, item_key)
-        // item_key for movies = media_id string
-        // item_key for series = "{media_id}:{season}:{episode}"
         let mut due: Vec<(String, &'static str)> = Vec::new();
 
         for (item_key, json_val) in &movies_raw {
@@ -148,13 +128,13 @@ impl JobHandler for BackgroundSearch {
                 continue;
             }
             let in_processing: bool = redis
-                .sismember::<bool, _, _>(PROCESSING_KEY, item_key.as_str())
+                .sismember::<bool, _, _>(background_queue::PROCESSING_KEY, item_key.as_str())
                 .await
                 .unwrap_or(false);
             if in_processing {
                 continue;
             }
-            due.push((item_key.clone(), MOVIES_KEY));
+            due.push((item_key.clone(), background_queue::MOVIES_KEY));
         }
 
         for (item_key, json_val) in &series_raw {
@@ -168,13 +148,13 @@ impl JobHandler for BackgroundSearch {
                 continue;
             }
             let in_processing: bool = redis
-                .sismember::<bool, _, _>(PROCESSING_KEY, item_key.as_str())
+                .sismember::<bool, _, _>(background_queue::PROCESSING_KEY, item_key.as_str())
                 .await
                 .unwrap_or(false);
             if in_processing {
                 continue;
             }
-            due.push((item_key.clone(), SERIES_KEY));
+            due.push((item_key.clone(), background_queue::SERIES_KEY));
         }
 
         debug!("background_search: {} items due for re-scrape", due.len());
@@ -185,20 +165,18 @@ impl JobHandler for BackgroundSearch {
                 return Err(JobError::Cancelled);
             }
 
-            // Mark as processing
             let _ = redis
-                .sadd::<(), _, _>(PROCESSING_KEY, item_key.as_str())
+                .sadd::<(), _, _>(background_queue::PROCESSING_KEY, item_key.as_str())
                 .await;
 
-            let result = process_item(&item_key, queue_key, pool, client, redis, config, now).await;
+            let result = process_item(&item_key, queue_key, &ctx.state, now).await;
 
             if let Err(e) = result {
                 warn!("background_search: item {item_key} failed: {e}");
             }
 
-            // Always unmark processing
             let _ = redis
-                .srem::<(), _, _>(PROCESSING_KEY, item_key.as_str())
+                .srem::<(), _, _>(background_queue::PROCESSING_KEY, item_key.as_str())
                 .await;
         }
 
@@ -209,32 +187,27 @@ impl JobHandler for BackgroundSearch {
 async fn process_item(
     item_key: &str,
     queue_key: &'static str,
-    pool: &sqlx::PgPool,
-    client: &reqwest::Client,
-    redis: &fred::clients::Client,
-    config: &crate::config::AppConfig,
+    state: &Arc<AppState>,
     now: f64,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let is_movie = queue_key == MOVIES_KEY;
+    let redis = &state.redis;
+    let pool = &state.pool;
+    let is_movie = queue_key == background_queue::MOVIES_KEY;
 
-    // Parse the item_key
     let (media_id_str, season, episode): (&str, Option<i32>, Option<i32>) = if is_movie {
         (item_key, None, None)
     } else {
-        // Format: "{media_id}:{season}:{episode}"
         let parts: Vec<&str> = item_key.splitn(3, ':').collect();
         if parts.len() == 3 {
             let s: Option<i32> = parts[1].parse().ok();
             let e: Option<i32> = parts[2].parse().ok();
             (parts[0], s, e)
         } else {
-            // Malformed key — remove from hash
             let _ = redis.hdel::<(), _, _>(queue_key, item_key).await;
             return Ok(());
         }
     };
 
-    // Look up media in DB
     let media = if is_movie {
         match lookup_movie(pool, media_id_str).await {
             Some(m) => m,
@@ -273,62 +246,17 @@ async fn process_item(
 
     let media_type = if is_movie { "movie" } else { "series" };
 
-    // Scrape from configured providers
-    let max_process = 50usize;
-    let max_time = Duration::from_secs(120);
-    let query_timeout = Duration::from_secs(30);
+    orchestrator::run_background(
+        state,
+        &UserData::default(),
+        &meta,
+        media_type,
+        season,
+        episode,
+        "background",
+    )
+    .await;
 
-    let mut all_streams = Vec::new();
-
-    if let (Some(url), Some(key)) = (&config.prowlarr_url, &config.prowlarr_api_key) {
-        let streams = crate::scrapers::prowlarr::scrape(
-            client,
-            url,
-            key,
-            &meta,
-            media_type,
-            season,
-            episode,
-            max_process,
-            max_time,
-            query_timeout,
-        )
-        .await;
-        debug!(
-            "background_search: prowlarr returned {} streams for {}",
-            streams.len(),
-            item_key
-        );
-        all_streams.extend(streams);
-    }
-
-    if let (Some(url), Some(key)) = (&config.jackett_url, &config.jackett_api_key) {
-        let streams = crate::scrapers::jackett::scrape(
-            client,
-            url,
-            key,
-            &meta,
-            media_type,
-            season,
-            episode,
-            max_process,
-            max_time,
-            query_timeout,
-        )
-        .await;
-        debug!(
-            "background_search: jackett returned {} streams for {}",
-            streams.len(),
-            item_key
-        );
-        all_streams.extend(streams);
-    }
-
-    if !all_streams.is_empty() {
-        persist::write_back(&all_streams, pool, &meta, media_type, season, episode).await;
-    }
-
-    // Update last_scrape timestamp in Redis
     let updated = serde_json::json!({
         "last_scrape": now,
         "added_at": now,

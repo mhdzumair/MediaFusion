@@ -126,7 +126,32 @@ async fn serve_meta(
         return Json(cached).into_response();
     }
 
-    let Some(meta) = build_meta(&state, media_type, meta_id).await else {
+    let mut meta = build_meta(&state, media_type, meta_id).await;
+    if meta.is_none()
+        && crate::scrapers::metadata::parse_import_meta_id(meta_id).is_some()
+        && crate::scrapers::media_resolve::ensure_media_for_import(
+            &state.pool,
+            &state.http,
+            meta_id,
+            media_type,
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            crate::scrapers::media_resolve::ImportMediaOverrides {
+                title: None,
+                poster: None,
+                background: None,
+                release_date: None,
+                year: None,
+            },
+            None,
+        )
+        .await
+        .is_some()
+    {
+        meta = build_meta(&state, media_type, meta_id).await;
+    }
+
+    let Some(meta) = meta else {
         return StatusCode::NOT_FOUND.into_response();
     };
 

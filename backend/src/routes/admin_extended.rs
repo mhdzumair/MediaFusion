@@ -790,10 +790,12 @@ fn agg_hash_to_item(ep_key: &str, data: std::collections::HashMap<String, String
         .get("method")
         .cloned()
         .unwrap_or_else(|| ep_key.split(':').next().unwrap_or("").to_string());
-    let route = data
-        .get("route")
-        .cloned()
-        .unwrap_or_else(|| ep_key.splitn(2, ':').nth(1).unwrap_or(ep_key).to_string());
+    let route = data.get("route").cloned().unwrap_or_else(|| {
+        ep_key
+            .split_once(':')
+            .map(|(_, rest)| rest.to_string())
+            .unwrap_or_else(|| ep_key.to_string())
+    });
 
     json!({
         "endpoint_key": ep_key,
@@ -877,21 +879,13 @@ pub async fn list_endpoint_stats(
             "avg_time" | "min_time" | "max_time" => {
                 a.get(sort_by).and_then(|v| v.as_f64()).unwrap_or(0.0)
             }
-            _ => {
-                a.get(sort_by)
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0) as f64
-            }
+            _ => a.get(sort_by).and_then(|v| v.as_i64()).unwrap_or(0) as f64,
         };
         let vb = match sort_by {
             "avg_time" | "min_time" | "max_time" => {
                 b.get(sort_by).and_then(|v| v.as_f64()).unwrap_or(0.0)
             }
-            _ => {
-                b.get(sort_by)
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0) as f64
-            }
+            _ => b.get(sort_by).and_then(|v| v.as_i64()).unwrap_or(0) as f64,
         };
         if sort_desc {
             vb.partial_cmp(&va).unwrap_or(std::cmp::Ordering::Equal)

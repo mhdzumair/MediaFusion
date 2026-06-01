@@ -1,6 +1,10 @@
+use std::collections::{HashMap, HashSet};
+use std::time::Duration;
+
+use quick_xml::events::Event;
+use quick_xml::Reader;
 use reqwest::Client;
 use serde::Deserialize;
-use std::time::Duration;
 
 use crate::{
     parser,
@@ -16,7 +20,8 @@ use crate::{
 
 pub(crate) const RESULT_PROCESS_CONCURRENCY: usize = 5;
 
-// ─── Jackett JSON response shapes ─────────────────────────────────────────────
+const MOVIE_CATEGORY_IDS: &[i64] = &[2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060, 2070];
+const SERIES_CATEGORY_IDS: &[i64] = &[5000, 5010, 5020, 5030, 5040, 5045, 5050, 5060, 5070];
 
 #[derive(Debug, Deserialize)]
 struct JackettResponse {
@@ -48,7 +53,151 @@ pub(crate) struct JackettResult {
     category_desc: Option<String>,
 }
 
-// ─── Public entry point ───────────────────────────────────────────────────────
+#[derive(Debug, Clone)]
+pub struct JackettIndexer {
+    pub id: String,
+    pub name: String,
+    pub categories: Vec<i64>,
+    pub supports_imdb_movie: bool,
+    pub supports_imdb_tv: bool,
+    pub supports_search: bool,
+}
+
+pub async fn list_healthy_indexers(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+) -> Vec<JackettIndexer> {
+    let url = format!(
+        "{}/api/v2.0/indexers/!status:failing/results/torznab/api",
+        base_url.trim_end_matches('/')
+    );
+    let resp = match client
+        .get(url)
+        .query(&[
+            ("apikey", api_key),
+            ("t", "indexers"),
+            ("configured", "true"),
+        ])
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => r,
+        Ok(r) => {
+            tracing::debug!("jackett: indexer list HTTP {}", r.status());
+            return vec![];
+        }
+        Err(e) => {
+            tracing::debug!("jackett: indexer list failed: {e}");
+            return vec![];
+        }
+    };
+
+    let xml = resp.text().await.unwrap_or_default();
+    parse_jackett_indexers(&xml)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn scrape_indexer(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+    idx: &JackettIndexer,
+    meta: &SearchMeta,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+    max_process: usize,
+    query_timeout: Duration,
+    title_queries: &[String],
+    deadline: tokio::time::Instant,
+) -> Vec<ScrapedStream> {
+    if tokio::time::Instant::now() >= deadline {
+        return vec![];
+    }
+
+    let queries = build_queries(meta, media_type, season, episode, title_queries);
+    if queries.is_empty() {
+        return vec![];
+    }
+
+    let categories: Vec<i64> = if media_type == "series" {
+        SERIES_CATEGORY_IDS.to_vec()
+    } else {
+        MOVIE_CATEGORY_IDS.to_vec()
+    };
+
+    let mut all_results: Vec<JackettResult> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    for query in queries {
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
+
+        let mut params: Vec<(&str, String)> = vec![
+            ("apikey", api_key.to_string()),
+            ("Query", query),
+            ("Tracker[]", idx.id.clone()),
+        ];
+        for cat in &categories {
+            params.push(("Category[]", cat.to_string()));
+        }
+
+        let resp = match client
+            .get(format!(
+                "{}/api/v2.0/indexers/all/results",
+                base_url.trim_end_matches('/')
+            ))
+            .query(&params)
+            .timeout(query_timeout)
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::debug!("jackett indexer {} request failed: {e}", idx.name);
+                continue;
+            }
+        };
+
+        let body: JackettResponse = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::debug!("jackett indexer {} parse failed: {e}", idx.name);
+                continue;
+            }
+        };
+
+        for result in body.results {
+            let dedupe_key = result
+                .info_hash
+                .clone()
+                .or_else(|| result.guid.clone())
+                .unwrap_or_default()
+                .to_lowercase();
+            if dedupe_key.is_empty() || seen.insert(dedupe_key) {
+                all_results.push(result);
+                if all_results.len() >= max_process {
+                    break;
+                }
+            }
+        }
+        if all_results.len() >= max_process {
+            break;
+        }
+    }
+
+    let items: Vec<JackettResult> = all_results.into_iter().take(max_process).collect();
+    use futures::stream::{self, StreamExt};
+    stream::iter(items)
+        .map(|r| process_result(client, r, media_type, season, episode, query_timeout))
+        .buffer_unordered(RESULT_PROCESS_CONCURRENCY)
+        .filter_map(|result| async move { result })
+        .collect()
+        .await
+}
 
 #[allow(clippy::too_many_arguments)]
 pub async fn scrape(
@@ -62,74 +211,199 @@ pub async fn scrape(
     max_process: usize,
     max_process_time: std::time::Duration,
     query_timeout: std::time::Duration,
+    title_queries: &[String],
 ) -> Vec<ScrapedStream> {
-    let imdb_id = meta.imdb_id.as_deref().unwrap_or("");
-    let is_series = media_type == "series";
-
-    let query = if !imdb_id.is_empty() {
-        format!("{{IMDbId:{imdb_id}}}")
-    } else {
-        build_title_query(&meta.title, meta.year, media_type, season, episode)
-    };
-
-    let categories: &[&str] = if is_series {
-        &[
-            "5000", "5010", "5020", "5030", "5040", "5045", "5050", "5060", "5070",
-        ]
-    } else {
-        &[
-            "2000", "2010", "2020", "2030", "2040", "2045", "2050", "2060", "2070",
-        ]
-    };
-
-    let mut params: Vec<(&str, String)> = vec![("apikey", api_key.to_string()), ("Query", query)];
-    for cat in categories {
-        params.push(("Category[]", cat.to_string()));
+    let indexers = list_healthy_indexers(client, base_url, api_key).await;
+    if indexers.is_empty() {
+        return vec![];
     }
 
-    match tokio::time::timeout(max_process_time, async {
-        let resp = match client
-            .get(format!("{base_url}/api/v2.0/indexers/all/results"))
-            .query(&params)
-            .timeout(query_timeout)
-            .send()
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::debug!("jackett request failed: {e}");
-                return vec![];
-            }
-        };
-
-        let body: JackettResponse = match resp.json().await {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::debug!("jackett response parse failed: {e}");
-                return vec![];
-            }
-        };
-
-        let items: Vec<JackettResult> = body.results.into_iter().take(max_process).collect();
-        use futures::stream::{self, StreamExt};
-        stream::iter(items)
-            .map(|r| process_result(client, r, media_type, season, episode, query_timeout))
-            .buffer_unordered(RESULT_PROCESS_CONCURRENCY)
-            .filter_map(|result| async move { result })
-            .collect()
-            .await
-    })
-    .await
-    {
-        Ok(r) => r,
-        Err(_) => {
-            tracing::debug!("jackett: max_process_time exceeded");
-            vec![]
+    let deadline = tokio::time::Instant::now() + max_process_time;
+    let mut all = Vec::new();
+    for idx in &indexers {
+        if tokio::time::Instant::now() >= deadline {
+            break;
         }
+        let mut batch = scrape_indexer(
+            client,
+            base_url,
+            api_key,
+            idx,
+            meta,
+            media_type,
+            season,
+            episode,
+            max_process,
+            query_timeout,
+            title_queries,
+            deadline,
+        )
+        .await;
+        all.append(&mut batch);
     }
+    all
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+fn build_queries(
+    meta: &SearchMeta,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+    title_queries: &[String],
+) -> Vec<String> {
+    let imdb_id = meta.imdb_id.as_deref().unwrap_or("");
+    let mut queries = Vec::new();
+    if !imdb_id.is_empty() {
+        queries.push(format!("{{IMDbId:{imdb_id}}}"));
+    }
+    if !title_queries.is_empty() {
+        queries.extend(title_queries.iter().cloned());
+    } else if imdb_id.is_empty() {
+        queries.push(build_title_query(
+            &meta.title,
+            meta.year,
+            media_type,
+            season,
+            episode,
+        ));
+    }
+    queries
+}
+
+fn parse_jackett_indexers(xml: &str) -> Vec<JackettIndexer> {
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+    let mut indexers = Vec::new();
+    let mut current_id: Option<String> = None;
+    let mut current_name = String::new();
+    let mut current_categories: Vec<i64> = Vec::new();
+    let mut search_caps: HashSet<String> = HashSet::new();
+    let mut movie_params: HashSet<String> = HashSet::new();
+    let mut tv_params: HashSet<String> = HashSet::new();
+
+    let flush = |indexers: &mut Vec<JackettIndexer>,
+                 id: Option<String>,
+                 name: String,
+                 categories: Vec<i64>,
+                 search_caps: &HashSet<String>,
+                 movie_params: &HashSet<String>,
+                 tv_params: &HashSet<String>| {
+        let Some(id) = id else { return };
+        if id.is_empty() {
+            return;
+        }
+        indexers.push(JackettIndexer {
+            id,
+            name: if name.is_empty() {
+                "unknown".into()
+            } else {
+                name
+            },
+            categories,
+            supports_imdb_movie: search_caps.contains("movie-search")
+                && movie_params
+                    .iter()
+                    .any(|p| p.eq_ignore_ascii_case("imdbid")),
+            supports_imdb_tv: search_caps.contains("tv-search")
+                && tv_params.iter().any(|p| p.eq_ignore_ascii_case("imdbid")),
+            supports_search: search_caps.contains("search"),
+        });
+    };
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                let tag = xml_tag_name(e.name().as_ref());
+                let attrs = xml_attrs(e);
+                match tag.as_str() {
+                    "indexer" => {
+                        flush(
+                            &mut indexers,
+                            current_id.take(),
+                            std::mem::take(&mut current_name),
+                            std::mem::take(&mut current_categories),
+                            &search_caps,
+                            &movie_params,
+                            &tv_params,
+                        );
+                        search_caps.clear();
+                        movie_params.clear();
+                        tv_params.clear();
+                        current_id = attrs.get("id").cloned();
+                    }
+                    "category" => {
+                        if let Some(id) = attrs.get("id").and_then(|s| s.parse().ok()) {
+                            current_categories.push(id);
+                        }
+                    }
+                    "subcat" => {
+                        if let Some(id) = attrs.get("id").and_then(|s| s.parse().ok()) {
+                            current_categories.push(id);
+                        }
+                    }
+                    "search" | "tv-search" | "movie-search"
+                        if attrs.get("available").map(String::as_str) == Some("yes") =>
+                    {
+                        search_caps.insert(tag.clone());
+                        if let Some(params) = attrs.get("supportedParams") {
+                            let set = match tag.as_str() {
+                                "movie-search" => &mut movie_params,
+                                "tv-search" => &mut tv_params,
+                                _ => &mut movie_params,
+                            };
+                            for p in params.split(',') {
+                                set.insert(p.trim().to_string());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::Text(ref e)) if current_id.is_some() && current_name.is_empty() => {
+                if let Ok(text) = e.decode() {
+                    let s = text.trim();
+                    if !s.is_empty() {
+                        current_name = s.to_string();
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    flush(
+        &mut indexers,
+        current_id.take(),
+        current_name,
+        current_categories,
+        &search_caps,
+        &movie_params,
+        &tv_params,
+    );
+
+    indexers.sort_by(|a, b| a.name.cmp(&b.name));
+    indexers
+}
+
+fn xml_tag_name(name: &[u8]) -> String {
+    std::str::from_utf8(name).unwrap_or("").to_lowercase()
+}
+
+fn xml_attrs(e: &quick_xml::events::BytesStart) -> HashMap<String, String> {
+    e.attributes()
+        .filter_map(|a| a.ok())
+        .map(|a| {
+            (
+                String::from_utf8_lossy(a.key.as_ref()).to_string(),
+                String::from_utf8_lossy(&a.value).to_string(),
+            )
+        })
+        .collect()
+}
 
 fn build_title_query(
     title: &str,

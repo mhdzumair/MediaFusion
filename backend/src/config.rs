@@ -35,8 +35,22 @@ pub struct AppConfig {
     /// Format: "U-{uuid}" or "D-{encrypted}"
     pub mediafusion_secret_str: Option<String>,
     /// Mirrors Python's prowlarr_live_title_search (default: true).
-    /// When false, prowlarr is excluded from live title searches.
+    /// When false, title queries are omitted from live Prowlarr/Jackett searches.
     pub prowlarr_live_title_search: bool,
+    /// Mirrors Python's jackett_live_title_search (default: true).
+    pub jackett_live_title_search: bool,
+
+    // ── Background search ─────────────────────────────────────────────────────
+    /// When false, stream requests do not enqueue items for background re-scraping.
+    pub background_search_enabled: bool,
+    /// Max results to process per indexer during background search (default: 50).
+    pub background_max_process: usize,
+    /// Overall time budget (seconds) for background Prowlarr/Jackett scrapes.
+    pub background_max_process_time: u64,
+    /// Per-request HTTP timeout (seconds) for background Prowlarr/Jackett calls.
+    pub background_query_timeout: u64,
+    /// Minimum hours between background re-scrapes for the same queued item.
+    pub background_search_interval_hours: i64,
 
     // ── Instance mode ────────────────────────────────────────────────────────
     /// When true the instance is fully public: no api_password or X-API-Key
@@ -436,6 +450,18 @@ impl AppConfig {
             mediafusion_secret_str: env("MEDIAFUSION_SECRET_STR").ok().filter(|s| !s.is_empty()),
             prowlarr_live_title_search: env("PROWLARR_LIVE_TITLE_SEARCH")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            jackett_live_title_search: env("JACKETT_LIVE_TITLE_SEARCH")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            background_search_enabled: env("BACKGROUND_SEARCH_ENABLED")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            background_max_process: env("BACKGROUND_MAX_PROCESS")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(50),
+            background_max_process_time: env("BACKGROUND_MAX_PROCESS_TIME")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(120),
+            background_query_timeout: env("BACKGROUND_QUERY_TIMEOUT")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(30),
+            background_search_interval_hours: env("BACKGROUND_SEARCH_INTERVAL_HOURS")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(72),
             is_public_instance: env("IS_PUBLIC_INSTANCE")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
             api_password: env("API_PASSWORD").ok().filter(|s| !s.is_empty()),

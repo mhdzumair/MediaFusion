@@ -1,4 +1,5 @@
 pub mod anilist;
+pub mod background_queue;
 pub mod browser;
 pub mod easynews;
 pub mod fetcher;
@@ -18,6 +19,7 @@ pub mod public_usenet;
 pub mod rss;
 pub mod source_health;
 pub mod telegram;
+pub mod title_queries;
 pub mod torbox_search;
 pub mod torrent_metadata;
 pub mod torrentio;

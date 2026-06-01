@@ -111,6 +111,19 @@ pub(crate) struct SearchResult {
 // ─── Healthy indexer (local representation) ──────────────────────────────────
 
 #[derive(Debug, Clone)]
+pub struct ProwlarrIndexer {
+    pub id: i64,
+    pub name: String,
+    pub priority: i64,
+    pub is_public: bool,
+    pub privacy: String,
+    pub categories: Vec<i64>,
+    pub supports_imdb_movie: bool,
+    pub supports_imdb_tv: bool,
+    pub supports_basic_search: bool,
+}
+
+#[derive(Debug, Clone)]
 struct Indexer {
     id: i64,
     name: String,
@@ -123,7 +136,85 @@ struct Indexer {
     supports_basic_search: bool,
 }
 
-// ─── Public entry point ───────────────────────────────────────────────────────
+impl From<Indexer> for ProwlarrIndexer {
+    fn from(value: Indexer) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            priority: value.priority,
+            is_public: value.is_public,
+            privacy: value.privacy,
+            categories: value.categories,
+            supports_imdb_movie: value.supports_imdb_movie,
+            supports_imdb_tv: value.supports_imdb_tv,
+            supports_basic_search: value.supports_basic_search,
+        }
+    }
+}
+
+// ─── Public entry points ──────────────────────────────────────────────────────
+
+pub async fn list_healthy_indexers(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+) -> Vec<ProwlarrIndexer> {
+    match fetch_indexers(client, base_url, api_key).await {
+        Ok(indexers) => indexers.into_iter().map(ProwlarrIndexer::from).collect(),
+        Err(e) => {
+            tracing::debug!(
+                "prowlarr: failed to fetch indexers: {}",
+                format_request_error(&*e)
+            );
+            vec![]
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn scrape_indexer(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+    idx: &ProwlarrIndexer,
+    meta: &SearchMeta,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+    max_process: usize,
+    query_timeout: Duration,
+    title_queries: &[String],
+    privacy_by_id: &HashMap<i64, String>,
+    deadline: tokio::time::Instant,
+) -> Vec<ScrapedStream> {
+    let idx = Indexer {
+        id: idx.id,
+        name: idx.name.clone(),
+        priority: idx.priority,
+        is_public: idx.is_public,
+        privacy: idx.privacy.clone(),
+        categories: idx.categories.clone(),
+        supports_imdb_movie: idx.supports_imdb_movie,
+        supports_imdb_tv: idx.supports_imdb_tv,
+        supports_basic_search: idx.supports_basic_search,
+    };
+    scrape_indexer_inner(
+        client,
+        base_url,
+        api_key,
+        &idx,
+        meta,
+        media_type,
+        season,
+        episode,
+        max_process,
+        query_timeout,
+        title_queries,
+        privacy_by_id,
+        deadline,
+    )
+    .await
+}
 
 #[allow(clippy::too_many_arguments)]
 pub async fn scrape(
@@ -137,6 +228,7 @@ pub async fn scrape(
     max_process: usize,
     max_process_time: std::time::Duration,
     query_timeout: std::time::Duration,
+    title_queries: &[String],
 ) -> Vec<ScrapedStream> {
     let indexers = match fetch_indexers(client, base_url, api_key).await {
         Ok(v) if !v.is_empty() => v,
@@ -155,41 +247,124 @@ pub async fn scrape(
 
     let privacy_by_id: HashMap<i64, String> =
         indexers.iter().map(|i| (i.id, i.privacy.clone())).collect();
-
-    let imdb_id = meta.imdb_id.as_deref().unwrap_or("");
-    let is_series = media_type == "series";
-
-    let mut results: Vec<ScrapedStream> = Vec::new();
-    let mut consecutive_failures: u32 = 0;
     let deadline = tokio::time::Instant::now() + max_process_time;
+    let mut results = Vec::new();
 
     for idx in &indexers {
         if tokio::time::Instant::now() >= deadline {
-            tracing::debug!("prowlarr: max_process_time exceeded after processing some indexers");
+            break;
+        }
+        let mut batch = scrape_indexer_inner(
+            client,
+            base_url,
+            api_key,
+            idx,
+            meta,
+            media_type,
+            season,
+            episode,
+            max_process,
+            query_timeout,
+            title_queries,
+            &privacy_by_id,
+            deadline,
+        )
+        .await;
+        results.append(&mut batch);
+    }
+
+    results
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn scrape_indexer_inner(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+    idx: &Indexer,
+    meta: &SearchMeta,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+    max_process: usize,
+    query_timeout: Duration,
+    title_queries: &[String],
+    privacy_by_id: &HashMap<i64, String>,
+    deadline: tokio::time::Instant,
+) -> Vec<ScrapedStream> {
+    let imdb_id = meta.imdb_id.as_deref().unwrap_or("");
+    let is_series = media_type == "series";
+    let mut results: Vec<ScrapedStream> = Vec::new();
+    let mut consecutive_failures: u32 = 0;
+
+    if tokio::time::Instant::now() >= deadline {
+        return results;
+    }
+
+    let (imdb_search_type, imdb_categories) = if is_series && idx.supports_imdb_tv {
+        ("tvsearch", movie_tv_categories(idx, true))
+    } else if !is_series && idx.supports_imdb_movie {
+        ("movie", movie_tv_categories(idx, false))
+    } else {
+        ("", Vec::new())
+    };
+
+    let fallback_search_type = if is_series && idx.supports_imdb_tv {
+        "tvsearch"
+    } else if !is_series && idx.supports_imdb_movie {
+        "movie"
+    } else if idx.supports_imdb_movie || idx.supports_imdb_tv || idx.supports_basic_search {
+        "search"
+    } else {
+        return results;
+    };
+    let fallback_categories = if imdb_categories.is_empty() {
+        if fallback_search_type == "search" {
+            idx.categories.clone()
+        } else {
+            movie_tv_categories(idx, is_series)
+        }
+    } else {
+        imdb_categories.clone()
+    };
+
+    let mut queries: Vec<(String, &str, Vec<i64>)> = Vec::new();
+
+    if !imdb_id.is_empty() && !imdb_search_type.is_empty() {
+        queries.push((
+            format!("{{IMDbId:{imdb_id}}}"),
+            imdb_search_type,
+            imdb_categories,
+        ));
+    }
+
+    if !title_queries.is_empty()
+        && (idx.supports_basic_search || idx.supports_imdb_movie || idx.supports_imdb_tv)
+    {
+        for title_query in title_queries {
+            queries.push((title_query.clone(), "search", idx.categories.clone()));
+        }
+    } else if imdb_id.is_empty() && title_queries.is_empty() {
+        queries.push((
+            meta.title.clone(),
+            fallback_search_type,
+            fallback_categories,
+        ));
+    }
+
+    for (query, search_type, categories) in queries {
+        if tokio::time::Instant::now() >= deadline {
+            tracing::debug!(
+                "prowlarr: max_process_time exceeded for indexer {}",
+                idx.name
+            );
             break;
         }
 
         if consecutive_failures >= 3 {
-            tracing::debug!("prowlarr: stopping after 3 consecutive failures");
+            tracing::debug!("prowlarr: stopping indexer {} after 3 failures", idx.name);
             break;
         }
-
-        let (search_type, categories) = if is_series && idx.supports_imdb_tv {
-            ("tvsearch", movie_tv_categories(idx, true))
-        } else if !is_series && idx.supports_imdb_movie {
-            ("movie", movie_tv_categories(idx, false))
-        } else if idx.supports_imdb_movie || idx.supports_imdb_tv || idx.supports_basic_search {
-            ("search", idx.categories.clone())
-        } else {
-            continue;
-        };
-
-        let query = if !imdb_id.is_empty() && (search_type == "movie" || search_type == "tvsearch")
-        {
-            format!("{{IMDbId:{imdb_id}}}")
-        } else {
-            meta.title.clone()
-        };
 
         let mut params = vec![
             ("query".to_string(), query),
@@ -211,7 +386,7 @@ pub async fn scrape(
                             client,
                             item,
                             &idx.name,
-                            &privacy_by_id,
+                            privacy_by_id,
                             media_type,
                             season,
                             episode,

@@ -9,7 +9,8 @@ use crate::{
     scrapers::{ScrapedStream, SearchMeta, StreamFile},
 };
 
-pub async fn scrape(
+/// POST /dmm/search — broad title lookup.
+pub async fn scrape_search(
     client: &Client,
     base_url: &str,
     meta: &SearchMeta,
@@ -17,13 +18,33 @@ pub async fn scrape(
     season: Option<i32>,
     episode: Option<i32>,
 ) -> Vec<ScrapedStream> {
-    // Fire POST /dmm/search and GET /dmm/filtered concurrently.
-    let search_fut = client
+    let resp = client
         .post(format!("{base_url}/dmm/search"))
         .timeout(std::time::Duration::from_secs(10))
         .json(&json!({"queryText": meta.title}))
-        .send();
+        .send()
+        .await;
 
+    let raw_items = match resp {
+        Ok(r) => parse_json_array(r).await,
+        Err(e) => {
+            tracing::debug!("zilean /dmm/search request error: {e}");
+            vec![]
+        }
+    };
+
+    process_items(raw_items, media_type, season, episode).await
+}
+
+/// GET /dmm/filtered — structured movie/series lookup.
+pub async fn scrape_filtered(
+    client: &Client,
+    base_url: &str,
+    meta: &SearchMeta,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+) -> Vec<ScrapedStream> {
     let mut filter_params: Vec<(&str, String)> = vec![("Query", meta.title.clone())];
     if media_type == "movie" {
         if let Some(y) = meta.year {
@@ -38,43 +59,69 @@ pub async fn scrape(
         }
     }
 
-    let filtered_fut = client
+    let resp = client
         .get(format!("{base_url}/dmm/filtered"))
         .timeout(std::time::Duration::from_secs(10))
         .query(&filter_params)
-        .send();
+        .send()
+        .await;
 
-    let (search_res, filtered_res) = tokio::join!(search_fut, filtered_fut);
+    let raw_items = match resp {
+        Ok(r) => parse_json_array(r).await,
+        Err(e) => {
+            tracing::debug!("zilean /dmm/filtered request error: {e}");
+            vec![]
+        }
+    };
 
-    let mut raw_items: Vec<Value> = Vec::new();
+    process_items(raw_items, media_type, season, episode).await
+}
 
-    match search_res {
-        Ok(resp) => match resp.text().await {
-            Ok(body) => match serde_json::from_str::<Vec<Value>>(&body) {
-                Ok(items) => raw_items.extend(items),
-                Err(e) => tracing::debug!(
-                    "zilean /dmm/search parse error: {e} — body: {}",
+pub async fn scrape(
+    client: &Client,
+    base_url: &str,
+    meta: &SearchMeta,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+) -> Vec<ScrapedStream> {
+    let (search, filtered) = tokio::join!(
+        scrape_search(client, base_url, meta, media_type, season, episode),
+        scrape_filtered(client, base_url, meta, media_type, season, episode),
+    );
+    let mut seen = std::collections::HashSet::new();
+    search
+        .into_iter()
+        .chain(filtered)
+        .filter(|s| seen.insert(s.info_hash.clone()))
+        .collect()
+}
+
+async fn parse_json_array(resp: reqwest::Response) -> Vec<Value> {
+    match resp.text().await {
+        Ok(body) => match serde_json::from_str::<Vec<Value>>(&body) {
+            Ok(items) => items,
+            Err(e) => {
+                tracing::debug!(
+                    "zilean response parse error: {e} — body: {}",
                     body.chars().take(500).collect::<String>()
-                ),
-            },
-            Err(e) => tracing::debug!("zilean /dmm/search body error: {e}"),
+                );
+                vec![]
+            }
         },
-        Err(e) => tracing::debug!("zilean /dmm/search request error: {e}"),
+        Err(e) => {
+            tracing::debug!("zilean response body error: {e}");
+            vec![]
+        }
     }
-    match filtered_res {
-        Ok(resp) => match resp.text().await {
-            Ok(body) => match serde_json::from_str::<Vec<Value>>(&body) {
-                Ok(items) => raw_items.extend(items),
-                Err(e) => tracing::debug!(
-                    "zilean /dmm/filtered parse error: {e} — body: {}",
-                    body.chars().take(500).collect::<String>()
-                ),
-            },
-            Err(e) => tracing::debug!("zilean /dmm/filtered body error: {e}"),
-        },
-        Err(e) => tracing::debug!("zilean /dmm/filtered request error: {e}"),
-    }
+}
 
+async fn process_items(
+    raw_items: Vec<Value>,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+) -> Vec<ScrapedStream> {
     if raw_items.is_empty() {
         return vec![];
     }
@@ -155,7 +202,6 @@ fn process_item(
         }
         f
     } else {
-        // Movie: reject if it has season/episode markers
         if !parsed.seasons.is_empty() || !parsed.episodes.is_empty() {
             return None;
         }

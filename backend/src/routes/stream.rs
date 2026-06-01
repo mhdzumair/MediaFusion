@@ -842,6 +842,24 @@ async fn build_pipeline(
         }
     }
 
+    if state.config.background_search_enabled && media_id != db::MediaId(0) {
+        let item_key = match (media_type, season, episode) {
+            ("series", Some(s), Some(e)) => {
+                crate::scrapers::background_queue::series_item_key(media_id.0, s, e)
+            }
+            ("movie", _, _) => crate::scrapers::background_queue::movie_item_key(media_id.0),
+            _ => String::new(),
+        };
+        if !item_key.is_empty() {
+            let queue_key = if media_type == "series" {
+                crate::scrapers::background_queue::SERIES_KEY
+            } else {
+                crate::scrapers::background_queue::MOVIES_KEY
+            };
+            crate::scrapers::background_queue::enqueue(&state.redis, queue_key, &item_key).await;
+        }
+    }
+
     let disabled = &state.config.disabled_providers;
 
     if media_id == db::MediaId(0) && related_ids.is_empty() {

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::Utc;
 use fred::prelude::*;
@@ -9,11 +10,55 @@ use crate::{
     scrapers::{
         easynews, jackett, mediafusion, newznab, persist, prowlarr, public_indexers, public_usenet,
         source_health::{self, HealthGateConfig},
-        telegram, torbox_search, torrentio, torznab, zilean, ScrapedStream, ScrapedUsenetStream,
-        SearchMeta,
+        telegram, title_queries, torbox_search, torrentio, torznab, zilean, ScrapedStream,
+        ScrapedUsenetStream, SearchMeta,
     },
     state::AppState,
 };
+
+pub(crate) struct FanOutOpts {
+    pub byparr_url: Option<String>,
+    pub bypass_ttl: bool,
+    pub max_process_override: Option<(usize, Duration)>,
+    pub query_timeout_override: Option<Duration>,
+    pub title_search: bool,
+}
+
+fn live_fan_out_opts(cfg: &crate::config::AppConfig) -> FanOutOpts {
+    FanOutOpts {
+        byparr_url: None,
+        bypass_ttl: false,
+        max_process_override: None,
+        query_timeout_override: None,
+        title_search: cfg.prowlarr_live_title_search || cfg.jackett_live_title_search,
+    }
+}
+
+fn background_fan_out_opts(cfg: &crate::config::AppConfig) -> FanOutOpts {
+    FanOutOpts {
+        byparr_url: cfg.byparr_url.clone(),
+        bypass_ttl: true,
+        max_process_override: Some((
+            cfg.background_max_process,
+            Duration::from_secs(cfg.background_max_process_time),
+        )),
+        query_timeout_override: Some(Duration::from_secs(cfg.background_query_timeout)),
+        title_search: true,
+    }
+}
+
+fn build_title_queries(
+    meta: &SearchMeta,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+) -> Vec<String> {
+    match (media_type, season, episode) {
+        ("series", Some(s), Some(e)) => title_queries::series_title_queries(&meta.title, s, e),
+        ("movie", _, _) => title_queries::movie_title_queries(&meta.title, meta.year),
+        _ => Vec::new(),
+    }
+}
 
 /// Run all live scrapers for the given media item.
 ///
@@ -41,7 +86,7 @@ pub async fn run(
         }
     }
 
-    let results = fan_out(
+    let results = fan_out_with_opts(
         state,
         user_data,
         meta,
@@ -49,6 +94,7 @@ pub async fn run(
         season,
         episode,
         &state.redis,
+        &live_fan_out_opts(&state.config),
     )
     .await;
 
@@ -129,7 +175,7 @@ pub async fn run_forced(
         }
     }
 
-    let results = fan_out(
+    let results = fan_out_with_opts(
         state,
         user_data,
         meta,
@@ -137,6 +183,7 @@ pub async fn run_forced(
         season,
         episode,
         &state.redis,
+        &live_fan_out_opts(&state.config),
     )
     .await;
 
@@ -285,6 +332,43 @@ pub async fn run_usenet(
     results
 }
 
+/// Full torrent + usenet fan-out for background worker re-scrapes.
+///
+/// Bypasses live-search TTL gates and Redis lock; uses deeper processing limits
+/// and Byparr for public indexers. Invalidates stream cache when done.
+pub async fn run_background(
+    state: &AppState,
+    user_data: &UserData,
+    meta: &SearchMeta,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+    scope: &str,
+) {
+    let opts = background_fan_out_opts(&state.config);
+    let results = fan_out_with_opts(
+        state,
+        user_data,
+        meta,
+        media_type,
+        season,
+        episode,
+        &state.redis,
+        &opts,
+    )
+    .await;
+
+    let mut seen = std::collections::HashSet::new();
+    let deduped: Vec<ScrapedStream> = results
+        .into_iter()
+        .filter(|s| seen.insert(s.info_hash.clone()))
+        .collect();
+
+    persist::write_back(&deduped, &state.pool, meta, media_type, season, episode).await;
+    run_usenet(state, user_data, meta, media_type, season, episode, scope).await;
+    invalidate_stream_cache(&state.redis, meta, media_type, season, episode, scope).await;
+}
+
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 fn lock_key(meta: &SearchMeta, season: Option<i32>, episode: Option<i32>) -> String {
@@ -334,7 +418,7 @@ async fn try_acquire_lock(
     Ok(result.is_some())
 }
 
-async fn fan_out(
+async fn fan_out_with_opts(
     state: &AppState,
     user_data: &UserData,
     meta: &SearchMeta,
@@ -342,6 +426,7 @@ async fn fan_out(
     season: Option<i32>,
     episode: Option<i32>,
     redis: &fred::clients::Client,
+    opts: &FanOutOpts,
 ) -> Vec<ScrapedStream> {
     use fred::prelude::SortedSetsInterface;
 
@@ -395,11 +480,53 @@ async fn fan_out(
     }
 
     let is_stale = |scraper_id: &str, ttl: i64| -> bool {
+        if opts.bypass_ttl {
+            return true;
+        }
         match last_scraped.get(scraper_id) {
             Some(&ts) => (now - ts) as i64 >= ttl,
             None => true, // never scraped → stale → should scrape
         }
     };
+
+    let title_queries = if opts.title_search {
+        build_title_queries(&meta, media_type, season, episode)
+    } else {
+        Vec::new()
+    };
+    let title_queries = Arc::new(title_queries);
+
+    let (prowlarr_max_process, prowlarr_max_time, prowlarr_query_timeout) =
+        if let Some((max_process, max_time)) = opts.max_process_override {
+            (
+                max_process,
+                max_time,
+                opts.query_timeout_override
+                    .unwrap_or_else(|| Duration::from_secs(cfg.prowlarr_search_query_timeout)),
+            )
+        } else {
+            (
+                cfg.prowlarr_immediate_max_process,
+                Duration::from_secs(cfg.prowlarr_immediate_max_process_time),
+                Duration::from_secs(cfg.prowlarr_search_query_timeout),
+            )
+        };
+
+    let (jackett_max_process, jackett_max_time, jackett_query_timeout) =
+        if let Some((max_process, max_time)) = opts.max_process_override {
+            (
+                max_process,
+                max_time,
+                opts.query_timeout_override
+                    .unwrap_or_else(|| Duration::from_secs(cfg.jackett_search_query_timeout)),
+            )
+        } else {
+            (
+                cfg.jackett_immediate_max_process,
+                Duration::from_secs(cfg.jackett_immediate_max_process_time),
+                Duration::from_secs(cfg.jackett_search_query_timeout),
+            )
+        };
 
     // Health gate config for public indexers
     let health_gate = HealthGateConfig {
@@ -437,36 +564,53 @@ async fn fan_out(
     }
 
     // ── Prowlarr (global config, or user-overridden URL/key) ──────────────────
-    if cfg.prowlarr_live_title_search && is_stale("prowlarr", cfg.prowlarr_search_ttl) {
+    if is_stale("prowlarr", cfg.prowlarr_search_ttl) {
         if let Some((url, key)) =
             crate::scrapers::indexer_credentials::resolve_prowlarr_credentials(&ic, &cfg)
         {
-            let http = http.clone();
-            let meta = meta.clone();
-            let mt = media_type.to_string();
-            let max_process = cfg.prowlarr_immediate_max_process;
-            let max_process_time =
-                std::time::Duration::from_secs(cfg.prowlarr_immediate_max_process_time);
-            let query_timeout = std::time::Duration::from_secs(cfg.prowlarr_search_query_timeout);
-            set.spawn(async move {
-                let start = Utc::now();
-                let t = std::time::Instant::now();
-                let streams = prowlarr::scrape(
-                    &http,
-                    &url,
-                    &key,
-                    &meta,
-                    &mt,
-                    season,
-                    episode,
-                    max_process,
-                    max_process_time,
-                    query_timeout,
-                )
-                .await;
-                ("prowlarr", streams, start, t.elapsed().as_secs_f64())
-            });
-            spawned_scrapers.push("prowlarr");
+            let indexers = prowlarr::list_healthy_indexers(&http, &url, &key).await;
+            if !indexers.is_empty() {
+                let privacy_by_id = prowlarr::fetch_indexer_privacy_map(&http, &url, &key).await;
+                let privacy_by_id = Arc::new(privacy_by_id);
+                let deadline = Arc::new(tokio::time::Instant::now() + prowlarr_max_time);
+                for idx in indexers {
+                    let http = http.clone();
+                    let url = url.clone();
+                    let key = key.clone();
+                    let meta = meta.clone();
+                    let mt = media_type.to_string();
+                    let title_queries = title_queries.clone();
+                    let privacy_by_id = privacy_by_id.clone();
+                    let deadline = deadline.clone();
+                    let indexer_name = idx.name.clone();
+                    set.spawn(async move {
+                        let start = Utc::now();
+                        let t = std::time::Instant::now();
+                        let streams = prowlarr::scrape_indexer(
+                            &http,
+                            &url,
+                            &key,
+                            &idx,
+                            &meta,
+                            &mt,
+                            season,
+                            episode,
+                            prowlarr_max_process,
+                            prowlarr_query_timeout,
+                            title_queries.as_slice(),
+                            &privacy_by_id,
+                            *deadline,
+                        )
+                        .await;
+                        tracing::debug!(
+                            "prowlarr indexer {indexer_name}: {} streams",
+                            streams.len()
+                        );
+                        ("prowlarr", streams, start, t.elapsed().as_secs_f64())
+                    });
+                }
+                spawned_scrapers.push("prowlarr");
+            }
         }
     }
 
@@ -475,47 +619,78 @@ async fn fan_out(
         if let Some((url, key)) =
             crate::scrapers::indexer_credentials::resolve_jackett_credentials(&ic, &cfg)
         {
-            let http = http.clone();
-            let meta = meta.clone();
-            let mt = media_type.to_string();
-            let max_process = cfg.jackett_immediate_max_process;
-            let max_process_time =
-                std::time::Duration::from_secs(cfg.jackett_immediate_max_process_time);
-            let query_timeout = std::time::Duration::from_secs(cfg.jackett_search_query_timeout);
-            set.spawn(async move {
-                let start = Utc::now();
-                let t = std::time::Instant::now();
-                let streams = jackett::scrape(
-                    &http,
-                    &url,
-                    &key,
-                    &meta,
-                    &mt,
-                    season,
-                    episode,
-                    max_process,
-                    max_process_time,
-                    query_timeout,
-                )
-                .await;
-                ("jackett", streams, start, t.elapsed().as_secs_f64())
-            });
-            spawned_scrapers.push("jackett");
+            let indexers = jackett::list_healthy_indexers(&http, &url, &key).await;
+            if !indexers.is_empty() {
+                let deadline = Arc::new(tokio::time::Instant::now() + jackett_max_time);
+                for idx in indexers {
+                    let http = http.clone();
+                    let url = url.clone();
+                    let key = key.clone();
+                    let meta = meta.clone();
+                    let mt = media_type.to_string();
+                    let title_queries = title_queries.clone();
+                    let deadline = deadline.clone();
+                    let indexer_name = idx.name.clone();
+                    set.spawn(async move {
+                        let start = Utc::now();
+                        let t = std::time::Instant::now();
+                        let streams = jackett::scrape_indexer(
+                            &http,
+                            &url,
+                            &key,
+                            &idx,
+                            &meta,
+                            &mt,
+                            season,
+                            episode,
+                            jackett_max_process,
+                            jackett_query_timeout,
+                            title_queries.as_slice(),
+                            *deadline,
+                        )
+                        .await;
+                        tracing::debug!(
+                            "jackett indexer {indexer_name}: {} streams",
+                            streams.len()
+                        );
+                        ("jackett", streams, start, t.elapsed().as_secs_f64())
+                    });
+                }
+                spawned_scrapers.push("jackett");
+            }
         }
     }
 
-    // ── Zilean ─────────────────────────────────────────────────────────────────
+    // ── Zilean (search + filtered endpoints in parallel) ──────────────────────
     if cfg.is_scrap_from_zilean && is_stale("zilean", cfg.zilean_search_ttl) {
         let url = cfg.zilean_url.clone();
-        let http = http.clone();
-        let meta = meta.clone();
-        let mt = media_type.to_string();
-        set.spawn(async move {
-            let start = Utc::now();
-            let t = std::time::Instant::now();
-            let streams = zilean::scrape(&http, &url, &meta, &mt, season, episode).await;
-            ("zilean", streams, start, t.elapsed().as_secs_f64())
-        });
+        {
+            let http = http.clone();
+            let meta = meta.clone();
+            let mt = media_type.to_string();
+            let url = url.clone();
+            set.spawn(async move {
+                let start = Utc::now();
+                let t = std::time::Instant::now();
+                let streams = zilean::scrape_search(&http, &url, &meta, &mt, season, episode).await;
+                tracing::debug!("zilean search: {} streams", streams.len());
+                ("zilean", streams, start, t.elapsed().as_secs_f64())
+            });
+        }
+        {
+            let http = http.clone();
+            let meta = meta.clone();
+            let mt = media_type.to_string();
+            let url = url.clone();
+            set.spawn(async move {
+                let start = Utc::now();
+                let t = std::time::Instant::now();
+                let streams =
+                    zilean::scrape_filtered(&http, &url, &meta, &mt, season, episode).await;
+                tracing::debug!("zilean filtered: {} streams", streams.len());
+                ("zilean", streams, start, t.elapsed().as_secs_f64())
+            });
+        }
         spawned_scrapers.push("zilean");
     }
 
@@ -613,8 +788,8 @@ async fn fan_out(
         let mt = media_type.to_string();
         // CF bypass (byparr) must NOT run during live API requests — it launches
         // Chromium sessions and causes severe CPU/latency spikes. Background workers
-        // call public_indexers::scrape directly with the full byparr URL.
-        let byparr: Option<String> = None;
+        // pass the configured byparr URL via FanOutOpts.
+        let byparr = opts.byparr_url.clone();
         let sites = cfg.public_indexers_live_search_sites.clone();
         let hg = health_gate.clone();
         set.spawn(async move {
