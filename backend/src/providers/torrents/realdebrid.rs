@@ -1125,7 +1125,10 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
             code,
         } => match get_access_token(http, &client_id, &client_secret, &code, None).await {
             Ok(t) => t,
-            Err(_) => return vec![],
+            Err(e) => {
+                tracing::warn!("realdebrid check_cached: token exchange failed: {e}");
+                return vec![];
+            }
         },
     };
 
@@ -1133,42 +1136,17 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
     let mut found = Vec::new();
 
     for page in 1..=MAX_PAGES {
-        let url = format!("{BASE_URL}/torrents?page={page}&limit={PAGE_SIZE}");
-        let resp = match http.get(&url).bearer_auth(&bearer).send().await {
-            Ok(r) => r,
+        // Use get_torrent_list so the request goes through rd_get → response_json →
+        // check_rd_error, giving consistent 401/API-error handling.
+        let arr = match get_torrent_list(http, &bearer, page, PAGE_SIZE).await {
+            Ok(a) if a.is_empty() => break,
+            Ok(a) => a,
             Err(e) => {
-                tracing::warn!("realdebrid torrents page {page}: {e}");
+                tracing::warn!("realdebrid check_cached page {page}: {e}");
                 break;
             }
         };
-        if resp.status() == 204 {
-            break;
-        }
-        if !resp.status().is_success() {
-            tracing::warn!("realdebrid torrents page {page}: HTTP {}", resp.status());
-            break;
-        }
-        let text = match resp.text().await {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::warn!("realdebrid torrents read page {page}: {e}");
-                break;
-            }
-        };
-        let body: serde_json::Value = match serde_json::from_str(&text) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(
-                    "realdebrid torrents json page {page}: {e} — body: {}",
-                    &text[..text.len().min(200)]
-                );
-                break;
-            }
-        };
-        let arr = match body.as_array() {
-            Some(a) if !a.is_empty() => a.clone(),
-            _ => break,
-        };
+
         for t in &arr {
             if t.get("status").and_then(|v| v.as_str()) == Some("downloaded") {
                 if let Some(h) = t.get("hash").and_then(|v| v.as_str()) {

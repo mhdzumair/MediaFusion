@@ -230,9 +230,21 @@ fn check_pm_error(body: &Value) -> Result<(), ProviderError> {
                 .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown error");
+            // Authentication failures use a dedicated video.
+            let msg_lower = msg.to_lowercase();
+            let video = if msg_lower.contains("not logged in")
+                || msg_lower.contains("invalid api key")
+                || msg_lower.contains("invalid apikey")
+                || msg_lower.contains("unauthorized")
+                || msg_lower.contains("authentication")
+            {
+                "invalid_token.mp4"
+            } else {
+                "transfer_error.mp4"
+            };
             return Err(ProviderError::api(
                 format!("Premiumize API error: {msg}"),
-                "transfer_error.mp4",
+                video,
             ));
         }
     }

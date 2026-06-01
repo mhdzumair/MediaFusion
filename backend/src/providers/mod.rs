@@ -7,6 +7,10 @@ use thiserror::Error;
 /// On any failure (HTTP error, read error, parse error) logs a WARN with
 /// the raw response body/status so callers can diagnose what the provider
 /// actually returned, then returns the original error.
+///
+/// For 401/403 responses whose body is not valid JSON (e.g. an HTML error page
+/// from a reverse proxy), returns a typed `invalid_token.mp4` error rather than
+/// the generic `api_error.mp4` that a bare parse failure would produce.
 pub async fn response_json(
     resp: reqwest::Response,
     context: &str,
@@ -17,6 +21,14 @@ pub async fn response_json(
         ProviderError::Http(e)
     })?;
     serde_json::from_str(&text).map_err(|e| {
+        // Auth failures with non-JSON bodies (HTML proxy error pages) should show
+        // the credentials error video, not the generic api_error.
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            return ProviderError::api(
+                format!("Authentication failed (HTTP {status})"),
+                "invalid_token.mp4",
+            );
+        }
         // Truncate very long bodies (e.g. full HTML error pages) in the log.
         let preview: &str = if text.len() > 500 {
             &text[..500]
