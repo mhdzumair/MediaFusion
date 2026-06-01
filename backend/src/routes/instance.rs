@@ -231,8 +231,11 @@ pub async fn create_initial_admin(
     // Create admin user
     let user_uuid = uuid::Uuid::new_v4().to_string();
     let user_id: i64 = match sqlx::query_scalar(
-        r#"INSERT INTO users (uuid, email, username, password_hash, role, is_verified, is_active, created_at, last_login)
-           VALUES ($1, $2, $3, $4, 'ADMIN', true, true, NOW(), NOW())
+        r#"INSERT INTO users (uuid, email, username, password_hash, role, is_verified, is_active,
+                              created_at, last_login, contribution_points, metadata_edits_approved,
+                              stream_edits_approved, contribution_level, contribute_anonymously,
+                              uploads_restricted)
+           VALUES ($1, $2, $3, $4, 'ADMIN', true, true, NOW(), NOW(), 0, 0, 0, 'beginner', false, false)
            RETURNING id"#,
     )
     .bind(&user_uuid)
