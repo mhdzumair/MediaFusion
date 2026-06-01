@@ -74,15 +74,48 @@ erDiagram
 
 ```mermaid
 erDiagram
-    media { int id PK; varchar title }
-    genre { int id PK; varchar name }
-    keyword { int id PK; varchar name }
-    person { int id PK; varchar name }
-    production_company { int id PK; varchar name }
-    media_external_id { int id PK; int media_id FK; varchar provider; varchar external_id }
-    media_rating { int id PK; int media_id FK; int rating_provider_id FK; float value }
-    rating_provider { int id PK; varchar name }
-    aka_title { int id PK; int media_id FK; varchar title; varchar region }
+    media {
+        int id PK
+        varchar title
+    }
+    genre {
+        int id PK
+        varchar name
+    }
+    keyword {
+        int id PK
+        varchar name
+    }
+    person {
+        int id PK
+        varchar name
+    }
+    production_company {
+        int id PK
+        varchar name
+    }
+    media_external_id {
+        int id PK
+        int media_id FK
+        varchar provider
+        varchar external_id
+    }
+    media_rating {
+        int id PK
+        int media_id FK
+        int rating_provider_id FK
+        float value
+    }
+    rating_provider {
+        int id PK
+        varchar name
+    }
+    aka_title {
+        int id PK
+        int media_id FK
+        varchar title
+        varchar region
+    }
 
     media ||--o{ media_genre_link : ""
     genre ||--o{ media_genre_link : ""
@@ -191,9 +224,18 @@ erDiagram
 
 ```mermaid
 erDiagram
-    stream { int id PK; varchar name }
-    media { int id PK; varchar title }
-    episode { int id PK; int episode_number }
+    stream {
+        int id PK
+        varchar name
+    }
+    media {
+        int id PK
+        varchar title
+    }
+    episode {
+        int id PK
+        int episode_number
+    }
     stream_media_link {
         int stream_id FK
         int media_id FK
@@ -208,7 +250,10 @@ erDiagram
         bigint size
         filetype file_type
     }
-    tracker { int id PK; varchar url }
+    tracker {
+        int id PK
+        varchar url
+    }
 
     stream ||--o{ stream_media_link : ""
     media ||--o{ stream_media_link : ""
