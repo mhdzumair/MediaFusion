@@ -507,7 +507,7 @@ const PROVIDER_SHORT_NAMES: &[(&str, &str)] = &[
     ("offcloud", "OC"),
     ("pikpak", "PKP"),
     ("torbox", "TRB"),
-    ("seedr", "SEEDR"),
+    ("seedr", "SDR"),
     ("stremthru", "ST"),
     ("qbittorrent", "QB"),
     ("easydebrid", "ED"),
@@ -519,6 +519,11 @@ fn short_name(service: &str) -> Option<&'static str> {
         .iter()
         .find(|(s, _)| *s == service)
         .map(|(_, n)| *n)
+}
+
+/// Short label for a streaming provider (e.g. `seedr` → `SDR`).
+pub fn provider_short_name(service: &str) -> &str {
+    short_name(service).unwrap_or(service)
 }
 
 // ─── UserData methods ─────────────────────────────────────────────────────────

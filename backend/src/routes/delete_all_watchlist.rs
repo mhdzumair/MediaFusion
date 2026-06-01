@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use crate::{
     models::{
         stremio::{Meta, MetaItem, MetaPreview},
-        user_data::UserData,
+        user_data::{provider_short_name, UserData},
     },
     providers,
     state::AppState,
@@ -71,9 +71,10 @@ pub fn delete_all_stream_json(
     service: &str,
     addon_name: &str,
 ) -> Value {
+    let short_name = provider_short_name(service);
     json!({
-        "name": format!("{addon_name} {} 🗑️💩🚨", service),
-        "description": format!("🚨💀⚠ Delete all files in {service} watchlist."),
+        "name": format!("{addon_name} {short_name} 🗑️💩🚨"),
+        "description": format!("🚨💀⚠ Delete all files in {short_name} watchlist."),
         "url": format!(
             "{host_url}/streaming_provider/{secret_str}/delete_all_watchlist?provider={service}"
         ),

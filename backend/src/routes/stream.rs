@@ -15,7 +15,7 @@ use crate::{
     cache::{self, codec, stream_cache},
     crypto, db,
     db::TorrentType,
-    models::user_data::SortingOption,
+    models::user_data::{provider_short_name, SortingOption},
     scrapers::{orchestrator, torrent_metadata},
     state::AppState,
     template,
@@ -2063,20 +2063,6 @@ fn build_stream_context(
         "service": service_obj,
         "addon": { "name": addon_name }
     })
-}
-
-fn provider_short_name(svc: &str) -> &str {
-    match svc {
-        "realdebrid" => "RD",
-        "alldebrid" => "AD",
-        "premiumize" => "PM",
-        "debridlink" => "DL",
-        "torbox" => "TB",
-        "stremthru" => "ST",
-        "offcloud" => "OC",
-        "easydebrid" => "ED",
-        other => other,
-    }
 }
 
 #[allow(clippy::too_many_arguments)]

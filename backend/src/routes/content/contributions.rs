@@ -1610,18 +1610,7 @@ fn is_adult_contribution(
     data: &serde_json::Value,
     cache: &crate::state::KeywordFilterCache,
 ) -> bool {
-    let check_text = |text: &str| -> bool {
-        if text.is_empty() {
-            return false;
-        }
-        let lower = text.to_lowercase();
-        // whitelist check first
-        if cache.whitelist.iter().any(|p| lower.contains(p.as_str())) {
-            return false;
-        }
-        // keyword check
-        cache.keywords.iter().any(|kw| lower.contains(kw.as_str()))
-    };
+    let check_text = |text: &str| -> bool { cache.matches_blocked_keyword(text) };
 
     // Check top-level name and title fields (torrent_name, display name, resolved title)
     for key in &["name", "title"] {

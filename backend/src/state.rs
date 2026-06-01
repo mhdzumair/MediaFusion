@@ -17,6 +17,37 @@ pub struct KeywordFilterCache {
     pub whitelist: Vec<String>, // whitelist phrases, lowercased
 }
 
+impl KeywordFilterCache {
+    /// Returns true when `text` matches an active blacklist keyword and is not whitelisted.
+    pub fn matches_blocked_keyword(&self, text: &str) -> bool {
+        if text.is_empty() {
+            return false;
+        }
+        let lower = text.to_lowercase();
+        if self
+            .whitelist
+            .iter()
+            .any(|phrase| lower.contains(phrase.as_str()))
+        {
+            return false;
+        }
+        self.keywords
+            .iter()
+            .any(|keyword| lower.contains(keyword.as_str()))
+    }
+
+    /// Remove genres whose names match blacklist keywords.
+    pub fn filter_genres_by_type(
+        &self,
+        mut genres: std::collections::HashMap<String, Vec<String>>,
+    ) -> std::collections::HashMap<String, Vec<String>> {
+        for list in genres.values_mut() {
+            list.retain(|name| !self.matches_blocked_keyword(name));
+        }
+        genres
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub config: AppConfig,

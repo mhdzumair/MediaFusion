@@ -311,6 +311,13 @@ async fn serve_manifest(state: Arc<AppState>, user_data: UserData) -> impl IntoR
             cache::set_json(&state.redis, GENRES_KEY, &gv, 3600).await;
             g
         };
+    let genres = {
+        let keyword_filters = state
+            .keyword_filters
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        keyword_filters.filter_genres_by_type(genres)
+    };
 
     let manifest = build_manifest(&state.config, &user_data, &genres);
     cache::set_json(&state.redis, &cache_key, &manifest, ttl).await;
