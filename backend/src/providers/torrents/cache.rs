@@ -17,6 +17,17 @@ const CHECK_MARKER_PREFIX: &str = "debrid_checked:";
 const EXPIRY_DAYS_SECS: i64 = 7 * 86400;
 const CHECK_MARKER_TTL: i64 = 1800; // 30 minutes
 
+/// Providers that check cache by scanning the user's own download list rather than a
+/// global CDN-hash endpoint. The full list is cached in Redis to prevent thundering-herd
+/// when many streams are checked concurrently or when the watchlist catalog runs in parallel.
+///
+/// - realdebrid: paginates GET /torrents (up to 100 pages × 100 items)
+/// - alldebrid:  single GET /magnet/status?status=ready (all user's ready magnets)
+/// - seedr:      fetches root folder contents
+const USER_LIST_CHECK_PROVIDERS: &[&str] = &["realdebrid", "alldebrid", "seedr"];
+const USER_HASHES_PREFIX: &str = "user_hashes:";
+const USER_HASHES_TTL: i64 = 300; // 5 minutes
+
 /// Global providers check service-level CDN cache (same for all users).
 const GLOBAL_CACHE_CHECK_PROVIDERS: &[&str] = &["torbox", "stremthru", "offcloud", "premiumize"];
 
@@ -84,6 +95,60 @@ pub async fn store_cached_hashes(redis: &RedisClient, service: &str, hashes: &[S
     }
 }
 
+// ─── User-account hash list cache ────────────────────────────────────────────
+
+/// Return the full set of downloaded info-hashes for `service`/`token`, using a
+/// short-lived Redis cache to avoid hammering the provider API.
+///
+/// Used by providers whose cache-check API IS the user's download list (no global
+/// CDN endpoint). Shared between `live_check` and the watchlist catalog so both
+/// code paths benefit from the same cache window.
+pub async fn get_user_hashes_cached(
+    http: &reqwest::Client,
+    redis: &RedisClient,
+    service: &str,
+    token: &str,
+) -> HashSet<String> {
+    let key = format!("{USER_HASHES_PREFIX}{service}:{}", user_hash(token));
+
+    if let Ok(Some(json)) = redis.get::<Option<String>, _>(&key).await {
+        if let Ok(hashes) = serde_json::from_str::<Vec<String>>(&json) {
+            return hashes.into_iter().collect();
+        }
+    }
+
+    let hashes =
+        match crate::providers::torrents::list_downloaded_hashes(http, service, token).await {
+            Ok(h) => h,
+            Err(e) => {
+                warn!("user_hashes [{service}]: {e}");
+                return HashSet::new();
+            }
+        };
+
+    if !hashes.is_empty() {
+        match serde_json::to_string(&hashes) {
+            Ok(json) => {
+                if let Err(e) = redis
+                    .set::<(), _, _>(
+                        &key,
+                        json,
+                        Some(Expiration::EX(USER_HASHES_TTL)),
+                        None,
+                        false,
+                    )
+                    .await
+                {
+                    warn!("user_hashes set [{key}]: {e}");
+                }
+            }
+            Err(e) => warn!("user_hashes serialize [{key}]: {e}"),
+        }
+    }
+
+    hashes.into_iter().collect()
+}
+
 // ─── Public dispatcher ────────────────────────────────────────────────────────
 
 /// Check uncached hashes against the live provider API.
@@ -107,19 +172,29 @@ pub async fn live_check(
         return hashes.iter().map(|h| (h.clone(), false)).collect();
     }
 
-    let newly_cached: Vec<String> = match service {
-        "torbox" => super::torbox::check_cached(http, token, hashes).await,
-        "premiumize" => super::premiumize::check_cached(http, token, hashes).await,
-        "offcloud" => super::offcloud::check_cached(http, token, hashes).await,
-        "easydebrid" => super::easydebrid::check_cached(http, token, hashes).await,
-        "stremthru" => super::stremthru::check_cached(http, token, hashes, media_id).await,
-        "alldebrid" => super::alldebrid::check_cached(http, token, hashes).await,
-        "realdebrid" => super::realdebrid::check_cached(http, token, hashes).await,
-        "debridlink" => super::debridlink::check_cached(http, token, hashes).await,
-        "seedr" => super::seedr::check_cached(http, token, hashes).await,
-        _ => {
-            mark_check_done(redis, service, token, media_id).await;
-            return hashes.iter().map(|h| (h.clone(), false)).collect();
+    let newly_cached: Vec<String> = if USER_LIST_CHECK_PROVIDERS.contains(&service) {
+        // These providers have no global hash-check endpoint; cache check IS the user's
+        // full download list. Use the shared Redis cache to avoid a fresh API fetch on
+        // every concurrent media_id check within the same 5-minute window.
+        let all = get_user_hashes_cached(http, redis, service, token).await;
+        hashes
+            .iter()
+            .filter(|h| all.contains(h.to_lowercase().as_str()))
+            .cloned()
+            .collect()
+    } else {
+        match service {
+            "torbox" => super::torbox::check_cached(http, token, hashes).await,
+            "premiumize" => super::premiumize::check_cached(http, token, hashes).await,
+            "offcloud" => super::offcloud::check_cached(http, token, hashes).await,
+            "easydebrid" => super::easydebrid::check_cached(http, token, hashes).await,
+            "stremthru" => super::stremthru::check_cached(http, token, hashes, media_id).await,
+            "alldebrid" => super::alldebrid::check_cached(http, token, hashes).await,
+            "debridlink" => super::debridlink::check_cached(http, token, hashes).await,
+            _ => {
+                mark_check_done(redis, service, token, media_id).await;
+                return hashes.iter().map(|h| (h.clone(), false)).collect();
+            }
         }
     };
 

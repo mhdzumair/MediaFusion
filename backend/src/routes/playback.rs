@@ -331,6 +331,15 @@ async fn resolve(
 
     if let Ok(ref url) = result {
         set_playback_cache(&state.redis, &cache_key, url).await;
+        // Successful resolution confirms this hash is accessible on the provider.
+        // Write to the global debrid_cache so future stream listings show ⚡️ without
+        // needing to re-run live_check for this hash.
+        crate::providers::torrents::cache::store_cached_hashes(
+            &state.redis,
+            &provider.service,
+            &[info_hash.to_string()],
+        )
+        .await;
     }
     lock_guard.release().await;
     result

@@ -1089,8 +1089,12 @@ async fn send_email(
         .header(ContentType::TEXT_PLAIN)
         .body(body)?;
 
-    let mut builder =
-        AsyncSmtpTransport::<Tokio1Executor>::relay(smtp_host)?.port(state.config.smtp_port);
+    let mut builder = if state.config.smtp_tls_enabled {
+        AsyncSmtpTransport::<Tokio1Executor>::relay(smtp_host)?.port(state.config.smtp_port)
+    } else {
+        AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(smtp_host)
+            .port(state.config.smtp_port)
+    };
 
     if let (Some(user), Some(pass)) = (
         state.config.smtp_username.as_deref(),

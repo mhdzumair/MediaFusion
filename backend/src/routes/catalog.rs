@@ -119,15 +119,16 @@ async fn handle_watchlist_catalog(
         None => return Json(Metas { metas: vec![] }).into_response(),
     };
 
-    let hashes =
-        match crate::providers::torrents::list_downloaded_hashes(&state.http, service, token).await
-        {
-            Ok(h) => h,
-            Err(e) => {
-                tracing::warn!("watchlist catalog {service}: {e}");
-                return Json(Metas { metas: vec![] }).into_response();
-            }
-        };
+    let hashes: Vec<String> =
+        crate::providers::torrents::cache::get_user_hashes_cached(
+            &state.http,
+            &state.redis,
+            service,
+            token,
+        )
+        .await
+        .into_iter()
+        .collect();
 
     if hashes.is_empty() {
         return Json(Metas { metas: vec![] }).into_response();

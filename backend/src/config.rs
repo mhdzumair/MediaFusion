@@ -144,6 +144,8 @@ pub struct AppConfig {
     /// SMTP host for sending verification/reset emails (optional).
     pub smtp_host: Option<String>,
     pub smtp_port: u16,
+    /// When false, connects without TLS — useful for internal/relay SMTP on port 25.
+    pub smtp_tls_enabled: bool,
     pub smtp_username: Option<String>,
     pub smtp_password: Option<String>,
     pub smtp_from: String,
@@ -538,6 +540,10 @@ impl AppConfig {
             telegram_backup_channel_id: env("TELEGRAM_BACKUP_CHANNEL_ID").ok().filter(|s| !s.is_empty()),
             smtp_host: env("SMTP_HOST").ok().filter(|s| !s.is_empty()),
             smtp_port: env("SMTP_PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(587),
+            smtp_tls_enabled: env("SMTP_TLS_ENABLED")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(true),
             smtp_username: env("SMTP_USERNAME").ok().filter(|s| !s.is_empty()),
             smtp_password: env("SMTP_PASSWORD").ok().filter(|s| !s.is_empty()),
             smtp_from: env("SMTP_FROM_EMAIL")
