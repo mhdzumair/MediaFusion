@@ -23,9 +23,10 @@ fn map_ad_error(code: &str) -> Option<(&'static str, &'static str)> {
         "MAGNET_TOO_MANY_ACTIVE" | "MAGNET_TOO_MANY" => {
             ("Too many active torrents on AllDebrid", "torrent_limit.mp4")
         }
-        "MAGNET_INVALID_ID" | "MAGNET_NOT_FOUND" => {
-            ("Torrent not found in AllDebrid account", "torrent_not_downloaded.mp4")
-        }
+        "MAGNET_INVALID_ID" | "MAGNET_NOT_FOUND" => (
+            "Torrent not found in AllDebrid account",
+            "torrent_not_downloaded.mp4",
+        ),
         "NO_SERVER" => ("Failed to add magnet to AllDebrid", "transfer_error.mp4"),
         _ => return None,
     })

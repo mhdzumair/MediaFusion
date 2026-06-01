@@ -113,9 +113,10 @@ fn map_torbox_error(error_code: &str) -> Option<(&'static str, &'static str)> {
         "ACTIVE_LIMIT" | "MONTHLY_LIMIT" => ("Download limit exceeded", "daily_download_limit.mp4"),
         "PLAN_RESTRICTED_FEATURE" => ("Need premium TorBox account", "need_premium.mp4"),
         // Transient TorBox-side errors — service will recover on retry.
-        "DATABASE_ERROR" | "DOWNSTREAM_ERROR" | "REQUEST_FAILED" => {
-            ("TorBox service error, please retry", "debrid_service_down_error.mp4")
-        }
+        "DATABASE_ERROR" | "DOWNSTREAM_ERROR" | "REQUEST_FAILED" => (
+            "TorBox service error, please retry",
+            "debrid_service_down_error.mp4",
+        ),
         _ => return None,
     })
 }

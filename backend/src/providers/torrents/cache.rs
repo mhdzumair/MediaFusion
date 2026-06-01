@@ -123,7 +123,10 @@ pub async fn get_user_hashes_cached(
             Err(e) => {
                 // Auth / rate-limit failures are expected (token expired, quota hit).
                 // Log at debug so they don't flood production logs; other errors stay warn.
-                if matches!(e.video_file(), "invalid_token.mp4" | "too_many_requests.mp4") {
+                if matches!(
+                    e.video_file(),
+                    "invalid_token.mp4" | "too_many_requests.mp4"
+                ) {
                     tracing::debug!("user_hashes [{service}]: {e}");
                 } else {
                     warn!("user_hashes [{service}]: {e}");

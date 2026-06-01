@@ -1145,7 +1145,10 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
             Ok(a) => a,
             Err(e) => {
                 // Auth and rate-limit errors are expected during cache checks; don't warn.
-                if matches!(e.video_file(), "invalid_token.mp4" | "too_many_requests.mp4") {
+                if matches!(
+                    e.video_file(),
+                    "invalid_token.mp4" | "too_many_requests.mp4"
+                ) {
                     tracing::debug!("realdebrid check_cached page {page}: {e}");
                 } else {
                     tracing::warn!("realdebrid check_cached page {page}: {e}");
