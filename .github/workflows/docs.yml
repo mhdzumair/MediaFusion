@@ -1,0 +1,38 @@
+name: Deploy documentation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install docs dependencies
+        run: pip install mkdocs-material mkdocs-glightbox
+
+      - name: Deploy to GitHub Pages
+        # MKDOCS_MATERIAL_CHECKS=false suppresses the informational MkDocs 2.0
+        # compatibility warning emitted by the Material theme team. It does not
+        # affect the build — the warning is advisory only.
+        env:
+          MKDOCS_MATERIAL_CHECKS: "false"
+        run: mkdocs gh-deploy --force

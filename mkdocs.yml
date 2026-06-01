@@ -1,0 +1,121 @@
+site_name: MediaFusion
+site_url: https://mhdzumair.github.io/MediaFusion/
+site_description: The ultimate open-source streaming platform — aggregate streams, manage playback via debrid/P2P providers, enjoy on Stremio, Kodi, or your browser.
+site_author: Mohamed Zumair
+repo_url: https://github.com/mhdzumair/MediaFusion
+repo_name: mhdzumair/MediaFusion
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - search.suggest
+    - search.share
+    - content.tabs.link
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+
+plugins:
+  - search
+  - glightbox
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - What is MediaFusion?: getting-started/index.md
+    - Quick Start (2 minutes): getting-started/quick-start.md
+    - Choosing a Deployment: getting-started/choosing-deployment.md
+  - Features: features.md
+  - Deployment:
+    - Overview: deployment/index.md
+    - ElfHosted (Managed): deployment/elfhosted.md
+    - Docker Compose: deployment/docker-compose.md
+    - Direct Binary: deployment/binary.md
+    - Kubernetes: deployment/kubernetes.md
+    - Local Development: deployment/local-dev.md
+    - Database Migrations: deployment/migrations.md
+  - Configuration:
+    - Overview: configuration/index.md
+    - Core Settings: configuration/core.md
+    - Database & Redis: configuration/database.md
+    - Streaming Providers: configuration/streaming-providers.md
+    - Content Sources: configuration/content-sources.md
+    - MediaFlow Proxy: configuration/mediaflow.md
+    - Security: configuration/security.md
+  - Integrations:
+    - Stremio: integrations/stremio.md
+    - Kodi: integrations/kodi.md
+    - Prowlarr: integrations/prowlarr.md
+    - AceStream: integrations/acestream.md
+    - qBittorrent WebDAV: integrations/qbittorrent.md
+    - Browser Extension: integrations/browser-extension.md
+  - Reference:
+    - Environment Variables: reference/env-reference.md
+    - Architecture: reference/architecture.md
+    - Database Schema: reference/database-erd.md
+    - Performance Tuning: reference/performance.md
+  - Contributing: contributing.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/mhdzumair/MediaFusion
+    - icon: fontawesome/brands/telegram
+      link: https://t.me/mediafusion_stremio_addon
+
+extra_css:
+  - assets/extra.css
+
+extra_javascript:
+  - assets/mermaid-init.js

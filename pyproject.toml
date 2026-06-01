@@ -82,6 +82,11 @@ dev = [
     "httpx>=0.28.1",
 ]
 
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocs-glightbox>=0.4",
+]
+
 [tool.uv.sources]
 pikpakapi = {git = "git+https://github.com/mhdzumair/PikPakAPI.git"}
 aioqbt = {git = "git+https://github.com/mhdzumair/aioqbt.git"}
