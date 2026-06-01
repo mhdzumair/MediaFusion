@@ -753,9 +753,7 @@ pub async fn clear_single_exception(
 
 // ─── request_metrics.py endpoints ────────────────────────────────────────────
 
-const METRICS_KEY_PREFIX: &str = "req_metric:";
-const METRICS_INDEX_KEY: &str = "req_metrics:index";
-const RECENT_REQUESTS_KEY: &str = "req_metrics:recent";
+use crate::metrics_middleware::{AGG_PREFIX, ENDPOINTS_KEY, RECENT_KEY};
 
 #[derive(Deserialize)]
 pub struct MetricsEndpointListQuery {
@@ -774,26 +772,58 @@ pub struct RecentRequestsQuery {
     pub route: Option<String>,
 }
 
+fn agg_hash_to_item(ep_key: &str, data: std::collections::HashMap<String, String>) -> Value {
+    let total_req: i64 = data
+        .get("total_requests")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let total_time: f64 = data
+        .get("total_time")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
+    let avg_time = if total_req > 0 {
+        (total_time / total_req as f64 * 1_000_000.0).round() / 1_000_000.0
+    } else {
+        0.0
+    };
+    let method = data
+        .get("method")
+        .cloned()
+        .unwrap_or_else(|| ep_key.split(':').next().unwrap_or("").to_string());
+    let route = data
+        .get("route")
+        .cloned()
+        .unwrap_or_else(|| ep_key.splitn(2, ':').nth(1).unwrap_or(ep_key).to_string());
+
+    json!({
+        "endpoint_key": ep_key,
+        "method": method,
+        "route": route,
+        "total_requests": total_req,
+        "avg_time": avg_time,
+        "min_time": data.get("min_time").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0),
+        "max_time": data.get("max_time").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0),
+        "error_count": data.get("error_count").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0),
+        "status_2xx": data.get("status_2xx").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0),
+        "status_3xx": data.get("status_3xx").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0),
+        "status_4xx": data.get("status_4xx").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0),
+        "status_5xx": data.get("status_5xx").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0),
+        "last_seen": data.get("last_seen").cloned().unwrap_or_default(),
+    })
+}
+
 /// GET /api/v1/admin/request-metrics/status
 pub async fn get_request_metrics_status(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
+    use fred::prelude::SortedSetsInterface;
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
 
-    let total_endpoints: i64 = state
-        .redis
-        .llen::<i64, _>(METRICS_INDEX_KEY)
-        .await
-        .unwrap_or(0);
-
-    let total_recent: i64 = state
-        .redis
-        .llen::<i64, _>(RECENT_REQUESTS_KEY)
-        .await
-        .unwrap_or(0);
+    let total_endpoints: i64 = state.redis.zcard(ENDPOINTS_KEY).await.unwrap_or(0);
+    let total_recent: i64 = state.redis.llen::<i64, _>(RECENT_KEY).await.unwrap_or(0);
 
     Json(json!({
         "enabled": true,
@@ -814,32 +844,61 @@ pub async fn list_endpoint_stats(
     State(state): State<Arc<AppState>>,
     Query(params): Query<MetricsEndpointListQuery>,
 ) -> impl IntoResponse {
+    use fred::prelude::SortedSetsInterface;
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
 
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
+    let sort_by = params.sort_by.as_deref().unwrap_or("total_requests");
+    let sort_desc = params.sort_order.as_deref().unwrap_or("desc") != "asc";
 
-    let all_keys: Vec<String> = state
+    // Get all endpoints (most-recently-seen first)
+    let all_ep_keys: Vec<String> = state
         .redis
-        .lrange::<Vec<String>, _>(METRICS_INDEX_KEY, 0, -1)
+        .zrange(ENDPOINTS_KEY, 0i64, -1i64, None, true, None, false)
         .await
         .unwrap_or_default();
 
     let mut items: Vec<Value> = Vec::new();
-    for key in &all_keys {
-        let data: Option<String> = state
-            .redis
-            .get::<Option<String>, _>(format!("{METRICS_KEY_PREFIX}{key}"))
-            .await
-            .unwrap_or(None);
-        if let Some(raw) = data {
-            if let Ok(v) = serde_json::from_str::<Value>(&raw) {
-                items.push(v);
-            }
+    for ep_key in &all_ep_keys {
+        let agg_key = format!("{AGG_PREFIX}{ep_key}");
+        let data: std::collections::HashMap<String, String> =
+            state.redis.hgetall(&agg_key).await.unwrap_or_default();
+        if !data.is_empty() {
+            items.push(agg_hash_to_item(ep_key, data));
         }
     }
+
+    // Sort
+    items.sort_by(|a, b| {
+        let va = match sort_by {
+            "avg_time" | "min_time" | "max_time" => {
+                a.get(sort_by).and_then(|v| v.as_f64()).unwrap_or(0.0)
+            }
+            _ => {
+                a.get(sort_by)
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0) as f64
+            }
+        };
+        let vb = match sort_by {
+            "avg_time" | "min_time" | "max_time" => {
+                b.get(sort_by).and_then(|v| v.as_f64()).unwrap_or(0.0)
+            }
+            _ => {
+                b.get(sort_by)
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0) as f64
+            }
+        };
+        if sort_desc {
+            vb.partial_cmp(&va).unwrap_or(std::cmp::Ordering::Equal)
+        } else {
+            va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
+        }
+    });
 
     let total = items.len() as i64;
     let pages = (total + per_page - 1) / per_page;
@@ -876,24 +935,20 @@ pub async fn get_endpoint_detail(
         format!("/{route}")
     };
 
-    let key = format!("{}{}-{}", METRICS_KEY_PREFIX, method.to_uppercase(), route);
-    let data: Option<String> = state
-        .redis
-        .get::<Option<String>, _>(&key)
-        .await
-        .unwrap_or(None);
+    let ep_key = format!("{}:{route}", method.to_uppercase());
+    let agg_key = format!("{AGG_PREFIX}{ep_key}");
+    let data: std::collections::HashMap<String, String> =
+        state.redis.hgetall(&agg_key).await.unwrap_or_default();
 
-    match data {
-        Some(raw) => match serde_json::from_str::<Value>(&raw) {
-            Ok(v) => Json(v).into_response(),
-            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        },
-        None => (
+    if data.is_empty() {
+        return (
             StatusCode::NOT_FOUND,
             Json(json!({"detail": "Endpoint metrics not found. It may have expired."})),
         )
-            .into_response(),
+            .into_response();
     }
+
+    Json(agg_hash_to_item(&ep_key, data)).into_response()
 }
 
 /// GET /api/v1/admin/request-metrics/recent
@@ -911,14 +966,13 @@ pub async fn list_recent_requests(
 
     let raw_entries: Vec<String> = state
         .redis
-        .lrange::<Vec<String>, _>(RECENT_REQUESTS_KEY, 0, -1)
+        .lrange::<Vec<String>, _>(RECENT_KEY, 0, -1)
         .await
         .unwrap_or_default();
 
     let mut items: Vec<Value> = Vec::new();
     for raw in &raw_entries {
         if let Ok(v) = serde_json::from_str::<Value>(raw) {
-            // Apply filters
             if let Some(ref method) = params.method {
                 if v.get("method").and_then(|m| m.as_str()) != Some(method.as_str()) {
                     continue;
@@ -930,7 +984,11 @@ pub async fn list_recent_requests(
                 }
             }
             if let Some(ref route) = params.route {
-                let path_val = v.get("path").and_then(|p| p.as_str()).unwrap_or("");
+                let path_val = v
+                    .get("route_template")
+                    .or_else(|| v.get("path"))
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("");
                 if !path_val.contains(route.as_str()) {
                     continue;
                 }
@@ -963,32 +1021,29 @@ pub async fn clear_request_metrics(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
+    use fred::prelude::SortedSetsInterface;
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
 
-    let all_keys: Vec<String> = state
+    let all_ep_keys: Vec<String> = state
         .redis
-        .lrange::<Vec<String>, _>(METRICS_INDEX_KEY, 0, -1)
+        .zrange(ENDPOINTS_KEY, 0i64, -1i64, None, false, None, false)
         .await
         .unwrap_or_default();
 
     let mut cleared: i64 = 0;
-    for key in &all_keys {
+    for ep_key in &all_ep_keys {
         let n: i64 = state
             .redis
-            .del::<i64, _>(format!("{METRICS_KEY_PREFIX}{key}"))
+            .del::<i64, _>(format!("{AGG_PREFIX}{ep_key}"))
             .await
             .unwrap_or(0);
         cleared += n;
     }
-    let _ = state.redis.del::<i64, _>(METRICS_INDEX_KEY).await;
-    let n: i64 = state
-        .redis
-        .del::<i64, _>(RECENT_REQUESTS_KEY)
-        .await
-        .unwrap_or(0);
-    cleared += n;
+    let _: Result<i64, _> = state.redis.del(ENDPOINTS_KEY).await;
+    let _: Result<i64, _> = state.redis.del(RECENT_KEY).await;
+    cleared += 2;
 
     Json(json!({
         "cleared": cleared,
