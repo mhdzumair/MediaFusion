@@ -160,29 +160,15 @@ async fn dispatch(
     {
         Ok(url) => url,
         Err(e) => {
-            let vf = e.video_file();
             let kind = match &e {
                 providers::ProviderError::Http(_) => "http",
                 providers::ProviderError::Api { .. } => "api",
                 providers::ProviderError::Json(_) => "json",
                 providers::ProviderError::Other(_) => "other",
             };
-            if vf == "api_error.mp4" {
-                tracing::warn!(
-                    provider = %provider_name,
-                    hash = %info_hash,
-                    kind,
-                    "playback error: {e}"
-                );
-            } else {
-                tracing::debug!(
-                    provider = %provider_name,
-                    hash = %info_hash,
-                    kind,
-                    "playback error: {e}"
-                );
-            }
-            error_video_url(state, vf)
+            let msg = format!("playback [{kind}] provider={provider_name} hash={info_hash}");
+            e.log(&msg);
+            error_video_url(state, e.video_file())
         }
     };
 

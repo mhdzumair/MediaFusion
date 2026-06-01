@@ -198,10 +198,18 @@ async fn oc_post_form(
     Ok(body)
 }
 
+fn offcloud_needs_premium(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    lower.contains("not_available")
+        || lower.contains("not premium")
+        || lower.contains("premium required")
+        || lower.contains("account not premium")
+}
+
 fn check_offcloud_error(body: &Value) -> Result<(), ProviderError> {
-    // Check for "not_available" anywhere in the response
+    // Check for premium/plan errors anywhere in the response
     if let Some(s) = body.as_str() {
-        if s.contains("not_available") {
+        if offcloud_needs_premium(s) {
             return Err(ProviderError::api(
                 "Need premium OffCloud account",
                 "need_premium.mp4",
@@ -210,10 +218,7 @@ fn check_offcloud_error(body: &Value) -> Result<(), ProviderError> {
     }
     if let Some(obj) = body.as_object() {
         for (_, v) in obj {
-            if v.as_str()
-                .map(|s| s.contains("not_available"))
-                .unwrap_or(false)
-            {
+            if v.as_str().is_some_and(offcloud_needs_premium) {
                 return Err(ProviderError::api(
                     "Need premium OffCloud account",
                     "need_premium.mp4",
@@ -223,9 +228,9 @@ fn check_offcloud_error(body: &Value) -> Result<(), ProviderError> {
     }
     if let Some(error) = body.get("error") {
         let msg = error.as_str().unwrap_or("Unknown OffCloud error");
-        if msg.contains("not_available") {
+        if offcloud_needs_premium(msg) {
             return Err(ProviderError::api(
-                "Need premium OffCloud account",
+                format!("OffCloud error: {msg}"),
                 "need_premium.mp4",
             ));
         }

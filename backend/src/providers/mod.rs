@@ -89,8 +89,29 @@ impl ProviderError {
     pub fn video_file(&self) -> &'static str {
         match self {
             Self::Api { video_file, .. } => video_file,
-            Self::Http(e) if e.is_timeout() || e.is_connect() => "debrid_service_down_error.mp4",
+            // Transport failures from reqwest (DNS, connection reset, TLS, etc.)
+            Self::Http(_) => "debrid_service_down_error.mp4",
             _ => "api_error.mp4",
+        }
+    }
+
+    /// Whether this error is an unexpected operational failure (vs. user/account config).
+    ///
+    /// Unexpected errors are logged at WARN; expected user-facing errors at DEBUG.
+    pub fn is_unexpected(&self) -> bool {
+        match self {
+            Self::Api { video_file, .. } => *video_file == "api_error.mp4",
+            Self::Http(_) | Self::Json(_) => false,
+            Self::Other(_) => true,
+        }
+    }
+
+    /// Log a provider error at WARN (unexpected) or DEBUG (expected user/account issue).
+    pub fn log(&self, message: &str) {
+        if self.is_unexpected() {
+            tracing::warn!("{message}: {self}");
+        } else {
+            tracing::debug!("{message}: {self}");
         }
     }
 }

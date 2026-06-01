@@ -611,15 +611,7 @@ fn check_api_error(data: Value) -> Result<Value, ProviderError> {
         let msg = data["error_description"]
             .as_str()
             .unwrap_or_else(|| err.as_str().unwrap_or("PikPak API error"));
-        let msg_lower = msg.to_lowercase();
-        let vf = if msg_lower.contains("invalid")
-            && (msg_lower.contains("token") || msg_lower.contains("account"))
-        {
-            "invalid_token.mp4"
-        } else {
-            "api_error.mp4"
-        };
-        return Err(ProviderError::api(msg.to_string(), vf));
+        return Err(map_pikpak_error(msg));
     }
     if let Some(code) = api_error_code(&data) {
         if code != 0 {
@@ -968,7 +960,8 @@ async fn handle_torrent_error(
             ))
         }
         "You have reached the limits of free usage today"
-        | "The number of free transfers has been used up, continued use requires Premium" => {
+        | "The number of free transfers has been used up, continued use requires Premium"
+        | "Insufficient cloud storage, continued use requires Premium" => {
             if !task_id.is_empty() {
                 offline_task_retry(http, tokens, task_id, forward).await;
             }
@@ -1666,10 +1659,20 @@ fn map_pikpak_error(msg: &str) -> ProviderError {
             "debrid_service_down_error.mp4",
         );
     }
-    if lower.contains("daily") || lower.contains("free usage") || lower.contains("free transfers") {
+    if lower.contains("daily")
+        || lower.contains("free usage")
+        || lower.contains("free transfers")
+        || lower.contains("continued use requires")
+    {
         return ProviderError::api(
             "PikPak daily download limit reached.",
             "daily_download_limit.mp4",
+        );
+    }
+    if lower.contains("requires premium") {
+        return ProviderError::api(
+            "PikPak premium required for this operation.",
+            "need_premium.mp4",
         );
     }
     if lower.contains("storage") || lower.contains("not enough space") {

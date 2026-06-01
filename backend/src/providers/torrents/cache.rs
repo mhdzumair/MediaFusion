@@ -121,16 +121,7 @@ pub async fn get_user_hashes_cached(
         match crate::providers::torrents::list_downloaded_hashes(http, service, token).await {
             Ok(h) => h,
             Err(e) => {
-                // Auth / rate-limit failures are expected (token expired, quota hit).
-                // Log at debug so they don't flood production logs; other errors stay warn.
-                if matches!(
-                    e.video_file(),
-                    "invalid_token.mp4" | "too_many_requests.mp4"
-                ) {
-                    tracing::debug!("user_hashes [{service}]: {e}");
-                } else {
-                    warn!("user_hashes [{service}]: {e}");
-                }
+                e.log(&format!("user_hashes [{service}]"));
                 return HashSet::new();
             }
         };

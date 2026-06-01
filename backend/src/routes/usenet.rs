@@ -300,7 +300,7 @@ async fn handle_provider(
     match result {
         Ok(url) => make_redirect(&url),
         Err(e) => {
-            warn!("usenet playback {provider_name}/{nzb_guid}: {e}");
+            e.log(&format!("usenet playback {provider_name}/{nzb_guid}"));
             make_redirect(&error_video_url(state, e.video_file()))
         }
     }

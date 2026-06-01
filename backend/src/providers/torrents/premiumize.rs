@@ -821,7 +821,7 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
         let body = match pm_get(http, &kind, "/cache/check", &params, None).await {
             Ok(v) => v,
             Err(e) => {
-                tracing::warn!("premiumize cache/check: {e}");
+                e.log("premiumize cache/check");
                 continue;
             }
         };
