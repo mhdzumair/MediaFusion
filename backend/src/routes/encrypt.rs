@@ -54,7 +54,7 @@ pub async fn decrypt_handler(
     match raw {
         Ok(val) => Json(json!({"status": "success", "data": val})).into_response(),
         Err(e) => {
-            tracing::warn!("decrypt_user_data failed: {e}");
+            tracing::debug!("decrypt_user_data failed: {e}");
             (
                 StatusCode::BAD_REQUEST,
                 Json(json!({"error": "decryption failed"})),

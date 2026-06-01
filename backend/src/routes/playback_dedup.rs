@@ -131,7 +131,7 @@ pub async fn reclaim_stale_lock(redis: &fred::clients::Client, cache_key: &str) 
 
     if stale {
         let age = lock_age_secs(redis, cache_key).await;
-        tracing::warn!(
+        tracing::debug!(
             cache_key = %cache_key,
             lock_value = %raw,
             lock_age_secs = ?age,

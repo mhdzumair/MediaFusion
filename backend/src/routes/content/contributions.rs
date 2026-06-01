@@ -996,9 +996,9 @@ pub async fn create_contribution(
         || (!is_anonymous && is_active && auto_types.contains(&body.contribution_type.as_str()));
 
     let initial_status = if should_auto_approve {
-        "APPROVED"
+        crate::db::ContributionStatus::Approved
     } else {
-        "PENDING"
+        crate::db::ContributionStatus::Pending
     };
     let reviewer_id = if should_auto_approve {
         Some("auto".to_string())

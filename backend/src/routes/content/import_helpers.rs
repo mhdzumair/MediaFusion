@@ -200,7 +200,11 @@ pub async fn create_contribution_record(
     is_privileged: bool,
 ) -> Result<String, sqlx::Error> {
     let id = Uuid::new_v4().to_string();
-    let status = if auto_approve { "APPROVED" } else { "PENDING" };
+    let status = if auto_approve {
+        crate::db::ContributionStatus::Approved
+    } else {
+        crate::db::ContributionStatus::Pending
+    };
     let reviewed_by: Option<&str> = if auto_approve { Some("auto") } else { None };
     let review_notes: Option<String> = if is_privileged {
         Some("Auto-approved: Privileged reviewer".to_string())
