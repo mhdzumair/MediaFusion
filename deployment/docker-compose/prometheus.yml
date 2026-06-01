@@ -6,8 +6,9 @@ scrape_configs:
   - job_name: mediafusion
     static_configs:
       - targets: ["mediafusion-api:8000"]
-    metrics_path: /api/v1/admin/metrics/prometheus
-    # No auth header needed when PROMETHEUS_DISABLE_AUTH=true
+    metrics_path: /api/v1/metrics
+    authorization:
+      credentials: "${PROMETHEUS_METRICS_TOKEN}"
 
   - job_name: redis
     static_configs:

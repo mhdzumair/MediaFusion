@@ -1167,7 +1167,6 @@ pub async fn find_or_create_sports_stub(
     pool: &PgPool,
     title: &str,
     year: Option<i32>,
-    genre_name: &str,
     poster_url: Option<&str>,
     media_type: &str,
 ) -> Option<i32> {
@@ -1199,7 +1198,6 @@ pub async fn find_or_create_sports_stub(
     };
 
     if let Some((id,)) = row {
-        link_genre(pool, id, genre_name).await;
         return Some(id);
     }
 
@@ -1217,7 +1215,6 @@ pub async fn find_or_create_sports_stub(
 
     if let Some((id, existing_title)) = fuzzy {
         if crate::parser::similarity_ratio(title, &existing_title) >= 70 {
-            link_genre(pool, id, genre_name).await;
             return Some(id);
         }
     }
@@ -1271,8 +1268,6 @@ pub async fn find_or_create_sports_stub(
         .execute(pool)
         .await;
     }
-
-    link_genre(pool, media_id, genre_name).await;
 
     debug!("media_resolve: created sports stub {media_id} ({media_type}) for '{title}'");
     Some(media_id)

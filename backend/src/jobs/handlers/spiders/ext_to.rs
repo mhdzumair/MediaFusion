@@ -100,8 +100,6 @@ pub(crate) struct CatalogSpec {
     media_type: &'static str,
     /// Sports category key (matches `catalog.name` in the DB, e.g. "formula_racing").
     category: &'static str,
-    /// Display genre name matching keys in sports_artifacts.json (e.g. "Formula Racing").
-    genre: &'static str,
 }
 
 const FORMULA_SPEC: CatalogSpec = CatalogSpec {
@@ -111,7 +109,6 @@ const FORMULA_SPEC: CatalogSpec = CatalogSpec {
     keyword: "formula",
     media_type: "movie",
     category: "formula_racing",
-    genre: "Formula Racing",
 };
 
 const MOTOGP_SPEC: CatalogSpec = CatalogSpec {
@@ -121,7 +118,6 @@ const MOTOGP_SPEC: CatalogSpec = CatalogSpec {
     keyword: "motogp",
     media_type: "movie",
     category: "motogp_racing",
-    genre: "MotoGP Racing",
 };
 
 const WWE_SPEC: CatalogSpec = CatalogSpec {
@@ -131,7 +127,6 @@ const WWE_SPEC: CatalogSpec = CatalogSpec {
     keyword: "wwe",
     media_type: "movie",
     category: "fighting",
-    genre: "Fighting (WWE, UFC)",
 };
 
 const UFC_SPEC: CatalogSpec = CatalogSpec {
@@ -141,7 +136,6 @@ const UFC_SPEC: CatalogSpec = CatalogSpec {
     keyword: "ufc",
     media_type: "movie",
     category: "fighting",
-    genre: "Fighting (WWE, UFC)",
 };
 
 const MOVIES_TV_SPEC: CatalogSpec = CatalogSpec {
@@ -151,7 +145,6 @@ const MOVIES_TV_SPEC: CatalogSpec = CatalogSpec {
     keyword: "",
     media_type: "movie",
     category: "ext_to_movie",
-    genre: "",
 };
 
 // ─── HMAC helpers ─────────────────────────────────────────────────────────────
@@ -632,7 +625,6 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                     pool,
                     &clean_title,
                     year,
-                    spec.genre,
                     None,
                     &stub_media_type,
                 )

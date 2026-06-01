@@ -47,6 +47,15 @@ pub struct AppConfig {
     // ── Torznab / auth ───────────────────────────────────────────────────────
     /// Optional API password for Torznab and private-instance validation.
     pub api_password: Option<String>,
+    /// Expose the Prometheus /api/v1/metrics endpoint (default: false).
+    pub enable_prometheus_metrics: bool,
+    /// Bearer token required to scrape /api/v1/metrics.
+    /// When set, the header `Authorization: Bearer <token>` is required on every
+    /// scrape request — even on public instances.  Configure the matching
+    /// `bearer_token` in your Prometheus scrape_configs.
+    /// When unset and the endpoint is enabled, it is open to anyone who can
+    /// reach the endpoint (rely on network-level controls in that case).
+    pub metrics_api_key: Option<String>,
     /// Enable the Torznab feed endpoint (default: true).
     pub enable_torznab_api: bool,
 
@@ -430,6 +439,9 @@ impl AppConfig {
             is_public_instance: env("IS_PUBLIC_INSTANCE")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
             api_password: env("API_PASSWORD").ok().filter(|s| !s.is_empty()),
+            enable_prometheus_metrics: env("ENABLE_PROMETHEUS_METRICS")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            metrics_api_key: env("PROMETHEUS_METRICS_TOKEN").ok().filter(|s| !s.is_empty()),
             enable_torznab_api: env("ENABLE_TORZNAB_API")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
             is_scrap_from_prowlarr: env("IS_SCRAP_FROM_PROWLARR")

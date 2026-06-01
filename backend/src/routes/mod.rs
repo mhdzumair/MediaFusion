@@ -456,8 +456,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/api/v1/content/{media_id}/likes",
             get(content::voting::get_content_likes),
         )
-        // ── Prometheus metrics (protected by api_key_middleware on private instances) ─
-        .route("/api/v1/metrics", get(metrics::handler))
+        // ── Prometheus metrics (opt-in via ENABLE_PROMETHEUS_METRICS=true) ─────
         // ── Admin ─────────────────────────────────────────────────────────────
         .route("/api/v1/admin/cache/stats", get(admin::cache_stats))
         .route("/api/v1/admin/cache/keys", get(admin::cache_keys))
@@ -714,7 +713,16 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/telegram/channels/{channel_id}", delete(integrations::remove_telegram_channel).patch(integrations::update_telegram_channel))
         .route("/api/v1/telegram/validate", post(integrations::validate_telegram_channel))
         .route("/api/v1/telegram/login", get(integrations::telegram_login))
-        .route("/api/v1/telegram/unlink", delete(integrations::telegram_unlink))
+        .route("/api/v1/telegram/unlink", delete(integrations::telegram_unlink));
+
+    // ── Prometheus metrics (opt-in via ENABLE_PROMETHEUS_METRICS=true) ───────
+    let api_router = if state.config.enable_prometheus_metrics {
+        api_router.route("/api/v1/metrics", get(metrics::handler))
+    } else {
+        api_router
+    };
+
+    let api_router = api_router
         // ── Middleware ───────────────────────────────────────────────────────
         .layer(axum::middleware::from_fn_with_state(
             Arc::clone(&state),

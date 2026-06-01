@@ -356,7 +356,6 @@ async fn store_torrent_stream(
         };
 
         let category = sports.catalog.as_deref().unwrap_or("other_sports");
-        let genre = parser::sports_category_to_genre(category);
         let stub_type = if sports.media_type == "series" {
             "SERIES"
         } else {
@@ -367,7 +366,6 @@ async fn store_torrent_stream(
             pool,
             &sports.meta.title,
             sports.meta.year,
-            genre,
             None,
             stub_type,
         )

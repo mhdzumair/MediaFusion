@@ -4,7 +4,7 @@ pub mod sports_parser;
 
 pub use sports_parser::{
     classify_wwe_title, clean_sports_title, detect_sports_category, is_sports_title,
-    parse_racing_title, parse_sports_title, racing_session_episode, sports_category_to_genre,
+    parse_racing_title, parse_sports_title, racing_session_episode,
     RacingParsed, WweEpisodeInfo,
 };
 

@@ -2,11 +2,13 @@
 ///
 /// Route: GET /api/v1/metrics
 ///
-/// Exposes live DB counts (torrents, metadata) and Redis stats
+/// Exposes live DB counts (torrents, metadata) and HTTP request metrics
 /// in Prometheus text format.
 ///
-/// No authentication on this endpoint — protect it at nginx/firewall level
-/// or prefix it with a shared secret path if needed.
+/// Enabled only when ENABLE_PROMETHEUS_METRICS=true.
+/// When PROMETHEUS_METRICS_TOKEN is set the request must carry
+/// `Authorization: Bearer <token>` — this applies even on public instances,
+/// so Prometheus can be configured with `bearer_token` in scrape_configs.
 use std::sync::Arc;
 
 use axum::{
@@ -20,7 +22,21 @@ use std::sync::atomic::AtomicU64;
 
 use crate::state::AppState;
 
-pub async fn handler(State(state): State<Arc<AppState>>) -> Response {
+pub async fn handler(
+    State(state): State<Arc<AppState>>,
+    req: axum::extract::Request,
+) -> Response {
+    if let Some(ref required) = state.config.metrics_api_key {
+        let provided = req
+            .headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .unwrap_or("");
+        if provided != required.as_str() {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+    }
     let mut registry = Registry::default();
 
     // ── DB gauges ────────────────────────────────────────────────────────────

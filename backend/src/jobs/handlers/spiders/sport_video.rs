@@ -404,13 +404,11 @@ impl JobHandler for SportVideoCrawl {
                 // with its true catalog key (e.g. "formula_racing").
                 let detected_category: &str =
                     parser::detect_sports_category(&block.title).unwrap_or(category.as_str());
-                let display_genre = parser::sports_category_to_genre(detected_category);
 
                 let media_id = media_resolve::find_or_create_sports_stub(
                     pool,
                     &block.title,
                     parsed_title.year,
-                    display_genre,
                     block.poster_url.as_deref(),
                     "MOVIE",
                 )

@@ -1988,12 +1988,10 @@ async fn process_advanced_import(
         } else {
             "MOVIE"
         };
-        let genre = crate::parser::sports_category_to_genre(cat);
         crate::scrapers::media_resolve::find_or_create_sports_stub(
             &state.pool,
             title,
             parsed.year,
-            genre,
             item.poster.as_deref(),
             db_type,
         )

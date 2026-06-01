@@ -117,11 +117,11 @@ services:
         max-file: "2"
 
   # ---------------------------------------------------------------------------
-  # Override mediafusion-api to expose /metrics without auth (perf only!)
+  # Override mediafusion-api to enable the metrics endpoint (no token for perf).
   # ---------------------------------------------------------------------------
   mediafusion-api:
     environment:
-      - PROMETHEUS_DISABLE_AUTH=true
+      - ENABLE_PROMETHEUS_METRICS=true
 
 volumes:
   prometheus-data:
