@@ -772,7 +772,10 @@ impl AppConfig {
             discover_enabled: env("DISCOVER_ENABLED")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
             discover_allow_server_key: env("DISCOVER_ALLOW_SERVER_KEY")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+                .ok()
+                .and_then(|v| v.parse().ok())
+                // Auto-enable when TMDB_API_KEY is set and no explicit override given.
+                .unwrap_or_else(|| env("TMDB_API_KEY").ok().filter(|s| !s.is_empty()).is_some()),
             image_upload_enabled: env("IMAGE_UPLOAD_ENABLED")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
             images_dir: env("IMAGES_DIR").unwrap_or_else(|_| "./data/images".into()),

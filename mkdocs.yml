@@ -85,6 +85,7 @@ nav:
     - Kubernetes: deployment/kubernetes.md
     - Local Development: deployment/local-dev.md
     - Database Migrations: deployment/migrations.md
+    - Worker CLI: deployment/worker-cli.md
   - Configuration:
     - Overview: configuration/index.md
     - Core Settings: configuration/core.md
