@@ -71,9 +71,7 @@ async fn record_to_redis(
 
     // Aggregate stats (atomic increments — no read-modify-write race)
     let _: Result<i64, _> = redis.hincrby(&agg_key, "total_requests", 1).await;
-    let _: Result<f64, _> = redis
-        .hincrbyfloat(&agg_key, "total_time", duration_s)
-        .await;
+    let _: Result<f64, _> = redis.hincrbyfloat(&agg_key, "total_time", duration_s).await;
     let _: Result<i64, _> = redis.hincrby(&agg_key, &status_class, 1).await;
     if status >= 400 {
         let _: Result<i64, _> = redis.hincrby(&agg_key, "error_count", 1).await;
@@ -98,18 +96,12 @@ async fn record_to_redis(
         .unwrap_or(0.0_f64);
     if duration_s < cur_min {
         let _: Result<bool, _> = redis
-            .hset(
-                &agg_key,
-                [("min_time", format!("{duration_s:.6}"))],
-            )
+            .hset(&agg_key, [("min_time", format!("{duration_s:.6}"))])
             .await;
     }
     if duration_s > cur_max {
         let _: Result<bool, _> = redis
-            .hset(
-                &agg_key,
-                [("max_time", format!("{duration_s:.6}"))],
-            )
+            .hset(&agg_key, [("max_time", format!("{duration_s:.6}"))])
             .await;
     }
 
@@ -177,13 +169,7 @@ pub async fn metrics_middleware(
         let now_ts = now.timestamp() as f64;
         let duration_s = duration_ms / 1000.0;
         tokio::spawn(record_to_redis(
-            redis,
-            method,
-            route,
-            status,
-            duration_s,
-            now_iso,
-            now_ts,
+            redis, method, route, status, duration_s, now_iso, now_ts,
         ));
     }
 
