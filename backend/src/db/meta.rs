@@ -67,12 +67,14 @@ pub async fn get_media_meta(
 
     let result = match parse_meta_id(meta_id) {
         MetaIdKind::Internal(id) => {
-            sqlx::query_as!(
-                MediaMetaRow,
+            // Use non-macro query_as so LEFT JOIN LATERAL columns (poster_url, background_url,
+            // imdb_rating) are decoded as nullable via the struct's Option<T> field types.
+            // The query_as! offline cache incorrectly infers those columns as non-nullable.
+            sqlx::query_as::<_, MediaMetaRow>(
                 r#"
                 SELECT
-                    m.id AS "media_id: MediaId",
-                    m.type AS "media_type: MediaType",
+                    m.id AS media_id,
+                    m.type AS media_type,
                     m.title,
                     m.year,
                     EXTRACT(YEAR FROM m.end_date)::int AS end_year,
@@ -108,19 +110,18 @@ pub async fn get_media_meta(
                 WHERE m.id = $1 AND m.type = $2
                 LIMIT 1
                 "#,
-                id as MediaId,
-                media_type as MediaType,
             )
+            .bind(id)
+            .bind(media_type)
             .fetch_optional(pool)
             .await
         }
         MetaIdKind::External(ext_id) => {
-            sqlx::query_as!(
-                MediaMetaRow,
+            sqlx::query_as::<_, MediaMetaRow>(
                 r#"
                 SELECT
-                    m.id AS "media_id: MediaId",
-                    m.type AS "media_type: MediaType",
+                    m.id AS media_id,
+                    m.type AS media_type,
                     m.title,
                     m.year,
                     EXTRACT(YEAR FROM m.end_date)::int AS end_year,
@@ -158,9 +159,9 @@ pub async fn get_media_meta(
                 WHERE m.type = $2
                 LIMIT 1
                 "#,
-                ext_id,
-                media_type as MediaType,
             )
+            .bind(ext_id)
+            .bind(media_type)
             .fetch_optional(pool)
             .await
         }
@@ -214,8 +215,9 @@ pub async fn get_cast(pool: &PgPool, media_id: MediaId) -> Vec<String> {
 }
 
 pub async fn get_episodes(pool: &PgPool, media_id: MediaId) -> Vec<EpisodeRow> {
-    sqlx::query_as!(
-        EpisodeRow,
+    // Use non-macro query_as so LEFT JOIN LATERAL (thumbnail_url) and LEFT JOIN
+    // (media_id) columns decode as nullable via the struct's Option<T> field types.
+    sqlx::query_as::<_, EpisodeRow>(
         r#"
         SELECT
             s.season_number,
@@ -224,7 +226,7 @@ pub async fn get_episodes(pool: &PgPool, media_id: MediaId) -> Vec<EpisodeRow> {
             e.overview,
             e.air_date,
             ei.url AS thumbnail_url,
-            fml.media_id AS "media_id: Option<MediaId>"
+            fml.media_id AS media_id
         FROM series_metadata sm
         JOIN season s ON s.series_id = sm.id
         JOIN episode e ON e.season_id = s.id
@@ -240,8 +242,8 @@ pub async fn get_episodes(pool: &PgPool, media_id: MediaId) -> Vec<EpisodeRow> {
         WHERE sm.media_id = $1
         ORDER BY s.season_number, e.episode_number
         "#,
-        media_id as MediaId,
     )
+    .bind(media_id)
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {

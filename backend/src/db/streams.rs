@@ -620,7 +620,7 @@ pub async fn fetch_stream_playback_info(
                 LEFT JOIN torrent_tracker_link ttl ON ttl.torrent_id = ts.id
                 LEFT JOIN tracker t ON t.id = ttl.tracker_id
                 WHERE ts.info_hash = $1
-                GROUP BY st.id, st.name, ts.total_size
+                GROUP BY st.id, st.name, ts.total_size, ts.torrent_file
                 "#,
             )
             .bind(info_hash)
