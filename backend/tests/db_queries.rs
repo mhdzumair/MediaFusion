@@ -63,8 +63,8 @@ impl Drop for Cleanup {
 async fn insert_media(pool: &sqlx::PgPool, media_type: MediaType, title: &str) -> i32 {
     sqlx::query_scalar::<_, i32>(
         r#"INSERT INTO media (type, title, adult, is_blocked, is_public, is_user_created,
-                              total_streams, created_at)
-           VALUES ($1, $2, false, false, true, false, 0, NOW())
+                              total_streams, nudity_status, created_at)
+           VALUES ($1, $2, false, false, true, false, 0, 'UNKNOWN', NOW())
            RETURNING id"#,
     )
     .bind(media_type)
