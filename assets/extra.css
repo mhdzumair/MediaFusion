@@ -1,0 +1,18 @@
+/* Hero section on landing page */
+.hero {
+  text-align: center;
+  padding: 2rem 0 1rem;
+}
+
+.hero img {
+  max-width: 180px;
+  margin-bottom: 1rem;
+}
+
+/* Provider badge grid */
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.5rem;
+  margin: 1rem 0;
+}

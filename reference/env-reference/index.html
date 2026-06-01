@@ -1,0 +1,3660 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The ultimate open-source streaming platform — aggregate streams, manage playback via debrid/P2P providers, enjoy on Stremio, Kodi, or your browser.">
+      
+      
+        <meta name="author" content="Mohamed Zumair">
+      
+      
+        <link rel="canonical" href="https://mhdzumair.github.io/MediaFusion/reference/env-reference/">
+      
+      
+        <link rel="prev" href="../../integrations/browser-extension/">
+      
+      
+        <link rel="next" href="../architecture/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Environment Variables - MediaFusion</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#environment-variables" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="MediaFusion" class="md-header__button md-logo" aria-label="MediaFusion" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MediaFusion
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Environment Variables
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard="" data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/mhdzumair/MediaFusion" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    mhdzumair/MediaFusion
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../features/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Features
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../deployment/" class="md-tabs__link">
+          
+  
+  
+  Deployment
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../configuration/" class="md-tabs__link">
+          
+  
+  
+  Configuration
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../integrations/stremio/" class="md-tabs__link">
+          
+  
+  
+  Integrations
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="MediaFusion" class="md-nav__button md-logo" aria-label="MediaFusion" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    MediaFusion
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/mhdzumair/MediaFusion" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    mhdzumair/MediaFusion
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2">
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What is MediaFusion?
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start (2 minutes)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/choosing-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choosing a Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4">
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/elfhosted/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ElfHosted (Managed)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/docker-compose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Compose
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/binary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Direct Binary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/kubernetes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kubernetes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/local-dev/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Local Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/migrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database Migrations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5">
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database &amp; Redis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/streaming-providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Streaming Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/content-sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Content Sources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/mediaflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MediaFlow Proxy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6">
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Integrations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/stremio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stremio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/kodi/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kodi
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/prowlarr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prowlarr
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/acestream/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AceStream
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/qbittorrent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qBittorrent WebDAV
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/browser-extension/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Browser Extension
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked="">
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Variables
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#required-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required Variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-application" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Application
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Database
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#caching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Caching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authentication-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication &amp; Security
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metrics-observability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metrics &amp; Observability
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scraper-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scraper Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scraper-enable-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scraper Enable Flags
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#live-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Live Search
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#background-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background Search
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#search-cache-ttls-re-search-intervals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Search Cache TTLs (Re-search Intervals)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dmm-hashlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DMM Hashlist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metadata
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#iptv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IPTV
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#premiumize-oauth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Premiumize OAuth
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#nzbdav-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NZBDav (Default)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#telegram-bot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Telegram Bot
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Telegram Bot">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#telegram-scraping-user-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Telegram Scraping (User API)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#smtp-email" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SMTP / Email
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#third-party-integrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Third-Party Integrations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#image-upload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Image Upload
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#static-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Static Files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#public-indexer-health-gates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public Indexer Health Gates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduler-global" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduler: Global
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduler-content-scrapers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduler: Content Scrapers
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../database-erd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance Tuning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#required-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required Variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-application" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Application
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Database
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#caching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Caching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authentication-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication &amp; Security
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metrics-observability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metrics &amp; Observability
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scraper-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scraper Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scraper-enable-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scraper Enable Flags
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#live-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Live Search
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#background-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background Search
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#search-cache-ttls-re-search-intervals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Search Cache TTLs (Re-search Intervals)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dmm-hashlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DMM Hashlist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metadata
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#iptv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IPTV
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#premiumize-oauth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Premiumize OAuth
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#nzbdav-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NZBDav (Default)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#telegram-bot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Telegram Bot
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Telegram Bot">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#telegram-scraping-user-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Telegram Scraping (User API)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#smtp-email" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SMTP / Email
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#third-party-integrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Third-Party Integrations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#image-upload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Image Upload
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#static-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Static Files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#public-indexer-health-gates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public Indexer Health Gates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduler-global" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduler: Global
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduler-content-scrapers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduler: Content Scrapers
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+  <nav class="md-path" aria-label="Navigation">
+    <ol class="md-path__list">
+      
+        
+  
+  
+    <li class="md-path__item">
+      <a href="../.." class="md-path__link">
+        
+  <span class="md-ellipsis">
+    Home
+  </span>
+
+      </a>
+    </li>
+  
+
+      
+      
+        
+  
+  
+    
+    
+      <li class="md-path__item">
+        <a href="./" class="md-path__link">
+          
+  <span class="md-ellipsis">
+    Reference
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">¶</a></h1>
+<p>Complete reference for all MediaFusion environment variables. Variables are read from the environment or from a <code>.env</code> file in the working directory.</p>
+<div class="admonition tip">
+<p class="admonition-title">Search this page</p>
+<p>Use ++ctrl+f++ / ++cmd+f++ in your browser to search for a specific variable name.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Case-insensitive</p>
+<p>Variable names are case-insensitive — <code>SECRET_KEY</code> and <code>secret_key</code> both work.</p>
+</div>
+<hr>
+<h2 id="required-variables">Required Variables<a class="headerlink" href="#required-variables" title="Permanent link">¶</a></h2>
+<p>These 4 variables must be set before MediaFusion will start:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SECRET_KEY</code></td>
+<td><em>(32+ char random string)</em></td>
+<td>AES-256 key for encrypting user profile data in manifest URLs. Generate with <code>openssl rand -hex 16</code>.</td>
+</tr>
+<tr>
+<td><code>POSTGRES_URI</code></td>
+<td><code>postgresql://user:pass@host:5432/db</code></td>
+<td>Primary PostgreSQL connection string. Both <code>postgresql://</code> and <code>postgresql+asyncpg://</code> formats are accepted.</td>
+</tr>
+<tr>
+<td><code>HOST_URL</code></td>
+<td><code>https://mediafusion.example.com</code></td>
+<td>Public base URL of your instance. Used to build all manifest and stream URLs.</td>
+</tr>
+<tr>
+<td><code>API_PASSWORD</code></td>
+<td><em>(strong password)</em></td>
+<td>Password protecting admin endpoints (<code>/scraper</code>, admin API). Set on private instances.</td>
+</tr>
+</tbody>
+</table>
+<p><code>CONTACT_EMAIL</code> is strongly recommended (shown in addon metadata) but not strictly required.</p>
+<hr>
+<h2 id="core-application">Core Application<a class="headerlink" href="#core-application" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ADDON_NAME</code></td>
+<td><code>MediaFusion</code></td>
+<td>Name shown in Stremio/Kodi addon listings.</td>
+</tr>
+<tr>
+<td><code>VERSION</code></td>
+<td><code>1.0.0</code></td>
+<td>Version string shown in manifest metadata.</td>
+</tr>
+<tr>
+<td><code>ADDON_DESCRIPTION</code></td>
+<td><em>(built-in)</em></td>
+<td>Addon description. Env var: <code>ADDON_DESCRIPTION</code>.</td>
+</tr>
+<tr>
+<td><code>ADDON_LOGO</code></td>
+<td><em>(MediaFusion CDN URL)</em></td>
+<td>URL of the logo shown in Stremio.</td>
+</tr>
+<tr>
+<td><code>CONTACT_EMAIL</code></td>
+<td>—</td>
+<td>Contact email shown in addon metadata.</td>
+</tr>
+<tr>
+<td><code>BRANDING_DESCRIPTION</code></td>
+<td><em>(built-in)</em></td>
+<td>Branding text shown on the home page (may contain HTML).</td>
+</tr>
+<tr>
+<td><code>IS_PUBLIC_INSTANCE</code></td>
+<td><code>false</code></td>
+<td>When <code>true</code>, disables API password enforcement everywhere. Use for fully open community instances.</td>
+</tr>
+<tr>
+<td><code>MIN_SCRAPING_VIDEO_SIZE</code></td>
+<td><code>26214400</code></td>
+<td>Minimum file size in bytes (25 MB) to consider a torrent file a valid video.</td>
+</tr>
+<tr>
+<td><code>DISABLED_CONTENT_TYPES</code></td>
+<td><code>[]</code></td>
+<td>JSON array of content types to disable globally: <code>magnet</code>, <code>torrent</code>, <code>nzb</code>, <code>iptv</code>, <code>youtube</code>, <code>http</code>, <code>acestream</code>, <code>telegram</code>.</td>
+</tr>
+<tr>
+<td><code>DISABLED_PROVIDERS</code></td>
+<td><code>[]</code></td>
+<td>JSON array of provider names to remove from the Configure UI: <code>p2p</code>, <code>realdebrid</code>, <code>seedr</code>, <code>debridlink</code>, <code>alldebrid</code>, <code>offcloud</code>, <code>pikpak</code>, <code>torbox</code>, <code>premiumize</code>, <code>qbittorrent</code>, <code>stremthru</code>, <code>easydebrid</code>, <code>debrider</code>.</td>
+</tr>
+<tr>
+<td><code>MAX_STREAMING_PROVIDERS_PER_PROFILE</code></td>
+<td><code>5</code></td>
+<td>Maximum number of providers a user profile can configure.</td>
+</tr>
+<tr>
+<td><code>PROVIDER_SIGNUP_LINKS</code></td>
+<td><em>(built-in)</em></td>
+<td>JSON object of provider → list of signup URLs. Appended to built-in defaults.</td>
+</tr>
+<tr>
+<td><code>STREAM_RS_PORT</code></td>
+<td><code>8000</code></td>
+<td>HTTP port the Rust API server listens on.</td>
+</tr>
+<tr>
+<td><code>REQUEST_TIMEOUT</code></td>
+<td><code>120</code></td>
+<td>Request timeout in seconds for <code>/stream/</code> routes. Increase if live scrapers are slow.</td>
+</tr>
+<tr>
+<td><code>SCRAPER_CONFIG_PATH</code></td>
+<td><code>resources/scraper_config.yaml</code></td>
+<td>Path to the scraper configuration YAML file.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="database">Database<a class="headerlink" href="#database" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POSTGRES_URI</code></td>
+<td><strong>required</strong></td>
+<td>Primary read-write PostgreSQL connection string.</td>
+</tr>
+<tr>
+<td><code>POSTGRES_READ_URI</code></td>
+<td>—</td>
+<td>Optional read-replica URI. Read queries route here when set.</td>
+</tr>
+<tr>
+<td><code>REDIS_URL</code></td>
+<td><code>redis://127.0.0.1:6379</code></td>
+<td>Redis connection URL for cache, task queue, and rate limiting.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="caching">Caching<a class="headerlink" href="#caching" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>META_CACHE_TTL_SECONDS</code></td>
+<td><code>1800</code></td>
+<td>Redis TTL for metadata (meta/catalog) responses (seconds).</td>
+</tr>
+<tr>
+<td><code>CATALOG_CACHE_TTL_SECONDS</code></td>
+<td><code>1800</code></td>
+<td>Redis TTL for catalog listing responses (seconds).</td>
+</tr>
+<tr>
+<td><code>STREAM_RAW_REDIS_CACHE_TTL_SECONDS</code></td>
+<td><code>900</code></td>
+<td>Redis TTL for raw stream blobs (seconds).</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="authentication-security">Authentication &amp; Security<a class="headerlink" href="#authentication-security" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SECRET_KEY</code></td>
+<td><strong>required</strong></td>
+<td>AES-256 encryption key for user profile data. Changing this invalidates all existing user manifests.</td>
+</tr>
+<tr>
+<td><code>API_PASSWORD</code></td>
+<td>—</td>
+<td>Password for admin endpoints. Leave unset on fully public instances (<code>IS_PUBLIC_INSTANCE=true</code>).</td>
+</tr>
+<tr>
+<td><code>IS_PUBLIC_INSTANCE</code></td>
+<td><code>false</code></td>
+<td>Disable all API password checks.</td>
+</tr>
+<tr>
+<td><code>ENABLE_TORZNAB_API</code></td>
+<td><code>true</code></td>
+<td>Expose the Torznab feed endpoint at <code>/torznab</code>.</td>
+</tr>
+<tr>
+<td><code>ENABLE_NZB_FILE_IMPORT</code></td>
+<td><code>true</code></td>
+<td>Allow NZB file imports via the web UI.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="metrics-observability">Metrics &amp; Observability<a class="headerlink" href="#metrics-observability" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ENABLE_PROMETHEUS_METRICS</code></td>
+<td><code>false</code></td>
+<td>Expose a Prometheus-compatible <code>/api/v1/metrics</code> endpoint.</td>
+</tr>
+<tr>
+<td><code>PROMETHEUS_METRICS_TOKEN</code></td>
+<td>—</td>
+<td>Bearer token required to scrape <code>/api/v1/metrics</code>. When unset, the endpoint is open.</td>
+</tr>
+<tr>
+<td><code>ENABLE_EXCEPTION_TRACKING</code></td>
+<td><code>false</code></td>
+<td>Track recent exceptions in Redis for admin visibility.</td>
+</tr>
+<tr>
+<td><code>EXCEPTION_TRACKING_TTL</code></td>
+<td><code>259200</code></td>
+<td>TTL in seconds for exception records (3 days).</td>
+</tr>
+<tr>
+<td><code>EXCEPTION_TRACKING_MAX_ENTRIES</code></td>
+<td><code>500</code></td>
+<td>Maximum distinct exceptions to keep in Redis.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="scraper-endpoints">Scraper Endpoints<a class="headerlink" href="#scraper-endpoints" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PROWLARR_URL</code></td>
+<td>—</td>
+<td>Base URL of your Prowlarr instance (e.g. <code>http://prowlarr:9696</code>).</td>
+</tr>
+<tr>
+<td><code>PROWLARR_API_KEY</code></td>
+<td>—</td>
+<td>API key from Prowlarr → Settings → General.</td>
+</tr>
+<tr>
+<td><code>JACKETT_URL</code></td>
+<td>—</td>
+<td>Base URL of your Jackett instance.</td>
+</tr>
+<tr>
+<td><code>JACKETT_API_KEY</code></td>
+<td>—</td>
+<td>Jackett API key.</td>
+</tr>
+<tr>
+<td><code>ZILEAN_URL</code></td>
+<td><code>https://zilean.elfhosted.com</code></td>
+<td>Zilean DMM base URL.</td>
+</tr>
+<tr>
+<td><code>TORRENTIO_URL</code></td>
+<td><code>https://torrentio.strem.fun</code></td>
+<td>Torrentio base URL.</td>
+</tr>
+<tr>
+<td><code>MEDIAFUSION_URL</code></td>
+<td><code>https://mediafusion.elfhosted.com</code></td>
+<td>Peer MediaFusion instance URL for cross-instance aggregation.</td>
+</tr>
+<tr>
+<td><code>MEDIAFUSION_SECRET_STR</code></td>
+<td>—</td>
+<td>Optional secret string for authenticated scraping from the peer instance.</td>
+</tr>
+<tr>
+<td><code>BYPARR_URL</code></td>
+<td>—</td>
+<td><a href="https://github.com/ThePhaseless/Byparr">Byparr</a> (FlareSolverr-compatible) base URL. When set, Cloudflare-protected indexers are fetched via Byparr.</td>
+</tr>
+<tr>
+<td><code>BROWSERLESS_URL</code></td>
+<td>—</td>
+<td>Browserless v2 base URL (e.g. <code>http://browserless:3000</code>) for JS-heavy scrapers.</td>
+</tr>
+<tr>
+<td><code>REQUESTS_PROXY_URL</code></td>
+<td>—</td>
+<td>HTTP proxy for all outbound scraper requests.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="scraper-enable-flags">Scraper Enable Flags<a class="headerlink" href="#scraper-enable-flags" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>IS_SCRAP_FROM_PROWLARR</code></td>
+<td><code>true</code></td>
+<td>Enable Prowlarr as a stream source.</td>
+</tr>
+<tr>
+<td><code>IS_SCRAP_FROM_JACKETT</code></td>
+<td><code>false</code></td>
+<td>Enable Jackett as a stream source.</td>
+</tr>
+<tr>
+<td><code>IS_SCRAP_FROM_TORZNAB</code></td>
+<td><code>true</code></td>
+<td>Enable direct Torznab endpoints as stream sources.</td>
+</tr>
+<tr>
+<td><code>IS_SCRAP_FROM_PUBLIC_INDEXERS</code></td>
+<td><code>true</code></td>
+<td>Enable built-in public torrent indexer scrapers (1337x, TPB, YTS, etc.).</td>
+</tr>
+<tr>
+<td><code>IS_SCRAP_FROM_PUBLIC_USENET_INDEXERS</code></td>
+<td><code>true</code></td>
+<td>Enable built-in public Usenet indexer scrapers.</td>
+</tr>
+<tr>
+<td><code>IS_SCRAP_FROM_ZILEAN</code></td>
+<td><code>false</code></td>
+<td>Fetch cached streams from Zilean DMM.</td>
+</tr>
+<tr>
+<td><code>IS_SCRAP_FROM_TORRENTIO</code></td>
+<td><code>false</code></td>
+<td>Fetch streams from Torrentio.</td>
+</tr>
+<tr>
+<td><code>IS_SCRAP_FROM_MEDIAFUSION</code></td>
+<td><code>false</code></td>
+<td>Fetch streams from the peer MediaFusion instance.</td>
+</tr>
+<tr>
+<td><code>IS_SCRAP_FROM_DMM_HASHLIST</code></td>
+<td><code>false</code></td>
+<td>Ingest torrent hashes from the DMM GitHub hashlist.</td>
+</tr>
+<tr>
+<td><code>PUBLIC_INDEXERS_LIVE_SEARCH_SITES</code></td>
+<td>—</td>
+<td>Comma-separated list of public indexer keys to use for live search (e.g. <code>x1337,nyaa</code>). Empty = all enabled indexers.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="live-search">Live Search<a class="headerlink" href="#live-search" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PROWLARR_LIVE_TITLE_SEARCH</code></td>
+<td><code>true</code></td>
+<td>Include a title search in live Prowlarr queries.</td>
+</tr>
+<tr>
+<td><code>JACKETT_LIVE_TITLE_SEARCH</code></td>
+<td><code>true</code></td>
+<td>Include a title search in live Jackett queries.</td>
+</tr>
+<tr>
+<td><code>PROWLARR_IMMEDIATE_MAX_PROCESS</code></td>
+<td><code>30</code></td>
+<td>Max results to keep per indexer from a live Prowlarr search.</td>
+</tr>
+<tr>
+<td><code>PROWLARR_IMMEDIATE_MAX_PROCESS_TIME</code></td>
+<td><code>30</code></td>
+<td>Timeout in seconds for the live Prowlarr search.</td>
+</tr>
+<tr>
+<td><code>PROWLARR_SEARCH_QUERY_TIMEOUT</code></td>
+<td><code>30</code></td>
+<td>Per-request HTTP timeout for Prowlarr calls (seconds).</td>
+</tr>
+<tr>
+<td><code>JACKETT_IMMEDIATE_MAX_PROCESS</code></td>
+<td><code>30</code></td>
+<td>Max results from a live Jackett search.</td>
+</tr>
+<tr>
+<td><code>JACKETT_IMMEDIATE_MAX_PROCESS_TIME</code></td>
+<td><code>30</code></td>
+<td>Timeout in seconds for the live Jackett search.</td>
+</tr>
+<tr>
+<td><code>JACKETT_SEARCH_QUERY_TIMEOUT</code></td>
+<td><code>30</code></td>
+<td>Per-request HTTP timeout for Jackett calls (seconds).</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="background-search">Background Search<a class="headerlink" href="#background-search" title="Permanent link">¶</a></h2>
+<p>Background search queues items seen during live requests for periodic re-scraping.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>BACKGROUND_SEARCH_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Enable background re-scraping of previously requested titles.</td>
+</tr>
+<tr>
+<td><code>BACKGROUND_MAX_PROCESS</code></td>
+<td><code>50</code></td>
+<td>Max results per indexer during a background search run.</td>
+</tr>
+<tr>
+<td><code>BACKGROUND_MAX_PROCESS_TIME</code></td>
+<td><code>120</code></td>
+<td>Time budget in seconds for background Prowlarr/Jackett scrapes.</td>
+</tr>
+<tr>
+<td><code>BACKGROUND_QUERY_TIMEOUT</code></td>
+<td><code>30</code></td>
+<td>Per-request HTTP timeout for background scraper calls (seconds).</td>
+</tr>
+<tr>
+<td><code>BACKGROUND_SEARCH_INTERVAL_HOURS</code></td>
+<td><code>72</code></td>
+<td>Minimum hours between background re-scrapes for the same item.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="search-cache-ttls-re-search-intervals">Search Cache TTLs (Re-search Intervals)<a class="headerlink" href="#search-cache-ttls-re-search-intervals" title="Permanent link">¶</a></h2>
+<p>These control how long scraped results are considered fresh before re-querying.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PROWLARR_SEARCH_INTERVAL_HOUR</code></td>
+<td><code>72</code></td>
+<td>Hours between Prowlarr re-searches for a given title.</td>
+</tr>
+<tr>
+<td><code>JACKETT_SEARCH_INTERVAL_HOUR</code></td>
+<td><code>72</code></td>
+<td>Hours between Jackett re-searches.</td>
+</tr>
+<tr>
+<td><code>ZILEAN_SEARCH_INTERVAL_HOUR</code></td>
+<td><code>24</code></td>
+<td>Hours between Zilean re-searches.</td>
+</tr>
+<tr>
+<td><code>TORRENTIO_SEARCH_INTERVAL_DAYS</code></td>
+<td><code>3</code></td>
+<td>Days between Torrentio re-searches.</td>
+</tr>
+<tr>
+<td><code>MEDIAFUSION_SEARCH_INTERVAL_DAYS</code></td>
+<td><code>3</code></td>
+<td>Days between peer MediaFusion re-searches.</td>
+</tr>
+<tr>
+<td><code>PUBLIC_INDEXERS_SEARCH_INTERVAL_HOUR</code></td>
+<td><code>48</code></td>
+<td>Hours between public indexer re-searches.</td>
+</tr>
+<tr>
+<td><code>PUBLIC_USENET_INDEXERS_SEARCH_INTERVAL_HOUR</code></td>
+<td><code>48</code></td>
+<td>Hours between public Usenet indexer re-searches.</td>
+</tr>
+<tr>
+<td><code>DMM_HASHLIST_SYNC_INTERVAL_HOUR</code></td>
+<td><code>6</code></td>
+<td>Hours between DMM hashlist incremental syncs.</td>
+</tr>
+<tr>
+<td><code>TORBOX_SEARCH_TTL</code></td>
+<td><em>(prowlarr interval)</em></td>
+<td>Override cache TTL for Torbox searches (seconds). Defaults to <code>PROWLARR_SEARCH_INTERVAL_HOUR * 3600</code>.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="dmm-hashlist">DMM Hashlist<a class="headerlink" href="#dmm-hashlist" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>IS_SCRAP_FROM_DMM_HASHLIST</code></td>
+<td><code>false</code></td>
+<td>Enable DMM hashlist ingestion.</td>
+</tr>
+<tr>
+<td><code>DMM_HASHLIST_REPO_OWNER</code></td>
+<td><code>debridmediamanager</code></td>
+<td>GitHub repo owner for hashlist.</td>
+</tr>
+<tr>
+<td><code>DMM_HASHLIST_REPO_NAME</code></td>
+<td><code>hashlists</code></td>
+<td>GitHub repo name for hashlist.</td>
+</tr>
+<tr>
+<td><code>DMM_HASHLIST_BRANCH</code></td>
+<td><code>main</code></td>
+<td>Git branch to read commits from.</td>
+</tr>
+<tr>
+<td><code>DMM_HASHLIST_COMMITS_PER_RUN</code></td>
+<td><code>20</code></td>
+<td>Max new commits to process per incremental run.</td>
+</tr>
+<tr>
+<td><code>DMM_HASHLIST_BACKFILL_COMMITS_PER_RUN</code></td>
+<td><code>20</code></td>
+<td>Max backfill commits per run.</td>
+</tr>
+<tr>
+<td><code>DMM_HASHLIST_GITHUB_TOKEN</code></td>
+<td>—</td>
+<td>GitHub token for API authentication. Falls back to <code>GITHUB_TOKEN</code>.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="metadata">Metadata<a class="headerlink" href="#metadata" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>METADATA_PRIMARY_SOURCE</code></td>
+<td><code>imdb</code></td>
+<td>Primary metadata source: <code>imdb</code> or <code>tmdb</code>.</td>
+</tr>
+<tr>
+<td><code>TMDB_API_KEY</code></td>
+<td>—</td>
+<td>TMDB API key. Required when <code>METADATA_PRIMARY_SOURCE=tmdb</code> or Discover is enabled.</td>
+</tr>
+<tr>
+<td><code>TVDB_API_KEY</code></td>
+<td>—</td>
+<td>TVDB API key for series metadata.</td>
+</tr>
+<tr>
+<td><code>IMDB_CINEMETA_FALLBACK_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Fall back to v3-cinemeta.strem.io when IMDb lookup fails.</td>
+</tr>
+<tr>
+<td><code>IMDB_DATASETS_BASE_URL</code></td>
+<td><em>(official URL)</em></td>
+<td>Base URL for IMDb non-commercial dataset downloads.</td>
+</tr>
+<tr>
+<td><code>IMDB_IMPORT_INCLUDE_ADULT</code></td>
+<td><code>false</code></td>
+<td>Include adult titles in IMDb dataset import.</td>
+</tr>
+<tr>
+<td><code>IMDB_IMPORT_DATASETS</code></td>
+<td><em>(all)</em></td>
+<td>Comma-separated list of dataset keys to import. Empty = all.</td>
+</tr>
+<tr>
+<td><code>ANIME_METADATA_SOURCE_ORDER</code></td>
+<td><code>kitsu,anilist</code></td>
+<td>Ordered list of anime metadata providers.</td>
+</tr>
+<tr>
+<td><code>DISCOVER_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Enable the Discover catalog section.</td>
+</tr>
+<tr>
+<td><code>DISCOVER_ALLOW_SERVER_KEY</code></td>
+<td><code>false</code></td>
+<td>Use the server's TMDB key for users who haven't set their own.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="iptv">IPTV<a class="headerlink" href="#iptv" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ENABLE_IPTV_IMPORT</code></td>
+<td><code>true</code></td>
+<td>Allow users to import M3U/Xtream/Stalker IPTV sources.</td>
+</tr>
+<tr>
+<td><code>ALLOW_PUBLIC_IPTV_SHARING</code></td>
+<td><code>false</code></td>
+<td>Allow imported IPTV playlists to be shared publicly.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="premiumize-oauth">Premiumize OAuth<a class="headerlink" href="#premiumize-oauth" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PREMIUMIZE_OAUTH_CLIENT_ID</code></td>
+<td>—</td>
+<td>OAuth client ID from <a href="https://www.premiumize.me/registerclient">premiumize.me/registerclient</a>.</td>
+</tr>
+<tr>
+<td><code>PREMIUMIZE_OAUTH_CLIENT_SECRET</code></td>
+<td>—</td>
+<td>OAuth client secret.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="nzbdav-default">NZBDav (Default)<a class="headerlink" href="#nzbdav-default" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DEFAULT_NZBDAV_URL</code></td>
+<td>—</td>
+<td>Operator-configured NzbDAV URL. Auto-injected into new user profiles when set.</td>
+</tr>
+<tr>
+<td><code>DEFAULT_NZBDAV_API_KEY</code></td>
+<td>—</td>
+<td>NzbDAV API key.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="telegram-bot">Telegram Bot<a class="headerlink" href="#telegram-bot" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TELEGRAM_BOT_TOKEN</code></td>
+<td>—</td>
+<td>Telegram Bot API token from @BotFather.</td>
+</tr>
+<tr>
+<td><code>TELEGRAM_BOT_USERNAME</code></td>
+<td>—</td>
+<td>Bot username (without @).</td>
+</tr>
+<tr>
+<td><code>TELEGRAM_WEBHOOK_SECRET_TOKEN</code></td>
+<td>—</td>
+<td>Webhook secret for validating Telegram webhook requests.</td>
+</tr>
+<tr>
+<td><code>TELEGRAM_CHAT_ID</code></td>
+<td>—</td>
+<td>Chat ID for moderation notifications.</td>
+</tr>
+<tr>
+<td><code>TELEGRAM_BACKUP_CHANNEL_ID</code></td>
+<td>—</td>
+<td>Backup channel for storing contributed video files.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="telegram-scraping-user-api">Telegram Scraping (User API)<a class="headerlink" href="#telegram-scraping-user-api" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TELEGRAM_API_ID</code></td>
+<td>—</td>
+<td>Telegram API ID (from my.telegram.org).</td>
+</tr>
+<tr>
+<td><code>TELEGRAM_API_HASH</code></td>
+<td>—</td>
+<td>Telegram API hash.</td>
+</tr>
+<tr>
+<td><code>TELEGRAM_GRAMMERS_SESSION</code></td>
+<td>—</td>
+<td>Grammers session string for the Telegram scraper.</td>
+</tr>
+<tr>
+<td><code>TELEGRAM_SCRAPING_CHANNELS</code></td>
+<td>—</td>
+<td>Comma-separated list of channel usernames/IDs to scrape.</td>
+</tr>
+<tr>
+<td><code>TELEGRAM_SCRAPE_MESSAGE_LIMIT</code></td>
+<td><code>100</code></td>
+<td>Max messages to fetch per channel per scrape run.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="smtp-email">SMTP / Email<a class="headerlink" href="#smtp-email" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SMTP_HOST</code></td>
+<td>—</td>
+<td>SMTP server hostname. Required for email verification/reset.</td>
+</tr>
+<tr>
+<td><code>SMTP_PORT</code></td>
+<td><code>587</code></td>
+<td>SMTP server port.</td>
+</tr>
+<tr>
+<td><code>SMTP_TLS_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Use TLS for SMTP. Set <code>false</code> for internal relay on port 25.</td>
+</tr>
+<tr>
+<td><code>SMTP_USERNAME</code></td>
+<td>—</td>
+<td>SMTP login username.</td>
+</tr>
+<tr>
+<td><code>SMTP_PASSWORD</code></td>
+<td>—</td>
+<td>SMTP login password.</td>
+</tr>
+<tr>
+<td><code>SMTP_FROM_EMAIL</code></td>
+<td><code>noreply@mediafusion.example.com</code></td>
+<td>From address for outgoing emails.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="third-party-integrations">Third-Party Integrations<a class="headerlink" href="#third-party-integrations" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TRAKT_CLIENT_ID</code></td>
+<td>—</td>
+<td>Trakt OAuth client ID (enables Trakt watchlist sync).</td>
+</tr>
+<tr>
+<td><code>TRAKT_CLIENT_SECRET</code></td>
+<td>—</td>
+<td>Trakt OAuth client secret.</td>
+</tr>
+<tr>
+<td><code>SIMKL_CLIENT_ID</code></td>
+<td>—</td>
+<td>Simkl OAuth client ID.</td>
+</tr>
+<tr>
+<td><code>SIMKL_CLIENT_SECRET</code></td>
+<td>—</td>
+<td>Simkl OAuth client secret.</td>
+</tr>
+<tr>
+<td><code>SYNC_DEBRID_CACHE_STREAMS</code></td>
+<td><code>false</code></td>
+<td>Sync cached stream data from debrid provider APIs.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="image-upload">Image Upload<a class="headerlink" href="#image-upload" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>IMAGE_UPLOAD_ENABLED</code></td>
+<td><code>false</code></td>
+<td>Enable local image upload endpoint.</td>
+</tr>
+<tr>
+<td><code>IMAGES_DIR</code></td>
+<td><code>./data/images</code></td>
+<td>Directory to store uploaded images.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="static-files">Static Files<a class="headerlink" href="#static-files" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RESOURCES_DIR</code></td>
+<td><code>resources/</code></td>
+<td>Directory containing static resources served at <code>/static</code>.</td>
+</tr>
+<tr>
+<td><code>FRONTEND_DIST_DIR</code></td>
+<td><code>clients/frontend/dist</code></td>
+<td>Path to the built React SPA served at <code>/app</code>.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="public-indexer-health-gates">Public Indexer Health Gates<a class="headerlink" href="#public-indexer-health-gates" title="Permanent link">¶</a></h2>
+<p>These variables control automatic circuit-breaking for public indexer sources that perform poorly.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PUBLIC_INDEXERS_SOURCE_HEALTH_GATES_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Enable health-based circuit breakers for public indexers.</td>
+</tr>
+<tr>
+<td><code>PUBLIC_INDEXERS_SOURCE_HEALTH_MIN_SAMPLES</code></td>
+<td><em>(built-in)</em></td>
+<td>Minimum request samples before health gate activates.</td>
+</tr>
+<tr>
+<td><code>PUBLIC_INDEXERS_SOURCE_MIN_SUCCESS_RATE</code></td>
+<td><em>(built-in)</em></td>
+<td>Minimum success rate (0–1) to keep a source open.</td>
+</tr>
+<tr>
+<td><code>PUBLIC_INDEXERS_SOURCE_MAX_TIMEOUT_RATE</code></td>
+<td><em>(built-in)</em></td>
+<td>Maximum timeout rate before tripping the circuit.</td>
+</tr>
+<tr>
+<td><code>PUBLIC_INDEXERS_SOURCE_HEALTH_COUNTER_SOFT_CAP</code></td>
+<td><em>(built-in)</em></td>
+<td>Rolling window cap for health counters.</td>
+</tr>
+<tr>
+<td><code>PUBLIC_INDEXERS_SOURCE_HEALTH_DECAY_FACTOR</code></td>
+<td><em>(built-in)</em></td>
+<td>Exponential decay factor for health counters.</td>
+</tr>
+<tr>
+<td><code>PUBLIC_INDEXERS_SOURCE_HEALTH_RECOVERY_SUCCESS_STREAK</code></td>
+<td><em>(built-in)</em></td>
+<td>Consecutive successes needed to recover a tripped circuit.</td>
+</tr>
+<tr>
+<td><code>PUBLIC_INDEXERS_SOURCE_HEALTH_SCOPE_MODE</code></td>
+<td><em>(built-in)</em></td>
+<td>Health scope mode.</td>
+</tr>
+<tr>
+<td><code>PUBLIC_INDEXERS_SOURCE_HEALTH_SCOPE</code></td>
+<td><em>(built-in)</em></td>
+<td>Health scope value.</td>
+</tr>
+<tr>
+<td><code>PUBLIC_INDEXERS_SOURCE_HEALTH_METRICS_TTL_SECONDS</code></td>
+<td><em>(built-in)</em></td>
+<td>TTL for health metric counters in Redis.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="scheduler-global">Scheduler: Global<a class="headerlink" href="#scheduler-global" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DISABLE_ALL_SCHEDULER</code></td>
+<td><code>false</code></td>
+<td>Disable all background scheduling. Useful during development.</td>
+</tr>
+<tr>
+<td><code>BACKGROUND_SEARCH_CRONTAB</code></td>
+<td><em>(built-in)</em></td>
+<td>Crontab for the background search job.</td>
+</tr>
+<tr>
+<td><code>INTEGRATION_SYNC_CRONTAB</code></td>
+<td><em>(built-in)</em></td>
+<td>Crontab for syncing third-party integrations (Trakt, Simkl).</td>
+</tr>
+<tr>
+<td><code>DISABLE_INTEGRATION_SYNC_SCHEDULER</code></td>
+<td><code>false</code></td>
+<td>Disable the integration sync scheduler.</td>
+</tr>
+<tr>
+<td><code>UPDATE_SEEDERS_CRONTAB</code></td>
+<td><em>(built-in)</em></td>
+<td>Crontab for updating torrent seeder counts.</td>
+</tr>
+<tr>
+<td><code>DISABLE_UPDATE_SEEDERS</code></td>
+<td><code>false</code></td>
+<td>Disable seeder count updates.</td>
+</tr>
+<tr>
+<td><code>VALIDATE_TV_STREAMS_IN_DB_CRONTAB</code></td>
+<td><em>(built-in)</em></td>
+<td>Crontab for validating TV stream URLs.</td>
+</tr>
+<tr>
+<td><code>DISABLE_VALIDATE_TV_STREAMS_IN_DB</code></td>
+<td><code>false</code></td>
+<td>Disable TV stream validation.</td>
+</tr>
+<tr>
+<td><code>CLEANUP_EXPIRED_SCRAPER_TASK_CRONTAB</code></td>
+<td><em>(built-in)</em></td>
+<td>Crontab for cleaning expired scraper task records.</td>
+</tr>
+<tr>
+<td><code>CLEANUP_EXPIRED_CACHE_TASK_CRONTAB</code></td>
+<td><em>(built-in)</em></td>
+<td>Crontab for cleaning expired Redis cache entries.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="scheduler-content-scrapers">Scheduler: Content Scrapers<a class="headerlink" href="#scheduler-content-scrapers" title="Permanent link">¶</a></h2>
+<p>Each content scraper has a <code>_CRONTAB</code> and a <code>DISABLE_</code> toggle. Only the most commonly adjusted are listed; the pattern is consistent across all scrapers.</p>
+<table>
+<thead>
+<tr>
+<th>Scraper</th>
+<th>Enable crontab</th>
+<th>Disable flag</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TamilMV</td>
+<td><code>TAMILMV_SCHEDULER_CRONTAB</code> <em>(0 </em>/3 * * <em>)</em></td>
+<td><code>DISABLE_TAMILMV_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>Tamil Blasters</td>
+<td><code>TAMIL_BLASTERS_SCHEDULER_CRONTAB</code> <em>(0 </em>/6 * * <em>)</em></td>
+<td><code>DISABLE_TAMIL_BLASTERS_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>Formula (ext)</td>
+<td><code>FORMULA_EXT_SCHEDULER_CRONTAB</code> <em>(</em>/30 * * * <em>)</em></td>
+<td><code>DISABLE_FORMULA_EXT_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>MotoGP (ext)</td>
+<td><code>MOTOGP_EXT_SCHEDULER_CRONTAB</code> <em>(0 5 * * </em>)*</td>
+<td><code>DISABLE_MOTOGP_EXT_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>WWE (ext)</td>
+<td><code>WWE_EXT_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_WWE_EXT_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>UFC (ext)</td>
+<td><code>UFC_EXT_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_UFC_EXT_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>Movies/TV (ext)</td>
+<td><code>MOVIES_TV_EXT_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_MOVIES_TV_EXT_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>NowMeTV</td>
+<td><code>NOWMETV_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_NOWMETV_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>NowSports</td>
+<td><code>NOWSPORTS_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_NOWSPORTS_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>TamilUltra</td>
+<td><code>TAMILULTRA_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_TAMILULTRA_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>Sport Video</td>
+<td><code>SPORT_VIDEO_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_SPORT_VIDEO_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>DLHD</td>
+<td><code>DLHD_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_DLHD_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>Arab Torrents</td>
+<td><code>ARAB_TORRENTS_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_ARAB_TORRENTS_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>1337x</td>
+<td><code>X1337_SCHEDULER_CRONTAB</code></td>
+<td><em>(use <code>IS_SCRAP_FROM_PUBLIC_INDEXERS</code>)</em></td>
+</tr>
+<tr>
+<td>The Pirate Bay</td>
+<td><code>THEPIRATEBAY_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_THEPIRATEBAY_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>Rutor</td>
+<td><code>RUTOR_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_RUTOR_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>LimeTorrents</td>
+<td><code>LIMETORRENTS_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_LIMETORRENTS_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>YTS</td>
+<td><code>YTS_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_YTS_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>BT4G</td>
+<td><code>BT4G_SCHEDULER_CRONTAB</code></td>
+<td><em>(built-in default)</em></td>
+</tr>
+<tr>
+<td>EZTV RSS</td>
+<td><code>EZTV_RSS_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_EZTV_RSS_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>Nyaa</td>
+<td><code>NYAA_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_NYAA_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>AnimeTosho</td>
+<td><code>ANIMETOSHO_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_ANIMETOSHO_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>SubsPlease</td>
+<td><code>SUBSPLEASE_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_SUBSPLEASE_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>AnimePahe</td>
+<td><code>ANIMEPAHE_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_ANIMEPAHE_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>BT52</td>
+<td><code>BT52_SCHEDULER_CRONTAB</code></td>
+<td><em>(built-in default)</em></td>
+</tr>
+<tr>
+<td>UIndex</td>
+<td><code>UINDEX_SCHEDULER_CRONTAB</code></td>
+<td><code>DISABLE_UINDEX_SCHEDULER</code></td>
+</tr>
+<tr>
+<td>Prowlarr feed</td>
+<td><code>PROWLARR_FEED_SCRAPER_CRONTAB</code></td>
+<td><code>DISABLE_PROWLARR_FEED_SCRAPER</code></td>
+</tr>
+<tr>
+<td>Jackett feed</td>
+<td><code>JACKETT_FEED_SCRAPER_CRONTAB</code></td>
+<td><code>DISABLE_JACKETT_FEED_SCRAPER</code></td>
+</tr>
+<tr>
+<td>RSS feeds</td>
+<td><code>RSS_FEED_SCRAPER_CRONTAB</code></td>
+<td><code>DISABLE_RSS_FEED_SCRAPER</code></td>
+</tr>
+<tr>
+<td>DMM hashlist</td>
+<td><code>DMM_HASHLIST_SCRAPER_CRONTAB</code></td>
+<td><code>DISABLE_DMM_HASHLIST_SCRAPER</code></td>
+</tr>
+<tr>
+<td>YouTube</td>
+<td><code>YOUTUBE_BACKGROUND_SCRAPER_CRONTAB</code></td>
+<td><code>DISABLE_YOUTUBE_BACKGROUND_SCRAPER</code></td>
+</tr>
+<tr>
+<td>AceStream</td>
+<td><code>ACESTREAM_BACKGROUND_SCRAPER_CRONTAB</code></td>
+<td><code>DISABLE_ACESTREAM_BACKGROUND_SCRAPER</code></td>
+</tr>
+<tr>
+<td>Telegram</td>
+<td><code>TELEGRAM_BACKGROUND_SCRAPER_CRONTAB</code></td>
+<td><code>DISABLE_TELEGRAM_BACKGROUND_SCRAPER</code></td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer">
+        
+          
+          <a href="../../integrations/browser-extension/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Browser Extension">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Browser Extension
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../architecture/" class="md-footer__link md-footer__link--next" aria-label="Next: Architecture">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Architecture
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"></path></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/mhdzumair/MediaFusion" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://t.me/mediafusion_stremio_addon" target="_blank" rel="noopener" title="t.me" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M256 8a248 248 0 1 0 0 496 248 248 0 1 0 0-496m115 168.7c-3.7 39.2-19.9 134.4-28.1 178.3-3.5 18.6-10.3 24.8-16.9 25.4-14.4 1.3-25.3-9.5-39.3-18.7-21.8-14.3-34.2-23.2-55.3-37.2-24.5-16.1-8.6-25 5.3-39.5 3.7-3.8 67.1-61.5 68.3-66.7.2-.7.3-3.1-1.2-4.4s-3.6-.8-5.1-.5c-2.2.5-37.1 23.5-104.6 69.1-9.9 6.8-18.9 10.1-26.9 9.9-8.9-.2-25.9-5-38.6-9.1-15.5-5-27.9-7.7-26.8-16.3.6-4.5 6.7-9 18.4-13.7 72.3-31.5 120.5-52.3 144.6-62.3 68.9-28.6 83.2-33.6 92.5-33.8 2.1 0 6.6.5 9.6 2.9 2 1.7 3.2 4.1 3.5 6.7.5 3.2.6 6.5.4 9.8z"></path></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.path", "navigation.top", "navigation.footer", "search.highlight", "search.suggest", "search.share", "content.tabs.link", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../assets/mermaid-init.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>
