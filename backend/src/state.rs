@@ -76,16 +76,18 @@ impl AppState {
         use crate::{cache::client as redis_client, db::pool as db_pool};
 
         tracing::info!("connecting to PostgreSQL (primary)…");
-        let pool = db_pool::build(&config.postgres_uri)
+        let pool = db_pool::build(&config.postgres_uri, config.db_pool_size)
             .await
             .map_err(|e| format!("PostgreSQL primary: {e}"))?;
 
         let pool_ro = if let Some(ro_uri) = &config.postgres_ro_uri {
             tracing::info!("connecting to PostgreSQL (read-replica)…");
-            db_pool::build(ro_uri).await.unwrap_or_else(|e| {
-                tracing::warn!("read-replica unavailable ({e}), falling back to primary");
-                pool.clone()
-            })
+            db_pool::build(ro_uri, config.db_pool_size)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!("read-replica unavailable ({e}), falling back to primary");
+                    pool.clone()
+                })
         } else {
             pool.clone()
         };

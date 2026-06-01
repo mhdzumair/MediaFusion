@@ -1273,11 +1273,11 @@ pub async fn refresh_imdb_data(
         provider,
         ext_id,
         is_series,
-        crate::scrapers::metadata::ExternalFetchOpts {
-            tmdb_api_key: Some(tmdb_key),
-            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
-            cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
-        },
+        crate::scrapers::metadata::FetchCtx::with_tmdb_tvdb(
+            Some(tmdb_key),
+            state.config.tvdb_api_key.as_deref(),
+            state.config.imdb_cinemeta_fallback_enabled,
+        ),
     )
     .await
     {

@@ -7,11 +7,10 @@
 ///   4. Minimal stub creation so the stream is never lost
 use std::collections::HashMap;
 
-use chrono::NaiveDate;
 use futures::future::join_all;
 use serde_json::Value;
 use sqlx::PgPool;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::db::MediaType;
 
@@ -175,66 +174,79 @@ pub async fn find_or_create_media_with_anime(
             });
         }
 
-        // Also fetch IMDb ID for TMDB results so Stremio can resolve it.
-        let imdb_id = if meta.provider == "tmdb" {
+        let match_meta = meta;
+        let mut normalized = crate::scrapers::metadata::fetch_normalized(
+            http,
+            &import_fetch_ctx(tmdb_api_key, None),
+            &match_meta.provider,
+            &match_meta.external_id,
+            is_series,
+        )
+        .await
+        .unwrap_or_else(|| crate::db::NormalizedMetadata {
+            media_type,
+            title: match_meta.title.clone(),
+            year: match_meta.year,
+            poster_url: match_meta.poster_url.clone(),
+            external_ids: vec![(
+                match_meta.provider.clone(),
+                match_meta.external_id.clone(),
+            )],
+            ..Default::default()
+        });
+
+        if match_meta.provider == "tmdb" {
             if let Some(key) = tmdb_api_key {
-                crate::scrapers::metadata::imdb_id_from_tmdb(
-                    http,
-                    &meta.external_id,
-                    is_series,
-                    key,
-                )
-                .await
-            } else {
-                None
-            }
-        } else {
-            Some(meta.external_id.clone()) // already an IMDb ID
-        };
-
-        let media_id = insert_media_row(pool, media_type, &meta.title, meta.year).await?;
-
-        store_external_id(pool, media_id, &meta.provider, &meta.external_id).await;
-        if let Some(ref iid) = imdb_id {
-            if meta.provider != "imdb" {
-                store_external_id(pool, media_id, "imdb", iid).await;
+                if normalized.external_id("imdb").is_none() {
+                    if let Some(iid) = crate::scrapers::metadata::imdb_id_from_tmdb(
+                        http,
+                        &match_meta.external_id,
+                        is_series,
+                        key,
+                    )
+                    .await
+                    {
+                        normalized.external_ids.push(("imdb".to_string(), iid));
+                    }
+                }
             }
         }
 
-        if let Some(ref poster) = meta.poster_url {
-            let _ = sqlx::query(
-                "INSERT INTO media_image \
-                 (media_id, provider_id, image_type, url, is_primary, display_order) \
-                 VALUES ($1, 1, 'poster', $2, true, 0) \
-                 ON CONFLICT (media_id, provider_id, image_type, url) DO NOTHING",
-            )
-            .bind(media_id)
-            .bind(poster)
-            .execute(pool)
-            .await;
-        }
+        let media_id = crate::db::store_media(
+            pool,
+            &normalized,
+            crate::db::StoreMediaOpts::default(),
+        )
+        .await
+        .ok()?;
 
-        link_to_catalogs(pool, media_id, catalog_ids).await;
+        link_to_catalogs(pool, media_id.0, catalog_ids).await;
         info!(
-            "media_resolve: created media {media_id} from {} match for '{title}' → '{}'",
-            meta.provider, meta.title
+            "media_resolve: created media {} from {} match for '{title}' → '{}'",
+            media_id.0, match_meta.provider, match_meta.title
         );
         return Some(MediaEntry {
-            id: media_id,
-            title: meta.title,
-            year: meta.year,
+            id: media_id.0,
+            title: match_meta.title,
+            year: match_meta.year,
         });
     }
 
     // 4. No external match — create a minimal stub so the stream is not lost.
-    // Internal identity is `media.id` only; `mf:{id}` is derived at read time and
-    // must not be persisted in `media_external_id`.
-    let media_id = insert_media_row(pool, media_type, title, year).await?;
-    link_to_catalogs(pool, media_id, catalog_ids).await;
+    let stub = crate::db::NormalizedMetadata {
+        media_type,
+        title: title.to_string(),
+        year,
+        ..Default::default()
+    };
+    let media_id = crate::db::store_media(pool, &stub, crate::db::StoreMediaOpts::default())
+        .await
+        .ok()?;
+    link_to_catalogs(pool, media_id.0, catalog_ids).await;
 
-    info!("media_resolve: created stub media {media_id} for '{title}'");
+    info!("media_resolve: created stub media {} for '{title}'", media_id.0);
     Some(MediaEntry {
-        id: media_id,
+        id: media_id.0,
         title: title.to_string(),
         year,
     })
@@ -246,39 +258,28 @@ pub async fn insert_media_row(
     title: &str,
     year: Option<i32>,
 ) -> Option<i32> {
-    let mt = media_type;
-    let insert: Option<(i32,)> = sqlx::query_as(
-        r#"
-        INSERT INTO media (
-            type, title, year,
-            adult, is_blocked, is_public, is_user_created,
-            total_streams, created_at
-        )
-        VALUES ($1, $2, $3, false, false, true, false, 0, NOW())
-        ON CONFLICT DO NOTHING
-        RETURNING id
-        "#,
-    )
-    .bind(mt)
-    .bind(title)
-    .bind(year)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
-
-    match insert {
-        Some((id,)) => Some(id),
-        None => sqlx::query_scalar::<_, i32>(
-            "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
-        )
-        .bind(title)
-        .bind(mt)
-        .fetch_optional(pool)
+    let meta = crate::db::NormalizedMetadata {
+        media_type,
+        title: title.to_string(),
+        year,
+        ..Default::default()
+    };
+    crate::db::store_media(pool, &meta, crate::db::StoreMediaOpts::default())
         .await
         .ok()
-        .flatten(),
-    }
+        .map(|id| id.0)
+}
+
+pub async fn store_external_id(pool: &PgPool, media_id: i32, provider: &str, external_id: &str) {
+    crate::db::store_external_id(pool, media_id, provider, external_id).await;
+}
+
+pub async fn link_to_catalogs(pool: &PgPool, media_id: i32, catalog_ids: &[&str]) {
+    crate::db::link_to_catalogs(pool, media_id, catalog_ids).await;
+}
+
+pub async fn link_genre(pool: &PgPool, media_id: i32, genre_name: &str) {
+    crate::db::link_genre(pool, media_id, genre_name).await;
 }
 
 pub struct ImportMediaOverrides<'a> {
@@ -299,7 +300,7 @@ pub struct ImportMetaCacheKey {
 /// Prefetched provider payload or a title-only fallback when fetch fails.
 #[derive(Clone)]
 pub enum ImportMediaPrefetchEntry {
-    Fetched(crate::scrapers::metadata::TmdbDetails),
+    Fetched(Box<crate::db::NormalizedMetadata>),
     FallbackTitle(String),
 }
 
@@ -339,15 +340,11 @@ pub fn resolve_file_fetch_meta_type(
     }
 }
 
-fn import_fetch_opts<'a>(
+fn import_fetch_ctx<'a>(
     tmdb_api_key: Option<&'a str>,
     tvdb_api_key: Option<&'a str>,
-) -> crate::scrapers::metadata::ExternalFetchOpts<'a> {
-    crate::scrapers::metadata::ExternalFetchOpts {
-        tmdb_api_key,
-        tvdb_api_key,
-        cinemeta_fallback: true,
-    }
+) -> crate::scrapers::metadata::FetchCtx<'a> {
+    crate::scrapers::metadata::FetchCtx::with_tmdb_tvdb(tmdb_api_key, tvdb_api_key, true)
 }
 
 /// Fetch metadata from external providers without holding a DB connection (Python `fetch_external_metadata_payload`).
@@ -374,16 +371,16 @@ pub async fn fetch_external_metadata_for_import(
 
     let is_series = meta_type == "series";
     if let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(&meta_id) {
-        if let Some(details) = crate::scrapers::metadata::fetch_by_external_id_with_opts(
+        if let Some(meta) = crate::scrapers::metadata::fetch_normalized(
             http,
+            &import_fetch_ctx(tmdb_api_key, tvdb_api_key),
             provider,
             &ext_id,
             is_series,
-            import_fetch_opts(tmdb_api_key, tvdb_api_key),
         )
         .await
         {
-            return ImportMediaPrefetchEntry::Fetched(details);
+            return ImportMediaPrefetchEntry::Fetched(Box::new(meta));
         }
     }
 
@@ -499,17 +496,17 @@ pub async fn prefetch_import_metadata(
     fetches.into_iter().collect()
 }
 
-fn prefetched_details(
+fn prefetched_meta(
     cache: Option<&ImportMetadataCache>,
     meta_id: &str,
     meta_type: &str,
-) -> Option<crate::scrapers::metadata::TmdbDetails> {
+) -> Option<crate::db::NormalizedMetadata> {
     let key = ImportMetaCacheKey {
         meta_id: normalize_contributor_meta_id(meta_id),
         meta_type: meta_type.to_string(),
     };
     match cache?.get(&key) {
-        Some(ImportMediaPrefetchEntry::Fetched(d)) => Some(d.clone()),
+        Some(ImportMediaPrefetchEntry::Fetched(d)) => Some(d.as_ref().clone()),
         _ => None,
     }
 }
@@ -572,109 +569,60 @@ pub async fn ensure_media_for_import(
         MediaType::Movie
     };
 
-    let mut details = prefetched_details(prefetch, meta_id, fetch_meta_type);
-    if details.is_none() && prefetch.is_none() {
+    let mut normalized = prefetched_meta(prefetch, meta_id, fetch_meta_type);
+    if normalized.is_none() && prefetch.is_none() {
         if let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(meta_id) {
-            details = crate::scrapers::metadata::fetch_by_external_id_with_opts(
+            normalized = crate::scrapers::metadata::fetch_normalized(
                 http,
+                &import_fetch_ctx(tmdb_api_key, tvdb_api_key),
                 provider,
                 &ext_id,
                 is_series,
-                import_fetch_opts(tmdb_api_key, tvdb_api_key),
             )
             .await;
         }
     }
 
-    let title = overrides
+    let fallback_title = overrides
         .title
         .filter(|t| !t.is_empty())
         .map(str::to_string)
-        .or_else(|| details.as_ref().map(|d| d.title.clone()))
+        .or_else(|| normalized.as_ref().map(|d| d.title.clone()))
         .or_else(|| prefetched_fallback_title(prefetch, meta_id, fetch_meta_type))
         .or_else(|| Some(meta_id.to_string()))?;
 
-    let year = overrides
-        .year
-        .or_else(|| details.as_ref().and_then(|d| d.year));
-    let description = details.as_ref().and_then(|d| d.description.clone());
-    let release_date = overrides
-        .release_date
-        .filter(|d| !d.is_empty())
-        .map(str::to_string)
-        .or_else(|| details.as_ref().and_then(|d| d.release_date.clone()));
-    let parsed_release = release_date
-        .as_deref()
-        .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
+    let mut meta = normalized.unwrap_or_else(|| crate::db::NormalizedMetadata {
+        media_type: db_type,
+        title: fallback_title,
+        year: overrides.year,
+        ..Default::default()
+    });
 
-    let media_id = insert_media_row(pool, db_type, &title, year).await?;
-    if let Some(desc) = description {
-        let _ = sqlx::query(
-            "UPDATE media SET description = $2, release_date = COALESCE($3, release_date), updated_at = NOW() WHERE id = $1",
-        )
-        .bind(media_id)
-        .bind(desc)
-        .bind(parsed_release)
-        .execute(pool)
-        .await;
-    } else if let Some(rd) = parsed_release {
-        let _ = sqlx::query("UPDATE media SET release_date = $2, updated_at = NOW() WHERE id = $1")
-            .bind(media_id)
-            .bind(rd)
-            .execute(pool)
-            .await;
-    }
+    meta.apply_overrides(
+        overrides.title,
+        overrides.year,
+        overrides.poster,
+        overrides.background,
+        overrides.release_date,
+    );
 
-    if let Some(d) = &details {
-        if let Some(ref tmdb_id) = d.tmdb_id {
-            store_external_id(pool, media_id, "tmdb", tmdb_id).await;
+    if meta.external_ids.is_empty() {
+        if let Some((provider, ext_id)) =
+            crate::scrapers::metadata::parse_import_meta_id(meta_id)
+        {
+            meta.external_ids.push((provider.to_string(), ext_id));
         }
-        if let Some(ref imdb_id) = d.imdb_id {
-            store_external_id(pool, media_id, "imdb", imdb_id).await;
-        }
-    } else if let Some((provider, ext_id)) =
-        crate::scrapers::metadata::parse_import_meta_id(meta_id)
-    {
-        store_external_id(pool, media_id, provider, &ext_id).await;
     }
 
-    let poster = overrides
-        .poster
-        .filter(|u| !u.is_empty())
-        .map(str::to_string)
-        .or_else(|| details.as_ref().and_then(|d| d.poster_url.clone()));
-    let background = overrides
-        .background
-        .filter(|u| !u.is_empty())
-        .map(str::to_string)
-        .or_else(|| details.as_ref().and_then(|d| d.backdrop_url.clone()));
+    let media_id = crate::db::store_media(pool, &meta, crate::db::StoreMediaOpts::default())
+        .await
+        .ok()?;
 
-    if let Some(url) = poster {
-        upsert_primary_image(pool, media_id, "poster", &url).await;
-    }
-    if let Some(url) = background {
-        upsert_primary_image(pool, media_id, "background", &url).await;
-    }
-
-    info!("ensure_media_for_import: created media {media_id} for meta_id={meta_id}");
-    Some(media_id)
-}
-
-async fn upsert_primary_image(pool: &PgPool, media_id: i32, image_type: &str, url: &str) {
-    if let Err(e) = sqlx::query(
-        "INSERT INTO media_image \
-         (media_id, provider_id, image_type, url, is_primary, display_order) \
-         VALUES ($1, 1, $2, $3, true, 0) \
-         ON CONFLICT (media_id, provider_id, image_type, url) DO NOTHING",
-    )
-    .bind(media_id)
-    .bind(image_type)
-    .bind(url)
-    .execute(pool)
-    .await
-    {
-        warn!("upsert_primary_image({image_type}, media_id={media_id}): {e}");
-    }
+    info!(
+        "ensure_media_for_import: stored media {} for meta_id={meta_id}",
+        media_id.0
+    );
+    Some(media_id.0)
 }
 
 pub async fn link_stream_to_media(
@@ -1120,43 +1068,6 @@ pub async fn search_meta_for_scraped(
     .await
 }
 
-pub async fn store_external_id(pool: &PgPool, media_id: i32, provider: &str, external_id: &str) {
-    // media_external_id.created_at is NOT NULL with no column default — must supply NOW().
-    let _ = sqlx::query(
-        "INSERT INTO media_external_id (media_id, provider, external_id, created_at) \
-         VALUES ($1, $2, $3, NOW()) ON CONFLICT DO NOTHING",
-    )
-    .bind(media_id)
-    .bind(provider)
-    .bind(external_id)
-    .execute(pool)
-    .await;
-}
-
-pub async fn link_to_catalogs(pool: &PgPool, media_id: i32, catalog_ids: &[&str]) {
-    for catalog_name in catalog_ids {
-        // Ensure the catalog row exists before linking — the catalog table has no seed data
-        // on fresh installs, so a pure SELECT would always miss.
-        let _ = sqlx::query(
-            "INSERT INTO catalog (name, display_name, is_system, display_order) \
-             VALUES ($1, $1, true, 0) ON CONFLICT (name) DO NOTHING",
-        )
-        .bind(catalog_name)
-        .execute(pool)
-        .await;
-
-        let _ = sqlx::query(
-            "INSERT INTO media_catalog_link (media_id, catalog_id) \
-             SELECT $1, c.id FROM catalog c WHERE c.name = $2 \
-             ON CONFLICT DO NOTHING",
-        )
-        .bind(media_id)
-        .bind(catalog_name)
-        .execute(pool)
-        .await;
-    }
-}
-
 /// Find or create a minimal media stub for a sports event, skipping any external
 /// metadata lookup. Sports event titles (match replays, highlight clips) are not
 /// on TMDB/IMDb, so a remote lookup would be wasted latency.
@@ -1219,84 +1130,31 @@ pub async fn find_or_create_sports_stub(
         }
     }
 
-    // 3. Create stub with is_add_title_to_poster = true.
-    let insert: Option<(i32,)> = sqlx::query_as(
-        r#"
-        INSERT INTO media (
-            type, title, year,
-            adult, is_blocked, is_public, is_user_created,
-            is_add_title_to_poster, total_streams, created_at
-        )
-        VALUES ($1, $2, $3, false, false, true, false, true, 0, NOW())
-        ON CONFLICT DO NOTHING
-        RETURNING id
-        "#,
-    )
-    .bind(mt)
-    .bind(title)
-    .bind(year)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
-
-    // Race: another worker may have inserted in between — fall back to SELECT.
-    let media_id = match insert {
-        Some((id,)) => id,
-        None => sqlx::query_scalar::<_, i32>(
-            "SELECT id FROM media WHERE LOWER(title) = LOWER($1) \
-             AND type = $2 LIMIT 1",
-        )
-        .bind(title)
-        .bind(mt)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()?,
+    // 3. Create stub with is_add_title_to_poster = true via the metadata funnel.
+    let meta = crate::db::NormalizedMetadata {
+        media_type: mt,
+        title: title.to_string(),
+        year,
+        poster_url: poster_url.map(str::to_string),
+        ..Default::default()
     };
 
-    // Store the scraped poster (only if no primary poster already stored).
-    if let Some(url) = poster_url {
-        let _ = sqlx::query(
-            "INSERT INTO media_image \
-             (media_id, provider_id, image_type, url, is_primary, display_order) \
-             VALUES ($1, 1, 'poster', $2, true, 0) \
-             ON CONFLICT (media_id, provider_id, image_type, url) DO NOTHING",
-        )
-        .bind(media_id)
-        .bind(url)
-        .execute(pool)
-        .await;
+    if let Some(existing) = crate::db::find_existing_media(pool, mt, title, year).await {
+        if let Some(url) = poster_url {
+            crate::db::upsert_primary_image(pool, existing.0, "poster", url).await;
+        }
+        return Some(existing.0);
     }
 
-    debug!("media_resolve: created sports stub {media_id} ({media_type}) for '{title}'");
-    Some(media_id)
-}
+    let media_id = crate::db::store_media(pool, &meta, crate::db::StoreMediaOpts::sports_stub())
+        .await
+        .ok()?;
 
-/// Find or insert a genre row by name, then link it to the media item.
-pub async fn link_genre(pool: &PgPool, media_id: i32, genre_name: &str) {
-    // Upsert the genre row (unique index on name).
-    let genre_id: Option<i32> = sqlx::query_scalar(
-        "INSERT INTO genre (name) VALUES ($1) \
-         ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name \
-         RETURNING id",
-    )
-    .bind(genre_name)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
-
-    if let Some(gid) = genre_id {
-        let _ = sqlx::query(
-            "INSERT INTO media_genre_link (media_id, genre_id) VALUES ($1, $2) \
-             ON CONFLICT DO NOTHING",
-        )
-        .bind(media_id)
-        .bind(gid)
-        .execute(pool)
-        .await;
-    }
+    debug!(
+        "media_resolve: created sports stub {} ({media_type}) for '{title}'",
+        media_id.0
+    );
+    Some(media_id.0)
 }
 
 #[cfg(test)]

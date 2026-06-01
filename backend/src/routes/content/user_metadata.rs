@@ -32,13 +32,14 @@ use serde_json::json;
 use sha2::Sha256;
 
 use crate::{
-    db::{EpisodeId, MediaId},
+    db::{EpisodeId, MediaId, MediaType, NudityStatus, SeasonId, SeriesId, UserRole},
     state::AppState,
 };
 
 // ─── Auth helper ─────────────────────────────────────────────────────────────
 
-fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
+// users.id is INT4 — return i32, not i64.
+fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -70,15 +71,14 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
     data["sub"].as_str()?.parse().ok()
 }
 
-async fn require_mod_or_admin(pool: &sqlx::PgPool, user_id: i64) -> Result<(), Response> {
-    let role: Option<String> =
-        sqlx::query_scalar("SELECT LOWER(role::text) FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
-    match role.as_deref() {
-        Some("moderator") | Some("admin") => Ok(()),
+async fn require_mod_or_admin(pool: &sqlx::PgPool, user_id: i32) -> Result<(), Response> {
+    let role: Option<UserRole> = sqlx::query_scalar("SELECT role FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+    match role {
+        Some(UserRole::Moderator) | Some(UserRole::Admin) => Ok(()),
         _ => Err((
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator or admin role required"})),
@@ -110,7 +110,7 @@ pub struct SeasonCreate {
 
 #[derive(Deserialize)]
 pub struct UserMediaCreate {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", alias = "media_type")]
     pub media_type: String,
     pub title: String,
     pub year: Option<i32>,
@@ -230,9 +230,9 @@ pub struct DeleteEpisodeAdminQuery {
 
 #[derive(sqlx::FromRow)]
 struct MediaBasicRow {
-    id: i64,
+    id: MediaId,
     #[sqlx(rename = "type")]
-    media_type: String,
+    media_type: MediaType,
     title: String,
     original_title: Option<String>,
     year: Option<i32>,
@@ -242,15 +242,14 @@ struct MediaBasicRow {
     website: Option<String>,
     is_public: bool,
     is_user_created: bool,
-    created_by_user_id: Option<i64>,
-    total_streams: i64,
+    created_by_user_id: Option<i32>,
+    total_streams: i32,
     created_at: DateTime<Utc>,
     updated_at: Option<DateTime<Utc>>,
     runtime_minutes: Option<i32>,
     release_date: Option<String>,
     original_language: Option<String>,
-    nudity_status: Option<String>,
-    source: Option<String>,
+    nudity_status: NudityStatus,
 }
 
 #[allow(clippy::type_complexity)]
@@ -259,20 +258,25 @@ async fn media_row_to_json(
     media_id: i32,
     include_seasons: bool,
 ) -> serde_json::Value {
-    let row = sqlx::query_as::<_, MediaBasicRow>(
+    let row = match sqlx::query_as::<_, MediaBasicRow>(
         r#"SELECT id, type, title, original_title, year, description, tagline,
                       status, website, is_public, is_user_created,
                       created_by_user_id, total_streams,
                       created_at, updated_at,
                       runtime_minutes, release_date::text,
-                      original_language, nudity_status::text, source
+                      original_language, nudity_status
                FROM media WHERE id = $1"#,
     )
     .bind(media_id)
     .fetch_optional(pool)
     .await
-    .ok()
-    .flatten();
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::error!("media_row_to_json fetch media {media_id}: {e}");
+            return json!(null);
+        }
+    };
 
     let row = match row {
         Some(r) => r,
@@ -373,15 +377,15 @@ async fn media_row_to_json(
     .await
     .unwrap_or(None);
 
-    let media_type_str = row.media_type.to_lowercase();
+    let media_type_str = row.media_type.as_wire().to_lowercase();
 
     // Series-specific data
-    let mut total_seasons: Option<i64> = None;
-    let mut total_episodes: Option<i64> = None;
+    let mut total_seasons: Option<i32> = None;
+    let mut total_episodes: Option<i32> = None;
     let mut seasons_json: Option<serde_json::Value> = None;
 
-    if media_type_str == "series" && include_seasons {
-        let series_row = sqlx::query_as::<_, (i64, Option<i64>, Option<i64>)>(
+    if row.media_type == MediaType::Series && include_seasons {
+        let series_row = sqlx::query_as::<_, (SeriesId, Option<i32>, Option<i32>)>(
             "SELECT id, total_seasons, total_episodes FROM series_metadata WHERE media_id = $1",
         )
         .bind(media_id)
@@ -394,7 +398,7 @@ async fn media_row_to_json(
             total_seasons = ts;
             total_episodes = te;
 
-            let season_rows: Vec<(i64, i32, Option<String>, Option<String>, Option<String>, i32)> =
+            let season_rows: Vec<(SeasonId, i32, Option<String>, Option<String>, Option<String>, i32)> =
                 sqlx::query_as(
                     "SELECT id, season_number, name, overview, air_date::text, episode_count FROM season WHERE series_id = $1 ORDER BY season_number ASC",
                 )
@@ -405,7 +409,7 @@ async fn media_row_to_json(
 
             let mut seasons_arr = Vec::new();
             for (sid, snum, sname, soverview, sair_date, sepcnt) in season_rows {
-                let ep_rows: Vec<(i64, i32, String, Option<String>, Option<String>, Option<i32>, bool, bool)> =
+                let ep_rows: Vec<(EpisodeId, i32, String, Option<String>, Option<String>, Option<i32>, bool, bool)> =
                     sqlx::query_as(
                         "SELECT id, episode_number, title, overview, air_date::text, runtime_minutes, is_user_created, is_user_addition FROM episode WHERE season_id = $1 ORDER BY episode_number ASC",
                     )
@@ -447,7 +451,7 @@ async fn media_row_to_json(
     }
 
     json!({
-        "id": row.id,
+        "id": row.id.0,
         "type": media_type_str,
         "title": row.title,
         "original_title": row.original_title,
@@ -465,8 +469,7 @@ async fn media_row_to_json(
         "runtime_minutes": row.runtime_minutes,
         "release_date": row.release_date,
         "original_language": row.original_language,
-        "nudity_status": row.nudity_status,
-        "source": row.source,
+        "nudity_status": row.nudity_status.as_wire(),
         "poster_url": poster_url,
         "background_url": background_url,
         "logo_url": logo_url,
@@ -503,10 +506,10 @@ pub async fn create_user_metadata(
         }
     };
 
-    let media_type_db = match body.media_type.as_str() {
-        "movie" => "MOVIE",
-        "series" => "SERIES",
-        "tv" => "TV",
+    let media_type = match body.media_type.as_str() {
+        "movie" => crate::db::MediaType::Movie,
+        "series" => crate::db::MediaType::Series,
+        "tv" => crate::db::MediaType::Tv,
         _ => {
             return (
                 StatusCode::BAD_REQUEST,
@@ -516,152 +519,68 @@ pub async fn create_user_metadata(
         }
     };
 
-    let media_id: i32 = match sqlx::query_scalar(
-        r#"INSERT INTO media (type, title, year, description, runtime_minutes, is_user_created, created_by_user_id, is_public, total_streams, created_at)
-           VALUES ($1, $2, $3, $4, $5, true, $6, $7, 0, NOW())
-           RETURNING id"#,
+    let external_ids: Vec<(String, String)> = body
+        .external_ids
+        .as_ref()
+        .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+        .unwrap_or_default();
+
+    let seasons: Vec<crate::db::NormalizedSeason> = body
+        .seasons
+        .as_ref()
+        .map(|seasons| {
+            seasons
+                .iter()
+                .map(|s| crate::db::NormalizedSeason {
+                    season_number: s.season_number,
+                    name: s.name.clone(),
+                    overview: s.overview.clone(),
+                    air_date: s.air_date.clone(),
+                    episodes: s
+                        .episodes
+                        .iter()
+                        .map(|ep| crate::db::NormalizedEpisode {
+                            episode_number: ep.episode_number,
+                            title: ep.title.clone(),
+                            overview: ep.overview.clone(),
+                            air_date: ep.air_date.clone(),
+                            runtime_minutes: ep.runtime_minutes,
+                            ..Default::default()
+                        })
+                        .collect(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let meta = crate::db::NormalizedMetadata {
+        media_type,
+        title: body.title.clone(),
+        year: body.year,
+        description: body.description.clone(),
+        poster_url: body.poster_url.clone(),
+        backdrop_url: body.background_url.clone(),
+        genres: body.genres.clone().unwrap_or_default(),
+        catalogs: body.catalogs.clone().unwrap_or_default(),
+        external_ids,
+        runtime_minutes: body.runtime_minutes,
+        seasons,
+        ..Default::default()
+    };
+
+    let media_id = match crate::db::store_media(
+        &state.pool,
+        &meta,
+        crate::db::StoreMediaOpts::user_created(user_id, body.is_public),
     )
-    .bind(
-        crate::db::MediaType::from_wire(&media_type_db.to_ascii_lowercase())
-            .unwrap_or(crate::db::MediaType::Movie),
-    )
-    .bind(&body.title)
-    .bind(body.year)
-    .bind(&body.description)
-    .bind(body.runtime_minutes)
-    .bind(user_id)
-    .bind(body.is_public)
-    .fetch_one(&state.pool)
     .await
     {
-        Ok(id) => id,
+        Ok(id) => id.0,
         Err(e) => {
-            tracing::error!("create_user_metadata insert: {e}");
+            tracing::error!("create_user_metadata store_media: {e}");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
-
-    // Add external IDs
-    if let Some(ref ext_ids) = body.external_ids {
-        for (provider, ext_id) in ext_ids {
-            let _ = sqlx::query(
-                "INSERT INTO media_external_id (media_id, provider, external_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-            )
-            .bind(media_id)
-            .bind(provider)
-            .bind(ext_id)
-            .execute(&state.pool)
-            .await;
-        }
-    }
-
-    // Add genres
-    if let Some(ref genres) = body.genres {
-        for genre_name in genres {
-            let genre_id: Option<i32> = sqlx::query_scalar(
-                "INSERT INTO genre (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
-            )
-            .bind(genre_name)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None);
-            if let Some(gid) = genre_id {
-                let _ = sqlx::query("INSERT INTO media_genre_link (media_id, genre_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
-                    .bind(media_id)
-                    .bind(gid)
-                    .execute(&state.pool)
-                    .await;
-            }
-        }
-    }
-
-    // Add images
-    if let Some(ref poster) = body.poster_url {
-        let _ = sqlx::query(
-            "INSERT INTO media_image (media_id, image_type, url, display_order) VALUES ($1, 'poster', $2, 0)",
-        )
-        .bind(media_id)
-        .bind(poster)
-        .execute(&state.pool)
-        .await;
-    }
-    if let Some(ref bg) = body.background_url {
-        let _ = sqlx::query(
-            "INSERT INTO media_image (media_id, image_type, url, display_order) VALUES ($1, 'background', $2, 0)",
-        )
-        .bind(media_id)
-        .bind(bg)
-        .execute(&state.pool)
-        .await;
-    }
-
-    // Type-specific metadata
-    if media_type_db == "MOVIE" {
-        let _ =
-            sqlx::query("INSERT INTO movie_metadata (media_id) VALUES ($1) ON CONFLICT DO NOTHING")
-                .bind(media_id)
-                .execute(&state.pool)
-                .await;
-    } else if media_type_db == "SERIES" {
-        let total_ep_count: i32 = body
-            .seasons
-            .as_ref()
-            .map(|s| s.iter().map(|s| s.episodes.len() as i32).sum())
-            .unwrap_or(0);
-        let total_seasons_count: i32 = body.seasons.as_ref().map(|s| s.len() as i32).unwrap_or(0);
-
-        let series_id: i32 = match sqlx::query_scalar(
-            "INSERT INTO series_metadata (media_id, total_seasons, total_episodes) VALUES ($1, $2, $3) RETURNING id",
-        )
-        .bind(media_id)
-        .bind(total_seasons_count)
-        .bind(total_ep_count)
-        .fetch_one(&state.pool)
-        .await
-        {
-            Ok(id) => id,
-            Err(e) => {
-                tracing::error!("create_user_metadata series_metadata: {e}");
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            }
-        };
-
-        if let Some(ref seasons) = body.seasons {
-            for season_data in seasons {
-                let season_id: i32 = match sqlx::query_scalar(
-                    "INSERT INTO season (series_id, season_number, name, overview, episode_count) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-                )
-                .bind(series_id)
-                .bind(season_data.season_number)
-                .bind(&season_data.name)
-                .bind(&season_data.overview)
-                .bind(season_data.episodes.len() as i32)
-                .fetch_one(&state.pool)
-                .await
-                {
-                    Ok(id) => id,
-                    Err(e) => {
-                        tracing::error!("create_user_metadata season insert: {e}");
-                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                    }
-                };
-
-                for ep in &season_data.episodes {
-                    let _ = sqlx::query(
-                        "INSERT INTO episode (season_id, episode_number, title, overview, runtime_minutes, is_user_created, created_by_user_id) VALUES ($1, $2, $3, $4, $5, true, $6)",
-                    )
-                    .bind(season_id)
-                    .bind(ep.episode_number)
-                    .bind(&ep.title)
-                    .bind(&ep.overview)
-                    .bind(ep.runtime_minutes)
-                    .bind(user_id)
-                    .execute(&state.pool)
-                    .await;
-                }
-            }
-        }
-    }
 
     let resp = media_row_to_json(&state.pool, media_id, true).await;
     (StatusCode::CREATED, Json(resp)).into_response()
@@ -807,7 +726,7 @@ pub async fn search_all_metadata(
 
     let mut results = Vec::new();
     for id in &ids {
-        let row = sqlx::query_as::<_, (String, Option<i32>, String, bool, Option<i64>)>("SELECT title, year, type::text, is_user_created, created_by_user_id FROM media WHERE id = $1")
+        let row = sqlx::query_as::<_, (String, Option<i32>, String, bool, Option<i32>)>("SELECT title, year, type::text, is_user_created, created_by_user_id FROM media WHERE id = $1")
                 .bind(id)
                 .fetch_optional(&state.pool_ro)
                 .await
@@ -853,7 +772,7 @@ pub async fn search_all_metadata(
                 "type": mtype.to_lowercase(),
                 "poster": poster,
                 "is_user_created": is_user,
-                "is_own": creator_id == Some(user_id),
+                "is_own": creator_id == Some(user_id as i32),
             }));
         }
     }
@@ -1149,7 +1068,7 @@ pub async fn add_season_to_series(
         }
     };
 
-    let row = sqlx::query_as::<_, (String, Option<i64>)>(
+    let row = sqlx::query_as::<_, (String, Option<i32>)>(
         "SELECT type::text, created_by_user_id FROM media WHERE id = $1",
     )
     .bind(media_id)
@@ -1184,7 +1103,7 @@ pub async fn add_season_to_series(
             .into_response();
     }
 
-    let series_id: Option<i64> =
+    let series_id: Option<SeriesId> =
         sqlx::query_scalar("SELECT id FROM series_metadata WHERE media_id = $1")
             .bind(media_id)
             .fetch_optional(&state.pool)
@@ -1300,7 +1219,7 @@ pub async fn add_episodes_to_series(
         }
     };
 
-    let row = sqlx::query_as::<_, (String, Option<i64>)>(
+    let row = sqlx::query_as::<_, (String, Option<i32>)>(
         "SELECT type::text, created_by_user_id FROM media WHERE id = $1",
     )
     .bind(media_id)
@@ -1335,7 +1254,7 @@ pub async fn add_episodes_to_series(
             .into_response();
     }
 
-    let series_id: Option<i64> =
+    let series_id: Option<SeriesId> =
         sqlx::query_scalar("SELECT id FROM series_metadata WHERE media_id = $1")
             .bind(media_id)
             .fetch_optional(&state.pool)
@@ -1346,7 +1265,7 @@ pub async fn add_episodes_to_series(
         Some(sid) => sid,
     };
 
-    let season_id: Option<i64> =
+    let season_id: Option<SeasonId> =
         sqlx::query_scalar("SELECT id FROM season WHERE series_id = $1 AND season_number = $2")
             .bind(series_id)
             .bind(body.season_number)
@@ -1431,7 +1350,7 @@ pub async fn update_episode(
         }
     };
 
-    let creator_id: Option<Option<i64>> =
+    let creator_id: Option<Option<i32>> =
         sqlx::query_scalar("SELECT created_by_user_id FROM media WHERE id = $1")
             .bind(media_id)
             .fetch_optional(&state.pool)
@@ -1563,7 +1482,7 @@ pub async fn delete_episode(
         }
     };
 
-    let creator_id: Option<Option<i64>> =
+    let creator_id: Option<Option<i32>> =
         sqlx::query_scalar("SELECT created_by_user_id FROM media WHERE id = $1")
             .bind(media_id)
             .fetch_optional(&state.pool)
@@ -1588,11 +1507,12 @@ pub async fn delete_episode(
         _ => {}
     }
 
-    let season_id: Option<i64> = sqlx::query_scalar("SELECT season_id FROM episode WHERE id = $1")
-        .bind(episode_id)
-        .fetch_optional(&state.pool)
-        .await
-        .unwrap_or(None);
+    let season_id: Option<SeasonId> =
+        sqlx::query_scalar("SELECT season_id FROM episode WHERE id = $1")
+            .bind(episode_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
 
     if season_id.is_none() {
         return (
@@ -1623,7 +1543,7 @@ pub async fn delete_episode(
         .bind(sid)
         .execute(&state.pool)
         .await;
-        let series_id: Option<i64> =
+        let series_id: Option<SeriesId> =
             sqlx::query_scalar("SELECT series_id FROM season WHERE id = $1")
                 .bind(sid)
                 .fetch_optional(&state.pool)
@@ -1676,11 +1596,12 @@ pub async fn admin_delete_episode(
             .into_response();
     }
 
-    let season_id: Option<i64> = sqlx::query_scalar("SELECT season_id FROM episode WHERE id = $1")
-        .bind(episode_id)
-        .fetch_optional(&state.pool)
-        .await
-        .unwrap_or(None);
+    let season_id: Option<SeasonId> =
+        sqlx::query_scalar("SELECT season_id FROM episode WHERE id = $1")
+            .bind(episode_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
 
     if season_id.is_none() {
         return (
@@ -1719,7 +1640,7 @@ pub async fn admin_delete_episode(
         .bind(sid)
         .execute(&state.pool)
         .await;
-        let series_id: Option<i64> =
+        let series_id: Option<SeriesId> =
             sqlx::query_scalar("SELECT series_id FROM season WHERE id = $1")
                 .bind(sid)
                 .fetch_optional(&state.pool)
@@ -1753,7 +1674,7 @@ pub async fn delete_season(
         }
     };
 
-    let creator_id: Option<Option<i64>> =
+    let creator_id: Option<Option<i32>> =
         sqlx::query_scalar("SELECT created_by_user_id FROM media WHERE id = $1")
             .bind(media_id)
             .fetch_optional(&state.pool)
@@ -1778,7 +1699,7 @@ pub async fn delete_season(
         _ => {}
     }
 
-    let series_id: Option<i64> =
+    let series_id: Option<SeriesId> =
         sqlx::query_scalar("SELECT id FROM series_metadata WHERE media_id = $1")
             .bind(media_id)
             .fetch_optional(&state.pool)
@@ -1864,7 +1785,7 @@ pub async fn admin_delete_season(
             .into_response();
     }
 
-    let series_id: Option<i64> =
+    let series_id: Option<SeriesId> =
         sqlx::query_scalar("SELECT id FROM series_metadata WHERE media_id = $1")
             .bind(media_id)
             .fetch_optional(&state.pool)
@@ -1992,11 +1913,11 @@ pub async fn import_user_metadata_preview(
                 &body.provider,
                 &body.external_id,
                 is_series,
-                crate::scrapers::metadata::ExternalFetchOpts {
-                    tmdb_api_key: tmdb_key,
-                    tvdb_api_key: state.config.tvdb_api_key.as_deref(),
-                    cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
-                },
+                crate::scrapers::metadata::FetchCtx::with_tmdb_tvdb(
+                    tmdb_key,
+                    state.config.tvdb_api_key.as_deref(),
+                    state.config.imdb_cinemeta_fallback_enabled,
+                ),
             )
             .await
             {
@@ -2076,16 +1997,21 @@ pub async fn import_from_external(
             let is_series = body.media_type.eq_ignore_ascii_case("series")
                 || body.media_type.eq_ignore_ascii_case("show");
 
-            let details = match crate::scrapers::metadata::fetch_by_external_id_with_opts(
+            let ctx = crate::scrapers::metadata::FetchCtx {
+                tmdb_api_key: tmdb_key,
+                tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+                mdblist_api_key: state.config.mdblist_api_key.as_deref(),
+                trakt_client_id: state.config.trakt_client_id.as_deref(),
+                trakt_client_secret: state.config.trakt_client_secret.as_deref(),
+                cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
+            };
+
+            let normalized = match crate::scrapers::metadata::fetch_normalized(
                 &state.http,
+                &ctx,
                 &body.provider,
                 &body.external_id,
                 is_series,
-                crate::scrapers::metadata::ExternalFetchOpts {
-                    tmdb_api_key: tmdb_key,
-                    tvdb_api_key: state.config.tvdb_api_key.as_deref(),
-                    cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
-                },
             )
             .await
             {
@@ -2101,29 +2027,26 @@ pub async fn import_from_external(
                 }
             };
 
-            let entry = crate::scrapers::media_resolve::find_or_create_media(
+            let media_id = match crate::db::store_media(
                 &state.pool,
-                &state.http,
-                &details.title,
-                details.year,
-                is_series,
-                &[],
-                tmdb_key,
-                state.config.imdb_cinemeta_fallback_enabled,
+                &normalized,
+                crate::db::StoreMediaOpts::default(),
             )
-            .await;
-
-            match entry {
-                Some(m) => {
-                    let media_json = media_row_to_json(&state.pool_ro, m.id, false).await;
-                    Json(media_json).into_response()
+            .await
+            {
+                Ok(id) => id.0,
+                Err(e) => {
+                    tracing::error!("import_from_external store_media: {e}");
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"detail": "Failed to create media entry"})),
+                    )
+                        .into_response();
                 }
-                None => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"detail": "Failed to create media entry"})),
-                )
-                    .into_response(),
-            }
+            };
+
+            let media_json = media_row_to_json(&state.pool_ro, media_id, true).await;
+            Json(media_json).into_response()
         }
     }
 }

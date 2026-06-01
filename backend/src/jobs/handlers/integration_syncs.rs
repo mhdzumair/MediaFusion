@@ -384,6 +384,15 @@ async fn sync_trakt(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds) -> SyncSt
 }
 
 async fn trakt_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: &mut SyncStats) {
+    let fetch_ctx = crate::scrapers::metadata::FetchCtx {
+        tmdb_api_key: ctx.state.config.tmdb_api_key.as_deref(),
+        tvdb_api_key: ctx.state.config.tvdb_api_key.as_deref(),
+        mdblist_api_key: ctx.state.config.mdblist_api_key.as_deref(),
+        trakt_client_id: Some(&creds.client_id),
+        trakt_client_secret: Some(&creds.client_secret),
+        cinemeta_fallback: ctx.state.config.imdb_cinemeta_fallback_enabled,
+    };
+
     // Movies
     if let Some(items) = trakt_get(
         &ctx.state.http,
@@ -400,7 +409,16 @@ async fn trakt_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
             let title = movie["title"].as_str().unwrap_or("").to_string();
             let watched_at = parse_dt(item["last_watched_at"].as_str());
 
-            let Some(mid) = resolve_media_id(&ctx.state.pool_ro, imdb, tmdb.as_deref()).await
+            let Some(mid) = crate::scrapers::metadata::resolve_or_store_media(
+                &ctx.state.pool,
+                &ctx.state.http,
+                &fetch_ctx,
+                imdb,
+                tmdb.as_deref(),
+                &title,
+                false,
+            )
+            .await
             else {
                 debug!("trakt_import: no local media for movie '{title}'");
                 stats.import_skipped += 1;
@@ -410,7 +428,7 @@ async fn trakt_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
                 &ctx.state.pool,
                 row.user_id,
                 row.profile_id,
-                mid,
+                mid.0,
                 &title,
                 "movie",
                 None,
@@ -440,7 +458,16 @@ async fn trakt_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
             let imdb = s["ids"]["imdb"].as_str();
             let tmdb = s["ids"]["tmdb"].as_i64().map(|n| n.to_string());
             let title = s["title"].as_str().unwrap_or("").to_string();
-            let Some(mid) = resolve_media_id(&ctx.state.pool_ro, imdb, tmdb.as_deref()).await
+            let Some(mid) = crate::scrapers::metadata::resolve_or_store_media(
+                &ctx.state.pool,
+                &ctx.state.http,
+                &fetch_ctx,
+                imdb,
+                tmdb.as_deref(),
+                &title,
+                true,
+            )
+            .await
             else {
                 debug!("trakt_import: no local media for show '{title}'");
                 stats.import_skipped += 1;
@@ -455,7 +482,7 @@ async fn trakt_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
                         &ctx.state.pool,
                         row.user_id,
                         row.profile_id,
-                        mid,
+                        mid.0,
                         &title,
                         "series",
                         Some(s_num),

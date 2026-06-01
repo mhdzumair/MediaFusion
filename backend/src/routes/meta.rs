@@ -34,6 +34,12 @@ async fn build_meta(state: &AppState, media_type: &str, meta_id: &str) -> Option
         .as_deref()
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
+        .or_else(|| {
+            row.tmdb_id
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .map(|t| format!("tmdb:{t}"))
+        })
         .unwrap_or_else(|| format!("mf{id}"));
 
     let media_type_wire = row.media_type.as_wire();
@@ -127,28 +133,38 @@ async fn serve_meta(
     }
 
     let mut meta = build_meta(&state, media_type, meta_id).await;
-    if meta.is_none()
-        && crate::scrapers::metadata::parse_import_meta_id(meta_id).is_some()
-        && crate::scrapers::media_resolve::ensure_media_for_import(
-            &state.pool,
-            &state.http,
-            meta_id,
-            media_type,
-            state.config.tmdb_api_key.as_deref(),
-            state.config.tvdb_api_key.as_deref(),
-            crate::scrapers::media_resolve::ImportMediaOverrides {
-                title: None,
-                poster: None,
-                background: None,
-                release_date: None,
-                year: None,
-            },
-            None,
-        )
-        .await
-        .is_some()
-    {
-        meta = build_meta(&state, media_type, meta_id).await;
+    if meta.is_none() {
+        if let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(meta_id) {
+            let ctx = crate::scrapers::metadata::FetchCtx {
+                tmdb_api_key: state.config.tmdb_api_key.as_deref(),
+                tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+                mdblist_api_key: state.config.mdblist_api_key.as_deref(),
+                trakt_client_id: state.config.trakt_client_id.as_deref(),
+                trakt_client_secret: state.config.trakt_client_secret.as_deref(),
+                cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
+            };
+            let is_series = media_type == "series";
+            if let Some(normalized) = crate::scrapers::metadata::fetch_normalized(
+                &state.http,
+                &ctx,
+                provider,
+                &ext_id,
+                is_series,
+            )
+            .await
+            {
+                if crate::db::store_media(
+                    &state.pool,
+                    &normalized,
+                    crate::db::StoreMediaOpts::default(),
+                )
+                .await
+                .is_ok()
+                {
+                    meta = build_meta(&state, media_type, meta_id).await;
+                }
+            }
+        }
     }
 
     let Some(meta) = meta else {

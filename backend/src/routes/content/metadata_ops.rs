@@ -196,9 +196,12 @@ pub async fn refresh_metadata(
         &state.http,
         media_id,
         meta_type,
-        crate::scrapers::metadata::ExternalFetchOpts {
+        crate::scrapers::metadata::FetchCtx {
             tmdb_api_key: state.config.tmdb_api_key.as_deref(),
             tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+            mdblist_api_key: state.config.mdblist_api_key.as_deref(),
+            trakt_client_id: state.config.trakt_client_id.as_deref(),
+            trakt_client_secret: state.config.trakt_client_secret.as_deref(),
             cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
         },
         None,
@@ -332,27 +335,24 @@ pub async fn link_external_id(
     if body.fetch_metadata {
         let meta_type = body.media_type.as_deref().unwrap_or("movie");
         let is_series = meta_type == "series";
-        if let Some(details) = crate::scrapers::metadata::fetch_by_external_id_with_opts(
+        let ctx = crate::scrapers::metadata::FetchCtx {
+            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
+            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+            mdblist_api_key: state.config.mdblist_api_key.as_deref(),
+            trakt_client_id: state.config.trakt_client_id.as_deref(),
+            trakt_client_secret: state.config.trakt_client_secret.as_deref(),
+            cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
+        };
+        if let Some(meta) = crate::scrapers::metadata::fetch_normalized(
             &state.http,
+            &ctx,
             &provider,
             &external_id,
             is_series,
-            crate::scrapers::metadata::ExternalFetchOpts {
-                tmdb_api_key: state.config.tmdb_api_key.as_deref(),
-                tvdb_api_key: state.config.tvdb_api_key.as_deref(),
-                cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
-            },
         )
         .await
         {
-            import_helpers::apply_fetched_metadata_to_media(
-                &state.pool,
-                media_id,
-                &details,
-                &provider,
-                &external_id,
-            )
-            .await;
+            import_helpers::apply_fetched_metadata_to_media(&state.pool, media_id, &meta).await;
             metadata_updated = true;
         }
     }

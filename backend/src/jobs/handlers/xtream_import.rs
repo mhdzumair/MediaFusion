@@ -223,8 +223,8 @@ async fn find_or_create_media(
     // Insert
     let res: Option<(i32,)> = sqlx::query_as(
         r#"INSERT INTO media (title, type, is_public, is_user_created, adult, is_blocked,
-                              total_streams, playback_count, created_at, updated_at)
-           VALUES ($1, $2, $3, true, false, false, 0, 0, NOW(), NOW())
+                              nudity_status, total_streams, created_at, updated_at)
+           VALUES ($1, $2, $3, true, false, false, 'UNKNOWN', 0, NOW(), NOW())
            ON CONFLICT DO NOTHING
            RETURNING id"#,
     )

@@ -656,11 +656,11 @@ pub async fn moderator_fetch_external_metadata(
         provider,
         &external_id,
         is_series,
-        crate::scrapers::metadata::ExternalFetchOpts {
-            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
-            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
-            cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
-        },
+        crate::scrapers::metadata::FetchCtx::with_tmdb_tvdb(
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            state.config.imdb_cinemeta_fallback_enabled,
+        ),
     )
     .await
     .map(|d| {
@@ -743,11 +743,11 @@ pub async fn moderator_apply_external_metadata(
         provider,
         &external_id,
         is_series,
-        crate::scrapers::metadata::ExternalFetchOpts {
-            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
-            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
-            cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
-        },
+        crate::scrapers::metadata::FetchCtx::with_tmdb_tvdb(
+            state.config.tmdb_api_key.as_deref(),
+            state.config.tvdb_api_key.as_deref(),
+            state.config.imdb_cinemeta_fallback_enabled,
+        ),
     )
     .await
     .map(|d| {

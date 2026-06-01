@@ -7,6 +7,9 @@ pub struct AppConfig {
     pub secret_key_raw: String,
     pub postgres_uri: String,
     pub postgres_ro_uri: Option<String>,
+    /// Max connections per pool. Two pools exist (rw + ro), so the DB sees up to 2× this.
+    /// Default 10 keeps dev instances under the 100-connection limit.
+    pub db_pool_size: u32,
     /// Redis URL — shared with the Python background workers. Reads REDIS_URL.
     pub redis_url: String,
     pub port: u16,
@@ -177,6 +180,8 @@ pub struct AppConfig {
     // ── Trakt / Simkl OAuth ─────────────────────────────────────────────────
     pub trakt_client_id: Option<String>,
     pub trakt_client_secret: Option<String>,
+    /// Server-level MDBList API key for list ingestion (`MDBLIST_API_KEY`).
+    pub mdblist_api_key: Option<String>,
     pub simkl_client_id: Option<String>,
     pub simkl_client_secret: Option<String>,
 
@@ -406,6 +411,10 @@ impl AppConfig {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .map(|s| s.replace("postgresql+asyncpg://", "postgresql://")),
+            db_pool_size: env("DB_POOL_SIZE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
             redis_url: env("REDIS_URL")
                 .unwrap_or_else(|_| "redis://127.0.0.1:6379".into()),
             port: env("STREAM_RS_PORT")
@@ -423,7 +432,7 @@ impl AppConfig {
             addon_name: env("ADDON_NAME")
                 .unwrap_or_else(|_| "MediaFusion".into()),
             addon_version: env("VERSION")
-                .unwrap_or_else(|_| "1.0.0".into()),
+                .unwrap_or_else(|_| env!("CARGO_PKG_VERSION").into()),
             addon_description: env("ADDON_DESCRIPTION").unwrap_or_else(|_| {
                 "MediaFusion — universal torrent & debrid streaming addon for Stremio".into()
             }),
@@ -579,6 +588,7 @@ impl AppConfig {
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
             trakt_client_id: env("TRAKT_CLIENT_ID").ok().filter(|s| !s.is_empty()),
             trakt_client_secret: env("TRAKT_CLIENT_SECRET").ok().filter(|s| !s.is_empty()),
+            mdblist_api_key: env("MDBLIST_API_KEY").ok().filter(|s| !s.is_empty()),
             simkl_client_id: env("SIMKL_CLIENT_ID").ok().filter(|s| !s.is_empty()),
             simkl_client_secret: env("SIMKL_CLIENT_SECRET").ok().filter(|s| !s.is_empty()),
             disable_all_scheduler: env("DISABLE_ALL_SCHEDULER")

@@ -460,7 +460,7 @@ pub async fn register(
         r#"INSERT INTO users (uuid, email, username, password_hash, role, is_verified, is_active, last_login, created_at,
                               contribution_points, metadata_edits_approved, stream_edits_approved,
                               contribution_level, contribute_anonymously, uploads_restricted)
-           VALUES ($1, $2, $3, $4, $5, true, $6, NOW(), 0, 0, 0, 'beginner', false, false)
+           VALUES ($1, $2, $3, $4, $5, $6, true, $7, NOW(), 0, 0, 0, 'beginner', false, false)
            RETURNING id"#,
     )
     .bind(&user_uuid)
@@ -472,7 +472,10 @@ pub async fn register(
     .bind(if auto_verify { Some(Utc::now()) } else { None })
     .fetch_optional(&state.pool)
     .await
-    .unwrap_or(None);
+    .unwrap_or_else(|e| {
+        tracing::error!("register INSERT failed: {e}");
+        None
+    });
 
     let user_id = match insert {
         Some((id,)) => id,
@@ -496,7 +499,7 @@ pub async fn register(
     if !auto_verify {
         // Send verification email if SMTP is configured
         let token = create_email_verify_token(user_id, &state.config.secret_key_raw);
-        if let Err(e) = send_email_verification(&state, &req.email, &token).await {
+        if let Err(e) = send_email_verification(&state, &req.email, Some(req.username.as_str()), &token).await {
             tracing::warn!("send_email_verification failed: {e}");
         }
         return (StatusCode::CREATED, Json(serde_json::json!({
@@ -710,7 +713,7 @@ pub async fn resend_verification(
     if let Some(user) = fetch_user_by_email(&state.pool, &req.email).await {
         if !user.is_verified {
             let token = create_email_verify_token(user.id, &state.config.secret_key_raw);
-            let _ = send_email_verification(&state, &user.email, &token).await;
+            let _ = send_email_verification(&state, &user.email, user.username.as_deref(), &token).await;
         }
     }
     (
@@ -735,7 +738,7 @@ pub async fn forgot_password(
             .unwrap_or("")
             .to_string();
         let token = create_password_reset_token(user.id, &pwd_prefix, &state.config.secret_key_raw);
-        let _ = send_password_reset_email(&state, &user.email, &token).await;
+        let _ = send_password_reset_email(&state, &user.email, user.username.as_deref(), &token).await;
     }
     (
         StatusCode::OK,
@@ -1033,16 +1036,88 @@ pub async fn update_me(
 async fn send_email_verification(
     state: &AppState,
     to_email: &str,
+    username: Option<&str>,
     token: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let verify_url = format!("{}/app/verify-email?token={token}", state.config.host_url);
+    let app_name = &state.config.addon_name;
+    let logo_url = &state.config.logo_url;
+
+    let greeting = match username {
+        Some(name) => format!(
+            "Thanks for signing up, <strong style=\"color:#fafafa;\">{name}</strong>! \
+             Please confirm your email address by clicking the button below."
+        ),
+        None => "Thanks for signing up! Please confirm your email address by clicking the button below.".to_string(),
+    };
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify your email</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0a0a;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background-color:#141414;border-radius:12px;border:1px solid #262626;overflow:hidden;">
+          <tr>
+            <td style="padding:32px 40px 24px;text-align:center;border-bottom:1px solid #262626;">
+              <img src="{logo_url}" alt="{app_name}" width="48" height="48" style="display:block;margin:0 auto 12px;border-radius:10px;" />
+              <h1 style="margin:0;font-size:22px;font-weight:600;color:#fafafa;">{app_name}</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 40px;">
+              <h2 style="margin:0 0 16px;font-size:20px;font-weight:600;color:#fafafa;">Verify your email address</h2>
+              <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#a1a1aa;">{greeting}</p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 24px;">
+                <tr>
+                  <td align="center" style="border-radius:8px;background-color:#eab308;">
+                    <a href="{verify_url}" target="_blank" style="display:inline-block;padding:12px 32px;font-size:15px;font-weight:600;color:#0a0a0a;text-decoration:none;border-radius:8px;">
+                      Verify Email
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:#71717a;">
+                If the button doesn't work, copy and paste this link into your browser:
+              </p>
+              <p style="margin:0 0 24px;font-size:13px;line-height:1.6;color:#a1a1aa;word-break:break-all;">
+                <a href="{verify_url}" style="color:#eab308;text-decoration:underline;">{verify_url}</a>
+              </p>
+              <p style="margin:0;font-size:13px;line-height:1.6;color:#71717a;">
+                This link expires in 24 hours. If you didn't create an account, you can safely ignore this email.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 40px;border-top:1px solid #262626;text-align:center;">
+              <p style="margin:0;font-size:12px;color:#52525b;">&copy; {app_name}. This is an automated message.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"#,
+        logo_url = logo_url,
+        app_name = app_name,
+        greeting = greeting,
+        verify_url = verify_url,
+    );
+    let text = format!(
+        "Verify your email address\n\nClick the link below to verify your email:\n{verify_url}\n\nThis link expires in 24 hours."
+    );
     send_email(
         state,
         to_email,
-        "Verify your MediaFusion email",
-        format!(
-            "Click the link to verify your email: {}/app/verify-email?token={token}",
-            state.config.host_url
-        ),
+        &format!("Verify your email - {app_name}"),
+        html,
+        text,
     )
     .await
 }
@@ -1050,16 +1125,87 @@ async fn send_email_verification(
 async fn send_password_reset_email(
     state: &AppState,
     to_email: &str,
+    username: Option<&str>,
     token: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let reset_url = format!("{}/app/reset-password?token={token}", state.config.host_url);
+    let app_name = &state.config.addon_name;
+    let logo_url = &state.config.logo_url;
+
+    let account_ref = match username {
+        Some(name) => format!(" (<strong style=\"color:#fafafa;\">{name}</strong>)"),
+        None => String::new(),
+    };
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset your password</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0a0a;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background-color:#141414;border-radius:12px;border:1px solid #262626;overflow:hidden;">
+          <tr>
+            <td style="padding:32px 40px 24px;text-align:center;border-bottom:1px solid #262626;">
+              <img src="{logo_url}" alt="{app_name}" width="48" height="48" style="display:block;margin:0 auto 12px;border-radius:10px;" />
+              <h1 style="margin:0;font-size:22px;font-weight:600;color:#fafafa;">{app_name}</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 40px;">
+              <h2 style="margin:0 0 16px;font-size:20px;font-weight:600;color:#fafafa;">Reset your password</h2>
+              <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#a1a1aa;">
+                We received a request to reset the password for your account{account_ref}. Click the button below to set a new password.
+              </p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 24px;">
+                <tr>
+                  <td align="center" style="border-radius:8px;background-color:#eab308;">
+                    <a href="{reset_url}" target="_blank" style="display:inline-block;padding:12px 32px;font-size:15px;font-weight:600;color:#0a0a0a;text-decoration:none;border-radius:8px;">
+                      Reset Password
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:#71717a;">
+                If the button doesn't work, copy and paste this link into your browser:
+              </p>
+              <p style="margin:0 0 24px;font-size:13px;line-height:1.6;color:#a1a1aa;word-break:break-all;">
+                <a href="{reset_url}" style="color:#eab308;text-decoration:underline;">{reset_url}</a>
+              </p>
+              <p style="margin:0;font-size:13px;line-height:1.6;color:#71717a;">
+                This link expires in 1 hour. If you didn't request a password reset, you can safely ignore this email — your password will not be changed.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 40px;border-top:1px solid #262626;text-align:center;">
+              <p style="margin:0;font-size:12px;color:#52525b;">&copy; {app_name}. This is an automated message.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"#,
+        logo_url = logo_url,
+        app_name = app_name,
+        account_ref = account_ref,
+        reset_url = reset_url,
+    );
+    let text = format!(
+        "Reset your password\n\nClick the link below to reset your password:\n{reset_url}\n\nThis link expires in 1 hour. If you didn't request a password reset, you can safely ignore this email."
+    );
     send_email(
         state,
         to_email,
-        "Reset your MediaFusion password",
-        format!(
-            "Click the link to reset your password: {}/app/reset-password?token={token}",
-            state.config.host_url
-        ),
+        &format!("Reset your password - {app_name}"),
+        html,
+        text,
     )
     .await
 }
@@ -1068,10 +1214,11 @@ async fn send_email(
     state: &AppState,
     to: &str,
     subject: &str,
-    body: String,
+    html: String,
+    text: String,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use lettre::{
-        message::header::ContentType,
+        message::MultiPart,
         transport::smtp::{
             authentication::Credentials,
             client::{Tls, TlsParameters},
@@ -1090,8 +1237,7 @@ async fn send_email(
         .from(state.config.smtp_from.parse()?)
         .to(to.parse()?)
         .subject(subject)
-        .header(ContentType::TEXT_PLAIN)
-        .body(body)?;
+        .multipart(MultiPart::alternative_plain_html(text, html))?;
 
     // SMTP_USE_SSL=true  → implicit TLS wrapper (port 465)
     // SMTP_USE_TLS=true  → STARTTLS (port 587, default)

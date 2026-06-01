@@ -3,7 +3,7 @@
 Complete reference for all MediaFusion environment variables. Variables are read from the environment or from a `.env` file in the working directory.
 
 !!! tip "Search this page"
-    Use ++ctrl+f++ / ++cmd+f++ in your browser to search for a specific variable name.
+    Use `ctrl+f` / `cmd+f` in your browser to search for a specific variable name.
 
 !!! note "Case-insensitive"
     Variable names are case-insensitive — `SECRET_KEY` and `secret_key` both work.
@@ -30,7 +30,7 @@ These 4 variables must be set before MediaFusion will start:
 | Variable | Default | Description |
 |---|---|---|
 | `ADDON_NAME` | `MediaFusion` | Name shown in Stremio/Kodi addon listings. |
-| `VERSION` | `1.0.0` | Version string shown in manifest metadata. |
+| `VERSION` | `Cargo.toml` package version | Version string shown in manifest metadata. |
 | `ADDON_DESCRIPTION` | *(built-in)* | Addon description. Env var: `ADDON_DESCRIPTION`. |
 | `ADDON_LOGO` | *(MediaFusion CDN URL)* | URL of the logo shown in Stremio. |
 | `CONTACT_EMAIL` | — | Contact email shown in addon metadata. |
@@ -272,6 +272,7 @@ These control how long scraped results are considered fresh before re-querying.
 |---|---|---|
 | `TRAKT_CLIENT_ID` | — | Trakt OAuth client ID (enables Trakt watchlist sync). |
 | `TRAKT_CLIENT_SECRET` | — | Trakt OAuth client secret. |
+| `MDBLIST_API_KEY` | — | Server-level MDBList API key for list ingestion into the media catalog. |
 | `SIMKL_CLIENT_ID` | — | Simkl OAuth client ID. |
 | `SIMKL_CLIENT_SECRET` | — | Simkl OAuth client secret. |
 | `SYNC_DEBRID_CACHE_STREAMS` | `false` | Sync cached stream data from debrid provider APIs. |

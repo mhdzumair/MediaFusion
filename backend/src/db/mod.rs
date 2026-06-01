@@ -31,6 +31,9 @@ pub use types::{
 pub mod catalog;
 pub mod genres;
 pub mod media;
+pub mod metadata_model;
+pub mod metadata_merge;
+pub mod metadata_store;
 pub mod meta;
 pub mod pool;
 pub mod streams;
@@ -42,6 +45,15 @@ pub mod watch_history;
 pub use media::{
     get_media_id_by_external_id, get_media_meta, load_aka_titles, resolve_media_ids,
     search_media_candidates,
+};
+pub use metadata_merge::merge_normalized;
+pub use metadata_model::{
+    NormalizedAkaTitle, NormalizedCastMember, NormalizedCrewMember, NormalizedEpisode,
+    NormalizedMetadata, NormalizedRating, NormalizedSeason, NormalizedTrailer, StoreMediaOpts,
+};
+pub use metadata_store::{
+    find_existing_media, link_genre, link_to_catalogs, store_external_id, store_media,
+    upsert_primary_image,
 };
 pub use streams::{
     fetch_acestream_streams_bulk, fetch_http_streams_bulk, fetch_stream_playback_info,

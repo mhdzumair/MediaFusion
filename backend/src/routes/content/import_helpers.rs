@@ -849,55 +849,18 @@ pub async fn link_media_catalogs(
     Ok(())
 }
 
-/// Apply fetched provider metadata to an existing media row (link-external parity).
+/// Apply fetched provider metadata to an existing media row via the storage funnel.
 pub async fn apply_fetched_metadata_to_media(
     pool: &PgPool,
     media_id: i32,
-    details: &crate::scrapers::metadata::TmdbDetails,
-    provider: &str,
-    external_id: &str,
+    meta: &crate::db::NormalizedMetadata,
 ) {
-    let _ = sqlx::query(
-        "UPDATE media SET title = $2, year = COALESCE($3, year), description = COALESCE($4, description), updated_at = NOW() WHERE id = $1",
+    let _ = crate::db::store_media(
+        pool,
+        meta,
+        crate::db::StoreMediaOpts::refresh(crate::db::MediaId(media_id)),
     )
-    .bind(media_id)
-    .bind(&details.title)
-    .bind(details.year)
-    .bind(&details.description)
-    .execute(pool)
     .await;
-
-    let _ = sqlx::query(
-        "INSERT INTO media_external_id (media_id, provider, external_id) VALUES ($1, $2, $3) ON CONFLICT (provider, external_id) DO NOTHING",
-    )
-    .bind(media_id)
-    .bind(provider)
-    .bind(external_id)
-    .execute(pool)
-    .await;
-
-    if let Some(ref imdb) = details.imdb_id {
-        if provider != "imdb" {
-            let _ = sqlx::query(
-                "INSERT INTO media_external_id (media_id, provider, external_id) VALUES ($1, 'imdb', $2) ON CONFLICT (provider, external_id) DO NOTHING",
-            )
-            .bind(media_id)
-            .bind(imdb)
-            .execute(pool)
-            .await;
-        }
-    }
-
-    if let Some(ref poster) = details.poster_url {
-        let _ = sqlx::query(
-            "INSERT INTO media_image (media_id, provider_id, image_type, url, is_primary, display_order) \
-             VALUES ($1, 1, 'poster', $2, true, 0) ON CONFLICT (media_id, provider_id, image_type, url) DO NOTHING",
-        )
-        .bind(media_id)
-        .bind(poster)
-        .execute(pool)
-        .await;
-    }
 }
 
 /// Insert per-file rows and link each file to resolved media (Python `process_torrent_import` file loop).

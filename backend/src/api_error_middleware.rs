@@ -12,6 +12,7 @@ use serde_json::json;
 /// Non-API paths (Stremio protocol, health, static) are passed through unchanged.
 pub async fn api_error_middleware(request: Request, next: Next) -> Response {
     let path = request.uri().path().to_string();
+    let method = request.method().clone();
     let response = next.run(request).await;
 
     if !path.starts_with("/api/v1/") {
@@ -40,6 +41,16 @@ pub async fn api_error_middleware(request: Request, next: Next) -> Response {
     };
 
     let detail = extract_detail(&bytes, status);
+
+    // Log client errors (4xx) at debug and server errors (5xx) at warn so they
+    // appear in server logs — Axum extractor rejections (422 etc.) never reach
+    // the handler and would otherwise be completely silent.
+    if status.is_server_error() {
+        tracing::warn!(method = %method, path, status = status_code, "{detail}");
+    } else {
+        tracing::debug!(method = %method, path, status = status_code, "{detail}");
+    }
+
     error_response(detail, status_code)
 }
 

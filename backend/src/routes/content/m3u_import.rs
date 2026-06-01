@@ -223,8 +223,8 @@ pub async fn import_tv_channel(
         None => {
             // Insert new media
             let res: Option<(i64,)> = sqlx::query_as(
-                "INSERT INTO media (title, type, created_at, adult, is_blocked, total_streams, popularity) \
-                 VALUES ($1, $2, NOW(), false, false, 0, 0.0) \
+                "INSERT INTO media (title, type, created_at, adult, is_blocked, is_public, is_user_created, nudity_status, total_streams, popularity) \
+                 VALUES ($1, $2, NOW(), false, false, true, false, 'UNKNOWN', 0, 0.0) \
                  ON CONFLICT DO NOTHING RETURNING id",
             )
             .bind(name)

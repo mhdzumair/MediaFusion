@@ -24,6 +24,7 @@ pub struct MediaMetaRow {
     pub runtime_minutes: Option<i32>,
     pub website: Option<String>,
     pub imdb_id: Option<String>,
+    pub tmdb_id: Option<String>,
     pub poster_url: Option<String>,
     pub background_url: Option<String>,
     pub imdb_rating: Option<f64>,
@@ -65,110 +66,75 @@ pub async fn get_media_meta(
 ) -> Option<MediaMetaRow> {
     let media_type = MediaType::from_wire(media_type)?;
 
-    let result = match parse_meta_id(meta_id) {
-        MetaIdKind::Internal(id) => {
-            // Use non-macro query_as so LEFT JOIN LATERAL columns (poster_url, background_url,
-            // imdb_rating) are decoded as nullable via the struct's Option<T> field types.
-            // The query_as! offline cache incorrectly infers those columns as non-nullable.
-            sqlx::query_as::<_, MediaMetaRow>(
-                r#"
-                SELECT
-                    m.id AS media_id,
-                    m.type AS media_type,
-                    m.title,
-                    m.year,
-                    EXTRACT(YEAR FROM m.end_date)::int AS end_year,
-                    m.description,
-                    m.runtime_minutes,
-                    m.website,
-                    m.original_language AS language,
-                    tv.country,
-                    mei_imdb.external_id AS imdb_id,
-                    mi_poster.url AS poster_url,
-                    mi_bg.url AS background_url,
-                    mr.rating AS imdb_rating
-                FROM media m
-                LEFT JOIN media_external_id mei_imdb
-                    ON mei_imdb.media_id = m.id AND mei_imdb.provider = 'imdb'
-                LEFT JOIN tv_metadata tv ON tv.media_id = m.id
-                LEFT JOIN LATERAL (
-                    SELECT url FROM media_image
-                    WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
-                    LIMIT 1
-                ) mi_poster ON true
-                LEFT JOIN LATERAL (
-                    SELECT url FROM media_image
-                    WHERE media_id = m.id AND image_type = 'background' AND is_primary = true
-                    LIMIT 1
-                ) mi_bg ON true
-                LEFT JOIN LATERAL (
-                    SELECT r.rating FROM media_rating r
-                    JOIN rating_provider rp ON rp.id = r.rating_provider_id
-                    WHERE r.media_id = m.id AND lower(rp.name) = 'imdb'
-                    LIMIT 1
-                ) mr ON true
-                WHERE m.id = $1 AND m.type = $2
-                LIMIT 1
-                "#,
-            )
-            .bind(id)
-            .bind(media_type)
-            .fetch_optional(pool)
-            .await
-        }
+    let media_id = match parse_meta_id(meta_id) {
+        MetaIdKind::Internal(id) => id,
         MetaIdKind::External(ext_id) => {
-            sqlx::query_as::<_, MediaMetaRow>(
-                r#"
-                SELECT
-                    m.id AS media_id,
-                    m.type AS media_type,
-                    m.title,
-                    m.year,
-                    EXTRACT(YEAR FROM m.end_date)::int AS end_year,
-                    m.description,
-                    m.runtime_minutes,
-                    m.website,
-                    m.original_language AS language,
-                    tv.country,
-                    mei_imdb.external_id AS imdb_id,
-                    mi_poster.url AS poster_url,
-                    mi_bg.url AS background_url,
-                    mr.rating AS imdb_rating
-                FROM media m
-                LEFT JOIN media_external_id mei_imdb
-                    ON mei_imdb.media_id = m.id AND mei_imdb.provider = 'imdb'
-                LEFT JOIN tv_metadata tv ON tv.media_id = m.id
-                LEFT JOIN LATERAL (
-                    SELECT url FROM media_image
-                    WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
-                    LIMIT 1
-                ) mi_poster ON true
-                LEFT JOIN LATERAL (
-                    SELECT url FROM media_image
-                    WHERE media_id = m.id AND image_type = 'background' AND is_primary = true
-                    LIMIT 1
-                ) mi_bg ON true
-                LEFT JOIN LATERAL (
-                    SELECT r.rating FROM media_rating r
-                    JOIN rating_provider rp ON rp.id = r.rating_provider_id
-                    WHERE r.media_id = m.id AND lower(rp.name) = 'imdb'
-                    LIMIT 1
-                ) mr ON true
-                JOIN media_external_id mei_lookup
-                    ON mei_lookup.media_id = m.id AND mei_lookup.external_id = $1
-                WHERE m.type = $2
-                LIMIT 1
-                "#,
-            )
-            .bind(ext_id)
-            .bind(media_type)
-            .fetch_optional(pool)
-            .await
+            crate::db::get_media_id_by_external_id(pool, ext_id, Some(media_type.as_wire()))
+                .await
+                .ok()
+                .flatten()?
         }
     };
 
-    result.unwrap_or_else(|e| {
-        warn!("meta query [{meta_id}]: {e}");
+    fetch_media_meta_by_id(pool, media_id, media_type).await
+}
+
+async fn fetch_media_meta_by_id(
+    pool: &PgPool,
+    media_id: MediaId,
+    media_type: MediaType,
+) -> Option<MediaMetaRow> {
+    sqlx::query_as::<_, MediaMetaRow>(
+        r#"
+        SELECT
+            m.id AS media_id,
+            m.type AS media_type,
+            m.title,
+            m.year,
+            EXTRACT(YEAR FROM m.end_date)::int AS end_year,
+            m.description,
+            m.runtime_minutes,
+            m.website,
+            m.original_language AS language,
+            tv.country,
+            mei_imdb.external_id AS imdb_id,
+            mei_tmdb.external_id AS tmdb_id,
+            mi_poster.url AS poster_url,
+            mi_bg.url AS background_url,
+            mr.rating AS imdb_rating
+        FROM media m
+        LEFT JOIN media_external_id mei_imdb
+            ON mei_imdb.media_id = m.id AND mei_imdb.provider = 'imdb'
+        LEFT JOIN media_external_id mei_tmdb
+            ON mei_tmdb.media_id = m.id AND mei_tmdb.provider = 'tmdb'
+        LEFT JOIN tv_metadata tv ON tv.media_id = m.id
+        LEFT JOIN LATERAL (
+            SELECT url FROM media_image
+            WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
+            LIMIT 1
+        ) mi_poster ON true
+        LEFT JOIN LATERAL (
+            SELECT url FROM media_image
+            WHERE media_id = m.id AND image_type = 'background' AND is_primary = true
+            LIMIT 1
+        ) mi_bg ON true
+        LEFT JOIN LATERAL (
+            SELECT r.rating FROM media_rating r
+            JOIN rating_provider rp ON rp.id = r.rating_provider_id
+            WHERE r.media_id = m.id AND lower(rp.name) IN ('imdb', 'tmdb')
+            ORDER BY CASE lower(rp.name) WHEN 'imdb' THEN 0 ELSE 1 END
+            LIMIT 1
+        ) mr ON true
+        WHERE m.id = $1 AND m.type = $2
+        LIMIT 1
+        "#,
+    )
+    .bind(media_id)
+    .bind(media_type)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or_else(|e| {
+        warn!("meta query [media_id={media_id}]: {e}");
         None
     })
 }

@@ -316,7 +316,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         // ── User metadata (must be before /{media_id} catch-all) ─────────────
         .route("/api/v1/metadata/user", get(content::user_metadata::list_user_metadata).post(content::user_metadata::create_user_metadata))
         .route("/api/v1/metadata/user/search/all", get(content::user_metadata::search_all_metadata))
-        .route("/api/v1/metadata/user/import", post(content::user_metadata::create_user_metadata))
+        .route("/api/v1/metadata/user/import", post(content::user_metadata::import_from_external))
         .route("/api/v1/metadata/user/{media_id}", get(content::user_metadata::get_user_metadata).put(content::user_metadata::update_user_metadata).delete(content::user_metadata::delete_user_metadata))
         .route("/api/v1/metadata/user/{media_id}/seasons", post(content::user_metadata::add_season_to_series))
         .route("/api/v1/metadata/user/{media_id}/episodes", post(content::user_metadata::add_episodes_to_series))

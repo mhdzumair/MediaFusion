@@ -12,7 +12,7 @@ General application settings that control how MediaFusion presents itself and be
 | `CONTACT_EMAIL` | **required** | Shown in addon metadata |
 | `LOGO_URL` | *(MediaFusion logo)* | Custom logo URL |
 | `BRANDING_SVG` | `None` | Optional partner/host SVG logo URL |
-| `VERSION` | `1.0.0` | Version string shown in metadata |
+| `VERSION` | `Cargo.toml` package version | Version string shown in metadata |
 
 ## UI appearance
 

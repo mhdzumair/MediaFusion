@@ -1,11 +1,9 @@
-pub mod anilist;
 pub mod background_queue;
 pub mod browser;
 pub mod easynews;
 pub mod fetcher;
 pub mod indexer_credentials;
 pub mod jackett;
-pub mod kitsu;
 pub mod media_resolve;
 pub mod mediafusion;
 pub mod metadata;
@@ -24,7 +22,6 @@ pub mod torbox_search;
 pub mod torrent_metadata;
 pub mod torrentio;
 pub mod torznab;
-pub mod tvdb;
 pub mod zilean;
 
 use crate::db::TorrentType;

@@ -612,8 +612,8 @@ async fn ensure_tv_media(
         return Some(id);
     }
     let id: Option<MediaId> = sqlx::query_scalar(
-        "INSERT INTO media (title, type, created_at, adult, is_blocked, total_streams, popularity) \
-         VALUES ($1, $2, NOW(), false, false, 0, 0.0) RETURNING id",
+        "INSERT INTO media (title, type, created_at, adult, is_blocked, is_public, is_user_created, nudity_status, total_streams, popularity) \
+         VALUES ($1, $2, NOW(), false, false, true, false, 'UNKNOWN', 0, 0.0) RETURNING id",
     )
     .bind(title)
     .bind(MediaType::Tv)

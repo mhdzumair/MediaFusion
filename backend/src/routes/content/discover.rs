@@ -25,7 +25,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
-use crate::state::AppState;
+use crate::{db::MediaId, state::AppState};
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -67,7 +67,7 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
 async fn resolve_tmdb_key(state: &AppState, user_id: i64) -> Option<String> {
     // Try user profile first
     let user_key: Option<String> = sqlx::query_scalar(
-        "SELECT config->'tmc'->>'ak' FROM user_profiles WHERE user_id = $1 AND is_default = true",
+        "SELECT config->'tmdb'->>'ak' FROM user_profiles WHERE user_id = $1 AND is_default = true",
     )
     .bind(user_id)
     .fetch_optional(&state.pool_ro)
@@ -163,13 +163,60 @@ fn normalize_tmdb_item(item: &Value) -> Value {
     })
 }
 
-fn paginated_response(items: Vec<Value>, page: u64, total_pages: u64, total_results: u64) -> Value {
+async fn build_db_index(pool: &sqlx::PgPool, items: &[Value]) -> Value {
+    let providers: Vec<&str> = items
+        .iter()
+        .filter_map(|v| v["provider"].as_str())
+        .collect();
+    let external_ids: Vec<&str> = items
+        .iter()
+        .filter_map(|v| v["external_id"].as_str())
+        .collect();
+
+    if providers.is_empty() {
+        return json!({});
+    }
+
+    let rows: Vec<(String, String, MediaId, Option<String>)> = sqlx::query_as(
+        r#"
+        WITH lookup(provider, external_id) AS (
+            SELECT unnest($1::text[]), unnest($2::text[])
+        )
+        SELECT meid.provider, meid.external_id, m.id, imdb.external_id
+        FROM lookup l
+        JOIN media_external_id meid ON meid.provider = l.provider AND meid.external_id = l.external_id
+        JOIN media m ON m.id = meid.media_id
+        LEFT JOIN media_external_id imdb ON imdb.media_id = m.id AND imdb.provider = 'imdb'
+        "#,
+    )
+    .bind(&providers)
+    .bind(&external_ids)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let mut map = serde_json::Map::new();
+    for (provider, external_id, media_id, imdb_id) in rows {
+        let key = format!("{provider}:{external_id}");
+        map.insert(key, json!({ "id": media_id.0, "imdb_id": imdb_id }));
+    }
+    Value::Object(map)
+}
+
+async fn paginated_response(
+    pool: &sqlx::PgPool,
+    items: Vec<Value>,
+    page: u64,
+    total_pages: u64,
+    total_results: u64,
+) -> Value {
+    let db_index = build_db_index(pool, &items).await;
     json!({
         "items": items,
         "page": page,
         "total_pages": total_pages,
         "total_results": total_results,
-        "db_index": {},
+        "db_index": db_index,
     })
 }
 
@@ -362,7 +409,8 @@ pub async fn discover_trending(
     let total_pages = data["total_pages"].as_u64().unwrap_or(1);
     let total_results = data["total_results"].as_u64().unwrap_or(0);
 
-    Json(paginated_response(items, page, total_pages, total_results)).into_response()
+    Json(paginated_response(&state.pool_ro, items, page, total_pages, total_results).await)
+        .into_response()
 }
 
 /// GET /api/v1/discover/list
@@ -456,7 +504,8 @@ pub async fn discover_list(
     let total_pages = data["total_pages"].as_u64().unwrap_or(1);
     let total_results = data["total_results"].as_u64().unwrap_or(0);
 
-    Json(paginated_response(items, page, total_pages, total_results)).into_response()
+    Json(paginated_response(&state.pool_ro, items, page, total_pages, total_results).await)
+        .into_response()
 }
 
 /// GET /api/v1/discover/watch-providers
@@ -486,7 +535,7 @@ pub async fn discover_watch_providers(
 
     let media_type = &params.media_type;
     let mut url =
-        format!("https://api.themoviedb.org/3/{media_type}/watch/providers?api_key={api_key}");
+        format!("https://api.themoviedb.org/3/watch/providers/{media_type}?api_key={api_key}");
     if let Some(ref region) = params.region {
         url.push_str(&format!("&watch_region={region}"));
     }
@@ -627,7 +676,8 @@ pub async fn discover_provider_feed(
     let total_pages = data["total_pages"].as_u64().unwrap_or(1);
     let total_results = data["total_results"].as_u64().unwrap_or(0);
 
-    Json(paginated_response(items, page, total_pages, total_results)).into_response()
+    Json(paginated_response(&state.pool_ro, items, page, total_pages, total_results).await)
+        .into_response()
 }
 
 /// GET /api/v1/discover/anime
@@ -834,7 +884,8 @@ pub async fn discover_search(
     let total_pages = data["total_pages"].as_u64().unwrap_or(1);
     let total_results = data["total_results"].as_u64().unwrap_or(0);
 
-    Json(paginated_response(items, page, total_pages, total_results)).into_response()
+    Json(paginated_response(&state.pool_ro, items, page, total_pages, total_results).await)
+        .into_response()
 }
 
 /// GET /api/v1/discover/tvdb-filter
@@ -859,7 +910,7 @@ pub async fn discover_tvdb_filter(
 
     // Get user's TVDB key
     let tvdb_key: Option<String> = sqlx::query_scalar(
-        "SELECT config->'tvdbc'->>'ak' FROM user_profiles WHERE user_id = $1 AND is_default = true",
+        "SELECT config->'tvdb'->>'ak' FROM user_profiles WHERE user_id = $1 AND is_default = true",
     )
     .bind(user_id)
     .fetch_optional(&state.pool_ro)
@@ -975,7 +1026,7 @@ pub async fn discover_mdblist(
     };
 
     let mdb_key: Option<String> = sqlx::query_scalar(
-        "SELECT config->'mdblistc'->>'ak' FROM user_profiles WHERE user_id = $1 AND is_default = true",
+        "SELECT config->'mdb'->>'ak' FROM user_profiles WHERE user_id = $1 AND is_default = true",
     )
     .bind(user_id)
     .fetch_optional(&state.pool_ro)

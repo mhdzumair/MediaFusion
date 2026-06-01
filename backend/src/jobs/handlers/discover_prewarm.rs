@@ -101,11 +101,11 @@ async fn upsert_media(
         INSERT INTO media (
             type, title, year,
             is_public, is_user_created, adult, is_blocked,
-            total_streams, created_at
+            nudity_status, total_streams, created_at
         ) VALUES (
             $1, $2, $3,
             true, false, false, false,
-            0, NOW()
+            'UNKNOWN', 0, NOW()
         )
         RETURNING id
         "#,
