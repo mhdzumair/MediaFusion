@@ -1121,9 +1121,10 @@ pub async fn search_meta_for_scraped(
 }
 
 pub async fn store_external_id(pool: &PgPool, media_id: i32, provider: &str, external_id: &str) {
+    // media_external_id.created_at is NOT NULL with no column default — must supply NOW().
     let _ = sqlx::query(
-        "INSERT INTO media_external_id (media_id, provider, external_id) \
-         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+        "INSERT INTO media_external_id (media_id, provider, external_id, created_at) \
+         VALUES ($1, $2, $3, NOW()) ON CONFLICT DO NOTHING",
     )
     .bind(media_id)
     .bind(provider)
@@ -1134,6 +1135,16 @@ pub async fn store_external_id(pool: &PgPool, media_id: i32, provider: &str, ext
 
 pub async fn link_to_catalogs(pool: &PgPool, media_id: i32, catalog_ids: &[&str]) {
     for catalog_name in catalog_ids {
+        // Ensure the catalog row exists before linking — the catalog table has no seed data
+        // on fresh installs, so a pure SELECT would always miss.
+        let _ = sqlx::query(
+            "INSERT INTO catalog (name, display_name, is_system, display_order) \
+             VALUES ($1, $1, true, 0) ON CONFLICT (name) DO NOTHING",
+        )
+        .bind(catalog_name)
+        .execute(pool)
+        .await;
+
         let _ = sqlx::query(
             "INSERT INTO media_catalog_link (media_id, catalog_id) \
              SELECT $1, c.id FROM catalog c WHERE c.name = $2 \

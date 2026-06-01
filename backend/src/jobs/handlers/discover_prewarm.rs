@@ -132,12 +132,20 @@ async fn upsert_media(
     Ok(media_id)
 }
 
-/// Link a media row to a catalog by name (does nothing if already linked).
+/// Link a media row to a catalog by name, creating the catalog row if it doesn't exist.
 async fn link_to_catalog(
     pool: &sqlx::PgPool,
     media_id: i32,
     catalog_name: &str,
 ) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO catalog (name, display_name, is_system, display_order) \
+         VALUES ($1, $1, true, 0) ON CONFLICT (name) DO NOTHING",
+    )
+    .bind(catalog_name)
+    .execute(pool)
+    .await?;
+
     let catalog_id: Option<(i32,)> = sqlx::query_as("SELECT id FROM catalog WHERE name = $1")
         .bind(catalog_name)
         .fetch_optional(pool)
@@ -145,7 +153,7 @@ async fn link_to_catalog(
 
     let Some((catalog_id,)) = catalog_id else {
         warn!(
-            "discover_prewarm: catalog '{}' not found — skipping",
+            "discover_prewarm: catalog '{}' not found after upsert — skipping",
             catalog_name
         );
         return Ok(());
