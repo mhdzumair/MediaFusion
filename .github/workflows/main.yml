@@ -44,10 +44,16 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Install Rust toolchain
+        if: "!github.event.release.prerelease"
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
       - name: Update version numbers
         if: "!github.event.release.prerelease"
         run: |
           make update-version VERSION_NEW=${{  github.ref_name }}
+          # Sync Cargo.lock with the bumped Cargo.toml version
+          cargo update --workspace --manifest-path backend/Cargo.toml
 
       - name: Commit and push version updates
         if: "!github.event.release.prerelease"
@@ -252,7 +258,9 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: clients/kodi/dist
           enable_jekyll: false
-          force_orphan: true
+          # Do NOT use force_orphan here — it would wipe the /docs/ subdirectory
+          # that the docs CI deploys to. Kodi files live at the root; docs live
+          # at /docs/. Both coexist on the same gh-pages branch.
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2

@@ -29,10 +29,15 @@ jobs:
       - name: Install docs dependencies
         run: pip install mkdocs-material mkdocs-glightbox
 
+      - name: Build docs
+        run: mkdocs build
+
+      # Deploy to the /docs/ subdirectory of gh-pages, leaving the Kodi addon
+      # repository files at the root untouched.
       - name: Deploy to GitHub Pages
-        # MKDOCS_MATERIAL_CHECKS=false suppresses the informational MkDocs 2.0
-        # compatibility warning emitted by the Material theme team. It does not
-        # affect the build — the warning is advisory only.
-        env:
-          MKDOCS_MATERIAL_CHECKS: "false"
-        run: mkdocs gh-deploy --force
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          destination_dir: docs
+          enable_jekyll: false
