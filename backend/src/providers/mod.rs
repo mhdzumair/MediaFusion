@@ -20,6 +20,26 @@ pub async fn response_json(
         tracing::warn!("{context}: failed to read response body (HTTP {status}): {e}");
         ProviderError::Http(e)
     })?;
+    // Some endpoints return 200 with an empty body instead of 204.
+    // Treat empty-body 2xx as null so callers handle it the same as a real 204.
+    if text.trim().is_empty() {
+        return if status.is_success() {
+            Ok(serde_json::Value::Null)
+        } else {
+            let video = if status == reqwest::StatusCode::UNAUTHORIZED
+                || status == reqwest::StatusCode::FORBIDDEN
+            {
+                "invalid_token.mp4"
+            } else {
+                "api_error.mp4"
+            };
+            Err(ProviderError::api(
+                format!("HTTP {status} with empty response"),
+                video,
+            ))
+        };
+    }
+
     serde_json::from_str(&text).map_err(|e| {
         // Auth failures with non-JSON bodies (HTML proxy error pages) should show
         // the credentials error video, not the generic api_error.
@@ -29,8 +49,8 @@ pub async fn response_json(
                 "invalid_token.mp4",
             );
         }
-        // Truncate very long bodies (e.g. full HTML error pages) in the log.
-        let preview: &str = if text.len() > 500 {
+        // Log up to 500 chars so HTML error pages are visible without flooding logs.
+        let preview = if text.len() > 500 {
             &text[..500]
         } else {
             &text
