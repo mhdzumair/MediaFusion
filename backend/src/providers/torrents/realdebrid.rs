@@ -1126,7 +1126,9 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
         } => match get_access_token(http, &client_id, &client_secret, &code, None).await {
             Ok(t) => t,
             Err(e) => {
-                tracing::warn!("realdebrid check_cached: token exchange failed: {e}");
+                // Token exchange failure (bad_token, permission_denied) is expected when
+                // the user's OAuth code has expired — not actionable at cache-check time.
+                tracing::debug!("realdebrid check_cached: token exchange failed: {e}");
                 return vec![];
             }
         },
@@ -1142,7 +1144,12 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
             Ok(a) if a.is_empty() => break,
             Ok(a) => a,
             Err(e) => {
-                tracing::warn!("realdebrid check_cached page {page}: {e}");
+                // Auth and rate-limit errors are expected during cache checks; don't warn.
+                if matches!(e.video_file(), "invalid_token.mp4" | "too_many_requests.mp4") {
+                    tracing::debug!("realdebrid check_cached page {page}: {e}");
+                } else {
+                    tracing::warn!("realdebrid check_cached page {page}: {e}");
+                }
                 break;
             }
         };

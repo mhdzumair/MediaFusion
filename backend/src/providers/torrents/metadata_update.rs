@@ -4,7 +4,7 @@
 /// metadata (stream_file rows), we save the file list returned by the provider so
 /// future users see the correct streams without waiting for the debrid API.
 use sqlx::PgPool;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     db::streams::{upsert_stream_files, TorrentFileEntry},
@@ -44,7 +44,7 @@ pub async fn update_metadata(
         .collect();
 
     if video_files.is_empty() {
-        warn!("metadata_update: no video files in provider response for {info_hash}");
+        debug!("metadata_update: no video files in provider response for {info_hash}");
         return;
     }
 
