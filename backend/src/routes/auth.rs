@@ -1072,7 +1072,11 @@ async fn send_email(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use lettre::{
         message::header::ContentType,
-        transport::smtp::{authentication::Credentials, AsyncSmtpTransport},
+        transport::smtp::{
+            authentication::Credentials,
+            client::{Tls, TlsParameters},
+            AsyncSmtpTransport,
+        },
         AsyncTransport, Message, Tokio1Executor,
     };
 
@@ -1089,7 +1093,15 @@ async fn send_email(
         .header(ContentType::TEXT_PLAIN)
         .body(body)?;
 
-    let mut builder = if state.config.smtp_tls_enabled {
+    // SMTP_USE_SSL=true  → implicit TLS wrapper (port 465)
+    // SMTP_USE_TLS=true  → STARTTLS (port 587, default)
+    // both false         → plaintext (internal relay / mailhog)
+    let mut builder = if state.config.smtp_use_ssl {
+        let tls = TlsParameters::new(smtp_host.to_string())?;
+        AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(smtp_host)
+            .port(state.config.smtp_port)
+            .tls(Tls::Wrapper(tls))
+    } else if state.config.smtp_use_tls {
         AsyncSmtpTransport::<Tokio1Executor>::relay(smtp_host)?.port(state.config.smtp_port)
     } else {
         AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(smtp_host)
