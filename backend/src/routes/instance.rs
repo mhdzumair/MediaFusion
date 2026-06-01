@@ -229,11 +229,13 @@ pub async fn create_initial_admin(
     let password_hash = format!("{salt}${digest}");
 
     // Create admin user
+    let user_uuid = uuid::Uuid::new_v4().to_string();
     let user_id: i64 = match sqlx::query_scalar(
-        r#"INSERT INTO users (email, username, password_hash, role, is_verified, is_active, created_at, last_login)
-           VALUES ($1, $2, $3, 'ADMIN', true, true, NOW(), NOW())
+        r#"INSERT INTO users (uuid, email, username, password_hash, role, is_verified, is_active, created_at, last_login)
+           VALUES ($1, $2, $3, $4, 'ADMIN', true, true, NOW(), NOW())
            RETURNING id"#,
     )
+    .bind(&user_uuid)
     .bind(&body.email)
     .bind(&body.username)
     .bind(&password_hash)
@@ -249,7 +251,7 @@ pub async fn create_initial_admin(
 
     // Create default profile
     if let Err(e) = sqlx::query(
-        r#"INSERT INTO user_profiles (user_id, name, config, is_default) VALUES ($1, 'Default', '{}', true)"#,
+        r#"INSERT INTO user_profiles (user_id, name, config, is_default) VALUES ($1, 'Default', '{}', true) ON CONFLICT DO NOTHING"#,
     )
     .bind(user_id)
     .execute(&state.pool)
