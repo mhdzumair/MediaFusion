@@ -98,6 +98,7 @@ nav:
     - Kodi: integrations/kodi.md
     - Prowlarr: integrations/prowlarr.md
     - AceStream: integrations/acestream.md
+    - Telegram: integrations/telegram.md
     - qBittorrent WebDAV: integrations/qbittorrent.md
     - Browser Extension: integrations/browser-extension.md
   - Reference:
