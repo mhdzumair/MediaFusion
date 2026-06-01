@@ -21,7 +21,9 @@ use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 
-use crate::{crypto, models::user_data::UserData, providers, state::AppState};
+use crate::{
+    crypto, models::user_data::UserData, providers, routes::delete_all_watchlist, state::AppState,
+};
 
 // ─── Providers that support watchlist (cached hash lookup) ───────────────────
 
@@ -255,11 +257,17 @@ pub async fn get_watchlist(
     .into_response()
 }
 
+#[derive(Deserialize)]
+pub struct DeleteAllQuery {
+    provider: Option<String>,
+}
+
 pub async fn delete_all_handler(
     Path(secret_str): Path<String>,
+    Query(params): Query<DeleteAllQuery>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    match dispatch(&state, &secret_str).await {
+    match dispatch(&state, &secret_str, params.provider.as_deref()).await {
         Ok(()) => redirect(format!(
             "{}/static/exceptions/watchlist_deleted.mp4",
             state.config.host_url
@@ -272,7 +280,11 @@ pub async fn delete_all_handler(
     }
 }
 
-async fn dispatch(state: &AppState, secret_str: &str) -> Result<(), providers::ProviderError> {
+async fn dispatch(
+    state: &AppState,
+    secret_str: &str,
+    provider_name: Option<&str>,
+) -> Result<(), providers::ProviderError> {
     let raw = crypto::resolve_user_data(
         secret_str,
         &state.config.secret_key,
@@ -282,40 +294,18 @@ async fn dispatch(state: &AppState, secret_str: &str) -> Result<(), providers::P
     .await;
     let user_data: UserData = serde_json::from_value(raw).unwrap_or_default();
 
-    let provider = user_data.get_primary_provider().ok_or_else(|| {
-        providers::ProviderError::api("No streaming provider configured", "api_error.mp4")
-    })?;
+    let service = if let Some(name) = provider_name.filter(|s| !s.is_empty()) {
+        name.to_string()
+    } else {
+        user_data
+            .get_primary_provider()
+            .map(|p| p.service.clone())
+            .ok_or_else(|| {
+                providers::ProviderError::api("No streaming provider configured", "api_error.mp4")
+            })?
+    };
 
-    let token = provider.token.as_deref().ok_or_else(|| {
-        providers::ProviderError::api("Provider token is missing", "invalid_token.mp4")
-    })?;
-
-    match provider.service.as_str() {
-        "realdebrid" => {
-            providers::torrents::realdebrid::delete_all_torrents(&state.http, token).await
-        }
-        "alldebrid" => {
-            providers::torrents::alldebrid::delete_all_torrents(&state.http, token).await
-        }
-        "premiumize" => {
-            providers::torrents::premiumize::delete_all_torrents(&state.http, token).await
-        }
-        "debridlink" => {
-            providers::torrents::debridlink::delete_all_torrents(&state.http, token).await
-        }
-        "torbox" => providers::torrents::torbox::delete_all_torrents(&state.http, token).await,
-        "stremthru" => {
-            providers::torrents::stremthru::delete_all_torrents(&state.http, token).await
-        }
-        "offcloud" => providers::torrents::offcloud::delete_all_torrents(&state.http, token).await,
-        "easydebrid" => {
-            providers::torrents::easydebrid::delete_all_torrents(&state.http, token).await
-        }
-        other => Err(providers::ProviderError::api(
-            format!("Provider '{other}' does not support delete-all-watchlist"),
-            "provider_error.mp4",
-        )),
-    }
+    delete_all_watchlist::delete_all_for_service(state, &user_data, &service).await
 }
 
 fn redirect(url: String) -> Response {

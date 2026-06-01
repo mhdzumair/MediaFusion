@@ -62,7 +62,7 @@ pub async fn scrape(
         match search(client, username, password, &query, max_results).await {
             Err(SearchError::AuthFailed) => {
                 // 401 — credentials are invalid; no point trying the remaining queries.
-                tracing::warn!(
+                tracing::debug!(
                     "easynews: credentials rejected (401) for user '{}' — skipping all queries",
                     username
                 );
@@ -406,7 +406,7 @@ pub async fn scrape_with_credentials(
     for (query, max_results) in queries {
         let raw_items = match search(client, username, password, &query, max_results).await {
             Err(SearchError::AuthFailed) => {
-                tracing::warn!(
+                tracing::debug!(
                     "easynews: credentials rejected (401) for user '{}' — skipping all queries",
                     username
                 );

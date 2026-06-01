@@ -1243,52 +1243,20 @@ pub async fn get_missing_torrents(
     // Fetch all torrents for the provider. Providers that embed files in their list
     // (TorBox, AllDebrid, Debrid-Link) populate `raw`; RD leaves it Null and we
     // fetch file details separately.
-    macro_rules! fetch_list {
-        ($call:expr) => {
-            match $call.await {
-                Ok(t) => t,
-                Err(e) => {
-                    tracing::warn!("get_missing_torrents {provider} list: {e}");
-                    return (
-                        StatusCode::BAD_GATEWAY,
-                        Json(json!({"detail": format!("Provider error: {e}")})),
-                    )
-                        .into_response();
-                }
+    let all_torrents =
+        match crate::providers::torrents::list_downloaded_torrents(&state.http, &provider, &token)
+            .await
+        {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!("get_missing_torrents {provider} list: {e}");
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(json!({"detail": format!("Provider error: {e}")})),
+                )
+                    .into_response();
             }
         };
-    }
-
-    let all_torrents = match provider.as_str() {
-        "realdebrid" => fetch_list!(
-            crate::providers::torrents::realdebrid::list_downloaded_torrents(&state.http, &token)
-        ),
-        "torbox" => fetch_list!(
-            crate::providers::torrents::torbox::list_downloaded_torrents(&state.http, &token)
-        ),
-        "alldebrid" => fetch_list!(
-            crate::providers::torrents::alldebrid::list_downloaded_torrents(&state.http, &token)
-        ),
-        "debridlink" => fetch_list!(
-            crate::providers::torrents::debridlink::list_downloaded_torrents(&state.http, &token)
-        ),
-        "premiumize" => fetch_list!(
-            crate::providers::torrents::premiumize::list_downloaded_torrents(&state.http, &token)
-        ),
-        "offcloud" => fetch_list!(
-            crate::providers::torrents::offcloud::list_downloaded_torrents(&state.http, &token)
-        ),
-        "pikpak" => fetch_list!(
-            crate::providers::torrents::pikpak::list_downloaded_torrents(&state.http, &token)
-        ),
-        "seedr" => fetch_list!(crate::providers::torrents::seedr::list_downloaded_torrents(
-            &state.http,
-            &token
-        )),
-        _ => {
-            return Json(json!({"items": [], "total": 0, "provider": provider})).into_response();
-        }
-    };
 
     let all_hashes: Vec<String> = all_torrents.iter().map(|t| t.info_hash.clone()).collect();
     let existing: std::collections::HashSet<String> =
@@ -1769,20 +1737,13 @@ async fn fetch_downloaded_torrents(
     state: &AppState,
     provider: &str,
     token: &str,
-) -> Result<Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>, String> {
-    use crate::providers::torrents as t;
-    let res = match provider {
-        "realdebrid" => t::realdebrid::list_downloaded_torrents(&state.http, token).await,
-        "torbox" => t::torbox::list_downloaded_torrents(&state.http, token).await,
-        "alldebrid" => t::alldebrid::list_downloaded_torrents(&state.http, token).await,
-        "debridlink" => t::debridlink::list_downloaded_torrents(&state.http, token).await,
-        "premiumize" => t::premiumize::list_downloaded_torrents(&state.http, token).await,
-        "offcloud" => t::offcloud::list_downloaded_torrents(&state.http, token).await,
-        "pikpak" => t::pikpak::list_downloaded_torrents(&state.http, token).await,
-        "seedr" => t::seedr::list_downloaded_torrents(&state.http, token).await,
-        _ => return Err(format!("Unsupported provider: {provider}")),
-    };
-    res.map_err(|e| e.to_string())
+) -> Result<Vec<crate::providers::torrents::DownloadedTorrent>, String> {
+    if !crate::providers::torrents::supports_download_list(provider) {
+        return Err(format!("Unsupported provider: {provider}"));
+    }
+    crate::providers::torrents::list_downloaded_torrents(&state.http, provider, token)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ─── Remove / clear-all body shapes ─────────────────────────────────────────

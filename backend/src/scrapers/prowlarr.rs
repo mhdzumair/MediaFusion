@@ -17,6 +17,17 @@ use crate::{
 
 pub(crate) const RESULT_PROCESS_CONCURRENCY: usize = 5;
 
+fn format_request_error(e: &(dyn std::error::Error + Send + Sync)) -> String {
+    let msg = e.to_string();
+    if msg.contains("401 Unauthorized") {
+        return "HTTP 401 Unauthorized — invalid or missing X-Api-Key (check PROWLARR_API_KEY or profile indexer API key)".into();
+    }
+    if msg.contains("timed out") {
+        return "request timed out".into();
+    }
+    msg
+}
+
 // ─── Prowlarr response shapes ─────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -134,7 +145,10 @@ pub async fn scrape(
             return vec![];
         }
         Err(e) => {
-            tracing::warn!("prowlarr: failed to fetch indexers: {e}");
+            tracing::debug!(
+                "prowlarr: failed to fetch indexers: {}",
+                format_request_error(&*e)
+            );
             return vec![];
         }
     };
@@ -212,7 +226,11 @@ pub async fn scrape(
             }
             Err(e) => {
                 consecutive_failures += 1;
-                tracing::debug!("prowlarr: indexer {} failed: {e}", idx.name);
+                tracing::debug!(
+                    "prowlarr: indexer {} failed: {}",
+                    idx.name,
+                    format_request_error(&*e)
+                );
             }
         }
     }

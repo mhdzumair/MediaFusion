@@ -8,6 +8,7 @@ pub mod auth;
 pub mod catalog;
 pub mod configure;
 pub mod content;
+pub mod delete_all_watchlist;
 pub mod downloads;
 pub mod encrypt;
 pub mod health;

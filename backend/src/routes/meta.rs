@@ -14,6 +14,7 @@ use crate::{
         stremio::{Meta, MetaItem, Video},
         user_data::UserData,
     },
+    routes::delete_all_watchlist,
     state::AppState,
 };
 
@@ -106,11 +107,18 @@ async fn build_meta(state: &AppState, media_type: &str, meta_id: &str) -> Option
 
 async fn serve_meta(
     state: Arc<AppState>,
-    _user_data: UserData,
+    user_data: UserData,
     media_type: &str,
     raw_id: &str,
 ) -> axum::response::Response {
     let meta_id = raw_id.trim_end_matches(".json");
+
+    if media_type == "movie" {
+        if let Some(service) = delete_all_watchlist::parse_service(meta_id) {
+            return delete_all_watchlist::delete_all_meta_response(&state, &user_data, service);
+        }
+    }
+
     let cache_key = format!("meta:{media_type}:{meta_id}");
     let ttl = state.config.meta_cache_ttl;
 

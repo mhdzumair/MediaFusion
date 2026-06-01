@@ -141,6 +141,31 @@ pub async fn movie(
     headers: HeaderMap,
 ) -> impl IntoResponse {
     let imdb_id = video_id.trim_end_matches(".json").to_string();
+    if let Some(service) = crate::routes::delete_all_watchlist::parse_service(&imdb_id) {
+        let raw_user_data = if let Some(hv) = headers
+            .get("encoded_user_data")
+            .and_then(|v| v.to_str().ok())
+        {
+            crypto::decode_encoded_user_data(hv)
+                .unwrap_or_else(|| serde_json::Value::Object(Default::default()))
+        } else {
+            crypto::resolve_user_data(
+                &secret_str,
+                &state.config.secret_key,
+                &state.pool,
+                &state.redis,
+            )
+            .await
+        };
+        let user_data: crate::models::user_data::UserData =
+            serde_json::from_value(raw_user_data).unwrap_or_default();
+        return crate::routes::delete_all_watchlist::delete_all_streams_response(
+            state,
+            &user_data,
+            &secret_str,
+            service,
+        );
+    }
     dispatch(state, secret_str, imdb_id, "movie", None, None, headers).await
 }
 

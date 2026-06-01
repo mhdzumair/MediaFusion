@@ -326,6 +326,41 @@ async fn wait_for_downloaded(
 
 // ─── Public entry points ──────────────────────────────────────────────────────
 
+/// Return all magnets stored in the user's StremThru account.
+pub async fn list_downloaded_torrents(
+    http: &reqwest::Client,
+    token: &str,
+) -> Result<Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>, ProviderError> {
+    let cfg = parse_config(token);
+    let items = list_magnets(http, &cfg).await?;
+    let mut results = Vec::with_capacity(items.len());
+    for item in items {
+        let info_hash = match item.get("hash").and_then(|v| v.as_str()) {
+            Some(h) => h.to_lowercase(),
+            None => continue,
+        };
+        let id = item
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let name = item
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&info_hash)
+            .to_string();
+        let size = item.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
+        results.push(crate::providers::torrents::realdebrid::DownloadedTorrent {
+            id,
+            info_hash,
+            name,
+            size,
+            raw: item,
+        });
+    }
+    Ok(results)
+}
+
 /// Resolve a direct video URL from StremThru for the given torrent.
 #[allow(clippy::too_many_arguments)]
 pub async fn get_video_url(

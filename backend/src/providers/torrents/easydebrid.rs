@@ -207,6 +207,12 @@ pub async fn get_video_url(
     ))
 }
 
+// ─── Downloaded torrent list (not supported) ──────────────────────────────────
+
+// EasyDebrid is cache-only instant debrid. The API exposes /link/generate,
+// /link/request, and /link/lookup but no account-level "list my downloads"
+// endpoint, so watchlist catalogs cannot be populated from EasyDebrid.
+
 // ─── Delete all torrents (no-op for EasyDebrid) ───────────────────────────────
 
 /// EasyDebrid has no account-level deletion API — this is a no-op.

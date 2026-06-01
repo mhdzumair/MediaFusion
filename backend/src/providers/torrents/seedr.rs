@@ -230,6 +230,36 @@ fn task_is_downloading(task: &Value) -> bool {
     )
 }
 
+/// Root-level Seedr folders are named with the torrent info_hash (40-char SHA-1 or 32-char MD5).
+fn is_info_hash_folder_name(name: &str) -> bool {
+    let len = name.len();
+    len == 40 || len == 32
+}
+
+/// List root folders whose names are info hashes — mirrors Python `list_contents().folders`.
+async fn list_root_hash_folders(
+    http: &Client,
+    token: &str,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Vec<(String, i64, i64)>, ProviderError> {
+    let root = api_get(http, token, "/fs/root/contents", forward).await?;
+    let mut out = Vec::new();
+    if let Some(folders) = root["folders"].as_array() {
+        for folder in folders {
+            let path = folder["path"].as_str().unwrap_or("").to_lowercase();
+            if !is_info_hash_folder_name(&path) {
+                continue;
+            }
+            let Some(folder_id) = folder["id"].as_i64() else {
+                continue;
+            };
+            let size = folder["size"].as_i64().unwrap_or(0);
+            out.push((path, folder_id, size));
+        }
+    }
+    Ok(out)
+}
+
 // ─── File collection ──────────────────────────────────────────────────────────
 
 // Returns Vec<(name, size, file_id)> collecting all files recursively
@@ -978,7 +1008,7 @@ pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), Provi
         if let Some(folders) = root["folders"].as_array() {
             for folder in folders {
                 let path = folder["path"].as_str().unwrap_or("").to_lowercase();
-                if path.len() == 40 || path.len() == 32 {
+                if is_info_hash_folder_name(&path) {
                     if let Some(id) = folder["id"].as_i64() {
                         api_delete(http, &bearer, &format!("/fs/folder/{id}"), None)
                             .await
@@ -1023,35 +1053,19 @@ pub async fn delete_torrent_by_hash(
 
 // ─── Torrent list ────────────────────────────────────────────────────────────
 
-/// Return all completed tasks with their video files, ready for the missing-import flow.
+/// Return all downloaded torrents by scanning root hash-named folders.
+///
+/// Seedr stores completed downloads as root folders named with the info_hash
+/// (see Python `fetch_downloaded_info_hashes_from_seedr`), not via the tasks API.
 pub async fn list_downloaded_torrents(
     http: &Client,
     token: &str,
 ) -> Result<Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>, ProviderError> {
     let bearer = resolve_token(token);
-    let tasks = list_tasks(http, &bearer, None).await.unwrap_or_default();
+    let hash_folders = list_root_hash_folders(http, &bearer, None).await?;
 
-    let mut results = Vec::new();
-    for task in &tasks {
-        if !task_is_complete(task) {
-            continue;
-        }
-        let info_hash = match task_info_hash(task) {
-            Some(h) => h,
-            None => continue,
-        };
-        let id = task["id"]
-            .as_i64()
-            .map(|v| v.to_string())
-            .unwrap_or_default();
-        let name = task["name"].as_str().unwrap_or(&info_hash).to_string();
-        let size = task["size"].as_i64().unwrap_or(0);
-
-        let folder_id = match task["folder_created_id"].as_i64() {
-            Some(id) => id,
-            None => continue,
-        };
-
+    let mut results = Vec::with_capacity(hash_folders.len());
+    for (info_hash, folder_id, size) in hash_folders {
         let all_files = folder_files_recursive(http, &bearer, folder_id, None)
             .await
             .unwrap_or_default();
@@ -1063,12 +1077,25 @@ pub async fn list_downloaded_torrents(
             .collect();
 
         results.push(crate::providers::torrents::realdebrid::DownloadedTorrent {
-            id,
-            info_hash,
-            name,
+            id: folder_id.to_string(),
+            info_hash: info_hash.clone(),
+            name: info_hash,
             size,
             raw: serde_json::json!({ "files": files }),
         });
     }
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_info_hash_folder_name;
+
+    #[test]
+    fn info_hash_folder_name_matches_sha1_and_md5_lengths() {
+        assert!(is_info_hash_folder_name(&"a".repeat(40)));
+        assert!(is_info_hash_folder_name(&"b".repeat(32)));
+        assert!(!is_info_hash_folder_name("not-a-hash"));
+        assert!(!is_info_hash_folder_name(&"c".repeat(39)));
+    }
 }

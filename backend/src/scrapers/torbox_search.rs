@@ -325,7 +325,7 @@ pub async fn scrape_usenet(
             }
         }
         Ok(r) if r.status().as_u16() == 429 => {
-            tracing::warn!("torbox_usenet query '{query}': rate-limited (429)");
+            tracing::debug!("torbox_usenet query '{query}': rate-limited (429)");
         }
         Ok(r) => tracing::debug!("torbox_usenet query {query}: HTTP {}", r.status()),
         Err(e) => tracing::debug!("torbox_usenet query {query}: {e}"),
@@ -374,7 +374,7 @@ async fn search_usenet_by_imdb(
             Some(parse_usenet_json(&json, media_type, season, episode, None))
         }
         Ok(r) if r.status().as_u16() == 429 => {
-            tracing::warn!(
+            tracing::debug!(
                 "torbox_usenet imdb {imdb_id}: rate-limited (429) — skipping title query"
             );
             None

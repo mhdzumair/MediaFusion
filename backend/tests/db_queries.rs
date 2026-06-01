@@ -21,6 +21,7 @@ mod common;
 // db::media::get_media_meta (re-exported as db::get_media_meta) returns a SearchMeta stub.
 // Tests here cover the former.
 use mediafusion_api::db::{
+    catalog::get_watchlist_items,
     fetch_stream_playback_info,
     meta::{get_episodes, get_media_meta as get_full_meta},
     types::{MediaId, MediaType},
@@ -288,4 +289,83 @@ async fn fetch_stream_playback_info_movie_group_by_is_complete() {
         info.torrent_file.is_some(),
         "stored torrent_file bytes must be returned"
     );
+}
+
+// ─── get_watchlist_items: info_hash → media join ─────────────────────────────
+
+/// A downloaded info_hash linked to media via torrent_stream must appear in
+/// watchlist catalog results.
+#[tokio::test]
+async fn get_watchlist_items_resolves_info_hash_to_media() {
+    let pool = common::test_pool().await;
+    let media_id = insert_media(&pool, MediaType::Movie, "test_db_queries::watchlist_movie").await;
+
+    sqlx::query("UPDATE media SET total_streams = 1 WHERE id = $1")
+        .bind(media_id)
+        .execute(&pool)
+        .await
+        .expect("bump total_streams");
+
+    let stream_id: i32 = sqlx::query_scalar::<_, i32>(
+        r#"INSERT INTO stream (stream_type, name, source, is_active, is_blocked, is_public,
+                               playback_count, is_remastered, is_upscaled, is_proper, is_repack,
+                               is_extended, is_complete, is_dubbed, is_subbed, created_at)
+           VALUES ('TORRENT', 'test_db_queries::watchlist.mkv', 'test',
+                   true, false, true, 0,
+                   false, false, false, false, false, false, false, false, NOW())
+           RETURNING id"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("insert stream");
+
+    let info_hash = format!("watchlist{stream_id:0>32}");
+
+    sqlx::query(
+        r#"INSERT INTO torrent_stream (stream_id, info_hash, total_size, torrent_type,
+                                       file_count, created_at)
+           VALUES ($1, $2, 1000, 'PUBLIC', 1, NOW())"#,
+    )
+    .bind(stream_id)
+    .bind(&info_hash)
+    .execute(&pool)
+    .await
+    .expect("insert torrent_stream");
+
+    sqlx::query(
+        "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at)
+         VALUES ($1, $2, true, false, NOW())",
+    )
+    .bind(stream_id)
+    .bind(media_id)
+    .execute(&pool)
+    .await
+    .expect("insert stream_media_link");
+
+    let rows = get_watchlist_items(
+        &pool,
+        "movie",
+        std::slice::from_ref(&info_hash),
+        0,
+        &[],
+        &[],
+        "latest",
+        "desc",
+    )
+    .await;
+
+    sqlx::query("DELETE FROM stream WHERE id = $1")
+        .bind(stream_id)
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM media WHERE id = $1")
+        .bind(media_id)
+        .execute(&pool)
+        .await
+        .ok();
+
+    assert_eq!(rows.len(), 1, "expected one watchlist row for linked hash");
+    assert_eq!(rows[0].media_id, MediaId(media_id));
+    assert_eq!(rows[0].title, "test_db_queries::watchlist_movie");
 }

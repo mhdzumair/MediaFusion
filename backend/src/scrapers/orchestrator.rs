@@ -437,27 +437,10 @@ async fn fan_out(
     }
 
     // ── Prowlarr (global config, or user-overridden URL/key) ──────────────────
-    if cfg.is_scrap_from_prowlarr
-        && cfg.prowlarr_live_title_search
-        && is_stale("prowlarr", cfg.prowlarr_search_ttl)
-    {
-        let prowlarr_url = ic
-            .prowlarr
-            .as_ref()
-            .and_then(|p| if p.use_global { None } else { p.url.clone() })
-            .or_else(|| cfg.prowlarr_url.clone());
-        let prowlarr_key = ic
-            .prowlarr
-            .as_ref()
-            .and_then(|p| {
-                if p.use_global {
-                    None
-                } else {
-                    p.api_key.clone()
-                }
-            })
-            .or_else(|| cfg.prowlarr_api_key.clone());
-        if let (Some(url), Some(key)) = (prowlarr_url, prowlarr_key) {
+    if cfg.prowlarr_live_title_search && is_stale("prowlarr", cfg.prowlarr_search_ttl) {
+        if let Some((url, key)) =
+            crate::scrapers::indexer_credentials::resolve_prowlarr_credentials(&ic, &cfg)
+        {
             let http = http.clone();
             let meta = meta.clone();
             let mt = media_type.to_string();
@@ -489,23 +472,9 @@ async fn fan_out(
 
     // ── Jackett (global config, or user-overridden) ───────────────────────────
     if cfg.is_scrap_from_jackett && is_stale("jackett", cfg.jackett_search_ttl) {
-        let jackett_url = ic
-            .jackett
-            .as_ref()
-            .and_then(|j| if j.use_global { None } else { j.url.clone() })
-            .or_else(|| cfg.jackett_url.clone());
-        let jackett_key = ic
-            .jackett
-            .as_ref()
-            .and_then(|j| {
-                if j.use_global {
-                    None
-                } else {
-                    j.api_key.clone()
-                }
-            })
-            .or_else(|| cfg.jackett_api_key.clone());
-        if let (Some(url), Some(key)) = (jackett_url, jackett_key) {
+        if let Some((url, key)) =
+            crate::scrapers::indexer_credentials::resolve_jackett_credentials(&ic, &cfg)
+        {
             let http = http.clone();
             let meta = meta.clone();
             let mt = media_type.to_string();

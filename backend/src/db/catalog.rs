@@ -4,6 +4,7 @@ use tracing::warn;
 use super::types::{MediaId, MediaType, UserId};
 
 const LIMIT: i64 = 100;
+const WATCHLIST_LIMIT: i64 = 25;
 
 #[derive(sqlx::FromRow, Debug)]
 pub struct CatalogRow {
@@ -173,6 +174,76 @@ async fn get_library_items(
         );
         vec![]
     })
+}
+
+/// Watchlist catalog rows: media linked to any of the given torrent info_hashes.
+pub async fn get_watchlist_items(
+    pool: &PgPool,
+    media_type: &str,
+    info_hashes: &[String],
+    skip: i64,
+    nudity_excludes: &[String],
+    cert_excludes: &[String],
+    sort: &str,
+    sort_dir: &str,
+) -> Vec<CatalogRow> {
+    if info_hashes.is_empty() {
+        return vec![];
+    }
+
+    let Some(mt) = MediaType::from_wire(media_type) else {
+        return vec![];
+    };
+
+    let ord = order_clause(sort, sort_dir);
+    let sql = format!(
+        r#"
+        SELECT
+            m.id AS media_id,
+            m.type AS media_type,
+            m.title,
+            m.year,
+            m.description,
+            mei.external_id AS imdb_id,
+            mi.url AS poster_url
+        FROM media m
+        JOIN stream_media_link sml ON sml.media_id = m.id
+        JOIN stream s ON s.id = sml.stream_id
+        JOIN torrent_stream ts ON ts.stream_id = s.id
+        LEFT JOIN media_external_id mei ON mei.media_id = m.id AND mei.provider = 'imdb'
+        LEFT JOIN LATERAL (
+            SELECT url FROM media_image
+            WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
+            LIMIT 1
+        ) mi ON true
+        WHERE m.type = $1
+          AND m.total_streams > 0
+          AND NOT m.is_blocked
+          AND lower(ts.info_hash) = ANY($2)
+          AND (cardinality($3::text[]) IS NULL OR m.nudity_status::text <> ALL($3))
+          AND (cardinality($4::text[]) IS NULL OR NOT EXISTS (
+              SELECT 1 FROM media_parental_certificate_link mpcl
+              JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
+              WHERE mpcl.media_id = m.id AND pc.name = ANY($4)
+          ))
+        GROUP BY m.id, m.type, m.title, m.year, m.description, mei.external_id, mi.url
+        ORDER BY {ord}
+        LIMIT {WATCHLIST_LIMIT} OFFSET $5
+        "#
+    );
+
+    sqlx::query_as::<_, CatalogRow>(&sql)
+        .bind(mt) // $1
+        .bind(info_hashes) // $2
+        .bind(nudity_excludes) // $3
+        .bind(cert_excludes) // $4
+        .bind(skip) // $5
+        .fetch_all(pool)
+        .await
+        .unwrap_or_else(|e| {
+            warn!("watchlist catalog query [type={media_type}]: {e}");
+            vec![]
+        })
 }
 
 pub async fn search_metadata(

@@ -63,6 +63,8 @@ pub struct MetaPreview {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub poster: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }
 

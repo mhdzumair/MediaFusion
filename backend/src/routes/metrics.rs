@@ -22,10 +22,7 @@ use std::sync::atomic::AtomicU64;
 
 use crate::state::AppState;
 
-pub async fn handler(
-    State(state): State<Arc<AppState>>,
-    req: axum::extract::Request,
-) -> Response {
+pub async fn handler(State(state): State<Arc<AppState>>, req: axum::extract::Request) -> Response {
     if let Some(ref required) = state.config.metrics_api_key {
         let provided = req
             .headers()

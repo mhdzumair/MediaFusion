@@ -14,6 +14,7 @@ use crate::{
         stremio::{MetaPreview, Metas},
         user_data::UserData,
     },
+    routes::delete_all_watchlist,
     state::AppState,
 };
 
@@ -79,11 +80,93 @@ fn rows_to_metas(rows: Vec<db_catalog::CatalogRow>, host_url: &str) -> Metas {
                 name: r.title,
                 release_info: r.year.map(|y| y.to_string()),
                 poster,
+                background: None,
                 description: r.description,
             }
         })
         .collect();
     Metas { metas }
+}
+
+fn parse_watchlist_service<'a>(catalog_id: &'a str, media_type: &str) -> Option<&'a str> {
+    if let Some(service) = catalog_id.strip_suffix("_watchlist_movies") {
+        if media_type == "movie" {
+            return Some(service);
+        }
+    } else if let Some(service) = catalog_id.strip_suffix("_watchlist_series") {
+        if media_type == "series" {
+            return Some(service);
+        }
+    }
+    None
+}
+
+async fn handle_watchlist_catalog(
+    state: &AppState,
+    user_data: &UserData,
+    media_type: &str,
+    catalog_id: &str,
+    service: &str,
+    extra: &ExtraParams,
+) -> axum::response::Response {
+    let provider = match user_data.get_provider_by_name(service) {
+        Some(p) if p.enable_watchlist_catalogs => p,
+        _ => return Json(Metas { metas: vec![] }).into_response(),
+    };
+
+    let token = match provider.token.as_deref().filter(|t| !t.is_empty()) {
+        Some(t) => t,
+        None => return Json(Metas { metas: vec![] }).into_response(),
+    };
+
+    let hashes =
+        match crate::providers::torrents::list_downloaded_hashes(&state.http, service, token).await
+        {
+            Ok(h) => h,
+            Err(e) => {
+                tracing::warn!("watchlist catalog {service}: {e}");
+                return Json(Metas { metas: vec![] }).into_response();
+            }
+        };
+
+    if hashes.is_empty() {
+        return Json(Metas { metas: vec![] }).into_response();
+    }
+
+    let (sort, sort_dir) = user_data.catalog_sort(catalog_id);
+    let nudity_excludes = user_data.nudity_filter.clone();
+    let cert_excludes: Vec<String> = user_data
+        .certification_filter
+        .iter()
+        .filter(|s| s.as_str() != "Disable")
+        .cloned()
+        .collect();
+
+    let rows = db_catalog::get_watchlist_items(
+        &state.pool_ro,
+        media_type,
+        &hashes,
+        extra.skip,
+        &nudity_excludes,
+        &cert_excludes,
+        &sort,
+        &sort_dir,
+    )
+    .await;
+
+    let mut metas = rows_to_metas(rows, &state.config.host_url).metas;
+
+    if media_type == "movie"
+        && delete_all_watchlist::supports_delete_all(service)
+        && !metas.is_empty()
+    {
+        metas.insert(
+            0,
+            delete_all_watchlist::delete_all_meta_preview(&state.config.host_url, service),
+        );
+    }
+
+    Json(Metas { metas }).into_response()
 }
 
 // ─── Shared dispatch ──────────────────────────────────────────────────────────
@@ -108,9 +191,17 @@ async fn handle_catalog(
             .into_response();
     };
 
-    // Watchlist catalogs stay in Python → return 404 so nginx falls back
-    if catalog_id.ends_with("_watchlist_movies") || catalog_id.ends_with("_watchlist_series") {
-        return StatusCode::NOT_FOUND.into_response();
+    // Watchlist catalogs: fetch debrid downloads and map to media rows (never cached).
+    if let Some(service) = parse_watchlist_service(&catalog_id, media_type) {
+        return handle_watchlist_catalog(
+            &state,
+            &user_data,
+            media_type,
+            &catalog_id,
+            service,
+            &extra,
+        )
+        .await;
     }
 
     let (sort, sort_dir) = user_data.catalog_sort(&catalog_id);
