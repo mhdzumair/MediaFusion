@@ -14,33 +14,33 @@ use mediafusion_api::db::{
 };
 
 struct Cleanup {
-    pool: sqlx::PgPool,
+    pool: &'static sqlx::PgPool,
     media_ids: Vec<i32>,
     stream_ids: Vec<i32>,
 }
 
-impl Drop for Cleanup {
-    fn drop(&mut self) {
-        let pool = self.pool.clone();
-        let media_ids = self.media_ids.clone();
-        let stream_ids = self.stream_ids.clone();
-        let _ = std::thread::spawn(move || {
-            tokio::runtime::Runtime::new().unwrap().block_on(async {
-                if !stream_ids.is_empty() {
-                    let _ = sqlx::query("DELETE FROM stream WHERE id = ANY($1)")
-                        .bind(&stream_ids)
-                        .execute(&pool)
-                        .await;
-                }
-                if !media_ids.is_empty() {
-                    let _ = sqlx::query("DELETE FROM media WHERE id = ANY($1)")
-                        .bind(&media_ids)
-                        .execute(&pool)
-                        .await;
-                }
-            });
-        })
-        .join();
+impl Cleanup {
+    fn new(pool: &'static sqlx::PgPool) -> Self {
+        Self {
+            pool,
+            media_ids: vec![],
+            stream_ids: vec![],
+        }
+    }
+
+    async fn finish(self) {
+        if !self.stream_ids.is_empty() {
+            let _ = sqlx::query("DELETE FROM stream WHERE id = ANY($1)")
+                .bind(&self.stream_ids)
+                .execute(self.pool)
+                .await;
+        }
+        if !self.media_ids.is_empty() {
+            let _ = sqlx::query("DELETE FROM media WHERE id = ANY($1)")
+                .bind(&self.media_ids)
+                .execute(self.pool)
+                .await;
+        }
     }
 }
 
@@ -124,48 +124,43 @@ fn resolve_series_episode_numbers_defaults() {
 #[tokio::test]
 async fn store_torrent_movie_uses_stream_media_link() {
     let pool = common::test_pool().await;
-    let media_id = insert_media(&pool, MediaType::Movie, "stream_store::torrent_movie").await;
-    let mut cleanup = Cleanup {
-        pool: pool.clone(),
-        media_ids: vec![media_id],
-        stream_ids: vec![],
-    };
+    let mut cleanup = Cleanup::new(pool);
+    let media_id = insert_media(pool, MediaType::Movie, "stream_store::torrent_movie").await;
+    cleanup.media_ids.push(media_id);
 
     let info_hash = format!("mov{media_id:0>36}");
     let mut stream = sample_torrent(&info_hash);
     stream.files.clear();
 
     let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Movie);
-    let result = store_torrent_stream(&pool, &stream, &opts)
+    let result = store_torrent_stream(pool, &stream, &opts)
         .await
         .expect("store");
     cleanup.stream_ids.push(result.stream_id().0);
 
     assert!(result.was_inserted());
     assert_eq!(
-        stream_media_link_count(&pool, result.stream_id().0, media_id).await,
+        stream_media_link_count(pool, result.stream_id().0, media_id).await,
         1
     );
     assert!(
-        !file_episode_link_exists(&pool, result.stream_id().0, media_id, 1, 1).await,
+        !file_episode_link_exists(pool, result.stream_id().0, media_id, 1, 1).await,
         "movies must not create file_media_link rows"
     );
+    cleanup.finish().await;
 }
 
 #[tokio::test]
 async fn store_torrent_series_with_files_links_episodes() {
     let pool = common::test_pool().await;
+    let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(
-        &pool,
+        pool,
         MediaType::Series,
         "stream_store::torrent_series_files",
     )
     .await;
-    let mut cleanup = Cleanup {
-        pool: pool.clone(),
-        media_ids: vec![media_id],
-        stream_ids: vec![],
-    };
+    cleanup.media_ids.push(media_id);
 
     let info_hash = format!("ser{media_id:0>36}");
     let mut stream = sample_torrent(&info_hash);
@@ -187,29 +182,27 @@ async fn store_torrent_series_with_files_links_episodes() {
     ];
 
     let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series);
-    let result = store_torrent_stream(&pool, &stream, &opts)
+    let result = store_torrent_stream(pool, &stream, &opts)
         .await
         .expect("store");
     cleanup.stream_ids.push(result.stream_id().0);
 
-    assert!(file_episode_link_exists(&pool, result.stream_id().0, media_id, 1, 1).await);
-    assert!(file_episode_link_exists(&pool, result.stream_id().0, media_id, 1, 2).await);
+    assert!(file_episode_link_exists(pool, result.stream_id().0, media_id, 1, 1).await);
+    assert!(file_episode_link_exists(pool, result.stream_id().0, media_id, 1, 2).await);
+    cleanup.finish().await;
 }
 
 #[tokio::test]
 async fn store_torrent_series_files_default_episode_when_missing() {
     let pool = common::test_pool().await;
+    let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(
-        &pool,
+        pool,
         MediaType::Series,
         "stream_store::torrent_series_default_ep",
     )
     .await;
-    let mut cleanup = Cleanup {
-        pool: pool.clone(),
-        media_ids: vec![media_id],
-        stream_ids: vec![],
-    };
+    cleanup.media_ids.push(media_id);
 
     let info_hash = format!("def{media_id:0>36}");
     let mut stream = sample_torrent(&info_hash);
@@ -222,29 +215,22 @@ async fn store_torrent_series_files_default_episode_when_missing() {
     }];
 
     let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series);
-    let result = store_torrent_stream(&pool, &stream, &opts)
+    let result = store_torrent_stream(pool, &stream, &opts)
         .await
         .expect("store");
     cleanup.stream_ids.push(result.stream_id().0);
 
     // file_index 2 → episode 3 (1-based default)
-    assert!(file_episode_link_exists(&pool, result.stream_id().0, media_id, 1, 3).await);
+    assert!(file_episode_link_exists(pool, result.stream_id().0, media_id, 1, 3).await);
+    cleanup.finish().await;
 }
 
 #[tokio::test]
 async fn store_torrent_series_pack_uses_synthetic_episode_from_opts() {
     let pool = common::test_pool().await;
-    let media_id = insert_media(
-        &pool,
-        MediaType::Series,
-        "stream_store::torrent_series_pack",
-    )
-    .await;
-    let mut cleanup = Cleanup {
-        pool: pool.clone(),
-        media_ids: vec![media_id],
-        stream_ids: vec![],
-    };
+    let mut cleanup = Cleanup::new(pool);
+    let media_id = insert_media(pool, MediaType::Series, "stream_store::torrent_series_pack").await;
+    cleanup.media_ids.push(media_id);
 
     let info_hash = format!("pack{media_id:0>36}");
     let stream = sample_torrent(&info_hash);
@@ -252,41 +238,39 @@ async fn store_torrent_series_pack_uses_synthetic_episode_from_opts() {
     let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series)
         .with_episode(Some(2), Some(7));
 
-    let result = store_torrent_stream(&pool, &stream, &opts)
+    let result = store_torrent_stream(pool, &stream, &opts)
         .await
         .expect("store");
     cleanup.stream_ids.push(result.stream_id().0);
 
     assert_eq!(
-        stream_media_link_count(&pool, result.stream_id().0, media_id).await,
+        stream_media_link_count(pool, result.stream_id().0, media_id).await,
         1
     );
-    assert!(file_episode_link_exists(&pool, result.stream_id().0, media_id, 2, 7).await);
+    assert!(file_episode_link_exists(pool, result.stream_id().0, media_id, 2, 7).await);
+    cleanup.finish().await;
 }
 
 #[tokio::test]
 async fn store_torrent_is_idempotent_and_refreshes_seeders() {
     let pool = common::test_pool().await;
-    let media_id = insert_media(&pool, MediaType::Movie, "stream_store::torrent_idempotent").await;
-    let mut cleanup = Cleanup {
-        pool: pool.clone(),
-        media_ids: vec![media_id],
-        stream_ids: vec![],
-    };
+    let mut cleanup = Cleanup::new(pool);
+    let media_id = insert_media(pool, MediaType::Movie, "stream_store::torrent_idempotent").await;
+    cleanup.media_ids.push(media_id);
 
     let info_hash = format!("idem{media_id:0>36}");
     let mut stream = sample_torrent(&info_hash);
     stream.seeders = Some(3);
 
     let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Movie);
-    let first = store_torrent_stream(&pool, &stream, &opts)
+    let first = store_torrent_stream(pool, &stream, &opts)
         .await
         .expect("first");
     cleanup.stream_ids.push(first.stream_id().0);
     assert!(first.was_inserted());
 
     stream.seeders = Some(99);
-    let second = store_torrent_stream(&pool, &stream, &opts)
+    let second = store_torrent_stream(pool, &stream, &opts)
         .await
         .expect("second");
     assert!(matches!(second, StoreStreamResult::AlreadyExists(_)));
@@ -295,10 +279,11 @@ async fn store_torrent_is_idempotent_and_refreshes_seeders() {
     let seeders: Option<i32> =
         sqlx::query_scalar("SELECT seeders FROM torrent_stream WHERE info_hash = $1")
             .bind(&info_hash)
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .expect("seeders");
     assert_eq!(seeders, Some(99));
+    cleanup.finish().await;
 }
 
 // ─── Import file path (upsert_stream_file_row + link_file_to_media_episode) ───
@@ -306,17 +291,14 @@ async fn store_torrent_is_idempotent_and_refreshes_seeders() {
 #[tokio::test]
 async fn import_file_helpers_link_series_episode() {
     let pool = common::test_pool().await;
-    let media_id = insert_media(&pool, MediaType::Series, "stream_store::import_file_link").await;
-    let mut cleanup = Cleanup {
-        pool: pool.clone(),
-        media_ids: vec![media_id],
-        stream_ids: vec![],
-    };
+    let mut cleanup = Cleanup::new(pool);
+    let media_id = insert_media(pool, MediaType::Series, "stream_store::import_file_link").await;
+    cleanup.media_ids.push(media_id);
 
     let info_hash = format!("imp{media_id:0>36}");
     let stream = sample_torrent(&info_hash);
     let opts = StoreStreamOpts::user_import(MediaId(media_id), MediaType::Series);
-    let result = store_torrent_stream(&pool, &stream, &opts)
+    let result = store_torrent_stream(pool, &stream, &opts)
         .await
         .expect("store torrent");
     let stream_id = result.stream_id();
@@ -329,14 +311,14 @@ async fn import_file_helpers_link_series_episode() {
         season_number: 0,
         episode_number: 0,
     };
-    let file_id = upsert_stream_file_row(&pool, stream_id, &file_row)
+    let file_id = upsert_stream_file_row(pool, stream_id, &file_row)
         .await
         .expect("file")
         .expect("file id");
 
     let (s, e) = resolve_series_episode_numbers(0, None, None);
     link_file_to_media_episode(
-        &pool,
+        pool,
         file_id,
         MediaId(media_id),
         s,
@@ -347,7 +329,8 @@ async fn import_file_helpers_link_series_episode() {
     .await
     .expect("link");
 
-    assert!(file_episode_link_exists(&pool, stream_id.0, media_id, 1, 1).await);
+    assert!(file_episode_link_exists(pool, stream_id.0, media_id, 1, 1).await);
+    cleanup.finish().await;
 }
 
 // ─── Usenet ───────────────────────────────────────────────────────────────────
@@ -355,12 +338,9 @@ async fn import_file_helpers_link_series_episode() {
 #[tokio::test]
 async fn store_usenet_inserts_and_dedupes() {
     let pool = common::test_pool().await;
-    let media_id = insert_media(&pool, MediaType::Movie, "stream_store::usenet").await;
-    let mut cleanup = Cleanup {
-        pool: pool.clone(),
-        media_ids: vec![media_id],
-        stream_ids: vec![],
-    };
+    let mut cleanup = Cleanup::new(pool);
+    let media_id = insert_media(pool, MediaType::Movie, "stream_store::usenet").await;
+    cleanup.media_ids.push(media_id);
 
     let guid = format!("nzb-{media_id}");
     let parsed = mediafusion_api::parser::parse_title("Release.1080p");
@@ -376,16 +356,17 @@ async fn store_usenet_inserts_and_dedupes() {
     };
     let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Movie);
 
-    let first = store_usenet_stream(&pool, &stream, &opts)
+    let first = store_usenet_stream(pool, &stream, &opts)
         .await
         .expect("first");
     cleanup.stream_ids.push(first.stream_id().0);
     assert!(first.was_inserted());
 
-    let second = store_usenet_stream(&pool, &stream, &opts)
+    let second = store_usenet_stream(pool, &stream, &opts)
         .await
         .expect("second");
     assert!(matches!(second, StoreStreamResult::AlreadyExists(_)));
+    cleanup.finish().await;
 }
 
 // ─── Telegram ─────────────────────────────────────────────────────────────────
@@ -393,12 +374,9 @@ async fn store_usenet_inserts_and_dedupes() {
 #[tokio::test]
 async fn store_telegram_dedupes_by_chat_and_message() {
     let pool = common::test_pool().await;
-    let media_id = insert_media(&pool, MediaType::Movie, "stream_store::telegram").await;
-    let mut cleanup = Cleanup {
-        pool: pool.clone(),
-        media_ids: vec![media_id],
-        stream_ids: vec![],
-    };
+    let mut cleanup = Cleanup::new(pool);
+    let media_id = insert_media(pool, MediaType::Movie, "stream_store::telegram").await;
+    cleanup.media_ids.push(media_id);
 
     let parsed = mediafusion_api::parser::parse_title("video.mkv");
     let stream = TelegramStoreInput {
@@ -420,16 +398,17 @@ async fn store_telegram_dedupes_by_chat_and_message() {
     };
     let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Movie);
 
-    let first = store_telegram_stream(&pool, &stream, &opts)
+    let first = store_telegram_stream(pool, &stream, &opts)
         .await
         .expect("first");
     cleanup.stream_ids.push(first.stream_id().0);
     assert!(first.was_inserted());
 
-    let second = store_telegram_stream(&pool, &stream, &opts)
+    let second = store_telegram_stream(pool, &stream, &opts)
         .await
         .expect("second");
     assert!(matches!(second, StoreStreamResult::AlreadyExists(_)));
+    cleanup.finish().await;
 }
 
 // ─── HTTP / YouTube / AceStream ───────────────────────────────────────────────
@@ -437,12 +416,9 @@ async fn store_telegram_dedupes_by_chat_and_message() {
 #[tokio::test]
 async fn store_http_dedupes_by_url_per_media() {
     let pool = common::test_pool().await;
-    let media_id = insert_media(&pool, MediaType::Movie, "stream_store::http").await;
-    let mut cleanup = Cleanup {
-        pool: pool.clone(),
-        media_ids: vec![media_id],
-        stream_ids: vec![],
-    };
+    let mut cleanup = Cleanup::new(pool);
+    let media_id = insert_media(pool, MediaType::Movie, "stream_store::http").await;
+    cleanup.media_ids.push(media_id);
 
     let url = format!("https://example/stream/{media_id}.m3u8");
     let stream = HttpStoreInput {
@@ -460,25 +436,23 @@ async fn store_http_dedupes_by_url_per_media() {
     };
     let opts = StoreStreamOpts::user_import(MediaId(media_id), MediaType::Movie);
 
-    let first = store_http_stream(&pool, &stream, &opts)
+    let first = store_http_stream(pool, &stream, &opts)
         .await
         .expect("first");
     cleanup.stream_ids.push(first.stream_id().0);
-    let second = store_http_stream(&pool, &stream, &opts)
+    let second = store_http_stream(pool, &stream, &opts)
         .await
         .expect("second");
     assert!(matches!(second, StoreStreamResult::AlreadyExists(_)));
+    cleanup.finish().await;
 }
 
 #[tokio::test]
 async fn store_youtube_dedupes_by_video_id() {
     let pool = common::test_pool().await;
-    let media_id = insert_media(&pool, MediaType::Movie, "stream_store::youtube").await;
-    let mut cleanup = Cleanup {
-        pool: pool.clone(),
-        media_ids: vec![media_id],
-        stream_ids: vec![],
-    };
+    let mut cleanup = Cleanup::new(pool);
+    let media_id = insert_media(pool, MediaType::Movie, "stream_store::youtube").await;
+    cleanup.media_ids.push(media_id);
 
     let video_id = format!("vid{media_id}");
     let stream = YoutubeStoreInput {
@@ -496,25 +470,23 @@ async fn store_youtube_dedupes_by_video_id() {
     };
     let opts = StoreStreamOpts::user_import(MediaId(media_id), MediaType::Movie);
 
-    let first = store_youtube_stream(&pool, &stream, &opts)
+    let first = store_youtube_stream(pool, &stream, &opts)
         .await
         .expect("first");
     cleanup.stream_ids.push(first.stream_id().0);
-    let second = store_youtube_stream(&pool, &stream, &opts)
+    let second = store_youtube_stream(pool, &stream, &opts)
         .await
         .expect("second");
     assert!(matches!(second, StoreStreamResult::AlreadyExists(_)));
+    cleanup.finish().await;
 }
 
 #[tokio::test]
 async fn store_acestream_inserts_and_links_media() {
     let pool = common::test_pool().await;
-    let media_id = insert_media(&pool, MediaType::Series, "stream_store::acestream").await;
-    let mut cleanup = Cleanup {
-        pool: pool.clone(),
-        media_ids: vec![media_id],
-        stream_ids: vec![],
-    };
+    let mut cleanup = Cleanup::new(pool);
+    let media_id = insert_media(pool, MediaType::Series, "stream_store::acestream").await;
+    cleanup.media_ids.push(media_id);
 
     let content_id = format!("ace{media_id}");
     let stream = AcestreamStoreInput {
@@ -528,15 +500,16 @@ async fn store_acestream_inserts_and_links_media() {
     };
     let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series);
 
-    let result = store_acestream_stream(&pool, &stream, &opts)
+    let result = store_acestream_stream(pool, &stream, &opts)
         .await
         .expect("store");
     cleanup.stream_ids.push(result.stream_id().0);
     assert!(result.was_inserted());
     assert_eq!(
-        stream_media_link_count(&pool, result.stream_id().0, media_id).await,
+        stream_media_link_count(pool, result.stream_id().0, media_id).await,
         1
     );
+    cleanup.finish().await;
 }
 
 // ─── Post-metadata torrent files ──────────────────────────────────────────────
@@ -544,23 +517,20 @@ async fn store_acestream_inserts_and_links_media() {
 #[tokio::test]
 async fn upsert_torrent_files_by_hash_enriches_existing_torrent() {
     let pool = common::test_pool().await;
-    let media_id = insert_media(&pool, MediaType::Movie, "stream_store::torrent_files").await;
-    let mut cleanup = Cleanup {
-        pool: pool.clone(),
-        media_ids: vec![media_id],
-        stream_ids: vec![],
-    };
+    let mut cleanup = Cleanup::new(pool);
+    let media_id = insert_media(pool, MediaType::Movie, "stream_store::torrent_files").await;
+    cleanup.media_ids.push(media_id);
 
     let info_hash = format!("enr{media_id:0>36}");
     let stream = sample_torrent(&info_hash);
     let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Movie);
-    let result = store_torrent_stream(&pool, &stream, &opts)
+    let result = store_torrent_stream(pool, &stream, &opts)
         .await
         .expect("store");
     cleanup.stream_ids.push(result.stream_id().0);
 
     upsert_torrent_files_by_hash(
-        &pool,
+        pool,
         &info_hash,
         &[TorrentFileEntry {
             file_index: 0,
@@ -577,8 +547,9 @@ async fn upsert_torrent_files_by_hash_enriches_existing_torrent() {
     let file_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM stream_file WHERE stream_id = $1")
             .bind(result.stream_id().0)
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .expect("count");
     assert_eq!(file_count, 1);
+    cleanup.finish().await;
 }
