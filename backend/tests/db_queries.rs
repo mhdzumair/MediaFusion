@@ -30,7 +30,7 @@ use mediafusion_api::db::{
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 struct Cleanup {
-    pool: sqlx::PgPool,
+    pool: &'static sqlx::PgPool,
     media_ids: Vec<i32>,
     stream_ids: Vec<i32>,
 }
@@ -99,23 +99,23 @@ async fn link_imdb(pool: &sqlx::PgPool, media_id: i32, imdb_id: &str) {
 #[tokio::test]
 async fn get_media_meta_null_poster_and_rating_external_id() {
     let pool = common::test_pool().await;
-    let media_id = insert_media(&pool, MediaType::Movie, "test_db_queries::no_poster_movie").await;
+    let media_id = insert_media(pool, MediaType::Movie, "test_db_queries::no_poster_movie").await;
     let imdb_id = format!("tt_test_{media_id}");
-    link_imdb(&pool, media_id, &imdb_id).await;
+    link_imdb(pool, media_id, &imdb_id).await;
 
     let mut cleanup = Cleanup {
-        pool: pool.clone(),
+        pool,
         media_ids: vec![media_id],
         stream_ids: vec![],
     };
 
     // No media_image or media_rating rows — forces LEFT JOIN LATERAL to return NULL.
-    let result = get_full_meta(&pool, &imdb_id, "movie").await;
+    let result = get_full_meta(pool, &imdb_id, "movie").await;
 
     cleanup.media_ids.clear(); // handled below so we can assert first
     sqlx::query("DELETE FROM media WHERE id = $1")
         .bind(media_id)
-        .execute(&pool)
+        .execute(pool)
         .await
         .ok();
 
@@ -140,17 +140,17 @@ async fn get_media_meta_null_poster_and_rating_external_id() {
 async fn get_media_meta_null_poster_and_rating_internal_id() {
     let pool = common::test_pool().await;
     let media_id = insert_media(
-        &pool,
+        pool,
         MediaType::Movie,
         "test_db_queries::no_poster_internal",
     )
     .await;
 
-    let result = get_full_meta(&pool, &format!("mf{media_id}"), "movie").await;
+    let result = get_full_meta(pool, &format!("mf{media_id}"), "movie").await;
 
     sqlx::query("DELETE FROM media WHERE id = $1")
         .bind(media_id)
-        .execute(&pool)
+        .execute(pool)
         .await
         .ok();
 
@@ -172,14 +172,14 @@ async fn get_media_meta_null_poster_and_rating_internal_id() {
 #[tokio::test]
 async fn get_episodes_null_thumbnail_and_null_file_link() {
     let pool = common::test_pool().await;
-    let media_id = insert_media(&pool, MediaType::Series, "test_db_queries::no_thumb_series").await;
+    let media_id = insert_media(pool, MediaType::Series, "test_db_queries::no_thumb_series").await;
 
     sqlx::query(
         "INSERT INTO series_metadata (media_id, total_seasons, total_episodes, created_at, updated_at)
          VALUES ($1, 1, 2, NOW(), NOW())",
     )
     .bind(media_id)
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("series_metadata");
 
@@ -188,7 +188,7 @@ async fn get_episodes_null_thumbnail_and_null_file_link() {
          VALUES ((SELECT id FROM series_metadata WHERE media_id = $1), 1, 2) RETURNING id",
     )
     .bind(media_id)
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .expect("season");
 
@@ -201,17 +201,17 @@ async fn get_episodes_null_thumbnail_and_null_file_link() {
         .bind(season_id)
         .bind(ep)
         .bind(format!("Episode {ep}"))
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("episode");
     }
 
     // No episode_image rows, no file_media_link rows.
-    let rows = get_episodes(&pool, MediaId(media_id)).await;
+    let rows = get_episodes(pool, MediaId(media_id)).await;
 
     sqlx::query("DELETE FROM media WHERE id = $1")
         .bind(media_id)
-        .execute(&pool)
+        .execute(pool)
         .await
         .ok();
 
@@ -253,7 +253,7 @@ async fn fetch_stream_playback_info_movie_group_by_is_complete() {
                    false, false, false, false, false, false, false, false, NOW())
            RETURNING id"#,
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .expect("insert stream");
 
@@ -268,15 +268,15 @@ async fn fetch_stream_playback_info_movie_group_by_is_complete() {
     )
     .bind(stream_id)
     .bind(&info_hash)
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("insert torrent_stream");
 
-    let result = fetch_stream_playback_info(&pool, &info_hash, None, None).await;
+    let result = fetch_stream_playback_info(pool, &info_hash, None, None).await;
 
     sqlx::query("DELETE FROM stream WHERE id = $1")
         .bind(stream_id)
-        .execute(&pool)
+        .execute(pool)
         .await
         .ok();
 
@@ -298,11 +298,11 @@ async fn fetch_stream_playback_info_movie_group_by_is_complete() {
 #[tokio::test]
 async fn get_watchlist_items_resolves_info_hash_to_media() {
     let pool = common::test_pool().await;
-    let media_id = insert_media(&pool, MediaType::Movie, "test_db_queries::watchlist_movie").await;
+    let media_id = insert_media(pool, MediaType::Movie, "test_db_queries::watchlist_movie").await;
 
     sqlx::query("UPDATE media SET total_streams = 1 WHERE id = $1")
         .bind(media_id)
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("bump total_streams");
 
@@ -315,7 +315,7 @@ async fn get_watchlist_items_resolves_info_hash_to_media() {
                    false, false, false, false, false, false, false, false, NOW())
            RETURNING id"#,
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .expect("insert stream");
 
@@ -328,7 +328,7 @@ async fn get_watchlist_items_resolves_info_hash_to_media() {
     )
     .bind(stream_id)
     .bind(&info_hash)
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("insert torrent_stream");
 
@@ -338,12 +338,12 @@ async fn get_watchlist_items_resolves_info_hash_to_media() {
     )
     .bind(stream_id)
     .bind(media_id)
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("insert stream_media_link");
 
     let rows = get_watchlist_items(
-        &pool,
+        pool,
         "movie",
         std::slice::from_ref(&info_hash),
         0,
@@ -356,12 +356,12 @@ async fn get_watchlist_items_resolves_info_hash_to_media() {
 
     sqlx::query("DELETE FROM stream WHERE id = $1")
         .bind(stream_id)
-        .execute(&pool)
+        .execute(pool)
         .await
         .ok();
     sqlx::query("DELETE FROM media WHERE id = $1")
         .bind(media_id)
-        .execute(&pool)
+        .execute(pool)
         .await
         .ok();
 
