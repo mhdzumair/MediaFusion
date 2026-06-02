@@ -71,6 +71,10 @@ fn torbox_token(user_data: &UserData) -> Option<String> {
         .and_then(|sp| sp.token.clone())
 }
 
+pub fn has_token(user_data: &UserData) -> bool {
+    torbox_token(user_data).is_some()
+}
+
 fn build_query(title: &str, media_type: &str, season: Option<i32>, episode: Option<i32>) -> String {
     if media_type == "series" {
         match (season, episode) {

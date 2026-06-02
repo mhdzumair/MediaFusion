@@ -607,6 +607,7 @@ pub async fn trigger_scrape_by_media(
         req.season,
         req.episode,
         &scope,
+        true,
     )
     .await;
 

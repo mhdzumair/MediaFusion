@@ -1190,12 +1190,10 @@ async fn build_pipeline(
     let mut live_usenet_raw: Vec<crate::scrapers::ScrapedUsenetStream> = Vec::new();
     if user_data.live_search_streams {
         if let Ok(Some(meta)) = db::get_media_meta(&state.pool, media_id, imdb_id).await {
-            let (scraped_torrents, scraped_usenet) = tokio::join!(
-                orchestrator::run(state, &user_data, &meta, media_type, season, episode, &scope),
-                orchestrator::run_usenet(
-                    state, &user_data, &meta, media_type, season, episode, &scope,
-                ),
-            );
+            let (scraped_torrents, scraped_usenet) = orchestrator::run_live_search(
+                state, &user_data, &meta, media_type, season, episode, &scope,
+            )
+            .await;
             for s in scraped_torrents {
                 all_torrents.push(scraped_to_json(&s));
             }

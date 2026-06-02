@@ -60,7 +60,43 @@ fn build_title_queries(
     }
 }
 
-/// Run all live scrapers for the given media item.
+/// Run torrent + usenet live scrapers for the given media item.
+///
+/// Both paths share a single Redis lock so a warm follow-up request does not
+/// re-run user-credential scrapers (Easynews, TorBox usenet) when torrent
+/// fan-out was already skipped due to the cooldown window.
+pub async fn run_live_search(
+    state: &AppState,
+    user_data: &UserData,
+    meta: &SearchMeta,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+    scope: &str,
+) -> (Vec<ScrapedStream>, Vec<ScrapedUsenetStream>) {
+    let lock_key = lock_key(meta, season, episode);
+    match try_acquire_lock(&state.redis, &lock_key).await {
+        Ok(true) => {}
+        Ok(false) => {
+            tracing::debug!("orchestrator: lock held, skipping live scrape for {lock_key}");
+            return (vec![], vec![]);
+        }
+        Err(e) => {
+            tracing::warn!("orchestrator: redis lock error ({e}), proceeding anyway");
+        }
+    }
+
+    let (torrents, usenet) = tokio::join!(
+        run_torrent_scrape(state, user_data, meta, media_type, season, episode),
+        run_usenet(
+            state, user_data, meta, media_type, season, episode, scope, false,
+        ),
+    );
+
+    (torrents, usenet)
+}
+
+/// Run all live torrent scrapers for the given media item.
 ///
 /// Returns immediately with an empty vec if:
 /// - A concurrent request already holds the Redis lock for this item
@@ -73,10 +109,9 @@ pub async fn run(
     episode: Option<i32>,
     _scope: &str,
 ) -> Vec<ScrapedStream> {
-    // Acquire SETNX lock to prevent stampede from concurrent requests.
     let lock_key = lock_key(meta, season, episode);
     match try_acquire_lock(&state.redis, &lock_key).await {
-        Ok(true) => {} // we own the lock
+        Ok(true) => {}
         Ok(false) => {
             tracing::debug!("orchestrator: lock held, skipping live scrape for {lock_key}");
             return vec![];
@@ -86,6 +121,17 @@ pub async fn run(
         }
     }
 
+    run_torrent_scrape(state, user_data, meta, media_type, season, episode).await
+}
+
+async fn run_torrent_scrape(
+    state: &AppState,
+    user_data: &UserData,
+    meta: &SearchMeta,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+) -> Vec<ScrapedStream> {
     let results = fan_out_with_opts(
         state,
         user_data,
@@ -239,7 +285,9 @@ pub async fn run_forced(
 
 /// Run usenet scrapers (Easynews + TorBox usenet) for the given media item.
 ///
-/// Separate from `run` so the kodi_stream route (torrents-only) is unaffected.
+/// Separate from torrent fan-out so the kodi_stream route (torrents-only) is unaffected.
+/// Per-scraper Redis TTLs mirror Python's `BaseScraper.cache` — timestamps are recorded
+/// even when a scraper returns no results (e.g. bad credentials or rate limits).
 pub async fn run_usenet(
     state: &AppState,
     user_data: &UserData,
@@ -248,64 +296,88 @@ pub async fn run_usenet(
     season: Option<i32>,
     episode: Option<i32>,
     scope: &str,
+    bypass_ttl: bool,
 ) -> Vec<ScrapedUsenetStream> {
+    let _ = scope;
+    let cfg = &state.config;
+    let cache_key = media_cache_key(meta, season, episode);
+    let now = scrape_timestamp_now();
+    let last_scraped = fetch_last_scraped(
+        &state.redis,
+        &["easynews", "torbox_search", "public_usenet_indexers"],
+        &cache_key,
+    )
+    .await;
+    let is_stale =
+        |scraper_id: &str, ttl: i64| is_scrape_stale(&last_scraped, scraper_id, ttl, now, bypass_ttl);
+
     let mut results: Vec<ScrapedUsenetStream> = Vec::new();
+    let mut scraped_ids: Vec<&str> = Vec::new();
 
     // ── Easynews ─────────────────────────────────────────────────────────────
     // Credentials come from the user's streaming provider config, not server config.
-    if let Some(en_provider) = user_data
-        .streaming_providers
-        .iter()
-        .find(|p| p.service == "easynews" && p.enabled)
-    {
-        let username = en_provider
-            .email
-            .as_deref()
-            .filter(|s| !s.is_empty())
-            .or_else(|| {
-                en_provider
-                    .easynews_config
-                    .as_ref()
-                    .and_then(|c| c.get("username").or_else(|| c.get("email")))
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-            });
-        let password = en_provider
-            .password
-            .as_deref()
-            .filter(|s| !s.is_empty())
-            .or_else(|| {
-                en_provider
-                    .easynews_config
-                    .as_ref()
-                    .and_then(|c| c.get("password"))
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-            });
-        if let (Some(u), Some(p)) = (username, password) {
-            let en = easynews::scrape_with_credentials(
-                &state.http,
-                u,
-                p,
-                meta,
-                media_type,
-                season,
-                episode,
-            )
-            .await;
-            results.extend(en);
+    if is_stale("easynews", cfg.prowlarr_search_ttl) {
+        if let Some(en_provider) = user_data
+            .streaming_providers
+            .iter()
+            .find(|p| p.service == "easynews" && p.enabled)
+        {
+            let username = en_provider
+                .email
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .or_else(|| {
+                    en_provider
+                        .easynews_config
+                        .as_ref()
+                        .and_then(|c| c.get("username").or_else(|| c.get("email")))
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                });
+            let password = en_provider
+                .password
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .or_else(|| {
+                    en_provider
+                        .easynews_config
+                        .as_ref()
+                        .and_then(|c| c.get("password"))
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                });
+            if let (Some(u), Some(p)) = (username, password) {
+                let en = easynews::scrape_with_credentials(
+                    &state.http,
+                    u,
+                    p,
+                    meta,
+                    media_type,
+                    season,
+                    episode,
+                )
+                .await;
+                results.extend(en);
+                scraped_ids.push("easynews");
+            }
         }
     }
 
     // ── TorBox Usenet ─────────────────────────────────────────────────────────
-    let tb =
-        torbox_search::scrape_usenet(&state.http, user_data, meta, media_type, season, episode)
-            .await;
-    results.extend(tb);
+    if is_stale("torbox_search", cfg.torbox_search_ttl)
+        && torbox_search::has_token(user_data)
+    {
+        let tb =
+            torbox_search::scrape_usenet(&state.http, user_data, meta, media_type, season, episode)
+                .await;
+        results.extend(tb);
+        scraped_ids.push("torbox_search");
+    }
 
     // ── Public Usenet indexers (NZBIndex + Binsearch) ─────────────────────────
-    if state.config.is_scrap_from_public_usenet_indexers {
-        let cfg = &state.config;
+    if cfg.is_scrap_from_public_usenet_indexers
+        && is_stale("public_usenet_indexers", cfg.public_usenet_search_ttl)
+    {
         let usenet_hg = HealthGateConfig {
             redis: state.redis.clone(),
             enabled: cfg.public_indexers_source_health_gates_enabled,
@@ -329,7 +401,10 @@ pub async fn run_usenet(
         )
         .await;
         results.extend(pu);
+        scraped_ids.push("public_usenet_indexers");
     }
+
+    record_scrape_timestamps(&state.redis, &scraped_ids, &cache_key, now).await;
 
     let opts = stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
     let normalized: Vec<_> = results
@@ -338,7 +413,6 @@ pub async fn run_usenet(
         .collect();
     crate::db::store_usenet_streams(&state.pool, &normalized, &opts).await;
 
-    let _ = scope;
     results
 }
 
@@ -380,11 +454,84 @@ pub async fn run_background(
         .map(crate::db::TorrentStoreInput::from)
         .collect();
     crate::db::store_torrent_streams(&state.pool, &normalized, &opts).await;
-    run_usenet(state, user_data, meta, media_type, season, episode, scope).await;
+    run_usenet(
+        state, user_data, meta, media_type, season, episode, scope, true,
+    )
+    .await;
     invalidate_stream_cache(&state.redis, meta, media_type, season, episode, scope).await;
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
+
+fn media_cache_key(meta: &SearchMeta, season: Option<i32>, episode: Option<i32>) -> String {
+    let fallback = meta.media_id.to_string();
+    let id = meta.imdb_id.as_deref().unwrap_or(&fallback);
+    match (season, episode) {
+        (Some(s), Some(e)) => format!("series:{id}:{s}:{e}"),
+        _ => format!("movie:{id}"),
+    }
+}
+
+fn scrape_timestamp_now() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as f64
+}
+
+fn is_scrape_stale(
+    last_scraped: &std::collections::HashMap<String, f64>,
+    scraper_id: &str,
+    ttl: i64,
+    now: f64,
+    bypass_ttl: bool,
+) -> bool {
+    if bypass_ttl {
+        return true;
+    }
+    match last_scraped.get(scraper_id) {
+        Some(&ts) => (now - ts) as i64 >= ttl,
+        None => true,
+    }
+}
+
+async fn fetch_last_scraped(
+    redis: &fred::clients::Client,
+    scraper_ids: &[&str],
+    cache_key: &str,
+) -> std::collections::HashMap<String, f64> {
+    use fred::prelude::SortedSetsInterface;
+
+    let mut last_scraped = std::collections::HashMap::new();
+    for id in scraper_ids {
+        if let Ok(Some(score)) = redis.zscore::<Option<f64>, _, _>(*id, cache_key).await {
+            last_scraped.insert(id.to_string(), score);
+        }
+    }
+    last_scraped
+}
+
+async fn record_scrape_timestamps(
+    redis: &fred::clients::Client,
+    scraper_ids: &[&str],
+    cache_key: &str,
+    now: f64,
+) {
+    use fred::prelude::SortedSetsInterface;
+
+    for scraper_id in scraper_ids {
+        let _: Result<i64, _> = redis
+            .zadd(
+                *scraper_id,
+                None,
+                None,
+                false,
+                false,
+                (now, cache_key),
+            )
+            .await;
+    }
+}
 
 fn lock_key(meta: &SearchMeta, season: Option<i32>, episode: Option<i32>) -> String {
     let id = meta.imdb_id.as_deref().unwrap_or_else(|| {
@@ -443,34 +590,14 @@ async fn fan_out_with_opts(
     redis: &fred::clients::Client,
     opts: &FanOutOpts,
 ) -> Vec<ScrapedStream> {
-    use fred::prelude::SortedSetsInterface;
-
     let http = state.http.clone();
     let cfg = state.config.clone();
     let meta = Arc::new(meta.clone());
     let ic = user_data.indexer_config.clone().unwrap_or_default();
 
     // Build cache key for TTL checking
-    let cache_key = match (season, episode) {
-        (Some(s), Some(e)) => format!(
-            "series:{}:{}:{}",
-            meta.imdb_id
-                .as_deref()
-                .unwrap_or(&meta.media_id.to_string()),
-            s,
-            e
-        ),
-        _ => format!(
-            "movie:{}",
-            meta.imdb_id
-                .as_deref()
-                .unwrap_or(&meta.media_id.to_string())
-        ),
-    };
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as f64;
+    let cache_key = media_cache_key(&meta, season, episode);
+    let now = scrape_timestamp_now();
 
     // Pre-fetch last-scrape timestamps for all enabled scrapers from Redis.
     let scraper_ids = [
@@ -484,24 +611,10 @@ async fn fan_out_with_opts(
         "newznab",
         "public_indexers",
     ];
-    let mut last_scraped: std::collections::HashMap<&str, f64> = std::collections::HashMap::new();
-    for id in &scraper_ids {
-        if let Ok(Some(score)) = redis
-            .zscore::<Option<f64>, _, _>(*id, cache_key.as_str())
-            .await
-        {
-            last_scraped.insert(id, score);
-        }
-    }
+    let last_scraped = fetch_last_scraped(redis, &scraper_ids, &cache_key).await;
 
     let is_stale = |scraper_id: &str, ttl: i64| -> bool {
-        if opts.bypass_ttl {
-            return true;
-        }
-        match last_scraped.get(scraper_id) {
-            Some(&ts) => (now - ts) as i64 >= ttl,
-            None => true, // never scraped → stale → should scrape
-        }
+        is_scrape_stale(&last_scraped, scraper_id, ttl, now, opts.bypass_ttl)
     };
 
     let title_queries = if opts.title_search {
@@ -865,18 +978,7 @@ async fn fan_out_with_opts(
     }
 
     // Record scrape timestamps for all scrapers that ran.
-    for scraper_id in &spawned_scrapers {
-        let _: Result<i64, _> = redis
-            .zadd(
-                *scraper_id,
-                None,
-                None,
-                false,
-                false,
-                (now, cache_key.as_str()),
-            )
-            .await;
-    }
+    record_scrape_timestamps(redis, &spawned_scrapers, &cache_key, now).await;
 
     all
 }
