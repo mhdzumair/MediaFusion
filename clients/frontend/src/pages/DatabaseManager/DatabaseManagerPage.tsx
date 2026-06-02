@@ -1,22 +1,31 @@
-import { useState } from 'react'
-import { Database, LayoutDashboard, Table2, Settings } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { Database, LayoutDashboard, Table2, Settings, Timer } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { useDatabaseStats, useTableList } from './hooks/useDatabaseData'
-import { OverviewTab, TableBrowserTab, MaintenanceTab } from './components'
+import { OverviewTab, TableBrowserTab, QueryStatsTab, MaintenanceTab } from './components'
 import type { DatabaseTab } from './types'
+import { parseDatabaseTab, patchDatabaseSearchParams, setDatabaseTab } from './databaseManagerUrl'
 
 export function DatabaseManagerPage() {
-  const [activeTab, setActiveTab] = useState<DatabaseTab>('overview')
-  const [selectedTable, setSelectedTable] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const activeTab = parseDatabaseTab(searchParams.get('tab'))
 
   const { data: stats } = useDatabaseStats()
   const { data: tables } = useTableList()
 
-  // Handle table click from overview - switch to browser tab
+  const setActiveTab = (tab: DatabaseTab) => {
+    setSearchParams(setDatabaseTab(searchParams, tab), { replace: true })
+  }
+
   const handleTableClick = (tableName: string) => {
-    setSelectedTable(tableName)
-    setActiveTab('browser')
+    const next = patchDatabaseSearchParams(searchParams, [
+      { key: 'tab', value: 'browser' },
+      { key: 'table', value: tableName },
+      { key: 'page', value: null },
+    ])
+    setSearchParams(next, { replace: false })
   }
 
   return (
@@ -66,6 +75,13 @@ export function DatabaseManagerPage() {
             <span className="hidden sm:inline">Tables</span>
           </TabsTrigger>
           <TabsTrigger
+            value="queries"
+            className="gap-1.5 md:gap-2 text-xs md:text-sm px-2 md:px-3 data-[state=active]:bg-amber-500/20 shrink-0"
+          >
+            <Timer className="h-3.5 w-3.5 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Query Stats</span>
+          </TabsTrigger>
+          <TabsTrigger
             value="maintenance"
             className="gap-1.5 md:gap-2 text-xs md:text-sm px-2 md:px-3 data-[state=active]:bg-primary/20 shrink-0"
           >
@@ -79,7 +95,11 @@ export function DatabaseManagerPage() {
         </TabsContent>
 
         <TabsContent value="browser" className="mt-3 md:mt-4">
-          <TableBrowserTab initialTable={selectedTable || undefined} />
+          <TableBrowserTab />
+        </TabsContent>
+
+        <TabsContent value="queries" className="mt-3 md:mt-4">
+          <QueryStatsTab />
         </TabsContent>
 
         <TabsContent value="maintenance" className="mt-3 md:mt-4">

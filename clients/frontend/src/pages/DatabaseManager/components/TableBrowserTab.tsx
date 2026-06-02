@@ -84,17 +84,7 @@ import { formatTimestamp, getTableTypeColor, truncateText } from '../types'
 import type { ColumnInfo } from '../types'
 import { EditRowDialog } from './EditRowDialog'
 import { RelatedRecordsPanel } from './RelatedRecordsPanel'
-
-interface TableBrowserTabProps {
-  initialTable?: string
-}
-
-interface FilterState {
-  id: string
-  column: string
-  operator: string
-  value: string
-}
+import { useTableBrowserUrl, type FilterState } from '../hooks/useTableBrowserUrl'
 
 interface NavigationEntry {
   table: string
@@ -392,18 +382,11 @@ function DataCell({
   return <span className="text-sm whitespace-nowrap">{strValue}</span>
 }
 
-export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
-  const [selectedTable, setSelectedTable] = useState<string | null>(initialTable || null)
+export function TableBrowserTab() {
+  const { selectedTable, page, perPage, orderBy, orderDir, filters, updateBrowserParams } = useTableBrowserUrl()
   const [tableSearch, setTableSearch] = useState('')
-  const [page, setPage] = useState(1)
-  const [perPage, setPerPage] = useState(25)
-  const [orderBy, setOrderBy] = useState<string | undefined>()
-  const [orderDir, setOrderDir] = useState<'asc' | 'desc'>('asc')
   const [selectedRows, setSelectedRows] = useState<string[]>([])
   const [showSchema, setShowSchema] = useState(true)
-
-  // Filter state - support multiple filters
-  const [filters, setFilters] = useState<FilterState[]>([])
 
   // Helper to generate unique filter ID
   const generateFilterId = () => `filter_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -510,19 +493,21 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
     (targetTable: string, targetColumn: string, value: string) => {
       if (!selectedTable) return
       setNavigationStack((prev) => [...prev, { table: selectedTable, filters, label: `${selectedTable}` }])
-      setSelectedTable(targetTable)
-      setFilters([
-        {
-          id: `fk_nav_${Date.now()}`,
-          column: targetColumn,
-          operator: 'equals',
-          value,
-        },
-      ])
-      setPage(1)
+      updateBrowserParams({
+        table: targetTable,
+        filters: [
+          {
+            id: `fk_nav_${Date.now()}`,
+            column: targetColumn,
+            operator: 'equals',
+            value,
+          },
+        ],
+        page: 1,
+      })
       setSelectedRows([])
     },
-    [selectedTable, filters],
+    [selectedTable, filters, updateBrowserParams],
   )
 
   // Navigate back to a specific breadcrumb entry
@@ -530,33 +515,28 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
     (index: number) => {
       const entry = navigationStack[index]
       if (!entry) return
-      setSelectedTable(entry.table)
-      setFilters(entry.filters)
-      setPage(1)
+      updateBrowserParams({ table: entry.table, filters: entry.filters, page: 1 })
       setSelectedRows([])
       setNavigationStack((prev) => prev.slice(0, index))
     },
-    [navigationStack],
+    [navigationStack, updateBrowserParams],
   )
 
   // Clear navigation history entirely
   const handleClearNavigation = useCallback(() => {
     setNavigationStack([])
-    setFilters([])
-    setPage(1)
-  }, [])
+    updateBrowserParams({ filters: [], page: 1 })
+  }, [updateBrowserParams])
 
   // Navigate to a table (from schema sidebar) without a filter
   const handleNavigateToTable = useCallback(
     (targetTable: string) => {
       if (!selectedTable) return
       setNavigationStack((prev) => [...prev, { table: selectedTable, filters, label: selectedTable }])
-      setSelectedTable(targetTable)
-      setFilters([])
-      setPage(1)
+      updateBrowserParams({ table: targetTable, filters: [], page: 1 })
       setSelectedRows([])
     },
-    [selectedTable, filters],
+    [selectedTable, filters, updateBrowserParams],
   )
 
   // Open related records panel for a row
@@ -568,10 +548,9 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
   // Handle sort
   const handleSort = (column: string) => {
     if (orderBy === column) {
-      setOrderDir(orderDir === 'asc' ? 'desc' : 'asc')
+      updateBrowserParams({ order_dir: orderDir === 'asc' ? 'desc' : 'asc' })
     } else {
-      setOrderBy(column)
-      setOrderDir('asc')
+      updateBrowserParams({ order_by: column, order_dir: 'asc' })
     }
   }
 
@@ -735,25 +714,31 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
 
   // Clear all filters
   const clearFilters = () => {
-    setFilters([])
-    setPage(1)
+    updateBrowserParams({ filters: [], page: 1 })
   }
 
   // Add a new filter
   const addFilter = () => {
-    setFilters((prev) => [...prev, { id: generateFilterId(), column: '', operator: 'equals', value: '' }])
+    updateBrowserParams({
+      filters: [...filters, { id: generateFilterId(), column: '', operator: 'equals', value: '' }],
+      page: 1,
+    })
   }
 
   // Update a specific filter
   const updateFilter = (id: string, updates: Partial<FilterState>) => {
-    setFilters((prev) => prev.map((f) => (f.id === id ? { ...f, ...updates } : f)))
-    setPage(1)
+    updateBrowserParams({
+      filters: filters.map((f) => (f.id === id ? { ...f, ...updates } : f)),
+      page: 1,
+    })
   }
 
   // Remove a specific filter
   const removeFilter = (id: string) => {
-    setFilters((prev) => prev.filter((f) => f.id !== id))
-    setPage(1)
+    updateBrowserParams({
+      filters: filters.filter((f) => f.id !== id),
+      page: 1,
+    })
   }
 
   // Check if we have active filters (some operators don't need a value)
@@ -780,8 +765,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                   <button
                     key={table.name}
                     onClick={() => {
-                      setSelectedTable(table.name)
-                      setPage(1)
+                      updateBrowserParams({ table: table.name, page: 1 })
                       setSelectedRows([])
                       onSelect?.()
                     }}
@@ -806,7 +790,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
         </div>
       </ScrollArea>
     ),
-    [tablesLoading, filteredTables, selectedTable, setSelectedTable, setPage, setSelectedRows],
+    [tablesLoading, filteredTables, selectedTable, updateBrowserParams, setSelectedRows],
   )
 
   return (
@@ -1371,8 +1355,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                       <Select
                         value={String(perPage)}
                         onValueChange={(v) => {
-                          setPerPage(Number(v))
-                          setPage(1)
+                          updateBrowserParams({ per_page: Number(v), page: 1 })
                         }}
                       >
                         <SelectTrigger className="w-[60px] md:w-[70px] h-7 md:h-8 text-xs md:text-sm">
@@ -1397,7 +1380,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                           size="icon"
                           className="h-7 w-7 md:h-8 md:w-8"
                           disabled={page === 1}
-                          onClick={() => setPage(page - 1)}
+                          onClick={() => updateBrowserParams({ page: page - 1 })}
                         >
                           <ChevronLeft className="h-4 w-4" />
                         </Button>
@@ -1406,7 +1389,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                           size="icon"
                           className="h-7 w-7 md:h-8 md:w-8"
                           disabled={page === (tableData?.pages || 1)}
-                          onClick={() => setPage(page + 1)}
+                          onClick={() => updateBrowserParams({ page: page + 1 })}
                         >
                           <ChevronRight className="h-4 w-4" />
                         </Button>

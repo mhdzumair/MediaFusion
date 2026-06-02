@@ -105,6 +105,20 @@ pub struct RebuildIndexRequest {
     pub index_name: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct SlowQueriesQuery {
+    pub limit: Option<i64>,
+    pub min_calls: Option<i64>,
+    /// Minimum mean execution time (ms). Queries faster than this are excluded. 0 = no floor.
+    pub min_mean_time_ms: Option<f64>,
+    pub order_by: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct MaintenanceTablesRequest {
+    pub tables: Option<Vec<String>>,
+}
+
 // ─── Rust-native DB endpoints ─────────────────────────────────────────────────
 
 /// GET /api/v1/admin/db/stats
@@ -705,36 +719,60 @@ pub async fn run_analyze(
     }
 }
 
-/// POST /api/v1/admin/db/maintenance/reindex/{table}
+/// POST /api/v1/admin/db/maintenance/reindex
 pub async fn run_reindex(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(table_name): Path<String>,
+    body: Option<Json<MaintenanceTablesRequest>>,
 ) -> impl IntoResponse {
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
 
-    if !table_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+    let tables: Vec<String> = body
+        .and_then(|Json(req)| req.tables)
+        .unwrap_or_default();
+
+    if tables.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({"detail": "Invalid table name"})),
+            Json(json!({"detail": "At least one table name is required for REINDEX"})),
         )
             .into_response();
     }
 
-    let query = format!("REINDEX TABLE {table_name}");
-    match sqlx::query(&query).execute(&state.pool).await {
-        Ok(_) => Json(json!({"status": "success", "message": format!("REINDEX TABLE {table_name} completed")})).into_response(),
-        Err(e) => {
-            tracing::error!("reindex {table_name}: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"detail": e.to_string()})),
+    for table_name in &tables {
+        if !table_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": format!("Invalid table name: {table_name}")})),
             )
-                .into_response()
+                .into_response();
         }
     }
+
+    let mut processed = Vec::new();
+    for table_name in tables {
+        let query = format!("REINDEX TABLE {table_name}");
+        match sqlx::query(&query).execute(&state.pool).await {
+            Ok(_) => processed.push(table_name),
+            Err(e) => {
+                tracing::error!("reindex {table_name}: {e}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"detail": e.to_string()})),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    Json(json!({
+        "status": "success",
+        "message": format!("REINDEX TABLE completed for {} table(s)", processed.len()),
+        "tables_processed": processed,
+    }))
+    .into_response()
 }
 
 /// GET /api/v1/admin/db/maintenance/bloat
@@ -781,34 +819,131 @@ pub async fn get_bloat_stats(
 pub async fn get_slow_queries(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
+    Query(params): Query<SlowQueriesQuery>,
 ) -> impl IntoResponse {
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
 
-    let rows = sqlx::query_as::<_, (String, i64, f64, f64)>(
-        r#"SELECT query, calls, mean_exec_time, total_exec_time
-           FROM pg_stat_statements
-           ORDER BY mean_exec_time DESC
-           LIMIT 20"#,
-    )
-    .fetch_all(&state.pool_ro)
-    .await
-    .unwrap_or_default();
+    let limit = params.limit.unwrap_or(20).clamp(1, 100);
+    let min_calls = params.min_calls.unwrap_or(5).max(1);
+    let min_mean_time_ms = params.min_mean_time_ms.unwrap_or(5.0).max(0.0);
+    let order_by = params.order_by.as_deref().unwrap_or("mean_exec_time");
+    let valid_order = ["mean_exec_time", "max_exec_time", "total_exec_time"];
+    if !valid_order.contains(&order_by) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "detail": format!(
+                    "order_by must be one of: {}",
+                    valid_order.join(", ")
+                )
+            })),
+        )
+            .into_response();
+    }
 
-    let items: Vec<Value> = rows
+    let ext_installed: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements')",
+    )
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(false);
+
+    if !ext_installed {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "detail": "pg_stat_statements is not available. \
+                    Add shared_preload_libraries=pg_stat_statements to PostgreSQL, restart the server, \
+                    then run migration 0014 or: CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+            })),
+        )
+            .into_response();
+    }
+
+    let sql = format!(
+        r#"SELECT
+               queryid,
+               LEFT(query, 500) AS query_preview,
+               calls,
+               round(total_exec_time::numeric, 2)::float8 AS total_exec_time_ms,
+               round(mean_exec_time::numeric, 2)::float8 AS mean_exec_time_ms,
+               round(min_exec_time::numeric, 2)::float8 AS min_exec_time_ms,
+               round(max_exec_time::numeric, 2)::float8 AS max_exec_time_ms,
+               round(stddev_exec_time::numeric, 2)::float8 AS stddev_exec_time_ms,
+               rows,
+               round(
+                   100.0 * shared_blks_hit /
+                   NULLIF(shared_blks_hit + shared_blks_read, 0), 1
+               )::float8 AS cache_hit_pct,
+               shared_blks_read,
+               shared_blks_hit,
+               temp_blks_read,
+               temp_blks_written
+           FROM pg_stat_statements
+           WHERE calls >= $1
+             AND ($3 <= 0 OR mean_exec_time >= $3)
+             AND query NOT ILIKE '%pg_stat_statements%'
+             AND query !~* '^\\s*(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\\s*;?\\s*$'
+             AND query NOT ILIKE 'SET %'
+             AND query NOT ILIKE 'SHOW %'
+             AND query NOT ILIKE 'DISCARD %'
+             AND query NOT ILIKE 'DEALLOCATE %'
+             AND query NOT ILIKE 'SELECT 1%'
+           ORDER BY {order_by} DESC
+           LIMIT $2"#
+    );
+
+    let rows = match sqlx::query(&sql)
+        .bind(min_calls)
+        .bind(limit)
+        .bind(min_mean_time_ms)
+        .fetch_all(&state.pool_ro)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("slow-queries: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": e.to_string()})),
+            )
+                .into_response();
+        }
+    };
+
+    let queries: Vec<Value> = rows
         .into_iter()
-        .map(|(query, calls, mean_time, total_time)| {
+        .map(|row| {
+            use sqlx::Row;
             json!({
-                "query": &query[..query.len().min(500)],
-                "calls": calls,
-                "mean_exec_time_ms": mean_time,
-                "total_exec_time_ms": total_time,
+                "queryid": row.try_get::<i64, _>("queryid").ok(),
+                "query_preview": row.try_get::<String, _>("query_preview").unwrap_or_default(),
+                "calls": row.try_get::<i64, _>("calls").unwrap_or(0),
+                "total_exec_time_ms": row.try_get::<f64, _>("total_exec_time_ms").unwrap_or(0.0),
+                "mean_exec_time_ms": row.try_get::<f64, _>("mean_exec_time_ms").unwrap_or(0.0),
+                "min_exec_time_ms": row.try_get::<f64, _>("min_exec_time_ms").unwrap_or(0.0),
+                "max_exec_time_ms": row.try_get::<f64, _>("max_exec_time_ms").unwrap_or(0.0),
+                "stddev_exec_time_ms": row.try_get::<f64, _>("stddev_exec_time_ms").unwrap_or(0.0),
+                "rows": row.try_get::<i64, _>("rows").unwrap_or(0),
+                "cache_hit_pct": row.try_get::<Option<f64>, _>("cache_hit_pct").ok().flatten(),
+                "shared_blks_read": row.try_get::<i64, _>("shared_blks_read").unwrap_or(0),
+                "shared_blks_hit": row.try_get::<i64, _>("shared_blks_hit").unwrap_or(0),
+                "temp_blks_read": row.try_get::<i64, _>("temp_blks_read").unwrap_or(0),
+                "temp_blks_written": row.try_get::<i64, _>("temp_blks_written").unwrap_or(0),
             })
         })
         .collect();
 
-    Json(json!({"slow_queries": items})).into_response()
+    Json(json!({
+        "order_by": order_by,
+        "min_calls": min_calls,
+        "min_mean_time_ms": min_mean_time_ms,
+        "count": queries.len(),
+        "queries": queries,
+    }))
+    .into_response()
 }
 
 /// GET /api/v1/admin/db/orphans/streams
@@ -1227,13 +1362,30 @@ pub async fn reset_slow_queries(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return (StatusCode::FORBIDDEN, Json(json!({"error": "Forbidden"}))).into_response();
     }
-    match sqlx::query("SELECT pg_stat_reset()")
+    let ext_installed: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements')",
+    )
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(false);
+
+    if !ext_installed {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"detail": "pg_stat_statements extension is not installed."})),
+        )
+            .into_response();
+    }
+
+    match sqlx::query("SELECT pg_stat_statements_reset()")
         .execute(&state.pool)
         .await
     {
-        Ok(_) => {
-            Json(json!({"status": "success", "message": "Slow query stats reset"})).into_response()
-        }
+        Ok(_) => Json(json!({
+            "status": "ok",
+            "message": "pg_stat_statements stats reset successfully."
+        }))
+        .into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"detail": e.to_string()})),

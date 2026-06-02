@@ -107,10 +107,21 @@ Returns p50/p95/p99 per route from a rolling 1000-sample window. Also visible in
 
 ### Slow query diagnostics
 
+Requires `pg_stat_statements` (migration `0014`, enabled in Docker/K8s compose). On a **new** dev Postgres after updating `docker-compose-minimal.yml`, recreate the container so preload takes effect:
+
+```bash
+cd deployment/docker-compose
+docker compose -f docker-compose-minimal.yml up -d --force-recreate postgres
+```
+
+Migrations run on API startup; or manually: `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;`
+
+**Performance impact:** Typically **~1–3% CPU** overhead with `pg_stat_statements.track=all` on a busy OLTP workload. Shared memory is bounded by `pg_stat_statements.max` (10 000 in our compose; on the order of a few MB). No measurable impact on query plans; safe for production when you want observability. Use `track=top` instead of `all` to reduce overhead further if needed.
+
 ```bash
 # Top 20 slowest query fingerprints (requires pg_stat_statements extension)
 curl -H "X-API-Key: $API_PASSWORD" \
-  "http://localhost:8000/api/v1/admin/db/slow-queries?limit=20&order_by=total_exec_time"
+  "http://localhost:8000/api/v1/admin/db/slow-queries?limit=20&order_by=mean_exec_time&min_mean_time_ms=100"
 
 # Reset counters
 curl -X POST -H "X-API-Key: $API_PASSWORD" \

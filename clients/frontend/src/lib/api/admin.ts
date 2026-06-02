@@ -808,13 +808,45 @@ export interface RelatedRecordsResponse {
   references: RelatedReference[]
 }
 
+export interface SlowQueryItem {
+  queryid?: number
+  query_preview: string
+  calls: number
+  total_exec_time_ms: number
+  mean_exec_time_ms: number
+  min_exec_time_ms: number
+  max_exec_time_ms: number
+  stddev_exec_time_ms: number
+  rows: number
+  cache_hit_pct?: number | null
+  shared_blks_read: number
+  shared_blks_hit: number
+  temp_blks_read: number
+  temp_blks_written: number
+}
+
+export interface SlowQueriesResponse {
+  order_by: string
+  min_calls: number
+  min_mean_time_ms: number
+  count: number
+  queries: SlowQueryItem[]
+}
+
+export interface SlowQueriesParams {
+  limit?: number
+  min_calls?: number
+  min_mean_time_ms?: number
+  order_by?: 'total_exec_time' | 'mean_exec_time' | 'max_exec_time'
+}
+
 // ============================================
 // Database Admin API
 // ============================================
 
 const DB_BASE = '/api/v1/admin/db'
 
-async function dbGet<T>(endpoint: string): Promise<T> {
+async function dbGet<T>(endpoint: string, params?: Record<string, string | number | undefined>): Promise<T> {
   const token = apiClient.getAccessToken()
   const apiKey = apiClient.getApiKey()
   const headers: HeadersInit = {
@@ -827,7 +859,17 @@ async function dbGet<T>(endpoint: string): Promise<T> {
     headers['X-API-Key'] = apiKey
   }
 
-  const response = await fetch(`${DB_BASE}${endpoint}`, {
+  const searchParams = new URLSearchParams()
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) {
+        searchParams.set(key, String(value))
+      }
+    }
+  }
+  const query = searchParams.toString()
+
+  const response = await fetch(`${DB_BASE}${endpoint}${query ? `?${query}` : ''}`, {
     method: 'GET',
     headers,
   })
@@ -886,10 +928,33 @@ async function dbPostFormData<T>(endpoint: string, formData: FormData): Promise<
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: `HTTP error ${response.status}` }))
-    throw new Error(error.detail || 'An error occurred')
+    const message =
+      typeof error.detail === 'string'
+        ? error.detail
+        : typeof error.error === 'string'
+          ? error.error
+          : typeof error.message === 'string'
+            ? error.message
+            : `HTTP error ${response.status}`
+    throw new Error(message)
   }
 
   return response.json()
+}
+
+function normalizeMaintenanceResult(
+  operation: string,
+  response: { status?: string; message?: string },
+  tables?: string[],
+  startedAt?: number,
+): MaintenanceResult {
+  return {
+    success: response.status === 'success' || response.status === 'ok',
+    operation,
+    tables_processed: tables || [],
+    execution_time_ms: startedAt ? Date.now() - startedAt : 0,
+    message: response.message || `${operation} completed`,
+  }
 }
 
 export const databaseApi = {
@@ -1004,15 +1069,24 @@ export const databaseApi = {
   // ============================================
 
   vacuum: async (request: MaintenanceRequest): Promise<MaintenanceResult> => {
-    return dbPost<MaintenanceResult>('/maintenance/vacuum', request)
+    const startedAt = Date.now()
+    const response = await dbPost<{ status?: string; message?: string }>('/maintenance/vacuum', request)
+    return normalizeMaintenanceResult('vacuum', response, request.tables, startedAt)
   },
 
   analyze: async (request: MaintenanceRequest): Promise<MaintenanceResult> => {
-    return dbPost<MaintenanceResult>('/maintenance/analyze', request)
+    const startedAt = Date.now()
+    const response = await dbPost<{ status?: string; message?: string }>('/maintenance/analyze', request)
+    return normalizeMaintenanceResult('analyze', response, request.tables, startedAt)
   },
 
   reindex: async (request: MaintenanceRequest): Promise<MaintenanceResult> => {
-    return dbPost<MaintenanceResult>('/maintenance/reindex', request)
+    const startedAt = Date.now()
+    const response = await dbPost<{ status?: string; message?: string; tables_processed?: string[] }>(
+      '/maintenance/reindex',
+      request,
+    )
+    return normalizeMaintenanceResult('reindex', response, response.tables_processed || request.tables, startedAt)
   },
 
   // ============================================
@@ -1055,5 +1129,22 @@ export const databaseApi = {
   ): Promise<RelatedRecordsResponse> => {
     const params = new URLSearchParams({ id_column: idColumn })
     return dbGet<RelatedRecordsResponse>(`/tables/${tableName}/rows/${encodeURIComponent(rowId)}/related?${params}`)
+  },
+
+  // ============================================
+  // Slow Queries
+  // ============================================
+
+  getSlowQueries: async (params: SlowQueriesParams = {}): Promise<SlowQueriesResponse> => {
+    return dbGet<SlowQueriesResponse>('/slow-queries', {
+      limit: params.limit,
+      min_calls: params.min_calls,
+      min_mean_time_ms: params.min_mean_time_ms,
+      order_by: params.order_by,
+    })
+  },
+
+  resetSlowQueries: async (): Promise<{ status: string; message: string }> => {
+    return dbPost<{ status: string; message: string }>('/slow-queries/reset')
   },
 }

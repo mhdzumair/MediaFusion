@@ -6,6 +6,7 @@ import {
   type MaintenanceRequest,
   type BulkDeleteRequest,
   type BulkUpdateRequest,
+  type SlowQueriesParams,
 } from '@/lib/api/admin'
 
 // ============================================
@@ -19,6 +20,8 @@ export const databaseQueryKeys = {
   tableSchema: (name: string) => [...databaseQueryKeys.all, 'schema', name] as const,
   tableData: (name: string, params?: TableDataParams) => [...databaseQueryKeys.all, 'data', name, params] as const,
   orphans: () => [...databaseQueryKeys.all, 'orphans'] as const,
+  slowQueries: (params?: { order_by?: string; limit?: number; min_calls?: number }) =>
+    [...databaseQueryKeys.all, 'slow-queries', params] as const,
   relatedRecords: (table: string, rowId: string, idColumn: string) =>
     [...databaseQueryKeys.all, 'related', table, rowId, idColumn] as const,
 }
@@ -278,6 +281,36 @@ export function useBulkUpdate() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: databaseQueryKeys.tableData(variables.table),
+      })
+    },
+  })
+}
+
+// ============================================
+// Slow Queries Hooks
+// ============================================
+
+export function useSlowQueries(params: SlowQueriesParams = {}) {
+  return useQuery({
+    queryKey: databaseQueryKeys.slowQueries(params),
+    queryFn: async () => {
+      return await databaseApi.getSlowQueries(params)
+    },
+    refetchInterval: 30000,
+    retry: false,
+  })
+}
+
+export function useResetSlowQueries() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async () => {
+      return await databaseApi.resetSlowQueries()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: [...databaseQueryKeys.all, 'slow-queries'],
       })
     },
   })

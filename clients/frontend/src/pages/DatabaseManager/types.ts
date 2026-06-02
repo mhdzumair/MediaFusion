@@ -240,7 +240,7 @@ export interface ActionHistoryItem {
 // Tab Types
 // ============================================
 
-export type DatabaseTab = 'overview' | 'browser' | 'maintenance'
+export type DatabaseTab = 'overview' | 'browser' | 'queries' | 'maintenance'
 
 // ============================================
 // Color Utility
@@ -297,7 +297,9 @@ export function formatBytes(bytes: number): string {
 }
 
 export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms.toFixed(0)}ms`
+  if (!Number.isFinite(ms) || ms <= 0) return '0ms'
+  if (ms < 1) return `${ms.toFixed(2)}ms`
+  if (ms < 1000) return `${ms.toFixed(ms < 100 ? 1 : 0)}ms`
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
   return `${(ms / 60000).toFixed(1)}m`
 }
