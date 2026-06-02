@@ -1135,6 +1135,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#backfill_stream_metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        backfill_stream_metadata
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2096,6 +2107,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#backfill_stream_metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        backfill_stream_metadata
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2406,6 +2428,10 @@
 <td>Validate and deactivate dead TV stream URLs</td>
 </tr>
 <tr>
+<td><code>backfill_stream_metadata</code></td>
+<td>Re-parse torrent/usenet <code>stream.name</code> with PTT; fill missing resolution/quality/language/HDR/audio links</td>
+</tr>
+<tr>
 <td><code>cleanup</code></td>
 <td>Remove expired scraper task records and cache entries</td>
 </tr>
@@ -2516,6 +2542,81 @@
 </span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>imdb_dataset_import<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">  </span>--args<span class="w"> </span><span class="s1">'{"datasets": ["title.basics", "title.akas"]}'</span>
 </span></code></pre></div>
+<h3 id="backfill_stream_metadata"><code>backfill_stream_metadata</code><a class="headerlink" href="#backfill_stream_metadata" title="Permanent link">¶</a></h3>
+<p>Re-parses existing <strong>torrent</strong> and <strong>usenet</strong> stream release names through the PTT parser (<code>parser::parse_title</code>, with <code>translate_languages: true</code> — same as Python <code>PTT.parse_title(name, True)</code>) and writes any missing metadata:</p>
+<ul>
+<li><code>stream</code> columns: <code>resolution</code>, <code>codec</code>, <code>quality</code>, <code>release_group</code> (and flags when <code>only_missing</code> is false)</li>
+<li>Link tables: <code>stream_language_link</code>, <code>stream_hdr_link</code>, <code>stream_audio_link</code>, <code>stream_channel_link</code></li>
+</ul>
+<p>By default the job runs <strong>continuously in one process</strong> until no streams match the criteria (suitable for CLI one-shot runs). Set <code>"continuous": false</code> to process a single page and enqueue the next page on the worker job queue instead.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>page</code></td>
+<td><code>int</code></td>
+<td><code>0</code></td>
+<td>Starting page index</td>
+</tr>
+<tr>
+<td><code>page_size</code></td>
+<td><code>int</code></td>
+<td><code>500</code></td>
+<td>Streams per page (max 5000)</td>
+</tr>
+<tr>
+<td><code>only_missing</code></td>
+<td><code>bool</code></td>
+<td><code>true</code></td>
+<td>Only streams missing columns or link-table rows</td>
+</tr>
+<tr>
+<td><code>stream_types</code></td>
+<td><code>string[]</code></td>
+<td><code>["TORRENT","USENET"]</code></td>
+<td>Stream types to process</td>
+</tr>
+<tr>
+<td><code>continuous</code></td>
+<td><code>bool</code></td>
+<td><code>true</code></td>
+<td>Loop pages in-process until done</td>
+</tr>
+<tr>
+<td><code>max_pages</code></td>
+<td><code>int</code></td>
+<td>—</td>
+<td>Optional cap (for test runs)</td>
+</tr>
+</tbody>
+</table>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># Full backfill (runs until complete — may take hours on large DBs)</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>backfill_stream_metadata
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># Larger batches, same behavior</span>
+</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>backfill_stream_metadata<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">  </span>--args<span class="w"> </span><span class="s1">'{"page_size": 2000}'</span>
+</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>
+</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="c1"># Test run: first 3 pages only</span>
+</span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>backfill_stream_metadata<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-15-10"><a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="w">  </span>--args<span class="w"> </span><span class="s1">'{"page_size": 500, "max_pages": 3}'</span>
+</span><span id="__span-15-11"><a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>
+</span><span id="__span-15-12"><a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="c1"># Re-parse everything (overwrite columns from PTT; links are additive)</span>
+</span><span id="__span-15-13"><a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>backfill_stream_metadata<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-15-14"><a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="w">  </span>--args<span class="w"> </span><span class="s1">'{"only_missing": false, "page_size": 1000}'</span>
+</span></code></pre></div>
+<p>Makefile shortcut:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>make<span class="w"> </span>worker-backfill-stream-metadata
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>make<span class="w"> </span>worker-backfill-stream-metadata<span class="w"> </span><span class="nv">PAGE_SIZE</span><span class="o">=</span><span class="m">2000</span>
+</span></code></pre></div>
+<p>After backfill, Stremio stream descriptions should show language lines (<code>🌐 English</code>, etc.) and language filtering in the addon will work for streams that PTT can parse.</p>
 <hr>
 <h2 id="exit-codes">Exit codes<a class="headerlink" href="#exit-codes" title="Permanent link">¶</a></h2>
 <table>
@@ -2538,23 +2639,26 @@
 </table>
 <hr>
 <h2 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">¶</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># Manually trigger the sport video scraper</span>
-</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>spider_sport_video
-</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
-</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># Run all public indexer spiders</span>
-</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>spider_registry_crawl
-</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>
-</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="c1"># Force a full DMM hashlist re-sync</span>
-</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>dmm_hashlist<span class="w"> </span>--args<span class="w"> </span><span class="s1">'{"full": true, "reset_checkpoints": true}'</span>
-</span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>
-</span><span id="__span-15-10"><a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="c1"># Process the background re-scrape queue once</span>
-</span><span id="__span-15-11"><a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>background_search
-</span><span id="__span-15-12"><a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>
-</span><span id="__span-15-13"><a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="c1"># Sync Trakt/Simkl integrations</span>
-</span><span id="__span-15-14"><a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>integration_syncs
-</span><span id="__span-15-15"><a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a>
-</span><span id="__span-15-16"><a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a><span class="c1"># List all available jobs</span>
-</span><span id="__span-15-17"><a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a>./mediafusion-worker<span class="w"> </span>--list-jobs
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># Manually trigger the sport video scraper</span>
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>spider_sport_video
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>
+</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="c1"># Run all public indexer spiders</span>
+</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>spider_registry_crawl
+</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>
+</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="c1"># Force a full DMM hashlist re-sync</span>
+</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>dmm_hashlist<span class="w"> </span>--args<span class="w"> </span><span class="s1">'{"full": true, "reset_checkpoints": true}'</span>
+</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>
+</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="c1"># Process the background re-scrape queue once</span>
+</span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>background_search
+</span><span id="__span-17-12"><a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a>
+</span><span id="__span-17-13"><a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a><span class="c1"># Sync Trakt/Simkl integrations</span>
+</span><span id="__span-17-14"><a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>integration_syncs
+</span><span id="__span-17-15"><a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a>
+</span><span id="__span-17-16"><a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a><span class="c1"># Backfill PTT metadata on existing torrent/usenet streams</span>
+</span><span id="__span-17-17"><a id="__codelineno-17-17" name="__codelineno-17-17" href="#__codelineno-17-17"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>backfill_stream_metadata
+</span><span id="__span-17-18"><a id="__codelineno-17-18" name="__codelineno-17-18" href="#__codelineno-17-18"></a>
+</span><span id="__span-17-19"><a id="__codelineno-17-19" name="__codelineno-17-19" href="#__codelineno-17-19"></a><span class="c1"># List all available jobs</span>
+</span><span id="__span-17-20"><a id="__codelineno-17-20" name="__codelineno-17-20" href="#__codelineno-17-20"></a>./mediafusion-worker<span class="w"> </span>--list-jobs
 </span></code></pre></div>
 
 

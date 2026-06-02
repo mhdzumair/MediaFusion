@@ -2634,6 +2634,7 @@
 <hr>
 <h2 id="stream-quality-filtering">Stream Quality &amp; Filtering<a class="headerlink" href="#stream-quality-filtering" title="Permanent link">¶</a></h2>
 <h3 id="rich-stream-metadata">Rich stream metadata<a class="headerlink" href="#rich-stream-metadata" title="Permanent link">¶</a></h3>
+<p>Torrent and usenet streams store parsed release metadata (resolution, codec, languages, HDR, audio) in the database. Existing rows ingested before v6 or without PTT at scrape time can be filled with the worker job <code>backfill_stream_metadata</code> — see <a href="../deployment/worker-cli/#backfill_stream_metadata">Worker CLI — backfill_stream_metadata</a>.</p>
 <p>Every stream result shows:
 - Resolution (480p → 4K)
 - HDR format (SDR, HDR10, HDR10+, Dolby Vision)
