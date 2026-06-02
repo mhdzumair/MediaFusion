@@ -144,21 +144,22 @@ pub async fn refresh_metadata(
     }
 
     // Check media exists
-    let row: Option<(crate::db::MediaType,)> = match sqlx::query_as("SELECT type FROM media WHERE id = $1")
-        .bind(media_id)
-        .fetch_optional(&state.pool_ro)
-        .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("refresh_metadata: db error: {e}");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"detail": "Database error"})),
-            )
-                .into_response();
-        }
-    };
+    let row: Option<(crate::db::MediaType,)> =
+        match sqlx::query_as("SELECT type FROM media WHERE id = $1")
+            .bind(media_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("refresh_metadata: db error: {e}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"detail": "Database error"})),
+                )
+                    .into_response();
+            }
+        };
 
     let media_row = match row {
         Some(r) => r,

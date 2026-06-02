@@ -371,7 +371,8 @@ pub async fn create_episode_suggestion(
     .unwrap_or(None)
     .unwrap_or(true);
 
-    let can_auto_approve = role.is_some_and(crate::db::is_mod_or_admin) || (allow_auto && user_points >= auto_threshold);
+    let can_auto_approve = role.is_some_and(crate::db::is_mod_or_admin)
+        || (allow_auto && user_points >= auto_threshold);
 
     let suggestion_id = Uuid::new_v4().to_string();
 

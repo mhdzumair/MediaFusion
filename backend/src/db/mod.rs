@@ -69,7 +69,6 @@ pub use stream_model::{
     StreamFileStoreInput, StreamStoreBase, TelegramStoreInput, TorrentStoreInput, UsenetStoreInput,
     YoutubeStoreInput,
 };
-pub use users::{get_user_role, is_admin, is_mod_or_admin};
 pub use stream_store::{
     link_file_to_media_episode, store_acestream_stream, store_http_stream, store_telegram_stream,
     store_telegram_streams, store_torrent_stream, store_torrent_streams, store_usenet_stream,
@@ -83,3 +82,4 @@ pub use streams::{
     link_torrent_trackers, upsert_stream_files, usenet_row_to_stremio, StreamPlaybackInfo,
     TorrentFileEntry,
 };
+pub use users::{get_user_role, is_admin, is_mod_or_admin};

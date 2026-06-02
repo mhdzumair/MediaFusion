@@ -356,7 +356,8 @@ pub async fn create_stream_suggestion(
     .unwrap_or(None)
     .unwrap_or(true);
 
-    let can_auto_approve = role.is_some_and(crate::db::is_mod_or_admin) || (allow_auto && user_points >= auto_threshold);
+    let can_auto_approve = role.is_some_and(crate::db::is_mod_or_admin)
+        || (allow_auto && user_points >= auto_threshold);
 
     let initial_status = if can_auto_approve {
         "auto_approved"
