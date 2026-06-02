@@ -12,6 +12,7 @@ pub use types::{
     IntegrationId,
     IntegrationType,
     IptvSourceType,
+    LanguageLinkType,
     LinkSource,
     MediaId,
     MediaType,
@@ -37,6 +38,7 @@ pub mod metadata_merge;
 pub mod metadata_model;
 pub mod metadata_store;
 pub mod pool;
+pub mod stream_backfill;
 pub mod stream_links;
 pub mod stream_model;
 pub mod stream_store;

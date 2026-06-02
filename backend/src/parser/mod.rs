@@ -1,6 +1,23 @@
+pub mod constants;
 pub mod episode_detector;
 pub mod filter;
+pub mod sort;
 pub mod sports_parser;
+
+pub use constants::{
+    default_hdr_filter_vec, default_language_sorting_values, default_quality_filter_groups,
+    default_resolutions_vec, expand_quality_filter, normalized_hdr_filter_and_display,
+    LANGUAGES_FILTERS, QUALITY_GROUPS, RESOLUTIONS,
+};
+pub use filter::{
+    cap_streams, filter_sort_and_cap_streams, filter_streams_by_preferences, resolution_cap_key,
+    sort_size_bytes_for_row, FilterContext, MAX_STREAM_NAME_FILTER_PATTERNS,
+    MAX_STREAM_NAME_FILTER_PATTERN_LENGTH,
+};
+pub use sort::{
+    compare_sort_keys, parse_created_at_ts, quality_rank, sort_and_cap_stream_rows,
+    torrent_sort_key,
+};
 
 pub use sports_parser::{
     classify_wwe_title, clean_sports_title, detect_sports_category, is_sports_title,
@@ -35,7 +52,8 @@ pub struct ParsedTitle {
 }
 
 pub fn parse_title(raw: &str) -> ParsedTitle {
-    let p = crate::ptt::parse_title(raw);
+    // Match Python scrapers: PTT.parse_title(title, translate_languages=True)
+    let p = crate::ptt::parse(raw, true);
     ParsedTitle {
         title: Some(p.title),
         year: p.year,

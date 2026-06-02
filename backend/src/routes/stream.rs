@@ -7,7 +7,6 @@ use axum::{
 };
 use serde_json::{json, Value};
 
-use chrono;
 use futures::future::join_all;
 use std::collections::HashMap;
 
@@ -15,10 +14,15 @@ use crate::{
     cache::{self, codec, stream_cache},
     crypto, db,
     db::TorrentType,
-    models::user_data::{provider_short_name, SortingOption},
+    models::user_data::{provider_short_name, SortingOption, UserData},
+    parser::{
+        self, compare_sort_keys, filter_streams_by_preferences, resolution_cap_key,
+        sort_and_cap_stream_rows, torrent_sort_key, FilterContext,
+    },
     scrapers::{orchestrator, torrent_metadata},
     state::AppState,
     template,
+    usenet_compat::is_usenet_stream_compatible,
 };
 
 use urlencoding;
@@ -48,33 +52,6 @@ pub(crate) const USENET_CAPABLE: &[&str] = &[
     "nzbdav",
     "easynews",
     "stremio_nntp",
-];
-
-// ─── Sort constants ────────────────────────────────────────────────────────────
-
-/// Maps Python's `const.QUALITY_GROUPS` — group name → member quality strings.
-pub(crate) static QUALITY_GROUPS: &[(&str, &[&str])] = &[
-    (
-        "BluRay/UHD",
-        &[
-            "BluRay",
-            "BluRay REMUX",
-            "BRRip",
-            "BDRip",
-            "UHDRip",
-            "REMUX",
-            "BLURAY",
-        ],
-    ),
-    (
-        "WEB/HD",
-        &["WEB-DL", "WEB-DLRip", "WEBRip", "HDRip", "WEBMux"],
-    ),
-    (
-        "DVD/TV/SAT",
-        &["DVD", "DVDRip", "HDTV", "SATRip", "TVRip", "PPVRip", "PDTV"],
-    ),
-    ("CAM/Screener", &["CAM", "TeleSync", "TeleCine", "SCR"]),
 ];
 
 // ─── Route handlers ────────────────────────────────────────────────────────────
@@ -335,7 +312,7 @@ pub async fn resolve(
     episode: Option<i32>,
     headers: &HeaderMap,
 ) -> Result<Vec<Value>, Box<dyn std::error::Error + Send + Sync>> {
-    let p = build_pipeline(
+    let mut p = build_pipeline(
         state, secret_str, imdb_id, media_type, season, episode, headers,
     )
     .await?;
@@ -354,19 +331,17 @@ pub async fn resolve(
     let addon_name = &state.config.addon_name;
     let host_url = &state.config.host_url;
 
-    // Parse sorting preferences from UserData
-    let sorting_priority: Vec<SortingOption> = p
-        .user_data
-        .torrent_sorting_priority
-        .iter()
-        .filter_map(|v| serde_json::from_value(v.clone()).ok())
-        .collect();
-    let language_sorting: Vec<String> = p
-        .user_data
-        .language_sorting
-        .iter()
-        .filter_map(|v| v.as_str().map(str::to_string))
-        .collect();
+    let allow_public_usenet = state.config.is_scrap_from_public_usenet_indexers;
+    let sorting_priority = p.user_data.sorting_priority();
+    let selected_resolutions = p.user_data.effective_selected_resolutions();
+    let quality_filter = if p.user_data.quality_filter.is_empty() {
+        parser::default_quality_filter_groups()
+    } else {
+        p.user_data.quality_filter.clone()
+    };
+    let language_sorting = p.user_data.language_sorting_list();
+
+    apply_content_filters_to_pipeline(&mut p, season, episode, allow_public_usenet);
 
     // Build refs for formatting (borrowing from pipeline)
     let torrent_providers_refs: Vec<&crate::models::user_data::StreamingProvider> =
@@ -374,7 +349,6 @@ pub async fn resolve(
     let usenet_providers_refs: Vec<&crate::models::user_data::StreamingProvider> =
         p.usenet_providers.iter().collect();
 
-    let allow_public_usenet = state.config.is_scrap_from_public_usenet_indexers;
     let type_mixed = p.user_data.stream_type_grouping == "mixed";
 
     // Expand torrent × provider pairs.
@@ -482,6 +456,8 @@ pub async fn resolve(
             season,
             episode,
             &sorting_priority,
+            &selected_resolutions,
+            &quality_filter,
             &language_sorting,
             allow_public_usenet,
         ));
@@ -495,11 +471,14 @@ pub async fn resolve(
             let sorted = sort_and_cap_torrents(
                 raw,
                 &sorting_priority,
-                &p.user_data.selected_resolutions,
-                &p.user_data.quality_filter,
+                &selected_resolutions,
+                &quality_filter,
                 &language_sorting,
                 &HashMap::new(),
+                season,
+                episode,
                 p.user_data.max_streams_per_resolution,
+                p.user_data.effective_max_streams(),
             );
             format_streams(
                 &sorted,
@@ -525,26 +504,24 @@ pub async fn resolve(
                 let ka = torrent_sort_key(
                     ta,
                     &sorting_priority,
-                    &p.user_data.selected_resolutions,
-                    &p.user_data.quality_filter,
+                    &selected_resolutions,
+                    &quality_filter,
                     &language_sorting,
                     &p.per_provider_cached[*pa],
+                    season,
+                    episode,
                 );
                 let kb = torrent_sort_key(
                     tb,
                     &sorting_priority,
-                    &p.user_data.selected_resolutions,
-                    &p.user_data.quality_filter,
+                    &selected_resolutions,
+                    &quality_filter,
                     &language_sorting,
                     &p.per_provider_cached[*pb],
+                    season,
+                    episode,
                 );
-                for (va, vb) in ka.iter().zip(kb.iter()) {
-                    match va.partial_cmp(vb) {
-                        Some(std::cmp::Ordering::Equal) | None => continue,
-                        Some(ord) => return ord,
-                    }
-                }
-                std::cmp::Ordering::Equal
+                compare_sort_keys(&ka, &kb)
             });
         }
 
@@ -554,11 +531,7 @@ pub async fn resolve(
         let capped: Vec<(Value, usize)> = pairs
             .into_iter()
             .filter(|(t, _)| {
-                let res = t
-                    .get("resolution")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let res = resolution_cap_key(t);
                 let count = res_counts.entry(res).or_insert(0);
                 if *count < max_per_res {
                     *count += 1;
@@ -604,13 +577,23 @@ pub async fn resolve(
     }
     for s in &p.live_usenet_raw {
         let row = scraped_usenet_to_value(s);
-        if let Some(pi) = usenet_providers_refs
-            .iter()
-            .position(|up| is_usenet_stream_compatible(&row, up, &p.user_data, allow_public_usenet))
-        {
-            let mut r = row;
-            r["cached"] = json!(false);
-            usenet_pool.push((r, pi));
+        let filtered = filter_pipeline_rows(
+            vec![row],
+            &p.user_data,
+            season,
+            episode,
+            true,
+            allow_public_usenet,
+            usenet_providers_refs.first().copied(),
+        );
+        for row in filtered {
+            if let Some(pi) = usenet_providers_refs.iter().position(|up| {
+                is_usenet_stream_compatible(&row, up, &p.user_data, allow_public_usenet)
+            }) {
+                let mut r = row;
+                r["cached"] = json!(false);
+                usenet_pool.push((r, pi));
+            }
         }
     }
     if !sorting_priority.is_empty() {
@@ -618,26 +601,24 @@ pub async fn resolve(
             let ka = torrent_sort_key(
                 a,
                 &sorting_priority,
-                &p.user_data.selected_resolutions,
-                &p.user_data.quality_filter,
+                &selected_resolutions,
+                &quality_filter,
                 &language_sorting,
                 &empty_cache,
+                season,
+                episode,
             );
             let kb = torrent_sort_key(
                 b,
                 &sorting_priority,
-                &p.user_data.selected_resolutions,
-                &p.user_data.quality_filter,
+                &selected_resolutions,
+                &quality_filter,
                 &language_sorting,
                 &empty_cache,
+                season,
+                episode,
             );
-            for (va, vb) in ka.iter().zip(kb.iter()) {
-                match va.partial_cmp(vb) {
-                    Some(std::cmp::Ordering::Equal) | None => continue,
-                    Some(ord) => return ord,
-                }
-            }
-            std::cmp::Ordering::Equal
+            compare_sort_keys(&ka, &kb)
         });
     }
     let usenet_streams: Vec<Value> = usenet_pool
@@ -656,31 +637,74 @@ pub async fn resolve(
         })
         .collect();
 
-    // Format HTTP
-    let http_streams: Vec<Value> = p
-        .http_rows
+    let max_per = p.user_data.max_streams_per_resolution;
+    let max_total = p.user_data.effective_max_streams();
+
+    let http_sorted = sort_stream_rows(
+        p.http_rows.clone(),
+        &sorting_priority,
+        &selected_resolutions,
+        &quality_filter,
+        &language_sorting,
+        &empty_cache,
+        season,
+        episode,
+        max_per,
+        max_total,
+    );
+    let http_streams: Vec<Value> = http_sorted
         .iter()
         .filter_map(|row| format_http_stream(row, addon_name, tpl))
         .collect();
 
-    // Format YouTube
-    let youtube_streams: Vec<Value> = p
-        .youtube_rows
+    let youtube_sorted = sort_stream_rows(
+        p.youtube_rows.clone(),
+        &sorting_priority,
+        &selected_resolutions,
+        &quality_filter,
+        &language_sorting,
+        &empty_cache,
+        season,
+        episode,
+        max_per,
+        max_total,
+    );
+    let youtube_streams: Vec<Value> = youtube_sorted
         .iter()
         .filter_map(|row| format_youtube_stream(row, addon_name, tpl))
         .collect();
 
-    // Format Telegram
     let mediaflow = p.user_data.mediaflow_config.as_ref();
-    let telegram_streams: Vec<Value> = p
-        .telegram_rows
+    let telegram_sorted = sort_stream_rows(
+        p.telegram_rows.clone(),
+        &sorting_priority,
+        &selected_resolutions,
+        &quality_filter,
+        &language_sorting,
+        &empty_cache,
+        season,
+        episode,
+        max_per,
+        max_total,
+    );
+    let telegram_streams: Vec<Value> = telegram_sorted
         .iter()
         .filter_map(|row| format_telegram_stream(row, addon_name, host_url, secret_str, tpl))
         .collect();
 
-    // Format AceStream
-    let acestream_streams: Vec<Value> = p
-        .acestream_rows
+    let acestream_sorted = sort_stream_rows(
+        p.acestream_rows.clone(),
+        &sorting_priority,
+        &selected_resolutions,
+        &quality_filter,
+        &language_sorting,
+        &empty_cache,
+        season,
+        episode,
+        max_per,
+        max_total,
+    );
+    let acestream_streams: Vec<Value> = acestream_sorted
         .iter()
         .filter_map(|row| format_acestream_stream(row, addon_name, mediaflow, tpl))
         .collect();
@@ -741,6 +765,114 @@ fn compute_show_p2p(
     !disabled.contains(&"p2p".to_string())
 }
 
+fn filter_pipeline_rows(
+    rows: Vec<Value>,
+    user_data: &UserData,
+    season: Option<i32>,
+    episode: Option<i32>,
+    is_usenet: bool,
+    allow_public_usenet: bool,
+    primary_provider: Option<&crate::models::user_data::StreamingProvider>,
+) -> Vec<Value> {
+    let ctx = FilterContext {
+        user_data,
+        season,
+        episode,
+        primary_provider,
+        is_usenet,
+        allow_public_usenet,
+    };
+    filter_streams_by_preferences(rows, &ctx)
+}
+
+fn apply_content_filters_to_pipeline(
+    p: &mut StreamPipeline,
+    season: Option<i32>,
+    episode: Option<i32>,
+    allow_public_usenet: bool,
+) {
+    p.all_torrents = filter_pipeline_rows(
+        std::mem::take(&mut p.all_torrents),
+        &p.user_data,
+        season,
+        episode,
+        false,
+        allow_public_usenet,
+        None,
+    );
+    p.usenet_rows = filter_pipeline_rows(
+        std::mem::take(&mut p.usenet_rows),
+        &p.user_data,
+        season,
+        episode,
+        true,
+        allow_public_usenet,
+        p.usenet_providers.first(),
+    );
+    p.http_rows = filter_pipeline_rows(
+        std::mem::take(&mut p.http_rows),
+        &p.user_data,
+        season,
+        episode,
+        false,
+        allow_public_usenet,
+        None,
+    );
+    p.youtube_rows = filter_pipeline_rows(
+        std::mem::take(&mut p.youtube_rows),
+        &p.user_data,
+        season,
+        episode,
+        false,
+        allow_public_usenet,
+        None,
+    );
+    p.telegram_rows = filter_pipeline_rows(
+        std::mem::take(&mut p.telegram_rows),
+        &p.user_data,
+        season,
+        episode,
+        false,
+        allow_public_usenet,
+        None,
+    );
+    p.acestream_rows = filter_pipeline_rows(
+        std::mem::take(&mut p.acestream_rows),
+        &p.user_data,
+        season,
+        episode,
+        false,
+        allow_public_usenet,
+        None,
+    );
+}
+
+fn sort_stream_rows(
+    rows: Vec<Value>,
+    priority: &[SortingOption],
+    selected_resolutions: &[Option<String>],
+    quality_filter: &[String],
+    language_sorting: &[Option<String>],
+    cached_hashes: &HashMap<String, bool>,
+    season: Option<i32>,
+    episode: Option<i32>,
+    max_per_resolution: u32,
+    max_total: u32,
+) -> Vec<Value> {
+    sort_and_cap_stream_rows(
+        rows,
+        priority,
+        selected_resolutions,
+        quality_filter,
+        language_sorting,
+        cached_hashes,
+        season,
+        episode,
+        max_per_resolution,
+        max_total,
+    )
+}
+
 // ─── Pipeline struct and build_pipeline() ────────────────────────────────────
 
 struct StreamPipeline {
@@ -771,6 +903,7 @@ async fn build_pipeline(
 ) -> Result<StreamPipeline, Box<dyn std::error::Error + Send + Sync>> {
     // 1. Decrypt user config → parse into UserData → derive scope
     // If the `encoded_user_data` header is present, decode it directly (no encryption).
+    let had_encoded_header = headers.get("encoded_user_data").is_some();
     let raw_user_data = if let Some(hv) = headers
         .get("encoded_user_data")
         .and_then(|v| v.to_str().ok())
@@ -785,6 +918,23 @@ async fn build_pipeline(
         )
         .await
     };
+    if raw_user_data.as_object().is_none_or(|o| o.is_empty()) {
+        if had_encoded_header {
+            tracing::warn!("stream: encoded_user_data decoded to empty config");
+        } else if let Some(uuid) = secret_str.strip_prefix("U-") {
+            tracing::warn!(
+                profile_uuid = uuid,
+                "stream: U-profile not found or has empty config in database (using public defaults)"
+            );
+        } else if secret_str.starts_with("D-") {
+            tracing::warn!("stream: D-profile decrypt failed or config is empty");
+        } else if !secret_str.is_empty() {
+            tracing::warn!(
+                secret_prefix = &secret_str[..secret_str.len().min(8)],
+                "stream: resolve_user_data returned empty config"
+            );
+        }
+    }
     let user_data: crate::models::user_data::UserData =
         serde_json::from_value(raw_user_data).unwrap_or_default();
 
@@ -1130,26 +1280,25 @@ pub async fn resolve_rich(
     episode: Option<i32>,
     headers: &HeaderMap,
 ) -> Result<Vec<Value>, Box<dyn std::error::Error + Send + Sync>> {
-    let p = build_pipeline(
+    let mut p = build_pipeline(
         state, secret_str, imdb_id, media_type, season, episode, headers,
     )
     .await?;
 
+    let allow_public_usenet = state.config.is_scrap_from_public_usenet_indexers;
+    apply_content_filters_to_pipeline(&mut p, season, episode, allow_public_usenet);
+
     let addon_name = &state.config.addon_name;
     let host_url = &state.config.host_url;
 
-    let sorting_priority: Vec<crate::models::user_data::SortingOption> = p
-        .user_data
-        .torrent_sorting_priority
-        .iter()
-        .filter_map(|v| serde_json::from_value(v.clone()).ok())
-        .collect();
-    let language_sorting: Vec<String> = p
-        .user_data
-        .language_sorting
-        .iter()
-        .filter_map(|v| v.as_str().map(str::to_string))
-        .collect();
+    let sorting_priority = p.user_data.sorting_priority();
+    let selected_resolutions = p.user_data.effective_selected_resolutions();
+    let quality_filter = if p.user_data.quality_filter.is_empty() {
+        parser::default_quality_filter_groups()
+    } else {
+        p.user_data.quality_filter.clone()
+    };
+    let language_sorting = p.user_data.language_sorting_list();
 
     let mut rich_streams: Vec<Value> = Vec::new();
 
@@ -1158,11 +1307,14 @@ pub async fn resolve_rich(
         let sorted = sort_and_cap_torrents(
             p.all_torrents,
             &sorting_priority,
-            &p.user_data.selected_resolutions,
-            &p.user_data.quality_filter,
+            &selected_resolutions,
+            &quality_filter,
             &language_sorting,
             &HashMap::new(),
+            season,
+            episode,
             p.user_data.max_streams_per_resolution,
+            p.user_data.effective_max_streams(),
         );
         for t in &sorted {
             let formatted = format_single_stream(
@@ -1196,26 +1348,24 @@ pub async fn resolve_rich(
                 let ka = torrent_sort_key(
                     ta,
                     &sorting_priority,
-                    &p.user_data.selected_resolutions,
-                    &p.user_data.quality_filter,
+                    &selected_resolutions,
+                    &quality_filter,
                     &language_sorting,
                     &p.per_provider_cached[*pa],
+                    season,
+                    episode,
                 );
                 let kb = torrent_sort_key(
                     tb,
                     &sorting_priority,
-                    &p.user_data.selected_resolutions,
-                    &p.user_data.quality_filter,
+                    &selected_resolutions,
+                    &quality_filter,
                     &language_sorting,
                     &p.per_provider_cached[*pb],
+                    season,
+                    episode,
                 );
-                for (va, vb) in ka.iter().zip(kb.iter()) {
-                    match va.partial_cmp(vb) {
-                        Some(std::cmp::Ordering::Equal) | None => continue,
-                        Some(ord) => return ord,
-                    }
-                }
-                std::cmp::Ordering::Equal
+                compare_sort_keys(&ka, &kb)
             });
         }
 
@@ -1224,11 +1374,7 @@ pub async fn resolve_rich(
         let capped: Vec<(Value, usize)> = pairs
             .into_iter()
             .filter(|(t, _)| {
-                let res = t
-                    .get("resolution")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let res = resolution_cap_key(t);
                 let count = res_counts.entry(res).or_insert(0);
                 if *count < max_per_res {
                     *count += 1;
@@ -1438,13 +1584,15 @@ fn format_unified_pool(
     season: Option<i32>,
     episode: Option<i32>,
     sorting_priority: &[SortingOption],
-    language_sorting: &[String],
+    selected_resolutions: &[Option<String>],
+    quality_filter: &[String],
+    language_sorting: &[Option<String>],
     allow_public_usenet: bool,
 ) -> Vec<Value> {
     let tpl = p.user_data.stream_template.as_ref();
     let mediaflow = p.user_data.mediaflow_config.as_ref();
     let max_per_res = p.user_data.max_streams_per_resolution;
-    let max_total = p.user_data.max_streams as usize;
+    let max_total = p.user_data.effective_max_streams();
 
     // Each item: (raw_value_with_cached_annotated, sort_key, resolution, type_tag, provider_idx)
     // type_tag: 0=torrent, 1=usenet, 2=http, 3=youtube, 4=telegram, 5=acestream
@@ -1473,16 +1621,14 @@ fn format_unified_pool(
         let sk = torrent_sort_key(
             &t,
             sorting_priority,
-            &p.user_data.selected_resolutions,
-            &p.user_data.quality_filter,
+            selected_resolutions,
+            quality_filter,
             language_sorting,
             cached_map,
+            season,
+            episode,
         );
-        let res = t
-            .get("resolution")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+        let res = resolution_cap_key(&t);
         pool.push(Item {
             value: t,
             sort_key: sk,
@@ -1504,16 +1650,14 @@ fn format_unified_pool(
             let sk = torrent_sort_key(
                 &r,
                 sorting_priority,
-                &p.user_data.selected_resolutions,
-                &p.user_data.quality_filter,
+                selected_resolutions,
+                quality_filter,
                 language_sorting,
                 &empty_cache,
+                season,
+                episode,
             );
-            let res = r
-                .get("resolution")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
+            let res = resolution_cap_key(&r);
             pool.push(Item {
                 value: r,
                 sort_key: sk,
@@ -1535,16 +1679,14 @@ fn format_unified_pool(
             let sk = torrent_sort_key(
                 &r,
                 sorting_priority,
-                &p.user_data.selected_resolutions,
-                &p.user_data.quality_filter,
+                selected_resolutions,
+                quality_filter,
                 language_sorting,
                 &empty_cache,
+                season,
+                episode,
             );
-            let res = r
-                .get("resolution")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
+            let res = resolution_cap_key(&r);
             pool.push(Item {
                 value: r,
                 sort_key: sk,
@@ -1562,16 +1704,14 @@ fn format_unified_pool(
         let sk = torrent_sort_key(
             &r,
             sorting_priority,
-            &p.user_data.selected_resolutions,
-            &p.user_data.quality_filter,
+            selected_resolutions,
+            quality_filter,
             language_sorting,
             &empty_cache,
+            season,
+            episode,
         );
-        let res = r
-            .get("resolution")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+        let res = resolution_cap_key(&r);
         pool.push(Item {
             value: r,
             sort_key: sk,
@@ -1588,16 +1728,14 @@ fn format_unified_pool(
         let sk = torrent_sort_key(
             &r,
             sorting_priority,
-            &p.user_data.selected_resolutions,
-            &p.user_data.quality_filter,
+            selected_resolutions,
+            quality_filter,
             language_sorting,
             &empty_cache,
+            season,
+            episode,
         );
-        let res = r
-            .get("resolution")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+        let res = resolution_cap_key(&r);
         pool.push(Item {
             value: r,
             sort_key: sk,
@@ -1614,16 +1752,14 @@ fn format_unified_pool(
         let sk = torrent_sort_key(
             &r,
             sorting_priority,
-            &p.user_data.selected_resolutions,
-            &p.user_data.quality_filter,
+            selected_resolutions,
+            quality_filter,
             language_sorting,
             &empty_cache,
+            season,
+            episode,
         );
-        let res = r
-            .get("resolution")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+        let res = resolution_cap_key(&r);
         pool.push(Item {
             value: r,
             sort_key: sk,
@@ -1640,16 +1776,14 @@ fn format_unified_pool(
         let sk = torrent_sort_key(
             &r,
             sorting_priority,
-            &p.user_data.selected_resolutions,
-            &p.user_data.quality_filter,
+            selected_resolutions,
+            quality_filter,
             language_sorting,
             &empty_cache,
+            season,
+            episode,
         );
-        let res = r
-            .get("resolution")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+        let res = resolution_cap_key(&r);
         pool.push(Item {
             value: r,
             sort_key: sk,
@@ -1683,7 +1817,7 @@ fn format_unified_pool(
                 false
             }
         })
-        .take(max_total)
+        .take(max_total as usize)
         .collect();
 
     // Format each item in sorted order
@@ -1742,179 +1876,31 @@ fn format_unified_pool(
     result
 }
 
-// ─── Stream sorting ───────────────────────────────────────────────────────────
-
-pub(crate) fn quality_rank(quality: Option<&str>, quality_filter: &[String]) -> f64 {
-    let q = quality.unwrap_or("");
-    if let Some(idx) = quality_filter.iter().position(|qf| qf == q) {
-        return idx as f64;
-    }
-    // Group fallback: check if this quality belongs to a named group the user configured
-    for (idx, group_name) in quality_filter.iter().enumerate() {
-        if let Some((_, members)) = QUALITY_GROUPS
-            .iter()
-            .find(|(g, _)| *g == group_name.as_str())
-        {
-            if members.contains(&q) {
-                return idx as f64;
-            }
-        }
-    }
-    quality_filter.len() as f64
-}
-
-pub(crate) fn parse_created_at_ts(v: &Value) -> f64 {
-    if let Some(s) = v.as_str() {
-        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-            return dt.timestamp() as f64;
-        }
-        // PostgreSQL may omit seconds in timezone offset: "2024-01-15T10:30:00+00"
-        let padded = if s.ends_with("+00") || s.ends_with("-00") {
-            format!("{}:00", s)
-        } else {
-            s.to_string()
-        };
-        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&padded) {
-            return dt.timestamp() as f64;
-        }
-    } else if let Some(n) = v.as_f64() {
-        return n;
-    }
-    f64::NEG_INFINITY
-}
-
-pub(crate) fn torrent_sort_key(
-    t: &Value,
-    priority: &[SortingOption],
-    selected_resolutions: &[Option<String>],
-    quality_filter: &[String],
-    language_sorting: &[String],
-    cached_hashes: &HashMap<String, bool>,
-) -> Vec<f64> {
-    priority
-        .iter()
-        .map(|opt| {
-            let mult = if opt.direction == "asc" {
-                1.0_f64
-            } else {
-                -1.0_f64
-            };
-            match opt.key.as_str() {
-                "cached" => {
-                    // For torrent streams: check the provider's cache map by info_hash.
-                    // For non-torrent streams (no info_hash): fall back to the stream's
-                    // own "cached" field (set before unified sort: usenet=false, http/tg/yt=true).
-                    let is_cached = t
-                        .get("info_hash")
-                        .and_then(|v| v.as_str())
-                        .filter(|h| !h.is_empty())
-                        .map(|h| cached_hashes.get(h).copied().unwrap_or(false))
-                        .unwrap_or_else(|| {
-                            t.get("cached").and_then(|v| v.as_bool()).unwrap_or(false)
-                        });
-                    mult * if is_cached { 1.0 } else { 0.0 }
-                }
-                "resolution" => {
-                    let res = t.get("resolution").and_then(|v| v.as_str());
-                    let rank = selected_resolutions
-                        .iter()
-                        .position(|r| r.as_deref() == res)
-                        .unwrap_or(selected_resolutions.len())
-                        as f64;
-                    mult * -rank
-                }
-                "quality" => {
-                    let quality = t.get("quality").and_then(|v| v.as_str());
-                    mult * -quality_rank(quality, quality_filter)
-                }
-                "size" => mult * t.get("size").and_then(|v| v.as_i64()).unwrap_or(0) as f64,
-                "seeders" => mult * t.get("seeders").and_then(|v| v.as_i64()).unwrap_or(0) as f64,
-                "created_at" => {
-                    let ts = t
-                        .get("created_at")
-                        .map(parse_created_at_ts)
-                        .unwrap_or(f64::NEG_INFINITY);
-                    mult * ts
-                }
-                "language" => {
-                    let languages: Vec<&str> = t
-                        .get("languages")
-                        .and_then(|v| v.as_array())
-                        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-                        .unwrap_or_default();
-                    let min_idx = language_sorting
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(i, lang)| {
-                            if languages.contains(&lang.as_str()) {
-                                Some(i as f64)
-                            } else {
-                                None
-                            }
-                        })
-                        .fold(language_sorting.len() as f64, f64::min);
-                    mult * -min_idx
-                }
-                _ => 0.0,
-            }
-        })
-        .collect()
-}
-
-/// Sort torrents by user's `torrent_sorting_priority` and apply `max_streams_per_resolution` cap.
+/// Sort torrents by user's `torrent_sorting_priority` and apply caps.
 fn sort_and_cap_torrents(
-    mut torrents: Vec<Value>,
+    torrents: Vec<Value>,
     priority: &[SortingOption],
     selected_resolutions: &[Option<String>],
     quality_filter: &[String],
-    language_sorting: &[String],
+    language_sorting: &[Option<String>],
     cached_hashes: &HashMap<String, bool>,
+    season: Option<i32>,
+    episode: Option<i32>,
     max_per_resolution: u32,
+    max_total: u32,
 ) -> Vec<Value> {
-    if !priority.is_empty() {
-        torrents.sort_by(|a, b| {
-            let ka = torrent_sort_key(
-                a,
-                priority,
-                selected_resolutions,
-                quality_filter,
-                language_sorting,
-                cached_hashes,
-            );
-            let kb = torrent_sort_key(
-                b,
-                priority,
-                selected_resolutions,
-                quality_filter,
-                language_sorting,
-                cached_hashes,
-            );
-            for (va, vb) in ka.iter().zip(kb.iter()) {
-                match va.partial_cmp(vb) {
-                    Some(std::cmp::Ordering::Equal) | None => continue,
-                    Some(ord) => return ord,
-                }
-            }
-            std::cmp::Ordering::Equal
-        });
-    }
-
-    // Per-resolution cap
-    let mut counts: HashMap<String, u32> = HashMap::new();
-    let mut capped: Vec<Value> = Vec::with_capacity(torrents.len());
-    for t in torrents {
-        let res = t
-            .get("resolution")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let count = counts.entry(res).or_insert(0);
-        if *count < max_per_resolution {
-            *count += 1;
-            capped.push(t);
-        }
-    }
-    capped
+    sort_stream_rows(
+        torrents,
+        priority,
+        selected_resolutions,
+        quality_filter,
+        language_sorting,
+        cached_hashes,
+        season,
+        episode,
+        max_per_resolution,
+        max_total,
+    )
 }
 
 // ─── RealDebrid filename block list ──────────────────────────────────────────
@@ -1992,6 +1978,15 @@ fn scraped_usenet_to_value(s: &crate::scrapers::ScrapedUsenetStream) -> Value {
     if !s.parsed.languages.is_empty() {
         obj.insert("languages".into(), json!(s.parsed.languages));
     }
+    if !s.parsed.hdr.is_empty() {
+        obj.insert("hdr_formats".into(), json!(s.parsed.hdr));
+    }
+    if !s.parsed.audio.is_empty() {
+        obj.insert("audio_formats".into(), json!(s.parsed.audio));
+    }
+    if !s.parsed.channels.is_empty() {
+        obj.insert("channels".into(), json!(s.parsed.channels));
+    }
     Value::Object(obj)
 }
 
@@ -2008,6 +2003,10 @@ fn scraped_to_json(s: &crate::scrapers::ScrapedStream) -> Value {
         "size": s.size,
         "torrent_type": torrent_type.as_wire(),
         "is_public": matches!(torrent_type, TorrentType::Public | TorrentType::WebSeed),
+        "languages": s.parsed.languages,
+        "hdr_formats": s.parsed.hdr,
+        "audio_formats": s.parsed.audio,
+        "channels": s.parsed.channels,
     })
 }
 
@@ -2665,190 +2664,7 @@ fn format_single_usenet_stream(
     }))
 }
 
-/// Decide whether a usenet stream row should be shown for a given provider+user combo.
-///
-/// Two independent rules apply:
-///
-/// **Rule 1 — Source exclusivity (ONE-WAY):**
-/// EasyNews and TorBox each produce content that is exclusive to their own service.
-/// A stream flagged as an EasyNews or TorBox source may only appear for that provider.
-/// However, EasyNews/TorBox users can also see streams from *other* sources (e.g., a
-/// user-configured NZBDav indexer) as long as they have credentials for that indexer.
-///
-/// **Rule 2 — Indexer credential match:**
-/// For providers that rely on external NZB downloads (sabnzbd, nzbget, nzbdav,
-/// stremio_nntp, torbox — when stream is not its own source), the stream's indexer must
-/// match one of the user's enabled Newznab indexers (by name or hostname) or a public
-/// usenet indexer (if the operator enables them). Without a credential match the playback
-/// endpoint cannot inject the right API key, so the stream is hidden.
-///
-/// **debrider** is universal: it accepts NZBs from any source.
-fn is_usenet_stream_compatible(
-    row: &Value,
-    provider: &crate::models::user_data::StreamingProvider,
-    user_data: &crate::models::user_data::UserData,
-    allow_public_usenet: bool,
-) -> bool {
-    // Sources whose content is exclusive to one provider's own infrastructure.
-    // A stream tagged with one of these sources may only appear for that provider.
-    const EXCLUSIVE_SOURCES: &[(&str, &str)] = &[("easynews", "easynews"), ("torbox", "torbox")];
-
-    let svc = provider.service.as_str();
-    let nzb_url = row.get("nzb_url").and_then(|v| v.as_str()).unwrap_or("");
-
-    // ── Rule 0: file-uploaded NZBs ──────────────────────────────────────────────
-    // When nzb_url is absent the NZB file is stored in MediaFusion and served via a
-    // signed URL at playback time — no external indexer credentials are needed.
-    if nzb_url.is_empty() {
-        return true;
-    }
-
-    let source = row
-        .get("source")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_lowercase();
-    let indexer = row
-        .get("indexer")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_lowercase();
-    let nzb_host = extract_hostname(nzb_url).unwrap_or_default().to_lowercase();
-    let candidates = [source.as_str(), indexer.as_str()];
-
-    // ── Rule 1: source exclusivity (one-way) ────────────────────────────────────
-    // If the stream was produced by an exclusive provider's own service, only that
-    // provider may use it. Other providers whose own content is exclusive are blocked
-    // from each other's streams; generic-source streams pass through.
-    let exclusive_owner: Option<&str> = EXCLUSIVE_SOURCES.iter().find_map(|(owner, marker)| {
-        let in_source = candidates
-            .iter()
-            .any(|c| !c.is_empty() && c.contains(marker));
-        let in_host = !nzb_host.is_empty() && nzb_host.contains(marker);
-        if in_source || in_host {
-            Some(*owner)
-        } else {
-            None
-        }
-    });
-    if let Some(owner) = exclusive_owner {
-        return svc == owner;
-    }
-
-    // ── Rule 2: credential gating for external NZB sources ──────────────────────
-    // EasyNews has no external NZB downloader — it only works with its own content.
-    if svc == "easynews" {
-        return false;
-    }
-
-    // All other usenet-capable providers (sabnzbd, nzbget, nzbdav, stremio_nntp,
-    // torbox, debrider, …) fetch the NZB from an external URL. The playback endpoint
-    // injects the user's API key only when the stream's indexer/source matches a
-    // configured Newznab indexer. Without that match, the NZB URL arrives at the
-    // provider with credentials stripped — the download will fail and showing the
-    // stream would leak that the content exists on that indexer.
-    //
-    // Public usenet indexers (binsearch, nzbindex) require no credentials, so they
-    // are accessible to any provider when the operator enables public usenet scraping.
-    usenet_indexer_match(&candidates, &nzb_host, user_data, allow_public_usenet)
-}
-
-/// Check whether the stream's indexer matches the user's enabled Newznab indexers or
-/// falls back to operator-permitted public usenet indexers.
-fn usenet_indexer_match(
-    candidates: &[&str],
-    nzb_host: &str,
-    user_data: &crate::models::user_data::UserData,
-    allow_public_usenet: bool,
-) -> bool {
-    const PUBLIC_USENET_KEYS: &[&str] = &["binsearch", "nzbindex"];
-
-    let enabled: Vec<&crate::models::user_data::NewznabIndexer> = user_data
-        .indexer_config
-        .as_ref()
-        .map(|ic| ic.newznab_indexers.iter().filter(|ix| ix.enabled).collect())
-        .unwrap_or_default();
-
-    if enabled.is_empty() {
-        // No Newznab indexers → only public usenet fallback
-        if allow_public_usenet {
-            return candidates
-                .iter()
-                .any(|c| PUBLIC_USENET_KEYS.iter().any(|k| c.contains(k)))
-                || PUBLIC_USENET_KEYS.iter().any(|k| nzb_host.contains(k));
-        }
-        return false;
-    }
-
-    // Match by indexer name (substring, case-insensitive)
-    let name_match = enabled.iter().any(|ix| {
-        let n = ix.name.to_lowercase();
-        candidates
-            .iter()
-            .any(|c| !c.is_empty() && (c.contains(n.as_str()) || n.contains(c.trim())))
-    });
-    if name_match {
-        return true;
-    }
-
-    // Match by NZB URL hostname against indexer URL hostname
-    if !nzb_host.is_empty() {
-        let host_match = enabled.iter().any(|ix| {
-            extract_hostname(&ix.url)
-                .map(|h| h.to_lowercase())
-                .as_deref()
-                == Some(nzb_host)
-        });
-        if host_match {
-            return true;
-        }
-    }
-
-    // Public usenet indexer fallback
-    if allow_public_usenet {
-        return candidates
-            .iter()
-            .any(|c| PUBLIC_USENET_KEYS.iter().any(|k| c.contains(k)))
-            || PUBLIC_USENET_KEYS.iter().any(|k| nzb_host.contains(k));
-    }
-
-    false
-}
-
-fn extract_hostname(url: &str) -> Option<String> {
-    if url.is_empty() {
-        return None;
-    }
-    // Fast hostname extraction without a full URL parser dependency
-    let after_scheme = if let Some(pos) = url.find("://") {
-        &url[pos + 3..]
-    } else {
-        url
-    };
-    // Strip userinfo (user:pass@)
-    let after_auth = if let Some(at) = after_scheme.rfind('@') {
-        &after_scheme[at + 1..]
-    } else {
-        after_scheme
-    };
-    // Take up to first '/' or '?' or ':' (port)
-    let host_port = after_auth.split(['/', '?', '#']).next()?;
-    let host = if let Some(colon) = host_port.rfind(':') {
-        // Check it's a port, not IPv6
-        if host_port[colon + 1..].chars().all(|c| c.is_ascii_digit()) {
-            &host_port[..colon]
-        } else {
-            host_port
-        }
-    } else {
-        host_port
-    };
-    if host.is_empty() {
-        None
-    } else {
-        Some(host.to_string())
-    }
-}
+// Usenet provider compatibility: see `crate::usenet_compat`.
 
 fn build_playback_url(
     host_url: &str,

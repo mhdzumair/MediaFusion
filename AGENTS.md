@@ -25,6 +25,10 @@ make rust-test
 # Run a single test file
 cd backend && cargo test --test jobs_validate_tv
 
+# Backfill PTT metadata on existing torrent/usenet streams (see docs/deployment/worker-cli.md)
+make worker-backfill-stream-metadata
+# OR: make worker-backfill-stream-metadata PAGE_SIZE=2000
+
 # Lint
 make rust-lint
 # OR: cd backend && cargo clippy --all-targets -- -D warnings
@@ -77,7 +81,7 @@ Everything in this directory has been fully replaced by Rust equivalents. It is 
 
 ### Services
 
-- **`mediafusion-api`** (Rust, Axum): HTTP server on port 8000. Handles Stremio addon manifest, catalog, stream, and user profile endpoints.
+- **`mediafusion-api`** (Rust, Axum): HTTP server on port 8001. Handles Stremio addon manifest, catalog, stream, and user profile endpoints.
 - **`mediafusion-worker`** (Rust): Long-running background job processor. Scrapes Prowlarr, RSS feeds, Telegram, YouTube, etc. Runs scheduled jobs.
 - **PostgreSQL**: Primary data store. Migrations live in `backend/migrations/` as `NNNN_description.{up|down}.sql` and are applied automatically on startup via sqlx.
 - **Redis**: Session cache, rate limiting, stream cache, job queue coordination.
@@ -163,7 +167,7 @@ make install-hooks
 Only 5 are required; all others have defaults. See `docs/env-reference.md` for the full 291-variable reference.
 
 ```env
-HOST_URL=http://127.0.0.1:8000
+HOST_URL=http://127.0.0.1:8001
 SECRET_KEY=<random-hex>
 API_PASSWORD=<your-password>
 POSTGRES_URI=postgresql://user:password@host:5432/mediafusion

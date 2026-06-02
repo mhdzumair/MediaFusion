@@ -36,3 +36,7 @@ Every MediaFusion deployment consists of these components:
 Migrations run **automatically** at startup — no separate migration step needed.
 
 For details on checking migration status or rolling back, see [Database Migrations](migrations.md).
+
+## One-shot worker jobs
+
+Manual scrapes, imports, and maintenance (including PTT metadata backfill on existing streams) are run via the worker CLI — see [Worker CLI Reference](worker-cli.md).

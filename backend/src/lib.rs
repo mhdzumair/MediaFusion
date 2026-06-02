@@ -22,4 +22,5 @@ pub mod scrapers;
 pub mod state;
 pub mod stremio_auth_middleware;
 pub mod template;
+pub mod usenet_compat;
 pub mod util;

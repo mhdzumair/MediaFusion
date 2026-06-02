@@ -25,6 +25,11 @@ pub struct StreamStoreBase {
     pub is_public: bool,
     pub is_active: bool,
     pub is_blocked: bool,
+    /// Parsed metadata linked after insert (scraper path).
+    pub languages: Vec<String>,
+    pub hdr_formats: Vec<String>,
+    pub audio_formats: Vec<String>,
+    pub audio_channels: Vec<String>,
 }
 
 impl Default for StreamStoreBase {
@@ -50,6 +55,10 @@ impl Default for StreamStoreBase {
             is_public: true,
             is_active: true,
             is_blocked: false,
+            languages: Vec::new(),
+            hdr_formats: Vec::new(),
+            audio_formats: Vec::new(),
+            audio_channels: Vec::new(),
         }
     }
 }
@@ -73,6 +82,10 @@ impl StreamStoreBase {
             is_subbed: parsed.is_subbed,
             is_remastered: parsed.is_remastered,
             is_upscaled: parsed.is_upscaled,
+            languages: parsed.languages.clone(),
+            hdr_formats: parsed.hdr.clone(),
+            audio_formats: parsed.audio.clone(),
+            audio_channels: parsed.channels.clone(),
             ..Self::default()
         }
     }

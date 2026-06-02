@@ -143,6 +143,7 @@ Run `--list-jobs` to get the live list. The table below describes each queue.
 | `update_seeders` | Update seeder counts for tracked torrents |
 | `update_tv_posters` | Refresh TV show poster images |
 | `validate_tv` | Validate and deactivate dead TV stream URLs |
+| `backfill_stream_metadata` | Re-parse torrent/usenet `stream.name` with PTT; fill missing resolution/quality/language/HDR/audio links |
 | `cleanup` | Remove expired scraper task records and cache entries |
 
 ---
@@ -204,6 +205,50 @@ Most jobs ignore `--args`. The following jobs use it:
   --args '{"datasets": ["title.basics", "title.akas"]}'
 ```
 
+### `backfill_stream_metadata`
+
+Re-parses existing **torrent** and **usenet** stream release names through the PTT parser (`parser::parse_title`, with `translate_languages: true` — same as Python `PTT.parse_title(name, True)`) and writes any missing metadata:
+
+- `stream` columns: `resolution`, `codec`, `quality`, `release_group` (and flags when `only_missing` is false)
+- Link tables: `stream_language_link`, `stream_hdr_link`, `stream_audio_link`, `stream_channel_link`
+
+By default the job runs **continuously in one process** until no streams match the criteria (suitable for CLI one-shot runs). Set `"continuous": false` to process a single page and enqueue the next page on the worker job queue instead.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `page` | `int` | `0` | Starting page index |
+| `page_size` | `int` | `500` | Streams per page (max 5000) |
+| `only_missing` | `bool` | `true` | Only streams missing columns or link-table rows |
+| `stream_types` | `string[]` | `["TORRENT","USENET"]` | Stream types to process |
+| `continuous` | `bool` | `true` | Loop pages in-process until done |
+| `max_pages` | `int` | — | Optional cap (for test runs) |
+
+```bash
+# Full backfill (runs until complete — may take hours on large DBs)
+./mediafusion-worker --run-job backfill_stream_metadata
+
+# Larger batches, same behavior
+./mediafusion-worker --run-job backfill_stream_metadata \
+  --args '{"page_size": 2000}'
+
+# Test run: first 3 pages only
+./mediafusion-worker --run-job backfill_stream_metadata \
+  --args '{"page_size": 500, "max_pages": 3}'
+
+# Re-parse everything (overwrite columns from PTT; links are additive)
+./mediafusion-worker --run-job backfill_stream_metadata \
+  --args '{"only_missing": false, "page_size": 1000}'
+```
+
+Makefile shortcut:
+
+```bash
+make worker-backfill-stream-metadata
+make worker-backfill-stream-metadata PAGE_SIZE=2000
+```
+
+After backfill, Stremio stream descriptions should show language lines (`🌐 English`, etc.) and language filtering in the addon will work for streams that PTT can parse.
+
 ---
 
 ## Exit codes
@@ -232,6 +277,9 @@ Most jobs ignore `--args`. The following jobs use it:
 
 # Sync Trakt/Simkl integrations
 ./mediafusion-worker --run-job integration_syncs
+
+# Backfill PTT metadata on existing torrent/usenet streams
+./mediafusion-worker --run-job backfill_stream_metadata
 
 # List all available jobs
 ./mediafusion-worker --list-jobs

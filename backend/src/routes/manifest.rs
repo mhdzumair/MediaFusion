@@ -8,7 +8,14 @@ use hmac::{Hmac, KeyInit, Mac};
 use serde_json::{json, Value};
 use sha2::Sha256;
 
-use crate::{cache, crypto, db::genres, models::user_data::UserData, state::AppState};
+use std::time::Duration;
+
+use crate::{
+    cache, crypto,
+    db::genres::{self, GENRES_CACHE_KEY},
+    models::user_data::UserData,
+    state::AppState,
+};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -301,16 +308,34 @@ async fn serve_manifest(state: Arc<AppState>, user_data: UserData) -> impl IntoR
         return Json(cached).into_response();
     }
 
-    const GENRES_KEY: &str = "genres:all_by_type:rs";
-    let genres: HashMap<String, Vec<String>> =
-        if let Some(v) = cache::get_json(&state.redis, GENRES_KEY).await {
-            serde_json::from_value(v).unwrap_or_default()
-        } else {
-            let g = genres::get_all_genres_by_type(&state.pool_ro).await;
-            let gv = serde_json::to_value(&g).unwrap_or_default();
-            cache::set_json(&state.redis, GENRES_KEY, &gv, 3600).await;
-            g
-        };
+    let genres: HashMap<String, Vec<String>> = if let Some(v) =
+        cache::get_json(&state.redis, GENRES_CACHE_KEY).await
+    {
+        serde_json::from_value(v).unwrap_or_default()
+    } else {
+        // Never block manifest for 30s on a cold genres query — cap wait, then refresh in background.
+        const GENRES_WAIT: Duration = Duration::from_secs(3);
+        match tokio::time::timeout(
+            GENRES_WAIT,
+            genres::load_genres_cached(&state.pool_ro, &state.redis),
+        )
+        .await
+        {
+            Ok(g) => g,
+            Err(_) => {
+                tracing::warn!(
+                    "manifest: genres query exceeded {:?}; serving manifest without dynamic genres",
+                    GENRES_WAIT
+                );
+                let pool = state.pool_ro.clone();
+                let redis = state.redis.clone();
+                tokio::spawn(async move {
+                    let _ = genres::load_genres_cached(&pool, &redis).await;
+                });
+                HashMap::new()
+            }
+        }
+    };
     let genres = {
         let keyword_filters = state
             .keyword_filters

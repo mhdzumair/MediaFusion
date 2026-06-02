@@ -309,6 +309,31 @@ pub enum FileType {
     Other,
 }
 
+/// `stream_language_link.language_type` varchar values (Python parity: lowercase `audio` / `subtitle`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LanguageLinkType {
+    Audio,
+    Subtitle,
+}
+
+impl LanguageLinkType {
+    /// Wire value stored in Postgres (`character varying`, not a PG enum).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Audio => "audio",
+            Self::Subtitle => "subtitle",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "audio" => Some(Self::Audio),
+            "subtitle" => Some(Self::Subtitle),
+            _ => None,
+        }
+    }
+}
+
 wire_enum_screaming!(FileType {
     Video => "VIDEO",
     Audio => "AUDIO",
@@ -516,6 +541,19 @@ mod tests {
         assert_eq!(
             WatchAction::from_wire("watched"),
             Some(WatchAction::Watched)
+        );
+    }
+
+    #[test]
+    fn language_link_type_matches_python_varchar() {
+        assert_eq!(LanguageLinkType::Audio.as_str(), "audio");
+        assert_eq!(
+            LanguageLinkType::parse("AUDIO"),
+            Some(LanguageLinkType::Audio)
+        );
+        assert_eq!(
+            LanguageLinkType::parse("subtitle"),
+            Some(LanguageLinkType::Subtitle)
         );
     }
 

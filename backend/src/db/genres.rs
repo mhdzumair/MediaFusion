@@ -1,79 +1,73 @@
 use std::collections::{HashMap, HashSet};
 
 use sqlx::PgPool;
-use tokio::try_join;
-use tracing::warn;
+use tracing::{info, warn};
 
-use super::types::MediaType;
+pub const GENRES_CACHE_KEY: &str = "genres:all_by_type:rs";
+/// Genres change rarely; long TTL avoids repeated heavy queries on large DBs.
+pub const GENRES_CACHE_TTL_SECS: u64 = 86_400;
 
-#[derive(sqlx::FromRow)]
-struct MediaTypeRow {
-    id: i32,
-    media_type: MediaType,
-}
+const ADULT_GENRE_NAMES: &[&str] = &["adult", "18+"];
 
 #[derive(sqlx::FromRow)]
-struct GenreNameRow {
-    id: i32,
+struct GenreByTypeRow {
+    media_type: String,
     name: String,
 }
 
-#[derive(sqlx::FromRow)]
-struct GenreLinkRow {
-    genre_id: i32,
-    media_id: i32,
-}
-
-fn is_manifest_media_type(media_type: MediaType) -> bool {
-    matches!(
-        media_type,
-        MediaType::Movie | MediaType::Series | MediaType::Tv
-    )
-}
-
+/// Distinct genres per media type (Python `get_all_genres_by_type` parity).
+///
+/// Uses three indexed `EXISTS` probes (one per manifest media type) over the ~450-row
+/// `genre` table instead of scanning all `media` / `media_genre_link` rows.
 pub async fn get_all_genres_by_type(pool: &PgPool) -> HashMap<String, Vec<String>> {
-    let media_future =
-        sqlx::query_as::<_, MediaTypeRow>("SELECT id, type AS media_type FROM media")
-            .fetch_all(pool);
-    let genre_future =
-        sqlx::query_as::<_, GenreNameRow>("SELECT id, name FROM genre").fetch_all(pool);
-    let links_future =
-        sqlx::query_as::<_, GenreLinkRow>("SELECT genre_id, media_id FROM media_genre_link")
-            .fetch_all(pool);
-
-    let (media_rows, genre_rows, link_rows) =
-        match try_join!(media_future, genre_future, links_future) {
-            Ok(rows) => rows,
-            Err(e) => {
-                warn!("genres query: {e}");
-                return HashMap::new();
-            }
-        };
-
-    let media_types: HashMap<i32, MediaType> = media_rows
-        .into_iter()
-        .map(|row| (row.id, row.media_type))
-        .collect();
-    let genre_names: HashMap<i32, String> = genre_rows
-        .into_iter()
-        .map(|row| (row.id, row.name))
-        .collect();
+    let rows = match sqlx::query_as::<_, GenreByTypeRow>(
+        r#"
+        SELECT 'movie' AS media_type, g.name
+        FROM genre g
+        WHERE EXISTS (
+            SELECT 1
+            FROM media_genre_link mgl
+            INNER JOIN media m ON m.id = mgl.media_id AND m.type = 'MOVIE'
+            WHERE mgl.genre_id = g.id
+        )
+        UNION ALL
+        SELECT 'series' AS media_type, g.name
+        FROM genre g
+        WHERE EXISTS (
+            SELECT 1
+            FROM media_genre_link mgl
+            INNER JOIN media m ON m.id = mgl.media_id AND m.type = 'SERIES'
+            WHERE mgl.genre_id = g.id
+        )
+        UNION ALL
+        SELECT 'tv' AS media_type, g.name
+        FROM genre g
+        WHERE EXISTS (
+            SELECT 1
+            FROM media_genre_link mgl
+            INNER JOIN media m ON m.id = mgl.media_id AND m.type = 'TV'
+            WHERE mgl.genre_id = g.id
+        )
+        ORDER BY media_type, name
+        "#,
+    )
+    .fetch_all(pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            warn!("genres query: {e}");
+            return HashMap::new();
+        }
+    };
 
     let mut by_type: HashMap<String, HashSet<String>> = HashMap::new();
-    for link in link_rows {
-        let Some(media_type) = media_types.get(&link.media_id) else {
-            continue;
-        };
-        if !is_manifest_media_type(*media_type) {
+    for row in rows {
+        let lower = row.name.to_ascii_lowercase();
+        if ADULT_GENRE_NAMES.contains(&lower.as_str()) {
             continue;
         }
-        let Some(genre_name) = genre_names.get(&link.genre_id) else {
-            continue;
-        };
-        by_type
-            .entry(media_type.as_wire().to_string())
-            .or_default()
-            .insert(genre_name.clone());
+        by_type.entry(row.media_type).or_default().insert(row.name);
     }
 
     by_type
@@ -84,4 +78,40 @@ pub async fn get_all_genres_by_type(pool: &PgPool) -> HashMap<String, Vec<String
             (media_type, list)
         })
         .collect()
+}
+
+/// Load genres from Redis, or compute and cache. Used by manifest and startup warm.
+pub async fn load_genres_cached(
+    pool: &PgPool,
+    redis: &fred::clients::Client,
+) -> HashMap<String, Vec<String>> {
+    if let Some(v) = crate::cache::get_json(redis, GENRES_CACHE_KEY).await {
+        if let Ok(g) = serde_json::from_value(v) {
+            return g;
+        }
+    }
+
+    let started = std::time::Instant::now();
+    let genres = get_all_genres_by_type(pool).await;
+    let elapsed = started.elapsed();
+    if elapsed.as_secs() >= 1 {
+        info!(
+            elapsed_ms = elapsed.as_millis(),
+            movie = genres.get("movie").map(|v| v.len()).unwrap_or(0),
+            series = genres.get("series").map(|v| v.len()).unwrap_or(0),
+            tv = genres.get("tv").map(|v| v.len()).unwrap_or(0),
+            "genres: computed all_by_type from database"
+        );
+    }
+
+    let gv = serde_json::to_value(&genres).unwrap_or_default();
+    crate::cache::set_json(redis, GENRES_CACHE_KEY, &gv, GENRES_CACHE_TTL_SECS).await;
+    genres
+}
+
+/// Fire-and-forget cache warm (API startup).
+pub fn spawn_genres_cache_warm(pool: PgPool, redis: fred::clients::Client) {
+    tokio::spawn(async move {
+        let _ = load_genres_cached(&pool, &redis).await;
+    });
 }

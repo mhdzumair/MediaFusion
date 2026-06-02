@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 
-use super::types::{MediaId, StreamId};
+use super::types::{LanguageLinkType, MediaId, StreamId};
 
 /// Link stream ↔ media and bump `total_streams` when the link is new.
 pub async fn link_stream_to_media(
@@ -161,11 +161,21 @@ pub async fn link_stream_audio_channels(
     Ok(())
 }
 
-/// Link audio languages to a stream.
+/// Link audio track languages to a stream.
 pub async fn link_stream_languages(
     pool: &PgPool,
     stream_id: i32,
     languages: &[String],
+) -> Result<(), sqlx::Error> {
+    link_stream_languages_typed(pool, stream_id, languages, LanguageLinkType::Audio).await
+}
+
+/// Link languages with an explicit [`LanguageLinkType`] (audio or subtitle).
+pub async fn link_stream_languages_typed(
+    pool: &PgPool,
+    stream_id: i32,
+    languages: &[String],
+    language_type: LanguageLinkType,
 ) -> Result<(), sqlx::Error> {
     for lang in languages {
         if lang.is_empty() {
@@ -179,10 +189,11 @@ pub async fn link_stream_languages(
         .await?;
         if let Some(lid) = lang_id {
             sqlx::query(
-                "INSERT INTO stream_language_link(stream_id, language_id, language_type) VALUES($1, $2, 'AUDIO') ON CONFLICT DO NOTHING",
+                "INSERT INTO stream_language_link(stream_id, language_id, language_type) VALUES($1, $2, $3) ON CONFLICT DO NOTHING",
             )
             .bind(stream_id)
             .bind(lid)
+            .bind(language_type.as_str())
             .execute(pool)
             .await?;
         }

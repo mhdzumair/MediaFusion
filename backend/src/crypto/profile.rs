@@ -10,15 +10,22 @@ const UUID_CACHE_TTL: u64 = 2_592_000; // 30 days, matches Python
 /// Checks Redis first (`user_profile:{uuid}`), falls back to Postgres.
 /// Decrypts `encrypted_secrets` from Redis cache and merges tokens back
 /// into the `sps` (streaming_providers) array before returning.
+fn config_is_usable(config: &Value) -> bool {
+    config.as_object().is_some_and(|o| !o.is_empty())
+}
+
 pub async fn lookup(
     redis: &fred::clients::Client,
     pool: &PgPool,
     key: &[u8; 32],
     uuid: &str,
 ) -> Option<Value> {
-    // 1. Try Redis cache
+    // 1. Try Redis cache (skip stale entries that only contain `{}` — always re-read DB)
     if let Some(v) = lookup_redis(redis, key, uuid).await {
-        return Some(v);
+        if config_is_usable(&v) {
+            return Some(v);
+        }
+        warn!("profile redis cache uuid={uuid} has empty config; refreshing from database");
     }
     // 2. Fall back to Postgres, then write back to Redis
     lookup_postgres(redis, pool, key, uuid).await
@@ -30,10 +37,11 @@ async fn lookup_redis(redis: &fred::clients::Client, key: &[u8; 32], uuid: &str)
     let raw = raw?;
     let cached: Value = serde_json::from_slice(&raw).ok()?;
 
-    let mut config: Value = cached
-        .get("config")
-        .cloned()
-        .unwrap_or(Value::Object(Default::default()));
+    let config_val = cached.get("config")?;
+    if config_val.is_null() {
+        return None;
+    }
+    let mut config: Value = config_val.clone();
     let user_id = cached.get("user_id").and_then(|v| v.as_i64());
     let profile_id = cached.get("profile_id").and_then(|v| v.as_i64());
 
@@ -83,7 +91,10 @@ async fn lookup_postgres(
         None
     });
 
-    let (config, profile_id, user_id, encrypted_secrets) = row?;
+    let Some((config, profile_id, user_id, encrypted_secrets)) = row else {
+        warn!("profile postgres lookup uuid={uuid}: no row in user_profiles");
+        return None;
+    };
 
     // Write back to Redis: store config + encrypted_secrets as-is (AES-encrypted),
     // never plaintext api_password — secrets are decrypted per-request by lookup_redis.

@@ -140,8 +140,14 @@ pub async fn get_system_constants() -> impl IntoResponse {
     // Return a minimal constants structure; the full constant tables live in Python.
     Json(json!({
         "CATALOG_DATA": [],
-        "RESOLUTIONS": ["4K", "2160p", "1440p", "1080p", "720p", "480p", "360p"],
-        "SUPPORTED_LANGUAGES": [],
+        "RESOLUTIONS": crate::parser::RESOLUTIONS
+            .iter()
+            .filter_map(|r| r.map(|s| s.to_string()))
+            .collect::<Vec<_>>(),
+        "SUPPORTED_LANGUAGES": crate::parser::LANGUAGES_FILTERS
+            .iter()
+            .filter_map(|l| l.map(|s| s.to_string()))
+            .collect::<Vec<_>>(),
     }))
     .into_response()
 }

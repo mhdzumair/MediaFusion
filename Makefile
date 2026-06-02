@@ -44,9 +44,9 @@ JOB_ARGS ?=
 CARGO_WATCH_FLAGS = --watch-when-idle -d 1
 
 # Parity harness hosts (override on command line or in qa/.env)
-RUST_HOST  ?= http://localhost:8000
-PYTHON_HOST ?= http://localhost:8001
-PYTHON_PORT ?= 8001
+RUST_HOST  ?= http://localhost:8001
+PYTHON_HOST ?= http://localhost:8000
+PYTHON_PORT ?= 8000
 
 .PHONY: build build-multi tag push prompt update-version generate-notes generate-reddit-post generate-baseline frontend-install frontend-build frontend-dev frontend-lint frontend-fmt dev backend-dev python-lint python-fmt python-test rust-build rust-dev rust-test rust-fmt rust-lint lint fmt test worker-list-jobs worker-run-job worker-run-sport-video exception-videos python-golden parity-seed parity-check parity-e2e parity grafana-dev grafana-dev-stop
 
@@ -271,6 +271,14 @@ endif
 
 worker-run-sport-video:
 	cd backend && cargo run --bin mediafusion-worker -- --run-job spider_sport_video
+
+# PTT backfill: parse stream.name → resolution/quality/languages/HDR/audio links (paginated, auto-continues)
+# Usage: make worker-backfill-stream-metadata
+#        make worker-backfill-stream-metadata PAGE_SIZE=1000
+#        make worker-run-job JOB=backfill_stream_metadata JOB_ARGS='{"page":0,"page_size":500,"only_missing":true}'
+PAGE_SIZE ?= 500
+worker-backfill-stream-metadata:
+	cd backend && cargo run --bin mediafusion-worker -- --run-job backfill_stream_metadata --args '{"page_size":$(PAGE_SIZE),"only_missing":true,"continuous":true}'
 
 # Rust targets
 rust-build:

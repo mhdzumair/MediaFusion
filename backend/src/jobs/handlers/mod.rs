@@ -1,4 +1,5 @@
 pub mod acestream_bg;
+pub mod backfill_stream_metadata;
 pub mod background_search;
 pub mod cleanup;
 pub mod discover_prewarm;

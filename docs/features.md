@@ -87,6 +87,8 @@ You can configure up to 5 providers per profile. Each provider is checked for ca
 
 ### Rich stream metadata
 
+Torrent and usenet streams store parsed release metadata (resolution, codec, languages, HDR, audio) in the database. Existing rows ingested before v6 or without PTT at scrape time can be filled with the worker job `backfill_stream_metadata` — see [Worker CLI — backfill_stream_metadata](deployment/worker-cli.md#backfill_stream_metadata).
+
 Every stream result shows:
 - Resolution (480p → 4K)
 - HDR format (SDR, HDR10, HDR10+, Dolby Vision)

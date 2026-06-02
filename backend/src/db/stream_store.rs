@@ -139,6 +139,7 @@ pub async fn store_torrent_stream(
     }
 
     link_torrent_to_media(pool, stream_id, &stream.files, opts).await?;
+    link_stream_parsed_metadata(pool, stream_id, &stream.base).await;
 
     Ok(StoreStreamResult::Inserted(stream_id))
 }
@@ -227,6 +228,7 @@ pub async fn store_usenet_stream(
     us_result?;
 
     link_files_or_media(pool, stream_id, &stream.files, opts).await?;
+    link_stream_parsed_metadata(pool, stream_id, &stream.base).await;
 
     Ok(StoreStreamResult::Inserted(stream_id))
 }
@@ -417,6 +419,8 @@ pub async fn store_http_stream(
         .await?;
     }
 
+    link_stream_parsed_metadata(pool, stream_id, &stream.base).await;
+
     Ok(StoreStreamResult::Inserted(stream_id))
 }
 
@@ -600,6 +604,27 @@ pub async fn upsert_torrent_files_by_hash(
 
     txn.commit().await?;
     Ok(())
+}
+
+async fn link_stream_parsed_metadata(pool: &PgPool, stream_id: StreamId, base: &StreamStoreBase) {
+    use super::stream_links::{
+        link_stream_audio_channels, link_stream_audio_formats, link_stream_hdr_formats,
+        link_stream_languages,
+    };
+
+    let sid = stream_id.0;
+    if !base.languages.is_empty() {
+        let _ = link_stream_languages(pool, sid, &base.languages).await;
+    }
+    if !base.hdr_formats.is_empty() {
+        let _ = link_stream_hdr_formats(pool, sid, &base.hdr_formats).await;
+    }
+    if !base.audio_formats.is_empty() {
+        let _ = link_stream_audio_formats(pool, sid, &base.audio_formats).await;
+    }
+    if !base.audio_channels.is_empty() {
+        let _ = link_stream_audio_channels(pool, sid, &base.audio_channels).await;
+    }
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────

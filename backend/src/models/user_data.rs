@@ -1,5 +1,12 @@
-use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+
+use crate::parser::constants::{
+    default_hdr_filter_vec, default_language_sorting_values, default_quality_filter_groups,
+    default_resolutions_vec, expand_quality_filter,
+};
 
 /// Mirrors Python's `SortingOption` (schema/config.py).
 /// Stored in `torrent_sorting_priority` as `{"k": "resolution", "d": "desc"}`.
@@ -31,64 +38,56 @@ fn default_torrent_sorting_priority() -> Vec<Value> {
 }
 
 fn default_language_sorting() -> Vec<Value> {
-    const LANGS: &[Option<&str>] = &[
-        Some("English"),
-        Some("Tamil"),
-        Some("Hindi"),
-        Some("Malayalam"),
-        Some("Kannada"),
-        Some("Telugu"),
-        Some("Chinese"),
-        Some("Russian"),
-        Some("Arabic"),
-        Some("Japanese"),
-        Some("Korean"),
-        Some("Taiwanese"),
-        Some("Latino"),
-        Some("French"),
-        Some("Spanish"),
-        Some("Portuguese"),
-        Some("Italian"),
-        Some("German"),
-        Some("Ukrainian"),
-        Some("Polish"),
-        Some("Czech"),
-        Some("Thai"),
-        Some("Indonesian"),
-        Some("Vietnamese"),
-        Some("Dutch"),
-        Some("Bengali"),
-        Some("Turkish"),
-        Some("Greek"),
-        Some("Swedish"),
-        Some("Romanian"),
-        Some("Hungarian"),
-        Some("Finnish"),
-        Some("Norwegian"),
-        Some("Danish"),
-        Some("Hebrew"),
-        Some("Lithuanian"),
-        Some("Punjabi"),
-        Some("Marathi"),
-        Some("Gujarati"),
-        Some("Bhojpuri"),
-        Some("Nepali"),
-        Some("Urdu"),
-        Some("Tagalog"),
-        Some("Filipino"),
-        Some("Malay"),
-        Some("Mongolian"),
-        Some("Armenian"),
-        Some("Georgian"),
-        None,
-    ];
-    LANGS
-        .iter()
-        .map(|l| match l {
-            Some(s) => Value::String(s.to_string()),
-            None => Value::Null,
-        })
-        .collect()
+    default_language_sorting_values()
+}
+
+fn default_selected_resolutions() -> Vec<Option<String>> {
+    default_resolutions_vec()
+}
+
+fn default_hdr_filter() -> Vec<String> {
+    default_hdr_filter_vec()
+}
+
+fn default_max_size() -> f64 {
+    f64::INFINITY
+}
+
+fn default_min_size() -> i64 {
+    0
+}
+
+fn deserialize_max_size<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let v = Value::deserialize(deserializer)?;
+    parse_max_size_value(&v).ok_or_else(|| serde::de::Error::custom("Invalid max_size"))
+}
+
+fn parse_max_size_value(v: &Value) -> Option<f64> {
+    match v {
+        Value::Number(n) => n.as_f64(),
+        Value::String(s) if s == "inf" => Some(f64::INFINITY),
+        Value::String(s) => s.parse::<f64>().ok(),
+        _ => None,
+    }
+}
+
+fn deserialize_min_size<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let v = Value::deserialize(deserializer)?;
+    Ok(parse_min_size_value(&v))
+}
+
+fn parse_min_size_value(v: &Value) -> i64 {
+    match v {
+        Value::Number(n) => n.as_i64().unwrap_or(0).max(0),
+        Value::String(s) => s.parse::<i64>().unwrap_or(0).max(0),
+        _ => 0,
+    }
 }
 
 fn default_true() -> bool {
@@ -104,13 +103,7 @@ fn default_cert_filter() -> Vec<String> {
     vec!["Adults+".to_string()]
 }
 fn default_quality_filter() -> Vec<String> {
-    // Mirrors Python's `list(const.QUALITY_GROUPS.keys())`
-    vec![
-        "BluRay/UHD".to_string(),
-        "WEB/HD".to_string(),
-        "DVD/TV/SAT".to_string(),
-        "CAM/Screener".to_string(),
-    ]
+    default_quality_filter_groups()
 }
 fn default_priority() -> i32 {
     1
@@ -329,10 +322,33 @@ pub struct UserData {
     pub nudity_filter: Vec<String>,
     #[serde(default, rename = "cf", alias = "certification_filter")]
     pub certification_filter: Vec<String>,
-    #[serde(default, rename = "sr", alias = "selected_resolutions")]
+    #[serde(
+        default = "default_selected_resolutions",
+        rename = "sr",
+        alias = "selected_resolutions"
+    )]
     pub selected_resolutions: Vec<Option<String>>,
-    #[serde(default, rename = "hf", alias = "hdr_filter", skip_serializing)]
+    #[serde(
+        default = "default_hdr_filter",
+        rename = "hf",
+        alias = "hdr_filter",
+        skip_serializing
+    )]
     pub hdr_filter: Vec<String>,
+    #[serde(
+        default = "default_max_size",
+        deserialize_with = "deserialize_max_size",
+        rename = "ms",
+        alias = "max_size"
+    )]
+    pub max_size: f64,
+    #[serde(
+        default = "default_min_size",
+        deserialize_with = "deserialize_min_size",
+        rename = "mns",
+        alias = "min_size"
+    )]
+    pub min_size: i64,
     #[serde(
         default = "default_quality_filter",
         rename = "qf",
@@ -465,8 +481,10 @@ impl Default for UserData {
             selected_catalogs: Vec::new(),
             nudity_filter: default_nudity_filter(),
             certification_filter: default_cert_filter(),
-            selected_resolutions: Vec::new(),
-            hdr_filter: Vec::new(),
+            selected_resolutions: default_selected_resolutions(),
+            hdr_filter: default_hdr_filter(),
+            max_size: default_max_size(),
+            min_size: default_min_size(),
             quality_filter: default_quality_filter(),
             max_streams: 25,
             max_streams_per_resolution: 10,
@@ -611,6 +629,66 @@ impl UserData {
     /// First enabled streaming provider (primary).
     pub fn get_primary_provider(&self) -> Option<&StreamingProvider> {
         self.all_providers().into_iter().next()
+    }
+
+    /// Parsed sorting options (shared by filter and stream routes).
+    pub fn sorting_priority(&self) -> Vec<SortingOption> {
+        self.torrent_sorting_priority
+            .iter()
+            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+            .collect()
+    }
+
+    /// Language sort/filter list as strings (None = unknown sentinel).
+    pub fn language_sorting_list(&self) -> Vec<Option<String>> {
+        self.language_sorting
+            .iter()
+            .map(|v| v.as_str().map(str::to_string))
+            .collect()
+    }
+
+    pub fn effective_selected_resolutions(&self) -> Vec<Option<String>> {
+        if self.selected_resolutions.is_empty() {
+            default_resolutions_vec()
+        } else {
+            self.selected_resolutions.clone()
+        }
+    }
+
+    pub fn effective_hdr_filter(&self) -> Vec<String> {
+        if self.hdr_filter.is_empty() {
+            default_hdr_filter_vec()
+        } else {
+            self.hdr_filter.clone()
+        }
+    }
+
+    pub fn quality_filter_set(&self) -> HashSet<Option<String>> {
+        let groups = if self.quality_filter.is_empty() {
+            default_quality_filter_groups()
+        } else {
+            self.quality_filter.clone()
+        };
+        expand_quality_filter(&groups)
+    }
+
+    pub fn hdr_filter_set(&self) -> HashSet<String> {
+        self.effective_hdr_filter().into_iter().collect()
+    }
+
+    pub fn language_filter_set(&self) -> HashSet<Option<String>> {
+        let list = if self.language_sorting.is_empty() {
+            default_language_sorting_values()
+        } else {
+            self.language_sorting.clone()
+        };
+        list.into_iter()
+            .map(|v| v.as_str().map(str::to_string))
+            .collect()
+    }
+
+    pub fn effective_max_streams(&self) -> u32 {
+        self.max_streams.clamp(1, 100)
     }
 
     /// Combine stream groups by type using user's `stg`/`sto`/`mxs` preferences.

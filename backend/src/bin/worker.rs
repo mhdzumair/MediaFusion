@@ -8,6 +8,7 @@ use mediafusion_api::{
     jobs::{
         handlers::{
             acestream_bg::AcestreamBgScraper,
+            backfill_stream_metadata::BackfillStreamMetadata,
             background_search::BackgroundSearch,
             cleanup::Cleanup,
             discover_prewarm::DiscoverPrewarm,
@@ -179,6 +180,7 @@ async fn main() {
     reg.register(Arc::new(YoutubeBgScraper));
     reg.register(Arc::new(AcestreamBgScraper));
     reg.register(Arc::new(TelegramBgScraper));
+    reg.register(Arc::new(BackfillStreamMetadata));
     reg.register(Arc::new(ValidateTvStreams));
     reg.register(Arc::new(UpdateSeeders));
     reg.register(Arc::new(UpdateTvPosters));

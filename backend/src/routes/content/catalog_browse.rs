@@ -25,9 +25,13 @@ use sha2::Sha256;
 
 use crate::{
     cache,
-    db::{MediaType, StreamType},
-    models::user_data::{SortingOption, UserData},
-    routes::{stream::torrent_sort_key, user_library::extract_streaming_providers},
+    db::{MediaType, StreamType, TorrentType},
+    models::user_data::UserData,
+    parser::{
+        cap_streams, compare_sort_keys, filter_streams_by_preferences, torrent_sort_key,
+        FilterContext,
+    },
+    routes::user_library::extract_streaming_providers,
     state::AppState,
 };
 
@@ -1078,18 +1082,16 @@ pub async fn get_media_streams(
 
     // Extract sort preferences from profile UserData (or use defaults)
     let ud = profile_user_data.unwrap_or_default();
-    let sorting_priority: Vec<SortingOption> = ud
-        .torrent_sorting_priority
-        .iter()
-        .filter_map(|v| serde_json::from_value(v.clone()).ok())
-        .collect();
-    let language_sorting: Vec<String> = ud
-        .language_sorting
-        .iter()
-        .filter_map(|v| v.as_str().map(str::to_string))
-        .collect();
-    let selected_resolutions = ud.selected_resolutions;
-    let quality_filter = ud.quality_filter;
+    let sorting_priority = ud.sorting_priority();
+    let language_sorting = ud.language_sorting_list();
+    let selected_resolutions = ud.effective_selected_resolutions();
+    let quality_filter = if ud.quality_filter.is_empty() {
+        crate::parser::default_quality_filter_groups()
+    } else {
+        ud.quality_filter.clone()
+    };
+    let season = params.season;
+    let episode = params.episode;
 
     tracing::debug!(
         "get_media_streams: fetching streams for {catalog_type}/{media_id} season={:?} episode={:?}",
@@ -1311,15 +1313,25 @@ pub async fn get_media_streams(
             let seeders_val = r.seeders.unwrap_or(0);
 
             // Sort context: fields torrent_sort_key reads (size as numeric, resolution original case)
-            let sort_ctx = json!({
+            let mut sort_ctx = json!({
+                "_id": r.id,
+                "name": r.name,
                 "resolution": r.resolution,
                 "quality": r.quality,
                 "size": file_size_val,
+                "file_size": file_size_val,
                 "seeders": seeders_val,
                 "languages": lang_arr_vals,
+                "hdr_formats": hdr_arr,
                 "cached": is_cached,
                 "created_at": r.created_at.map(|dt| dt.to_rfc3339()),
             });
+            if r.stream_type == StreamType::Torrent {
+                if let Some(ref h) = r.info_hash {
+                    sort_ctx["info_hash"] = json!(h);
+                    sort_ctx["torrent_type"] = json!(TorrentType::Public.as_wire());
+                }
+            }
 
             // Template context for name/description rendering
             let stream_ctx = json!({
@@ -1476,7 +1488,33 @@ pub async fn get_media_streams(
         });
     }
 
-    // Sort using the same pipeline as the Stremio endpoint
+    let allow_public_usenet = state.config.is_scrap_from_public_usenet_indexers;
+    let filter_ctx = FilterContext {
+        user_data: &ud,
+        season,
+        episode,
+        primary_provider: ud.get_primary_provider(),
+        is_usenet: false,
+        allow_public_usenet,
+    };
+
+    let sort_rows: Vec<serde_json::Value> = stream_pairs.iter().map(|(a, _)| a.clone()).collect();
+    let filtered_sort = filter_streams_by_preferences(sort_rows, &filter_ctx);
+    let capped_sort = cap_streams(
+        filtered_sort,
+        ud.max_streams_per_resolution,
+        ud.effective_max_streams(),
+    );
+    let keep_ids: std::collections::HashSet<i32> = capped_sort
+        .iter()
+        .filter_map(|v| v.get("_id").and_then(|x| x.as_i64()).map(|i| i as i32))
+        .collect();
+    stream_pairs.retain(|(ctx, _)| {
+        ctx.get("_id")
+            .and_then(|x| x.as_i64())
+            .is_some_and(|id| keep_ids.contains(&(id as i32)))
+    });
+
     if !sorting_priority.is_empty() {
         stream_pairs.sort_by(|(a, _), (b, _)| {
             let ka = torrent_sort_key(
@@ -1486,6 +1524,8 @@ pub async fn get_media_streams(
                 &quality_filter,
                 &language_sorting,
                 &cached_hashes,
+                season,
+                episode,
             );
             let kb = torrent_sort_key(
                 b,
@@ -1494,23 +1534,14 @@ pub async fn get_media_streams(
                 &quality_filter,
                 &language_sorting,
                 &cached_hashes,
+                season,
+                episode,
             );
-            for (va, vb) in ka.iter().zip(kb.iter()) {
-                match va.partial_cmp(vb) {
-                    Some(std::cmp::Ordering::Equal) | None => continue,
-                    Some(ord) => return ord,
-                }
-            }
-            std::cmp::Ordering::Equal
+            compare_sort_keys(&ka, &kb)
         });
     }
 
-    const MAX_STREAMS: usize = 200;
-    let streams: Vec<serde_json::Value> = stream_pairs
-        .into_iter()
-        .take(MAX_STREAMS)
-        .map(|(_, out)| out)
-        .collect();
+    let streams: Vec<serde_json::Value> = stream_pairs.into_iter().map(|(_, out)| out).collect();
 
     Json(json!({
         "streams": streams,
