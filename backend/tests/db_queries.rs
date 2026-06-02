@@ -35,29 +35,28 @@ struct Cleanup {
     stream_ids: Vec<i32>,
 }
 
-impl Drop for Cleanup {
-    fn drop(&mut self) {
-        let pool = self.pool.clone();
-        let media_ids = self.media_ids.clone();
-        let stream_ids = self.stream_ids.clone();
-        // Run cleanup synchronously via a blocking task; ignore errors.
-        let _ = std::thread::spawn(move || {
-            tokio::runtime::Runtime::new().unwrap().block_on(async {
-                if !stream_ids.is_empty() {
-                    let _ = sqlx::query("DELETE FROM stream WHERE id = ANY($1)")
-                        .bind(&stream_ids)
-                        .execute(&pool)
-                        .await;
-                }
-                if !media_ids.is_empty() {
-                    let _ = sqlx::query("DELETE FROM media WHERE id = ANY($1)")
-                        .bind(&media_ids)
-                        .execute(&pool)
-                        .await;
-                }
-            });
-        })
-        .join();
+impl Cleanup {
+    fn new(pool: &'static sqlx::PgPool) -> Self {
+        Self {
+            pool,
+            media_ids: vec![],
+            stream_ids: vec![],
+        }
+    }
+
+    async fn finish(self) {
+        if !self.stream_ids.is_empty() {
+            let _ = sqlx::query("DELETE FROM stream WHERE id = ANY($1)")
+                .bind(&self.stream_ids)
+                .execute(self.pool)
+                .await;
+        }
+        if !self.media_ids.is_empty() {
+            let _ = sqlx::query("DELETE FROM media WHERE id = ANY($1)")
+                .bind(&self.media_ids)
+                .execute(self.pool)
+                .await;
+        }
     }
 }
 
@@ -98,26 +97,14 @@ async fn link_imdb(pool: &sqlx::PgPool, media_id: i32, imdb_id: &str) {
 ///   "meta query [tt37532356]: error occurred while decoding column 13: unexpected null"
 #[tokio::test]
 async fn get_media_meta_null_poster_and_rating_external_id() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let media_id = insert_media(pool, MediaType::Movie, "test_db_queries::no_poster_movie").await;
     let imdb_id = format!("tt_test_{media_id}");
     link_imdb(pool, media_id, &imdb_id).await;
 
-    let mut cleanup = Cleanup {
-        pool,
-        media_ids: vec![media_id],
-        stream_ids: vec![],
-    };
-
     // No media_image or media_rating rows — forces LEFT JOIN LATERAL to return NULL.
     let result = get_full_meta(pool, &imdb_id, "movie").await;
-
-    cleanup.media_ids.clear(); // handled below so we can assert first
-    sqlx::query("DELETE FROM media WHERE id = $1")
-        .bind(media_id)
-        .execute(pool)
-        .await
-        .ok();
 
     let row = result.expect("query must succeed (not panic/warn on NULL lateral)");
     assert_eq!(row.title, "test_db_queries::no_poster_movie");
@@ -133,11 +120,16 @@ async fn get_media_meta_null_poster_and_rating_external_id() {
         row.imdb_rating.is_none(),
         "imdb_rating must be None — no media_rating row"
     );
+
+    let mut cleanup = Cleanup::new(pool);
+    cleanup.media_ids.push(media_id);
+    cleanup.finish().await;
 }
 
 /// Same test via internal `mf{id}` lookup path.
 #[tokio::test]
 async fn get_media_meta_null_poster_and_rating_internal_id() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let media_id = insert_media(
         pool,
@@ -171,6 +163,7 @@ async fn get_media_meta_null_poster_and_rating_internal_id() {
 ///   "episodes for media 200645: error occurred while decoding column 5: unexpected null"
 #[tokio::test]
 async fn get_episodes_null_thumbnail_and_null_file_link() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let media_id = insert_media(pool, MediaType::Series, "test_db_queries::no_thumb_series").await;
 
@@ -242,6 +235,7 @@ async fn get_episodes_null_thumbnail_and_null_file_link() {
 ///   "fetch_stream_playback_info error: column 'ts.torrent_file' must appear in GROUP BY"
 #[tokio::test]
 async fn fetch_stream_playback_info_movie_group_by_is_complete() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
 
     let stream_id: i32 = sqlx::query_scalar::<_, i32>(
@@ -297,10 +291,11 @@ async fn fetch_stream_playback_info_movie_group_by_is_complete() {
 /// watchlist catalog results.
 #[tokio::test]
 async fn get_watchlist_items_resolves_info_hash_to_media() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let media_id = insert_media(pool, MediaType::Movie, "test_db_queries::watchlist_movie").await;
 
-    sqlx::query("UPDATE media SET total_streams = 1 WHERE id = $1")
+    sqlx::query("UPDATE media SET total_streams = 1, last_stream_added = NOW() WHERE id = $1")
         .bind(media_id)
         .execute(pool)
         .await
@@ -319,7 +314,8 @@ async fn get_watchlist_items_resolves_info_hash_to_media() {
     .await
     .expect("insert stream");
 
-    let info_hash = format!("watchlist{stream_id:0>32}");
+    // 40-char hex-style hash (matches real torrent info_hashes).
+    let info_hash = format!("aa{:038x}", stream_id);
 
     sqlx::query(
         r#"INSERT INTO torrent_stream (stream_id, info_hash, total_size, torrent_type,
@@ -354,6 +350,10 @@ async fn get_watchlist_items_resolves_info_hash_to_media() {
     )
     .await;
 
+    assert_eq!(rows.len(), 1, "expected one watchlist row for linked hash");
+    assert_eq!(rows[0].media_id, MediaId(media_id));
+    assert_eq!(rows[0].title, "test_db_queries::watchlist_movie");
+
     sqlx::query("DELETE FROM stream WHERE id = $1")
         .bind(stream_id)
         .execute(pool)
@@ -364,8 +364,4 @@ async fn get_watchlist_items_resolves_info_hash_to_media() {
         .execute(pool)
         .await
         .ok();
-
-    assert_eq!(rows.len(), 1, "expected one watchlist row for linked hash");
-    assert_eq!(rows[0].media_id, MediaId(media_id));
-    assert_eq!(rows[0].title, "test_db_queries::watchlist_movie");
 }

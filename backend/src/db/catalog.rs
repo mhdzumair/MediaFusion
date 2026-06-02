@@ -197,6 +197,7 @@ pub async fn get_watchlist_items(
         return vec![];
     };
 
+    let info_hashes_lower: Vec<String> = info_hashes.iter().map(|h| h.to_lowercase()).collect();
     let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
     let ord = order_clause(sort, sort_dir);
     let sql = format!(
@@ -237,7 +238,7 @@ pub async fn get_watchlist_items(
 
     sqlx::query_as::<_, CatalogRow>(&sql)
         .bind(mt) // $1
-        .bind(info_hashes) // $2
+        .bind(&info_hashes_lower) // $2
         .bind(&nudity_exclude_enums) // $3
         .bind(cert_excludes) // $4
         .bind(skip) // $5

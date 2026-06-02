@@ -123,6 +123,7 @@ fn resolve_series_episode_numbers_defaults() {
 
 #[tokio::test]
 async fn store_torrent_movie_uses_stream_media_link() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(pool, MediaType::Movie, "stream_store::torrent_movie").await;
@@ -152,6 +153,7 @@ async fn store_torrent_movie_uses_stream_media_link() {
 
 #[tokio::test]
 async fn store_torrent_series_with_files_links_episodes() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(
@@ -194,6 +196,7 @@ async fn store_torrent_series_with_files_links_episodes() {
 
 #[tokio::test]
 async fn store_torrent_series_files_default_episode_when_missing() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(
@@ -227,6 +230,7 @@ async fn store_torrent_series_files_default_episode_when_missing() {
 
 #[tokio::test]
 async fn store_torrent_series_pack_uses_synthetic_episode_from_opts() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(pool, MediaType::Series, "stream_store::torrent_series_pack").await;
@@ -253,6 +257,7 @@ async fn store_torrent_series_pack_uses_synthetic_episode_from_opts() {
 
 #[tokio::test]
 async fn store_torrent_is_idempotent_and_refreshes_seeders() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(pool, MediaType::Movie, "stream_store::torrent_idempotent").await;
@@ -290,6 +295,7 @@ async fn store_torrent_is_idempotent_and_refreshes_seeders() {
 
 #[tokio::test]
 async fn import_file_helpers_link_series_episode() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(pool, MediaType::Series, "stream_store::import_file_link").await;
@@ -337,6 +343,7 @@ async fn import_file_helpers_link_series_episode() {
 
 #[tokio::test]
 async fn store_usenet_inserts_and_dedupes() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(pool, MediaType::Movie, "stream_store::usenet").await;
@@ -373,6 +380,7 @@ async fn store_usenet_inserts_and_dedupes() {
 
 #[tokio::test]
 async fn store_telegram_dedupes_by_chat_and_message() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(pool, MediaType::Movie, "stream_store::telegram").await;
@@ -415,6 +423,7 @@ async fn store_telegram_dedupes_by_chat_and_message() {
 
 #[tokio::test]
 async fn store_http_dedupes_by_url_per_media() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(pool, MediaType::Movie, "stream_store::http").await;
@@ -449,6 +458,7 @@ async fn store_http_dedupes_by_url_per_media() {
 
 #[tokio::test]
 async fn store_youtube_dedupes_by_video_id() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(pool, MediaType::Movie, "stream_store::youtube").await;
@@ -483,6 +493,7 @@ async fn store_youtube_dedupes_by_video_id() {
 
 #[tokio::test]
 async fn store_acestream_inserts_and_links_media() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(pool, MediaType::Series, "stream_store::acestream").await;
@@ -516,6 +527,7 @@ async fn store_acestream_inserts_and_links_media() {
 
 #[tokio::test]
 async fn upsert_torrent_files_by_hash_enriches_existing_torrent() {
+    let _db = common::lock_db_tests().await;
     let pool = common::test_pool().await;
     let mut cleanup = Cleanup::new(pool);
     let media_id = insert_media(pool, MediaType::Movie, "stream_store::torrent_files").await;
