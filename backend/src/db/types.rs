@@ -344,6 +344,14 @@ wire_enum_screaming!(NudityStatus {
     Disable => "DISABLE",
 });
 
+/// Parse user profile nudity filter strings into Postgres enum values for SQL `ALL()` binds.
+pub fn nudity_statuses_from_filter(excludes: &[String]) -> Vec<NudityStatus> {
+    excludes
+        .iter()
+        .filter_map(|s| NudityStatus::from_wire(s))
+        .collect()
+}
+
 /// `torrent_stream.torrent_type` column.  Postgres type: `torrenttype`.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
@@ -401,6 +409,18 @@ wire_enum_screaming!(UserRole {
     Moderator => "MODERATOR",
     Admin => "ADMIN",
 });
+
+impl UserRole {
+    /// Lowercase API / JWT wire form (`user`, `paid_user`, `moderator`, `admin`).
+    pub fn as_api_wire(&self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::PaidUser => "paid_user",
+            Self::Moderator => "moderator",
+            Self::Admin => "admin",
+        }
+    }
+}
 
 /// `contributions.status` column.  Postgres type: `contributionstatus`.
 #[derive(

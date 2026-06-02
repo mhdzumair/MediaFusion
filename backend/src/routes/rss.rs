@@ -778,7 +778,7 @@ pub async fn run_rss_feed_scraper(
         String,
     );
     let row: Option<FeedRow> = sqlx::query_as(
-        "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type::text FROM rss_feed WHERE id = $1",
+        "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type FROM rss_feed WHERE id = $1",
     )
     .bind(feed_id)
     .fetch_optional(&state.pool_ro)
@@ -1549,13 +1549,13 @@ pub async fn user_scrape_single_feed(
     );
     let row: Option<FeedRow> = if let Some(uid) = user_id_filter {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type::text FROM rss_feed WHERE id::text = $1 AND user_id = $2",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type FROM rss_feed WHERE id::text = $1 AND user_id = $2",
         )
         .bind(&feed_id).bind(uid)
         .fetch_optional(&state.pool_ro).await.ok().flatten()
     } else {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type::text FROM rss_feed WHERE id::text = $1",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type FROM rss_feed WHERE id::text = $1",
         )
         .bind(&feed_id)
         .fetch_optional(&state.pool_ro).await.ok().flatten()
@@ -1631,12 +1631,12 @@ pub async fn user_run_all_scrapers(
     );
     let feeds: Vec<FeedRow> = if role == "admin" {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type::text FROM rss_feed WHERE is_active = true",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type FROM rss_feed WHERE is_active = true",
         )
         .fetch_all(&state.pool_ro).await.unwrap_or_default()
     } else {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type::text FROM rss_feed WHERE is_active = true AND user_id = $1",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type FROM rss_feed WHERE is_active = true AND user_id = $1",
         )
         .bind(user_id)
         .fetch_all(&state.pool_ro).await.unwrap_or_default()

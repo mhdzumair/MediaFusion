@@ -281,20 +281,21 @@ pub async fn get_total_metadata(
         return forbidden();
     }
 
-    let type_rows =
-        sqlx::query_as::<_, (String, i64)>("SELECT type::text, COUNT(*) FROM media GROUP BY type")
-            .fetch_all(&state.pool_ro)
-            .await
-            .unwrap_or_default();
+    let type_rows = sqlx::query_as::<_, (crate::db::MediaType, i64)>(
+        "SELECT type, COUNT(*) FROM media GROUP BY type",
+    )
+    .fetch_all(&state.pool_ro)
+    .await
+    .unwrap_or_default();
     let mut movies = 0i64;
     let mut series = 0i64;
     let mut tv = 0i64;
     for (t, c) in &type_rows {
-        match t.as_str() {
-            "MOVIE" => movies = *c,
-            "SERIES" => series = *c,
-            "TV" => tv = *c,
-            _ => {}
+        match t {
+            crate::db::MediaType::Movie => movies = *c,
+            crate::db::MediaType::Series => series = *c,
+            crate::db::MediaType::Tv => tv = *c,
+            crate::db::MediaType::Events => {}
         }
     }
 
@@ -906,8 +907,8 @@ pub async fn get_system_overview(
     let now = Utc::now();
 
     // Stream counts by type
-    let stream_rows = sqlx::query_as::<_, (String, i64)>(
-        "SELECT LOWER(stream_type::text), COUNT(*) FROM stream GROUP BY stream_type",
+    let stream_rows = sqlx::query_as::<_, (crate::db::StreamType, i64)>(
+        "SELECT stream_type, COUNT(*) FROM stream GROUP BY stream_type",
     )
     .fetch_all(&state.pool_ro)
     .await
@@ -916,7 +917,7 @@ pub async fn get_system_overview(
     let mut by_type = serde_json::Map::new();
     let mut total_streams: i64 = 0;
     for (stype, cnt) in &stream_rows {
-        by_type.insert(stype.clone(), json!(cnt));
+        by_type.insert(stype.as_wire().to_lowercase(), json!(cnt));
         total_streams += cnt;
     }
     // Ensure all known types are present
@@ -933,20 +934,21 @@ pub async fn get_system_overview(
     }
 
     // Metadata counts
-    let media_type_rows =
-        sqlx::query_as::<_, (String, i64)>("SELECT type::text, COUNT(*) FROM media GROUP BY type")
-            .fetch_all(&state.pool_ro)
-            .await
-            .unwrap_or_default();
+    let media_type_rows = sqlx::query_as::<_, (crate::db::MediaType, i64)>(
+        "SELECT type, COUNT(*) FROM media GROUP BY type",
+    )
+    .fetch_all(&state.pool_ro)
+    .await
+    .unwrap_or_default();
     let mut movies = 0i64;
     let mut series = 0i64;
     let mut tv = 0i64;
     for (t, c) in &media_type_rows {
-        match t.as_str() {
-            "MOVIE" => movies = *c,
-            "SERIES" => series = *c,
-            "TV" => tv = *c,
-            _ => {}
+        match t {
+            crate::db::MediaType::Movie => movies = *c,
+            crate::db::MediaType::Series => series = *c,
+            crate::db::MediaType::Tv => tv = *c,
+            crate::db::MediaType::Events => {}
         }
     }
 

@@ -312,7 +312,7 @@ pub async fn list_blocked_media(
     );
 
     let list_sql = format!(
-        "SELECT id, title, type::text, year, is_blocked, blocked_at, \
+        "SELECT id, title, type, year, is_blocked, blocked_at, \
                 blocked_by_user_id, block_reason \
          FROM media {where_clause} \
          ORDER BY blocked_at DESC NULLS LAST \

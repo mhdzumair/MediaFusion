@@ -64,13 +64,9 @@ fn validate_admin(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
 }
 
 async fn check_admin_role(pool: &sqlx::PgPool, user_id: i32) -> bool {
-    let role: Option<String> =
-        sqlx::query_scalar("SELECT LOWER(role::text) FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
-    role.as_deref() == Some("admin")
+    crate::db::get_user_role(pool, user_id)
+        .await
+        .is_some_and(crate::db::is_admin)
 }
 
 // ─── Query params ─────────────────────────────────────────────────────────────

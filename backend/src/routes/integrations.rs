@@ -126,7 +126,7 @@ fn db_error(context: &str, e: &sqlx::Error) -> Response {
 type IntegrationRow = (
     i32,
     i32,
-    String,
+    IntegrationType,
     bool,
     String,
     bool,
@@ -245,7 +245,7 @@ pub async fn list_integrations(
     };
 
     let rows: Vec<IntegrationRow> = match sqlx::query_as(
-        r#"SELECT id, profile_id, platform::text, is_enabled, sync_direction, scrobble_enabled,
+        r#"SELECT id, profile_id, platform, is_enabled, sync_direction, scrobble_enabled,
                   last_sync_at, last_sync_status, last_sync_error, last_sync_stats
            FROM profile_integration
            WHERE profile_id = $1"#,
@@ -262,7 +262,7 @@ pub async fn list_integrations(
     let mut map: std::collections::HashMap<String, &IntegrationRow> =
         std::collections::HashMap::new();
     for row in &rows {
-        map.insert(row.2.to_lowercase(), row);
+        map.insert(row.2.as_wire().to_string(), row);
     }
 
     let integrations: Vec<IntegrationStatus> = KNOWN_PLATFORMS

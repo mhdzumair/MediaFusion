@@ -78,8 +78,8 @@ pub async fn delete_stream(
     let stream_id_i32 = stream_id;
 
     // 2. Check stream exists and get stream_type
-    let stream_type: Option<String> =
-        match sqlx::query_scalar("SELECT stream_type::text FROM stream WHERE id = $1")
+    let stream_type: Option<crate::db::StreamType> =
+        match sqlx::query_scalar("SELECT stream_type FROM stream WHERE id = $1")
             .bind(stream_id_i32)
             .fetch_optional(&state.pool)
             .await
@@ -173,15 +173,14 @@ pub async fn delete_stream(
     }
 
     // 7. Delete type-specific row
-    let type_table = match stream_type.as_str() {
-        "torrent" => Some("torrent_stream"),
-        "http" => Some("http_stream"),
-        "youtube" => Some("youtube_stream"),
-        "usenet" => Some("usenet_stream"),
-        "telegram" => Some("telegram_stream"),
-        "external_link" => Some("external_link_stream"),
-        "acestream" => Some("acestream_stream"),
-        _ => None,
+    let type_table = match stream_type {
+        crate::db::StreamType::Torrent => Some("torrent_stream"),
+        crate::db::StreamType::Http => Some("http_stream"),
+        crate::db::StreamType::Youtube => Some("youtube_stream"),
+        crate::db::StreamType::Usenet => Some("usenet_stream"),
+        crate::db::StreamType::Telegram => Some("telegram_stream"),
+        crate::db::StreamType::ExternalLink => Some("external_link_stream"),
+        crate::db::StreamType::Acestream => Some("acestream_stream"),
     };
 
     if let Some(table) = type_table {
@@ -231,7 +230,7 @@ pub async fn delete_stream(
     // 11. Return success
     (
         StatusCode::OK,
-        Json(json!({"message": format!("{stream_type} stream deleted successfully")})),
+        Json(json!({"message": format!("{} stream deleted successfully", stream_type.as_wire().to_lowercase())})),
     )
         .into_response()
 }

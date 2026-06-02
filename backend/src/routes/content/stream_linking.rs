@@ -63,18 +63,6 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     data["sub"].as_str()?.parse().ok()
 }
 
-async fn get_user_role(pool: &sqlx::PgPool, user_id: i32) -> Option<String> {
-    sqlx::query_scalar::<_, String>("SELECT LOWER(role::text) FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None)
-}
-
-fn is_mod_or_admin(role: &str) -> bool {
-    matches!(role, "moderator" | "admin")
-}
-
 // ─── Request / Response structs ───────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -162,10 +150,8 @@ pub async fn create_stream_link(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -269,10 +255,8 @@ pub async fn create_bulk_stream_links(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -383,10 +367,8 @@ pub async fn delete_stream_link(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -437,8 +419,8 @@ pub async fn get_media_for_stream(
 
     let mut media_entries = Vec::new();
     for (link_id, media_id, file_index) in links {
-        let media_row: Option<(String, Option<i32>, String)> =
-            sqlx::query_as("SELECT title, year, type::text FROM media WHERE id = $1")
+        let media_row: Option<(String, Option<i32>, crate::db::MediaType)> =
+            sqlx::query_as("SELECT title, year, type FROM media WHERE id = $1")
                 .bind(media_id)
                 .fetch_optional(&state.pool_ro)
                 .await
@@ -460,7 +442,7 @@ pub async fn get_media_for_stream(
                 "external_id": ext_id,
                 "title": title,
                 "year": year,
-                "type": mtype.to_lowercase(),
+                "type": mtype.as_wire(),
                 "file_index": file_index,
             }));
         }
@@ -488,8 +470,8 @@ pub async fn get_streams_for_media(
 
     let mut streams = Vec::new();
     for (link_id, stream_id, file_index) in links {
-        let stream_row: Option<(Option<String>, String, Option<String>)> =
-            sqlx::query_as("SELECT name, stream_type::text, resolution FROM stream WHERE id = $1")
+        let stream_row: Option<(Option<String>, crate::db::StreamType, Option<String>)> =
+            sqlx::query_as("SELECT name, stream_type, resolution FROM stream WHERE id = $1")
                 .bind(stream_id)
                 .fetch_optional(&state.pool_ro)
                 .await
@@ -507,7 +489,7 @@ pub async fn get_streams_for_media(
                 "link_id": link_id,
                 "stream_id": stream_id,
                 "name": name,
-                "type": stype.to_lowercase(),
+                "type": stype.as_wire().to_lowercase(),
                 "size": size,
                 "resolution": resolution,
                 "file_index": file_index,
@@ -541,10 +523,8 @@ pub async fn search_unlinked_streams(
         }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool_ro, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -565,8 +545,8 @@ pub async fn search_unlinked_streams(
 
     let mut results = Vec::new();
     for (stream_id,) in stream_ids {
-        let stream_row: Option<(Option<String>, String, Option<String>)> =
-            sqlx::query_as("SELECT name, stream_type::text, resolution FROM stream WHERE id = $1")
+        let stream_row: Option<(Option<String>, crate::db::StreamType, Option<String>)> =
+            sqlx::query_as("SELECT name, stream_type, resolution FROM stream WHERE id = $1")
                 .bind(stream_id)
                 .fetch_optional(&state.pool_ro)
                 .await
@@ -597,7 +577,7 @@ pub async fn search_unlinked_streams(
             results.push(json!({
                 "stream_id": stream_id,
                 "name": name,
-                "type": stype.to_lowercase(),
+                "type": stype.as_wire().to_lowercase(),
                 "size": size,
                 "link_count": link_count,
                 "links": links_json,
@@ -625,10 +605,8 @@ pub async fn update_file_links(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -651,14 +629,14 @@ pub async fn update_file_links(
             .into_response();
     }
 
-    let media_type: Option<String> =
-        sqlx::query_scalar("SELECT type::text FROM media WHERE id = $1")
+    let media_type: Option<crate::db::MediaType> =
+        sqlx::query_scalar("SELECT type FROM media WHERE id = $1")
             .bind(body.media_id)
             .fetch_optional(&state.pool)
             .await
             .unwrap_or(None);
 
-    match media_type.as_deref() {
+    match media_type {
         None => {
             return (
                 StatusCode::NOT_FOUND,
@@ -666,10 +644,10 @@ pub async fn update_file_links(
             )
                 .into_response()
         }
-        Some(t) if t.to_uppercase() != "SERIES" => {
+        Some(crate::db::MediaType::Series) => {}
+        Some(_) => {
             return (StatusCode::BAD_REQUEST, Json(json!({"detail": "File annotation updates are only supported for series media"}))).into_response();
         }
-        _ => {}
     }
 
     let mut updated = 0i64;
@@ -939,10 +917,8 @@ pub async fn get_streams_needing_annotation(
         }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool_ro, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -971,7 +947,7 @@ pub async fn get_streams_needing_annotation(
         i32,
         String,
         Option<i32>,
-        String,
+        crate::db::MediaType,
         Option<String>,
         i64,
     )> = sqlx::query_as(
@@ -986,7 +962,7 @@ pub async fn get_streams_needing_annotation(
                 m.id,
                 m.title,
                 m.year,
-                m.type::text,
+                m.type,
                 img.url,
                 COUNT(*) OVER() AS total_count
             FROM stream_media_link sml
@@ -1072,7 +1048,7 @@ pub async fn get_streams_needing_annotation(
                     "media_id": media_id,
                     "media_title": media_title,
                     "media_year": media_year,
-                    "media_type": media_type.to_lowercase(),
+                    "media_type": media_type.as_wire(),
                     "media_external_id": null,
                     "media_poster": media_poster,
                 })
@@ -1108,10 +1084,8 @@ pub async fn dismiss_annotation_request(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),

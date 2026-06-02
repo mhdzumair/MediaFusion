@@ -69,18 +69,6 @@ fn validate_token_optional(headers: &HeaderMap, secret_key: &str) -> Option<i32>
     validate_token(headers, secret_key)
 }
 
-async fn get_user_role(pool: &sqlx::PgPool, user_id: i32) -> Option<String> {
-    sqlx::query_scalar::<_, String>("SELECT LOWER(role::text) FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None)
-}
-
-fn is_mod_or_admin(role: &str) -> bool {
-    matches!(role, "moderator" | "admin")
-}
-
 // ─── Request / Response structs ───────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -244,8 +232,8 @@ async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_j
         .unwrap_or(None);
 
     // Source media via stream_media_link
-    let source_media: Option<(i32, String, String, Option<i32>)> = sqlx::query_as(
-        r#"SELECT m.id, m.title, m.type::text, m.year
+    let source_media: Option<(i32, String, crate::db::MediaType, Option<i32>)> = sqlx::query_as(
+        r#"SELECT m.id, m.title, m.type, m.year
            FROM media m
            JOIN stream_media_link sml ON sml.media_id = m.id
            WHERE sml.stream_id = $1
@@ -258,7 +246,7 @@ async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_j
     .unwrap_or(None);
 
     let (src_media_id, src_media_title, src_media_type, src_media_year) = source_media
-        .map(|(id, t, mt, y)| (Some(id), Some(t), Some(mt.to_lowercase()), y))
+        .map(|(id, t, mt, y)| (Some(id), Some(t), Some(mt.as_wire().to_string()), y))
         .unwrap_or((None, None, None, None));
 
     let user_info: Option<(String, i32)> =
@@ -343,9 +331,7 @@ pub async fn create_stream_suggestion(
     }
 
     // Check auto-approval eligibility
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
     let user_points: i32 =
         sqlx::query_scalar("SELECT COALESCE(contribution_points, 0) FROM users WHERE id = $1")
             .bind(user_id)
@@ -370,7 +356,7 @@ pub async fn create_stream_suggestion(
     .unwrap_or(None)
     .unwrap_or(true);
 
-    let can_auto_approve = is_mod_or_admin(&role) || (allow_auto && user_points >= auto_threshold);
+    let can_auto_approve = role.is_some_and(crate::db::is_mod_or_admin) || (allow_auto && user_points >= auto_threshold);
 
     let initial_status = if can_auto_approve {
         "auto_approved"
@@ -643,10 +629,8 @@ pub async fn get_stream_suggestion_stats(
         }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id)
-        .await
-        .unwrap_or_default();
-    let is_moderator = is_mod_or_admin(&role);
+    let role = crate::db::get_user_role(&state.pool_ro, user_id).await;
+    let is_moderator = role.is_some_and(crate::db::is_mod_or_admin);
 
     let (total, pending, approved, auto_approved, rejected, approved_today, rejected_today) =
         if is_moderator {
@@ -751,10 +735,8 @@ pub async fn list_pending_stream_suggestions(
         }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool_ro, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -839,10 +821,8 @@ pub async fn bulk_review_stream_suggestions(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -958,10 +938,8 @@ pub async fn get_stream_suggestion(
         Some(r) => r,
     };
 
-    let role = get_user_role(&state.pool_ro, user_id)
-        .await
-        .unwrap_or_default();
-    if row.user_id != user_id && !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool_ro, user_id).await;
+    if row.user_id != user_id && !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Access denied"})),
@@ -1046,10 +1024,8 @@ pub async fn review_stream_suggestion(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -1155,10 +1131,8 @@ pub async fn triage_stream_suggestion(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -1478,10 +1452,8 @@ pub async fn update_stream_broken_status(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),

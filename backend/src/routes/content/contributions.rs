@@ -80,22 +80,6 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     data["sub"].as_str()?.parse().ok()
 }
 
-async fn get_user_role(pool: &sqlx::PgPool, user_id: i32) -> Option<String> {
-    sqlx::query_scalar::<_, String>("SELECT LOWER(role::text) FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None)
-}
-
-fn is_mod_or_admin(role: &str) -> bool {
-    matches!(role, "moderator" | "admin")
-}
-
-fn is_admin(role: &str) -> bool {
-    role == "admin"
-}
-
 // ─── Request / Response structs ───────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -200,7 +184,7 @@ async fn fetch_contrib_row(pool: &sqlx::PgPool, id: &str) -> Option<ContribRow> 
         String,
         Option<String>,
         serde_json::Value,
-        String,
+        crate::db::ContributionStatus,
         Option<String>,
         Option<DateTime<Utc>>,
         Option<String>,
@@ -212,7 +196,7 @@ async fn fetch_contrib_row(pool: &sqlx::PgPool, id: &str) -> Option<ContribRow> 
         Option<DateTime<Utc>>,
     );
     let row = sqlx::query_as::<_, RowTuple>(
-        r#"SELECT id, user_id, contribution_type, target_id, data::jsonb, status::text,
+        r#"SELECT id, user_id, contribution_type, target_id, data::jsonb, status,
                       reviewed_by, reviewed_at, review_notes,
                       admin_review_requested, admin_review_requested_by,
                       admin_review_requested_at, admin_review_reason,
@@ -231,7 +215,7 @@ async fn fetch_contrib_row(pool: &sqlx::PgPool, id: &str) -> Option<ContribRow> 
         contribution_type: row.2,
         target_id: row.3,
         data: row.4,
-        status: row.5.to_lowercase(),
+        status: row.5.as_wire().to_lowercase(),
         reviewed_by: row.6,
         reviewed_at: row.7,
         review_notes: row.8,
@@ -311,10 +295,8 @@ pub async fn list_contributions(
         }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id)
-        .await
-        .unwrap_or_default();
-    let is_privileged = is_mod_or_admin(&role);
+    let role = crate::db::get_user_role(&state.pool_ro, user_id).await;
+    let is_privileged = role.is_some_and(crate::db::is_mod_or_admin);
     let show_all = is_privileged && !params.me_only;
 
     let page = params.page.max(1);
@@ -323,7 +305,7 @@ pub async fn list_contributions(
 
     let mut count_sql = String::from("SELECT COUNT(*) FROM contributions WHERE 1=1");
     let mut fetch_sql = String::from(
-        r#"SELECT id, user_id, contribution_type, target_id, data::jsonb, status::text,
+        r#"SELECT id, user_id, contribution_type, target_id, data::jsonb, status,
                   reviewed_by, reviewed_at, review_notes,
                   admin_review_requested, admin_review_requested_by,
                   admin_review_requested_at, admin_review_reason,
@@ -428,7 +410,7 @@ pub async fn list_contributions(
         String,
         Option<String>,
         serde_json::Value,
-        String,
+        crate::db::ContributionStatus,
         Option<String>,
         Option<DateTime<Utc>>,
         Option<String>,
@@ -462,7 +444,7 @@ pub async fn list_contributions(
             contribution_type: r.2.clone(),
             target_id: r.3.clone(),
             data: r.4.clone(),
-            status: r.5.clone(),
+            status: r.5.as_wire().to_lowercase(),
             reviewed_by: r.6.clone(),
             reviewed_at: r.7,
             review_notes: r.8.clone(),
@@ -616,10 +598,8 @@ pub async fn list_contribution_contributors(
         }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool_ro, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -720,10 +700,8 @@ pub async fn list_pending_contributions(
         }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool_ro, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -737,7 +715,7 @@ pub async fn list_pending_contributions(
 
     let mut count_sql = String::from("SELECT COUNT(*) FROM contributions WHERE status = 'PENDING'");
     let mut fetch_sql = String::from(
-        r#"SELECT id, user_id, contribution_type, target_id, data::jsonb, status::text,
+        r#"SELECT id, user_id, contribution_type, target_id, data::jsonb, status,
                   reviewed_by, reviewed_at, review_notes,
                   admin_review_requested, admin_review_requested_by,
                   admin_review_requested_at, admin_review_reason,
@@ -764,7 +742,7 @@ pub async fn list_pending_contributions(
         String,
         Option<String>,
         serde_json::Value,
-        String,
+        crate::db::ContributionStatus,
         Option<String>,
         Option<DateTime<Utc>>,
         Option<String>,
@@ -790,7 +768,7 @@ pub async fn list_pending_contributions(
             contribution_type: r.2.clone(),
             target_id: r.3.clone(),
             data: r.4.clone(),
-            status: r.5.clone(),
+            status: r.5.as_wire().to_lowercase(),
             reviewed_by: r.6.clone(),
             reviewed_at: r.7,
             review_notes: r.8.clone(),
@@ -831,10 +809,8 @@ pub async fn get_all_contribution_stats(
         }
     };
 
-    let role = get_user_role(&state.pool_ro, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool_ro, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -943,10 +919,8 @@ pub async fn get_contribution(
         Some(r) => r,
     };
 
-    let role = get_user_role(&state.pool_ro, user_id)
-        .await
-        .unwrap_or_default();
-    if row.user_id != Some(user_id) && !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool_ro, user_id).await;
+    if row.user_id != Some(user_id) && !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Not authorized"})),
@@ -974,10 +948,8 @@ pub async fn create_contribution(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    let is_privileged = is_mod_or_admin(&role);
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    let is_privileged = role.is_some_and(crate::db::is_mod_or_admin);
     let is_anonymous = body
         .data
         .get("is_anonymous")
@@ -1082,13 +1054,11 @@ pub async fn delete_contribution(
         Some(r) => r,
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
     let is_owner = row.user_id == Some(user_id);
     let is_pending = row.status == "pending";
 
-    if !(is_admin(&role) || is_owner && is_pending) {
+    if !(role.is_some_and(crate::db::is_admin) || is_owner && is_pending) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Cannot delete this contribution. Only pending contributions can be deleted by their owner."})),
@@ -1126,10 +1096,8 @@ pub async fn review_contribution(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -1279,10 +1247,8 @@ pub async fn flag_contribution_for_admin_review(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -1520,10 +1486,8 @@ pub async fn reject_approved_contribution(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),
@@ -1654,10 +1618,8 @@ pub async fn bulk_review_contributions(
         }
     };
 
-    let role = get_user_role(&state.pool, user_id)
-        .await
-        .unwrap_or_default();
-    if !is_mod_or_admin(&role) {
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
+    if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"detail": "Moderator role required"})),

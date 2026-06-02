@@ -102,8 +102,8 @@ pub fn pending_import_message(import_kind: &str) -> String {
 }
 
 pub async fn fetch_user_info(pool: &sqlx::PgPool, user_id: i64) -> Option<UserInfo> {
-    let row: Option<(String, bool, String, bool, bool)> = sqlx::query_as(
-        "SELECT COALESCE(username, 'user'), uploads_restricted, LOWER(role::text), contribute_anonymously, is_active FROM users WHERE id = $1",
+    let row: Option<(String, bool, crate::db::UserRole, bool, bool)> = sqlx::query_as(
+        "SELECT COALESCE(username, 'user'), uploads_restricted, role, contribute_anonymously, is_active FROM users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(pool)
@@ -114,7 +114,7 @@ pub async fn fetch_user_info(pool: &sqlx::PgPool, user_id: i64) -> Option<UserIn
         |(username, uploads_restricted, role, contribute_anonymously, is_active)| UserInfo {
             username,
             uploads_restricted,
-            role,
+            role: role.as_api_wire().to_string(),
             contribute_anonymously,
             is_active,
         },
@@ -446,8 +446,8 @@ pub async fn stream_media_attachment_details(
     stream_id: i32,
     max_items: usize,
 ) -> serde_json::Value {
-    let rows: Vec<(i32, String, Option<i32>, String)> = sqlx::query_as(
-        r#"SELECT m.id, m.title, m.year, LOWER(m.type::text)
+    let rows: Vec<(i32, String, Option<i32>, crate::db::MediaType)> = sqlx::query_as(
+        r#"SELECT m.id, m.title, m.year, m.type
            FROM stream_media_link sml
            JOIN media m ON m.id = sml.media_id
            WHERE sml.stream_id = $1
@@ -485,7 +485,7 @@ pub async fn stream_media_attachment_details(
             "external_id": external_id.unwrap_or_else(|| format!("mf:{media_id}")),
             "title": title,
             "year": year,
-            "type": media_type,
+            "type": media_type.as_wire(),
         }));
     }
 

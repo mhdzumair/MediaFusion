@@ -115,13 +115,9 @@ fn default_page_size() -> i64 {
 
 /// Check if a user is a moderator or admin (role stored as TEXT in DB).
 async fn is_moderator(pool: &sqlx::PgPool, user_id: i32) -> bool {
-    let role: Option<String> =
-        sqlx::query_scalar("SELECT LOWER(role::text) FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
-    matches!(role.as_deref(), Some("moderator") | Some("admin"))
+    crate::db::get_user_role(pool, user_id)
+        .await
+        .is_some_and(crate::db::is_mod_or_admin)
 }
 
 async fn get_username(pool: &sqlx::PgPool, user_id: i32) -> Option<String> {
@@ -179,15 +175,15 @@ async fn build_suggestion_json(
     };
 
     // Media context
-    let media_info: Option<(String, String, Option<i32>)> =
-        sqlx::query_as("SELECT title, type::text, year FROM media WHERE id = $1")
+    let media_info: Option<(String, crate::db::MediaType, Option<i32>)> =
+        sqlx::query_as("SELECT title, type, year FROM media WHERE id = $1")
             .bind(media_id)
             .fetch_optional(pool)
             .await
             .unwrap_or(None);
 
     let (media_title, media_type, media_year) = media_info
-        .map(|(t, mt, y)| (Some(t), Some(mt), y))
+        .map(|(t, mt, y)| (Some(t), Some(mt.as_wire().to_string()), y))
         .unwrap_or((None, None, None));
 
     // User contribution info

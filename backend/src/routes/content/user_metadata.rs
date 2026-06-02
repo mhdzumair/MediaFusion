@@ -726,7 +726,7 @@ pub async fn search_all_metadata(
 
     let mut results = Vec::new();
     for id in &ids {
-        let row = sqlx::query_as::<_, (String, Option<i32>, String, bool, Option<i32>)>("SELECT title, year, type::text, is_user_created, created_by_user_id FROM media WHERE id = $1")
+        let row = sqlx::query_as::<_, (String, Option<i32>, MediaType, bool, Option<i32>)>("SELECT title, year, type, is_user_created, created_by_user_id FROM media WHERE id = $1")
                 .bind(id)
                 .fetch_optional(&state.pool_ro)
                 .await
@@ -769,7 +769,7 @@ pub async fn search_all_metadata(
                 "external_ids": serde_json::Value::Object(ext_map),
                 "title": title,
                 "year": year,
-                "type": mtype.to_lowercase(),
+                "type": mtype.as_wire(),
                 "poster": poster,
                 "is_user_created": is_user,
                 "is_own": creator_id == Some(user_id as i32),
@@ -1068,8 +1068,8 @@ pub async fn add_season_to_series(
         }
     };
 
-    let row = sqlx::query_as::<_, (String, Option<i32>)>(
-        "SELECT type::text, created_by_user_id FROM media WHERE id = $1",
+    let row = sqlx::query_as::<_, (MediaType, Option<i32>)>(
+        "SELECT type, created_by_user_id FROM media WHERE id = $1",
     )
     .bind(media_id)
     .fetch_optional(&state.pool)
@@ -1088,7 +1088,7 @@ pub async fn add_season_to_series(
         Some(r) => r,
     };
 
-    if mtype.to_uppercase() != "SERIES" {
+    if mtype != MediaType::Series {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"detail": "Can only add seasons to series"})),
@@ -1219,8 +1219,8 @@ pub async fn add_episodes_to_series(
         }
     };
 
-    let row = sqlx::query_as::<_, (String, Option<i32>)>(
-        "SELECT type::text, created_by_user_id FROM media WHERE id = $1",
+    let row = sqlx::query_as::<_, (MediaType, Option<i32>)>(
+        "SELECT type, created_by_user_id FROM media WHERE id = $1",
     )
     .bind(media_id)
     .fetch_optional(&state.pool)
@@ -1239,7 +1239,7 @@ pub async fn add_episodes_to_series(
         Some(r) => r,
     };
 
-    if mtype.to_uppercase() != "SERIES" {
+    if mtype != MediaType::Series {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"detail": "Can only add episodes to series"})),

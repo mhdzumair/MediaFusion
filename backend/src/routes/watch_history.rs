@@ -142,8 +142,8 @@ struct WatchRow {
     duration: Option<i32>,
     progress: i32,
     watched_at: DateTime<Utc>,
-    action: Option<String>,
-    source: Option<String>,
+    action: Option<WatchAction>,
+    source: Option<HistorySource>,
     stream_info: Option<serde_json::Value>,
 }
 
@@ -217,8 +217,14 @@ fn build_watch_response(row: &WatchRow, ext: &serde_json::Value) -> serde_json::
         "progress": row.progress,
         "watched_at": row.watched_at.to_rfc3339(),
         "poster": format!("/poster/{}/{}.jpg", row.media_type, poster_id),
-        "action": row.action.as_deref().unwrap_or("WATCHED"),
-        "source": row.source.as_deref().unwrap_or("mediafusion"),
+        "action": row
+            .action
+            .map(|a| a.as_wire())
+            .unwrap_or("WATCHED"),
+        "source": row
+            .source
+            .map(|s| s.as_wire().to_lowercase())
+            .unwrap_or_else(|| "mediafusion".to_string()),
         "stream_info": row.stream_info,
     })
 }
@@ -249,8 +255,14 @@ async fn row_to_response(pool: &sqlx::PgPool, row: &WatchRow) -> serde_json::Val
         "progress": row.progress,
         "watched_at": row.watched_at.to_rfc3339(),
         "poster": format!("/poster/{}/{}.jpg", row.media_type, poster_id),
-        "action": row.action.as_deref().unwrap_or("WATCHED"),
-        "source": row.source.as_deref().unwrap_or("mediafusion"),
+        "action": row
+            .action
+            .map(|a| a.as_wire())
+            .unwrap_or("WATCHED"),
+        "source": row
+            .source
+            .map(|s| s.as_wire().to_lowercase())
+            .unwrap_or_else(|| "mediafusion".to_string()),
         "stream_info": row.stream_info,
     })
 }
@@ -274,13 +286,13 @@ async fn fetch_watch_row(
         Option<i32>,
         i32,
         DateTime<Utc>,
-        Option<String>,
-        Option<String>,
+        Option<WatchAction>,
+        Option<HistorySource>,
         Option<serde_json::Value>,
     )> = sqlx::query_as(
         r#"SELECT id, user_id, profile_id, media_id, title, media_type,
                       season, episode, duration, progress, watched_at,
-                      action::text, source::text, stream_info
+                      action, source, stream_info
                FROM watch_history
                WHERE id = $1 AND user_id = $2"#,
     )
@@ -339,8 +351,8 @@ fn map_watch_row(
         Option<i32>,
         i32,
         DateTime<Utc>,
-        Option<String>,
-        Option<String>,
+        Option<WatchAction>,
+        Option<HistorySource>,
         Option<serde_json::Value>,
     ),
 ) -> WatchRow {
@@ -438,14 +450,14 @@ pub async fn list_watch_history(
         Option<i32>,
         i32,
         DateTime<Utc>,
-        Option<String>,
-        Option<String>,
+        Option<WatchAction>,
+        Option<HistorySource>,
         Option<serde_json::Value>,
     )> = {
         let mut sql = String::from(
             r#"SELECT id, user_id, profile_id, media_id, title, media_type,
                       season, episode, duration, progress, watched_at,
-                      action::text, source::text, stream_info
+                      action, source, stream_info
                FROM watch_history WHERE user_id = $1"#,
         );
         let mut idx = 2i32;
@@ -479,8 +491,8 @@ pub async fn list_watch_history(
                 Option<i32>,
                 i32,
                 DateTime<Utc>,
-                Option<String>,
-                Option<String>,
+                Option<WatchAction>,
+                Option<HistorySource>,
                 Option<serde_json::Value>,
             ),
         >(&sql)
@@ -551,7 +563,7 @@ pub async fn continue_watching(
         format!(
             r#"SELECT id, user_id, profile_id, media_id, title, media_type,
                       season, episode, duration, progress, watched_at,
-                      action::text, source::text, stream_info
+                      action, source, stream_info
                FROM watch_history
                WHERE user_id = $1 AND profile_id = $2 AND progress > 0
                ORDER BY watched_at DESC
@@ -562,7 +574,7 @@ pub async fn continue_watching(
         format!(
             r#"SELECT id, user_id, profile_id, media_id, title, media_type,
                       season, episode, duration, progress, watched_at,
-                      action::text, source::text, stream_info
+                      action, source, stream_info
                FROM watch_history
                WHERE user_id = $1 AND progress > 0
                ORDER BY watched_at DESC
@@ -583,8 +595,8 @@ pub async fn continue_watching(
         Option<i32>,
         i32,
         DateTime<Utc>,
-        Option<String>,
-        Option<String>,
+        Option<WatchAction>,
+        Option<HistorySource>,
         Option<serde_json::Value>,
     )> = if let Some(pid) = params.profile_id {
         match sqlx::query_as(&sql)
@@ -744,8 +756,8 @@ pub async fn create_watch_history(
         Option<i32>,
         i32,
         DateTime<Utc>,
-        Option<String>,
-        Option<String>,
+        Option<WatchAction>,
+        Option<HistorySource>,
         Option<serde_json::Value>,
     ) = if let Some(eid) = existing_id {
         match sqlx::query_as(
@@ -754,7 +766,7 @@ pub async fn create_watch_history(
                WHERE id = $4
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
-                         action::text, source::text, stream_info"#,
+                         action, source, stream_info"#,
         )
         .bind(body.progress)
         .bind(body.duration)
@@ -777,7 +789,7 @@ pub async fn create_watch_history(
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), $10, $11)
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
-                         action::text, source::text, stream_info"#,
+                         action, source, stream_info"#,
         )
         .bind(user_id as i32)
         .bind(body.profile_id)
@@ -837,8 +849,8 @@ pub async fn update_progress(
         Option<i32>,
         i32,
         DateTime<Utc>,
-        Option<String>,
-        Option<String>,
+        Option<WatchAction>,
+        Option<HistorySource>,
         Option<serde_json::Value>,
     )> = match sqlx::query_as(
         r#"UPDATE watch_history
@@ -846,7 +858,7 @@ pub async fn update_progress(
                WHERE id = $3 AND user_id = $4
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
-                         action::text, source::text, stream_info"#,
+                         action, source, stream_info"#,
     )
     .bind(body.progress as i32)
     .bind(body.duration.map(|d| d as i32))
@@ -1114,8 +1126,8 @@ pub async fn track_action(
         Option<i32>,
         i32,
         DateTime<Utc>,
-        Option<String>,
-        Option<String>,
+        Option<WatchAction>,
+        Option<HistorySource>,
         Option<serde_json::Value>,
     ) = if let Some(eid) = existing_id {
         match sqlx::query_as(
@@ -1124,7 +1136,7 @@ pub async fn track_action(
                WHERE id = $4
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
-                         action::text, source::text, stream_info"#,
+                         action, source, stream_info"#,
         )
         .bind(action)
         .bind(&body.stream_info)
@@ -1147,7 +1159,7 @@ pub async fn track_action(
                VALUES ($1, $2, $3, $4, $5, $6, $7, 0, NOW(), $8, $9, $10)
                RETURNING id, user_id, profile_id, media_id, title, media_type,
                          season, episode, duration, progress, watched_at,
-                         action::text, source::text, stream_info"#,
+                         action, source, stream_info"#,
         )
         .bind(user_id as i32)
         .bind(profile_id)

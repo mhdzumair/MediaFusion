@@ -375,10 +375,10 @@ pub async fn moderator_list_metadata(
     );
 
     let list_sql = format!(
-        "SELECT m.id, m.type::text, m.title, m.year, m.description, m.runtime_minutes, \
+        "SELECT m.id, m.type, m.title, m.year, m.description, m.runtime_minutes, \
                 m.is_user_created, m.is_blocked, m.blocked_at, m.block_reason, m.total_streams, \
                 m.created_at, m.updated_at, m.last_stream_added, m.is_add_title_to_poster, \
-                m.nudity_status::text \
+                m.nudity_status \
          FROM media m {where_clause} \
          ORDER BY m.created_at DESC \
          LIMIT {per_page} OFFSET {offset}"
@@ -464,10 +464,10 @@ pub async fn moderator_get_metadata(
     );
 
     let row: Option<MediaRow> = sqlx::query_as(
-        "SELECT id, type::text, title, year, description, runtime_minutes, \
+        "SELECT id, type, title, year, description, runtime_minutes, \
                 is_user_created, is_blocked, blocked_at, block_reason, total_streams, \
                 created_at, updated_at, last_stream_added, is_add_title_to_poster, \
-                nudity_status::text \
+                nudity_status \
          FROM media WHERE id = $1",
     )
     .bind(media_id)
@@ -609,7 +609,7 @@ pub async fn moderator_fetch_external_metadata(
     }
 
     // Check media exists
-    let row: Option<(String,)> = sqlx::query_as("SELECT type::text FROM media WHERE id = $1")
+    let row: Option<(String,)> = sqlx::query_as("SELECT type FROM media WHERE id = $1")
         .bind(media_id)
         .fetch_optional(&state.pool_ro)
         .await
@@ -696,7 +696,7 @@ pub async fn moderator_apply_external_metadata(
     }
 
     // Check media exists
-    let row: Option<(String,)> = sqlx::query_as("SELECT type::text FROM media WHERE id = $1")
+    let row: Option<(String,)> = sqlx::query_as("SELECT type FROM media WHERE id = $1")
         .bind(media_id)
         .fetch_optional(&state.pool_ro)
         .await
@@ -923,10 +923,10 @@ pub async fn moderator_migrate_metadata_id(
     );
 
     let row: Option<MediaRow> = sqlx::query_as(
-        "SELECT id, type::text, title, year, description, runtime_minutes, \
+        "SELECT id, type, title, year, description, runtime_minutes, \
                 is_user_created, is_blocked, blocked_at, block_reason, total_streams, \
                 created_at, updated_at, last_stream_added, is_add_title_to_poster, \
-                nudity_status::text \
+                nudity_status \
          FROM media WHERE id = $1",
     )
     .bind(media_id)

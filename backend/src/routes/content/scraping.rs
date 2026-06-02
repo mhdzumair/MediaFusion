@@ -271,13 +271,9 @@ pub async fn get_scrape_status_by_media(
     let meta_id = meta_id.unwrap_or_else(|| format!("mf:{media_id}"));
 
     // ── User role → is_moderator ───────────────────────────────────────────────
-    let role: Option<String> =
-        sqlx::query_scalar::<_, String>("SELECT role::text FROM users WHERE id = $1")
-            .bind(user_id as i32)
-            .fetch_optional(&state.pool_ro)
-            .await
-            .unwrap_or(None);
-    let is_moderator = matches!(role.as_deref(), Some("MODERATOR") | Some("ADMIN"));
+    let is_moderator = crate::db::get_user_role(&state.pool_ro, user_id as i32)
+        .await
+        .is_some_and(crate::db::is_mod_or_admin);
 
     // ── User profile → has_debrid + streaming services ─────────────────────────
     let profile_row: Option<(Option<Value>, Option<String>)> =
@@ -487,13 +483,9 @@ pub async fn trigger_scrape_by_media(
     let media_type = req.media_type.as_str();
 
     // ── User role ─────────────────────────────────────────────────────────────
-    let role: Option<String> =
-        sqlx::query_scalar::<_, String>("SELECT role::text FROM users WHERE id = $1")
-            .bind(user_id as i32)
-            .fetch_optional(&state.pool_ro)
-            .await
-            .unwrap_or(None);
-    let is_moderator = matches!(role.as_deref(), Some("MODERATOR") | Some("ADMIN"));
+    let is_moderator = crate::db::get_user_role(&state.pool_ro, user_id as i32)
+        .await
+        .is_some_and(crate::db::is_mod_or_admin);
 
     // ── External IDs → imdb_id + meta_id ─────────────────────────────────────
     let ext_rows: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(

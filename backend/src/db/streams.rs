@@ -41,7 +41,7 @@ pub async fn fetch_streams_bulk(
                             'source',     st.source,
                             'seeders',    ts.seeders,
                             'size',       ts.total_size,
-                            'torrent_type', ts.torrent_type::text,
+                            'torrent_type', ts.torrent_type,
                             'file_index', sf.file_index,
                             'filename',   sf.filename,
                             'is_public',  st.is_public,
@@ -90,7 +90,7 @@ pub async fn fetch_streams_bulk(
                             'source',     st.source,
                             'seeders',    ts.seeders,
                             'size',       ts.total_size,
-                            'torrent_type', ts.torrent_type::text,
+                            'torrent_type', ts.torrent_type,
                             'is_public',  st.is_public,
                             'created_at', st.created_at,
                             'languages',  COALESCE((

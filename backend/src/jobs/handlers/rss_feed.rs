@@ -26,7 +26,7 @@ struct RssFeedRow {
 async fn fetch_active_feeds(pool: &sqlx::PgPool) -> Result<Vec<RssFeedRow>, JobError> {
     let rows = sqlx::query(
         r#"
-        SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type::text
+        SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type
         FROM rss_feed WHERE is_active = true
         "#,
     )

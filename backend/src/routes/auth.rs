@@ -33,7 +33,7 @@ use sha2::Sha256;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::state::AppState;
+use crate::{db::UserRole, state::AppState};
 
 // Token expiry
 const ACCESS_TOKEN_EXPIRE_SECS: i64 = 60 * 60 * 24; // 24h
@@ -282,7 +282,7 @@ async fn fetch_user_by_email(pool: &PgPool, email: &str) -> Option<UserRow> {
             String,
             Option<String>,
             Option<String>,
-            String,
+            UserRole,
             bool,
             bool,
             DateTime<Utc>,
@@ -293,7 +293,7 @@ async fn fetch_user_by_email(pool: &PgPool, email: &str) -> Option<UserRow> {
             bool,
         ),
     >(
-        r#"SELECT id, uuid, email, username, password_hash, role::text, is_verified, is_active,
+        r#"SELECT id, uuid, email, username, password_hash, role, is_verified, is_active,
                   created_at, last_login,
                   contribution_points, contribution_level,
                   contribute_anonymously, uploads_restricted
@@ -320,7 +320,7 @@ async fn fetch_user_by_id(pool: &PgPool, id: i32) -> Option<UserRow> {
             String,
             Option<String>,
             Option<String>,
-            String,
+            UserRole,
             bool,
             bool,
             DateTime<Utc>,
@@ -331,7 +331,7 @@ async fn fetch_user_by_id(pool: &PgPool, id: i32) -> Option<UserRow> {
             bool,
         ),
     >(
-        r#"SELECT id, uuid, email, username, password_hash, role::text, is_verified, is_active,
+        r#"SELECT id, uuid, email, username, password_hash, role, is_verified, is_active,
                   created_at, last_login,
                   contribution_points, contribution_level,
                   contribute_anonymously, uploads_restricted
@@ -353,7 +353,7 @@ fn row_to_user(
         String,
         Option<String>,
         Option<String>,
-        String,
+        UserRole,
         bool,
         bool,
         DateTime<Utc>,
@@ -370,7 +370,7 @@ fn row_to_user(
         email: r.2,
         username: r.3,
         password_hash: r.4,
-        role: r.5.to_lowercase(),
+        role: r.5.as_api_wire().to_string(),
         is_verified: r.6,
         is_active: r.7,
         created_at: r.8,

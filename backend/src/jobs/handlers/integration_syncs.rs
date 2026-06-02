@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     crypto::profile::{decrypt_secrets, encrypt_secrets},
-    db::{HistorySource, WatchAction},
+    db::{HistorySource, IntegrationType, WatchAction},
     jobs::{
         error::JobError,
         handler::{JobCtx, JobHandler},
@@ -42,7 +42,7 @@ struct IntegrationRow {
     id: i32,
     profile_id: i32,
     user_id: i32,
-    platform: String,
+    platform: IntegrationType,
     encrypted_credentials: Option<String>,
     sync_direction: String,
     last_sync_at: Option<DateTime<Utc>>,
@@ -165,7 +165,7 @@ async fn fetch_integrations(
 ) -> Result<Vec<IntegrationRow>, sqlx::Error> {
     let base = r#"
         SELECT pi.id, pi.profile_id, up.user_id,
-               pi.platform::text AS platform,
+               pi.platform,
                pi.encrypted_credentials,
                pi.sync_direction,
                pi.last_sync_at
@@ -190,7 +190,7 @@ async fn fetch_integrations(
                 id: r.try_get("id")?,
                 profile_id: r.try_get("profile_id")?,
                 user_id: r.try_get("user_id")?,
-                platform: r.try_get::<String, _>("platform")?.to_lowercase(),
+                platform: r.try_get("platform")?,
                 encrypted_credentials: r.try_get("encrypted_credentials")?,
                 sync_direction: r.try_get("sync_direction")?,
                 last_sync_at: r.try_get("last_sync_at")?,
@@ -222,8 +222,8 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
 
     let raw = decrypt_secrets(&enc, &ctx.state.config.secret_key);
 
-    let result = match row.platform.as_str() {
-        "trakt" => {
+    let result = match row.platform {
+        IntegrationType::Trakt => {
             let default_cid = ctx.state.config.trakt_client_id.as_deref().unwrap_or("");
             let default_csec = ctx
                 .state
@@ -281,7 +281,7 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
             }
             sync_trakt(ctx, row, &creds).await
         }
-        "simkl" => {
+        IntegrationType::Simkl => {
             let default_cid = ctx.state.config.simkl_client_id.as_deref().unwrap_or("");
             let default_csec = ctx
                 .state
@@ -341,7 +341,8 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
         }
         other => {
             warn!(
-                "integration_syncs: unsupported platform '{other}' id={}",
+                "integration_syncs: unsupported platform '{}' id={}",
+                other.as_wire(),
                 row.id
             );
             mark_status(
@@ -363,7 +364,11 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
     };
     info!(
         "integration_syncs: id={} platform={} imported={} exported={} status={}",
-        row.id, row.platform, result.imported, result.exported, status
+        row.id,
+        row.platform.as_wire(),
+        result.imported,
+        result.exported,
+        status
     );
     mark_status(&ctx.state.pool, row.id, status, None, Some(&result)).await;
 }

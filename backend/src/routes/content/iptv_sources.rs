@@ -22,6 +22,7 @@ use serde_json::json;
 use sha2::Sha256;
 
 use crate::{
+    db::IptvSourceType,
     jobs::enqueue::{enqueue_simple, EnqueueOpts},
     state::AppState,
 };
@@ -92,7 +93,7 @@ struct SourceResponse {
 
 type SourceRow = (
     i32,
-    String,
+    IptvSourceType,
     String,
     bool,
     bool,
@@ -109,7 +110,7 @@ type SourceRow = (
 fn row_to_response(r: SourceRow) -> SourceResponse {
     SourceResponse {
         id: r.0,
-        source_type: r.1,
+        source_type: r.1.as_wire().to_ascii_lowercase(),
         name: r.2,
         is_public: r.3,
         import_live: r.4,
@@ -140,7 +141,7 @@ pub async fn list_iptv_sources(headers: HeaderMap, State(state): State<Arc<AppSt
     };
 
     let rows: Vec<SourceRow> = sqlx::query_as(
-        r#"SELECT id, source_type::text, name, is_public, import_live, import_vod, import_series,
+        r#"SELECT id, source_type, name, is_public, import_live, import_vod, import_series,
                   last_synced_at, last_sync_stats, is_active, created_at, m3u_url, encrypted_credentials::text
            FROM iptv_source
            WHERE user_id = $1
@@ -179,7 +180,7 @@ pub async fn get_iptv_source(
     };
 
     let row: Option<SourceRow> = sqlx::query_as(
-        r#"SELECT id, source_type::text, name, is_public, import_live, import_vod, import_series,
+        r#"SELECT id, source_type, name, is_public, import_live, import_vod, import_series,
                   last_synced_at, last_sync_stats, is_active, created_at, m3u_url, encrypted_credentials::text
            FROM iptv_source
            WHERE id = $1 AND user_id = $2"#,
@@ -278,7 +279,7 @@ pub async fn update_iptv_source(
     }
 
     let row: Option<SourceRow> = sqlx::query_as(
-        r#"SELECT id, source_type::text, name, is_public, import_live, import_vod, import_series,
+        r#"SELECT id, source_type, name, is_public, import_live, import_vod, import_series,
                   last_synced_at, last_sync_stats, is_active, created_at, m3u_url, encrypted_credentials::text
            FROM iptv_source
            WHERE id = $1"#,
@@ -367,10 +368,10 @@ pub async fn sync_iptv_source(
     }
 
     // Load source details
-    type SourceDetail = (String, Option<String>, Option<String>, bool);
+    type SourceDetail = (IptvSourceType, Option<String>, Option<String>, bool);
     // (source_type, m3u_url, server_url, is_active)
     let detail: Option<SourceDetail> = sqlx::query_as(
-        "SELECT source_type::text, m3u_url, server_url, is_active FROM iptv_source WHERE id = $1",
+        "SELECT source_type, m3u_url, server_url, is_active FROM iptv_source WHERE id = $1",
     )
     .bind(source_id)
     .fetch_optional(&state.pool_ro)
@@ -396,13 +397,13 @@ pub async fn sync_iptv_source(
             .into_response();
     }
 
-    let queue = if source_type.to_uppercase() == "XTREAM" {
+    let queue = if source_type == IptvSourceType::Xtream {
         "xtream_import"
     } else {
         "m3u_import"
     };
 
-    if source_type.to_uppercase() != "XTREAM" && m3u_url.as_ref().is_none_or(|u| u.is_empty()) {
+    if source_type != IptvSourceType::Xtream && m3u_url.as_ref().is_none_or(|u| u.is_empty()) {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"detail": "M3U source has no URL configured"})),

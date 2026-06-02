@@ -144,7 +144,7 @@ pub async fn refresh_metadata(
     }
 
     // Check media exists
-    let row: Option<(String,)> = match sqlx::query_as("SELECT type::text FROM media WHERE id = $1")
+    let row: Option<(crate::db::MediaType,)> = match sqlx::query_as("SELECT type FROM media WHERE id = $1")
         .bind(media_id)
         .fetch_optional(&state.pool_ro)
         .await
@@ -170,7 +170,7 @@ pub async fn refresh_metadata(
                 .into_response()
         }
     };
-    let db_media_type = media_row.0.to_lowercase();
+    let db_media_type = media_row.0.as_wire();
 
     // Get external IDs
     let ext_rows: Vec<(String, String)> =
@@ -473,7 +473,7 @@ pub async fn get_media_metadata(
 
     let row: Option<(i32, String, String, Option<i32>, Option<String>, bool, Option<DateTime<Utc>>, Option<DateTime<Utc>>)> =
         match sqlx::query_as(
-            "SELECT m.id, m.title, m.type::text, m.year, m.description, m.is_blocked, m.blocked_at, m.last_scraped_at
+            "SELECT m.id, m.title, m.type, m.year, m.description, m.is_blocked, m.blocked_at, m.last_scraped_at
              FROM media m WHERE m.id = $1",
         )
         .bind(media_id)
@@ -751,7 +751,7 @@ pub async fn search_metadata(
             };
 
             let rows: Vec<(i32, String, String, Option<i32>, bool)> = match sqlx::query_as(
-                "SELECT id, title, type::text, year, is_blocked
+                "SELECT id, title, type, year, is_blocked
                  FROM media
                  WHERE title ILIKE '%' || $1 || '%'
                    AND type = $2
@@ -803,7 +803,7 @@ pub async fn search_metadata(
             };
 
             let rows: Vec<(i32, String, String, Option<i32>, bool)> = match sqlx::query_as(
-                "SELECT id, title, type::text, year, is_blocked
+                "SELECT id, title, type, year, is_blocked
                  FROM media
                  WHERE title ILIKE '%' || $1 || '%'
                  ORDER BY

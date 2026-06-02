@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use tracing::warn;
 
-use super::types::{MediaId, MediaType, UserId};
+use super::types::{nudity_statuses_from_filter, MediaId, MediaType, UserId};
 
 const LIMIT: i64 = 100;
 const WATCHLIST_LIMIT: i64 = 25;
@@ -64,6 +64,7 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
         return get_library_items(pool, mt, skip, nudity_excludes, cert_excludes, user_id).await;
     }
 
+    let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
     let ord = order_clause(sort, sort_dir);
     let sql = format!(
         r#"
@@ -92,7 +93,7 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
               JOIN genre g ON g.id = mgl.genre_id
               WHERE mgl.media_id = m.id AND g.name = $4
           ))
-          AND (cardinality($5::text[]) IS NULL OR m.nudity_status::text <> ALL($5))
+          AND (cardinality($5::nuditystatus[]) = 0 OR m.nudity_status <> ALL($5))
           AND (cardinality($6::text[]) IS NULL OR NOT EXISTS (
               SELECT 1 FROM media_parental_certificate_link mpcl
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
@@ -108,7 +109,7 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
         .bind(mt) // $2
         .bind(skip) // $3
         .bind(genre) // $4 - Option<&str> → NULL when None
-        .bind(nudity_excludes) // $5 - &[String] → text[]
+        .bind(&nudity_exclude_enums) // $5 - nuditystatus[]
         .bind(cert_excludes) // $6 - &[String] → text[]
         .fetch_all(pool)
         .await
@@ -129,6 +130,7 @@ async fn get_library_items(
     let Some(uid) = user_id else {
         return vec![];
     };
+    let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
     sqlx::query_as::<_, CatalogRow>(
         r#"
         SELECT
@@ -150,7 +152,7 @@ async fn get_library_items(
         WHERE uli.user_id = $1
           AND m.type = $2
           AND NOT m.is_blocked
-          AND (cardinality($3::text[]) IS NULL OR m.nudity_status::text <> ALL($3))
+          AND (cardinality($3::nuditystatus[]) = 0 OR m.nudity_status <> ALL($3))
           AND (cardinality($5::text[]) IS NULL OR NOT EXISTS (
               SELECT 1 FROM media_parental_certificate_link mpcl
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
@@ -162,7 +164,7 @@ async fn get_library_items(
     )
     .bind(uid) // $1
     .bind(media_type) // $2
-    .bind(nudity_excludes) // $3
+    .bind(&nudity_exclude_enums) // $3
     .bind(skip) // $4
     .bind(cert_excludes) // $5
     .fetch_all(pool)
@@ -195,6 +197,7 @@ pub async fn get_watchlist_items(
         return vec![];
     };
 
+    let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
     let ord = order_clause(sort, sort_dir);
     let sql = format!(
         r#"
@@ -220,7 +223,7 @@ pub async fn get_watchlist_items(
           AND m.total_streams > 0
           AND NOT m.is_blocked
           AND lower(ts.info_hash) = ANY($2)
-          AND (cardinality($3::text[]) IS NULL OR m.nudity_status::text <> ALL($3))
+          AND (cardinality($3::nuditystatus[]) = 0 OR m.nudity_status <> ALL($3))
           AND (cardinality($4::text[]) IS NULL OR NOT EXISTS (
               SELECT 1 FROM media_parental_certificate_link mpcl
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
@@ -235,7 +238,7 @@ pub async fn get_watchlist_items(
     sqlx::query_as::<_, CatalogRow>(&sql)
         .bind(mt) // $1
         .bind(info_hashes) // $2
-        .bind(nudity_excludes) // $3
+        .bind(&nudity_exclude_enums) // $3
         .bind(cert_excludes) // $4
         .bind(skip) // $5
         .fetch_all(pool)
@@ -258,6 +261,7 @@ pub async fn search_metadata(
         return vec![];
     };
 
+    let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
     sqlx::query_as::<_, CatalogRow>(
         r#"
         SELECT
@@ -278,7 +282,7 @@ pub async fn search_metadata(
         WHERE m.type = $1
           AND m.total_streams > 0
           AND NOT m.is_blocked
-          AND (cardinality($3::text[]) IS NULL OR m.nudity_status::text <> ALL($3))
+          AND (cardinality($3::nuditystatus[]) = 0 OR m.nudity_status <> ALL($3))
           AND (cardinality($5::text[]) IS NULL OR NOT EXISTS (
               SELECT 1 FROM media_parental_certificate_link mpcl
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
@@ -307,7 +311,7 @@ pub async fn search_metadata(
     )
     .bind(mt) // $1
     .bind(query) // $2
-    .bind(nudity_excludes) // $3
+    .bind(&nudity_exclude_enums) // $3
     .bind(skip) // $4
     .bind(cert_excludes) // $5
     .fetch_all(pool)

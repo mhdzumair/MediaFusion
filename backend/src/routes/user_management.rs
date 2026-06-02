@@ -79,7 +79,7 @@ type UserRow = (
     String,
     String,
     Option<String>,
-    String,
+    crate::db::UserRole,
     bool,
     bool,
     DateTime<Utc>,
@@ -111,7 +111,7 @@ fn row_to_response(r: UserRow) -> UserResponse {
         uuid: r.1,
         email: r.2,
         username: r.3,
-        role: r.4,
+        role: r.4.as_api_wire().to_string(),
         is_verified: r.5,
         is_active: r.6,
         created_at: r.7,
@@ -218,7 +218,9 @@ pub async fn list_users(
     // Build WHERE clause
     let mut conditions: Vec<String> = Vec::new();
     if let Some(ref role) = params.role {
-        conditions.push(format!("role = '{role}'"));
+        if let Some(user_role) = crate::db::UserRole::from_wire(role) {
+            conditions.push(format!("role = '{}'", user_role.as_wire()));
+        }
     }
     if let Some(ref search) = params.search {
         // Escape single quotes for safety (search is admin-only, but still good practice)
@@ -260,7 +262,7 @@ pub async fn list_users(
     };
 
     let data_sql = format!(
-        r#"SELECT id, uuid, email, username, role::text, is_verified, is_active,
+        r#"SELECT id, uuid, email, username, role, is_verified, is_active,
                   created_at, last_login, contribution_points, contribution_level, uploads_restricted
            FROM users {where_clause}
            ORDER BY {order_expr} {dir} NULLS LAST, id {secondary_dir}
@@ -307,7 +309,7 @@ pub async fn get_user(
     };
 
     let row = sqlx::query_as::<_, UserRow>(
-        r#"SELECT id, uuid, email, username, role::text, is_verified, is_active,
+        r#"SELECT id, uuid, email, username, role, is_verified, is_active,
                   created_at, last_login, contribution_points, contribution_level, uploads_restricted
            FROM users WHERE id = $1"#,
     )
@@ -510,8 +512,18 @@ pub async fn update_user_role(
             .into_response();
     }
 
+    let Some(new_role) = crate::db::UserRole::from_wire(&body.role) else {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({
+                "error": format!("Invalid role: {}. Valid roles: {:?}", body.role, VALID_ROLES)
+            })),
+        )
+            .into_response();
+    };
+
     if let Err(e) = sqlx::query("UPDATE users SET role = $1 WHERE id = $2")
-        .bind(&body.role)
+        .bind(new_role)
         .bind(user_id)
         .execute(&state.pool)
         .await
@@ -712,7 +724,7 @@ async fn send_email(
 
 async fn get_user_by_id_response(pool: &sqlx::PgPool, user_id: i32) -> Response {
     let row = sqlx::query_as::<_, UserRow>(
-        r#"SELECT id, uuid, email, username, role::text, is_verified, is_active,
+        r#"SELECT id, uuid, email, username, role, is_verified, is_active,
                   created_at, last_login, contribution_points, contribution_level, uploads_restricted
            FROM users WHERE id = $1"#,
     )
