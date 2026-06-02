@@ -1112,7 +1112,7 @@ export function ContentDetailPage() {
   const seasons = useMemo(() => item?.seasons ?? [], [item?.seasons])
 
   const episodes = useMemo(() => {
-    if (!selectedSeason || !seasons.length) return []
+    if (selectedSeason === undefined || !seasons.length) return []
     const season = seasons.find((s) => s.season_number === selectedSeason)
     return season?.episodes ?? []
   }, [selectedSeason, seasons])
@@ -1804,203 +1804,208 @@ export function ContentDetailPage() {
       )}
 
       {/* Streams Section */}
-      {isAuthenticated && (catalogType === 'movie' || catalogType === 'tv' || (selectedSeason && selectedEpisode)) && (
-        <Card className="glass border-border/50">
-          <CardHeader className="px-3 sm:px-6 py-4 sm:py-6">
-            <div className="flex flex-col gap-3 sm:gap-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                    <Play className="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
-                    Available Streams
-                  </CardTitle>
-                  <CardDescription className="text-xs sm:text-sm mt-0.5">
-                    {catalogType === 'series'
-                      ? `Season ${selectedSeason}, Episode ${selectedEpisode}`
-                      : catalogType === 'tv'
-                        ? 'Select a stream to watch this channel'
-                        : 'Select a stream to watch or download'}
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Profile Selector - show when multiple profiles available */}
-                  {profiles && profiles.length > 1 ? (
-                    <Select
-                      value={selectedProfileId?.toString() ?? ''}
-                      onValueChange={(value) => {
-                        const newProfileId = parseInt(value, 10)
-                        const newProfile = profiles.find((p) => p.id === newProfileId)
-                        setSelectedProfileId(newProfileId)
-                        setSelectedProfileUuid(newProfile?.uuid)
-                        // Set the primary provider from the new profile
-                        setSelectedProvider(newProfile?.streaming_providers?.primary_service || undefined)
-                      }}
-                    >
-                      <SelectTrigger className="w-[130px] sm:w-[160px] h-9 rounded-xl text-xs sm:text-sm">
-                        <SelectValue placeholder="Profile" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {profiles.map((profile) => (
-                          <SelectItem key={profile.id} value={profile.id.toString()}>
-                            <div className="flex items-center gap-2">
-                              <span>{profile.name}</span>
-                              {profile.is_default && (
-                                <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                  Default
-                                </Badge>
-                              )}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : profiles && profiles.length === 1 ? (
-                    // Show single profile name as a badge
-                    <Badge
+      {isAuthenticated &&
+        (catalogType === 'movie' ||
+          catalogType === 'tv' ||
+          (selectedSeason !== undefined && selectedEpisode !== undefined)) && (
+          <Card className="glass border-border/50">
+            <CardHeader className="px-3 sm:px-6 py-4 sm:py-6">
+              <div className="flex flex-col gap-3 sm:gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                      <Play className="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
+                      Available Streams
+                    </CardTitle>
+                    <CardDescription className="text-xs sm:text-sm mt-0.5">
+                      {catalogType === 'series'
+                        ? `Season ${selectedSeason}, Episode ${selectedEpisode}`
+                        : catalogType === 'tv'
+                          ? 'Select a stream to watch this channel'
+                          : 'Select a stream to watch or download'}
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Profile Selector - show when multiple profiles available */}
+                    {profiles && profiles.length > 1 ? (
+                      <Select
+                        value={selectedProfileId?.toString() ?? ''}
+                        onValueChange={(value) => {
+                          const newProfileId = parseInt(value, 10)
+                          const newProfile = profiles.find((p) => p.id === newProfileId)
+                          setSelectedProfileId(newProfileId)
+                          setSelectedProfileUuid(newProfile?.uuid)
+                          // Set the primary provider from the new profile
+                          setSelectedProvider(newProfile?.streaming_providers?.primary_service || undefined)
+                        }}
+                      >
+                        <SelectTrigger className="w-[130px] sm:w-[160px] h-9 rounded-xl text-xs sm:text-sm">
+                          <SelectValue placeholder="Profile" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {profiles.map((profile) => (
+                            <SelectItem key={profile.id} value={profile.id.toString()}>
+                              <div className="flex items-center gap-2">
+                                <span>{profile.name}</span>
+                                {profile.is_default && (
+                                  <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                    Default
+                                  </Badge>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : profiles && profiles.length === 1 ? (
+                      // Show single profile name as a badge
+                      <Badge
+                        variant="outline"
+                        className="rounded-lg px-2.5 sm:px-3 py-1.5 h-9 flex items-center text-xs sm:text-sm"
+                      >
+                        {profiles[0].name}
+                      </Badge>
+                    ) : null}
+                    <ViewModeToggle mode={viewMode} onModeChange={setViewMode} />
+                    <Button
                       variant="outline"
-                      className="rounded-lg px-2.5 sm:px-3 py-1.5 h-9 flex items-center text-xs sm:text-sm"
+                      size="sm"
+                      onClick={() => refetchStreams()}
+                      disabled={streamsLoading}
+                      className="rounded-xl h-9 text-xs sm:text-sm"
                     >
-                      {profiles[0].name}
-                    </Badge>
-                  ) : null}
-                  <ViewModeToggle mode={viewMode} onModeChange={setViewMode} />
+                      {streamsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Refresh'}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Provider Tabs - show when providers available */}
+                {availableProviders.length > 0 &&
+                  (availableProviders.length > 1 ? (
+                    <Tabs
+                      value={selectedProvider || availableProviders[0]?.service}
+                      onValueChange={(value) => setSelectedProvider(value)}
+                      className="w-full"
+                    >
+                      <TabsList className="w-full justify-start h-auto flex-wrap gap-1 bg-muted/50 p-1 rounded-xl">
+                        {availableProviders.map((provider) => (
+                          <TabsTrigger
+                            key={provider.service}
+                            value={provider.service}
+                            className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm"
+                          >
+                            {getProviderDisplayName(provider)}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                    </Tabs>
+                  ) : (
+                    // Show single provider as a badge
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">Provider:</span>
+                      <Badge variant="secondary" className="rounded-lg px-3 py-1">
+                        {getProviderDisplayName(availableProviders[0])}
+                      </Badge>
+                    </div>
+                  ))}
+
+                {/* Filters and Sorting */}
+                {streamsData?.streams && streamsData.streams.length > 0 && (
+                  <StreamFilters
+                    filters={streamFilters}
+                    onFiltersChange={setStreamFilters}
+                    availableSources={availableSources}
+                    availableResolutions={availableResolutions}
+                    availableQualities={availableQualities}
+                    availableCodecs={availableCodecs}
+                    availableLanguages={availableLanguages}
+                    availableStreamTypes={availableStreamTypes}
+                    totalStreams={streamsData?.streams?.length || 0}
+                    filteredCount={filteredStreams.length}
+                    showCachedFilter={availableProviders.length > 0}
+                    hasLastPlayed={!!lastPlayedStreamId}
+                  />
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="px-3 sm:px-6">
+              {/* Banner shown when navigated from Discover (scraping just triggered) */}
+              {scrapingBanner && !streamsLoading && !streamsData?.streams.length && (
+                <div className="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 mb-4 text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-medium">Searching for streams…</p>
+                    <p className="text-muted-foreground text-xs">
+                      This was just added. Streams are being fetched in the background — check back in a moment.
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    onClick={() => setScrapingBanner(false)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+              {streamsLoading ? (
+                <div className="space-y-3">
+                  {[...Array(5)].map((_, i) => (
+                    <Skeleton key={i} className="h-20 rounded-xl" />
+                  ))}
+                </div>
+              ) : !streamsData?.streams.length ? (
+                <div className="text-center py-8">
+                  <Wifi className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
+                  <p className="mt-4 text-muted-foreground">No streams available</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Make sure you have a streaming provider configured
+                  </p>
+                </div>
+              ) : filteredStreams.length === 0 ? (
+                <div className="text-center py-8">
+                  <Wifi className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
+                  <p className="mt-4 text-muted-foreground">No streams match your filters</p>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => refetchStreams()}
-                    disabled={streamsLoading}
-                    className="rounded-xl h-9 text-xs sm:text-sm"
+                    className="mt-4 rounded-xl"
+                    onClick={() => setStreamFilters(defaultStreamFilters)}
                   >
-                    {streamsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Refresh'}
+                    Clear Filters
                   </Button>
                 </div>
-              </div>
-
-              {/* Provider Tabs - show when providers available */}
-              {availableProviders.length > 0 &&
-                (availableProviders.length > 1 ? (
-                  <Tabs
-                    value={selectedProvider || availableProviders[0]?.service}
-                    onValueChange={(value) => setSelectedProvider(value)}
-                    className="w-full"
-                  >
-                    <TabsList className="w-full justify-start h-auto flex-wrap gap-1 bg-muted/50 p-1 rounded-xl">
-                      {availableProviders.map((provider) => (
-                        <TabsTrigger
-                          key={provider.service}
-                          value={provider.service}
-                          className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm"
-                        >
-                          {getProviderDisplayName(provider)}
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-                  </Tabs>
-                ) : (
-                  // Show single provider as a badge
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">Provider:</span>
-                    <Badge variant="secondary" className="rounded-lg px-3 py-1">
-                      {getProviderDisplayName(availableProviders[0])}
-                    </Badge>
-                  </div>
-                ))}
-
-              {/* Filters and Sorting */}
-              {streamsData?.streams && streamsData.streams.length > 0 && (
-                <StreamFilters
-                  filters={streamFilters}
-                  onFiltersChange={setStreamFilters}
-                  availableSources={availableSources}
-                  availableResolutions={availableResolutions}
-                  availableQualities={availableQualities}
-                  availableCodecs={availableCodecs}
-                  availableLanguages={availableLanguages}
-                  availableStreamTypes={availableStreamTypes}
-                  totalStreams={streamsData?.streams?.length || 0}
-                  filteredCount={filteredStreams.length}
-                  showCachedFilter={availableProviders.length > 0}
-                  hasLastPlayed={!!lastPlayedStreamId}
+              ) : viewMode === 'grouped' ? (
+                <StreamGroupedList
+                  streams={filteredStreams}
+                  groupBy="quality"
+                  renderStream={(stream, index) => (
+                    <StreamCard
+                      key={stream.id || index}
+                      stream={stream}
+                      onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
+                      mediaType={catalogType === 'series' ? 'series' : 'movie'}
+                      isLastPlayed={stream.id !== undefined && String(stream.id) === lastPlayedStreamId}
+                    />
+                  )}
                 />
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="px-3 sm:px-6">
-            {/* Banner shown when navigated from Discover (scraping just triggered) */}
-            {scrapingBanner && !streamsLoading && !streamsData?.streams.length && (
-              <div className="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 mb-4 text-sm">
-                <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
-                <div className="flex-1">
-                  <p className="font-medium">Searching for streams…</p>
-                  <p className="text-muted-foreground text-xs">
-                    This was just added. Streams are being fetched in the background — check back in a moment.
-                  </p>
+              ) : (
+                <div className="space-y-3">
+                  {filteredStreams.map((stream, index) => (
+                    <StreamCard
+                      key={stream.id || index}
+                      stream={stream}
+                      onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
+                      mediaType={catalogType === 'series' ? 'series' : 'movie'}
+                      isLastPlayed={stream.id !== undefined && String(stream.id) === lastPlayedStreamId}
+                    />
+                  ))}
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0"
-                  onClick={() => setScrapingBanner(false)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
-            {streamsLoading ? (
-              <div className="space-y-3">
-                {[...Array(5)].map((_, i) => (
-                  <Skeleton key={i} className="h-20 rounded-xl" />
-                ))}
-              </div>
-            ) : !streamsData?.streams.length ? (
-              <div className="text-center py-8">
-                <Wifi className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
-                <p className="mt-4 text-muted-foreground">No streams available</p>
-                <p className="text-sm text-muted-foreground mt-2">Make sure you have a streaming provider configured</p>
-              </div>
-            ) : filteredStreams.length === 0 ? (
-              <div className="text-center py-8">
-                <Wifi className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
-                <p className="mt-4 text-muted-foreground">No streams match your filters</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-4 rounded-xl"
-                  onClick={() => setStreamFilters(defaultStreamFilters)}
-                >
-                  Clear Filters
-                </Button>
-              </div>
-            ) : viewMode === 'grouped' ? (
-              <StreamGroupedList
-                streams={filteredStreams}
-                groupBy="quality"
-                renderStream={(stream, index) => (
-                  <StreamCard
-                    key={stream.id || index}
-                    stream={stream}
-                    onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
-                    mediaType={catalogType === 'series' ? 'series' : 'movie'}
-                    isLastPlayed={stream.id !== undefined && String(stream.id) === lastPlayedStreamId}
-                  />
-                )}
-              />
-            ) : (
-              <div className="space-y-3">
-                {filteredStreams.map((stream, index) => (
-                  <StreamCard
-                    key={stream.id || index}
-                    stream={stream}
-                    onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
-                    mediaType={catalogType === 'series' ? 'series' : 'movie'}
-                    isLastPlayed={stream.id !== undefined && String(stream.id) === lastPlayedStreamId}
-                  />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+              )}
+            </CardContent>
+          </Card>
+        )}
 
       {/* Login prompt for anonymous users */}
       {!isAuthenticated && (

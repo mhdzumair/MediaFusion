@@ -77,7 +77,7 @@ export function SeriesEpisodePicker({
   className,
 }: SeriesEpisodePickerProps) {
   const [expandedSeasons, setExpandedSeasons] = useState<number[]>(
-    selectedSeason ? [selectedSeason] : seasons.length > 0 ? [seasons[0].season_number] : [],
+    selectedSeason !== undefined ? [selectedSeason] : seasons.length > 0 ? [seasons[0].season_number] : [],
   )
   const [deletingEpisodeId, setDeletingEpisodeId] = useState<number | null>(null)
   const [deletingSeasonNumber, setDeletingSeasonNumber] = useState<number | null>(null)
@@ -124,7 +124,7 @@ export function SeriesEpisodePicker({
             <Tv className="h-5 w-5 text-primary" />
             <CardTitle className="text-lg">Episodes</CardTitle>
           </div>
-          {selectedSeason && selectedEpisode && (
+          {selectedSeason !== undefined && selectedEpisode !== undefined && (
             <Badge variant="secondary" className="rounded-lg">
               S{selectedSeason.toString().padStart(2, '0')}E{selectedEpisode.toString().padStart(2, '0')}
             </Badge>

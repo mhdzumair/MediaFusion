@@ -25,7 +25,7 @@ use sha2::Sha256;
 
 use crate::{
     cache,
-    db::MediaType,
+    db::{MediaType, StreamType},
     models::user_data::{SortingOption, UserData},
     routes::{stream::torrent_sort_key, user_library::extract_streaming_providers},
     state::AppState,
@@ -110,7 +110,7 @@ fn format_size(bytes: i64) -> String {
 struct StreamRow {
     id: i32,
     name: String,
-    stream_type: String,
+    stream_type: StreamType,
     source: Option<String>,
     resolution: Option<String>,
     quality: Option<String>,
@@ -186,8 +186,8 @@ pub async fn get_available_catalogs(State(state): State<Arc<AppState>>) -> Respo
         return Json(cached).into_response();
     }
 
-    let rows: Vec<(String, String, String)> = sqlx::query_as(
-        r#"SELECT DISTINCT c.name, COALESCE(c.display_name, c.name) as display_name, m.type::text as media_type
+    let rows: Vec<(String, String, MediaType)> = sqlx::query_as(
+        r#"SELECT DISTINCT c.name, COALESCE(c.display_name, c.name) as display_name, m.type
            FROM catalog c
            JOIN media_catalog_link mcl ON mcl.catalog_id = c.id
            JOIN media m ON m.id = mcl.media_id
@@ -204,12 +204,11 @@ pub async fn get_available_catalogs(State(state): State<Arc<AppState>>) -> Respo
 
     for (name, display_name, media_type) in rows {
         let entry = json!({"name": name, "display_name": display_name});
-        match media_type.to_lowercase().as_str() {
-            "movie" => movies.push(entry),
-            "series" => series.push(entry),
-            "tv" => tv.push(entry),
-            "events" => sports.push(entry),
-            _ => {}
+        match media_type {
+            MediaType::Movie => movies.push(entry),
+            MediaType::Series => series.push(entry),
+            MediaType::Tv => tv.push(entry),
+            MediaType::Events => sports.push(entry),
         }
     }
 
@@ -296,8 +295,8 @@ pub async fn search_catalog(
     .await
     .unwrap_or(0);
 
-    let rows: Vec<(i32, String, String, Option<i32>)> = sqlx::query_as(
-        r#"SELECT m.id, m.title, m.type::text, m.year
+    let rows: Vec<(i32, String, MediaType, Option<i32>)> = sqlx::query_as(
+        r#"SELECT m.id, m.title, m.type, m.year
            FROM media m
            WHERE (m.title ILIKE $1) AND m.adult = false
            ORDER BY m.title
@@ -316,7 +315,7 @@ pub async fn search_catalog(
             json!({
                 "id": id,
                 "title": title,
-                "type": mtype.to_lowercase(),
+                "type": mtype.as_wire(),
                 "year": year,
                 "poster": null,
                 "background": null,
@@ -504,7 +503,7 @@ pub async fn browse_catalog(
     let count_sql = format!("SELECT COUNT(*) FROM media m WHERE {where_clause}");
 
     let list_sql = format!(
-        r#"SELECT m.id, m.title, m.type::text, m.year, m.description,
+        r#"SELECT m.id, m.title, m.type, m.year, m.description,
                (SELECT url FROM media_image WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true LIMIT 1) as poster,
                (SELECT url FROM media_image WHERE media_id = m.id AND image_type = 'background' AND is_primary = true LIMIT 1) as background,
                (SELECT mr.rating FROM media_rating mr JOIN rating_provider rp ON rp.id = mr.rating_provider_id WHERE mr.media_id = m.id AND rp.name = 'imdb' LIMIT 1) as imdb_rating,
@@ -566,7 +565,7 @@ pub async fn browse_catalog(
         (
             i32,
             String,
-            String,
+            MediaType,
             Option<i32>,
             Option<String>,
             Option<String>,
@@ -664,7 +663,7 @@ pub async fn browse_catalog(
                 json!({
                     "id": id,
                     "title": title,
-                    "type": mtype.to_lowercase(),
+                    "type": mtype.as_wire(),
                     "year": year,
                     "poster": poster,
                     "background": background,
@@ -707,7 +706,7 @@ pub async fn get_media_detail(
     let media_row: Option<(
         i32,
         String,
-        String,
+        MediaType,
         Option<i32>,
         Option<String>,
         Option<String>,
@@ -718,7 +717,7 @@ pub async fn get_media_detail(
         Option<String>,
         Option<String>,
     )> = sqlx::query_as(
-        r#"SELECT m.id, m.title, m.type::text, m.year, m.description, m.status,
+        r#"SELECT m.id, m.title, m.type, m.year, m.description, m.status,
                       m.runtime_minutes::text, m.original_language, m.adult,
                       m.release_date::text, m.end_date::text, m.tagline
                FROM media m WHERE m.id = $1"#,
@@ -821,7 +820,7 @@ pub async fn get_media_detail(
     }
 
     // For series, load seasons and episodes
-    let seasons_value: serde_json::Value = if mtype.to_lowercase() == "series" {
+    let seasons_value: serde_json::Value = if mtype == MediaType::Series {
         // Fetch all seasons ordered by season_number
         let season_rows: Vec<(i32, i32)> = sqlx::query_as(
             r#"SELECT sn.id, sn.season_number
@@ -901,7 +900,7 @@ pub async fn get_media_detail(
     Json(json!({
         "id": id,
         "title": title,
-        "type": mtype.to_lowercase(),
+        "type": mtype.as_wire(),
         "year": year,
         "description": description,
         "status": status,
@@ -938,6 +937,10 @@ pub async fn get_media_streams(
 
     if !VALID_CATALOG_TYPES.contains(&catalog_type.as_str()) {
         return bad_request("Invalid catalog_type");
+    }
+
+    if catalog_type == "series" && (params.season.is_none() || params.episode.is_none()) {
+        return bad_request("Season and episode parameters are required for series");
     }
 
     // Load streaming providers from the user's profile
@@ -1088,13 +1091,82 @@ pub async fn get_media_streams(
     let selected_resolutions = ud.selected_resolutions;
     let quality_filter = ud.quality_filter;
 
-    tracing::debug!("get_media_streams: fetching streams for {catalog_type}/{media_id}");
+    tracing::debug!(
+        "get_media_streams: fetching streams for {catalog_type}/{media_id} season={:?} episode={:?}",
+        params.season,
+        params.episode
+    );
 
-    let stream_rows: Vec<StreamRow> = sqlx::query_as(
-        r#"SELECT
+    let stream_rows: Vec<StreamRow> = if catalog_type == "series" {
+        let season = params.season.unwrap();
+        let episode = params.episode.unwrap();
+        sqlx::query_as(
+            r#"SELECT DISTINCT ON (s.id)
             s.id,
             s.name,
-            LOWER(s.stream_type::text) AS stream_type,
+            s.stream_type,
+            s.source,
+            s.resolution,
+            s.quality,
+            s.codec,
+            s.bit_depth,
+            ts.seeders,
+            s.uploader,
+            s.release_group,
+            sf.filename,
+            COALESCE(ts.total_size, sf.size) AS file_size,
+            ts.info_hash,
+            ys.video_id AS yt_id,
+            (SELECT STRING_AGG(af.name, '|' ORDER BY af.name)
+             FROM stream_audio_link sal JOIN audio_format af ON af.id = sal.audio_format_id
+             WHERE sal.stream_id = s.id) AS audio_formats,
+            (SELECT STRING_AGG(ac.name, '|' ORDER BY ac.name)
+             FROM stream_channel_link scl JOIN audio_channel ac ON ac.id = scl.channel_id
+             WHERE scl.stream_id = s.id) AS channels,
+            (SELECT STRING_AGG(hf.name, '|' ORDER BY hf.name)
+             FROM stream_hdr_link shl JOIN hdr_format hf ON hf.id = shl.hdr_format_id
+             WHERE shl.stream_id = s.id) AS hdr_formats,
+            (SELECT STRING_AGG(l.name, ' + ' ORDER BY l.name)
+             FROM stream_language_link sll JOIN language l ON l.id = sll.language_id
+             WHERE sll.stream_id = s.id) AS languages,
+            s.is_remastered,
+            s.is_upscaled,
+            s.is_proper,
+            s.is_repack,
+            s.is_extended,
+            s.is_complete,
+            s.is_dubbed,
+            s.is_subbed,
+            ts.created_at
+           FROM stream s
+           JOIN stream_file sf ON sf.stream_id = s.id
+           JOIN file_media_link fml ON fml.file_id = sf.id
+              AND fml.media_id = $1
+              AND fml.season_number = $2
+              AND fml.episode_number = $3
+           LEFT JOIN torrent_stream ts ON ts.stream_id = s.id
+           LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
+           WHERE s.is_active = true
+             AND s.is_blocked = false
+           ORDER BY s.id"#,
+        )
+        .bind(media_id)
+        .bind(season)
+        .bind(episode)
+        .fetch_all(&state.pool_ro)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(
+                "get_media_streams series query failed for media_id={media_id} S{season}E{episode}: {e}"
+            );
+            vec![]
+        })
+    } else {
+        sqlx::query_as(
+            r#"SELECT
+            s.id,
+            s.name,
+            s.stream_type,
             s.source,
             s.resolution,
             s.quality,
@@ -1135,14 +1207,15 @@ pub async fn get_media_streams(
            WHERE sml.media_id = $1
              AND s.is_active = true
              AND s.is_blocked = false"#,
-    )
-    .bind(media_id)
-    .fetch_all(&state.pool_ro)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!("get_media_streams query failed for media_id={media_id}: {e}");
-        vec![]
-    });
+        )
+        .bind(media_id)
+        .fetch_all(&state.pool_ro)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("get_media_streams query failed for media_id={media_id}: {e}");
+            vec![]
+        })
+    };
 
     tracing::debug!(
         "get_media_streams: found {} rows for media_id={media_id}",
@@ -1214,6 +1287,8 @@ pub async fn get_media_streams(
     let mut stream_pairs: Vec<(serde_json::Value, serde_json::Value)> = stream_rows
         .into_iter()
         .map(|r| {
+            let stream_type = r.stream_type.as_wire().to_lowercase();
+
             let is_cached = r.info_hash.as_deref()
                 .and_then(|h| cached_hashes.get(h).copied())
                 .unwrap_or(false);
@@ -1250,7 +1325,7 @@ pub async fn get_media_streams(
             let stream_ctx = json!({
                 "name": r.name,
                 "filename": r.filename,
-                "type": r.stream_type,
+                "type": stream_type,
                 "resolution": if resolution_upper.is_empty() { json!(null) } else { json!(resolution_upper) },
                 "quality": r.quality,
                 "codec": r.codec,
@@ -1292,7 +1367,7 @@ pub async fn get_media_streams(
             let lang_out = if lang_arr_vals.is_empty() { json!([]) } else { json!(lang_arr_vals) };
 
             let rd_blocked = selected_provider.as_deref() == Some("realdebrid")
-                && r.stream_type == "torrent"
+                && r.stream_type == StreamType::Torrent
                 && {
                     let check = r
                         .filename
@@ -1307,7 +1382,7 @@ pub async fn get_media_streams(
                 None
             } else if !secret_str.is_empty() {
                 if let (Some(ref svc), Some(ref hash)) = (&selected_provider, &r.info_hash) {
-                    if r.stream_type == "torrent" {
+                    if r.stream_type == StreamType::Torrent {
                         let filename = r.filename.as_deref().unwrap_or("");
                         let base = match (params.season, params.episode) {
                             (Some(s), Some(e)) => format!(
@@ -1343,7 +1418,7 @@ pub async fn get_media_streams(
                 "name": display_name,
                 "description": description,
                 "stream_name": r.name,
-                "stream_type": r.stream_type,
+                "stream_type": stream_type,
                 "resolution": r.resolution,
                 "quality": r.quality,
                 "codec": r.codec,
