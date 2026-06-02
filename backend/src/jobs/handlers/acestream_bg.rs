@@ -691,48 +691,36 @@ async fn upsert_acestream(
         return Ok(Some(existing));
     }
 
-    let stream_id: Option<StreamId> = sqlx::query_scalar(
-        r#"INSERT INTO stream (
-            stream_type, name, source, resolution, release_group,
-            is_active, is_blocked, is_public, playback_count,
-            is_remastered, is_upscaled, is_proper, is_repack,
-            is_extended, is_complete, is_dubbed, is_subbed,
-            created_at, updated_at
-        ) VALUES (
-            $1, $2, $3, $4, $5,
-            true, false, true, 0,
-            false, false, false, false,
-            false, false, false, false,
-            NOW(), NOW()
-        ) RETURNING id"#,
-    )
-    .bind(StreamType::Acestream)
-    .bind(name)
-    .bind(source)
-    .bind(resolution)
-    .bind(release_group)
-    .fetch_optional(pool)
-    .await?;
-
-    let Some(stream_id) = stream_id else {
-        return Ok(None);
+    let base = crate::db::StreamStoreBase {
+        name: name.to_string(),
+        source: source.to_string(),
+        resolution: resolution.map(str::to_string),
+        release_group: release_group.map(str::to_string),
+        is_public: true,
+        ..Default::default()
     };
 
-    sqlx::query(
-        "INSERT INTO acestream_stream (stream_id, content_id, info_hash) VALUES ($1, $2, $3) \
-         ON CONFLICT (stream_id) DO UPDATE SET content_id = EXCLUDED.content_id, info_hash = COALESCE(EXCLUDED.info_hash, acestream_stream.info_hash)",
-    )
-    .bind(stream_id)
-    .bind(content_id)
-    .bind(info_hash)
-    .execute(pool)
-    .await?;
+    let normalized = crate::db::AcestreamStoreInput {
+        base,
+        content_id: content_id.to_string(),
+        info_hash: info_hash.map(str::to_string),
+    };
 
-    if let Some(mid) = media_id {
-        let _ = media_resolve::link_stream_to_media(pool, stream_id, mid).await;
-    }
+    let opts = media_id.map_or_else(
+        || crate::db::StoreStreamOpts {
+            media_id: MediaId(0),
+            media_type: crate::db::MediaType::Series,
+            season: None,
+            episode: None,
+            link_source: crate::db::LinkSource::PttParser,
+            is_primary: true,
+            is_verified: false,
+        },
+        |mid| crate::db::StoreStreamOpts::scraper(mid, crate::db::MediaType::Series),
+    );
 
-    Ok(Some(stream_id))
+    let result = crate::db::store_acestream_stream(pool, &normalized, &opts).await?;
+    Ok(Some(result.stream_id()))
 }
 
 async fn process_candidate(

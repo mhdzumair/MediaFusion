@@ -10,7 +10,7 @@ use crate::db::{
     NormalizedMetadata, NormalizedRating, NormalizedSeason, NormalizedTrailer, NudityStatus,
 };
 
-use super::{FetchCtx, MetadataMatch, year_matches, MIN_TITLE_SIMILARITY};
+use super::{year_matches, FetchCtx, MetadataMatch, MIN_TITLE_SIMILARITY};
 
 const TMDB_IMG: &str = "https://image.tmdb.org/t/p";
 
@@ -26,7 +26,15 @@ const IMPORTANT_CREW_JOBS: &[&str] = &[
 ];
 
 const ADULT_CERT_KEYWORDS: &[&str] = &[
-    "nc-17", "x", "xxx", "ao", "r18", "18+", "nr-18", "x18", "adults only",
+    "nc-17",
+    "x",
+    "xxx",
+    "ao",
+    "r18",
+    "18+",
+    "nr-18",
+    "x18",
+    "adults only",
 ];
 
 pub async fn fetch_by_id(
@@ -210,10 +218,7 @@ pub fn parse_tmdb_response(data: &Value, is_series: bool) -> Option<NormalizedMe
         .as_str()
         .map(|p| format!("{TMDB_IMG}/original{p}"));
 
-    let mut external_ids = vec![(
-        "tmdb".to_string(),
-        data["id"].as_i64()?.to_string(),
-    )];
+    let mut external_ids = vec![("tmdb".to_string(), data["id"].as_i64()?.to_string())];
 
     if let Some(ext) = data["external_ids"].as_object() {
         if let Some(imdb) = ext.get("imdb_id").and_then(|v| v.as_str()) {
@@ -283,9 +288,9 @@ pub fn parse_tmdb_response(data: &Value, is_series: bool) -> Option<NormalizedMe
             arr.iter()
                 .filter(|v| {
                     v["site"].as_str() == Some("YouTube")
-                        && v["type"]
-                            .as_str()
-                            .is_some_and(|t| matches!(t, "Trailer" | "Teaser" | "Clip" | "Featurette"))
+                        && v["type"].as_str().is_some_and(|t| {
+                            matches!(t, "Trailer" | "Teaser" | "Clip" | "Featurette")
+                        })
                 })
                 .take(10)
                 .enumerate()
@@ -294,10 +299,7 @@ pub fn parse_tmdb_response(data: &Value, is_series: bool) -> Option<NormalizedMe
                         video_key: v["key"].as_str()?.to_string(),
                         site: "YouTube".to_string(),
                         name: v["name"].as_str().map(str::to_string),
-                        trailer_type: v["type"]
-                            .as_str()
-                            .unwrap_or("Trailer")
-                            .to_ascii_lowercase(),
+                        trailer_type: v["type"].as_str().unwrap_or("Trailer").to_ascii_lowercase(),
                         is_official: v["official"].as_bool().unwrap_or(true),
                         is_primary: i == 0,
                         size: v["size"].as_i64().map(|s| s as i32),
@@ -414,9 +416,7 @@ pub fn parse_tmdb_response(data: &Value, is_series: bool) -> Option<NormalizedMe
             .map(str::to_string),
         release_date,
         runtime_minutes,
-        original_language: data["original_language"]
-            .as_str()
-            .map(str::to_string),
+        original_language: data["original_language"].as_str().map(str::to_string),
         status: data["status"].as_str().map(str::to_string),
         poster_url,
         backdrop_url,

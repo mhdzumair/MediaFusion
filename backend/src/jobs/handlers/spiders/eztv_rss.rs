@@ -8,7 +8,7 @@ use crate::{
         handler::{JobCtx, JobHandler},
     },
     parser,
-    scrapers::{media_resolve, persist, prowlarr::build_series_files, ScrapedStream},
+    scrapers::{media_resolve, prowlarr::build_series_files, stream_convert, ScrapedStream},
     util::rate_limit,
 };
 
@@ -260,9 +260,9 @@ impl JobHandler for EztvRssCrawl {
             )
             .await
             {
-                persist::write_back(
-                    std::slice::from_ref(&stream),
+                stream_convert::write_back_torrents(
                     pool,
+                    std::slice::from_ref(&stream),
                     &meta,
                     media_type,
                     None,

@@ -3,15 +3,15 @@ mod imdb;
 mod kitsu;
 mod mdblist;
 mod tmdb;
-mod tvdb;
 mod trakt;
+mod tvdb;
 
 use std::collections::HashSet;
 
 use serde_json::json;
 use sqlx::PgPool;
 
-pub use crate::db::{NormalizedMetadata, NormalizedSeason, NormalizedEpisode};
+pub use crate::db::{NormalizedEpisode, NormalizedMetadata, NormalizedSeason};
 pub use mdblist::ingest_list;
 pub use trakt::resolve_or_store_media;
 
@@ -166,7 +166,10 @@ pub async fn fetch_by_external_id_with_opts(
 }
 
 /// Build a torrent-import match payload from normalized metadata.
-pub fn import_match_from_normalized(meta: &NormalizedMetadata, media_type: &str) -> serde_json::Value {
+pub fn import_match_from_normalized(
+    meta: &NormalizedMetadata,
+    media_type: &str,
+) -> serde_json::Value {
     let imdb_id = meta.external_id("imdb").map(str::to_string);
     let tmdb_id = meta.external_id("tmdb").map(str::to_string);
     let primary_id = imdb_id
@@ -543,9 +546,7 @@ pub async fn refresh_media_from_providers(
             Some((_, id)) => id.clone(),
             None => continue,
         };
-        if let Some(meta) =
-            fetch_normalized(http, &opts, provider, &external_id, is_series).await
-        {
+        if let Some(meta) = fetch_normalized(http, &opts, provider, &external_id, is_series).await {
             refreshed.push(provider.to_string());
             fetched.push(meta);
         }

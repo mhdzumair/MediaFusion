@@ -372,56 +372,50 @@ pub async fn import_http_stream(
         }
     }
 
-    // Insert stream
-    let stream_id: i64 = match sqlx::query_scalar(
-        r#"INSERT INTO stream (stream_type, name, source, uploader, uploader_user_id, is_active, is_blocked, is_public, playback_count, is_remastered, is_upscaled, is_proper, is_repack, is_extended, is_complete, is_dubbed, is_subbed, created_at, resolution, quality, codec)
-           VALUES ('HTTP', $1, 'user_import', $2, $3, true, false, $4, 0, false, false, false, false, false, false, false, false, NOW(), $5, $6, $7)
-           RETURNING id"#,
-    )
-    .bind(&stream_name)
-    .bind(&uploader_name)
-    .bind(uploader_user_id)
-    .bind(is_public)
-    .bind(&body.resolution)
-    .bind(&body.quality)
-    .bind(&body.codec)
-    .fetch_one(&state.pool)
-    .await
-    {
-        Ok(id) => id,
+    let base = crate::db::StreamStoreBase {
+        name: stream_name.clone(),
+        source: "user_import".to_string(),
+        resolution: body.resolution.clone(),
+        codec: body.codec.clone(),
+        quality: body.quality.clone(),
+        uploader: Some(uploader_name.clone()),
+        uploader_user_id: uploader_user_id.map(|id| id as i32),
+        is_public,
+        ..Default::default()
+    };
+
+    let normalized = crate::db::HttpStoreInput {
+        base,
+        url: url.clone(),
+        format: format.map(str::to_string),
+        behavior_hints: body.behavior_hints.clone(),
+        drm_key_id: body.drm_key_id.clone(),
+        drm_key: body.drm_key.clone(),
+        extractor_name: body.extractor_name.clone(),
+    };
+
+    let media_type =
+        crate::db::MediaType::from_wire(meta_type).unwrap_or(crate::db::MediaType::Movie);
+    let opts = media_id.map_or_else(
+        || crate::db::StoreStreamOpts {
+            media_id: crate::db::MediaId(0),
+            media_type,
+            season: None,
+            episode: None,
+            link_source: crate::db::LinkSource::User,
+            is_primary: true,
+            is_verified: false,
+        },
+        |mid| crate::db::StoreStreamOpts::user_import(crate::db::MediaId(mid as i32), media_type),
+    );
+
+    let stream_id: i64 = match crate::db::store_http_stream(&state.pool, &normalized, &opts).await {
+        Ok(r) => r.stream_id().0 as i64,
         Err(e) => {
-            tracing::error!("import_http_stream insert stream: {e}");
+            tracing::error!("import_http_stream store: {e}");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
-
-    // Insert http_stream
-    let behavior_hints_json = body.behavior_hints.as_ref().map(|v| v.to_string());
-    if let Err(e) = sqlx::query(
-        "INSERT INTO http_stream (stream_id, url, format, behavior_hints, drm_key_id, drm_key, extractor_name) VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)",
-    )
-    .bind(stream_id)
-    .bind(&url)
-    .bind(format)
-    .bind(behavior_hints_json.as_deref())
-    .bind(&body.drm_key_id)
-    .bind(&body.drm_key)
-    .bind(&body.extractor_name)
-    .execute(&state.pool)
-    .await
-    {
-        tracing::error!("import_http_stream insert http_stream: {e}");
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-    }
-
-    if let Some(mid) = media_id {
-        let _ = super::import_helpers::link_stream_to_media(
-            &state.pool,
-            stream_id as i32,
-            crate::db::MediaId(mid as i32),
-        )
-        .await;
-    }
 
     if let Some(ref langs) = body.languages {
         let _ = super::import_helpers::link_stream_languages(&state.pool, stream_id as i32, langs)

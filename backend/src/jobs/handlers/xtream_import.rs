@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use tracing::{info, warn};
 
-use crate::db::{MediaType, StreamType};
+use crate::db::MediaType;
 use crate::{
     crypto::decrypt::decrypt_user_data,
     jobs::{
@@ -279,66 +279,29 @@ async fn insert_http_stream_for_media(
         return Ok(false);
     }
 
-    // Insert stream
-    let stream_row: Option<(i32,)> = sqlx::query_as(
-        r#"INSERT INTO stream (
-            stream_type, name, source, is_active, is_blocked, is_public, playback_count,
-            is_remastered, is_upscaled, is_proper, is_repack, is_extended, is_complete,
-            is_dubbed, is_subbed, created_at, updated_at
-        ) VALUES (
-            $1, $2, $3, true, false, $4, 0,
-            false, false, false, false, false, false,
-            false, false, NOW(), NOW()
-        ) RETURNING id"#,
-    )
-    .bind(StreamType::Http)
-    .bind(stream_name)
-    .bind(source_label)
-    .bind(is_public)
-    .fetch_optional(pool)
-    .await?;
-
-    let stream_id = match stream_row {
-        Some((id,)) => id,
-        None => return Ok(false),
+    let normalized = crate::db::HttpStoreInput {
+        base: crate::db::StreamStoreBase {
+            name: stream_name.to_string(),
+            source: source_label.to_string(),
+            is_public,
+            ..Default::default()
+        },
+        url: url.to_string(),
+        format: None,
+        behavior_hints: behavior_hints.cloned(),
+        drm_key_id: None,
+        drm_key: None,
+        extractor_name: None,
     };
 
-    // Insert http_stream
-    let bh_json = behavior_hints.map(|v| v.to_string());
-    let hs = sqlx::query(
-        "INSERT INTO http_stream (stream_id, url, behavior_hints)
-         VALUES ($1, $2, $3::jsonb)
-         ON CONFLICT (stream_id) DO NOTHING",
-    )
-    .bind(stream_id)
-    .bind(url)
-    .bind(bh_json.as_deref())
-    .execute(pool)
-    .await;
+    let opts = crate::db::StoreStreamOpts::user_import(
+        crate::db::MediaId(media_id),
+        crate::db::MediaType::Movie,
+    );
 
-    if hs.is_err() {
-        // Roll back the stream row on failure
-        let _ = sqlx::query("DELETE FROM stream WHERE id = $1")
-            .bind(stream_id)
-            .execute(pool)
-            .await;
-        return Ok(false);
-    }
-
-    // Link to media
-    let _ = sqlx::query(
-        "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at)
-         SELECT $1, $2, true, false, NOW()
-         WHERE NOT EXISTS (
-             SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2
-         )",
-    )
-    .bind(stream_id)
-    .bind(media_id)
-    .execute(pool)
-    .await;
-
-    Ok(true)
+    Ok(crate::db::store_http_stream(pool, &normalized, &opts)
+        .await?
+        .was_inserted())
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────

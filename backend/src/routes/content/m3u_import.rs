@@ -21,7 +21,7 @@ use serde_json::json;
 use sha2::Sha256;
 use uuid::Uuid;
 
-use crate::db::{MediaType, StreamType};
+use crate::db::MediaType;
 use crate::state::AppState;
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -285,52 +285,31 @@ pub async fn import_tv_channel(
         return false; // already exists
     }
 
-    // Insert stream row
-    let stream_row: Option<(i32,)> = sqlx::query_as(
-        "INSERT INTO stream (stream_type, name, source, is_active, is_blocked, is_public, playback_count, created_at, updated_at) \
-         VALUES ($1, $2, $3, true, false, true, 0, NOW(), NOW()) RETURNING id",
-    )
-    .bind(StreamType::Http)
-    .bind(name)
-    .bind(source_name)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
-
-    let stream_id = match stream_row {
-        Some((id,)) => id,
-        None => return false,
+    let normalized = crate::db::HttpStoreInput {
+        base: crate::db::StreamStoreBase {
+            name: name.to_string(),
+            source: source_name.to_string(),
+            is_public: true,
+            ..Default::default()
+        },
+        url: url.to_string(),
+        format: None,
+        behavior_hints: behavior_hints.cloned(),
+        drm_key_id: None,
+        drm_key: None,
+        extractor_name: None,
     };
 
-    // Insert http_stream row
-    let bh_json = behavior_hints.map(|v| v.to_string());
-    let hs = sqlx::query(
-        "INSERT INTO http_stream (stream_id, url, behavior_hints) \
-         VALUES ($1, $2, $3::jsonb) ON CONFLICT (stream_id) DO NOTHING",
-    )
-    .bind(stream_id)
-    .bind(url)
-    .bind(bh_json.as_deref())
-    .execute(pool)
-    .await;
-
-    if hs.is_err() {
-        let _ = sqlx::query("DELETE FROM stream WHERE id = $1")
-            .bind(stream_id)
-            .execute(pool)
-            .await;
-        return false;
-    }
-
-    let _ = super::import_helpers::link_stream_to_media(
-        pool,
-        stream_id,
+    let opts = crate::db::StoreStreamOpts::user_import(
         crate::db::MediaId(media_id as i32),
-    )
-    .await;
+        crate::db::MediaType::Movie,
+    );
 
-    true
+    match crate::db::store_http_stream(pool, &normalized, &opts).await {
+        Ok(r) if r.was_inserted() => true,
+        Ok(_) => false,
+        Err(_) => false,
+    }
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────

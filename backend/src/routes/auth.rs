@@ -499,7 +499,9 @@ pub async fn register(
     if !auto_verify {
         // Send verification email if SMTP is configured
         let token = create_email_verify_token(user_id, &state.config.secret_key_raw);
-        if let Err(e) = send_email_verification(&state, &req.email, Some(req.username.as_str()), &token).await {
+        if let Err(e) =
+            send_email_verification(&state, &req.email, Some(req.username.as_str()), &token).await
+        {
             tracing::warn!("send_email_verification failed: {e}");
         }
         return (StatusCode::CREATED, Json(serde_json::json!({
@@ -713,7 +715,8 @@ pub async fn resend_verification(
     if let Some(user) = fetch_user_by_email(&state.pool, &req.email).await {
         if !user.is_verified {
             let token = create_email_verify_token(user.id, &state.config.secret_key_raw);
-            let _ = send_email_verification(&state, &user.email, user.username.as_deref(), &token).await;
+            let _ = send_email_verification(&state, &user.email, user.username.as_deref(), &token)
+                .await;
         }
     }
     (
@@ -738,7 +741,8 @@ pub async fn forgot_password(
             .unwrap_or("")
             .to_string();
         let token = create_password_reset_token(user.id, &pwd_prefix, &state.config.secret_key_raw);
-        let _ = send_password_reset_email(&state, &user.email, user.username.as_deref(), &token).await;
+        let _ =
+            send_password_reset_email(&state, &user.email, user.username.as_deref(), &token).await;
     }
     (
         StatusCode::OK,
@@ -1048,7 +1052,10 @@ async fn send_email_verification(
             "Thanks for signing up, <strong style=\"color:#fafafa;\">{name}</strong>! \
              Please confirm your email address by clicking the button below."
         ),
-        None => "Thanks for signing up! Please confirm your email address by clicking the button below.".to_string(),
+        None => {
+            "Thanks for signing up! Please confirm your email address by clicking the button below."
+                .to_string()
+        }
     };
     let html = format!(
         r#"<!DOCTYPE html>

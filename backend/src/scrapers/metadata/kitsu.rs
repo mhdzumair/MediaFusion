@@ -12,11 +12,7 @@ use super::MetadataMatch;
 
 const KITSU_BASE: &str = "https://kitsu.io/api/edge";
 
-pub async fn search(
-    http: &reqwest::Client,
-    query: &str,
-    limit: usize,
-) -> Vec<MetadataMatch> {
+pub async fn search(http: &reqwest::Client, query: &str, limit: usize) -> Vec<MetadataMatch> {
     search_import_kitsu(http, query, limit)
         .await
         .into_iter()
@@ -153,7 +149,10 @@ pub async fn fetch_by_id(http: &reqwest::Client, kitsu_id: &str) -> Option<Norma
     }
 
     let mut ratings = Vec::new();
-    if let Some(raw) = attrs["averageRating"].as_str().and_then(|s| s.parse::<f64>().ok()) {
+    if let Some(raw) = attrs["averageRating"]
+        .as_str()
+        .and_then(|s| s.parse::<f64>().ok())
+    {
         ratings.push(NormalizedRating {
             provider: "kitsu".to_string(),
             rating: raw / 10.0,
@@ -238,7 +237,9 @@ async fn fetch_all_episodes(http: &reqwest::Client, kitsu_id: &str) -> Vec<Norma
 
         for (idx, item) in items.iter().enumerate() {
             let attrs = &item["attributes"];
-            let episode_number = attrs["number"].as_i64().unwrap_or((offset + idx + 1) as i64) as i32;
+            let episode_number = attrs["number"]
+                .as_i64()
+                .unwrap_or((offset + idx + 1) as i64) as i32;
             let title = attrs["canonicalTitle"]
                 .as_str()
                 .or_else(|| attrs["titles"]["en"].as_str())

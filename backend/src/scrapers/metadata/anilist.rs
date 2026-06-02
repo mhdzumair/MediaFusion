@@ -251,7 +251,10 @@ fn details_from_anilist_media(item: &Value) -> Option<NormalizedMetadata> {
 
     let trailers = if item["trailer"]["site"].as_str() == Some("youtube") {
         vec![NormalizedTrailer {
-            video_key: item["trailer"]["id"].as_str().unwrap_or_default().to_string(),
+            video_key: item["trailer"]["id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
             site: "YouTube".to_string(),
             name: Some("Trailer".to_string()),
             trailer_type: "trailer".to_string(),
@@ -263,10 +266,7 @@ fn details_from_anilist_media(item: &Value) -> Option<NormalizedMetadata> {
         vec![]
     };
 
-    let mut external_ids = vec![(
-        "anilist".to_string(),
-        item["id"].as_i64()?.to_string(),
-    )];
+    let mut external_ids = vec![("anilist".to_string(), item["id"].as_i64()?.to_string())];
     if let Some(mal) = item["idMal"].as_i64() {
         external_ids.push(("mal".to_string(), mal.to_string()));
     }

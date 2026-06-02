@@ -7,7 +7,7 @@ use crate::{
         error::JobError,
         handler::{JobCtx, JobHandler},
     },
-    scrapers::{media_resolve, persist},
+    scrapers::{media_resolve, stream_convert},
 };
 
 pub struct TelegramBgScraper;
@@ -158,9 +158,9 @@ async fn scrape_and_persist_channel(
         )
         .await
         {
-            persist::write_telegram_streams(
-                std::slice::from_ref(stream),
+            stream_convert::write_back_telegram(
                 &ctx.state.pool,
+                std::slice::from_ref(stream),
                 &meta,
                 media_type,
                 stream.season,

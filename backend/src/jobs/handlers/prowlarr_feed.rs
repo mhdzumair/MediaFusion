@@ -9,7 +9,7 @@ use crate::{
         error::JobError,
         handler::{JobCtx, JobHandler},
     },
-    scrapers::{media_resolve, persist, prowlarr},
+    scrapers::{media_resolve, prowlarr, stream_convert},
 };
 
 pub struct ProwlarrFeedScraper;
@@ -190,9 +190,9 @@ impl JobHandler for ProwlarrFeedScraper {
                 )
                 .await
                 {
-                    persist::write_back(
-                        std::slice::from_ref(&stream),
+                    stream_convert::write_back_torrents(
                         pool,
+                        std::slice::from_ref(&stream),
                         &meta,
                         media_type,
                         None,

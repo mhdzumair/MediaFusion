@@ -18,7 +18,9 @@ pub async fn store_media(
     let media_id = if let Some(id) = opts.existing_media_id {
         id
     } else {
-        resolve_existing_media(pool, meta).await?.unwrap_or(MediaId(0))
+        resolve_existing_media(pool, meta)
+            .await?
+            .unwrap_or(MediaId(0))
     };
 
     let media_id = if media_id.0 > 0 {
@@ -81,15 +83,13 @@ pub async fn find_existing_media(
         .ok()
         .flatten()
     } else {
-        sqlx::query_as(
-            "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
-        )
-        .bind(title)
-        .bind(media_type)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
+        sqlx::query_as("SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1")
+            .bind(title)
+            .bind(media_type)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
     };
 
     if let Some((id,)) = row {
@@ -403,10 +403,7 @@ async fn upsert_series(
     network: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     let total_seasons = seasons.len() as i32;
-    let total_episodes: i32 = seasons
-        .iter()
-        .map(|s| s.episodes.len() as i32)
-        .sum();
+    let total_episodes: i32 = seasons.iter().map(|s| s.episodes.len() as i32).sum();
 
     let series_id: i32 = sqlx::query_scalar(
         r#"
@@ -929,12 +926,10 @@ async fn resolve_crew_person_id(pool: &PgPool, member: &NormalizedCrewMember) ->
     }
 
     if let Some(ref imdb_id) = member.imdb_id {
-        if let Ok(Some(id)) = sqlx::query_scalar(
-            "SELECT id FROM person WHERE imdb_id = $1 LIMIT 1",
-        )
-        .bind(imdb_id)
-        .fetch_optional(pool)
-        .await
+        if let Ok(Some(id)) = sqlx::query_scalar("SELECT id FROM person WHERE imdb_id = $1 LIMIT 1")
+            .bind(imdb_id)
+            .fetch_optional(pool)
+            .await
         {
             return Some(id);
         }

@@ -8,10 +8,10 @@ use tokio::task::JoinSet;
 use crate::{
     models::user_data::UserData,
     scrapers::{
-        easynews, jackett, mediafusion, newznab, persist, prowlarr, public_indexers, public_usenet,
+        easynews, jackett, mediafusion, newznab, prowlarr, public_indexers, public_usenet,
         source_health::{self, HealthGateConfig},
-        telegram, title_queries, torbox_search, torrentio, torznab, zilean, ScrapedStream,
-        ScrapedUsenetStream, SearchMeta,
+        stream_convert, telegram, title_queries, torbox_search, torrentio, torznab, zilean,
+        ScrapedStream, ScrapedUsenetStream, SearchMeta,
     },
     state::AppState,
 };
@@ -110,7 +110,12 @@ pub async fn run(
     // DB and re-run scrapers, turning every "warm" request into a slow one.
     // The lock TTL (300s) serves as the cooldown window; the cache is refreshed
     // naturally when the next cold-path request repopulates it.
-    persist::write_back(&deduped, &state.pool, meta, media_type, season, episode).await;
+    let opts = stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
+    let normalized: Vec<_> = deduped
+        .iter()
+        .map(crate::db::TorrentStoreInput::from)
+        .collect();
+    crate::db::store_torrent_streams(&state.pool, &normalized, &opts).await;
 
     // ── Telegram live scraper (Phase 2c) ─────────────────────────────────────
     if let Some(ref tg_client) = state.telegram {
@@ -132,15 +137,13 @@ pub async fn run(
         )
         .await;
 
-        persist::write_telegram_streams(
-            &tg_results,
-            &state.pool,
-            meta,
-            media_type,
-            season,
-            episode,
-        )
-        .await;
+        let tg_opts =
+            stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
+        let tg_normalized: Vec<_> = tg_results
+            .iter()
+            .map(crate::db::TelegramStoreInput::from)
+            .collect();
+        crate::db::store_telegram_streams(&state.pool, &tg_normalized, &tg_opts).await;
     }
 
     // Do NOT delete the lock — let it expire after 300s. This gives a 5-minute
@@ -193,7 +196,12 @@ pub async fn run_forced(
         .filter(|s| seen.insert(s.info_hash.clone()))
         .collect();
 
-    persist::write_back(&deduped, &state.pool, meta, media_type, season, episode).await;
+    let opts = stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
+    let normalized: Vec<_> = deduped
+        .iter()
+        .map(crate::db::TorrentStoreInput::from)
+        .collect();
+    crate::db::store_torrent_streams(&state.pool, &normalized, &opts).await;
     // Forced scrape explicitly invalidates the cache so the caller sees fresh results.
     invalidate_stream_cache(&state.redis, meta, media_type, season, episode, scope).await;
 
@@ -215,15 +223,13 @@ pub async fn run_forced(
             state.config.min_scraping_video_size,
         )
         .await;
-        persist::write_telegram_streams(
-            &tg_results,
-            &state.pool,
-            meta,
-            media_type,
-            season,
-            episode,
-        )
-        .await;
+        let tg_opts =
+            stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
+        let tg_normalized: Vec<_> = tg_results
+            .iter()
+            .map(crate::db::TelegramStoreInput::from)
+            .collect();
+        crate::db::store_telegram_streams(&state.pool, &tg_normalized, &tg_opts).await;
     }
 
     // Release the lock so a subsequent forced scrape can run immediately.
@@ -325,8 +331,12 @@ pub async fn run_usenet(
         results.extend(pu);
     }
 
-    // Persist to DB
-    persist::write_back_usenet(&results, &state.pool, meta, media_type, season, episode).await;
+    let opts = stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
+    let normalized: Vec<_> = results
+        .iter()
+        .map(crate::db::UsenetStoreInput::from)
+        .collect();
+    crate::db::store_usenet_streams(&state.pool, &normalized, &opts).await;
 
     let _ = scope;
     results
@@ -364,7 +374,12 @@ pub async fn run_background(
         .filter(|s| seen.insert(s.info_hash.clone()))
         .collect();
 
-    persist::write_back(&deduped, &state.pool, meta, media_type, season, episode).await;
+    let opts = stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
+    let normalized: Vec<_> = deduped
+        .iter()
+        .map(crate::db::TorrentStoreInput::from)
+        .collect();
+    crate::db::store_torrent_streams(&state.pool, &normalized, &opts).await;
     run_usenet(state, user_data, meta, media_type, season, episode, scope).await;
     invalidate_stream_cache(&state.redis, meta, media_type, season, episode, scope).await;
 }

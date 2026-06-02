@@ -251,7 +251,10 @@ pub async fn fetch_by_id(
     let mut external_ids = vec![("tvdb".to_string(), tvdb_id.to_string())];
     if let Some(remotes) = record["remoteIds"].as_array() {
         for remote in remotes {
-            let source = remote["sourceName"].as_str().unwrap_or("").to_ascii_lowercase();
+            let source = remote["sourceName"]
+                .as_str()
+                .unwrap_or("")
+                .to_ascii_lowercase();
             let id = remote["id"].as_str().unwrap_or("");
             if id.is_empty() {
                 continue;
@@ -275,7 +278,10 @@ pub async fn fetch_by_id(
     if let Some(artworks) = record["artworks"].as_array() {
         for art in artworks {
             let art_type = art["type"].as_i64().unwrap_or(0);
-            let url = art["image"].as_str().filter(|s| !s.is_empty()).map(str::to_string);
+            let url = art["image"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
             let Some(url) = url else { continue };
             match art_type {
                 2 if poster_url.is_none() => poster_url = Some(url),
@@ -428,10 +434,7 @@ fn group_episodes_by_season(episodes: &[Value]) -> Vec<NormalizedSeason> {
     for ep in episodes {
         let season_number = ep["seasonNumber"].as_i64().unwrap_or(1) as i32;
         let episode_number = ep["number"].as_i64().unwrap_or(1) as i32;
-        let title = ep["name"]
-            .as_str()
-            .unwrap_or("Episode")
-            .to_string();
+        let title = ep["name"].as_str().unwrap_or("Episode").to_string();
         let still_url = ep["image"]
             .as_str()
             .filter(|s| !s.is_empty())

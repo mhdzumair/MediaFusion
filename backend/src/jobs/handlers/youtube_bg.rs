@@ -7,13 +7,9 @@ use tracing::{debug, info, warn};
 
 use fred::prelude::*;
 
-use crate::{
-    db::StreamType,
-    jobs::{
-        error::JobError,
-        handler::{JobCtx, JobHandler},
-    },
-    routes::content::import_helpers,
+use crate::jobs::{
+    error::JobError,
+    handler::{JobCtx, JobHandler},
 };
 
 pub struct YoutubeBgScraper;
@@ -203,66 +199,38 @@ impl JobHandler for YoutubeBgScraper {
                     continue;
                 }
 
-                // ── 2. Insert base stream row ─────────────────────────────
-                let stream_id: Option<i32> = sqlx::query_scalar(
-                    r#"INSERT INTO stream (
-                        stream_type, name, source, is_active, is_blocked, is_public,
-                        playback_count, is_remastered, is_upscaled, is_proper, is_repack,
-                        is_extended, is_complete, is_dubbed, is_subbed, updated_at, created_at
-                    ) VALUES (
-                        $1, $2, 'youtube_bg', true, false, true, 0,
-                        false, false, false, false, false, false, false, false, NOW(), NOW()
-                    ) RETURNING id"#,
-                )
-                .bind(StreamType::Youtube)
-                .bind(title)
-                .fetch_optional(&ctx.state.pool)
-                .await
-                .unwrap_or(None);
-
-                let stream_id = match stream_id {
-                    Some(id) => id,
-                    None => {
-                        warn!(
-                            "youtube_bg: failed to insert stream for youtube_id={}",
-                            entry.id
-                        );
-                        continue;
-                    }
-                };
-
-                // ── 3. Insert youtube_stream row ──────────────────────────
                 let duration_i32 = if duration_secs > i32::MAX as u64 {
                     None
                 } else {
                     Some(duration_secs as i32)
                 };
 
-                if let Err(e) = sqlx::query(
-                    "INSERT INTO youtube_stream (stream_id, video_id, duration_seconds, is_live, is_premiere) \
-                     VALUES ($1, $2, $3, false, false) ON CONFLICT (video_id) DO NOTHING",
-                )
-                .bind(stream_id)
-                .bind(&entry.id)
-                .bind(duration_i32)
-                .execute(&ctx.state.pool)
-                .await
+                let normalized = crate::db::YoutubeStoreInput {
+                    base: crate::db::StreamStoreBase {
+                        name: title.to_string(),
+                        source: "youtube_bg".to_string(),
+                        is_public: true,
+                        ..Default::default()
+                    },
+                    video_id: entry.id.clone(),
+                    channel_id: None,
+                    channel_name: None,
+                    duration_seconds: duration_i32,
+                    is_live: false,
+                    is_premiere: false,
+                };
+
+                let opts = crate::db::StoreStreamOpts::scraper(
+                    crate::db::MediaId(candidate.media_id),
+                    crate::db::MediaType::Movie,
+                );
+
+                if let Err(e) =
+                    crate::db::store_youtube_stream(&ctx.state.pool, &normalized, &opts).await
                 {
-                    warn!("youtube_bg: youtube_stream insert error for {}: {e}", entry.id);
-                    // Clean up the orphaned stream row
-                    let _ = sqlx::query("DELETE FROM stream WHERE id = $1")
-                        .bind(stream_id)
-                        .execute(&ctx.state.pool)
-                        .await;
+                    warn!("youtube_bg: store error for {}: {e}", entry.id);
                     continue;
                 }
-
-                let _ = import_helpers::link_stream_to_media(
-                    &ctx.state.pool,
-                    stream_id,
-                    crate::db::MediaId(candidate.media_id),
-                )
-                .await;
             }
 
             // ── 3. Mark as scraped ────────────────────────────────────────────

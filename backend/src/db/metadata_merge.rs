@@ -11,7 +11,10 @@ fn is_empty_str(opt: &Option<String>) -> bool {
     opt.as_ref().is_none_or(|s| s.is_empty())
 }
 
-fn first_scalar<T: Clone>(metas: &[NormalizedMetadata], pick: impl Fn(&NormalizedMetadata) -> Option<T>) -> Option<T> {
+fn first_scalar<T: Clone>(
+    metas: &[NormalizedMetadata],
+    pick: impl Fn(&NormalizedMetadata) -> Option<T>,
+) -> Option<T> {
     for provider in PROVIDER_PRIORITY {
         for meta in metas {
             if meta_has_provider(meta, provider) {
@@ -193,9 +196,7 @@ fn merge_seasons(metas: &[NormalizedMetadata]) -> Vec<NormalizedSeason> {
 }
 
 fn merge_episode(existing: &mut NormalizedEpisode, incoming: &NormalizedEpisode) {
-    if (existing.title.is_empty() || existing.title == "Episode")
-        && !incoming.title.is_empty()
-    {
+    if (existing.title.is_empty() || existing.title == "Episode") && !incoming.title.is_empty() {
         existing.title = incoming.title.clone();
     }
     if existing.overview.is_none() {
@@ -351,6 +352,9 @@ mod tests {
             ..Default::default()
         };
         let merged = merge_normalized(vec![a, b]).unwrap();
-        assert_eq!(merged.seasons[0].episodes[0].overview.as_deref(), Some("Overview"));
+        assert_eq!(
+            merged.seasons[0].episodes[0].overview.as_deref(),
+            Some("Overview")
+        );
     }
 }

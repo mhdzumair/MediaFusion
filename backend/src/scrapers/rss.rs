@@ -10,7 +10,7 @@ use serde_json::Value;
 use sqlx::PgPool;
 use tracing::{debug, info, warn};
 
-use crate::db::{FileType, LinkSource, StreamId, StreamType, TorrentType};
+use crate::db::{MediaType, TorrentType};
 use crate::parser::{self, ParsedTitle};
 use crate::scrapers::torrent_metadata::{
     self, parse_torrent_bytes, should_persist_torrent_file, torrent_file_for_storage,
@@ -408,151 +408,46 @@ async fn upsert_rss_stream(
     torrent_file: Option<Vec<u8>>,
     announce_list: &[String],
 ) -> bool {
-    // Check existing
-    let existing: Option<(i32,)> =
-        sqlx::query_as("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
-            .bind(info_hash)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
-
-    if let Some((stream_id,)) = existing {
-        if let Some(s) = seeders {
-            let _ = sqlx::query(
-                "UPDATE torrent_stream SET seeders = GREATEST(seeders, $1) WHERE stream_id = $2",
-            )
-            .bind(s)
-            .bind(stream_id)
-            .execute(pool)
-            .await;
-        }
-        return false;
-    }
-
-    // Insert base stream row
-    let stream_row: Option<(i32,)> = sqlx::query_as(
-        r#"
-        INSERT INTO stream (
-            stream_type, name, source,
-            resolution, codec, quality,
-            is_proper, is_repack, is_extended, is_complete, is_dubbed,
-            release_group,
-            is_active, is_blocked, is_public, playback_count,
-            created_at, updated_at
-        ) VALUES (
-            $1, $2, $3,
-            $4, $5, $6,
-            $7, $8, $9, $10, $11,
-            $12,
-            true, false, true, 0,
-            NOW(), NOW()
-        )
-        RETURNING id
-        "#,
-    )
-    .bind(StreamType::Torrent)
-    .bind(name)
-    .bind(source)
-    .bind(&parsed.resolution)
-    .bind(&parsed.codec)
-    .bind(&parsed.quality)
-    .bind(parsed.is_proper)
-    .bind(parsed.is_repack)
-    .bind(parsed.is_extended)
-    .bind(parsed.is_complete)
-    .bind(parsed.is_dubbed)
-    .bind(&parsed.release_group)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
-
-    let stream_id = match stream_row {
-        Some((id,)) => id,
-        None => return false,
-    };
-
-    // Insert torrent_stream
-    let ts = sqlx::query(
-        r#"
-        INSERT INTO torrent_stream (
-            stream_id, info_hash, total_size, seeders, torrent_type, file_count, torrent_file, created_at
-        ) VALUES ($1, $2, $3, $4, $5, 1, $6, NOW())
-        ON CONFLICT (info_hash) DO NOTHING
-        "#,
-    )
-    .bind(stream_id)
-    .bind(info_hash)
-    .bind(size)
-    .bind(seeders)
-    .bind(torrent_type)
-    .bind(torrent_file.as_deref())
-    .execute(pool)
-    .await;
-
-    if let Ok(r) = &ts {
-        if r.rows_affected() == 0 {
-            let _ = sqlx::query("DELETE FROM stream WHERE id = $1")
-                .bind(stream_id)
-                .execute(pool)
-                .await;
-            return false;
-        }
-    } else {
-        return false;
-    }
-
-    if !announce_list.is_empty() {
-        let _ = crate::db::link_torrent_trackers(pool, StreamId(stream_id), announce_list).await;
-    }
-
-    // Link stream → media
     let season = parsed.seasons.first().copied();
     let episode = parsed.episodes.first().copied();
+    let media_type = if is_series {
+        MediaType::Series
+    } else {
+        MediaType::Movie
+    };
 
+    let mut files = Vec::new();
     if is_series {
         if let (Some(s), Some(e)) = (season, episode) {
-            let sf: Option<(i32,)> = sqlx::query_as(
-                "INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive) VALUES ($1, 0, $2, $3, false) ON CONFLICT (stream_id, file_index) DO UPDATE SET is_archive = EXCLUDED.is_archive RETURNING id"
-            )
-            .bind(stream_id)
-            .bind(name)
-            .bind(FileType::Video)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
-
-            if let Some((file_id,)) = sf {
-                let _ = sqlx::query(
-                    "INSERT INTO file_media_link (file_id, media_id, season_number, episode_number, is_primary, confidence, link_source, created_at) VALUES ($1, $2, $3, $4, true, 1.0, $5, NOW()) ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING"
-                )
-                .bind(file_id)
-                .bind(media_id)
-                .bind(s)
-                .bind(e)
-                .bind(LinkSource::PttParser)
-                .execute(pool)
-                .await;
-            }
-        } else {
-            let _ = crate::scrapers::media_resolve::link_stream_to_media(
-                pool,
-                crate::db::StreamId(stream_id),
-                crate::db::MediaId(media_id),
-            )
-            .await;
+            files.push(crate::db::StreamFileStoreInput {
+                file_index: 0,
+                filename: name.to_string(),
+                size: Some(size),
+                season_number: s,
+                episode_number: e,
+            });
         }
-    } else {
-        let _ = crate::scrapers::media_resolve::link_stream_to_media(
-            pool,
-            crate::db::StreamId(stream_id),
-            crate::db::MediaId(media_id),
-        )
-        .await;
     }
 
-    true
+    let stream = crate::db::TorrentStoreInput {
+        base: crate::db::StreamStoreBase::from_parsed(name.to_string(), source.to_string(), parsed)
+            .scraper_defaults(),
+        info_hash: info_hash.to_string(),
+        total_size: size,
+        seeders,
+        torrent_type,
+        torrent_file,
+        announce_list: announce_list.to_vec(),
+        files,
+    };
+
+    let opts = crate::db::StoreStreamOpts::scraper(crate::db::MediaId(media_id), media_type)
+        .with_episode(season, episode);
+
+    match crate::db::store_torrent_stream(pool, &stream, &opts).await {
+        Ok(r) => r.was_inserted(),
+        Err(_) => false,
+    }
 }
 
 // ─── Feed metrics update ──────────────────────────────────────────────────────

@@ -17,7 +17,7 @@
 ///        - A numeric torrent ID is read from `.download-btn-magnet[data-id]`.
 ///        - POST `/ajax/getTorrentMagnet.php` with HMAC-SHA256 signature to get magnet.
 ///        - Fallback: legacy inline `magnet:?...` in HTML.
-///   3. Build `ScrapedStream` and write via `persist::write_back`.
+///   3. Build `ScrapedStream` and write via `stream_convert::write_back_torrents`.
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -35,7 +35,7 @@ use crate::{
     parser,
     scrapers::{
         fetcher::{fetch_byparr, fetch_plain, post_byparr},
-        media_resolve, persist, ScrapedStream, SearchMeta, StreamFile,
+        media_resolve, stream_convert, ScrapedStream, SearchMeta, StreamFile,
     },
     util::{rate_limit, retry},
 };
@@ -655,7 +655,15 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                     title: clean_title,
                     year,
                 };
-                persist::write_back(&[stream], pool, &meta, effective_media_type, None, None).await;
+                stream_convert::write_back_torrents(
+                    pool,
+                    &[stream],
+                    &meta,
+                    effective_media_type,
+                    None,
+                    None,
+                )
+                .await;
                 total_written += 1;
             }
 

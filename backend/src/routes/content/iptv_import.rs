@@ -10,10 +10,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    db::{FileType, IptvSourceType, LinkSource, StreamType},
-    parser,
-    scrapers::media_resolve::ImportMediaOverrides,
-    state::AppState,
+    db::IptvSourceType, parser, scrapers::media_resolve::ImportMediaOverrides, state::AppState,
 };
 
 use super::{
@@ -215,44 +212,30 @@ pub async fn insert_http_stream_for_media(
         return Ok(false);
     }
 
-    let stream_id: i32 = sqlx::query_scalar(
-        r#"INSERT INTO stream (
-            stream_type, name, source, uploader_user_id, is_active, is_blocked, is_public,
-            playback_count, is_remastered, is_upscaled, is_proper, is_repack, is_extended,
-            is_complete, is_dubbed, is_subbed, created_at, updated_at
-        ) VALUES (
-            $1, $2, $3, $4, true, false, $5, 0,
-            false, false, false, false, false, false, false, false, NOW(), NOW()
-        ) RETURNING id"#,
-    )
-    .bind(StreamType::Http)
-    .bind(stream_name)
-    .bind(source_label)
-    .bind(uploader_user_id.map(|id| id as i32))
-    .bind(is_public)
-    .fetch_one(pool)
-    .await?;
+    let normalized = crate::db::HttpStoreInput {
+        base: crate::db::StreamStoreBase {
+            name: stream_name.to_string(),
+            source: source_label.to_string(),
+            uploader_user_id: uploader_user_id.map(|id| id as i32),
+            is_public,
+            ..Default::default()
+        },
+        url: url.to_string(),
+        format: None,
+        behavior_hints: behavior_hints.cloned(),
+        drm_key_id: None,
+        drm_key: None,
+        extractor_name: None,
+    };
 
-    let bh_json = behavior_hints.map(|v| v.to_string());
-    if sqlx::query(
-        "INSERT INTO http_stream (stream_id, url, behavior_hints) VALUES ($1, $2, $3::jsonb)",
-    )
-    .bind(stream_id)
-    .bind(url)
-    .bind(bh_json.as_deref())
-    .execute(pool)
-    .await
-    .is_err()
-    {
-        let _ = sqlx::query("DELETE FROM stream WHERE id = $1")
-            .bind(stream_id)
-            .execute(pool)
-            .await;
-        return Ok(false);
-    }
+    let opts = crate::db::StoreStreamOpts::user_import(
+        crate::db::MediaId(media_id),
+        crate::db::MediaType::Movie,
+    );
 
-    import_helpers::link_stream_to_media(pool, stream_id, crate::db::MediaId(media_id)).await?;
-    Ok(true)
+    Ok(crate::db::store_http_stream(pool, &normalized, &opts)
+        .await?
+        .was_inserted())
 }
 
 // ─── Per-entry import (Python `_import_*_entry`) ─────────────────────────────
@@ -342,60 +325,31 @@ pub async fn import_series_entry(
         return Ok(false);
     }
 
-    let stream_id: i32 = sqlx::query_scalar(
-        r#"INSERT INTO stream (
-            stream_type, name, source, uploader_user_id, is_active, is_blocked, is_public,
-            playback_count, created_at, updated_at
-        ) VALUES (
-            $1, $2, $3, $4, true, false, $5, 0, NOW(), NOW()
-        ) RETURNING id"#,
-    )
-    .bind(StreamType::Http)
-    .bind(&entry.name)
-    .bind(source)
-    .bind(user_id as i32)
-    .bind(is_public)
-    .fetch_one(ctx.pool)
-    .await?;
+    let normalized = crate::db::HttpStoreInput {
+        base: crate::db::StreamStoreBase {
+            name: entry.name.clone(),
+            source: source.to_string(),
+            uploader_user_id: Some(user_id as i32),
+            is_public,
+            ..Default::default()
+        },
+        url: entry.url.clone(),
+        format: None,
+        behavior_hints: entry.behavior_hints.clone(),
+        drm_key_id: None,
+        drm_key: None,
+        extractor_name: None,
+    };
 
-    let bh_json = entry.behavior_hints.as_ref().map(|v| v.to_string());
-    sqlx::query(
-        "INSERT INTO http_stream (stream_id, url, behavior_hints) VALUES ($1, $2, $3::jsonb)",
+    let opts = crate::db::StoreStreamOpts::user_import(
+        crate::db::MediaId(media_id),
+        crate::db::MediaType::Series,
     )
-    .bind(stream_id)
-    .bind(&entry.url)
-    .bind(bh_json.as_deref())
-    .execute(ctx.pool)
-    .await?;
+    .with_episode(Some(season), Some(episode));
 
-    let file_id: i32 = sqlx::query_scalar(
-        r#"INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive)
-           VALUES ($1, 0, $2, $3, false)
-           ON CONFLICT (stream_id, file_index) DO UPDATE SET filename = EXCLUDED.filename
-           RETURNING id"#,
-    )
-    .bind(stream_id)
-    .bind(&entry.name)
-    .bind(FileType::Video)
-    .fetch_one(ctx.pool)
-    .await?;
-
-    sqlx::query(
-        r#"INSERT INTO file_media_link (
-               file_id, media_id, season_number, episode_number, is_primary, confidence, link_source
-           ) VALUES ($1, $2, $3, $4, true, 1.0, $5)
-           ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING"#,
-    )
-    .bind(file_id)
-    .bind(media_id)
-    .bind(season)
-    .bind(episode)
-    .bind(LinkSource::Manual)
-    .execute(ctx.pool)
-    .await?;
-
-    import_helpers::link_stream_to_media(ctx.pool, stream_id, crate::db::MediaId(media_id)).await?;
-    Ok(true)
+    Ok(crate::db::store_http_stream(ctx.pool, &normalized, &opts)
+        .await?
+        .was_inserted())
 }
 
 /// Process one M3U row (respecting optional user override).

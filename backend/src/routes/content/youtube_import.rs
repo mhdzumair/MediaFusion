@@ -378,51 +378,48 @@ pub async fn import_youtube_video(
     .await
     .map(i64::from);
 
-    // Insert stream
-    let stream_id: i64 = match sqlx::query_scalar(
-        r#"INSERT INTO stream (stream_type, name, source, uploader, uploader_user_id, is_active, is_blocked, is_public, playback_count, is_remastered, is_upscaled, is_proper, is_repack, is_extended, is_complete, is_dubbed, is_subbed, created_at, resolution, quality, codec)
-           VALUES ('YOUTUBE', $1, 'youtube', $2, $3, true, false, $4, 0, false, false, false, false, false, false, false, false, NOW(), NULL, NULL, NULL)
-           RETURNING id"#,
-    )
-    .bind(&stream_name)
-    .bind(&uploader_name)
-    .bind(uploader_user_id)
-    .bind(is_public)
-    .fetch_one(&state.pool)
-    .await
-    {
-        Ok(id) => id,
-        Err(e) => {
-            tracing::error!("import_youtube_video insert stream: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
+    let base = crate::db::StreamStoreBase {
+        name: stream_name.clone(),
+        source: "youtube".to_string(),
+        uploader: Some(uploader_name.clone()),
+        uploader_user_id: uploader_user_id.map(|id| id as i32),
+        is_public,
+        ..Default::default()
     };
 
-    // Insert youtube_stream
-    if let Err(e) = sqlx::query(
-        "INSERT INTO youtube_stream (stream_id, video_id, channel_id, channel_name, duration_seconds, is_live, is_premiere) VALUES ($1, $2, $3, $4, $5, $6, false)",
-    )
-    .bind(stream_id)
-    .bind(&video_id)
-    .bind(&body.channel_id)
-    .bind(&channel_name)
-    .bind(body.duration_seconds)
-    .bind(body.is_live)
-    .execute(&state.pool)
-    .await
-    {
-        tracing::error!("import_youtube_video insert youtube_stream: {e}");
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-    }
+    let normalized = crate::db::YoutubeStoreInput {
+        base,
+        video_id: video_id.clone(),
+        channel_id: body.channel_id.clone(),
+        channel_name: Some(channel_name.clone()),
+        duration_seconds: body.duration_seconds.map(|n| n as i32),
+        is_live: body.is_live,
+        is_premiere: false,
+    };
 
-    if let Some(mid) = media_id {
-        let _ = super::import_helpers::link_stream_to_media(
-            &state.pool,
-            stream_id as i32,
-            crate::db::MediaId(mid as i32),
-        )
-        .await;
-    }
+    let media_type =
+        crate::db::MediaType::from_wire(meta_type).unwrap_or(crate::db::MediaType::Movie);
+    let opts = media_id.map_or_else(
+        || crate::db::StoreStreamOpts {
+            media_id: crate::db::MediaId(0),
+            media_type,
+            season: None,
+            episode: None,
+            link_source: crate::db::LinkSource::User,
+            is_primary: true,
+            is_verified: false,
+        },
+        |mid| crate::db::StoreStreamOpts::user_import(crate::db::MediaId(mid as i32), media_type),
+    );
+
+    let stream_id: i64 =
+        match crate::db::store_youtube_stream(&state.pool, &normalized, &opts).await {
+            Ok(r) => r.stream_id().0 as i64,
+            Err(e) => {
+                tracing::error!("import_youtube_video store: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
 
     let effective_meta_id = body
         .meta_id

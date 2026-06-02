@@ -729,9 +729,7 @@ pub async fn run_reindex(
         return forbidden();
     }
 
-    let tables: Vec<String> = body
-        .and_then(|Json(req)| req.tables)
-        .unwrap_or_default();
+    let tables: Vec<String> = body.and_then(|Json(req)| req.tables).unwrap_or_default();
 
     if tables.is_empty() {
         return (

@@ -12,7 +12,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    db::{MediaType, StreamType, TorrentType},
+    db::{MediaType, TorrentType},
     parser::detect_sports_category,
     state::AppState,
 };
@@ -698,27 +698,7 @@ pub async fn link_stream_audio_formats(
     stream_id: i32,
     formats: &[String],
 ) -> Result<(), sqlx::Error> {
-    for name in formats {
-        if name.is_empty() {
-            continue;
-        }
-        let fmt_id: Option<i32> = sqlx::query_scalar(
-            "INSERT INTO audio_format(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
-        )
-        .bind(name)
-        .fetch_optional(pool)
-        .await?;
-        if let Some(fid) = fmt_id {
-            sqlx::query(
-                "INSERT INTO stream_audio_link(stream_id, audio_format_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
-            )
-            .bind(stream_id)
-            .bind(fid)
-            .execute(pool)
-            .await?;
-        }
-    }
-    Ok(())
+    crate::db::link_stream_audio_formats(pool, stream_id, formats).await
 }
 
 /// Link HDR format names to a stream.
@@ -727,27 +707,7 @@ pub async fn link_stream_hdr_formats(
     stream_id: i32,
     formats: &[String],
 ) -> Result<(), sqlx::Error> {
-    for name in formats {
-        if name.is_empty() {
-            continue;
-        }
-        let hdr_id: Option<i32> = sqlx::query_scalar(
-            "INSERT INTO hdr_format(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
-        )
-        .bind(name)
-        .fetch_optional(pool)
-        .await?;
-        if let Some(hdr_id) = hdr_id {
-            sqlx::query(
-                "INSERT INTO stream_hdr_link(stream_id, hdr_format_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
-            )
-            .bind(stream_id)
-            .bind(hdr_id)
-            .execute(pool)
-            .await?;
-        }
-    }
-    Ok(())
+    crate::db::link_stream_hdr_formats(pool, stream_id, formats).await
 }
 
 /// Link audio channel names to a stream.
@@ -756,27 +716,7 @@ pub async fn link_stream_audio_channels(
     stream_id: i32,
     channels: &[String],
 ) -> Result<(), sqlx::Error> {
-    for name in channels {
-        if name.is_empty() {
-            continue;
-        }
-        let ch_id: Option<i32> = sqlx::query_scalar(
-            "INSERT INTO audio_channel(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
-        )
-        .bind(name)
-        .fetch_optional(pool)
-        .await?;
-        if let Some(ch_id) = ch_id {
-            sqlx::query(
-                "INSERT INTO stream_channel_link(stream_id, channel_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
-            )
-            .bind(stream_id)
-            .bind(ch_id)
-            .execute(pool)
-            .await?;
-        }
-    }
-    Ok(())
+    crate::db::link_stream_audio_channels(pool, stream_id, channels).await
 }
 
 /// Link audio languages to a stream (Python `StreamLanguageLink`).
@@ -785,27 +725,7 @@ pub async fn link_stream_languages(
     stream_id: i32,
     languages: &[String],
 ) -> Result<(), sqlx::Error> {
-    for lang in languages {
-        if lang.is_empty() {
-            continue;
-        }
-        let lang_id: Option<i32> = sqlx::query_scalar(
-            "INSERT INTO language(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name RETURNING id",
-        )
-        .bind(lang)
-        .fetch_optional(pool)
-        .await?;
-        if let Some(lid) = lang_id {
-            sqlx::query(
-                "INSERT INTO stream_language_link(stream_id, language_id, language_type) VALUES($1, $2, 'AUDIO') ON CONFLICT DO NOTHING",
-            )
-            .bind(stream_id)
-            .bind(lid)
-            .execute(pool)
-            .await?;
-        }
-    }
-    Ok(())
+    crate::db::link_stream_languages(pool, stream_id, languages).await
 }
 
 /// Link announce trackers to a torrent (`stream.id`).
@@ -814,7 +734,8 @@ pub async fn link_torrent_trackers(
     stream_id: i32,
     tracker_urls: &[String],
 ) -> Result<(), sqlx::Error> {
-    crate::db::link_torrent_trackers(pool, crate::db::StreamId(stream_id), tracker_urls).await
+    crate::db::link_torrent_trackers_for_stream(pool, crate::db::StreamId(stream_id), tracker_urls)
+        .await
 }
 
 /// Attach catalog names to media (Python import catalog linking).
@@ -890,19 +811,17 @@ pub async fn insert_torrent_import_files(
         }
         let size = file_info.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
 
-        let file_id: Option<i32> = sqlx::query_scalar(
-            r#"INSERT INTO stream_file(stream_id, file_index, filename, size, file_type, is_archive)
-               VALUES($1, $2, $3, $4, 'VIDEO', false)
-               ON CONFLICT (stream_id, file_index) DO UPDATE SET filename = EXCLUDED.filename
-               RETURNING id"#,
-        )
-        .bind(stream_id)
-        .bind(file_index)
-        .bind(filename)
-        .bind(size)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        let file_row = crate::db::StreamFileStoreInput {
+            file_index,
+            filename: filename.to_string(),
+            size: Some(size),
+            season_number: 0,
+            episode_number: 0,
+        };
+        let file_id =
+            crate::db::upsert_stream_file_row(pool, crate::db::StreamId(stream_id), &file_row)
+                .await
+                .map_err(|e| e.to_string())?;
 
         let Some(file_id) = file_id else {
             continue;
@@ -965,37 +884,34 @@ pub async fn insert_torrent_import_files(
             continue;
         };
 
-        let mut season = file_info
+        let season = file_info
             .get("season_number")
             .and_then(|v| v.as_i64())
             .map(|n| n as i32);
-        let mut episode = file_info
+        let episode = file_info
             .get("episode_number")
             .and_then(|v| v.as_i64())
             .map(|n| n as i32);
-        if default_meta_type == "series" {
-            if season.is_none() {
-                season = Some(1);
-            }
-            if episode.is_none() {
-                episode = Some(file_index + 1);
-            }
-        }
 
-        if let (Some(s), Some(e)) = (season, episode) {
-            sqlx::query(
-                r#"INSERT INTO file_media_link(file_id, media_id, season_number, episode_number)
-                   VALUES($1, $2, $3, $4)
-                   ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING"#,
-            )
-            .bind(file_id)
-            .bind(target_media)
-            .bind(s)
-            .bind(e)
-            .execute(pool)
-            .await
-            .map_err(|e| e.to_string())?;
-        }
+        let (s, e) = if default_meta_type == "series" {
+            crate::db::resolve_series_episode_numbers(file_index, season, episode)
+        } else if let (Some(s), Some(e)) = (season, episode) {
+            (s, e)
+        } else {
+            continue;
+        };
+
+        crate::db::link_file_to_media_episode(
+            pool,
+            file_id,
+            crate::db::MediaId(target_media),
+            s,
+            e,
+            crate::db::LinkSource::User,
+            true,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
 
         if target_media != primary_media_id.unwrap_or(-1) {
             let _ = link_stream_to_media(pool, stream_id, crate::db::MediaId(target_media)).await;
@@ -1196,9 +1112,7 @@ pub async fn organize_user_series_episodes(
     }
 }
 
-/// Insert a `stream` + `torrent_stream` row (all NOT NULL columns populated) and
-/// link it to `media_id`. On info_hash conflict, returns the existing stream id
-/// (and links media). This is the single source of truth for torrent stream rows.
+/// Insert a `stream` + `torrent_stream` row and link to `media_id` when provided.
 #[allow(clippy::too_many_arguments)]
 pub async fn insert_torrent_stream_row(
     pool: &PgPool,
@@ -1214,80 +1128,38 @@ pub async fn insert_torrent_stream_row(
     torrent_type: TorrentType,
     torrent_file: Option<&[u8]>,
 ) -> Result<i32, sqlx::Error> {
-    let mut txn = pool.begin().await?;
+    let _ = file_count;
+    let mut base =
+        crate::db::StreamStoreBase::from_parsed(name.to_string(), source.to_string(), parsed);
+    base.is_public = is_public;
 
-    let stream_id: i32 = sqlx::query_scalar(
-        r#"INSERT INTO stream(
-               stream_type, name, source, resolution, codec, quality,
-               is_proper, is_repack, is_remastered, is_upscaled, is_extended, is_complete, is_dubbed, is_subbed, release_group,
-               is_active, is_blocked, is_public, playback_count, created_at
-           ) VALUES(
-               $1, $2, $3, $4, $5, $6,
-               $7, $8, $9, $10, $11, $12, $13, $14, $15,
-               true, false, $16, 0, NOW()
-           )
-           RETURNING id"#,
-    )
-    .bind(StreamType::Torrent)
-    .bind(name)
-    .bind(source)
-    .bind(parsed.resolution.as_deref())
-    .bind(parsed.codec.as_deref())
-    .bind(parsed.quality.as_deref())
-    .bind(parsed.is_proper)
-    .bind(parsed.is_repack)
-    .bind(parsed.is_remastered)
-    .bind(parsed.is_upscaled)
-    .bind(parsed.is_extended)
-    .bind(parsed.is_complete)
-    .bind(parsed.is_dubbed)
-    .bind(parsed.is_subbed)
-    .bind(parsed.release_group.as_deref())
-    .bind(is_public)
-    .fetch_one(&mut *txn)
-    .await?;
+    let stream = crate::db::TorrentStoreInput {
+        base,
+        info_hash: info_hash.to_string(),
+        total_size: size.unwrap_or(0),
+        seeders,
+        torrent_type,
+        torrent_file: torrent_file.map(|b| b.to_vec()),
+        announce_list: vec![],
+        files: vec![],
+    };
 
-    let inserted = sqlx::query(
-        r#"INSERT INTO torrent_stream(stream_id, info_hash, total_size, seeders, torrent_type, file_count, torrent_file, created_at)
-           VALUES($1, $2, $3, $4, $5, $6, $7, NOW())
-           ON CONFLICT (info_hash) DO NOTHING"#,
-    )
-    .bind(stream_id)
-    .bind(info_hash)
-    .bind(size.unwrap_or(0))
-    .bind(seeders)
-    .bind(torrent_type)
-    .bind(file_count)
-    .bind(torrent_file)
-    .execute(&mut *txn)
-    .await?
-    .rows_affected()
-        > 0;
-
-    if !inserted {
-        // Another row already owns this info_hash — drop the orphan stream and reuse it.
-        sqlx::query("DELETE FROM stream WHERE id = $1")
-            .bind(stream_id)
-            .execute(&mut *txn)
-            .await
-            .ok();
-        txn.commit().await?;
-        let existing: i32 =
-            sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
-                .bind(info_hash)
-                .fetch_one(pool)
-                .await?;
-        if let Some(mid) = media_id {
-            let _ = link_stream_to_media(pool, existing, crate::db::MediaId(mid as i32)).await;
+    let opts = if let Some(mid) = media_id {
+        crate::db::StoreStreamOpts::user_import(crate::db::MediaId(mid as i32), MediaType::Movie)
+    } else {
+        crate::db::StoreStreamOpts {
+            media_id: crate::db::MediaId(0),
+            media_type: MediaType::Movie,
+            season: None,
+            episode: None,
+            link_source: crate::db::LinkSource::User,
+            is_primary: true,
+            is_verified: false,
         }
-        return Ok(existing);
-    }
+    };
 
-    txn.commit().await?;
-    if let Some(mid) = media_id {
-        let _ = link_stream_to_media(pool, stream_id, crate::db::MediaId(mid as i32)).await;
-    }
-    Ok(stream_id)
+    let result = crate::db::store_torrent_stream(pool, &stream, &opts).await?;
+    Ok(result.stream_id().0)
 }
 
 /// Populate `series_metadata` / `season` / `episode` rows so series detail pages

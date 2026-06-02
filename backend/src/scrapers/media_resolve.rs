@@ -188,10 +188,7 @@ pub async fn find_or_create_media_with_anime(
             title: match_meta.title.clone(),
             year: match_meta.year,
             poster_url: match_meta.poster_url.clone(),
-            external_ids: vec![(
-                match_meta.provider.clone(),
-                match_meta.external_id.clone(),
-            )],
+            external_ids: vec![(match_meta.provider.clone(), match_meta.external_id.clone())],
             ..Default::default()
         });
 
@@ -212,13 +209,10 @@ pub async fn find_or_create_media_with_anime(
             }
         }
 
-        let media_id = crate::db::store_media(
-            pool,
-            &normalized,
-            crate::db::StoreMediaOpts::default(),
-        )
-        .await
-        .ok()?;
+        let media_id =
+            crate::db::store_media(pool, &normalized, crate::db::StoreMediaOpts::default())
+                .await
+                .ok()?;
 
         link_to_catalogs(pool, media_id.0, catalog_ids).await;
         info!(
@@ -244,7 +238,10 @@ pub async fn find_or_create_media_with_anime(
         .ok()?;
     link_to_catalogs(pool, media_id.0, catalog_ids).await;
 
-    info!("media_resolve: created stub media {} for '{title}'", media_id.0);
+    info!(
+        "media_resolve: created stub media {} for '{title}'",
+        media_id.0
+    );
     Some(MediaEntry {
         id: media_id.0,
         title: title.to_string(),
@@ -607,9 +604,7 @@ pub async fn ensure_media_for_import(
     );
 
     if meta.external_ids.is_empty() {
-        if let Some((provider, ext_id)) =
-            crate::scrapers::metadata::parse_import_meta_id(meta_id)
-        {
+        if let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(meta_id) {
             meta.external_ids.push((provider.to_string(), ext_id));
         }
     }
@@ -630,32 +625,7 @@ pub async fn link_stream_to_media(
     stream_id: crate::db::StreamId,
     media_id: crate::db::MediaId,
 ) -> Result<(), sqlx::Error> {
-    let inserted: Option<(i32,)> = sqlx::query_as(
-        r#"INSERT INTO stream_media_link(stream_id, media_id, is_primary, is_verified, created_at)
-           SELECT $1, $2, true, false, NOW()
-           WHERE NOT EXISTS (
-               SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2
-           )
-           RETURNING 1"#,
-    )
-    .bind(stream_id)
-    .bind(media_id)
-    .fetch_optional(pool)
-    .await?;
-
-    if inserted.is_some() {
-        sqlx::query(
-            r#"UPDATE media SET
-                   total_streams = total_streams + 1,
-                   last_stream_added = GREATEST(COALESCE(last_stream_added, NOW()), NOW())
-               WHERE id = $1"#,
-        )
-        .bind(media_id)
-        .execute(pool)
-        .await?;
-    }
-
-    Ok(())
+    crate::db::link_stream_to_media(pool, stream_id, media_id).await
 }
 
 /// Minimum title similarity for DMM hashlist metadata linking (Python parity).

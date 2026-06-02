@@ -18,9 +18,9 @@ use crate::{
     parser,
     scrapers::{
         fetcher::{fetch_byparr, fetch_plain},
-        media_resolve, persist,
+        media_resolve,
         prowlarr::build_series_files,
-        ScrapedStream, SearchMeta,
+        stream_convert, ScrapedStream, SearchMeta,
     },
     util::{rate_limit, retry},
 };
@@ -327,7 +327,15 @@ async fn scrape_tamil_forum(
                         torrent_file: None,
                         announce_list: vec![],
                     };
-                    persist::write_back(&[stream], pool, &meta, media_type_str, None, None).await;
+                    stream_convert::write_back_torrents(
+                        pool,
+                        &[stream],
+                        &meta,
+                        media_type_str,
+                        None,
+                        None,
+                    )
+                    .await;
                     all_streams.push(());
                 }
             }

@@ -24,6 +24,20 @@ STAGED_FRONTEND_FILES=$(echo "$STAGED_FILES" | grep '^clients/frontend/' || true
 # The CI rust-build job runs `cargo sqlx prepare --check` against a real DB
 # and will catch any query!/schema drift that this check cannot.
 if [ -n "$STAGED_RUST_FILES" ]; then
+  STAGED_RUST_RELATIVE=$(echo "$STAGED_RUST_FILES" | sed 's|^backend/||')
+
+  echo "==> Running cargo fmt on staged Rust files..."
+  (
+    cd "$REPO_ROOT/backend"
+    # Format only staged Rust files to avoid touching unrelated files.
+    echo "$STAGED_RUST_RELATIVE" | xargs cargo fmt --all --
+  ) \
+    && echo "==> cargo fmt passed!" \
+    || { echo "==> cargo fmt FAILED — fix formatting errors before committing."; exit 1; }
+
+  echo "==> Re-staging formatted Rust files..."
+  echo "$STAGED_RUST_FILES" | xargs git add
+
   echo "==> Running cargo check on staged Rust files..."
   (cd "$REPO_ROOT/backend" && SQLX_OFFLINE=true cargo check --quiet 2>&1) \
     && echo "==> cargo check passed!" \

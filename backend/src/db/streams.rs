@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use tracing::warn;
 
-use super::types::{FileType, LinkSource, MediaId, MediaType, StreamFileId, StreamId};
+use super::types::{LinkSource, MediaId, MediaType, StreamId};
 
 fn is_series_episode(media_type: &str, season: Option<i32>, episode: Option<i32>) -> bool {
     matches!(
@@ -659,98 +659,13 @@ pub async fn upsert_stream_files(
     info_hash: &str,
     files: &[TorrentFileEntry],
 ) -> Result<(), sqlx::Error> {
-    if files.is_empty() {
-        return Ok(());
-    }
-
-    // Fetch stream_id + media_id in one query
-    let row: Option<(StreamId, i32, MediaId)> = sqlx::query_as(
-        r#"
-        SELECT ts.stream_id, ts.id, sml.media_id
-        FROM torrent_stream ts
-        JOIN stream_media_link sml ON sml.stream_id = ts.stream_id
-        WHERE ts.info_hash = $1
-        LIMIT 1
-        "#,
+    super::stream_store::upsert_torrent_files_by_hash(
+        pool,
+        info_hash,
+        files,
+        LinkSource::TorrentMetadata,
     )
-    .bind(info_hash)
-    .fetch_optional(pool)
-    .await?;
-
-    let (stream_id, _torrent_id, media_id) = match row {
-        Some(r) => r,
-        None => return Ok(()),
-    };
-
-    // Check if files already exist
-    let existing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_file WHERE stream_id = $1")
-        .bind(stream_id)
-        .fetch_one(pool)
-        .await?;
-
-    if existing > 0 {
-        return Ok(());
-    }
-
-    let mut txn = pool.begin().await?;
-
-    // Calculate total size for update
-    let total_size: i64 = files.iter().map(|f| f.size).sum();
-
-    for f in files {
-        let file_id: Option<StreamFileId> = sqlx::query_scalar(
-            r#"
-            INSERT INTO stream_file(stream_id, file_index, filename, size, file_type, is_archive)
-            VALUES ($1, $2, $3, $4, $5, false)
-            ON CONFLICT DO NOTHING
-            RETURNING id
-            "#,
-        )
-        .bind(stream_id)
-        .bind(f.file_index)
-        .bind(&f.filename)
-        .bind(f.size)
-        .bind(FileType::Video)
-        .fetch_optional(&mut *txn)
-        .await?;
-
-        if let Some(file_id) = file_id {
-            if let (Some(s), Some(e)) = (f.season, f.episode) {
-                sqlx::query(
-                    r#"
-                    INSERT INTO file_media_link(
-                        file_id, media_id, season_number, episode_number,
-                        is_primary, confidence, link_source, created_at
-                    )
-                    VALUES ($1, $2, $3, $4, false, 1.0, $5, NOW())
-                    ON CONFLICT DO NOTHING
-                    "#,
-                )
-                .bind(file_id)
-                .bind(media_id)
-                .bind(s)
-                .bind(e)
-                .bind(LinkSource::TorrentMetadata)
-                .execute(&mut *txn)
-                .await?;
-            }
-        }
-    }
-
-    // Update total_size on torrent_stream if new total is larger
-    sqlx::query(
-        r#"
-        UPDATE torrent_stream SET total_size = GREATEST(total_size, $2), updated_at = NOW()
-        WHERE stream_id = $1
-        "#,
-    )
-    .bind(stream_id)
-    .bind(total_size)
-    .execute(&mut *txn)
-    .await?;
-
-    txn.commit().await?;
-    Ok(())
+    .await
 }
 
 /// Fetch HTTP streams for a single media_id (used for live TV playback).

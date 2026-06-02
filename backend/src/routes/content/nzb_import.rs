@@ -214,105 +214,42 @@ async fn insert_usenet_stream(
     uploader_user_id: Option<i64>,
     is_public: bool,
 ) -> Result<i64, sqlx::Error> {
-    let mut txn = pool.begin().await?;
+    let mut base =
+        crate::db::StreamStoreBase::from_parsed(name.to_string(), source.to_string(), parsed);
+    base.uploader = Some(uploader.to_string());
+    base.uploader_user_id = uploader_user_id.map(|id| id as i32);
+    base.is_public = is_public;
 
-    let stream_id: i64 = sqlx::query_scalar(
-        r#"INSERT INTO stream(
-               stream_type, name, source, uploader, uploader_user_id,
-               resolution, codec, quality,
-               is_proper, is_repack, is_extended, is_complete, is_dubbed, release_group,
-               is_active, is_blocked, is_public, playback_count, created_at
-           ) VALUES(
-               $1, $2, $3, $4, $5,
-               $6, $7, $8,
-               $9, $10, $11, $12, $13, $14,
-               true, false, $15, 0, NOW()
-           )
-           RETURNING id"#,
-    )
-    .bind(crate::db::StreamType::Usenet)
-    .bind(name)
-    .bind(source)
-    .bind(uploader)
-    .bind(uploader_user_id)
-    .bind(parsed.resolution.as_deref())
-    .bind(parsed.codec.as_deref())
-    .bind(parsed.quality.as_deref())
-    .bind(parsed.is_proper)
-    .bind(parsed.is_repack)
-    .bind(parsed.is_extended)
-    .bind(parsed.is_complete)
-    .bind(parsed.is_dubbed)
-    .bind(parsed.release_group.as_deref())
-    .bind(is_public)
-    .fetch_one(&mut *txn)
-    .await?;
+    let stream = crate::db::UsenetStoreInput {
+        base,
+        nzb_guid: nzb_guid.to_string(),
+        nzb_url: nzb_url.unwrap_or("").to_string(),
+        size: size.unwrap_or(0),
+        indexer: indexer.unwrap_or("").to_string(),
+        group_name: group_name.map(str::to_string),
+        is_passworded: false,
+        files: vec![],
+    };
 
-    let us_result = sqlx::query(
-        r#"INSERT INTO usenet_stream(
-               stream_id, nzb_guid, nzb_url, size, indexer, group_name, is_passworded
-           ) VALUES($1, $2, $3, $4, $5, $6, false)
-           ON CONFLICT (nzb_guid) DO NOTHING"#,
-    )
-    .bind(stream_id as i32)
-    .bind(nzb_guid)
-    .bind(nzb_url)
-    .bind(size)
-    .bind(indexer)
-    .bind(group_name)
-    .execute(&mut *txn)
-    .await;
-
-    if let Ok(r) = &us_result {
-        if r.rows_affected() == 0 {
-            sqlx::query("DELETE FROM stream WHERE id = $1")
-                .bind(stream_id as i32)
-                .execute(&mut *txn)
-                .await
-                .ok();
-            txn.commit().await?;
-            let existing: i64 =
-                sqlx::query_scalar("SELECT stream_id FROM usenet_stream WHERE nzb_guid = $1")
-                    .bind(nzb_guid)
-                    .fetch_one(pool)
-                    .await
-                    .unwrap_or(stream_id);
-            if let Some(mid) = media_id {
-                let _ = super::import_helpers::link_stream_to_media(
-                    pool,
-                    existing as i32,
-                    crate::db::MediaId(mid as i32),
-                )
-                .await;
-            }
-            return Ok(existing);
-        }
-    }
-    us_result?;
-
-    if let Some(mid) = media_id {
-        sqlx::query(
-            r#"INSERT INTO stream_media_link(stream_id, media_id, is_primary, is_verified, created_at)
-               SELECT $1, $2, true, false, NOW()
-               WHERE NOT EXISTS (
-                   SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2
-               )"#,
+    let opts = if let Some(mid) = media_id {
+        crate::db::StoreStreamOpts::user_import(
+            crate::db::MediaId(mid as i32),
+            crate::db::MediaType::Movie,
         )
-        .bind(stream_id as i32)
-        .bind(mid as i32)
-        .execute(&mut *txn)
-        .await
-        .ok();
+    } else {
+        crate::db::StoreStreamOpts {
+            media_id: crate::db::MediaId(0),
+            media_type: crate::db::MediaType::Movie,
+            season: None,
+            episode: None,
+            link_source: crate::db::LinkSource::User,
+            is_primary: true,
+            is_verified: false,
+        }
+    };
 
-        sqlx::query("UPDATE media SET total_streams = total_streams + 1 WHERE id = $1")
-            .bind(mid as i32)
-            .execute(&mut *txn)
-            .await
-            .ok();
-    }
-
-    txn.commit().await?;
-    Ok(stream_id)
+    let result = crate::db::store_usenet_stream(pool, &stream, &opts).await?;
+    Ok(result.stream_id().0 as i64)
 }
 
 fn nzb_info_to_response(

@@ -1519,37 +1519,33 @@ pub async fn add_tv_metadata(
         if stream_url.is_empty() {
             continue;
         }
-        let stream_row: Result<(i64,), _> = sqlx::query_as(
-            "INSERT INTO stream (stream_type, name, source, is_active, is_blocked, is_public, playback_count, created_at) \
-             VALUES ('HTTP', $1, $2, true, false, true, 0, NOW()) RETURNING id",
-        )
-        .bind(&stream_name)
-        .bind(&stream_source)
-        .fetch_one(&state.pool)
-        .await;
+        let normalized = crate::db::HttpStoreInput {
+            base: crate::db::StreamStoreBase {
+                name: stream_name.clone(),
+                source: stream_source.clone(),
+                is_public: true,
+                ..Default::default()
+            },
+            url: stream_url.clone(),
+            format: None,
+            behavior_hints: None,
+            drm_key_id: None,
+            drm_key: None,
+            extractor_name: None,
+        };
 
-        match stream_row {
-            Ok((stream_id,)) => {
-                let _ = sqlx::query("INSERT INTO http_stream (stream_id, url) VALUES ($1, $2)")
-                    .bind(stream_id)
-                    .bind(&stream_url)
-                    .execute(&state.pool)
-                    .await;
+        let opts = crate::db::StoreStreamOpts::user_import(
+            crate::db::MediaId(media_id as i32),
+            crate::db::MediaType::Series,
+        );
 
-                let _ = sqlx::query(
-                    "INSERT INTO stream_media_link (stream_id, media_id, is_primary, is_verified, created_at) \
-                     SELECT $1, $2, true, false, NOW() \
-                     WHERE NOT EXISTS (SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2)",
-                )
-                .bind(stream_id)
-                .bind(media_id)
-                .execute(&state.pool)
-                .await;
-
+        match crate::db::store_http_stream(&state.pool, &normalized, &opts).await {
+            Ok(r) if r.was_inserted() => {
                 streams_added += 1;
             }
+            Ok(_) => {}
             Err(e) => {
-                tracing::warn!("add_tv_metadata insert stream error: {e}");
+                tracing::warn!("add_tv_metadata store stream error: {e}");
             }
         }
     }

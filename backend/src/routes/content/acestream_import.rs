@@ -397,48 +397,45 @@ pub async fn import_acestream(
         }
     }
 
-    // Insert stream
-    let stream_id: i64 = match sqlx::query_scalar(
-        r#"INSERT INTO stream (stream_type, name, source, uploader, uploader_user_id, is_active, is_blocked, is_public, playback_count, is_remastered, is_upscaled, is_proper, is_repack, is_extended, is_complete, is_dubbed, is_subbed, created_at, resolution, quality, codec)
-           VALUES ('ACESTREAM', $1, 'user_import', $2, $3, true, false, $4, 0, false, false, false, false, false, false, false, false, NOW(), NULL, NULL, NULL)
-           RETURNING id"#,
-    )
-    .bind(&stream_name)
-    .bind(&uploader_name)
-    .bind(uploader_user_id)
-    .bind(is_public)
-    .fetch_one(&state.pool)
-    .await
-    {
-        Ok(id) => id,
-        Err(e) => {
-            tracing::error!("import_acestream insert stream: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
+    let base = crate::db::StreamStoreBase {
+        name: stream_name.clone(),
+        source: "user_import".to_string(),
+        uploader: Some(uploader_name.clone()),
+        uploader_user_id: uploader_user_id.map(|id| id as i32),
+        is_public,
+        ..Default::default()
     };
 
-    // Insert acestream_stream
-    if let Err(e) = sqlx::query(
-        "INSERT INTO acestream_stream (stream_id, content_id, info_hash) VALUES ($1, $2, $3)",
-    )
-    .bind(stream_id)
-    .bind(&content_id)
-    .bind(&info_hash)
-    .execute(&state.pool)
-    .await
-    {
-        tracing::error!("import_acestream insert acestream_stream: {e}");
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-    }
+    let normalized = crate::db::AcestreamStoreInput {
+        base,
+        content_id: content_id.clone(),
+        info_hash: info_hash.clone(),
+    };
 
-    if let Some(mid) = media_id {
-        let _ = super::import_helpers::link_stream_to_media(
-            &state.pool,
-            stream_id as i32,
-            crate::db::MediaId(mid as i32),
-        )
-        .await;
-    }
+    let meta_type = body.meta_type.as_deref().unwrap_or("tv");
+    let media_type =
+        crate::db::MediaType::from_wire(meta_type).unwrap_or(crate::db::MediaType::Series);
+    let opts = media_id.map_or_else(
+        || crate::db::StoreStreamOpts {
+            media_id: crate::db::MediaId(0),
+            media_type,
+            season: None,
+            episode: None,
+            link_source: crate::db::LinkSource::User,
+            is_primary: true,
+            is_verified: false,
+        },
+        |mid| crate::db::StoreStreamOpts::user_import(crate::db::MediaId(mid as i32), media_type),
+    );
+
+    let stream_id: i64 =
+        match crate::db::store_acestream_stream(&state.pool, &normalized, &opts).await {
+            Ok(r) => r.stream_id().0 as i64,
+            Err(e) => {
+                tracing::error!("import_acestream store: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
 
     let effective_meta_id = body
         .meta_id

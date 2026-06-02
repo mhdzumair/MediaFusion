@@ -9,11 +9,11 @@ use crate::{
     },
     parser,
     scrapers::{
-        fetcher, media_resolve, persist,
+        fetcher, media_resolve,
         prowlarr::build_series_files,
         public_indexer_registry::ALL_INDEXERS,
         public_indexers::{extract_row_data_pub, parse_size_bytes_pub},
-        ScrapedStream,
+        stream_convert, ScrapedStream,
     },
     util::rate_limit,
 };
@@ -208,9 +208,9 @@ impl JobHandler for RegistryCrawl {
                 )
                 .await
                 {
-                    persist::write_back(
-                        std::slice::from_ref(&stream),
+                    stream_convert::write_back_torrents(
                         pool,
+                        std::slice::from_ref(&stream),
                         &meta,
                         media_type,
                         None,

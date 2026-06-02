@@ -31,7 +31,7 @@ use crate::{
         handler::{JobCtx, JobHandler},
     },
     parser,
-    scrapers::{media_resolve, persist, ScrapedStream, SearchMeta, StreamFile},
+    scrapers::{media_resolve, stream_convert, ScrapedStream, SearchMeta, StreamFile},
 };
 
 // ─── Redis key constants (must match Python side) ─────────────────────────────
@@ -438,9 +438,9 @@ async fn store_torrent_stream(
         announce_list: vec![],
     };
 
-    persist::write_back(
-        &[stream],
+    stream_convert::write_back_torrents(
         pool,
+        &[stream],
         &resolved.meta,
         &resolved.media_type,
         resolved.season,

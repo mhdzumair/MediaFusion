@@ -7,7 +7,7 @@ use crate::{
         error::JobError,
         handler::{JobCtx, JobHandler},
     },
-    scrapers::{jackett, media_resolve, persist},
+    scrapers::{jackett, media_resolve, stream_convert},
 };
 
 pub struct JackettFeedScraper;
@@ -126,9 +126,9 @@ impl JobHandler for JackettFeedScraper {
             )
             .await
             {
-                persist::write_back(
-                    std::slice::from_ref(&stream),
+                stream_convert::write_back_torrents(
                     pool,
+                    std::slice::from_ref(&stream),
                     &meta,
                     media_type,
                     None,

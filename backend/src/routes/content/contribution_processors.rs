@@ -3,10 +3,7 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 
 use crate::{
-    db::{StreamType, TorrentType},
-    parser,
-    scrapers::media_resolve::ImportMediaOverrides,
-    state::AppState,
+    db::TorrentType, parser, scrapers::media_resolve::ImportMediaOverrides, state::AppState,
 };
 
 use super::import_helpers::{
@@ -232,48 +229,7 @@ async fn process_torrent(
         .unwrap_or(parsed.is_subbed);
     let release_group = data_str(data, "release_group").or(parsed.release_group.as_deref());
 
-    let stream_id: i32 = sqlx::query_scalar(
-        r#"INSERT INTO stream(
-               stream_type, name, source, uploader, uploader_user_id,
-               resolution, codec, quality, bit_depth, release_group,
-               is_proper, is_repack, is_remastered, is_upscaled,
-               is_extended, is_complete, is_dubbed, is_subbed, is_active, is_blocked, is_public,
-               playback_count, created_at
-           ) VALUES(
-               $1, $2, 'Contribution Stream', $3, $4,
-               $5, $6, $7, $8, $9,
-               $10, $11, $12, $13, $14, $15, $16, $17,
-               true, false, $18, 0, NOW()
-           ) RETURNING id"#,
-    )
-    .bind(StreamType::Torrent)
-    .bind(name)
-    .bind(&uploader_name)
-    .bind(uploader_user_id)
-    .bind(data_str(data, "resolution").or(parsed.resolution.as_deref()))
-    .bind(data_str(data, "codec").or(parsed.codec.as_deref()))
-    .bind(data_str(data, "quality").or(parsed.quality.as_deref()))
-    .bind(data_str(data, "bit_depth"))
-    .bind(release_group)
-    .bind(is_proper)
-    .bind(is_repack)
-    .bind(is_remastered)
-    .bind(is_upscaled)
-    .bind(is_extended)
-    .bind(is_complete)
-    .bind(is_dubbed)
-    .bind(is_subbed)
-    .bind(
-        data.get("is_public")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true),
-    )
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|e| ImportProcessError::Other(e.to_string()))?;
-
     let total_size = data.get("total_size").and_then(|v| v.as_i64()).unwrap_or(0);
-    let file_count = data.get("file_count").and_then(|v| v.as_i64()).unwrap_or(1) as i32;
     let torrent_type = data
         .get("torrent_type")
         .and_then(|v| v.as_str())
@@ -288,35 +244,77 @@ async fn process_torrent(
         torrent_file_bytes,
     );
 
-    sqlx::query(
-        r#"INSERT INTO torrent_stream(stream_id, info_hash, total_size, torrent_type, file_count, torrent_file, created_at)
-           VALUES($1, $2, $3, $4, $5, $6, NOW())"#,
-    )
-    .bind(stream_id)
-    .bind(&info_hash)
-    .bind(total_size)
-    .bind(torrent_type)
-    .bind(file_count)
-    .bind(torrent_file.as_deref())
-    .execute(&state.pool)
-    .await
-    .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let mut base = crate::db::StreamStoreBase::from_parsed(
+        name.to_string(),
+        "Contribution Stream".to_string(),
+        &parsed,
+    );
+    base.resolution = data_str(data, "resolution")
+        .map(str::to_string)
+        .or(parsed.resolution.clone());
+    base.codec = data_str(data, "codec")
+        .map(str::to_string)
+        .or(parsed.codec.clone());
+    base.quality = data_str(data, "quality")
+        .map(str::to_string)
+        .or(parsed.quality.clone());
+    base.bit_depth = data_str(data, "bit_depth").map(str::to_string);
+    base.release_group = release_group.map(str::to_string);
+    base.is_proper = is_proper;
+    base.is_repack = is_repack;
+    base.is_remastered = is_remastered;
+    base.is_upscaled = is_upscaled;
+    base.is_extended = is_extended;
+    base.is_complete = is_complete;
+    base.is_dubbed = is_dubbed;
+    base.is_subbed = is_subbed;
+    base.uploader = Some(uploader_name.clone());
+    base.uploader_user_id = uploader_user_id.map(|id| id as i32);
+    base.is_public = data
+        .get("is_public")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
 
-    if let Some(list) = data.get("announce_list").and_then(|v| v.as_array()) {
-        let trackers: Vec<String> = list
-            .iter()
-            .filter_map(|v| v.as_str().map(str::to_string))
-            .collect();
-        if !trackers.is_empty() {
-            let _ = import_helpers::link_torrent_trackers(&state.pool, stream_id, &trackers).await;
-        }
-    }
+    let announce_list: Vec<String> = data
+        .get("announce_list")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
 
-    if let Some(mid) = media_id {
-        let _ =
-            import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid))
-                .await;
-    }
+    let normalized = crate::db::TorrentStoreInput {
+        base,
+        info_hash: info_hash.to_string(),
+        total_size,
+        seeders: None,
+        torrent_type,
+        torrent_file,
+        announce_list,
+        files: vec![],
+    };
+
+    let media_type =
+        crate::db::MediaType::from_wire(effective_meta_type).unwrap_or(crate::db::MediaType::Movie);
+    let opts = media_id.map_or_else(
+        || crate::db::StoreStreamOpts {
+            media_id: crate::db::MediaId(0),
+            media_type,
+            season: None,
+            episode: None,
+            link_source: crate::db::LinkSource::User,
+            is_primary: true,
+            is_verified: false,
+        },
+        |mid| crate::db::StoreStreamOpts::user_import(crate::db::MediaId(mid), media_type),
+    );
+
+    let result = crate::db::store_torrent_stream(&state.pool, &normalized, &opts)
+        .await
+        .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let stream_id = result.stream_id().0;
 
     if !file_rows.is_empty() {
         import_helpers::insert_torrent_import_files(
@@ -415,58 +413,48 @@ async fn process_nzb(
     let media_id = resolve_media(state, &meta_id, meta_type, name, data, None).await;
 
     let parsed = parser::parse_title(name);
-    let stream_id: i32 = sqlx::query_scalar(
-        r#"INSERT INTO stream(stream_type, name, source, uploader, uploader_user_id,
-               resolution, codec, quality, is_proper, is_repack, release_group,
-               is_active, is_blocked, is_public, playback_count, created_at)
-           VALUES($1, $2, $3, $4, $5,
-               $6, $7, $8, $9, $10, $11,
-               true, false, true, 0, NOW()) RETURNING id"#,
-    )
-    .bind(StreamType::Usenet)
-    .bind(name)
-    .bind(data_str(data, "indexer").unwrap_or("User Import"))
-    .bind(&uploader_name)
-    .bind(uploader_user_id)
-    .bind(data_str(data, "resolution").or(parsed.resolution.as_deref()))
-    .bind(data_str(data, "codec").or(parsed.codec.as_deref()))
-    .bind(data_str(data, "quality").or(parsed.quality.as_deref()))
-    .bind(
-        data.get("is_proper")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(parsed.is_proper),
-    )
-    .bind(
-        data.get("is_repack")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(parsed.is_repack),
-    )
-    .bind(data_str(data, "group_name").or(parsed.release_group.as_deref()))
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let mut base = crate::db::StreamStoreBase::from_parsed(
+        name.to_string(),
+        data_str(data, "indexer")
+            .unwrap_or("User Import")
+            .to_string(),
+        &parsed,
+    );
+    base.uploader = Some(uploader_name.clone());
+    base.uploader_user_id = uploader_user_id.map(|id| id as i32);
 
-    let nzb_url = data_str(data, "nzb_url");
-    let size = data.get("total_size").and_then(|v| v.as_i64());
+    let normalized = crate::db::UsenetStoreInput {
+        base,
+        nzb_guid: nzb_guid.to_string(),
+        nzb_url: data_str(data, "nzb_url").unwrap_or("").to_string(),
+        size: data.get("total_size").and_then(|v| v.as_i64()).unwrap_or(0),
+        indexer: data_str(data, "indexer")
+            .unwrap_or("User Import")
+            .to_string(),
+        group_name: data_str(data, "group_name").map(str::to_string),
+        is_passworded: false,
+        files: vec![],
+    };
 
-    sqlx::query(
-        r#"INSERT INTO usenet_stream(stream_id, nzb_guid, nzb_url, size, indexer, is_passworded)
-           VALUES($1, $2, $3, $4, $5, false)"#,
-    )
-    .bind(stream_id)
-    .bind(nzb_guid)
-    .bind(nzb_url)
-    .bind(size)
-    .bind(data_str(data, "indexer").unwrap_or("User Import"))
-    .execute(&state.pool)
-    .await
-    .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let media_type =
+        crate::db::MediaType::from_wire(meta_type).unwrap_or(crate::db::MediaType::Movie);
+    let opts = media_id.map_or_else(
+        || crate::db::StoreStreamOpts {
+            media_id: crate::db::MediaId(0),
+            media_type,
+            season: None,
+            episode: None,
+            link_source: crate::db::LinkSource::User,
+            is_primary: true,
+            is_verified: false,
+        },
+        |mid| crate::db::StoreStreamOpts::user_import(crate::db::MediaId(mid), media_type),
+    );
 
-    if let Some(mid) = media_id {
-        let _ =
-            import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid))
-                .await;
-    }
+    let result = crate::db::store_usenet_stream(&state.pool, &normalized, &opts)
+        .await
+        .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let stream_id = result.stream_id().0;
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;
 
@@ -524,35 +512,44 @@ async fn process_http(
         }
     }
 
-    let stream_id: i32 = sqlx::query_scalar(
-        r#"INSERT INTO stream(stream_type, name, source, uploader, uploader_user_id, is_active, is_blocked, is_public, playback_count, created_at)
-           VALUES($1, $2, 'user_import', $3, $4, true, false, true, 0, NOW()) RETURNING id"#,
-    )
-    .bind(StreamType::Http)
-    .bind(title)
-    .bind(&uploader_name)
-    .bind(uploader_user_id)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let base = crate::db::StreamStoreBase {
+        name: title.to_string(),
+        source: "user_import".to_string(),
+        uploader: Some(uploader_name.clone()),
+        uploader_user_id: uploader_user_id.map(|id| id as i32),
+        is_public: true,
+        ..Default::default()
+    };
 
-    let behavior_hints = data.get("behavior_hints").map(|v| v.to_string());
-    sqlx::query(
-        "INSERT INTO http_stream (stream_id, url, format, behavior_hints) VALUES ($1, $2, $3, $4::jsonb)",
-    )
-    .bind(stream_id)
-    .bind(url)
-    .bind(data_str(data, "format"))
-    .bind(behavior_hints.as_deref())
-    .execute(&state.pool)
-    .await
-    .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let normalized = crate::db::HttpStoreInput {
+        base,
+        url: url.to_string(),
+        format: data_str(data, "format").map(str::to_string),
+        behavior_hints: data.get("behavior_hints").cloned(),
+        drm_key_id: None,
+        drm_key: None,
+        extractor_name: None,
+    };
 
-    if let Some(mid) = media_id {
-        let _ =
-            import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid))
-                .await;
-    }
+    let media_type =
+        crate::db::MediaType::from_wire(meta_type).unwrap_or(crate::db::MediaType::Movie);
+    let opts = media_id.map_or_else(
+        || crate::db::StoreStreamOpts {
+            media_id: crate::db::MediaId(0),
+            media_type,
+            season: None,
+            episode: None,
+            link_source: crate::db::LinkSource::User,
+            is_primary: true,
+            is_verified: false,
+        },
+        |mid| crate::db::StoreStreamOpts::user_import(crate::db::MediaId(mid), media_type),
+    );
+
+    let result = crate::db::store_http_stream(&state.pool, &normalized, &opts)
+        .await
+        .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let stream_id = result.stream_id().0;
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;
 
@@ -614,37 +611,56 @@ async fn process_youtube(
 
     let media_id = resolve_media(state, &meta_id, meta_type, title, data, None).await;
 
-    let stream_id: i32 = sqlx::query_scalar(
-        r#"INSERT INTO stream(stream_type, name, source, uploader, uploader_user_id, is_active, is_blocked, is_public, playback_count, created_at)
-           VALUES($1, $2, 'youtube', $3, $4, true, false, true, 0, NOW()) RETURNING id"#,
-    )
-    .bind(StreamType::Youtube)
-    .bind(title)
-    .bind(&uploader_name)
-    .bind(uploader_user_id)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let base = crate::db::StreamStoreBase {
+        name: title.to_string(),
+        source: "youtube".to_string(),
+        uploader: Some(uploader_name.clone()),
+        uploader_user_id: uploader_user_id.map(|id| id as i32),
+        is_public: true,
+        ..Default::default()
+    };
 
-    sqlx::query(
-        "INSERT INTO youtube_stream (stream_id, video_id, channel_id, channel_name, duration_seconds, is_live) \
-         VALUES ($1, $2, $3, $4, $5, $6)",
-    )
-    .bind(stream_id)
-    .bind(video_id)
-    .bind(data.get("channel_id").and_then(|v| v.as_str()))
-    .bind(data.get("channel_name").and_then(|v| v.as_str()))
-    .bind(data.get("duration_seconds").and_then(|v| v.as_i64()))
-    .bind(data.get("is_live").and_then(|v| v.as_bool()).unwrap_or(false))
-    .execute(&state.pool)
-    .await
-    .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let normalized = crate::db::YoutubeStoreInput {
+        base,
+        video_id: video_id.to_string(),
+        channel_id: data
+            .get("channel_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        channel_name: data
+            .get("channel_name")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        duration_seconds: data
+            .get("duration_seconds")
+            .and_then(|v| v.as_i64())
+            .map(|n| n as i32),
+        is_live: data
+            .get("is_live")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        is_premiere: false,
+    };
 
-    if let Some(mid) = media_id {
-        let _ =
-            import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid))
-                .await;
-    }
+    let media_type =
+        crate::db::MediaType::from_wire(meta_type).unwrap_or(crate::db::MediaType::Movie);
+    let opts = media_id.map_or_else(
+        || crate::db::StoreStreamOpts {
+            media_id: crate::db::MediaId(0),
+            media_type,
+            season: None,
+            episode: None,
+            link_source: crate::db::LinkSource::User,
+            is_primary: true,
+            is_verified: false,
+        },
+        |mid| crate::db::StoreStreamOpts::user_import(crate::db::MediaId(mid), media_type),
+    );
+
+    let result = crate::db::store_youtube_stream(&state.pool, &normalized, &opts)
+        .await
+        .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let stream_id = result.stream_id().0;
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;
 
@@ -708,33 +724,40 @@ async fn process_acestream(
 
     let media_id = resolve_media(state, &meta_id, meta_type, title, data, None).await;
 
-    let stream_id: i32 = sqlx::query_scalar(
-        r#"INSERT INTO stream(stream_type, name, source, uploader, uploader_user_id, is_active, is_blocked, is_public, playback_count, created_at)
-           VALUES($1, $2, 'user_import', $3, $4, true, false, true, 0, NOW()) RETURNING id"#,
-    )
-    .bind(StreamType::Acestream)
-    .bind(title)
-    .bind(&uploader_name)
-    .bind(uploader_user_id)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let base = crate::db::StreamStoreBase {
+        name: title.to_string(),
+        source: "user_import".to_string(),
+        uploader: Some(uploader_name.clone()),
+        uploader_user_id: uploader_user_id.map(|id| id as i32),
+        is_public: true,
+        ..Default::default()
+    };
 
-    sqlx::query(
-        "INSERT INTO acestream_stream (stream_id, content_id, info_hash) VALUES ($1, $2, $3)",
-    )
-    .bind(stream_id)
-    .bind(content_id)
-    .bind(data_str(data, "info_hash"))
-    .execute(&state.pool)
-    .await
-    .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let normalized = crate::db::AcestreamStoreInput {
+        base,
+        content_id: content_id.to_string(),
+        info_hash: data_str(data, "info_hash").map(str::to_string),
+    };
 
-    if let Some(mid) = media_id {
-        let _ =
-            import_helpers::link_stream_to_media(&state.pool, stream_id, crate::db::MediaId(mid))
-                .await;
-    }
+    let media_type =
+        crate::db::MediaType::from_wire(meta_type).unwrap_or(crate::db::MediaType::Series);
+    let opts = media_id.map_or_else(
+        || crate::db::StoreStreamOpts {
+            media_id: crate::db::MediaId(0),
+            media_type,
+            season: None,
+            episode: None,
+            link_source: crate::db::LinkSource::User,
+            is_primary: true,
+            is_verified: false,
+        },
+        |mid| crate::db::StoreStreamOpts::user_import(crate::db::MediaId(mid), media_type),
+    );
+
+    let result = crate::db::store_acestream_stream(&state.pool, &normalized, &opts)
+        .await
+        .map_err(|e| ImportProcessError::Other(e.to_string()))?;
+    let stream_id = result.stream_id().0;
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, false).await?;
 

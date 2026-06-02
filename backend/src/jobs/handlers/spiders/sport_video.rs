@@ -26,7 +26,7 @@ use crate::{
     scrapers::{
         browser,
         fetcher::{fetch_byparr, fetch_plain},
-        media_resolve, persist, ScrapedStream, SearchMeta,
+        media_resolve, stream_convert, ScrapedStream, SearchMeta,
     },
     util::rate_limit,
 };
@@ -425,7 +425,15 @@ impl JobHandler for SportVideoCrawl {
                     title: block.title.clone(),
                     year: parsed_title.year,
                 };
-                persist::write_back(&block_streams, pool, &meta, "movie", None, None).await;
+                stream_convert::write_back_torrents(
+                    pool,
+                    &block_streams,
+                    &meta,
+                    "movie",
+                    None,
+                    None,
+                )
+                .await;
             }
         }
 
