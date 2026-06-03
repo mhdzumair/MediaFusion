@@ -175,7 +175,9 @@ pub async fn list_integrations(
     headers: HeaderMap,
     Query(params): Query<ProfileIdQuery>,
 ) -> Response {
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -279,7 +281,9 @@ pub async fn get_sync_status(
     Path(platform): Path<String>,
     Query(params): Query<ProfileIdQuery>,
 ) -> Response {
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -428,7 +432,9 @@ pub async fn connect_trakt(
     Query(params): Query<ProfileIdQuery>,
     Json(body): Json<TraktConnectRequest>,
 ) -> Response {
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -551,7 +557,9 @@ pub async fn connect_simkl(
     Query(params): Query<ProfileIdQuery>,
     Json(body): Json<SimklConnectRequest>,
 ) -> Response {
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -678,7 +686,9 @@ pub async fn disconnect_integration(
     Path(platform): Path<String>,
     Query(params): Query<ProfileIdQuery>,
 ) -> Response {
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -738,7 +748,9 @@ pub async fn update_integration_settings(
     Query(params): Query<ProfileIdQuery>,
     Json(body): Json<IntegrationSettingsUpdate>,
 ) -> Response {
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -834,7 +846,9 @@ pub async fn trigger_sync(
     Path(platform): Path<String>,
     Query(params): Query<TriggerSyncQuery>,
 ) -> Response {
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -936,7 +950,9 @@ pub async fn trigger_sync_all(
     headers: HeaderMap,
     Query(_params): Query<ProfileIdQuery>,
 ) -> Response {
-    let Some(_user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(_user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -1054,7 +1070,9 @@ pub async fn get_telegram_config(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Response {
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -1090,7 +1108,9 @@ pub async fn update_telegram_config(
     headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -1146,7 +1166,9 @@ pub async fn add_telegram_channel(
     headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -1208,7 +1230,9 @@ pub async fn remove_telegram_channel(
     headers: HeaderMap,
     Path(channel_id): Path<String>,
 ) -> Response {
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -1256,7 +1280,9 @@ pub async fn update_telegram_channel(
     Path(channel_id): Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -1413,7 +1439,9 @@ pub async fn telegram_login(
 ) -> Response {
     use fred::prelude::{Expiration, KeysInterface};
 
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 
@@ -1580,7 +1608,9 @@ pub async fn telegram_login(
 pub async fn telegram_unlink(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     use fred::prelude::KeysInterface;
 
-    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
         return unauthorized();
     };
 

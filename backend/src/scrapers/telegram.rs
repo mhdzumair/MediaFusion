@@ -27,16 +27,11 @@ fn imdb_pattern() -> &'static Regex {
 }
 
 fn extract_caption_imdb(caption: &str) -> Option<String> {
-    imdb_pattern()
-        .find(caption)
-        .map(|m| m.as_str().to_string())
+    imdb_pattern().find(caption).map(|m| m.as_str().to_string())
 }
 
 fn document_is_video(doc: &grammers_client::media::Document) -> bool {
-    if doc
-        .mime_type()
-        .is_some_and(|m| m.starts_with("video/"))
-    {
+    if doc.mime_type().is_some_and(|m| m.starts_with("video/")) {
         return true;
     }
     doc.duration().is_some() && doc.resolution().is_some()
@@ -248,12 +243,8 @@ fn process_message(
             let mime = doc.mime_type().map(str::to_string);
             if !is_video {
                 let lower = name.to_lowercase();
-                let mime_is_video = mime
-                    .as_deref()
-                    .is_some_and(|m| m.starts_with("video/"));
-                if !mime_is_video
-                    && !VIDEO_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
-                {
+                let mime_is_video = mime.as_deref().is_some_and(|m| m.starts_with("video/"));
+                if !mime_is_video && !VIDEO_EXTENSIONS.iter().any(|ext| lower.ends_with(ext)) {
                     return None;
                 }
             }

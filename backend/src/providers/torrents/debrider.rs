@@ -12,7 +12,10 @@ use crate::providers::{
 
 const BASE: &str = "https://debrider.app/api/v1";
 
-fn auth_headers(token: &str, user_ip: Option<&str>) -> Result<reqwest::header::HeaderMap, ProviderError> {
+fn auth_headers(
+    token: &str,
+    user_ip: Option<&str>,
+) -> Result<reqwest::header::HeaderMap, ProviderError> {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
         reqwest::header::AUTHORIZATION,

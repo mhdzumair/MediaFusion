@@ -49,7 +49,10 @@ pub async fn get_providers(
     Query(params): Query<ProvidersQuery>,
 ) -> Response {
     // Auth is optional — unauthenticated requests return an empty provider list.
-    let user_id = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await.map(i64::from);
+    let user_id =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+            .map(i64::from);
 
     // Fetch the profile config (with secrets decrypted), including the actual profile id.
     type ProfileRecord = (i32, Option<serde_json::Value>, Option<String>);
@@ -194,16 +197,20 @@ pub async fn get_watchlist(
     State(state): State<Arc<AppState>>,
     Query(params): Query<WatchlistQuery>,
 ) -> Response {
-    let _user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await.map(i64::from) {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"detail": "Unauthorized"})),
-            )
-                .into_response()
-        }
-    };
+    let _user_id =
+        match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+            .map(i64::from)
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({"detail": "Unauthorized"})),
+                )
+                    .into_response()
+            }
+        };
 
     let page = params.page.unwrap_or(1).max(1);
     let page_size = params.page_size.unwrap_or(25).clamp(1, 100);

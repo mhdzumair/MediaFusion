@@ -594,8 +594,17 @@ pub async fn upsert_torrent_files_by_hash(
             insert_stream_file(&mut *txn, stream_id, &normalized, f.size > 0).await?
         {
             if let (Some(s), Some(e)) = (f.season, f.episode) {
-                insert_file_media_link(&mut *txn, file_id, media_id, s, e, None, false, link_source)
-                    .await?;
+                insert_file_media_link(
+                    &mut *txn,
+                    file_id,
+                    media_id,
+                    s,
+                    e,
+                    None,
+                    false,
+                    link_source,
+                )
+                .await?;
             }
         }
     }

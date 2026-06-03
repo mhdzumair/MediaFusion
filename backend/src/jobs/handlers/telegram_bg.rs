@@ -93,8 +93,7 @@ async fn run_user_channel_scrape(
             .await;
     }
 
-    let metrics =
-        scrape_and_persist_channel(ctx, client, channel, message_limit, min_size).await;
+    let metrics = scrape_and_persist_channel(ctx, client, channel, message_limit, min_size).await;
 
     if let (Some(api), Some(mid)) = (api.as_ref(), progress_message_id) {
         let _ = api

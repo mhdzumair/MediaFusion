@@ -275,14 +275,13 @@ pub async fn cache_stats(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if let Err(failure) =
-        auth_guard::require_active_role(
-            &state.pool,
-            &headers,
-            &state.config.secret_key_raw,
-            &["admin"],
-        )
-        .await
+    if let Err(failure) = auth_guard::require_active_role(
+        &state.pool,
+        &headers,
+        &state.config.secret_key_raw,
+        &["admin"],
+    )
+    .await
     {
         return auth_guard::auth_failure_response(failure).into_response();
     }
@@ -378,14 +377,13 @@ pub async fn cache_keys(
     State(state): State<Arc<AppState>>,
     Query(params): Query<CacheKeysParamsExt>,
 ) -> impl IntoResponse {
-    if let Err(failure) =
-        auth_guard::require_active_role(
-            &state.pool,
-            &headers,
-            &state.config.secret_key_raw,
-            &["admin"],
-        )
-        .await
+    if let Err(failure) = auth_guard::require_active_role(
+        &state.pool,
+        &headers,
+        &state.config.secret_key_raw,
+        &["admin"],
+    )
+    .await
     {
         return auth_guard::auth_failure_response(failure).into_response();
     }
@@ -464,14 +462,13 @@ pub async fn cache_key_delete(
     State(state): State<Arc<AppState>>,
     Path(key): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(failure) =
-        auth_guard::require_active_role(
-            &state.pool,
-            &headers,
-            &state.config.secret_key_raw,
-            &["admin"],
-        )
-        .await
+    if let Err(failure) = auth_guard::require_active_role(
+        &state.pool,
+        &headers,
+        &state.config.secret_key_raw,
+        &["admin"],
+    )
+    .await
     {
         return auth_guard::auth_failure_response(failure).into_response();
     }
@@ -498,14 +495,13 @@ pub async fn cache_key_item_delete(
     Path(key): Path<String>,
     Json(body): Json<DeleteCacheItemRequest>,
 ) -> impl IntoResponse {
-    if let Err(failure) =
-        auth_guard::require_active_role(
-            &state.pool,
-            &headers,
-            &state.config.secret_key_raw,
-            &["admin"],
-        )
-        .await
+    if let Err(failure) = auth_guard::require_active_role(
+        &state.pool,
+        &headers,
+        &state.config.secret_key_raw,
+        &["admin"],
+    )
+    .await
     {
         return auth_guard::auth_failure_response(failure).into_response();
     }
@@ -615,14 +611,13 @@ pub async fn cache_key_get(
     State(state): State<Arc<AppState>>,
     Path(key): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(failure) =
-        auth_guard::require_active_role(
-            &state.pool,
-            &headers,
-            &state.config.secret_key_raw,
-            &["admin"],
-        )
-        .await
+    if let Err(failure) = auth_guard::require_active_role(
+        &state.pool,
+        &headers,
+        &state.config.secret_key_raw,
+        &["admin"],
+    )
+    .await
     {
         return auth_guard::auth_failure_response(failure).into_response();
     }
@@ -716,14 +711,13 @@ pub async fn cache_image_get(
     State(state): State<Arc<AppState>>,
     Path(key): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(failure) =
-        auth_guard::require_active_role(
-            &state.pool,
-            &headers,
-            &state.config.secret_key_raw,
-            &["admin"],
-        )
-        .await
+    if let Err(failure) = auth_guard::require_active_role(
+        &state.pool,
+        &headers,
+        &state.config.secret_key_raw,
+        &["admin"],
+    )
+    .await
     {
         return auth_guard::auth_failure_response(failure).into_response();
     }
@@ -736,14 +730,13 @@ pub async fn cache_clear(
     State(state): State<Arc<AppState>>,
     Json(body): Json<CacheClearRequest>,
 ) -> impl IntoResponse {
-    if let Err(failure) =
-        auth_guard::require_active_role(
-            &state.pool,
-            &headers,
-            &state.config.secret_key_raw,
-            &["admin"],
-        )
-        .await
+    if let Err(failure) = auth_guard::require_active_role(
+        &state.pool,
+        &headers,
+        &state.config.secret_key_raw,
+        &["admin"],
+    )
+    .await
     {
         return auth_guard::auth_failure_response(failure).into_response();
     }
@@ -811,14 +804,13 @@ pub async fn cache_clear(
 }
 
 pub async fn db_stats(headers: HeaderMap, State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    if let Err(failure) =
-        auth_guard::require_active_role(
-            &state.pool,
-            &headers,
-            &state.config.secret_key_raw,
-            &["admin"],
-        )
-        .await
+    if let Err(failure) = auth_guard::require_active_role(
+        &state.pool,
+        &headers,
+        &state.config.secret_key_raw,
+        &["admin"],
+    )
+    .await
     {
         return auth_guard::auth_failure_response(failure).into_response();
     }
@@ -889,14 +881,13 @@ pub async fn db_tables(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if let Err(failure) =
-        auth_guard::require_active_role(
-            &state.pool,
-            &headers,
-            &state.config.secret_key_raw,
-            &["admin"],
-        )
-        .await
+    if let Err(failure) = auth_guard::require_active_role(
+        &state.pool,
+        &headers,
+        &state.config.secret_key_raw,
+        &["admin"],
+    )
+    .await
     {
         return auth_guard::auth_failure_response(failure).into_response();
     }

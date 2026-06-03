@@ -32,11 +32,7 @@ use crate::{routes::auth_guard, state::AppState};
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
 // Optional auth — returns None if no/invalid/inactive token (rather than 401)
-async fn optional_token(
-    pool: &sqlx::PgPool,
-    headers: &HeaderMap,
-    secret_key: &str,
-) -> Option<i32> {
+async fn optional_token(pool: &sqlx::PgPool, headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     auth_guard::validate_active_user(pool, headers, secret_key).await
 }
 
@@ -148,16 +144,19 @@ pub async fn create_user_catalog(
     State(state): State<Arc<AppState>>,
     Json(body): Json<CatalogCreate>,
 ) -> Response {
-    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
-            )
-                .into_response();
-        }
-    };
+    let user_id =
+        match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Unauthorized"})),
+                )
+                    .into_response();
+            }
+        };
 
     if body.name.is_empty() || body.name.len() > 100 {
         return (
@@ -199,16 +198,19 @@ pub async fn list_user_catalogs(
     State(state): State<Arc<AppState>>,
     Query(params): Query<CatalogListQuery>,
 ) -> Response {
-    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
-            )
-                .into_response();
-        }
-    };
+    let user_id =
+        match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Unauthorized"})),
+                )
+                    .into_response();
+            }
+        };
 
     let limit = params.limit.clamp(1, 100);
     let rows: Vec<CatalogRow> = match sqlx::query_as(
@@ -283,16 +285,19 @@ pub async fn list_subscribed_catalogs(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
-            )
-                .into_response();
-        }
-    };
+    let user_id =
+        match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Unauthorized"})),
+                )
+                    .into_response();
+            }
+        };
 
     let rows: Vec<CatalogRow> = match sqlx::query_as(
         r#"SELECT c.id, c.share_code, c.user_id, c.name, c.description, c.poster_url, c.is_public,
@@ -421,16 +426,19 @@ pub async fn update_user_catalog(
     Path(catalog_id): Path<i32>,
     Json(body): Json<CatalogUpdate>,
 ) -> Response {
-    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
-            )
-                .into_response();
-        }
-    };
+    let user_id =
+        match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Unauthorized"})),
+                )
+                    .into_response();
+            }
+        };
 
     // Fetch catalog
     let existing: Option<(i32, i32, bool)> =
@@ -542,16 +550,19 @@ pub async fn delete_user_catalog(
     State(state): State<Arc<AppState>>,
     Path(catalog_id): Path<i32>,
 ) -> Response {
-    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
-            )
-                .into_response();
-        }
-    };
+    let user_id =
+        match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Unauthorized"})),
+                )
+                    .into_response();
+            }
+        };
 
     let existing: Option<(i32, i32)> =
         match sqlx::query_as("SELECT id, user_id FROM user_catalog WHERE id = $1")
@@ -680,16 +691,19 @@ pub async fn add_catalog_item(
     Path(catalog_id): Path<i32>,
     Json(body): Json<CatalogItemAdd>,
 ) -> Response {
-    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
-            )
-                .into_response();
-        }
-    };
+    let user_id =
+        match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Unauthorized"})),
+                )
+                    .into_response();
+            }
+        };
 
     if body.media_id.is_none() && body.stream_id.is_none() {
         return (
@@ -769,16 +783,19 @@ pub async fn remove_catalog_item(
     State(state): State<Arc<AppState>>,
     Path((catalog_id, item_id)): Path<(i32, i32)>,
 ) -> Response {
-    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
-            )
-                .into_response();
-        }
-    };
+    let user_id =
+        match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Unauthorized"})),
+                )
+                    .into_response();
+            }
+        };
 
     // Check ownership
     let owner: Option<i32> =
@@ -839,16 +856,19 @@ pub async fn reorder_items(
     Path(catalog_id): Path<i32>,
     Json(body): Json<ReorderRequest>,
 ) -> Response {
-    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
-            )
-                .into_response();
-        }
-    };
+    let user_id =
+        match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Unauthorized"})),
+                )
+                    .into_response();
+            }
+        };
 
     if body.item_ids.is_empty() {
         return (
@@ -927,16 +947,19 @@ pub async fn subscribe_catalog(
     State(state): State<Arc<AppState>>,
     Path(catalog_id): Path<i32>,
 ) -> Response {
-    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
-            )
-                .into_response();
-        }
-    };
+    let user_id =
+        match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Unauthorized"})),
+                )
+                    .into_response();
+            }
+        };
 
     let catalog: Option<(i32, bool)> =
         match sqlx::query_as("SELECT user_id, is_public FROM user_catalog WHERE id = $1")
@@ -1021,16 +1044,19 @@ pub async fn unsubscribe_catalog(
     State(state): State<Arc<AppState>>,
     Path(catalog_id): Path<i32>,
 ) -> Response {
-    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
-            )
-                .into_response();
-        }
-    };
+    let user_id =
+        match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Unauthorized"})),
+                )
+                    .into_response();
+            }
+        };
 
     let result =
         sqlx::query("DELETE FROM user_catalog_subscription WHERE user_id = $1 AND catalog_id = $2")
@@ -1059,16 +1085,19 @@ pub async fn check_subscription(
     State(state): State<Arc<AppState>>,
     Path(catalog_id): Path<i32>,
 ) -> Response {
-    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Unauthorized"})),
-            )
-                .into_response();
-        }
-    };
+    let user_id =
+        match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Unauthorized"})),
+                )
+                    .into_response();
+            }
+        };
 
     let subscribed: Option<i64> = sqlx::query_scalar(
         "SELECT 1 FROM user_catalog_subscription WHERE user_id = $1 AND catalog_id = $2",

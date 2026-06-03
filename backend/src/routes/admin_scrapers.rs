@@ -64,11 +64,7 @@ use crate::{routes::auth_guard, state::AppState};
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-async fn validate_admin(
-    pool: &sqlx::PgPool,
-    headers: &HeaderMap,
-    secret_key: &str,
-) -> Option<i32> {
+async fn validate_admin(pool: &sqlx::PgPool, headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     auth_guard::require_active_role(pool, headers, secret_key, &["admin"])
         .await
         .ok()
@@ -97,7 +93,10 @@ pub async fn list_spiders(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     Json(json!({
@@ -125,7 +124,10 @@ pub async fn run_scraper(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let spider_name = match body["spider_name"].as_str() {
@@ -241,7 +243,10 @@ pub async fn block_torrent(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let info_hash = match body["info_hash"].as_str() {
@@ -281,7 +286,11 @@ pub async fn block_torrent(
         )
             .into_response(),
         Ok(_) => {
-            if let (Some((torrent_name, title, meta_type, meta_id)), Some(bot_token), Some(chat_id)) = (
+            if let (
+                Some((torrent_name, title, meta_type, meta_id)),
+                Some(bot_token),
+                Some(chat_id),
+            ) = (
                 stream_meta,
                 state.config.telegram_bot_token.as_deref(),
                 state.config.telegram_chat_id.as_deref(),
@@ -336,7 +345,10 @@ pub async fn unblock_torrent(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let info_hash = match body["info_hash"].as_str() {
@@ -383,7 +395,10 @@ pub async fn get_catalog_data(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let fallback_languages: Vec<&str> = vec![
@@ -435,7 +450,10 @@ pub async fn get_scraper_status(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -485,7 +503,10 @@ pub async fn get_dmm_hashlist_status(
 ) -> impl IntoResponse {
     use fred::prelude::KeysInterface;
 
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -512,7 +533,10 @@ pub async fn get_imdb_dataset_status(
 ) -> impl IntoResponse {
     use fred::prelude::KeysInterface;
 
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -589,7 +613,10 @@ pub async fn get_imdb_dataset_config(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -666,7 +693,10 @@ pub async fn update_imdb_dataset_config(
     State(state): State<Arc<AppState>>,
     Json(body): Json<UpdateImdbDatasetConfigRequest>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -787,7 +817,10 @@ pub async fn run_imdb_dataset_import(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RunImdbDatasetImportRequest>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -866,7 +899,10 @@ pub async fn run_dmm_hashlist(
     State(state): State<Arc<AppState>>,
     Json(_body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     match crate::jobs::enqueue::enqueue_simple(
@@ -904,7 +940,10 @@ pub async fn run_dmm_hashlist_full(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let mut args = body;
@@ -949,7 +988,10 @@ pub async fn migrate_media(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_moderator_or_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_moderator_or_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -1055,7 +1097,10 @@ pub async fn migrate_id(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -1152,14 +1197,7 @@ pub async fn migrate_id(
                 let chat_id = chat_id.to_string();
                 crate::bot::notify_if_enabled(&state, async move {
                     crate::bot::send_migration_notification(
-                        &http,
-                        &bot_token,
-                        &chat_id,
-                        &from_id,
-                        &to_id,
-                        &title,
-                        &meta_type,
-                        &poster,
+                        &http, &bot_token, &chat_id, &from_id, &to_id, &title, &meta_type, &poster,
                     )
                     .await;
                 });
@@ -1188,7 +1226,10 @@ pub async fn update_media_images(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let meta_id = match body["meta_id"].as_str() {
@@ -1220,13 +1261,12 @@ pub async fn update_media_images(
         }
     };
 
-    let meta_info: Option<(String, String)> = sqlx::query_as(
-        "SELECT m.title, m.type::text FROM media m WHERE m.id = $1",
-    )
-    .bind(media_id)
-    .fetch_optional(&state.pool_ro)
-    .await
-    .unwrap_or(None);
+    let meta_info: Option<(String, String)> =
+        sqlx::query_as("SELECT m.title, m.type::text FROM media m WHERE m.id = $1")
+            .bind(media_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None);
 
     let old_images: Vec<(String, String)> = sqlx::query_as(
         "SELECT image_type, url FROM media_image WHERE media_id = $1 AND is_primary = true",
@@ -1345,7 +1385,10 @@ pub async fn refresh_imdb_data(
     Path(meta_id): Path<String>,
     Query(params): Query<RefreshImdbQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -1493,7 +1536,10 @@ pub async fn delete_torrent(
     Path(info_hash): Path<String>,
     Query(params): Query<DeleteTorrentQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let _ = params.reason;
@@ -1524,7 +1570,11 @@ pub async fn delete_torrent(
         )
             .into_response(),
         Ok(_) => {
-            if let (Some((torrent_name, title, meta_type, meta_id)), Some(bot_token), Some(chat_id)) = (
+            if let (
+                Some((torrent_name, title, meta_type, meta_id)),
+                Some(bot_token),
+                Some(chat_id),
+            ) = (
                 stream_meta,
                 state.config.telegram_bot_token.as_deref(),
                 state.config.telegram_chat_id.as_deref(),
@@ -1579,7 +1629,10 @@ pub async fn add_tv_metadata(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let title = match body["title"].as_str() {
@@ -2257,7 +2310,10 @@ pub async fn list_schedulers(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ListSchedulersQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -2303,7 +2359,10 @@ pub async fn get_scheduler_stats(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let global_disabled = state.config.disable_all_scheduler;
@@ -2359,7 +2418,10 @@ pub async fn get_scheduler_job(
     State(state): State<Arc<AppState>>,
     Path(job_id): Path<String>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     if let Some(&(id, name, cat, desc, cron)) = SCHEDULER_JOBS
@@ -2400,7 +2462,10 @@ pub async fn update_scheduler_job(
     Path(job_id): Path<String>,
     Json(body): Json<UpdateSchedulerJobRequest>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -2575,7 +2640,10 @@ pub async fn run_scheduler_job(
     Query(params): Query<RunSchedulerQuery>,
     body: Option<Json<Value>>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     match dispatch_scheduler_job(
@@ -2605,7 +2673,10 @@ pub async fn run_scheduler_job_inline(
     State(state): State<Arc<AppState>>,
     Path(job_id): Path<String>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     match dispatch_scheduler_job(&state.pool, &job_id, None, None).await {
@@ -2636,7 +2707,10 @@ pub async fn get_job_history(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let limit = params.limit.unwrap_or(50).clamp(1, 200);
@@ -2791,7 +2865,10 @@ pub async fn get_task_overview(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let sample = params.sample_size.unwrap_or(200).clamp(1, 2000);
@@ -2868,7 +2945,10 @@ pub async fn list_tasks(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ListTasksQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let offset = params.offset.unwrap_or(0) as usize;
@@ -2938,7 +3018,10 @@ pub async fn stream_task_snapshots(
     State(state): State<Arc<AppState>>,
     Query(params): Query<StreamTasksQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let sample = params.sample_size.unwrap_or(200).clamp(1, 2000);
@@ -3011,7 +3094,10 @@ pub async fn bulk_cancel_tasks(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -3070,7 +3156,10 @@ pub async fn bulk_retry_tasks(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -3158,7 +3247,10 @@ pub async fn get_task_detail(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -3249,7 +3341,10 @@ pub async fn retry_task(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -3323,7 +3418,10 @@ pub async fn cancel_task(
     Path(task_id): Path<String>,
     Json(_body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
 
@@ -3385,7 +3483,10 @@ pub async fn get_telegram_stats(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM telegram_stream")
@@ -3401,7 +3502,10 @@ pub async fn migrate_single_stream(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let file_unique_id = match body["file_unique_id"].as_str() {
@@ -3455,7 +3559,10 @@ pub async fn migrate_bulk_streams(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let migrations = match body["migrations"].as_array() {
@@ -3527,7 +3634,10 @@ pub async fn get_exportable_streams(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ExportableQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return forbidden();
     }
     let limit = params.limit.unwrap_or(50).clamp(1, 500);

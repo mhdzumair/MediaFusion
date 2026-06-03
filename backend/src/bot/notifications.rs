@@ -245,7 +245,10 @@ async fn send_photo_message(
 }
 
 /// Fire-and-forget admin notification when credentials are configured.
-pub fn notify_if_enabled(state: &AppState, fut: impl std::future::Future<Output = ()> + Send + 'static) {
+pub fn notify_if_enabled(
+    state: &AppState,
+    fut: impl std::future::Future<Output = ()> + Send + 'static,
+) {
     if state.config.telegram_bot_token.is_some() && state.config.telegram_chat_id.is_some() {
         tokio::spawn(fut);
     }
