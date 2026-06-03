@@ -1007,6 +1007,80 @@ pub async fn search_meta_for_title_with_anime(
     })
 }
 
+/// Resolve metadata for a Telegram feed candidate, preferring caption IMDb ID when present.
+pub async fn search_meta_for_telegram_feed(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    title: &str,
+    year: Option<i32>,
+    is_series: bool,
+    caption_imdb_id: Option<&str>,
+    tmdb_api_key: Option<&str>,
+    tvdb_api_key: Option<&str>,
+    cinemeta_fallback_enabled: bool,
+    anime_source_order: &[String],
+    metadata_primary_source: &str,
+) -> Option<crate::scrapers::SearchMeta> {
+    let media_type = if is_series { "series" } else { "movie" };
+
+    if let Some(imdb) = caption_imdb_id.filter(|s| !s.is_empty()) {
+        let overrides = ImportMediaOverrides {
+            title: Some(title),
+            poster: None,
+            background: None,
+            release_date: None,
+            year,
+        };
+        if let Some(media_id) = ensure_media_for_import(
+            pool,
+            http,
+            imdb,
+            media_type,
+            tmdb_api_key,
+            tvdb_api_key,
+            overrides,
+            None,
+        )
+        .await
+        {
+            let row: Option<(String, Option<i32>, Option<String>)> = sqlx::query_as(
+                "SELECT m.title, m.year, mei.external_id \
+                 FROM media m \
+                 LEFT JOIN media_external_id mei \
+                   ON mei.media_id = m.id AND mei.provider = 'imdb' \
+                 WHERE m.id = $1",
+            )
+            .bind(media_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+
+            if let Some((resolved_title, resolved_year, imdb_ext)) = row {
+                return Some(crate::scrapers::SearchMeta {
+                    media_id: crate::db::MediaId(media_id),
+                    imdb_id: imdb_ext.or_else(|| Some(imdb.to_string())),
+                    title: resolved_title,
+                    year: resolved_year,
+                });
+            }
+        }
+    }
+
+    search_meta_for_title_with_anime(
+        pool,
+        http,
+        title,
+        year,
+        is_series,
+        tmdb_api_key,
+        cinemeta_fallback_enabled,
+        anime_source_order,
+        metadata_primary_source,
+    )
+    .await
+}
+
 /// Resolve media for a feed/spider scraped torrent before persistence (skip when unresolved).
 pub async fn search_meta_for_scraped(
     pool: &PgPool,

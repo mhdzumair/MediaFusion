@@ -6,6 +6,7 @@ use crate::{routes::content::import_helpers, state::AppState};
 
 use super::{
     callback::CallbackAction,
+    metadata::{episode_info, metadata_value, selected_languages},
     model::{ContentType, ConversationState},
     text,
 };
@@ -147,6 +148,9 @@ pub async fn show_metadata_review(state: &AppState, conv: &ConversationState) ->
     let sel = conv.selected_match.clone().unwrap_or(json!({}));
     let analysis = conv.analysis_result.clone().unwrap_or(json!({}));
     let overrides = &conv.metadata_overrides;
+    let media_type = conv.media_type.as_deref().unwrap_or("movie");
+    let is_series = media_type == "series";
+    let is_sports = media_type == "sports";
 
     let title = overrides
         .get("title")
@@ -154,11 +158,16 @@ pub async fn show_metadata_review(state: &AppState, conv: &ConversationState) ->
         .or(analysis.get("parsed_title"))
         .and_then(|v| v.as_str())
         .unwrap_or("Unknown");
+    let year = sel
+        .get("year")
+        .and_then(|v| v.as_i64())
+        .map(|y| format!(" ({y})"))
+        .unwrap_or_default();
+
     let ext_id = sel
         .get("external_id")
         .and_then(|v| v.as_str())
         .unwrap_or("N/A");
-    let media_type = conv.media_type.as_deref().unwrap_or("movie");
 
     let size = analysis
         .get("total_size_readable")
@@ -172,31 +181,117 @@ pub async fn show_metadata_review(state: &AppState, conv: &ConversationState) ->
         })
         .unwrap_or_else(|| "Unknown".to_string());
 
+    let resolution = metadata_value("resolution", &analysis, overrides);
+    let quality = metadata_value("quality", &analysis, overrides);
+    let codec = metadata_value("codec", &analysis, overrides);
+    let audio = metadata_value("audio", &analysis, overrides);
+    let languages_list = selected_languages(&analysis, overrides);
+    let languages = if languages_list.is_empty() {
+        "Auto".to_string()
+    } else {
+        languages_list.join(", ")
+    };
+
+    let (season_number, episode_number, _) = episode_info(&analysis, overrides);
+    let mut episode_line = String::new();
+    if is_series {
+        let s_display = season_number
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "?".into());
+        let e_display = episode_number
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "?".into());
+        episode_line = format!("📺 *Season:* {s_display} | *Episode:* {e_display}\n");
+    }
+
+    let poster_line = if conv.custom_poster_url.is_some() {
+        "🖼️ *Poster:* Custom ✓\n"
+    } else if is_sports {
+        "🖼️ *Poster:* Auto (sports)\n"
+    } else {
+        ""
+    };
+
     let escaped_title = text::escape_markdown(title);
     let escaped_ext_id = text::escape_markdown(ext_id);
-    let escaped_media_type = text::escape_markdown(media_type);
-    let msg = format!(
-        "📋 *Review Import*\n\n\
-         *Title:* {escaped_title}\n\
-         *ID:* `{escaped_ext_id}`\n\
-         *Type:* {escaped_media_type}\n\
-         *Size:* {size}\n\n\
-         Confirm to submit this contribution."
-    );
+    let msg = if is_sports {
+        let category = conv.sports_category.as_deref().unwrap_or("Sports");
+        format!(
+            "📋 *Review Import Details*\n\n\
+             🏆 *{escaped_title}*{year}\n\
+             ⚽ *Category:* {category}\n\
+             🆔 `{escaped_ext_id}`\n\n\
+             📦 *Size:* {size}\n\
+             📐 *Resolution:* {resolution}\n\
+             🎞 *Quality:* {quality}\n\
+             💿 *Codec:* {codec}\n\
+             🔊 *Audio:* {audio}\n\
+             🌐 *Languages:* {languages}\n\
+             {poster_line}\n\
+             _Tap a field to edit, or confirm to import._"
+        )
+    } else {
+        format!(
+            "📋 *Review Import Details*\n\n\
+             🎬 *{escaped_title}*{year}\n\
+             🆔 `{escaped_ext_id}`\n\n\
+             {episode_line}\
+             📦 *Size:* {size}\n\
+             📐 *Resolution:* {resolution}\n\
+             🎞 *Quality:* {quality}\n\
+             💿 *Codec:* {codec}\n\
+             🔊 *Audio:* {audio}\n\
+             🌐 *Languages:* {languages}\n\
+             {poster_line}\n\
+             _Tap a field to edit, or confirm to import._"
+        )
+    };
 
-    let keyboard = json!({
-        "inline_keyboard": [
-            [
-                {"text": "📐 Resolution", "callback_data": CallbackAction::MetaEdit { user_id, field: "resolution".into() }.encode(state).await},
-                {"text": "🎨 Quality", "callback_data": CallbackAction::MetaEdit { user_id, field: "quality".into() }.encode(state).await},
-                {"text": "🎞 Codec", "callback_data": CallbackAction::MetaEdit { user_id, field: "codec".into() }.encode(state).await},
-            ],
-            [{"text": "✅ Confirm Import", "callback_data": CallbackAction::Confirm { user_id }.encode(state).await}],
-            [{"text": "◀️ Back", "callback_data": CallbackAction::Back { user_id }.encode(state).await}],
-            [{"text": "❌ Cancel", "callback_data": CallbackAction::Cancel { user_id }.encode(state).await}],
-        ]
-    });
-    (msg, keyboard)
+    let poster_btn_text = if conv.custom_poster_url.is_some() {
+        "🖼️ ✓ Poster"
+    } else {
+        "🖼️ Add Poster"
+    };
+
+    let mut rows: Vec<Value> = Vec::new();
+    if is_series {
+        let s_btn = season_number
+            .map(|n| format!("S{n}"))
+            .unwrap_or_else(|| "S?".to_string());
+        let e_btn = episode_number
+            .map(|n| format!("E{n}"))
+            .unwrap_or_else(|| "E?".to_string());
+        rows.push(json!([
+            {"text": format!("📺 {s_btn}"), "callback_data": CallbackAction::MetaEdit { user_id, field: "season_number".into() }.encode(state).await},
+            {"text": format!("📺 {e_btn}"), "callback_data": CallbackAction::MetaEdit { user_id, field: "episode_number".into() }.encode(state).await},
+        ]));
+    }
+
+    rows.push(json!([
+        {"text": format!("📐 {resolution}"), "callback_data": CallbackAction::MetaEdit { user_id, field: "resolution".into() }.encode(state).await},
+        {"text": format!("🎞 {quality}"), "callback_data": CallbackAction::MetaEdit { user_id, field: "quality".into() }.encode(state).await},
+    ]));
+    rows.push(json!([
+        {"text": format!("💿 {codec}"), "callback_data": CallbackAction::MetaEdit { user_id, field: "codec".into() }.encode(state).await},
+        {"text": format!("🔊 {audio}"), "callback_data": CallbackAction::MetaEdit { user_id, field: "audio".into() }.encode(state).await},
+    ]));
+    rows.push(json!([
+        {"text": format!("🌐 {languages}"), "callback_data": CallbackAction::MetaEdit { user_id, field: "languages".into() }.encode(state).await},
+        {"text": poster_btn_text, "callback_data": CallbackAction::AddPoster { user_id }.encode(state).await},
+    ]));
+    rows.push(json!([{"text": "✅ Confirm Import", "callback_data": CallbackAction::Confirm { user_id }.encode(state).await}]));
+    rows.push(json!([
+        {"text": "◀️ Back", "callback_data": CallbackAction::Back { user_id }.encode(state).await},
+        {"text": "❌ Cancel", "callback_data": CallbackAction::Cancel { user_id }.encode(state).await},
+    ]));
+    if conv.batch_item_id.is_some() {
+        rows.push(json!([{
+            "text": "← Back to batch",
+            "callback_data": CallbackAction::BatchSummary { user_id }.encode(state).await,
+        }]));
+    }
+
+    (msg, json!({ "inline_keyboard": rows }))
 }
 
 pub fn parse_external_id_from_text(text: &str) -> Option<String> {

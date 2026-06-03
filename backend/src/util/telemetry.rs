@@ -31,11 +31,20 @@ pub fn init(exc_tx: Option<mpsc::UnboundedSender<crate::exception_tracker::ExcEv
 pub fn sanitize_path(path: &str) -> String {
     path.split('/')
         .map(|seg| {
-            if (seg.starts_with("D-") || seg.starts_with("U-")) && seg.len() > 10 {
-                "[token]"
-            } else {
-                seg
+            if (seg.starts_with("D-") || seg.starts_with("U-") || seg.starts_with("P-"))
+                && seg.len() > 10
+            {
+                return "*MASKED*";
             }
+            // Long opaque path segments (legacy secret_str / existing_secret_str).
+            if seg.len() > 24
+                && seg
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+            {
+                return "*MASKED*";
+            }
+            seg
         })
         .collect::<Vec<_>>()
         .join("/")

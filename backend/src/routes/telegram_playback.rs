@@ -39,9 +39,26 @@ pub struct ChatMessagePath {
 }
 
 #[derive(Deserialize)]
+pub struct ChatMessageFilenamePath {
+    pub secret_str: String,
+    pub chat_id: String,
+    pub message_id: i64,
+    #[allow(dead_code)]
+    pub filename: String,
+}
+
+#[derive(Deserialize)]
 pub struct StreamIdPath {
     pub secret_str: String,
     pub telegram_stream_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct StreamIdFilenamePath {
+    pub secret_str: String,
+    pub telegram_stream_id: i64,
+    #[allow(dead_code)]
+    pub filename: String,
 }
 
 #[derive(Deserialize)]
@@ -67,6 +84,30 @@ pub async fn handler_by_chat_message(
 
 pub async fn handler_by_stream_id(
     Path(p): Path<StreamIdPath>,
+    Query(q): Query<PlaybackQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    match dispatch_by_stream_id(&state, &p.secret_str, p.telegram_stream_id, q.transcode).await {
+        Ok(url) => redirect(url),
+        Err(e) => error_response(e),
+    }
+}
+
+pub async fn handler_by_chat_message_filename(
+    Path(p): Path<ChatMessageFilenamePath>,
+    Query(q): Query<PlaybackQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    match dispatch_by_chat_message(&state, &p.secret_str, &p.chat_id, p.message_id, q.transcode)
+        .await
+    {
+        Ok(url) => redirect(url),
+        Err(e) => error_response(e),
+    }
+}
+
+pub async fn handler_by_stream_id_filename(
+    Path(p): Path<StreamIdFilenamePath>,
     Query(q): Query<PlaybackQuery>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
@@ -161,12 +202,9 @@ async fn build_mediaflow_url(
         ("chat_id", forward.forwarded_chat_id.clone()),
     ];
 
-    // Prefer document_id; fall back to decoding it from file_unique_id
+    // Prefer stored document_id; fall back to decoding from file_id (Bot API encoding).
     let document_id = stream.document_id.or_else(|| {
-        stream
-            .file_unique_id
-            .as_deref()
-            .and_then(extract_document_id_from_file_id)
+        crate::util::telegram_file_id::extract_document_id_from_file_id(stream.file_id.as_deref())
     });
 
     if let Some(doc_id) = document_id {
@@ -341,24 +379,6 @@ async fn send_video_to_user(
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/// Decode the `document_id` embedded in a Telegram `file_unique_id`.
-/// Telegram encodes it as: base64url(type_byte || little-endian-i64 || ...).
-fn extract_document_id_from_file_id(file_unique_id: &str) -> Option<i64> {
-    use base64::{engine::general_purpose::URL_SAFE, Engine};
-    // file_unique_id may lack padding — pad to multiple of 4
-    let padded = match file_unique_id.len() % 4 {
-        2 => format!("{file_unique_id}=="),
-        3 => format!("{file_unique_id}="),
-        _ => file_unique_id.to_string(),
-    };
-    let decoded = URL_SAFE.decode(&padded).ok()?;
-    if decoded.len() < 9 {
-        return None;
-    }
-    let arr: [u8; 8] = decoded[1..9].try_into().ok()?;
-    Some(i64::from_le_bytes(arr))
-}
 
 fn redirect(url: String) -> Response {
     Response::builder()

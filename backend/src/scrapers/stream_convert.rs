@@ -87,7 +87,7 @@ pub fn scraper_store_opts(
     episode: Option<i32>,
 ) -> crate::db::StoreStreamOpts {
     let mt = MediaType::from_wire(media_type).unwrap_or(MediaType::Movie);
-    crate::db::StoreStreamOpts::scraper(media_id, mt).with_episode(season, episode)
+    crate::db::StoreStreamOpts::scraper(media_id, mt).with_episode(season, episode, None)
 }
 
 /// Scraper/job cold-path torrent persistence (replaces `persist::write_back`).
@@ -127,7 +127,7 @@ pub async fn write_back_usenet(
     crate::db::store_usenet_streams(pool, &normalized, &opts).await;
 }
 
-/// Scraper/job cold-path telegram persistence.
+/// Scraper/job cold-path telegram persistence. Returns true when a new stream was inserted.
 pub async fn write_back_telegram(
     pool: &sqlx::PgPool,
     streams: &[ScrapedTelegramStream],
@@ -135,12 +135,23 @@ pub async fn write_back_telegram(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-) {
+) -> bool {
     if streams.is_empty() {
-        return;
+        return false;
     }
     let opts = scraper_store_opts(meta.media_id, media_type, season, episode);
-    let normalized: Vec<TelegramStoreInput> =
-        streams.iter().map(TelegramStoreInput::from).collect();
-    crate::db::store_telegram_streams(pool, &normalized, &opts).await;
+    let mut inserted = false;
+    for stream in streams {
+        let input = TelegramStoreInput::from(stream);
+        match crate::db::store_telegram_stream(pool, &input, &opts).await {
+            Ok(r) if r.was_inserted() => inserted = true,
+            Ok(_) => {}
+            Err(e) => tracing::warn!(
+                "store_telegram_stream: failed chat={} msg={} — {e}",
+                input.chat_id,
+                input.message_id
+            ),
+        }
+    }
+    inserted
 }

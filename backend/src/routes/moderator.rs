@@ -15,12 +15,8 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use chrono::Utc;
-use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Value};
-use sha2::Sha256;
 
 fn bool_opt_from_str<'de, D: Deserializer<'de>>(d: D) -> Result<Option<bool>, D::Error> {
     let s: Option<String> = Option::deserialize(d)?;
@@ -29,43 +25,16 @@ fn bool_opt_from_str<'de, D: Deserializer<'de>>(d: D) -> Result<Option<bool>, D:
 
 use crate::{db::MediaType, state::AppState};
 
-// ─── Auth helper ──────────────────────────────────────────────────────────────
+use super::auth_guard;
 
-fn validate_moderator_token(headers: &HeaderMap, secret_key: &str) -> Option<(i64, String)> {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string)?;
-    let dot = token.rfind('.')?;
-    let (payload_str, sig) = token.split_at(dot);
-    let sig = &sig[1..];
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).ok()?;
-    mac.update(payload_str.as_bytes());
-    let expected: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if expected != sig {
-        return None;
-    }
-    let decoded = URL_SAFE_NO_PAD.decode(payload_str).ok()?;
-    let data: Value = serde_json::from_slice(&decoded).ok()?;
-    let exp = data["exp"].as_f64()?;
-    if exp < Utc::now().timestamp() as f64 {
-        return None;
-    }
-    if data["type"].as_str() != Some("access") {
-        return None;
-    }
-    let user_id: i64 = data["sub"].as_str()?.parse().ok()?;
-    let role = data["role"].as_str().unwrap_or("user").to_string();
-    if role != "moderator" && role != "admin" {
-        return None;
-    }
-    Some((user_id, role))
+async fn moderator_auth(
+    headers: &HeaderMap,
+    pool: &sqlx::PgPool,
+    secret: &str,
+) -> Result<i32, (StatusCode, Json<Value>)> {
+    auth_guard::require_active_role(pool, headers, secret, &["moderator", "admin"])
+        .await
+        .map_err(auth_guard::auth_failure_response)
 }
 
 // ─── Query params ─────────────────────────────────────────────────────────────
@@ -308,8 +277,8 @@ pub async fn moderator_list_metadata(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ListMetadataQuery>,
 ) -> impl IntoResponse {
-    if validate_moderator_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
+    if let Err(resp) = moderator_auth(&headers, &state.pool, &state.config.secret_key_raw).await {
+        return resp.into_response();
     }
 
     let page = params.page.unwrap_or(1).max(1);
@@ -440,8 +409,8 @@ pub async fn moderator_get_metadata(
     State(state): State<Arc<AppState>>,
     Path(media_id): Path<i32>,
 ) -> impl IntoResponse {
-    if validate_moderator_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
+    if let Err(resp) = moderator_auth(&headers, &state.pool, &state.config.secret_key_raw).await {
+        return resp.into_response();
     }
 
     type MediaRow = (
@@ -537,8 +506,8 @@ pub async fn moderator_search_external_metadata(
     State(state): State<Arc<AppState>>,
     body: Option<Json<Value>>,
 ) -> impl IntoResponse {
-    if validate_moderator_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
+    if let Err(resp) = moderator_auth(&headers, &state.pool, &state.config.secret_key_raw).await {
+        return resp.into_response();
     }
 
     let body = body.map(|b| b.0).unwrap_or_default();
@@ -604,8 +573,8 @@ pub async fn moderator_fetch_external_metadata(
     Path(media_id): Path<i32>,
     body: Option<Json<Value>>,
 ) -> impl IntoResponse {
-    if validate_moderator_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
+    if let Err(resp) = moderator_auth(&headers, &state.pool, &state.config.secret_key_raw).await {
+        return resp.into_response();
     }
 
     // Check media exists
@@ -691,8 +660,8 @@ pub async fn moderator_apply_external_metadata(
     Path(media_id): Path<i32>,
     body: Option<Json<Value>>,
 ) -> impl IntoResponse {
-    if validate_moderator_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
+    if let Err(resp) = moderator_auth(&headers, &state.pool, &state.config.secret_key_raw).await {
+        return resp.into_response();
     }
 
     // Check media exists
@@ -830,8 +799,8 @@ pub async fn moderator_migrate_metadata_id(
     Path(media_id): Path<i32>,
     Json(body): Json<MigrateIdBody>,
 ) -> impl IntoResponse {
-    if validate_moderator_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
+    if let Err(resp) = moderator_auth(&headers, &state.pool, &state.config.secret_key_raw).await {
+        return resp.into_response();
     }
 
     // Verify media exists

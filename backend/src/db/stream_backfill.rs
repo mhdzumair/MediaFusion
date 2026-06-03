@@ -1,5 +1,7 @@
 //! Re-parse stream release names with PTT and fill missing metadata columns / link tables.
 
+use std::collections::HashMap;
+
 use sqlx::PgPool;
 use tracing::debug;
 
@@ -26,6 +28,24 @@ pub struct StreamBackfillRow {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
+struct StreamLinkFlags {
+    has_languages: bool,
+    has_hdr: bool,
+    has_audio: bool,
+    has_channels: bool,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct StreamBackfillCandidate {
+    id: i32,
+    name: String,
+    resolution: Option<String>,
+    codec: Option<String>,
+    quality: Option<String>,
+    release_group: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
 pub struct StreamBackfillStats {
     pub examined: u32,
     pub updated_columns: u32,
@@ -40,15 +60,90 @@ fn is_blank(opt: &Option<String>) -> bool {
     opt.as_ref().is_none_or(|s| s.trim().is_empty())
 }
 
+async fn load_stream_link_flags(
+    pool: &PgPool,
+    stream_ids: &[i32],
+) -> Result<HashMap<i32, StreamLinkFlags>, sqlx::Error> {
+    let mut flags = stream_ids
+        .iter()
+        .map(|&id| (id, StreamLinkFlags::default()))
+        .collect::<HashMap<_, _>>();
+
+    if stream_ids.is_empty() {
+        return Ok(flags);
+    }
+
+    mark_linked_streams(
+        pool,
+        stream_ids,
+        "SELECT DISTINCT stream_id FROM stream_language_link WHERE stream_id = ANY($1)",
+        |entry| entry.has_languages = true,
+        &mut flags,
+    )
+    .await?;
+    mark_linked_streams(
+        pool,
+        stream_ids,
+        "SELECT DISTINCT stream_id FROM stream_hdr_link WHERE stream_id = ANY($1)",
+        |entry| entry.has_hdr = true,
+        &mut flags,
+    )
+    .await?;
+    mark_linked_streams(
+        pool,
+        stream_ids,
+        "SELECT DISTINCT stream_id FROM stream_audio_link WHERE stream_id = ANY($1)",
+        |entry| entry.has_audio = true,
+        &mut flags,
+    )
+    .await?;
+    mark_linked_streams(
+        pool,
+        stream_ids,
+        "SELECT DISTINCT stream_id FROM stream_channel_link WHERE stream_id = ANY($1)",
+        |entry| entry.has_channels = true,
+        &mut flags,
+    )
+    .await?;
+
+    Ok(flags)
+}
+
+async fn mark_linked_streams<F>(
+    pool: &PgPool,
+    stream_ids: &[i32],
+    query: &str,
+    mut mark: F,
+    flags: &mut HashMap<i32, StreamLinkFlags>,
+) -> Result<(), sqlx::Error>
+where
+    F: FnMut(&mut StreamLinkFlags),
+{
+    let linked_ids: Vec<i32> = sqlx::query_scalar(query)
+        .bind(stream_ids)
+        .fetch_all(pool)
+        .await?;
+
+    for id in linked_ids {
+        if let Some(entry) = flags.get_mut(&id) {
+            mark(entry);
+        }
+    }
+
+    Ok(())
+}
+
 /// Fetch a page of streams that still lack parsed metadata.
+///
+/// Uses keyset pagination (`after_id`) so each page stays O(limit) regardless of progress.
 pub async fn fetch_streams_for_backfill(
     pool: &PgPool,
     stream_types: &[StreamType],
     only_missing: bool,
     limit: i64,
-    offset: i64,
+    after_id: i32,
 ) -> Result<Vec<StreamBackfillRow>, sqlx::Error> {
-    sqlx::query_as::<_, StreamBackfillRow>(
+    let candidates = sqlx::query_as::<_, StreamBackfillCandidate>(
         r#"
         SELECT
             s.id,
@@ -56,18 +151,15 @@ pub async fn fetch_streams_for_backfill(
             s.resolution,
             s.codec,
             s.quality,
-            s.release_group,
-            EXISTS(SELECT 1 FROM stream_language_link sll WHERE sll.stream_id = s.id) AS has_languages,
-            EXISTS(SELECT 1 FROM stream_hdr_link shl WHERE shl.stream_id = s.id) AS has_hdr,
-            EXISTS(SELECT 1 FROM stream_audio_link sal WHERE sal.stream_id = s.id) AS has_audio,
-            EXISTS(SELECT 1 FROM stream_channel_link scl WHERE scl.stream_id = s.id) AS has_channels
+            s.release_group
         FROM stream s
         WHERE s.stream_type = ANY($1::streamtype[])
           AND NOT s.is_blocked
           AND s.name IS NOT NULL
           AND TRIM(s.name) <> ''
+          AND s.id > $2
           AND (
-            NOT $2
+            NOT $3
             OR s.resolution IS NULL OR TRIM(s.resolution) = ''
             OR s.codec IS NULL OR TRIM(s.codec) = ''
             OR s.quality IS NULL OR TRIM(s.quality) = ''
@@ -78,15 +170,41 @@ pub async fn fetch_streams_for_backfill(
             OR NOT EXISTS (SELECT 1 FROM stream_channel_link scl WHERE scl.stream_id = s.id)
           )
         ORDER BY s.id
-        LIMIT $3 OFFSET $4
+        LIMIT $4
         "#,
     )
     .bind(stream_types)
+    .bind(after_id)
     .bind(only_missing)
     .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await
+    .await?;
+
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let stream_ids: Vec<i32> = candidates.iter().map(|row| row.id).collect();
+    let link_flags = load_stream_link_flags(pool, &stream_ids).await?;
+
+    Ok(candidates
+        .into_iter()
+        .map(|row| {
+            let flags = link_flags.get(&row.id).copied().unwrap_or_default();
+            StreamBackfillRow {
+                id: row.id,
+                name: row.name,
+                resolution: row.resolution,
+                codec: row.codec,
+                quality: row.quality,
+                release_group: row.release_group,
+                has_languages: flags.has_languages,
+                has_hdr: flags.has_hdr,
+                has_audio: flags.has_audio,
+                has_channels: flags.has_channels,
+            }
+        })
+        .collect())
 }
 
 /// Parse `name` with PTT and apply missing column + link-table updates for one stream.

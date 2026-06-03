@@ -27,7 +27,8 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     crypto, db, models::user_data::UserData, providers,
-    providers::torrents::metadata_update::ProviderFile, routes::playback_dedup, state::AppState,
+    providers::torrents::metadata_update::ProviderFile, routes::playback_dedup,
+    services::sync::spawn_playback_scrobble, state::AppState,
 };
 
 const URL_CACHE_TTL: i64 = 3600;
@@ -75,7 +76,7 @@ pub async fn handler_base(
     State(state): State<Arc<AppState>>,
 ) -> Response {
     dispatch(
-        &state,
+        state,
         p.secret_str,
         p.provider_name,
         p.info_hash,
@@ -91,7 +92,7 @@ pub async fn handler_with_filename(
     State(state): State<Arc<AppState>>,
 ) -> Response {
     dispatch(
-        &state,
+        state,
         p.secret_str,
         p.provider_name,
         p.info_hash,
@@ -107,7 +108,7 @@ pub async fn handler_seep(
     State(state): State<Arc<AppState>>,
 ) -> Response {
     dispatch(
-        &state,
+        state,
         p.secret_str,
         p.provider_name,
         p.info_hash,
@@ -123,7 +124,7 @@ pub async fn handler_seep_filename(
     State(state): State<Arc<AppState>>,
 ) -> Response {
     dispatch(
-        &state,
+        state,
         p.secret_str,
         p.provider_name,
         p.info_hash,
@@ -137,7 +138,7 @@ pub async fn handler_seep_filename(
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
 async fn dispatch(
-    state: &AppState,
+    state: Arc<AppState>,
     secret_str: String,
     provider_name: String,
     info_hash: String,
@@ -148,7 +149,7 @@ async fn dispatch(
     let info_hash = info_hash.to_lowercase();
 
     let video_url = match resolve(
-        state,
+        Arc::clone(&state),
         &secret_str,
         &provider_name,
         &info_hash,
@@ -168,7 +169,7 @@ async fn dispatch(
             };
             let msg = format!("playback [{kind}] provider={provider_name} hash={info_hash}");
             e.log(&msg);
-            error_video_url(state, e.video_file())
+            error_video_url(&state, e.video_file())
         }
     };
 
@@ -176,7 +177,7 @@ async fn dispatch(
 }
 
 async fn resolve(
-    state: &AppState,
+    state: Arc<AppState>,
     secret_str: &str,
     provider_name: &str,
     info_hash: &str,
@@ -226,7 +227,7 @@ async fn resolve(
     let resolved_token: Option<String> = if provider.service == "pikpak" {
         Some(
             pikpak_resolve_token(
-                state,
+                &state,
                 provider,
                 pikpak_credentials.as_ref(),
                 pikpak_profile_id,
@@ -289,7 +290,7 @@ async fn resolve(
     let result = match tokio::time::timeout(
         playback_dedup::holder_resolve_timeout(),
         resolve_playback_url(
-            state,
+            &state,
             info_hash,
             season,
             episode,
@@ -317,15 +318,26 @@ async fn resolve(
 
     if let Ok(ref url) = result {
         set_playback_cache(&state.redis, &cache_key, url).await;
-        // Successful resolution confirms this hash is accessible on the provider.
-        // Write to the global debrid_cache so future stream listings show ⚡️ without
-        // needing to re-run live_check for this hash.
-        crate::providers::torrents::cache::store_cached_hashes(
+        crate::providers::torrents::cache::store_cached_hashes_for_provider(
             &state.redis,
-            &provider.service,
+            Some(&state.http),
+            provider,
             &[info_hash.to_string()],
+            state.config.sync_debrid_cache_streams,
+            &state.config.mediafusion_url,
+            state.config.store_stremthru_magnet_cache,
         )
         .await;
+
+        if let Some(profile_id) = user_data.profile_id {
+            spawn_playback_scrobble(
+                Arc::clone(&state),
+                profile_id.0,
+                info_hash.to_string(),
+                season,
+                episode,
+            );
+        }
     }
     lock_guard.release().await;
     result
@@ -570,6 +582,49 @@ async fn resolve_playback_url(
                 Err(e) => return Err(e),
             }
         }
+        "debrider" => {
+            let magnet = build_magnet_link(info_hash, &stream_info.announce_list);
+            let (url, files) = providers::torrents::debrider::get_video_url_with_files(
+                &state.http,
+                token,
+                &magnet,
+                &stream_info.name,
+                resolved_filename,
+                season,
+                episode,
+                ip_hint(true),
+                fwd,
+            )
+            .await?;
+            (url, files)
+        }
+        "qbittorrent" => {
+            let cfg = provider.qbittorrent_config.as_ref().ok_or_else(|| {
+                providers::ProviderError::api(
+                    "qBittorrent configuration missing",
+                    "invalid_config.mp4",
+                )
+            })?;
+            let magnet = build_magnet_link(info_hash, &stream_info.announce_list);
+            let is_private = !matches!(
+                stream_info.torrent_type,
+                crate::db::TorrentType::Public | crate::db::TorrentType::WebSeed
+            );
+            let url = providers::torrents::qbittorrent::get_video_url(
+                &state.http,
+                cfg,
+                info_hash,
+                &magnet,
+                &stream_info.name,
+                resolved_filename,
+                season,
+                episode,
+                stream_info.torrent_file.as_deref(),
+                is_private,
+            )
+            .await?;
+            (url, Vec::new())
+        }
         other => {
             return Err(providers::ProviderError::api(
                 format!("Provider '{other}' is not yet supported in the Rust service"),
@@ -581,11 +636,19 @@ async fn resolve_playback_url(
     // If no file metadata in DB, store it in the background (future users benefit).
     if no_file_metadata && !provider_files.is_empty() {
         let pool = state.pool.clone();
+        let redis = state.redis.clone();
         let hash = info_hash.to_string();
         let files = provider_files;
         let s = season;
         tokio::spawn(async move {
-            providers::torrents::metadata_update::update_metadata(&pool, &hash, &files, s).await;
+            providers::torrents::metadata_update::update_metadata(
+                &pool,
+                Some(&redis),
+                &hash,
+                &files,
+                s,
+            )
+            .await;
         });
     }
 
@@ -750,6 +813,19 @@ fn playback_cache_key(
     hasher.update(raw.as_bytes());
     let hash = hex_encode(&hasher.finalize());
     format!("playback_url:{hash}")
+}
+
+fn build_magnet_link(info_hash: &str, announce_list: &[String]) -> String {
+    let trackers = announce_list
+        .iter()
+        .map(|t| format!("tr={}", urlencoding::encode(t)))
+        .collect::<Vec<_>>()
+        .join("&");
+    if trackers.is_empty() {
+        format!("magnet:?xt=urn:btih:{info_hash}")
+    } else {
+        format!("magnet:?xt=urn:btih:{info_hash}&{trackers}")
+    }
 }
 
 fn hex_encode(bytes: &[u8]) -> String {

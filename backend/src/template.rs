@@ -12,6 +12,8 @@
 use serde_json::Value;
 
 const MAX_TEMPLATE_LEN: usize = 10_000;
+const MAX_RECURSION_DEPTH: usize = 10;
+const MAX_MODIFIERS_CHAIN: usize = 10;
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -19,8 +21,8 @@ pub fn render(template: &str, context: &Value) -> String {
     if template.len() > MAX_TEMPLATE_LEN {
         return String::new();
     }
-    let nodes = parse(template);
-    let raw = render_nodes(&nodes, context);
+    let nodes = parse(template, 0);
+    let raw = render_nodes(&nodes, context, 0);
     // Remove blank lines (mirrors Python's cleaned_lines logic)
     raw.lines()
         .filter(|l| !l.trim().is_empty())
@@ -47,15 +49,15 @@ enum Node {
 
 // ─── Parser ───────────────────────────────────────────────────────────────────
 
-fn parse(template: &str) -> Vec<Node> {
+fn parse(template: &str, depth: usize) -> Vec<Node> {
     let mut pos = 0;
     let bytes = template.as_bytes();
     let mut nodes = Vec::new();
-    parse_block(bytes, &mut pos, &mut nodes, false);
+    parse_block(bytes, &mut pos, &mut nodes, false, depth);
     nodes
 }
 
-fn parse_block(bytes: &[u8], pos: &mut usize, out: &mut Vec<Node>, inside_if: bool) {
+fn parse_block(bytes: &[u8], pos: &mut usize, out: &mut Vec<Node>, inside_if: bool, depth: usize) {
     let n = bytes.len();
     loop {
         if *pos >= n {
@@ -99,10 +101,17 @@ fn parse_block(bytes: &[u8], pos: &mut usize, out: &mut Vec<Node>, inside_if: bo
 
         // {if ...}
         if inner.len() > 3 && inner[..3].eq_ignore_ascii_case("if ") {
+            if depth >= MAX_RECURSION_DEPTH {
+                out.push(Node::Text(
+                    String::from_utf8_lossy(&bytes[*pos..=close]).into_owned(),
+                ));
+                *pos = close + 1;
+                continue;
+            }
             let condition = inner[3..].trim().to_string();
             *pos = close + 1; // consume {if ...}
             let mut true_branch = Vec::new();
-            parse_block(bytes, pos, &mut true_branch, true);
+            parse_block(bytes, pos, &mut true_branch, true, depth + 1);
             // true_branch stopped at {elif}, {else}, or {/if} — we must consume the stopping token
 
             let mut elif_branches: Vec<(String, Vec<Node>)> = Vec::new();
@@ -120,7 +129,7 @@ fn parse_block(bytes: &[u8], pos: &mut usize, out: &mut Vec<Node>, inside_if: bo
                     let elif_cond = tag[5..].trim().to_string();
                     *pos = c2 + 1; // consume {elif ...}
                     let mut elif_body = Vec::new();
-                    parse_block(bytes, pos, &mut elif_body, true);
+                    parse_block(bytes, pos, &mut elif_body, true, depth + 1);
                     elif_branches.push((elif_cond, elif_body));
                 } else {
                     break;
@@ -135,7 +144,7 @@ fn parse_block(bytes: &[u8], pos: &mut usize, out: &mut Vec<Node>, inside_if: bo
                         .trim();
                     if tag.eq_ignore_ascii_case("else") {
                         *pos = c2 + 1; // consume {else}
-                        parse_block(bytes, pos, &mut false_branch, true);
+                        parse_block(bytes, pos, &mut false_branch, true, depth + 1);
                     }
                 }
             }
@@ -206,6 +215,9 @@ fn parse_var(inner: &str) -> (String, Vec<(String, Option<String>)>) {
     let path = parts[0].trim().to_string();
     let mut modifiers = Vec::new();
     for part in &parts[1..] {
+        if modifiers.len() >= MAX_MODIFIERS_CHAIN {
+            break;
+        }
         let part = part.trim();
         if let Some(paren) = part.find('(') {
             if part.ends_with(')') {
@@ -253,11 +265,14 @@ fn smart_split(s: &str, delim: char) -> Vec<String> {
 
 // ─── Renderer ─────────────────────────────────────────────────────────────────
 
-fn render_nodes(nodes: &[Node], ctx: &Value) -> String {
-    nodes.iter().map(|n| render_node(n, ctx)).collect()
+fn render_nodes(nodes: &[Node], ctx: &Value, depth: usize) -> String {
+    nodes.iter().map(|n| render_node(n, ctx, depth)).collect()
 }
 
-fn render_node(node: &Node, ctx: &Value) -> String {
+fn render_node(node: &Node, ctx: &Value, depth: usize) -> String {
+    if depth > MAX_RECURSION_DEPTH {
+        return String::new();
+    }
     match node {
         Node::Text(t) => t.clone(),
         Node::Var { path, modifiers } => {
@@ -271,14 +286,14 @@ fn render_node(node: &Node, ctx: &Value) -> String {
             false_branch,
         } => {
             if eval_condition(condition, ctx) {
-                render_nodes(true_branch, ctx)
+                render_nodes(true_branch, ctx, depth + 1)
             } else {
                 for (cond, body) in elif_branches {
                     if eval_condition(cond, ctx) {
-                        return render_nodes(body, ctx);
+                        return render_nodes(body, ctx, depth + 1);
                     }
                 }
-                render_nodes(false_branch, ctx)
+                render_nodes(false_branch, ctx, depth + 1)
             }
         }
     }
@@ -552,14 +567,14 @@ fn format_bytes(n: i64) -> String {
     if n <= 0 {
         return "0 B".to_string();
     }
-    let units = ["B", "KB", "MB", "GB", "TB", "PB"];
+    let units = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
     let mut v = n as f64;
     let mut i = 0usize;
-    while v >= 1000.0 && i < units.len() - 1 {
-        v /= 1000.0;
+    while v >= 1024.0 && i < units.len() - 1 {
+        v /= 1024.0;
         i += 1;
     }
-    format!("{v:.1} {}", units[i])
+    format!("{v:.2} {}", units[i])
 }
 
 fn format_time(secs: i64) -> String {
@@ -626,7 +641,7 @@ mod tests {
     fn test_modifier_bytes() {
         let ctx = json!({"stream": {"size": 4_500_000_000i64}});
         let out = render("{stream.size|bytes}", &ctx);
-        assert_eq!(out, "4.5 GB");
+        assert_eq!(out, "4.19 GB");
     }
 
     #[test]

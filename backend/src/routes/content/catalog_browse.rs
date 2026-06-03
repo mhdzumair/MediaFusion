@@ -264,6 +264,9 @@ pub async fn get_genres(
 
     let genres: Vec<serde_json::Value> = rows
         .into_iter()
+        .filter(|(_, name)| {
+            !crate::db::genres::ADULT_GENRE_NAMES.contains(&name.to_ascii_lowercase().as_str())
+        })
         .map(|(id, name)| json!({"id": id, "name": name}))
         .collect();
 
@@ -990,6 +993,7 @@ pub async fn get_media_streams(
         streaming_providers,
         selected_provider,
         provider_token,
+        selected_stremthru_store,
         title_tmpl,
         desc_tmpl,
     ) = if let Some((pid, cfg, enc)) = profile_row {
@@ -1043,6 +1047,26 @@ pub async fn get_media_streams(
                         .map(str::to_string)
                 })
         });
+        let selected_stremthru_store = selected.as_deref().and_then(|svc| {
+            config
+                .get("sps")
+                .or_else(|| config.get("streaming_providers"))
+                .and_then(|v| v.as_array())
+                .and_then(|arr| {
+                    arr.iter().find(|sp| {
+                        sp.get("sv")
+                            .or_else(|| sp.get("service"))
+                            .and_then(|v| v.as_str())
+                            == Some(svc)
+                    })
+                })
+                .and_then(|sp| {
+                    sp.get("stsn")
+                        .or_else(|| sp.get("stremthru_store_name"))
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                })
+        });
         // Read stream_template (alias "st") from profile config
         let st = config.get("st").or_else(|| config.get("stream_template"));
         let title = st
@@ -1055,7 +1079,15 @@ pub async fn get_media_streams(
             .and_then(|v| v.as_str())
             .map(str::to_string)
             .unwrap_or_else(|| default_desc_tmpl.to_string());
-        (pid, providers, selected, token, title, desc)
+        (
+            pid,
+            providers,
+            selected,
+            token,
+            selected_stremthru_store,
+            title,
+            desc,
+        )
     } else {
         tracing::debug!(
             "get_media_streams: profile not found for user={user_id} profile_id={:?}",
@@ -1065,6 +1097,7 @@ pub async fn get_media_streams(
             0i32,
             vec![],
             params.provider.clone(),
+            None,
             None,
             default_title_tmpl.to_string(),
             default_desc_tmpl.to_string(),
@@ -1226,17 +1259,34 @@ pub async fn get_media_streams(
 
     // Step 1: check Redis debrid_cache:{service} (global per service)
     let mut cached_hashes: HashMap<String, bool> = if let Some(ref svc) = selected_provider {
+        let cache_service = crate::providers::torrents::cache_federation::cache_service_name(
+            svc,
+            selected_stremthru_store.as_deref(),
+        );
         let hashes: Vec<String> = stream_rows
             .iter()
             .filter_map(|r| r.info_hash.clone())
             .collect();
-        cache::get_debrid_cache_status(&state.redis, svc, &hashes).await
+        cache::get_debrid_cache_status_federated(
+            &state.redis,
+            Some(&state.http),
+            &cache_service,
+            svc,
+            &hashes,
+            state.config.sync_debrid_cache_streams,
+            &state.config.mediafusion_url,
+        )
+        .await
     } else {
         HashMap::new()
     };
 
     // Step 2: for hashes not found in Redis, call the live provider API
     if let (Some(ref svc), Some(ref tok)) = (&selected_provider, &provider_token) {
+        let cache_service = crate::providers::torrents::cache_federation::cache_service_name(
+            svc,
+            selected_stremthru_store.as_deref(),
+        );
         let uncached: Vec<String> = stream_rows
             .iter()
             .filter_map(|r| r.info_hash.as_deref())
@@ -1248,9 +1298,11 @@ pub async fn get_media_streams(
                 &state.http,
                 &state.redis,
                 svc,
+                &cache_service,
                 tok,
                 &uncached,
                 media_id,
+                state.config.store_stremthru_magnet_cache,
             )
             .await;
             for (hash, is_cached) in live {

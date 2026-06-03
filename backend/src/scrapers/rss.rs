@@ -442,7 +442,7 @@ async fn upsert_rss_stream(
     };
 
     let opts = crate::db::StoreStreamOpts::scraper(crate::db::MediaId(media_id), media_type)
-        .with_episode(season, episode);
+        .with_episode(season, episode, None);
 
     match crate::db::store_torrent_stream(pool, &stream, &opts).await {
         Ok(r) => r.was_inserted(),

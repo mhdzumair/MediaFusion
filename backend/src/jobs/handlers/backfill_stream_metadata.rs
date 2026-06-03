@@ -1,19 +1,19 @@
 //! PTT metadata backfill — re-parse `stream.name` and fill missing quality/language/HDR links.
 //!
-//! Run via worker CLI (processes all pages in one invocation by default):
+//! Run via worker CLI (processes all batches in one invocation by default):
 //!   mediafusion-worker --run-job backfill_stream_metadata
 //!
 //! Args:
-//!   page (default 0) — starting page when `continuous` is false
-//!   page_size (default 500)
+//!   after_id (default 0) — resume from this stream id (keyset pagination)
+//!   batch_size (default 500) — streams per batch (max 5000)
 //!   only_missing (default true)
 //!   stream_types (default ["TORRENT","USENET"])
-//!   continuous (default true) — loop pages in-process until no rows remain
-//!   max_pages (optional) — cap pages processed (for test runs)
+//!   continuous (default true) — loop batches in-process until no rows remain
+//!   max_batches (optional) — cap batches processed (for test runs)
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::db::stream_backfill::{
     backfill_stream_batch, default_backfill_stream_types, fetch_streams_for_backfill,
@@ -30,24 +30,28 @@ pub struct BackfillStreamMetadata;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct BackfillStreamMetadataArgs {
+    /// Resume scanning after this stream id (keyset pagination).
     #[serde(default)]
-    pub page: i64,
-    #[serde(default = "default_page_size")]
-    pub page_size: i64,
+    pub after_id: i32,
+    #[serde(default = "default_batch_size", alias = "page_size")]
+    pub batch_size: i64,
     /// When true (default), only streams missing resolution/quality/links are selected.
     #[serde(default = "default_only_missing")]
     pub only_missing: bool,
     #[serde(default = "default_stream_types")]
     pub stream_types: Vec<String>,
-    /// When true (default), process page after page in this job until done.
+    /// When true (default), process batch after batch in this job until done.
     #[serde(default = "default_continuous")]
     pub continuous: bool,
-    /// Optional cap on pages processed (useful for dry runs).
+    /// Optional cap on batches processed (useful for dry runs).
+    #[serde(default, alias = "max_pages")]
+    pub max_batches: Option<i64>,
+    /// Deprecated: offset pagination was removed; use `after_id` to resume.
     #[serde(default)]
-    pub max_pages: Option<i64>,
+    pub page: Option<i64>,
 }
 
-fn default_page_size() -> i64 {
+fn default_batch_size() -> i64 {
     500
 }
 
@@ -90,35 +94,41 @@ fn merge_stats(acc: &mut StreamBackfillStats, batch: StreamBackfillStats) {
 #[async_trait]
 impl JobHandler for BackfillStreamMetadata {
     const QUEUE: &'static str = "backfill_stream_metadata";
-    const CONCURRENCY: usize = 2;
+    const CONCURRENCY: usize = 1;
     type Args = BackfillStreamMetadataArgs;
 
     async fn run(&self, args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        let mut page = args.page;
-        let page_size = args.page_size.max(1).min(5_000);
+        if args.page.is_some() {
+            warn!(
+                page = ?args.page,
+                "backfill_stream_metadata: `page` is deprecated; use `after_id` for resumable keyset pagination"
+            );
+        }
+
+        let mut after_id = args.after_id;
+        let batch_size = args.batch_size.clamp(1, 5_000);
         let stream_types = parse_stream_types(&args.stream_types);
         let mut totals = StreamBackfillStats::default();
-        let mut pages_done: i64 = 0;
+        let mut batches_done: i64 = 0;
 
         loop {
             if ctx.is_cancelled() {
                 return Err(JobError::Cancelled);
             }
 
-            let offset = page * page_size;
             let rows = fetch_streams_for_backfill(
                 &ctx.state.pool,
                 &stream_types,
                 args.only_missing,
-                page_size,
-                offset,
+                batch_size,
+                after_id,
             )
             .await?;
 
             if rows.is_empty() {
                 info!(
-                    page,
-                    pages_done,
+                    after_id,
+                    batches_done,
                     examined = totals.examined,
                     linked_languages = totals.linked_languages,
                     updated_columns = totals.updated_columns,
@@ -127,27 +137,31 @@ impl JobHandler for BackfillStreamMetadata {
                 break;
             }
 
+            let batch_last_id = rows.last().map(|row| row.id).unwrap_or(after_id);
+
             info!(
-                page,
+                after_id,
+                batch_last_id,
                 count = rows.len(),
                 only_missing = args.only_missing,
                 types = ?stream_types,
-                "backfill_stream_metadata: processing page"
+                "backfill_stream_metadata: processing batch"
             );
 
-            let mut page_stats = StreamBackfillStats::default();
+            let mut batch_stats = StreamBackfillStats::default();
             for chunk in rows.chunks(100) {
                 if ctx.is_cancelled() {
                     return Err(JobError::Cancelled);
                 }
                 let batch =
                     backfill_stream_batch(&ctx.state.pool, chunk, args.only_missing).await?;
-                merge_stats(&mut page_stats, batch);
+                merge_stats(&mut batch_stats, batch);
             }
-            merge_stats(&mut totals, page_stats);
+            merge_stats(&mut totals, batch_stats);
 
             info!(
-                page,
+                after_id,
+                batch_last_id,
                 examined = totals.examined,
                 updated_columns = totals.updated_columns,
                 linked_languages = totals.linked_languages,
@@ -155,21 +169,23 @@ impl JobHandler for BackfillStreamMetadata {
                 linked_audio = totals.linked_audio,
                 linked_channels = totals.linked_channels,
                 skipped_empty_parse = totals.skipped_empty_parse,
-                "backfill_stream_metadata: page complete"
+                "backfill_stream_metadata: batch complete"
             );
 
-            pages_done += 1;
-            let full_page = rows.len() as i64 == page_size;
+            batches_done += 1;
+            let full_batch = rows.len() as i64 == batch_size;
+            after_id = batch_last_id;
 
             if !args.continuous {
-                if full_page {
+                if full_batch {
                     let next = BackfillStreamMetadataArgs {
-                        page: page + 1,
-                        page_size,
+                        after_id,
+                        batch_size,
                         only_missing: args.only_missing,
                         stream_types: args.stream_types.clone(),
                         continuous: false,
-                        max_pages: args.max_pages,
+                        max_batches: args.max_batches,
+                        page: None,
                     };
                     enqueue_simple(&ctx.state.pool, Self::QUEUE, &next, EnqueueOpts::default())
                         .await?;
@@ -177,14 +193,18 @@ impl JobHandler for BackfillStreamMetadata {
                 break;
             }
 
-            if !full_page {
+            if !full_batch {
                 break;
             }
-            if args.max_pages.is_some_and(|max| pages_done >= max) {
-                info!(pages_done, max = ?args.max_pages, "backfill_stream_metadata: stopped at max_pages");
+            if args.max_batches.is_some_and(|max| batches_done >= max) {
+                info!(
+                    batches_done,
+                    after_id,
+                    max = ?args.max_batches,
+                    "backfill_stream_metadata: stopped at max_batches"
+                );
                 break;
             }
-            page += 1;
         }
 
         Ok(())

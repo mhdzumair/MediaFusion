@@ -712,6 +712,7 @@ async fn upsert_acestream(
             media_type: crate::db::MediaType::Series,
             season: None,
             episode: None,
+            episode_end: None,
             link_source: crate::db::LinkSource::PttParser,
             is_primary: true,
             is_verified: false,
@@ -845,11 +846,6 @@ impl JobHandler for AcestreamBgScraper {
     type Args = serde_json::Value;
 
     async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        if ctx.state.config.disable_acestream_background_scraper {
-            info!("acestream_bg: disabled by config");
-            return Ok(());
-        }
-
         let config_path = &ctx.state.config.scraper_config_path;
         let source_configs = load_source_configs(config_path);
         let api_key = std::env::var("ACESTREAM_BACKGROUND_SEARCH_API_KEY")

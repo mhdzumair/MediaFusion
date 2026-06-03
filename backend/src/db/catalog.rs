@@ -12,19 +12,32 @@ pub struct CatalogRow {
     pub media_type: MediaType,
     pub title: String,
     pub year: Option<i32>,
+    pub end_year: Option<i32>,
     pub description: Option<String>,
     pub imdb_id: Option<String>,
     pub poster_url: Option<String>,
 }
 
-fn order_clause(sort: &str, sort_dir: &str) -> &'static str {
-    match (sort, sort_dir) {
-        ("year", "asc") => "m.year ASC NULLS LAST, m.id DESC",
-        ("year", _) => "m.year DESC NULLS LAST, m.id DESC",
-        ("title", "asc") => "m.title ASC",
-        ("title", _) => "m.title DESC",
-        (_, "asc") => "m.last_stream_added ASC NULLS LAST, m.id ASC",
-        _ => "m.last_stream_added DESC NULLS LAST, m.id DESC",
+fn order_clause(sort: &str, sort_dir: &str) -> String {
+    let sort_dir = if sort_dir == "asc" { "ASC" } else { "DESC" };
+    let nulls = if sort_dir == "ASC" {
+        "NULLS FIRST"
+    } else {
+        "NULLS LAST"
+    };
+    match sort {
+        "popular" => format!(
+            "m.popularity {sort_dir} {nulls}, m.total_streams {sort_dir} {nulls}, m.last_stream_added {sort_dir} {nulls}, m.id ASC"
+        ),
+        "rating" => format!(
+            "(SELECT mr2.rating FROM media_rating mr2 JOIN rating_provider rp2 ON rp2.id = mr2.rating_provider_id WHERE mr2.media_id = m.id AND rp2.name = 'imdb' LIMIT 1) {sort_dir} {nulls}, m.total_streams {sort_dir} {nulls}, m.id ASC"
+        ),
+        "year" => format!("m.year {sort_dir} {nulls}, m.id ASC"),
+        "title" => format!("m.title {sort_dir}, m.id ASC"),
+        "release_date" => format!(
+            "COALESCE(m.release_date, make_date(m.year, 12, 31)) {sort_dir} {nulls}, m.id ASC"
+        ),
+        _ => format!("m.last_stream_added {sort_dir} {nulls}, m.id ASC"),
     }
 }
 
@@ -73,6 +86,7 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
             m.type AS media_type,
             m.title,
             m.year,
+            EXTRACT(YEAR FROM m.end_date)::int AS end_year,
             m.description,
             mei.external_id AS imdb_id,
             mi.url AS poster_url
@@ -138,6 +152,7 @@ async fn get_library_items(
             m.type AS media_type,
             m.title,
             m.year,
+            EXTRACT(YEAR FROM m.end_date)::int AS end_year,
             m.description,
             mei.external_id AS imdb_id,
             mi.url AS poster_url
@@ -207,6 +222,7 @@ pub async fn get_watchlist_items(
             m.type AS media_type,
             m.title,
             m.year,
+            EXTRACT(YEAR FROM m.end_date)::int AS end_year,
             m.description,
             mei.external_id AS imdb_id,
             mi.url AS poster_url
@@ -230,7 +246,7 @@ pub async fn get_watchlist_items(
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
               WHERE mpcl.media_id = m.id AND pc.name = ANY($4)
           ))
-        GROUP BY m.id, m.type, m.title, m.year, m.description, mei.external_id, mi.url
+        GROUP BY m.id, m.type, m.title, m.year, m.end_date, m.description, mei.external_id, mi.url
         ORDER BY {ord}
         LIMIT {WATCHLIST_LIMIT} OFFSET $5
         "#
@@ -270,6 +286,7 @@ pub async fn search_metadata(
             m.type AS media_type,
             m.title,
             m.year,
+            EXTRACT(YEAR FROM m.end_date)::int AS end_year,
             m.description,
             mei.external_id AS imdb_id,
             mi.url AS poster_url
@@ -321,4 +338,76 @@ pub async fn search_metadata(
         warn!("search query [type={media_type} q={query}]: {e}");
         vec![]
     })
+}
+
+/// Filter MDBList IMDb ids through PostgreSQL with parental-guide filters and stream availability.
+pub async fn get_mdblist_filtered_items(
+    pool: &PgPool,
+    media_type: MediaType,
+    imdb_ids: &[String],
+    skip: i64,
+    limit: i64,
+    nudity_excludes: &[String],
+    cert_excludes: &[String],
+) -> Vec<CatalogRow> {
+    if imdb_ids.is_empty() {
+        return vec![];
+    }
+
+    let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
+    let type_join = match media_type {
+        MediaType::Movie => "JOIN movie_metadata mm ON mm.media_id = m.id",
+        MediaType::Series => "JOIN series_metadata sm ON sm.media_id = m.id",
+        _ => return vec![],
+    };
+
+    let sql = format!(
+        r#"
+        SELECT
+            m.id AS media_id,
+            m.type AS media_type,
+            m.title,
+            m.year,
+            EXTRACT(YEAR FROM m.end_date)::int AS end_year,
+            m.description,
+            mei.external_id AS imdb_id,
+            mi.url AS poster_url
+        FROM media m
+        JOIN media_external_id mei ON mei.media_id = m.id AND mei.provider = 'imdb'
+        {type_join}
+        LEFT JOIN LATERAL (
+            SELECT url FROM media_image
+            WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
+            LIMIT 1
+        ) mi ON true
+        WHERE mei.external_id = ANY($1)
+          AND m.type = $2
+          AND m.total_streams > 0
+          AND (cardinality($3::nuditystatus[]) = 0 OR m.nudity_status <> ALL($3))
+          AND (cardinality($4::text[]) IS NULL OR NOT EXISTS (
+              SELECT 1 FROM media_parental_certificate_link mpcl
+              JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
+              WHERE mpcl.media_id = m.id AND pc.name = ANY($4)
+          ))
+        ORDER BY m.last_stream_added DESC NULLS LAST, m.id ASC
+        LIMIT $5 OFFSET $6
+        "#
+    );
+
+    sqlx::query_as::<_, CatalogRow>(&sql)
+        .bind(imdb_ids)
+        .bind(media_type)
+        .bind(&nudity_exclude_enums)
+        .bind(cert_excludes)
+        .bind(limit)
+        .bind(skip)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_else(|e| {
+            warn!(
+                "mdblist filtered query [type={}]: {e}",
+                media_type.as_wire()
+            );
+            vec![]
+        })
 }

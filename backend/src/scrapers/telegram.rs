@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 use grammers_client::Client;
 use grammers_session::SessionData;
+use regex::Regex;
+use std::sync::OnceLock;
 
 use crate::{
     config::AppConfig,
@@ -18,6 +20,27 @@ use crate::{
 const VIDEO_EXTENSIONS: &[&str] = &[
     ".mkv", ".mp4", ".avi", ".webm", ".mov", ".flv", ".wmv", ".m4v",
 ];
+
+fn imdb_pattern() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"tt\d{7,8}").expect("IMDB_PATTERN"))
+}
+
+fn extract_caption_imdb(caption: &str) -> Option<String> {
+    imdb_pattern()
+        .find(caption)
+        .map(|m| m.as_str().to_string())
+}
+
+fn document_is_video(doc: &grammers_client::media::Document) -> bool {
+    if doc
+        .mime_type()
+        .is_some_and(|m| m.starts_with("video/"))
+    {
+        return true;
+    }
+    doc.duration().is_some() && doc.resolution().is_some()
+}
 
 // ─── Client initialisation ────────────────────────────────────────────────────
 
@@ -210,22 +233,34 @@ fn process_message(
 ) -> Option<ScrapedTelegramStream> {
     use grammers_client::media::Media;
 
-    // Only handle document media
     let (file_name, size, mime_type): (String, i64, Option<String>) = match message.media()? {
         Media::Document(doc) => {
-            let name = doc.name()?.to_string();
+            let is_video = document_is_video(&doc);
+            let mut name = doc.name().unwrap_or("").to_string();
+            if name.is_empty() {
+                name = if is_video {
+                    format!("video_{}.mp4", message.id())
+                } else {
+                    format!("file_{}", message.id())
+                };
+            }
             let size = doc.size().unwrap_or(0) as i64;
             let mime = doc.mime_type().map(str::to_string);
+            if !is_video {
+                let lower = name.to_lowercase();
+                let mime_is_video = mime
+                    .as_deref()
+                    .is_some_and(|m| m.starts_with("video/"));
+                if !mime_is_video
+                    && !VIDEO_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+                {
+                    return None;
+                }
+            }
             (name, size, mime)
         }
         _ => return None,
     };
-
-    // Filter by video extension
-    let lower: String = file_name.to_lowercase();
-    if !VIDEO_EXTENSIONS.iter().any(|ext| lower.ends_with(ext)) {
-        return None;
-    }
 
     // Minimum file size check
     if size > 0 && (size as u64) < min_size {
@@ -239,12 +274,15 @@ fn process_message(
 
     // Parse title with PTT
     let parsed = parser::parse_title(&file_name);
+    let caption_imdb_id = extract_caption_imdb(message.text());
 
-    // Title similarity check (80% threshold)
-    let ratio =
-        parser::similarity_ratio(parsed.title.as_deref().unwrap_or(&file_name), &meta.title);
-    if ratio < 80 {
-        return None;
+    // Title similarity check (80% threshold) — skipped for feed/background scrapes.
+    if !meta.title.is_empty() {
+        let ratio =
+            parser::similarity_ratio(parsed.title.as_deref().unwrap_or(&file_name), &meta.title);
+        if ratio < 80 {
+            return None;
+        }
     }
 
     // For series: verify season/episode match
@@ -270,5 +308,6 @@ fn process_message(
         parsed,
         season,
         episode,
+        caption_imdb_id,
     })
 }

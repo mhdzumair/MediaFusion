@@ -25,6 +25,7 @@ use sha2::Sha256;
 
 use crate::{
     db::{HistorySource, WatchAction},
+    services::sync::{scrobble_playback_for_progress, scrobble_playback_start},
     state::AppState,
 };
 
@@ -814,6 +815,26 @@ pub async fn create_watch_history(
     };
 
     let watch_row = map_watch_row(row);
+    let ext = get_external_ids(&state.pool_ro, watch_row.media_id).await;
+    let imdb_id = ext.get("imdb").and_then(|v| v.as_str());
+    let tmdb_id = ext
+        .get("tmdb")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse().ok());
+    scrobble_playback_for_progress(
+        &state,
+        watch_row.profile_id,
+        imdb_id,
+        tmdb_id,
+        &watch_row.title,
+        &watch_row.media_type,
+        watch_row.season,
+        watch_row.episode,
+        watch_row.progress,
+        watch_row.duration,
+    )
+    .await;
+
     let resp = row_to_response(&state.pool, &watch_row).await;
     (StatusCode::CREATED, Json(resp)).into_response()
 }
@@ -877,6 +898,25 @@ pub async fn update_progress(
     match row {
         Some(r) => {
             let watch_row = map_watch_row(r);
+            let ext = get_external_ids(&state.pool_ro, watch_row.media_id).await;
+            let imdb_id = ext.get("imdb").and_then(|v| v.as_str());
+            let tmdb_id = ext
+                .get("tmdb")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse().ok());
+            scrobble_playback_for_progress(
+                &state,
+                watch_row.profile_id,
+                imdb_id,
+                tmdb_id,
+                &watch_row.title,
+                &watch_row.media_type,
+                watch_row.season,
+                watch_row.episode,
+                watch_row.progress,
+                watch_row.duration,
+            )
+            .await;
             Json(row_to_response(&state.pool, &watch_row).await).into_response()
         }
         None => (
@@ -1183,6 +1223,30 @@ pub async fn track_action(
     };
 
     let watch_row = map_watch_row(row);
+
+    // Scrobble to external platforms for 'watch' action (Trakt; Simkl has no scrobble API).
+    if body.action.eq_ignore_ascii_case("watch") || body.action.eq_ignore_ascii_case("watched") {
+        let ext = get_external_ids(&state.pool_ro, watch_row.media_id).await;
+        let imdb_id = ext.get("imdb").and_then(|v| v.as_str());
+        let tmdb_id = ext
+            .get("tmdb")
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse().ok());
+        if imdb_id.is_some() || tmdb_id.is_some() {
+            scrobble_playback_start(
+                &state,
+                watch_row.profile_id,
+                imdb_id,
+                tmdb_id,
+                &watch_row.title,
+                &watch_row.media_type,
+                watch_row.season,
+                watch_row.episode,
+            )
+            .await;
+        }
+    }
+
     let resp = row_to_response(&state.pool, &watch_row).await;
     (StatusCode::CREATED, Json(resp)).into_response()
 }

@@ -11,6 +11,7 @@ use crate::{
 use super::{
     api::BotApi,
     forwarded,
+    metadata::{episode_info, metadata_value, selected_languages},
     model::{ContentType, ConversationState},
 };
 
@@ -117,6 +118,15 @@ pub async fn execute_import(
     }
 }
 
+fn merge_fields(mut base: Value, common: &Value) -> Value {
+    if let (Some(base_obj), Some(common_obj)) = (base.as_object_mut(), common.as_object()) {
+        for (key, value) in common_obj {
+            base_obj.insert(key.clone(), value.clone());
+        }
+    }
+    base
+}
+
 fn build_contribution_data(
     _state: &AppState,
     _api: &BotApi,
@@ -126,7 +136,13 @@ fn build_contribution_data(
 ) -> Result<(&'static str, Value), String> {
     let analysis = conv.analysis_result.clone().unwrap_or(json!({}));
     let selected = conv.selected_match.clone().unwrap_or(json!({}));
+    let overrides = &conv.metadata_overrides;
     let media_type = conv.media_type.as_deref().unwrap_or("movie");
+    let meta_type = if media_type == "series" {
+        "series"
+    } else {
+        "movie"
+    };
     let meta_id = selected
         .get("external_id")
         .and_then(|v| v.as_str())
@@ -137,101 +153,126 @@ fn build_contribution_data(
         .and_then(|v| v.as_str())
         .unwrap_or("Unknown");
 
+    let field_or_analysis = |field: &str| -> Value {
+        let value = metadata_value(field, &analysis, overrides);
+        if value == "Auto" {
+            analysis.get(field).cloned().unwrap_or(Value::Null)
+        } else {
+            json!(value)
+        }
+    };
+
+    let languages = selected_languages(&analysis, overrides);
+    let (season_number, episode_number, episode_end) = episode_info(&analysis, overrides);
     let is_public = import_helpers::stream_is_public_on_submit(true, true);
+
+    let mut common = json!({
+        "title": title,
+        "meta_type": meta_type,
+        "meta_id": meta_id,
+        "resolution": field_or_analysis("resolution"),
+        "quality": field_or_analysis("quality"),
+        "codec": field_or_analysis("codec"),
+        "audio": field_or_analysis("audio"),
+        "languages": languages,
+        "season_number": season_number,
+        "episode_number": episode_number,
+        "episode_end": episode_end,
+        "is_anonymous": is_anonymous,
+        "is_public": is_public,
+        "sports_category": conv.sports_category,
+    });
+    if is_anonymous {
+        if let Some(name) = &conv.anonymous_display_name {
+            common["anonymous_display_name"] = json!(name);
+        }
+    }
+    if let Some(poster) = &conv.custom_poster_url {
+        common["custom_poster_url"] = json!(poster);
+    }
 
     let content_type = conv.content_type.ok_or("Missing content type")?;
     match content_type {
         ContentType::Magnet => Ok((
             "torrent",
-            json!({
-                "info_hash": analysis.get("info_hash").and_then(|v| v.as_str()),
-                "name": analysis.get("torrent_name").and_then(|v| v.as_str()).unwrap_or(title),
-                "title": title,
-                "meta_type": media_type,
-                "meta_id": meta_id,
-                "total_size": analysis.get("total_size"),
-                "file_data": analysis.get("files").cloned().unwrap_or(json!([])),
-                "resolution": analysis.get("resolution"),
-                "codec": analysis.get("codec"),
-                "quality": analysis.get("quality"),
-                "is_anonymous": is_anonymous,
-                "is_public": is_public,
-                "sports_category": conv.sports_category,
-                "contributor_user_id": conv.user_id,
-            }),
+            merge_fields(
+                json!({
+                    "info_hash": analysis.get("info_hash").and_then(|v| v.as_str()),
+                    "name": analysis.get("torrent_name").and_then(|v| v.as_str()).unwrap_or(title),
+                    "total_size": analysis.get("total_size"),
+                    "file_data": analysis.get("files").cloned().unwrap_or(json!([])),
+                    "file_count": analysis.get("file_count").cloned().unwrap_or(json!(1)),
+                    "contributor_user_id": conv.user_id,
+                }),
+                &common,
+            ),
         )),
         ContentType::TorrentFile | ContentType::TorrentUrl => Ok((
             "torrent",
-            json!({
-                "info_hash": analysis.get("info_hash").and_then(|v| v.as_str()),
-                "name": analysis.get("torrent_name").and_then(|v| v.as_str()).unwrap_or(title),
-                "title": title,
-                "meta_type": media_type,
-                "meta_id": meta_id,
-                "total_size": analysis.get("total_size"),
-                "file_data": analysis.get("files").cloned().unwrap_or(json!([])),
-                "is_anonymous": is_anonymous,
-                "is_public": is_public,
-                "sports_category": conv.sports_category,
-            }),
+            merge_fields(
+                json!({
+                    "info_hash": analysis.get("info_hash").and_then(|v| v.as_str()),
+                    "name": analysis.get("torrent_name").and_then(|v| v.as_str()).unwrap_or(title),
+                    "total_size": analysis.get("total_size"),
+                    "file_data": analysis.get("files").cloned().unwrap_or(json!([])),
+                    "file_count": analysis.get("file_count").cloned().unwrap_or(json!(1)),
+                }),
+                &common,
+            ),
         )),
         ContentType::Nzb => Ok((
             "nzb",
-            json!({
-                "url": conv.raw_input.as_str(),
-                "title": title,
-                "meta_type": media_type,
-                "meta_id": meta_id,
-                "is_anonymous": is_anonymous,
-                "is_public": is_public,
-            }),
+            merge_fields(
+                json!({
+                    "url": conv.raw_input.as_str().or_else(|| analysis.get("nzb_url").and_then(|v| v.as_str())),
+                }),
+                &common,
+            ),
         )),
         ContentType::Youtube => Ok((
             "youtube",
-            json!({
-                "url": conv.raw_input.get("url").and_then(|v| v.as_str()),
-                "video_id": conv.raw_input.get("video_id").and_then(|v| v.as_str()),
-                "title": title,
-                "meta_type": media_type,
-                "meta_id": meta_id,
-                "is_anonymous": is_anonymous,
-                "is_public": is_public,
-            }),
+            merge_fields(
+                json!({
+                    "url": conv.raw_input.get("url").and_then(|v| v.as_str())
+                        .or_else(|| analysis.get("url").and_then(|v| v.as_str())),
+                    "video_id": conv.raw_input.get("video_id").and_then(|v| v.as_str())
+                        .or_else(|| analysis.get("video_id").and_then(|v| v.as_str())),
+                }),
+                &common,
+            ),
         )),
         ContentType::Http => Ok((
             "http",
-            json!({
-                "url": conv.raw_input.as_str(),
-                "title": title,
-                "meta_type": media_type,
-                "meta_id": meta_id,
-                "is_anonymous": is_anonymous,
-                "is_public": is_public,
-            }),
+            merge_fields(
+                json!({
+                    "url": conv.raw_input.as_str().or_else(|| analysis.get("url").and_then(|v| v.as_str())),
+                }),
+                &common,
+            ),
         )),
         ContentType::Acestream => Ok((
             "acestream",
-            json!({
-                "acestream_id": conv.raw_input.as_str(),
-                "title": title,
-                "meta_type": media_type,
-                "meta_id": meta_id,
-                "is_anonymous": is_anonymous,
-                "is_public": is_public,
-            }),
+            merge_fields(
+                json!({
+                    "acestream_id": conv.raw_input.as_str()
+                        .or_else(|| analysis.get("content_id").and_then(|v| v.as_str())),
+                }),
+                &common,
+            ),
         )),
         ContentType::Video => Ok((
             "telegram",
-            json!({
-                "file_id": conv.raw_input.get("file_id").and_then(|v| v.as_str()),
-                "file_unique_id": conv.raw_input.get("file_unique_id").and_then(|v| v.as_str()),
-                "file_name": conv.raw_input.get("file_name").and_then(|v| v.as_str()),
-                "meta_id": meta_id,
-                "meta_type": media_type,
-                "title": title,
-                "is_public": is_public,
-                "user_id": conv.user_id,
-            }),
+            merge_fields(
+                json!({
+                    "file_id": conv.raw_input.get("file_id").and_then(|v| v.as_str()),
+                    "file_unique_id": conv.raw_input.get("file_unique_id").and_then(|v| v.as_str()),
+                    "file_name": conv.raw_input.get("file_name").and_then(|v| v.as_str()),
+                    "file_size": conv.raw_input.get("file_size").cloned()
+                        .or_else(|| analysis.get("file_size").cloned()),
+                    "user_id": conv.user_id,
+                }),
+                &common,
+            ),
         )),
     }
 }

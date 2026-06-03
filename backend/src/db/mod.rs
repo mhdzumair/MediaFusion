@@ -31,6 +31,7 @@ pub use types::{
 };
 
 pub mod catalog;
+pub mod contribution_defaults;
 pub mod genres;
 pub mod media;
 pub mod meta;

@@ -23,7 +23,18 @@ use std::sync::atomic::AtomicU64;
 use crate::state::AppState;
 
 pub async fn handler(State(state): State<Arc<AppState>>, req: axum::extract::Request) -> Response {
-    if let Some(ref required) = state.config.metrics_api_key {
+    if state.config.is_public_instance {
+        let provided = req
+            .headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .unwrap_or("");
+        let required = state.config.metrics_api_key.as_deref().unwrap_or("");
+        if required.is_empty() || provided != required {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+    } else if let Some(ref required) = state.config.metrics_api_key {
         let provided = req
             .headers()
             .get(header::AUTHORIZATION)

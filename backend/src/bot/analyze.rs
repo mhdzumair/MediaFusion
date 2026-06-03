@@ -133,6 +133,8 @@ fn analyze_video(raw_input: &Value, media_type: &str) -> Value {
     json!({
         "success": true,
         "file_name": file_name,
+        "file_unique_id": raw_input.get("file_unique_id").and_then(|v| v.as_str()),
+        "file_size": raw_input.get("file_size").and_then(|v| v.as_i64()),
         "parsed_title": parsed.title,
         "year": parsed.year,
         "resolution": parsed.resolution,

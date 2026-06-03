@@ -7,6 +7,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use serde_json::{json, Value};
 
 use crate::providers::{
+    file_selection::select_debrid_file_index,
     response_json,
     torrents::transport::{append_query, MediaFlowForward},
     ProviderError,
@@ -405,73 +406,23 @@ async fn wait_for_download(
 
 // ─── File selection helper ────────────────────────────────────────────────────
 
-/// Select a file index from a list of `(name, size)` pairs.
 fn select_video_file(
     files: &[(String, i64)],
+    release_name: &str,
     filename: Option<&str>,
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
 ) -> usize {
-    let video_exts = ["mkv", "mp4", "avi", "webm", "mov", "flv", "m4v", "wmv"];
-
-    // 1. Explicit index
-    if let Some(fi) = file_index {
-        if fi >= 0 && (fi as usize) < files.len() {
-            return fi as usize;
-        }
-    }
-
-    // Collect video file indices
-    let video_indices: Vec<usize> = files
-        .iter()
-        .enumerate()
-        .filter_map(|(i, (name, _))| {
-            let ext = std::path::Path::new(name.as_str())
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if video_exts.contains(&ext.as_str()) {
-                Some(i)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // 2. Filename substring match
-    if let Some(fname) = filename {
-        let lower = fname.to_lowercase();
-        for &i in &video_indices {
-            if files[i].0.to_lowercase().contains(&lower) {
-                return i;
-            }
-        }
-    }
-
-    // 3. Season/episode regex match
-    if let (Some(s), Some(e)) = (season, episode) {
-        let re1 = regex::Regex::new(r"[Ss](\d+)[Ee](\d+)").unwrap();
-        let re2 = regex::Regex::new(r"(\d+)x(\d+)").unwrap();
-        for &i in &video_indices {
-            let name = &files[i].0;
-            if let Some(caps) = re1.captures(name).or_else(|| re2.captures(name)) {
-                let cs: i32 = caps[1].parse().unwrap_or(-1);
-                let ce: i32 = caps[2].parse().unwrap_or(-1);
-                if cs == s && ce == e {
-                    return i;
-                }
-            }
-        }
-    }
-
-    // 4. Largest video
-    video_indices
-        .iter()
-        .max_by_key(|&&i| files[i].1)
-        .copied()
-        .unwrap_or(0)
+    select_debrid_file_index(
+        files,
+        release_name,
+        filename,
+        file_index,
+        season,
+        episode,
+        None,
+    )
 }
 
 // ─── Public entry points ──────────────────────────────────────────────────────
@@ -591,7 +542,13 @@ pub async fn get_video_url(
         })
         .collect();
 
-    let idx = select_video_file(&pairs, filename, file_index, season, episode);
+    let release_name = torrent
+        .get("name")
+        .and_then(|v| v.as_str())
+        .or(torrent_name)
+        .unwrap_or("");
+
+    let idx = select_video_file(&pairs, release_name, filename, file_index, season, episode);
 
     let selected = ready_files.get(idx).ok_or_else(|| {
         ProviderError::api(

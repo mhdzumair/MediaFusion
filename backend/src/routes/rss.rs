@@ -1743,9 +1743,22 @@ pub async fn user_get_scheduler_status(
         )
             .into_response();
     }
-    let enabled = !state.config.disable_rss_feed_scraper;
+    let cron_row = sqlx::query("SELECT enabled, schedule FROM cron_jobs WHERE name = 'rss_feed'")
+        .fetch_optional(&state.pool_ro)
+        .await
+        .ok()
+        .flatten();
+    use sqlx::Row as _;
+    let enabled = !state.config.disable_all_scheduler
+        && cron_row
+            .as_ref()
+            .and_then(|r| r.try_get::<bool, _>("enabled").ok())
+            .unwrap_or(true);
+    let crontab = cron_row
+        .and_then(|r| r.try_get::<String, _>("schedule").ok())
+        .unwrap_or_else(|| "0 */3 * * *".into());
     Json(json!({
-        "crontab": state.config.rss_feed_scraper_crontab,
+        "crontab": crontab,
         "enabled": enabled,
         "next_run": null,
     }))

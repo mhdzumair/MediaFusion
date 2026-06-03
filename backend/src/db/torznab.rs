@@ -133,17 +133,49 @@ pub async fn search_by_title(
     pool: &PgPool,
     query: &str,
     media_type: Option<&str>,
+    year: Option<i32>,
     limit: i64,
 ) -> Vec<TorznabRow> {
     let mt = parse_media_type_filter(media_type);
-    let (mt_clause, limit_ph) = media_type_limit_placeholders(mt.is_some());
     let pattern = format!("%{query}%");
+
+    let mut next_param = 2i32;
+    let year_clause = if year.is_some() {
+        let clause = format!("\n  AND m.year = ${next_param}");
+        next_param += 1;
+        clause
+    } else {
+        String::new()
+    };
+    let mt_clause = if mt.is_some() {
+        let clause = format!("\n  AND m.type = ${next_param}");
+        next_param += 1;
+        clause
+    } else {
+        String::new()
+    };
+    let limit_ph = format!("${next_param}");
+
     let sql = format!(
         "SELECT {SELECT_COLS}
-         AND (m.title ILIKE $1 OR st.name ILIKE $1){mt_clause}{GROUP_BY}
+         AND (m.title ILIKE $1 OR st.name ILIKE $1){year_clause}{mt_clause}{GROUP_BY}
          LIMIT {limit_ph}"
     );
-    run(pool, &sql, &pattern, mt, limit).await
+
+    let mut q = sqlx::query_as::<_, Row>(&sql).bind(&pattern);
+    if let Some(y) = year {
+        q = q.bind(y);
+    }
+    if let Some(mt_val) = mt {
+        q = q.bind(mt_val);
+    }
+    match q.bind(limit).fetch_all(pool).await {
+        Ok(rows) => rows.into_iter().map(TorznabRow::from).collect(),
+        Err(e) => {
+            tracing::warn!("torznab db query failed: {e}");
+            vec![]
+        }
+    }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

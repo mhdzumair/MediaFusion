@@ -7,12 +7,15 @@
 /// that fans out to each provider's `check_cached`.
 pub mod alldebrid;
 pub mod cache;
+pub mod cache_federation;
+pub mod debrider;
 pub mod debridlink;
 pub mod easydebrid;
 pub mod metadata_update;
 pub mod offcloud;
 pub mod pikpak;
 pub mod premiumize;
+pub mod qbittorrent;
 pub mod realdebrid;
 pub mod seedr;
 pub mod stremthru;

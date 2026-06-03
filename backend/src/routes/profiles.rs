@@ -27,7 +27,52 @@ use serde::Deserialize;
 use serde_json::Value;
 use sha2::Sha256;
 
-use crate::state::AppState;
+use crate::{models::user_data::UserData, providers::validator, state::AppState};
+
+async fn validate_profile_config(
+    state: &AppState,
+    headers: &HeaderMap,
+    config: &Value,
+) -> Option<Response> {
+    let user_data: UserData = match serde_json::from_value(config.clone()) {
+        Ok(u) => u,
+        Err(e) => {
+            return Some(
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({"detail": format!("Invalid profile config: {e}")})),
+                )
+                    .into_response(),
+            );
+        }
+    };
+    let default_nzbdav = state
+        .config
+        .default_nzbdav_url
+        .as_ref()
+        .zip(state.config.default_nzbdav_api_key.as_ref())
+        .map(|(url, key)| {
+            serde_json::json!({
+                "url": url,
+                "api_key": key,
+            })
+        });
+    let user_ip = validator::client_ip_from_headers(headers);
+    let result = validator::validate_provider_credentials(
+        &state.http,
+        &user_data,
+        user_ip.as_deref(),
+        default_nzbdav.as_ref(),
+    )
+    .await;
+    validator::validation_error_response(&result).map(|msg| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"detail": msg})),
+        )
+            .into_response()
+    })
+}
 
 // ─── Auth helper ─────────────────────────────────────────────────────────────
 
@@ -813,6 +858,11 @@ pub async fn create_profile(
     } else {
         body.config
     };
+
+    if let Some(resp) = validate_profile_config(&state, &headers, &config_val).await {
+        return resp;
+    }
+
     let (clean_config, encrypted_secrets) = split_config(&config_val, &state.config.secret_key);
 
     // Transaction: unset old default if needed, then insert
@@ -978,6 +1028,10 @@ pub async fn update_profile(
     } else {
         get_full_config(&profile, &state.config.secret_key)
     };
+
+    if let Some(resp) = validate_profile_config(&state, &headers, &merged_config).await {
+        return resp;
+    }
 
     let (clean_config, encrypted_secrets) = split_config(&merged_config, &state.config.secret_key);
 

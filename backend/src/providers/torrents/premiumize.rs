@@ -7,6 +7,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use serde_json::Value;
 
 use crate::providers::{
+    file_selection::select_debrid_file_index,
     response_json,
     torrents::transport::{append_query, encode_form_body, MediaFlowForward},
     ProviderError,
@@ -253,76 +254,23 @@ fn check_pm_error(body: &Value) -> Result<(), ProviderError> {
 
 // ─── File selection helper ────────────────────────────────────────────────────
 
-/// Select a file index from a list of `(name, size)` pairs.
-///
-/// Priority: file_index → filename match → season/episode → largest video.
 fn select_video_file(
     files: &[(String, i64)],
+    release_name: &str,
     filename: Option<&str>,
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
 ) -> usize {
-    let video_exts = ["mkv", "mp4", "avi", "webm", "mov", "flv", "m4v", "wmv"];
-
-    // 1. Explicit index
-    if let Some(fi) = file_index {
-        if fi >= 0 && (fi as usize) < files.len() {
-            return fi as usize;
-        }
-    }
-
-    // Collect video file indices
-    let video_indices: Vec<usize> = files
-        .iter()
-        .enumerate()
-        .filter_map(|(i, (name, _))| {
-            let ext = std::path::Path::new(name.as_str())
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if video_exts.contains(&ext.as_str()) {
-                Some(i)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // 2. Filename substring match
-    if let Some(fname) = filename {
-        let lower = fname.to_lowercase();
-        for &i in &video_indices {
-            if files[i].0.to_lowercase().contains(&lower) {
-                return i;
-            }
-        }
-    }
-
-    // 3. Season/episode regex match
-    if let (Some(s), Some(e)) = (season, episode) {
-        // compile once per call — acceptable for the hot path
-        let re1 = regex::Regex::new(r"[Ss](\d+)[Ee](\d+)").unwrap();
-        let re2 = regex::Regex::new(r"(\d+)x(\d+)").unwrap();
-        for &i in &video_indices {
-            let name = &files[i].0;
-            if let Some(caps) = re1.captures(name).or_else(|| re2.captures(name)) {
-                let cs: i32 = caps[1].parse().unwrap_or(-1);
-                let ce: i32 = caps[2].parse().unwrap_or(-1);
-                if cs == s && ce == e {
-                    return i;
-                }
-            }
-        }
-    }
-
-    // 4. Largest video
-    video_indices
-        .iter()
-        .max_by_key(|&&i| files[i].1)
-        .copied()
-        .unwrap_or(0)
+    select_debrid_file_index(
+        files,
+        release_name,
+        filename,
+        file_index,
+        season,
+        episode,
+        None,
+    )
 }
 
 // ─── Premiumize API operations ────────────────────────────────────────────────
@@ -367,6 +315,7 @@ async fn direct_download(
 
 fn select_from_directdl_content(
     content: &[Value],
+    release_name: &str,
     filename: Option<&str>,
     file_index: Option<i32>,
     season: Option<i32>,
@@ -389,7 +338,7 @@ fn select_from_directdl_content(
         return None;
     }
 
-    let idx = select_video_file(&files, filename, file_index, season, episode);
+    let idx = select_video_file(&files, release_name, filename, file_index, season, episode);
     let entry = &content[idx];
     entry
         .get("stream_link")
@@ -530,6 +479,7 @@ async fn get_folder_contents(
 
 fn select_from_folder_content(
     content: &[Value],
+    release_name: &str,
     filename: Option<&str>,
     file_index: Option<i32>,
     season: Option<i32>,
@@ -563,7 +513,7 @@ fn select_from_folder_content(
         })
         .collect();
 
-    let idx = select_video_file(&pairs, filename, file_index, season, episode);
+    let idx = select_video_file(&pairs, release_name, filename, file_index, season, episode);
     video_files
         .get(idx)
         .and_then(|f| f.get("link"))
@@ -601,15 +551,22 @@ pub async fn get_video_url(
         .collect();
     let magnet = format!("magnet:?xt=urn:btih:{info_hash}{trackers}");
 
+    let release_name = torrent_name.unwrap_or("");
+
     // Check instant availability
     let cached = check_cache(http, &kind, info_hash, forward).await?;
 
     if cached {
         let body = direct_download(http, &kind, &magnet, forward).await?;
         if let Some(content) = body.get("content").and_then(|v| v.as_array()) {
-            if let Some(url) =
-                select_from_directdl_content(content, filename, file_index, season, episode)
-            {
+            if let Some(url) = select_from_directdl_content(
+                content,
+                release_name,
+                filename,
+                file_index,
+                season,
+                episode,
+            ) {
                 return Ok(url);
             }
         }
@@ -629,9 +586,14 @@ pub async fn get_video_url(
 
     // If the transfer already has content (immediate), skip waiting
     if let Some(content) = transfer_resp.get("content").and_then(|v| v.as_array()) {
-        if let Some(url) =
-            select_from_directdl_content(content, filename, file_index, season, episode)
-        {
+        if let Some(url) = select_from_directdl_content(
+            content,
+            release_name,
+            filename,
+            file_index,
+            season,
+            episode,
+        ) {
             return Ok(url);
         }
     }
@@ -645,7 +607,15 @@ pub async fn get_video_url(
     wait_for_transfer(http, &kind, &transfer_id, MAX_RETRIES, RETRY_SECS, forward).await?;
 
     let content = get_folder_contents(http, &kind, &folder_id, forward).await?;
-    select_from_folder_content(&content, filename, file_index, season, episode).ok_or_else(|| {
+    select_from_folder_content(
+        &content,
+        release_name,
+        filename,
+        file_index,
+        season,
+        episode,
+    )
+    .ok_or_else(|| {
         ProviderError::api(
             "No video file found in Premiumize folder",
             "torrent_not_downloaded.mp4",

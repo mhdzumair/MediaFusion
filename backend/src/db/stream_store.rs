@@ -364,6 +364,12 @@ pub async fn store_telegram_stream(
     )
     .await?;
 
+    if opts.media_type == super::types::MediaType::Series {
+        if let (Some(s), Some(e)) = (opts.season, opts.episode) {
+            link_synthetic_episode_file(pool, stream_id, opts.media_id, s, e, opts).await?;
+        }
+    }
+
     Ok(StoreStreamResult::Inserted(stream_id))
 }
 
@@ -588,7 +594,7 @@ pub async fn upsert_torrent_files_by_hash(
             insert_stream_file(&mut *txn, stream_id, &normalized, f.size > 0).await?
         {
             if let (Some(s), Some(e)) = (f.season, f.episode) {
-                insert_file_media_link(&mut *txn, file_id, media_id, s, e, false, link_source)
+                insert_file_media_link(&mut *txn, file_id, media_id, s, e, None, false, link_source)
                     .await?;
             }
         }
@@ -724,6 +730,7 @@ async fn link_files_or_media(
                         opts.media_id,
                         season,
                         episode,
+                        opts.episode_end,
                         opts.is_primary,
                         opts.link_source,
                     )
@@ -787,6 +794,7 @@ pub async fn link_file_to_media_episode(
         media_id,
         season,
         episode,
+        None,
         is_primary,
         link_source,
     )
@@ -844,6 +852,7 @@ async fn insert_file_media_link<'e, E>(
     media_id: MediaId,
     season: i32,
     episode: i32,
+    episode_end: Option<i32>,
     is_primary: bool,
     link_source: LinkSource,
 ) -> Result<(), sqlx::Error>
@@ -853,9 +862,9 @@ where
     sqlx::query(
         r#"
         INSERT INTO file_media_link
-            (file_id, media_id, season_number, episode_number,
+            (file_id, media_id, season_number, episode_number, episode_end,
              is_primary, confidence, link_source, created_at)
-        VALUES ($1, $2, $3, $4, $5, 1.0, $6, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, 1.0, $7, NOW())
         ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING
         "#,
     )
@@ -863,6 +872,7 @@ where
     .bind(media_id)
     .bind(season)
     .bind(episode)
+    .bind(episode_end)
     .bind(is_primary)
     .bind(link_source)
     .execute(executor)
@@ -892,6 +902,7 @@ async fn link_synthetic_episode_file(
             media_id,
             season,
             episode,
+            opts.episode_end,
             opts.is_primary,
             opts.link_source,
         )

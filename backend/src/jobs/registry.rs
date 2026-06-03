@@ -80,6 +80,7 @@ impl JobRegistry {
             runner.start();
         }
 
-        scheduler::run(pool, cancel).await;
+        let disable_all = self.state.config.disable_all_scheduler;
+        scheduler::run(pool, cancel, disable_all).await;
     }
 }

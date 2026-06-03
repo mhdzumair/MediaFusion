@@ -63,12 +63,9 @@ pub fn filter_streams_by_preferences(streams: Vec<Value>, ctx: &FilterContext<'_
     // Step 1: usenet pre-pass
     if ctx.is_usenet {
         if let Some(provider) = ctx.primary_provider {
-            working = working
-                .into_iter()
-                .filter(|row| {
-                    is_usenet_stream_compatible(row, provider, ud, ctx.allow_public_usenet)
-                })
-                .collect();
+            working.retain(|row| {
+                is_usenet_stream_compatible(row, provider, ud, ctx.allow_public_usenet)
+            });
         }
     }
 

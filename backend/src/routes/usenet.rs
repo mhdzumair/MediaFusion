@@ -34,7 +34,7 @@ use crate::{
     models::user_data::{StreamingProvider, UserData},
     providers::{
         self,
-        usenet::{cache, debrider, easynews, nzb_url, nzbget, sabnzbd, torbox},
+        usenet::{cache, debrider, easynews, nzb_url, nzbdav, nzbget, sabnzbd, torbox},
     },
     routes::playback_dedup,
     state::AppState,
@@ -115,7 +115,7 @@ pub async fn provider_handler(
     Path((secret_str, provider_name, nzb_guid)): Path<(String, String, String)>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    handle_provider(&state, &secret_str, &provider_name, &nzb_guid, 0, 0).await
+    handle_provider(&state, &secret_str, &provider_name, &nzb_guid, 0, 0, None).await
 }
 
 /// `GET /streaming_provider/{secret}/usenet/{provider}/{nzb_guid}/{season}/{episode}`
@@ -136,6 +136,48 @@ pub async fn provider_seep_handler(
         &nzb_guid,
         season,
         episode,
+        None,
+    )
+    .await
+}
+
+/// `GET /streaming_provider/{secret}/usenet/{provider}/{nzb_guid}/{filename}`
+pub async fn provider_filename_handler(
+    Path((secret_str, provider_name, nzb_guid, filename)): Path<(String, String, String, String)>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    handle_provider(
+        &state,
+        &secret_str,
+        &provider_name,
+        &nzb_guid,
+        0,
+        0,
+        Some(filename.as_str()),
+    )
+    .await
+}
+
+/// `GET /streaming_provider/{secret}/usenet/{provider}/{nzb_guid}/{season}/{episode}/{filename}`
+pub async fn provider_seep_filename_handler(
+    Path((secret_str, provider_name, nzb_guid, season, episode, filename)): Path<(
+        String,
+        String,
+        String,
+        i32,
+        i32,
+        String,
+    )>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    handle_provider(
+        &state,
+        &secret_str,
+        &provider_name,
+        &nzb_guid,
+        season,
+        episode,
+        Some(filename.as_str()),
     )
     .await
 }
@@ -149,6 +191,7 @@ async fn handle_provider(
     nzb_guid: &str,
     season: i32,
     episode: i32,
+    filename: Option<&str>,
 ) -> Response {
     // 1. Decrypt user profile
     let user_json = crypto::resolve_user_data(
@@ -184,13 +227,17 @@ async fn handle_provider(
         .find(|p| p.service.eq_ignore_ascii_case(provider_name) && p.enabled)
         .copied();
 
-    // 5. Inject user's Newznab API key into the stored NZB URL
-    let fallback_url = nzb_url::build_user_scoped_nzb_url(
-        &stream.nzb_url,
-        stream.source.as_deref(),
-        stream.indexer.as_deref(),
-        &user_data,
-    );
+    // 5. Resolve NZB URL — file-imported NZBs use signed download URLs (Python parity).
+    let fallback_url = if stream.nzb_url.is_empty() {
+        crate::util::nzb_storage::generate_signed_nzb_url(&state.config, nzb_guid)
+    } else {
+        nzb_url::build_user_scoped_nzb_url(
+            &stream.nzb_url,
+            stream.source.as_deref(),
+            stream.indexer.as_deref(),
+            &user_data,
+        )
+    };
 
     // Build a MediaFusion-proxied submission URL so raw indexer credentials
     // are never sent to third-party providers.  Falls back to direct file-upload
@@ -272,12 +319,14 @@ async fn handle_provider(
         dispatch(
             &state.http,
             &state.config,
+            &state.pool_ro,
             provider_name,
             provider_cfg,
             &submission_url,
             &fallback_url,
             &stream.nzb_guid,
             &stream.name,
+            filename,
             season,
             episode,
             fwd,
@@ -316,16 +365,22 @@ async fn handle_provider(
 async fn dispatch(
     http: &reqwest::Client,
     config: &AppConfig,
+    pool_ro: &sqlx::PgPool,
     provider_name: &str,
     provider_cfg: Option<&StreamingProvider>,
     submission_url: &str,
     fallback_url: &str,
     nzb_guid: &str,
     name: &str,
+    filename: Option<&str>,
     season: i32,
     episode: i32,
     fwd: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, providers::ProviderError> {
+    let episode_air_date =
+        resolve_usenet_episode_air_date_iso(pool_ro, nzb_guid, season, episode).await;
+    let air_date_ref = episode_air_date.as_deref();
+
     match provider_name.to_lowercase().as_str() {
         "torbox" => {
             let token = provider_cfg
@@ -375,9 +430,28 @@ async fn dispatch(
             }
         }
         "sabnzbd" | "nzbdav" => {
-            let raw =
-                provider_cfg.and_then(|p| p.sabnzbd_config.as_ref().or(p.nzbdav_config.as_ref()));
+            let raw = provider_cfg.and_then(|p| {
+                if provider_name == "nzbdav" {
+                    p.nzbdav_config.as_ref()
+                } else {
+                    p.sabnzbd_config.as_ref()
+                }
+            });
             match raw {
+                Some(cfg) if provider_name == "nzbdav" => {
+                    nzbdav::get_url(
+                        http,
+                        cfg,
+                        submission_url,
+                        fallback_url,
+                        name,
+                        filename,
+                        season,
+                        episode,
+                        air_date_ref,
+                    )
+                    .await
+                }
                 Some(cfg) => {
                     sabnzbd::get_url(
                         http,
@@ -475,6 +549,37 @@ async fn fetch_stream_info(state: &AppState, nzb_guid: &str) -> Option<UsenetStr
         source,
         name,
     })
+}
+
+/// Return catalog episode air date as YYYY-MM-DD for dated Usenet release names.
+async fn resolve_usenet_episode_air_date_iso(
+    pool: &sqlx::PgPool,
+    nzb_guid: &str,
+    season: i32,
+    episode: i32,
+) -> Option<String> {
+    if season <= 0 || episode <= 0 {
+        return None;
+    }
+    sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT e.air_date::text
+        FROM usenet_stream us
+        JOIN stream_media_link sml ON sml.stream_id = us.stream_id
+        JOIN series_metadata sm ON sm.media_id = sml.media_id
+        JOIN season s ON s.series_id = sm.id AND s.season_number = $2
+        JOIN episode e ON e.season_id = s.id AND e.episode_number = $3
+        WHERE us.nzb_guid = $1
+        LIMIT 1
+        "#,
+    )
+    .bind(nzb_guid)
+    .bind(season)
+    .bind(episode)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────

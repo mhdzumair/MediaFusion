@@ -16,7 +16,6 @@ use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
 use serde_json::json;
 use sha2::Sha256;
-use uuid::Uuid;
 
 use crate::state::AppState;
 
@@ -75,16 +74,6 @@ fn detect_content_type(bytes: &[u8]) -> (&'static str, &'static str) {
     }
 }
 
-fn content_type_from_ext(ext: &str) -> &'static str {
-    match ext {
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "webp" => "image/webp",
-        "gif" => "image/gif",
-        _ => "application/octet-stream",
-    }
-}
-
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 /// POST /api/v1/import/images/upload
@@ -135,33 +124,26 @@ pub async fn upload_image(
     };
 
     let (content_type, ext) = detect_content_type(&data);
-    let key = format!("{}.{}", Uuid::new_v4(), ext);
-    let images_dir = &state.config.images_dir;
-    let file_path = format!("{images_dir}/{key}");
+    let key = crate::util::image_storage::generate_image_storage_key(ext);
 
-    // Create parent directory if needed
-    if let Err(e) = tokio::fs::create_dir_all(images_dir).await {
-        tracing::error!("upload_image: create_dir_all {images_dir}: {e}");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"detail": "Failed to create image storage directory"})),
-        )
-            .into_response();
-    }
+    let stored_key =
+        match crate::util::image_storage::store_image(&state.config, &key, &data, content_type)
+            .await
+        {
+            Ok(k) => k,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"detail": e})),
+                )
+                    .into_response();
+            }
+        };
 
     let size = data.len();
-    if let Err(e) = tokio::fs::write(&file_path, &data).await {
-        tracing::error!("upload_image: write {file_path}: {e}");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"detail": "Failed to save image"})),
-        )
-            .into_response();
-    }
-
     Json(json!({
-        "url": format!("/api/v1/import/images/{key}"),
-        "key": key,
+        "url": format!("/api/v1/import/images/{stored_key}"),
+        "key": stored_key,
         "content_type": content_type,
         "size": size,
     }))
@@ -181,45 +163,30 @@ pub async fn get_uploaded_image(
             .into_response();
     }
 
-    // Validate key — only alphanumeric, hyphens, and dots (no path traversal)
-    if !key
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '-' || c == '.')
-    {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"detail": "Invalid image key"})),
-        )
-            .into_response();
-    }
-
-    let file_path = format!("{}/{key}", state.config.images_dir);
-    let data = match tokio::fs::read(&file_path).await {
-        Ok(d) => d,
-        Err(_) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({"detail": "Image not found"})),
-            )
-                .into_response();
+    let normalized = match crate::util::image_storage::normalize_image_storage_key(&key) {
+        Ok(k) => k,
+        Err(msg) => {
+            return (StatusCode::BAD_REQUEST, Json(json!({"detail": msg}))).into_response();
         }
     };
 
-    // Determine content type from extension
-    let ext = key.rsplit('.').next().unwrap_or("");
-    let content_type = content_type_from_ext(ext);
+    let Some((data, content_type)) =
+        crate::util::image_storage::retrieve_image(&state.config, &normalized).await
+    else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Image not found"})),
+        )
+            .into_response();
+    };
 
-    let mut response = axum::response::Response::builder()
+    Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", content_type)
         .header(
             "Cache-Control",
-            HeaderValue::from_static("public, max-age=31536000"),
+            HeaderValue::from_static("public, max-age=31536000, immutable"),
         )
         .body(axum::body::Body::from(data))
-        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
-
-    // Suppress unused variable warning from the builder pattern
-    let _ = &mut response;
-    response
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }

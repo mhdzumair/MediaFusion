@@ -10,6 +10,7 @@ use crate::{
     parser,
     scrapers::{
         prowlarr::build_series_files,
+        torrent_info,
         torrent_metadata::{
             self, download_torrent_bytes, jackett_torrent_type, parse_torrent_bytes,
             resolve_download_url, should_persist_torrent_file, torrent_file_for_storage,
@@ -468,6 +469,36 @@ async fn process_result(
                     announce_list = parsed.announce_list;
                     size = size.filter(|s| *s > 0).or(Some(parsed.total_size));
                     torrent_file = torrent_file_for_storage(torrent_type, Some(parsed.raw_bytes));
+                }
+            } else {
+                let indexer_name = item.tracker.as_deref().unwrap_or("Jackett");
+                let page_info =
+                    torrent_info::get_torrent_info(client, url, indexer_name, query_timeout).await;
+                if let Some(magnet) = page_info.magnet_url.as_deref() {
+                    info_hash = info_hash.or_else(|| parser::extract_info_hash(magnet));
+                    if announce_list.is_empty() {
+                        announce_list = torrent_metadata::announce_list_from_magnet(magnet);
+                    }
+                }
+                if info_hash.is_none() {
+                    info_hash = page_info
+                        .info_hash
+                        .map(|h| h.to_lowercase())
+                        .filter(|h| h.len() == 40);
+                }
+                if torrent_file.is_none() {
+                    if let Some(dl) = page_info.download_url.as_deref() {
+                        if let Some(bytes) = download_torrent_bytes(client, dl, query_timeout).await
+                        {
+                            if let Some(parsed) = parse_torrent_bytes(&bytes) {
+                                info_hash = Some(parsed.info_hash);
+                                announce_list = parsed.announce_list;
+                                size = size.filter(|s| *s > 0).or(Some(parsed.total_size));
+                                torrent_file =
+                                    torrent_file_for_storage(torrent_type, Some(parsed.raw_bytes));
+                            }
+                        }
+                    }
                 }
             }
         }

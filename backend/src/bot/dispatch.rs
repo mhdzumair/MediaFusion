@@ -38,6 +38,19 @@ async fn handle_message(state: &AppState, api: &BotApi, message: Message) {
     let chat_id = message.chat.id;
 
     let text_or_caption = message.text.as_deref().or(message.caption.as_deref());
+
+    if let Some(conv) = state_store::get_conversation(state, user_id).await {
+        if conv.step == super::model::ConversationStep::AwaitingPosterInput {
+            if let Some(photos) = &message.photo {
+                if let Some(largest) = photos.last() {
+                    wizard::handle_poster_photo(state, api, user_id, chat_id, &largest.file_id)
+                        .await;
+                    return;
+                }
+            }
+        }
+    }
+
     if let Some(text) = text_or_caption {
         if text.starts_with('/') {
             commands::handle_command(state, api, user_id, chat_id, text).await;
@@ -66,6 +79,23 @@ async fn handle_message(state: &AppState, api: &BotApi, message: Message) {
     }
 
     if let Some((content_type, raw)) = detect::detect_content_type(&message) {
+        if super::disabled_content::is_content_type_disabled(
+            content_type,
+            &state.config.disabled_content_types,
+        ) {
+            let label = super::disabled_content::content_type_label(content_type);
+            let _ = api
+                .send_message(
+                    chat_id,
+                    &format!(
+                        "🚫 *{label}* imports are currently disabled on this instance.\n\nType `/help` to see which content types are available."
+                    ),
+                    None,
+                )
+                .await;
+            return;
+        }
+
         let is_forwarded =
             message.forward_from_chat.is_some() || message.forward_from_message_id.is_some();
         if is_forwarded
@@ -159,6 +189,18 @@ async fn handle_callback(state: &AppState, api: &BotApi, cb: super::model::Callb
         }
         CallbackAction::BackReview { .. } => {
             wizard::handle_back_to_review(state, api, user_id, chat_id, message_id).await;
+        }
+        CallbackAction::AnonSkip { .. } => {
+            wizard::handle_anon_skip(state, api, user_id, chat_id, message_id).await;
+        }
+        CallbackAction::AddPoster { .. } => {
+            wizard::handle_add_poster_prompt(state, api, user_id, chat_id, message_id).await;
+        }
+        CallbackAction::ClearPoster { .. } => {
+            wizard::handle_clear_poster(state, api, user_id, chat_id, message_id).await;
+        }
+        CallbackAction::BatchSummary { .. } => {
+            wizard::handle_batch_summary(state, api, user_id, chat_id, message_id).await;
         }
         CallbackAction::BatchReview { item_id, .. } => {
             super::batch::start_batch_item_review(state, api, user_id, chat_id, &item_id).await;

@@ -27,7 +27,7 @@ cd backend && cargo test --test jobs_validate_tv
 
 # Backfill PTT metadata on existing torrent/usenet streams (see docs/deployment/worker-cli.md)
 make worker-backfill-stream-metadata
-# OR: make worker-backfill-stream-metadata PAGE_SIZE=2000
+# OR: make worker-backfill-stream-metadata BATCH_SIZE=2000
 
 # Lint
 make rust-lint

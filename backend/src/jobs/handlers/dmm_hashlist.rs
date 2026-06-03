@@ -648,7 +648,7 @@ async fn write_dmm_status(
     let status = serde_json::json!({
         "enabled": app_cfg.is_scrap_from_dmm_hashlist,
         "scheduler_disabled": app_cfg.disable_dmm_hashlist_scraper,
-        "cron_expression": app_cfg.dmm_hashlist_scraper_crontab,
+        "cron_expression": "0 * * * *",
         "repo": format!(
             "{}/{}",
             app_cfg.dmm_hashlist_repo_owner, app_cfg.dmm_hashlist_repo_name

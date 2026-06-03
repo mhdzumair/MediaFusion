@@ -17,56 +17,21 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
-use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
 
 use crate::state::AppState;
 
-// ─── Auth helper ─────────────────────────────────────────────────────────────
+use super::auth_guard;
 
-fn validate_admin(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string)?;
-    let dot = token.rfind('.')?;
-    let (payload_str, sig) = token.split_at(dot);
-    let sig = &sig[1..];
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).ok()?;
-    mac.update(payload_str.as_bytes());
-    let expected: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if expected != sig {
-        return None;
-    }
-    let decoded = URL_SAFE_NO_PAD.decode(payload_str).ok()?;
-    let data: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
-    let exp = data["exp"].as_f64()?;
-    if exp < Utc::now().timestamp() as f64 {
-        return None;
-    }
-    if data["type"].as_str() != Some("access") {
-        return None;
-    }
-    if data["role"].as_str() != Some("admin") {
-        return None;
-    }
-    data["sub"].as_str()?.parse().ok()
-}
-
-fn unauthorized() -> impl IntoResponse {
-    (
-        StatusCode::UNAUTHORIZED,
-        Json(serde_json::json!({"error": "Unauthorized"})),
-    )
+async fn admin_auth(
+    headers: &HeaderMap,
+    pool: &sqlx::PgPool,
+    secret: &str,
+) -> Result<i32, Response> {
+    auth_guard::require_active_role(pool, headers, secret, &["admin"])
+        .await
+        .map_err(|failure| auth_guard::auth_failure_response(failure).into_response())
 }
 
 // ─── Row / Response types ─────────────────────────────────────────────────────
@@ -181,8 +146,9 @@ pub async fn list_users(
     headers: HeaderMap,
     Query(params): Query<ListUsersQuery>,
 ) -> Response {
-    let Some(_admin_id) = validate_admin(&headers, &state.config.secret_key_raw) else {
-        return unauthorized().into_response();
+    let _admin_id = match admin_auth(&headers, &state.pool, &state.config.secret_key_raw).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
     };
 
     // Validate role filter
@@ -304,8 +270,9 @@ pub async fn get_user(
     headers: HeaderMap,
     Path(user_id): Path<i32>,
 ) -> Response {
-    let Some(_admin_id) = validate_admin(&headers, &state.config.secret_key_raw) else {
-        return unauthorized().into_response();
+    let _admin_id = match admin_auth(&headers, &state.pool, &state.config.secret_key_raw).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
     };
 
     let row = sqlx::query_as::<_, UserRow>(
@@ -342,8 +309,9 @@ pub async fn update_user(
     Path(user_id): Path<i32>,
     Json(body): Json<UpdateUserRequest>,
 ) -> Response {
-    let Some(_admin_id) = validate_admin(&headers, &state.config.secret_key_raw) else {
-        return unauthorized().into_response();
+    let _admin_id = match admin_auth(&headers, &state.pool, &state.config.secret_key_raw).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
     };
 
     // Confirm user exists
@@ -464,8 +432,9 @@ pub async fn update_user_role(
     Path(user_id): Path<i32>,
     Json(body): Json<RoleUpdateRequest>,
 ) -> Response {
-    let Some(admin_id) = validate_admin(&headers, &state.config.secret_key_raw) else {
-        return unauthorized().into_response();
+    let admin_id = match admin_auth(&headers, &state.pool, &state.config.secret_key_raw).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
     };
 
     // Validate role value
@@ -545,8 +514,9 @@ pub async fn delete_user(
     headers: HeaderMap,
     Path(user_id): Path<i32>,
 ) -> Response {
-    let Some(admin_id) = validate_admin(&headers, &state.config.secret_key_raw) else {
-        return unauthorized().into_response();
+    let admin_id = match admin_auth(&headers, &state.pool, &state.config.secret_key_raw).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
     };
 
     if user_id == admin_id {
@@ -607,8 +577,9 @@ pub async fn send_upload_warning(
     Path(user_id): Path<i32>,
     Json(body): Json<SendUploadWarningRequest>,
 ) -> Response {
-    let Some(_admin_id) = validate_admin(&headers, &state.config.secret_key_raw) else {
-        return unauthorized().into_response();
+    let _admin_id = match admin_auth(&headers, &state.pool, &state.config.secret_key_raw).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
     };
 
     // Fetch user email

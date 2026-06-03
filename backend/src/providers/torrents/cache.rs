@@ -2,9 +2,6 @@
 ///
 /// Each provider implements `check_cached` in its own module.
 /// This module owns the Redis marker/storage layer and the public `live_check` entry point.
-///
-/// Marker key: `debrid_checked:{service}[:{user_hash}]:{media_id}` (30-min TTL)
-/// Cache key:  `debrid_cache:{service}` → Redis hash of info_hash → Unix expiry timestamp
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
@@ -12,19 +9,16 @@ use fred::{clients::Client as RedisClient, prelude::*};
 use sha2::{Digest, Sha256};
 use tracing::warn;
 
+use super::cache_federation;
+
 const CACHE_KEY_PREFIX: &str = "debrid_cache:";
 const CHECK_MARKER_PREFIX: &str = "debrid_checked:";
 const EXPIRY_DAYS_SECS: i64 = 7 * 86400;
 const CHECK_MARKER_TTL: i64 = 1800; // 30 minutes
 
 /// Providers that check cache by scanning the user's own download list rather than a
-/// global CDN-hash endpoint. The full list is cached in Redis to prevent thundering-herd
-/// when many streams are checked concurrently or when the watchlist catalog runs in parallel.
-///
-/// - realdebrid: paginates GET /torrents (up to 100 pages × 100 items)
-/// - alldebrid:  single GET /magnet/status?status=ready (all user's ready magnets)
-/// - seedr:      fetches root folder contents
-const USER_LIST_CHECK_PROVIDERS: &[&str] = &["realdebrid", "alldebrid", "seedr"];
+/// global CDN-hash endpoint.
+const USER_LIST_CHECK_PROVIDERS: &[&str] = &["realdebrid", "alldebrid", "seedr", "pikpak"];
 const USER_HASHES_PREFIX: &str = "user_hashes:";
 const USER_HASHES_TTL: i64 = 300; // 5 minutes
 
@@ -76,23 +70,77 @@ pub async fn mark_check_done(redis: &RedisClient, service: &str, token: &str, me
 
 // ─── Redis store ──────────────────────────────────────────────────────────────
 
-pub async fn store_cached_hashes(redis: &RedisClient, service: &str, hashes: &[String]) {
+pub async fn store_cached_hashes(redis: &RedisClient, cache_service: &str, hashes: &[String]) {
+    store_cached_hashes_federated(redis, None, cache_service, cache_service, hashes, false, "")
+        .await;
+}
+
+/// Store cached hashes locally and optionally submit to federated MediaFusion instance.
+pub async fn store_cached_hashes_federated(
+    redis: &RedisClient,
+    http: Option<&reqwest::Client>,
+    cache_service: &str,
+    federation_service: &str,
+    hashes: &[String],
+    sync_federation: bool,
+    mediafusion_url: &str,
+) {
     if hashes.is_empty() {
         return;
     }
-    let cache_key = format!("{CACHE_KEY_PREFIX}{service}");
-    let expiry_ts = (Utc::now().timestamp() + EXPIRY_DAYS_SECS).to_string();
-    let pairs: Vec<(String, String)> = hashes
-        .iter()
-        .map(|h| (h.clone(), expiry_ts.clone()))
-        .collect();
-    let pairs_ref: Vec<(&str, &str)> = pairs
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect();
-    if let Err(e) = redis.hset::<(), _, _>(&cache_key, pairs_ref).await {
-        warn!("debrid_cache store [{cache_key}]: {e}");
+    if let Some(http) = http {
+        cache_federation::store_with_federation(
+            redis,
+            http,
+            cache_service,
+            federation_service,
+            hashes,
+            sync_federation,
+            mediafusion_url,
+        )
+        .await;
+    } else {
+        let cache_key = format!("{CACHE_KEY_PREFIX}{cache_service}");
+        let expiry_ts = (Utc::now().timestamp() + EXPIRY_DAYS_SECS).to_string();
+        let pairs: Vec<(String, String)> = hashes
+            .iter()
+            .map(|h| (h.clone(), expiry_ts.clone()))
+            .collect();
+        let pairs_ref: Vec<(&str, &str)> = pairs
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        if let Err(e) = redis.hset::<(), _, _>(&cache_key, pairs_ref).await {
+            warn!("debrid_cache store [{cache_key}]: {e}");
+        }
     }
+}
+
+/// Store cached hashes for a provider, honoring StremThru magnet-cache opt-in.
+pub async fn store_cached_hashes_for_provider(
+    redis: &RedisClient,
+    http: Option<&reqwest::Client>,
+    provider: &crate::models::user_data::StreamingProvider,
+    hashes: &[String],
+    sync_federation: bool,
+    mediafusion_url: &str,
+    store_stremthru_magnet_cache: bool,
+) {
+    if !cache_federation::should_store_magnet_cache(&provider.service, store_stremthru_magnet_cache)
+    {
+        return;
+    }
+    let cache_service = provider.cache_service_name();
+    store_cached_hashes_federated(
+        redis,
+        http,
+        &cache_service,
+        &provider.service,
+        hashes,
+        sync_federation,
+        mediafusion_url,
+    )
+    .await;
 }
 
 // ─── User-account hash list cache ────────────────────────────────────────────
@@ -159,31 +207,33 @@ pub async fn get_user_hashes_cached(
 pub async fn live_check(
     http: &reqwest::Client,
     redis: &RedisClient,
-    service: &str,
+    provider_service: &str,
+    cache_service: &str,
     token: &str,
     hashes: &[String],
     media_id: i32,
+    store_stremthru_magnet_cache: bool,
 ) -> HashMap<String, bool> {
     if hashes.is_empty() || token.is_empty() {
         return HashMap::new();
     }
 
-    if is_check_done(redis, service, token, media_id).await {
+    if is_check_done(redis, cache_service, token, media_id).await {
         return hashes.iter().map(|h| (h.clone(), false)).collect();
     }
 
-    let newly_cached: Vec<String> = if USER_LIST_CHECK_PROVIDERS.contains(&service) {
+    let newly_cached: Vec<String> = if USER_LIST_CHECK_PROVIDERS.contains(&provider_service) {
         // These providers have no global hash-check endpoint; cache check IS the user's
         // full download list. Use the shared Redis cache to avoid a fresh API fetch on
         // every concurrent media_id check within the same 5-minute window.
-        let all = get_user_hashes_cached(http, redis, service, token).await;
+        let all = get_user_hashes_cached(http, redis, provider_service, token).await;
         hashes
             .iter()
             .filter(|h| all.contains(h.to_lowercase().as_str()))
             .cloned()
             .collect()
     } else {
-        match service {
+        match provider_service {
             "torbox" => super::torbox::check_cached(http, token, hashes).await,
             "premiumize" => super::premiumize::check_cached(http, token, hashes).await,
             "offcloud" => super::offcloud::check_cached(http, token, hashes).await,
@@ -191,19 +241,25 @@ pub async fn live_check(
             "stremthru" => super::stremthru::check_cached(http, token, hashes, media_id).await,
             "alldebrid" => super::alldebrid::check_cached(http, token, hashes).await,
             "debridlink" => super::debridlink::check_cached(http, token, hashes).await,
+            "debrider" => super::debrider::check_cached(http, token, hashes, None).await,
             _ => {
-                mark_check_done(redis, service, token, media_id).await;
+                mark_check_done(redis, cache_service, token, media_id).await;
                 return hashes.iter().map(|h| (h.clone(), false)).collect();
             }
         }
     };
 
-    mark_check_done(redis, service, token, media_id).await;
+    mark_check_done(redis, cache_service, token, media_id).await;
 
     let cached_set: HashSet<String> = newly_cached.into_iter().map(|h| h.to_lowercase()).collect();
-    if !cached_set.is_empty() {
+    if !cached_set.is_empty()
+        && cache_federation::should_store_magnet_cache(
+            provider_service,
+            store_stremthru_magnet_cache,
+        )
+    {
         let to_store: Vec<String> = cached_set.iter().cloned().collect();
-        store_cached_hashes(redis, service, &to_store).await;
+        store_cached_hashes(redis, cache_service, &to_store).await;
     }
 
     hashes

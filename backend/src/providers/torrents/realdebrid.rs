@@ -8,6 +8,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::providers::{
+    file_selection::select_debrid_file_index,
     response_json,
     torrents::transport::{append_query, encode_form_body, MediaFlowForward},
     ProviderError,
@@ -626,60 +627,22 @@ struct RdFile {
 
 fn select_video_file_index(
     files: &[RdFile],
-    _links_count: usize,
+    release_name: &str,
     filename: Option<&str>,
     season: Option<i32>,
     episode: Option<i32>,
     file_index: Option<i32>,
 ) -> usize {
-    // 1. By exact filename match
-    if let Some(name) = filename {
-        let name_lower = name.to_lowercase();
-        if let Some(idx) = files.iter().position(|f| {
-            std::path::Path::new(&f.path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|n| n.to_lowercase() == name_lower)
-                .unwrap_or(false)
-        }) {
-            return idx;
-        }
-    }
-
-    // 2. By file_index hint from DB
-    if let Some(fi) = file_index {
-        if fi >= 0 && fi < files.len() as i32 {
-            return fi as usize;
-        }
-    }
-
-    // 3. For series: match S##E## in path
-    if let (Some(s), Some(e)) = (season, episode) {
-        let patterns = [format!("s{:02}e{:02}", s, e), format!("{:01}x{:02}", s, e)];
-        if let Some(idx) = files.iter().position(|f| {
-            let lower = f.path.to_lowercase();
-            patterns.iter().any(|p| lower.contains(p))
-        }) {
-            return idx;
-        }
-    }
-
-    // 4. Fallback: largest video file (mimics Python's `get_main_file`)
-    let video_exts = ["mkv", "mp4", "avi", "webm", "mov", "flv", "wmv", "m4v"];
-    files
-        .iter()
-        .enumerate()
-        .filter(|(_, f)| {
-            let ext = std::path::Path::new(&f.path)
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            video_exts.contains(&ext.as_str())
-        })
-        .max_by_key(|(_, f)| f.bytes)
-        .map(|(i, _)| i)
-        .unwrap_or(0)
+    let pairs: Vec<(String, i64)> = files.iter().map(|f| (f.path.clone(), f.bytes)).collect();
+    select_debrid_file_index(
+        &pairs,
+        release_name,
+        filename,
+        file_index,
+        season,
+        episode,
+        None,
+    )
 }
 
 // ─── create_download_link ─────────────────────────────────────────────────────
@@ -719,8 +682,13 @@ async fn create_download_link(
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
+    let release_name = torrent_info
+        .get("filename")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
     let selected_idx =
-        select_video_file_index(&files, links.len(), filename, season, episode, file_index);
+        select_video_file_index(&files, release_name, filename, season, episode, file_index);
 
     let selected_files: Vec<&RdFile> = files.iter().filter(|f| f.selected == Some(1)).collect();
     let relevant_file = files.get(selected_idx);

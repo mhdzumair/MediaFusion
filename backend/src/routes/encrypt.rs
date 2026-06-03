@@ -2,21 +2,61 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
 };
 use serde_json::{json, Value};
 
-use crate::{crypto, state::AppState};
+use crate::{crypto, models::user_data::UserData, providers::validator, state::AppState};
 
 /// POST /encrypt-user-data
 ///
 /// Accepts a UserData JSON object and returns a D- prefixed encrypted secret string.
 /// Mirrors Python's `POST /encrypt-user-data` in api/routers/stremio/config.py.
 pub async fn handler(
+    headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
+    let user_data: UserData = match serde_json::from_value(body.clone()) {
+        Ok(u) => u,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"status": "error", "message": format!("invalid user data: {e}")})),
+            )
+                .into_response();
+        }
+    };
+
+    let default_nzbdav = state
+        .config
+        .default_nzbdav_url
+        .as_ref()
+        .zip(state.config.default_nzbdav_api_key.as_ref())
+        .map(|(url, key)| {
+            json!({
+                "url": url,
+                "api_key": key,
+            })
+        });
+
+    let user_ip = validator::client_ip_from_headers(&headers);
+    let validation = validator::validate_provider_credentials(
+        &state.http,
+        &user_data,
+        user_ip.as_deref(),
+        default_nzbdav.as_ref(),
+    )
+    .await;
+    if let Some(msg) = validator::validation_error_response(&validation) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"status": "error", "message": msg})),
+        )
+            .into_response();
+    }
+
     let json_str = match serde_json::to_string(&body) {
         Ok(s) => s,
         Err(e) => {

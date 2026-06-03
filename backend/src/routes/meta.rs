@@ -45,16 +45,14 @@ async fn build_meta(state: &AppState, media_type: &str, meta_id: &str) -> Option
     let media_type_wire = row.media_type.as_wire();
     let poster = row.poster_url.or_else(|| {
         Some(format!(
-            "{}/poster/{media_type_wire}/mf{id}.jpg",
-            state.config.host_url
+            "{}/poster/{media_type_wire}/{canonical_id}.jpg",
+            state.config.poster_host_url
         ))
     });
 
     let release_info = match (row.media_type, row.year, row.end_year) {
-        (db::MediaType::Series, Some(start), Some(end)) if end > start => {
-            Some(format!("{start}-{end}"))
-        }
-        (db::MediaType::Series, Some(start), _) => Some(format!("{start}-")),
+        (db::MediaType::Series, Some(start), Some(end)) => Some(format!("{start}-{end}")),
+        (db::MediaType::Series, Some(start), None) => Some(format!("{start}-")),
         (_, Some(y), _) => Some(y.to_string()),
         _ => None,
     };
@@ -87,7 +85,7 @@ async fn build_meta(state: &AppState, media_type: &str, meta_id: &str) -> Option
         vec![]
     };
 
-    let imdb_rating = row.imdb_rating.map(|r| format!("{:.1}", r));
+    let imdb_rating = row.imdb_rating.map(|r| r.to_string());
 
     Some(Meta {
         id: canonical_id,
@@ -97,6 +95,7 @@ async fn build_meta(state: &AppState, media_type: &str, meta_id: &str) -> Option
         description: row.description,
         poster,
         background: row.background_url,
+        logo: row.logo_url,
         runtime,
         website: row.website,
         language: row.language,

@@ -49,6 +49,18 @@ pub enum CallbackAction {
     BackReview {
         user_id: i64,
     },
+    AnonSkip {
+        user_id: i64,
+    },
+    AddPoster {
+        user_id: i64,
+    },
+    ClearPoster {
+        user_id: i64,
+    },
+    BatchSummary {
+        user_id: i64,
+    },
     BatchReview {
         user_id: i64,
         item_id: String,
@@ -96,6 +108,10 @@ impl CallbackAction {
             Self::Cancel { user_id } => format!("cancel:{user_id}"),
             Self::Back { user_id } => format!("back:{user_id}"),
             Self::BackReview { user_id } => format!("back_review:{user_id}"),
+            Self::AnonSkip { user_id } => format!("anon_skip:{user_id}"),
+            Self::AddPoster { user_id } => format!("add_poster:{user_id}"),
+            Self::ClearPoster { user_id } => format!("clear_poster:{user_id}"),
+            Self::BatchSummary { user_id } => format!("batch_summary:{user_id}"),
             Self::BatchReview { user_id, item_id } => format!("batch_review:{user_id}:{item_id}"),
             Self::BatchImport { user_id } => format!("batch_import:{user_id}"),
             Self::BatchSkip { user_id, item_id } => format!("batch_skip:{user_id}:{item_id}"),
@@ -166,6 +182,18 @@ impl CallbackAction {
             "back_review" if parts.len() >= 2 => Some(Self::BackReview {
                 user_id: parts[1].parse().ok()?,
             }),
+            "anon_skip" if parts.len() >= 2 => Some(Self::AnonSkip {
+                user_id: parts[1].parse().ok()?,
+            }),
+            "add_poster" if parts.len() >= 2 => Some(Self::AddPoster {
+                user_id: parts[1].parse().ok()?,
+            }),
+            "clear_poster" if parts.len() >= 2 => Some(Self::ClearPoster {
+                user_id: parts[1].parse().ok()?,
+            }),
+            "batch_summary" if parts.len() >= 2 => Some(Self::BatchSummary {
+                user_id: parts[1].parse().ok()?,
+            }),
             "batch_review" if parts.len() >= 3 => Some(Self::BatchReview {
                 user_id: parts[1].parse().ok()?,
                 item_id: parts[2].to_string(),
@@ -202,6 +230,10 @@ impl CallbackAction {
             | Self::Cancel { user_id }
             | Self::Back { user_id }
             | Self::BackReview { user_id }
+            | Self::AnonSkip { user_id }
+            | Self::AddPoster { user_id }
+            | Self::ClearPoster { user_id }
+            | Self::BatchSummary { user_id }
             | Self::BatchReview { user_id, .. }
             | Self::BatchImport { user_id }
             | Self::BatchSkip { user_id, .. }

@@ -53,6 +53,7 @@ pub fn delete_all_meta(host_url: &str, service: &str) -> Meta {
         background: Some(format!(
             "{host_url}/static/images/delete_all_background.png"
         )),
+        logo: None,
         runtime: None,
         website: None,
         language: None,
@@ -130,6 +131,15 @@ pub async fn delete_all_for_service(
         }
         "seedr" => providers::torrents::seedr::delete_all_torrents(&state.http, token).await,
         "pikpak" => providers::torrents::pikpak::delete_all_torrents(&state.http, token).await,
+        "qbittorrent" => {
+            let cfg = provider.qbittorrent_config.as_ref().ok_or_else(|| {
+                providers::ProviderError::api(
+                    "qBittorrent configuration missing",
+                    "invalid_config.mp4",
+                )
+            })?;
+            providers::torrents::qbittorrent::delete_all_torrents(&state.http, cfg).await
+        }
         other => Err(providers::ProviderError::api(
             format!("Provider '{other}' does not support delete-all-watchlist"),
             "provider_error.mp4",

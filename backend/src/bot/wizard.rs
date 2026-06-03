@@ -7,8 +7,10 @@ use crate::state::AppState;
 use super::{
     analyze,
     api::BotApi,
+    batch,
     callback::CallbackAction,
-    detect, import, matches,
+    content_exists, detect, import, matches,
+    metadata::{field_options, is_valid_poster_url},
     model::{ContentType, ConversationState, ConversationStep},
     state_store, text,
 };
@@ -21,6 +23,7 @@ pub async fn start_wizard(
     original_message_id: i64,
     content_type: ContentType,
     raw_input: Value,
+    batch_item_id: Option<String>,
 ) {
     if let Some(existing) = state_store::get_conversation(state, user_id).await {
         if !existing.is_expired(30) {
@@ -54,6 +57,7 @@ pub async fn start_wizard(
     conv.raw_input = raw_input;
     conv.message_id = Some(message_id);
     conv.original_message_id = Some(original_message_id);
+    conv.batch_item_id = batch_item_id;
     state_store::save_conversation(state, &conv).await;
 }
 
@@ -101,6 +105,21 @@ pub async fn handle_media_type_selection(
 
     conv.analysis_result = Some(analysis.clone());
     conv.matches = analysis.get("matches").and_then(|v| v.as_array()).cloned();
+
+    if let Some(reason) = content_exists::check_content_already_exists(&state.pool, &conv).await {
+        let _ = api
+            .edit_message_text(
+                chat_id,
+                message_id,
+                &format!(
+                    "ℹ️ *Already Available*\n\n{reason}\n\nThis content is already in MediaFusion, so import is skipped."
+                ),
+                None,
+            )
+            .await;
+        state_store::clear_conversation(state, user_id).await;
+        return;
+    }
 
     if media_type == "sports" {
         conv.step = ConversationStep::AwaitingSportsCategory;
@@ -248,16 +267,140 @@ pub async fn handle_text_input(
                 .edit_message_text(chat_id, message_id, &msg, Some(kb))
                 .await;
         }
+        ConversationStep::AwaitingEpisodeInput => {
+            let field = conv.editing_field.clone().unwrap_or_default();
+            if field != "season_number" && field != "episode_number" {
+                return;
+            }
+            let stripped = text_input.trim();
+            if !stripped.chars().all(|c| c.is_ascii_digit()) {
+                let label = if field == "season_number" {
+                    "Season"
+                } else {
+                    "Episode"
+                };
+                let _ = api
+                    .send_message(
+                        chat_id,
+                        &format!("Please enter a valid number for {label}."),
+                        None,
+                    )
+                    .await;
+                return;
+            }
+            if let Some(obj) = conv.metadata_overrides.as_object_mut() {
+                obj.insert(
+                    field.clone(),
+                    json!(stripped.parse::<i64>().unwrap_or_default()),
+                );
+            }
+            conv.editing_field = None;
+            conv.step = ConversationStep::AwaitingMetadataReview;
+            conv.touch();
+            state_store::save_conversation(state, &conv).await;
+            let (msg, kb) = matches::show_metadata_review(state, &conv).await;
+            let _ = api
+                .edit_message_text(chat_id, message_id, &msg, Some(kb))
+                .await;
+        }
+        ConversationStep::AwaitingPosterInput => {
+            handle_poster_input(state, api, user_id, chat_id, text_input.trim()).await;
+        }
         ConversationStep::AwaitingAnonymousName => {
             if text_input.trim().to_lowercase() != "skip" {
                 conv.anonymous_display_name = Some(text_input.trim().chars().take(50).collect());
             }
-            conv.step = ConversationStep::AwaitingConfirm;
+            conv.step = ConversationStep::Importing;
             conv.touch();
             state_store::save_conversation(state, &conv).await;
-            handle_confirm_import(state, api, user_id, chat_id, message_id).await;
+            run_import(state, api, user_id, chat_id, message_id, &conv).await;
         }
         _ => {}
+    }
+}
+
+pub async fn handle_poster_photo(
+    state: &AppState,
+    api: &BotApi,
+    user_id: i64,
+    chat_id: i64,
+    file_id: &str,
+) {
+    let Some(conv) = state_store::get_conversation(state, user_id).await else {
+        return;
+    };
+    if conv.step != ConversationStep::AwaitingPosterInput {
+        return;
+    }
+
+    let file_info = match api.get_file(file_id).await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("poster get_file: {e}");
+            let _ = api
+                .send_message(
+                    chat_id,
+                    "⚠️ Failed to process uploaded image. Please try sending an image URL instead.",
+                    None,
+                )
+                .await;
+            return;
+        }
+    };
+    let Some(file_path) = file_info.get("file_path").and_then(|v| v.as_str()) else {
+        let _ = api
+            .send_message(
+                chat_id,
+                "⚠️ Failed to process uploaded image. Please try sending an image URL instead.",
+                None,
+            )
+            .await;
+        return;
+    };
+    let token = state.config.telegram_bot_token.as_deref().unwrap_or("");
+    let poster_url = format!("https://api.telegram.org/file/bot{token}/{file_path}");
+    handle_poster_input(state, api, user_id, chat_id, &poster_url).await;
+}
+
+async fn handle_poster_input(
+    state: &AppState,
+    api: &BotApi,
+    user_id: i64,
+    chat_id: i64,
+    poster_url: &str,
+) {
+    let Some(mut conv) = state_store::get_conversation(state, user_id).await else {
+        return;
+    };
+    if !is_valid_poster_url(poster_url) {
+        let _ = api
+            .send_message(
+                chat_id,
+                "⚠️ *Invalid Image URL*\n\nPlease send a valid image URL (jpg, png, webp) or upload an image directly.",
+                None,
+            )
+            .await;
+        return;
+    }
+
+    conv.custom_poster_url = Some(poster_url.to_string());
+    conv.step = ConversationStep::AwaitingMetadataReview;
+    conv.touch();
+    state_store::save_conversation(state, &conv).await;
+
+    let _ = api
+        .send_message(
+            chat_id,
+            "✅ *Poster Added*\n\nCustom poster has been set.",
+            None,
+        )
+        .await;
+
+    if let Some(message_id) = conv.message_id {
+        let (msg, kb) = matches::show_metadata_review(state, &conv).await;
+        let _ = api
+            .edit_message_text(chat_id, message_id, &msg, Some(kb))
+            .await;
     }
 }
 
@@ -320,34 +463,35 @@ pub async fn handle_confirm_import(
         return;
     };
 
-    // Check if user contributes anonymously and hasn't provided a display name yet
-    if conv.anonymous_display_name.is_none() {
-        if let Some(uid) = crate::db::telegram::resolve_mediafusion_user_id(
+    if let Some(uid) =
+        crate::db::telegram::resolve_mediafusion_user_id(&state.pool, &state.redis, conv.user_id)
+            .await
+    {
+        if let Some(user_info) = crate::routes::content::import_helpers::fetch_user_info(
             &state.pool,
-            &state.redis,
-            conv.user_id,
+            i64::from(i32::from(uid)),
         )
         .await
         {
-            if let Some(user_info) = crate::routes::content::import_helpers::fetch_user_info(
-                &state.pool,
-                i64::from(i32::from(uid)),
-            )
-            .await
-            {
-                if user_info.contribute_anonymously {
-                    conv.step = ConversationStep::AwaitingAnonymousName;
-                    conv.touch();
-                    state_store::save_conversation(state, &conv).await;
-                    let kb = super::callback::cancel_keyboard(state, conv.user_id).await;
-                    let _ = api.edit_message_text(
-                        chat_id,
-                        message_id,
-                        "👤 *Anonymous Display Name*\n\nEnter a name to show for this contribution, or type `skip` to use default:",
-                        Some(kb),
-                    ).await;
-                    return;
-                }
+            if user_info.contribute_anonymously && conv.anonymous_display_name.is_none() {
+                conv.step = ConversationStep::AwaitingAnonymousName;
+                conv.touch();
+                state_store::save_conversation(state, &conv).await;
+                let keyboard = json!({
+                    "inline_keyboard": [
+                        [{"text": "⏭ Skip (use Anonymous)", "callback_data": CallbackAction::AnonSkip { user_id }.encode(state).await}],
+                        [{"text": "◀️ Back to Review", "callback_data": CallbackAction::BackReview { user_id }.encode(state).await}],
+                        [{"text": "❌ Cancel", "callback_data": CallbackAction::Cancel { user_id }.encode(state).await}],
+                    ]
+                });
+                let _ = api.edit_message_text(
+                    chat_id,
+                    message_id,
+                    "🕶️ *Anonymous Contribution*\n\nSend a custom display name for this contribution.\n\
+                     • Max 50 chars\n\n_Send text now, or tap Skip to use Anonymous._",
+                    Some(keyboard),
+                ).await;
+                return;
             }
         }
     }
@@ -356,9 +500,24 @@ pub async fn handle_confirm_import(
         .edit_message_text(chat_id, message_id, "⏳ *Importing...*", None)
         .await;
 
-    match import::execute_import(state, api, &conv).await {
+    run_import(state, api, user_id, chat_id, message_id, &conv).await;
+    state_store::clear_conversation(state, user_id).await;
+}
+
+async fn run_import(
+    state: &AppState,
+    api: &BotApi,
+    user_id: i64,
+    chat_id: i64,
+    message_id: i64,
+    conv: &ConversationState,
+) {
+    match import::execute_import(state, api, conv).await {
         Ok(msg) => {
             let _ = api.edit_message_text(chat_id, message_id, &msg, None).await;
+            if let Some(item_id) = conv.batch_item_id.clone() {
+                batch::finish_item_review(state, api, user_id, &item_id, true).await;
+            }
         }
         Err(e) => {
             let _ = api
@@ -371,7 +530,27 @@ pub async fn handle_confirm_import(
                 .await;
         }
     }
+}
 
+pub async fn handle_anon_skip(
+    state: &AppState,
+    api: &BotApi,
+    user_id: i64,
+    chat_id: i64,
+    message_id: i64,
+) {
+    let Some(mut conv) = state_store::get_conversation(state, user_id).await else {
+        return;
+    };
+    conv.anonymous_display_name = None;
+    conv.step = ConversationStep::Importing;
+    conv.touch();
+    state_store::save_conversation(state, &conv).await;
+
+    let _ = api
+        .edit_message_text(chat_id, message_id, "⏳ *Importing...*", None)
+        .await;
+    run_import(state, api, user_id, chat_id, message_id, &conv).await;
     state_store::clear_conversation(state, user_id).await;
 }
 
@@ -382,10 +561,20 @@ pub async fn handle_cancel(
     chat_id: i64,
     message_id: i64,
 ) {
+    let batch_item_id = state_store::get_conversation(state, user_id)
+        .await
+        .and_then(|c| c.batch_item_id.clone());
     state_store::clear_conversation(state, user_id).await;
-    let _ = api
-        .edit_message_text(chat_id, message_id, &text::cancel_success(), None)
-        .await;
+    if let Some(item_id) = batch_item_id {
+        batch::finish_item_review(state, api, user_id, &item_id, false).await;
+        let _ = api
+            .edit_message_text(chat_id, message_id, "↩️ *Returned to batch.*", None)
+            .await;
+    } else {
+        let _ = api
+            .edit_message_text(chat_id, message_id, &text::cancel_success(), None)
+            .await;
+    }
 }
 
 pub async fn handle_back(
@@ -427,6 +616,66 @@ pub async fn handle_back_to_review(
         .await;
 }
 
+pub async fn handle_add_poster_prompt(
+    state: &AppState,
+    api: &BotApi,
+    user_id: i64,
+    chat_id: i64,
+    message_id: i64,
+) {
+    let Some(mut conv) = state_store::get_conversation(state, user_id).await else {
+        return;
+    };
+    conv.step = ConversationStep::AwaitingPosterInput;
+    conv.touch();
+    state_store::save_conversation(state, &conv).await;
+
+    let mut rows = vec![];
+    if conv.custom_poster_url.is_some() {
+        rows.push(json!([{
+            "text": "🗑️ Clear Custom Poster",
+            "callback_data": CallbackAction::ClearPoster { user_id }.encode(state).await,
+        }]));
+    }
+    rows.push(json!([{
+        "text": "◀️ Back to Review",
+        "callback_data": CallbackAction::BackReview { user_id }.encode(state).await,
+    }]));
+
+    let _ = api
+        .edit_message_text(
+            chat_id,
+            message_id,
+            "🖼️ *Add Custom Poster*\n\n\
+         You can provide a poster image in one of the following ways:\n\n\
+         • *Send an image URL* - Paste a direct link to an image (jpg, png, webp)\n\
+         • *Upload an image* - Send an image file directly\n\n\
+         _The image will be used as the poster for this content._",
+            Some(json!({ "inline_keyboard": rows })),
+        )
+        .await;
+}
+
+pub async fn handle_clear_poster(
+    state: &AppState,
+    api: &BotApi,
+    user_id: i64,
+    chat_id: i64,
+    message_id: i64,
+) {
+    let Some(mut conv) = state_store::get_conversation(state, user_id).await else {
+        return;
+    };
+    conv.custom_poster_url = None;
+    conv.step = ConversationStep::AwaitingMetadataReview;
+    conv.touch();
+    state_store::save_conversation(state, &conv).await;
+    let (msg, kb) = matches::show_metadata_review(state, &conv).await;
+    let _ = api
+        .edit_message_text(chat_id, message_id, &msg, Some(kb))
+        .await;
+}
+
 pub async fn handle_meta_edit(
     state: &AppState,
     api: &BotApi,
@@ -438,20 +687,45 @@ pub async fn handle_meta_edit(
     let Some(mut conv) = state_store::get_conversation(state, user_id).await else {
         return;
     };
+
+    if field == "season_number" || field == "episode_number" {
+        conv.step = ConversationStep::AwaitingEpisodeInput;
+        conv.editing_field = Some(field.to_string());
+        conv.touch();
+        state_store::save_conversation(state, &conv).await;
+        let label = if field == "season_number" {
+            "Season Number"
+        } else {
+            "Episode Number"
+        };
+        let keyboard = json!({
+            "inline_keyboard": [[{
+                "text": "◀️ Back to Review",
+                "callback_data": CallbackAction::BackReview { user_id }.encode(state).await,
+            }]]
+        });
+        let _ = api
+            .edit_message_text(
+                chat_id,
+                message_id,
+                &format!(
+                    "📺 *Enter {label}*\n\nReply with the {} (a number).\n\n*Example:* `3`",
+                    label.to_lowercase()
+                ),
+                Some(keyboard),
+            )
+            .await;
+        return;
+    }
+
     conv.step = ConversationStep::AwaitingFieldEdit;
     conv.editing_field = Some(field.to_string());
     conv.touch();
     state_store::save_conversation(state, &conv).await;
 
-    let options: &[&str] = match field {
-        "resolution" => &["4K", "1080p", "720p", "480p", "360p"],
-        "quality" => &["BluRay", "WEBRip", "WEB-DL", "HDTV", "CAM"],
-        "codec" => &["x265", "x264", "AV1", "HEVC", "H.264"],
-        _ => &[],
-    };
-
-    let mut rows: Vec<serde_json::Value> = vec![];
-    for chunk in options.chunks(3) {
+    let options = field_options(field);
+    let mut rows: Vec<Value> = vec![];
+    for chunk in options.chunks(2) {
         let mut row = vec![];
         for v in chunk {
             row.push(json!({
@@ -466,7 +740,7 @@ pub async fn handle_meta_edit(
         rows.push(json!(row));
     }
     rows.push(json!([{
-        "text": "◀️ Back",
+        "text": "◀️ Back to Review",
         "callback_data": CallbackAction::BackReview { user_id }.encode(state).await,
     }]));
 
@@ -503,4 +777,26 @@ pub async fn handle_meta_val(
     let _ = api
         .edit_message_text(chat_id, message_id, &msg, Some(kb))
         .await;
+}
+
+pub async fn handle_batch_summary(
+    state: &AppState,
+    api: &BotApi,
+    user_id: i64,
+    chat_id: i64,
+    message_id: i64,
+) {
+    let batch_item_id = state_store::get_conversation(state, user_id)
+        .await
+        .and_then(|c| c.batch_item_id.clone());
+    state_store::clear_conversation(state, user_id).await;
+    if let Some(item_id) = batch_item_id {
+        batch::finish_item_review(state, api, user_id, &item_id, false).await;
+    }
+    let _ = api
+        .edit_message_text(chat_id, message_id, "↩️ *Returned to batch.*", None)
+        .await;
+    if let Some(batch) = state_store::get_batch(state, user_id).await {
+        batch::render_batch_summary(state, api, &batch).await;
+    }
 }

@@ -268,6 +268,22 @@ pub struct StreamingProvider {
     pub stremthru_store_name: Option<String>,
 }
 
+impl StreamingProvider {
+    /// Redis debrid-cache namespace (mirrors Python `get_cache_service_name`).
+    pub fn cache_service_name(&self) -> String {
+        if self.service == "stremthru" {
+            if let Some(name) = self
+                .stremthru_store_name
+                .as_deref()
+                .filter(|s| !s.is_empty())
+            {
+                return name.to_string();
+            }
+        }
+        self.service.clone()
+    }
+}
+
 // ─── Catalog configuration ────────────────────────────────────────────────────
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -546,7 +562,108 @@ pub fn provider_short_name(service: &str) -> &str {
 
 // ─── UserData methods ─────────────────────────────────────────────────────────
 
+/// MDBList catalog list entry parsed from `mdblist_config.lists`.
+#[derive(Debug, Clone)]
+pub struct MdbListItem {
+    pub id: i32,
+    pub title: String,
+    pub catalog_type: String,
+    pub use_filters: bool,
+    pub sort: String,
+    pub order: String,
+}
+
+impl MdbListItem {
+    pub fn catalog_id(&self) -> String {
+        format!("mdblist_{}_{}", self.catalog_type, self.id)
+    }
+}
+
 impl UserData {
+    /// MDBList API key from profile config (`mdb.ak` / `api_key`).
+    pub fn mdblist_api_key(&self) -> Option<&str> {
+        self.mdblist_config
+            .as_ref()
+            .and_then(|cfg| {
+                cfg.get("ak")
+                    .or_else(|| cfg.get("api_key"))
+                    .and_then(|v| v.as_str())
+            })
+            .filter(|s| !s.is_empty())
+    }
+
+    /// Parsed MDBList list definitions from `mdblist_config.lists` / `l`.
+    pub fn mdblist_lists(&self) -> Vec<MdbListItem> {
+        let Some(cfg) = &self.mdblist_config else {
+            return vec![];
+        };
+        let lists = cfg
+            .get("lists")
+            .or_else(|| cfg.get("l"))
+            .and_then(|v| v.as_array());
+        let Some(lists) = lists else {
+            return vec![];
+        };
+
+        lists
+            .iter()
+            .filter_map(|item| {
+                let id = item
+                    .get("i")
+                    .or_else(|| item.get("id"))
+                    .and_then(|v| v.as_i64())? as i32;
+                let title = item
+                    .get("t")
+                    .or_else(|| item.get("title"))
+                    .or_else(|| item.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let catalog_type = item
+                    .get("ct")
+                    .or_else(|| item.get("catalog_type"))
+                    .or_else(|| item.get("type"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("movie")
+                    .to_string();
+                let use_filters = item
+                    .get("uf")
+                    .or_else(|| item.get("use_filters"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let sort = item
+                    .get("s")
+                    .or_else(|| item.get("sort"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("rank")
+                    .to_string();
+                let order = item
+                    .get("o")
+                    .or_else(|| item.get("order"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("desc")
+                    .to_string();
+                Some(MdbListItem {
+                    id,
+                    title,
+                    catalog_type,
+                    use_filters,
+                    sort,
+                    order,
+                })
+            })
+            .collect()
+    }
+
+    /// Lookup an MDBList list config by Stremio catalog id (`mdblist_{type}_{id}`).
+    pub fn mdblist_list_for_catalog(&self, catalog_id: &str) -> Option<MdbListItem> {
+        let raw_id = catalog_id.rsplit('_').next()?;
+        let list_id: i32 = raw_id.split('.').next()?.parse().ok()?;
+        self.mdblist_lists()
+            .into_iter()
+            .find(|l| l.id == list_id && l.catalog_id() == catalog_id)
+    }
+
     /// True when MediaFlow is configured with both proxy_url and api_password.
     pub fn has_mediaflow_config(&self) -> bool {
         self.mediaflow_config
@@ -558,6 +675,15 @@ impl UserData {
                     .unwrap_or(false)
             })
             .unwrap_or(false)
+    }
+
+    /// RPDB API key from profile config (`rpdb_config.api_key`).
+    pub fn rpdb_api_key(&self) -> Option<&str> {
+        self.rpdb_config
+            .as_ref()
+            .and_then(|cfg| cfg.get("api_key"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
     }
 
     /// All enabled streaming providers (merges legacy `sp` into `sps`).
@@ -574,6 +700,45 @@ impl UserData {
                 }
             }
         }
+        providers
+    }
+
+    /// Active streaming providers sorted by priority.
+    ///
+    /// Mirrors Python `UserData.get_active_providers()`: merges legacy single provider,
+    /// and injects operator-configured NzbDAV when the user has none.
+    pub fn get_active_providers(&self, default_nzbdav: Option<&Value>) -> Vec<StreamingProvider> {
+        let mut providers: Vec<StreamingProvider> = if !self.streaming_providers.is_empty() {
+            self.streaming_providers
+                .iter()
+                .filter(|p| p.enabled)
+                .cloned()
+                .collect()
+        } else if let Some(ref sp) = self.streaming_provider {
+            if sp.enabled {
+                vec![sp.clone()]
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        };
+
+        if let Some(cfg) = default_nzbdav {
+            let has_nzbdav = providers.iter().any(|p| p.service == "nzbdav");
+            if !has_nzbdav {
+                providers.push(StreamingProvider {
+                    name: "operator-nzbdav".into(),
+                    service: "nzbdav".into(),
+                    enabled: true,
+                    priority: 100,
+                    nzbdav_config: Some(cfg.clone()),
+                    ..Default::default()
+                });
+            }
+        }
+
+        providers.sort_by_key(|p| p.priority);
         providers
     }
 

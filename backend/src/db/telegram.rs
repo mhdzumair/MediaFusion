@@ -226,7 +226,7 @@ pub async fn resolve_mediafusion_user_id(
     if let Some((uid, _)) = get_user_by_telegram_id(pool, telegram_user_id).await {
         return Some(uid);
     }
-    let key = format!("telegram:user_mapping:{telegram_user_id}");
+    let key = crate::bot::user_mapping_key(telegram_user_id);
     let cached: Option<String> = redis.get(&key).await.ok()?;
     cached.and_then(|s| s.parse::<i32>().ok()).map(UserId)
 }

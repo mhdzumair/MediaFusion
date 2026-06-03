@@ -78,7 +78,7 @@ pub async fn get_url(
 
 // ─── NZB submission (proxy URL → file-upload fallback) ────────────────────────
 
-async fn submit_nzb(
+pub async fn submit_nzb(
     http: &reqwest::Client,
     api_url: &str,
     api_key: &str,

@@ -2,9 +2,9 @@
 ///
 /// Token format: raw API key used as Bearer token AND `key=` query parameter.
 use serde_json::Value;
-use std::sync::OnceLock;
 
 use crate::providers::{
+    file_selection::select_debrid_file_index,
     response_json,
     torrents::transport::{append_query, encode_form_body, MediaFlowForward},
     ProviderError,
@@ -12,94 +12,25 @@ use crate::providers::{
 
 const BASE_URL: &str = "https://offcloud.com";
 
-// ─── Regex helpers ────────────────────────────────────────────────────────────
-
-static SE_REGEX: OnceLock<regex::Regex> = OnceLock::new();
-static ALT_REGEX: OnceLock<regex::Regex> = OnceLock::new();
-
-fn se_regex() -> &'static regex::Regex {
-    SE_REGEX.get_or_init(|| regex::Regex::new(r"[Ss](\d{1,2})[Ee](\d{1,2})").unwrap())
-}
-
-fn alt_regex() -> &'static regex::Regex {
-    ALT_REGEX.get_or_init(|| regex::Regex::new(r"(\d{1,2})x(\d{1,2})").unwrap())
-}
-
 // ─── Video file selection helper ──────────────────────────────────────────────
 
-/// Select the best-matching video file index from a list of (name, size) pairs.
 fn select_video_file(
     files: &[(String, i64)],
+    release_name: &str,
     filename: Option<&str>,
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
 ) -> usize {
-    if files.is_empty() {
-        return 0;
-    }
-
-    // 1. Explicit file_index
-    if let Some(fi) = file_index {
-        if fi >= 0 && (fi as usize) < files.len() {
-            return fi as usize;
-        }
-    }
-
-    let video_exts = ["mkv", "mp4", "avi", "webm", "mov", "flv", "m4v", "wmv"];
-
-    let video_indices: Vec<usize> = files
-        .iter()
-        .enumerate()
-        .filter(|(_, (name, _))| {
-            let ext = std::path::Path::new(name.as_str())
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            video_exts.contains(&ext.as_str())
-        })
-        .map(|(i, _)| i)
-        .collect();
-
-    // 2. By filename
-    if let Some(name) = filename {
-        let name_lower = name.to_lowercase();
-        if let Some(&idx) = video_indices
-            .iter()
-            .find(|&&i| files[i].0.to_lowercase().contains(&name_lower))
-        {
-            return idx;
-        }
-    }
-
-    // 3. By season/episode
-    if let (Some(s), Some(e)) = (season, episode) {
-        for &idx in &video_indices {
-            let lower = files[idx].0.to_lowercase();
-            if let Some(caps) = se_regex().captures(&lower) {
-                let fs: i32 = caps[1].parse().unwrap_or(-1);
-                let fe: i32 = caps[2].parse().unwrap_or(-1);
-                if fs == s && fe == e {
-                    return idx;
-                }
-            }
-            if let Some(caps) = alt_regex().captures(&lower) {
-                let fs: i32 = caps[1].parse().unwrap_or(-1);
-                let fe: i32 = caps[2].parse().unwrap_or(-1);
-                if fs == s && fe == e {
-                    return idx;
-                }
-            }
-        }
-    }
-
-    // 4. Largest video file
-    video_indices
-        .iter()
-        .copied()
-        .max_by_key(|&i| files[i].1)
-        .unwrap_or(0)
+    select_debrid_file_index(
+        files,
+        release_name,
+        filename,
+        file_index,
+        season,
+        episode,
+        None,
+    )
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -432,6 +363,7 @@ fn try_single_file_url(info: &Value, request_id: &str) -> Option<String> {
 /// Select a URL from the explore list by matching basename against filename/episode.
 fn select_url_from_list(
     urls: &[String],
+    release_name: &str,
     filename: Option<&str>,
     file_index: Option<i32>,
     season: Option<i32>,
@@ -444,8 +376,7 @@ fn select_url_from_list(
     // Build (basename, dummy_size) pairs for select_video_file
     let pairs: Vec<(String, i64)> = urls
         .iter()
-        .enumerate()
-        .map(|(i, url)| {
+        .map(|url| {
             let basename = url
                 .split('/')
                 .next_back()
@@ -455,12 +386,11 @@ fn select_url_from_list(
                 })
                 .unwrap_or(url.as_str())
                 .to_string();
-            // Use index as a proxy size so select_video_file can rank them
-            (basename, i as i64)
+            (basename, 0i64)
         })
         .collect();
 
-    let idx = select_video_file(&pairs, filename, file_index, season, episode);
+    let idx = select_video_file(&pairs, release_name, filename, file_index, season, episode);
     urls.get(idx).cloned()
 }
 
@@ -527,12 +457,19 @@ pub async fn get_video_url(
     // Multi-file: explore and select
     let urls = explore_torrent(http, token, &request_id, forward).await?;
 
-    select_url_from_list(&urls, filename, file_index, season, episode).ok_or_else(|| {
-        ProviderError::api(
-            "No matching video file found in OffCloud torrent",
-            "torrent_not_downloaded.mp4",
-        )
-    })
+    let release_name = torrent_info
+        .get("fileName")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    select_url_from_list(&urls, release_name, filename, file_index, season, episode).ok_or_else(
+        || {
+            ProviderError::api(
+                "No matching video file found in OffCloud torrent",
+                "torrent_not_downloaded.mp4",
+            )
+        },
+    )
 }
 
 /// Delete the cloud download matching `info_hash` from OffCloud.

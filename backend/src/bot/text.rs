@@ -1,17 +1,20 @@
 //! Message templates (legacy Markdown, not MarkdownV2).
 
-pub fn welcome(first_name: Option<&str>) -> String {
+pub fn welcome(first_name: Option<&str>, enabled_content: &[&str]) -> String {
     let name = first_name.unwrap_or("there");
+    let content_lines = if enabled_content.is_empty() {
+        "• All content types are currently disabled on this instance.".to_string()
+    } else {
+        enabled_content
+            .iter()
+            .map(|line| format!("• {line}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     format!(
         "👋 *Welcome, {name}!*\n\n\
          I'm the MediaFusion content bot. Send me content to contribute:\n\n\
-         • 🧲 Magnet links\n\
-         • 📦 Torrent files\n\
-         • ▶️ YouTube URLs\n\
-         • 🔗 HTTP direct links\n\
-         • 🎬 Video files (forward or upload)\n\
-         • 📰 NZB URLs\n\
-         • 📡 AceStream IDs\n\n\
+         {content_lines}\n\n\
          *Getting started:*\n\
          1. Send `/login` to link your MediaFusion account\n\
          2. Send content to start the import wizard\n\n\
@@ -19,19 +22,24 @@ pub fn welcome(first_name: Option<&str>) -> String {
     )
 }
 
-pub fn help_text() -> String {
-    "*MediaFusion Bot Commands*\n\n\
-     `/start` — Welcome message\n\
-     `/help` — This help message\n\
-     `/login` — Link your Telegram account to MediaFusion\n\
-     `/status` — Check account link status\n\
-     `/cancel` — Cancel current operation\n\
-     `/scrape @channel` — Scrape a public Telegram channel\n\n\
-     *Contributing content:*\n\
-     Send magnet links, torrent files, YouTube URLs, HTTP links, \
-     NZB URLs, AceStream IDs, or forward video files.\n\n\
-     You'll be guided through matching content to media and confirming the import."
-        .to_string()
+pub fn help_text(enabled_content: &[&str]) -> String {
+    let content_section = if enabled_content.is_empty() {
+        "All content types are currently disabled on this instance.".to_string()
+    } else {
+        format!("Send {}.", enabled_content.join(", "))
+    };
+    format!(
+        "*MediaFusion Bot Commands*\n\n\
+         `/start` — Welcome message\n\
+         `/help` — This help message\n\
+         `/login` — Link your Telegram account to MediaFusion\n\
+         `/status` — Check account link status\n\
+         `/cancel` — Cancel current operation\n\
+         `/scrape @channel` — Scrape a public Telegram channel\n\n\
+         *Contributing content:*\n\
+         {content_section}\n\n\
+         You'll be guided through matching content to media and confirming the import."
+    )
 }
 
 pub fn login_private_chat_required() -> String {

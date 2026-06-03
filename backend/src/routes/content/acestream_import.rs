@@ -421,6 +421,7 @@ pub async fn import_acestream(
             media_type,
             season: None,
             episode: None,
+            episode_end: None,
             link_source: crate::db::LinkSource::User,
             is_primary: true,
             is_verified: false,

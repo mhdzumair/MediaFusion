@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // ─── Manifest ─────────────────────────────────────────────────────────────────
@@ -47,12 +47,12 @@ pub struct ExtraField {
 
 // ─── Catalog/Metas ────────────────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Metas {
     pub metas: Vec<MetaPreview>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct MetaPreview {
     pub id: String,
     #[serde(rename = "type")]
@@ -89,6 +89,8 @@ pub struct Meta {
     pub poster: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logo: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

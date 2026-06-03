@@ -508,7 +508,7 @@ fn min_size_filters_small_streams() {
             None,
         ),
     ];
-    let ud = make_user_data(json!({"mns": 1 * GB}));
+    let ud = make_user_data(json!({"mns": GB}));
     let result = run_pipeline(streams, &ud, Some(1), Some(1));
     assert_eq!(result.len(), 1);
     assert_eq!(
@@ -543,7 +543,7 @@ fn min_size_zero_keeps_unknown_size() {
             None,
         ),
     ];
-    let ud = make_user_data(json!({"mns": 1 * GB}));
+    let ud = make_user_data(json!({"mns": GB}));
     assert_eq!(run_pipeline(streams, &ud, Some(1), Some(1)).len(), 2);
 }
 
@@ -694,7 +694,7 @@ fn full_pipeline_integration() {
         ),
         make_stream(
             "Small.WEB.720p",
-            1 * GB,
+            GB,
             Some("720p"),
             Some("WEB-DL"),
             &[],
@@ -746,7 +746,7 @@ fn full_pipeline_integration() {
             {"k": "size", "d": "desc"},
         ],
         "ms": 50 * GB,
-        "mns": 1 * GB,
+        "mns": GB,
         "mxs": 10,
     }));
     assert_eq!(

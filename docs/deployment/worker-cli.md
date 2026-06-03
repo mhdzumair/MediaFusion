@@ -216,12 +216,12 @@ By default the job runs **continuously in one process** until no streams match t
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `page` | `int` | `0` | Starting page index |
-| `page_size` | `int` | `500` | Streams per page (max 5000) |
+| `after_id` | `int` | `0` | Resume after this stream id (keyset pagination) |
+| `batch_size` | `int` | `500` | Streams per batch (max 5000). Alias: `page_size` |
 | `only_missing` | `bool` | `true` | Only streams missing columns or link-table rows |
 | `stream_types` | `string[]` | `["TORRENT","USENET"]` | Stream types to process |
-| `continuous` | `bool` | `true` | Loop pages in-process until done |
-| `max_pages` | `int` | — | Optional cap (for test runs) |
+| `continuous` | `bool` | `true` | Loop batches in-process until done |
+| `max_batches` | `int` | — | Optional cap (for test runs). Alias: `max_pages` |
 
 ```bash
 # Full backfill (runs until complete — may take hours on large DBs)
@@ -229,22 +229,27 @@ By default the job runs **continuously in one process** until no streams match t
 
 # Larger batches, same behavior
 ./mediafusion-worker --run-job backfill_stream_metadata \
-  --args '{"page_size": 2000}'
+  --args '{"batch_size": 2000}'
 
-# Test run: first 3 pages only
+# Resume after a specific stream id (e.g. after stopping a run)
 ./mediafusion-worker --run-job backfill_stream_metadata \
-  --args '{"page_size": 500, "max_pages": 3}'
+  --args '{"after_id": 1234567, "batch_size": 2000}'
+
+# Test run: first 3 batches only
+./mediafusion-worker --run-job backfill_stream_metadata \
+  --args '{"batch_size": 500, "max_batches": 3}'
 
 # Re-parse everything (overwrite columns from PTT; links are additive)
 ./mediafusion-worker --run-job backfill_stream_metadata \
-  --args '{"only_missing": false, "page_size": 1000}'
+  --args '{"only_missing": false, "batch_size": 1000}'
 ```
 
 Makefile shortcut:
 
 ```bash
 make worker-backfill-stream-metadata
-make worker-backfill-stream-metadata PAGE_SIZE=2000
+make worker-backfill-stream-metadata BATCH_SIZE=2000
+make worker-backfill-stream-metadata AFTER_ID=1234567 BATCH_SIZE=2000
 ```
 
 After backfill, Stremio stream descriptions should show language lines (`🌐 English`, etc.) and language filtering in the addon will work for streams that PTT can parse.

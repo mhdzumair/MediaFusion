@@ -1,5 +1,7 @@
+pub mod file_selection;
 pub mod torrents;
 pub mod usenet;
+pub mod validator;
 
 use thiserror::Error;
 

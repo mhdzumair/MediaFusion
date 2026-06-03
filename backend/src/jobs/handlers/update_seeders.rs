@@ -13,7 +13,7 @@ use crate::jobs::{
 
 pub struct UpdateSeeders;
 
-const DEFAULT_TRACKERS: &[&str] = &[
+const DEFAULT_TRACKERS_FALLBACK: &[&str] = &[
     "udp://tracker.opentrackr.org:1337/announce",
     "udp://open.demonii.com:1337/announce",
     "udp://tracker.openbittorrent.com:6969/announce",
@@ -177,8 +177,16 @@ async fn scrape_seeders(torrent_rows: &[(i32, String, Vec<String>)]) -> HashMap<
     let mut best: HashMap<String, i32> = HashMap::new();
 
     // Collect the set of tracker URLs to query.
-    // Per-torrent tracker URLs are interleaved with the defaults.
-    let mut tracker_set: Vec<String> = DEFAULT_TRACKERS.iter().map(|s| s.to_string()).collect();
+    // Per-torrent tracker URLs are interleaved with bundled defaults from trackers.json.
+    let bundled: Vec<String> = crate::util::trackers::all_trackers();
+    let mut tracker_set: Vec<String> = if bundled.is_empty() {
+        DEFAULT_TRACKERS_FALLBACK
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        bundled
+    };
 
     for (_, _, trackers) in torrent_rows {
         for t in trackers {

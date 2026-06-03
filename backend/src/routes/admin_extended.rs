@@ -51,7 +51,7 @@ use serde_json::{json, Value};
 use sha2::Sha256;
 
 use crate::{
-    db::{MediaId, StreamId},
+    db::{contribution_defaults, MediaId, StreamId},
     state::AppState,
 };
 
@@ -443,19 +443,18 @@ pub async fn get_contribution_settings(
         }))
         .into_response(),
         Ok(None) => {
-            // Return defaults
             Json(json!({
                 "id": "default",
-                "auto_approval_threshold": 100,
-                "points_per_metadata_edit": 10,
-                "points_per_stream_edit": 5,
-                "points_for_rejection_penalty": -5,
-                "contributor_threshold": 50,
-                "trusted_threshold": 200,
-                "expert_threshold": 1000,
+                "auto_approval_threshold": contribution_defaults::AUTO_APPROVAL_THRESHOLD,
+                "points_per_metadata_edit": contribution_defaults::POINTS_PER_METADATA_EDIT,
+                "points_per_stream_edit": contribution_defaults::POINTS_PER_STREAM_EDIT,
+                "points_for_rejection_penalty": contribution_defaults::POINTS_FOR_REJECTION_PENALTY,
+                "contributor_threshold": contribution_defaults::CONTRIBUTOR_THRESHOLD,
+                "trusted_threshold": contribution_defaults::TRUSTED_THRESHOLD,
+                "expert_threshold": contribution_defaults::EXPERT_THRESHOLD,
                 "allow_auto_approval": true,
                 "require_reason_for_edits": false,
-                "max_pending_suggestions_per_user": 10,
+                "max_pending_suggestions_per_user": contribution_defaults::MAX_PENDING_SUGGESTIONS_PER_USER,
             }))
             .into_response()
         }
@@ -602,7 +601,13 @@ pub async fn get_contribution_levels(
     .await
     .unwrap_or(None);
 
-    let (ct, tt, et, aaa, aat) = row.unwrap_or((50, 200, 1000, true, 100));
+    let (ct, tt, et, aaa, aat) = row.unwrap_or((
+        contribution_defaults::CONTRIBUTOR_THRESHOLD as i32,
+        contribution_defaults::TRUSTED_THRESHOLD as i32,
+        contribution_defaults::EXPERT_THRESHOLD as i32,
+        true,
+        contribution_defaults::AUTO_APPROVAL_THRESHOLD,
+    ));
 
     let levels = json!([
         {"name": "new", "display_name": "New Contributor", "min_points": 0, "max_points": ct - 1, "can_auto_approve": false},

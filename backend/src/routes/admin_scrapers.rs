@@ -55,86 +55,33 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::Utc;
-use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::state::AppState;
+use crate::{routes::auth_guard, state::AppState};
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-fn validate_admin(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string)?;
-    let dot = token.rfind('.')?;
-    let (payload_str, sig) = token.split_at(dot);
-    let sig = &sig[1..];
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).ok()?;
-    mac.update(payload_str.as_bytes());
-    let expected: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if expected != sig {
-        return None;
-    }
-    let decoded = URL_SAFE_NO_PAD.decode(payload_str).ok()?;
-    let data: Value = serde_json::from_slice(&decoded).ok()?;
-    let exp = data["exp"].as_f64()?;
-    if exp < Utc::now().timestamp() as f64 {
-        return None;
-    }
-    if data["type"].as_str() != Some("access") {
-        return None;
-    }
-    if data["role"].as_str() != Some("admin") {
-        return None;
-    }
-    data["sub"].as_str()?.parse().ok()
+async fn validate_admin(
+    pool: &sqlx::PgPool,
+    headers: &HeaderMap,
+    secret_key: &str,
+) -> Option<i32> {
+    auth_guard::require_active_role(pool, headers, secret_key, &["admin"])
+        .await
+        .ok()
 }
 
-fn validate_moderator_or_admin(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string)?;
-    let dot = token.rfind('.')?;
-    let (payload_str, sig) = token.split_at(dot);
-    let sig = &sig[1..];
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).ok()?;
-    mac.update(payload_str.as_bytes());
-    let expected: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if expected != sig {
-        return None;
-    }
-    let decoded = URL_SAFE_NO_PAD.decode(payload_str).ok()?;
-    let data: Value = serde_json::from_slice(&decoded).ok()?;
-    let exp = data["exp"].as_f64()?;
-    if exp < Utc::now().timestamp() as f64 {
-        return None;
-    }
-    if data["type"].as_str() != Some("access") {
-        return None;
-    }
-    let role = data["role"].as_str().unwrap_or("user");
-    if role != "admin" && role != "moderator" {
-        return None;
-    }
-    data["sub"].as_str()?.parse().ok()
+async fn validate_moderator_or_admin(
+    pool: &sqlx::PgPool,
+    headers: &HeaderMap,
+    secret_key: &str,
+) -> Option<i32> {
+    auth_guard::require_active_role(pool, headers, secret_key, &["moderator", "admin"])
+        .await
+        .ok()
 }
 
 fn forbidden() -> axum::response::Response {
@@ -150,7 +97,7 @@ pub async fn list_spiders(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     Json(json!({
@@ -178,7 +125,7 @@ pub async fn run_scraper(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let spider_name = match body["spider_name"].as_str() {
@@ -283,6 +230,7 @@ fn spider_name_to_queue(spider_name: &str) -> Option<(&'static str, Option<serde
             "spider_registry_crawl",
             Some(serde_json::json!({"indexer":"bt4g"})),
         )),
+        "arab_torrents" => Some(("spider_arab_torrents", None)),
         _ => None,
     }
 }
@@ -293,7 +241,7 @@ pub async fn block_torrent(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let info_hash = match body["info_hash"].as_str() {
@@ -306,6 +254,20 @@ pub async fn block_torrent(
                 .into_response();
         }
     };
+    let stream_meta: Option<(String, String, String, String)> = sqlx::query_as(
+        "SELECT s.name, m.title, m.type::text, COALESCE(mei.external_id, 'mf' || m.id::text) \
+         FROM streams s \
+         JOIN stream_media_link sml ON sml.stream_id = s.id \
+         JOIN media m ON m.id = sml.media_id \
+         LEFT JOIN media_external_id mei ON mei.media_id = m.id AND mei.provider = 'imdb' \
+         WHERE LOWER(s.info_hash) = LOWER($1) \
+         LIMIT 1",
+    )
+    .bind(&info_hash)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .unwrap_or(None);
+
     let result =
         sqlx::query("UPDATE streams SET is_blocked = true WHERE LOWER(info_hash) = LOWER($1)")
             .bind(&info_hash)
@@ -318,12 +280,45 @@ pub async fn block_torrent(
             Json(json!({"detail": "Torrent not found"})),
         )
             .into_response(),
-        Ok(_) => Json(json!({
-            "status": "success",
-            "message": "Torrent blocked",
-            "info_hash": info_hash
-        }))
-        .into_response(),
+        Ok(_) => {
+            if let (Some((torrent_name, title, meta_type, meta_id)), Some(bot_token), Some(chat_id)) = (
+                stream_meta,
+                state.config.telegram_bot_token.as_deref(),
+                state.config.telegram_chat_id.as_deref(),
+            ) {
+                let poster = format!(
+                    "{}/poster/{}/{}.jpg",
+                    state.config.poster_host_url.trim_end_matches('/'),
+                    meta_type,
+                    meta_id
+                );
+                let http = state.http.clone();
+                let info_hash = info_hash.clone();
+                let bot_token = bot_token.to_string();
+                let chat_id = chat_id.to_string();
+                crate::bot::notify_if_enabled(&state, async move {
+                    crate::bot::send_block_notification(
+                        &http,
+                        &bot_token,
+                        &chat_id,
+                        &info_hash,
+                        "block",
+                        &meta_id,
+                        &title,
+                        &meta_type,
+                        &poster,
+                        &torrent_name,
+                    )
+                    .await;
+                });
+            }
+            Json(json!({
+                "status": "success",
+                "message": "Torrent blocked",
+                "info_hash": info_hash
+            }))
+            .into_response()
+        }
         Err(e) => {
             tracing::error!("block_torrent DB error: {e}");
             (
@@ -341,7 +336,7 @@ pub async fn unblock_torrent(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let info_hash = match body["info_hash"].as_str() {
@@ -388,7 +383,7 @@ pub async fn get_catalog_data(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let fallback_languages: Vec<&str> = vec![
@@ -440,7 +435,7 @@ pub async fn get_scraper_status(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -490,7 +485,7 @@ pub async fn get_dmm_hashlist_status(
 ) -> impl IntoResponse {
     use fred::prelude::KeysInterface;
 
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -517,7 +512,7 @@ pub async fn get_imdb_dataset_status(
 ) -> impl IntoResponse {
     use fred::prelude::KeysInterface;
 
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -594,7 +589,7 @@ pub async fn get_imdb_dataset_config(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -671,7 +666,7 @@ pub async fn update_imdb_dataset_config(
     State(state): State<Arc<AppState>>,
     Json(body): Json<UpdateImdbDatasetConfigRequest>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -792,7 +787,7 @@ pub async fn run_imdb_dataset_import(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RunImdbDatasetImportRequest>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -871,7 +866,7 @@ pub async fn run_dmm_hashlist(
     State(state): State<Arc<AppState>>,
     Json(_body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     match crate::jobs::enqueue::enqueue_simple(
@@ -909,7 +904,7 @@ pub async fn run_dmm_hashlist_full(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let mut args = body;
@@ -954,7 +949,7 @@ pub async fn migrate_media(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_moderator_or_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_moderator_or_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -1060,7 +1055,7 @@ pub async fn migrate_id(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -1117,6 +1112,18 @@ pub async fn migrate_id(
             .into_response();
     }
 
+    // Fetch metadata for notification before migration
+    let old_meta: Option<(String, String)> = sqlx::query_as(
+        "SELECT m.title, m.type::text \
+         FROM media m \
+         JOIN media_external_id mei ON mei.media_id = m.id \
+         WHERE mei.external_id = $1 LIMIT 1",
+    )
+    .bind(&from_id)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .unwrap_or(None);
+
     // Update from_id → to_id
     let result =
         sqlx::query("UPDATE media_external_id SET external_id = $1 WHERE external_id = $2")
@@ -1126,12 +1133,44 @@ pub async fn migrate_id(
             .await;
 
     match result {
-        Ok(r) => Json(json!({
-            "status": "success",
-            "message": format!("Migrated {} → {}", from_id, to_id),
-            "rows_updated": r.rows_affected()
-        }))
-        .into_response(),
+        Ok(r) => {
+            if let (Some((title, meta_type)), Some(bot_token), Some(chat_id)) = (
+                old_meta,
+                state.config.telegram_bot_token.as_deref(),
+                state.config.telegram_chat_id.as_deref(),
+            ) {
+                let poster = format!(
+                    "{}/poster/{}/{}.jpg",
+                    state.config.poster_host_url.trim_end_matches('/'),
+                    meta_type,
+                    to_id
+                );
+                let http = state.http.clone();
+                let from_id = from_id.clone();
+                let to_id = to_id.clone();
+                let bot_token = bot_token.to_string();
+                let chat_id = chat_id.to_string();
+                crate::bot::notify_if_enabled(&state, async move {
+                    crate::bot::send_migration_notification(
+                        &http,
+                        &bot_token,
+                        &chat_id,
+                        &from_id,
+                        &to_id,
+                        &title,
+                        &meta_type,
+                        &poster,
+                    )
+                    .await;
+                });
+            }
+            Json(json!({
+                "status": "success",
+                "message": format!("Migrated {} → {}", from_id, to_id),
+                "rows_updated": r.rows_affected()
+            }))
+            .into_response()
+        }
         Err(e) => {
             tracing::error!("migrate_id error: {e}");
             (
@@ -1149,7 +1188,7 @@ pub async fn update_media_images(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let meta_id = match body["meta_id"].as_str() {
@@ -1180,6 +1219,22 @@ pub async fn update_media_images(
                 .into_response();
         }
     };
+
+    let meta_info: Option<(String, String)> = sqlx::query_as(
+        "SELECT m.title, m.type::text FROM media m WHERE m.id = $1",
+    )
+    .bind(media_id)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .unwrap_or(None);
+
+    let old_images: Vec<(String, String)> = sqlx::query_as(
+        "SELECT image_type, url FROM media_image WHERE media_id = $1 AND is_primary = true",
+    )
+    .bind(media_id)
+    .fetch_all(&state.pool_ro)
+    .await
+    .unwrap_or_default();
 
     let image_fields = [
         ("poster", body["poster"].as_str()),
@@ -1218,6 +1273,58 @@ pub async fn update_media_images(
         }
     }
 
+    if !updated.is_empty() {
+        if let (Some((title, meta_type)), Some(bot_token), Some(chat_id)) = (
+            meta_info,
+            state.config.telegram_bot_token.as_deref(),
+            state.config.telegram_chat_id.as_deref(),
+        ) {
+            let old_poster = old_images
+                .iter()
+                .find(|(t, _)| t == "poster")
+                .map(|(_, u)| u.clone());
+            let old_background = old_images
+                .iter()
+                .find(|(t, _)| t == "background")
+                .map(|(_, u)| u.clone());
+            let old_logo = old_images
+                .iter()
+                .find(|(t, _)| t == "logo")
+                .map(|(_, u)| u.clone());
+            let poster = format!(
+                "{}/poster/{}/{}.jpg",
+                state.config.poster_host_url.trim_end_matches('/'),
+                meta_type,
+                meta_id
+            );
+            let http = state.http.clone();
+            let meta_id = meta_id.clone();
+            let bot_token = bot_token.to_string();
+            let chat_id = chat_id.to_string();
+            let new_poster = body["poster"].as_str().map(str::to_string);
+            let new_background = body["background"].as_str().map(str::to_string);
+            let new_logo = body["logo"].as_str().map(str::to_string);
+            crate::bot::notify_if_enabled(&state, async move {
+                crate::bot::send_image_update_notification(
+                    &http,
+                    &bot_token,
+                    &chat_id,
+                    &meta_id,
+                    &title,
+                    &meta_type,
+                    &poster,
+                    old_poster.as_deref(),
+                    old_background.as_deref(),
+                    old_logo.as_deref(),
+                    new_poster.as_deref(),
+                    new_background.as_deref(),
+                    new_logo.as_deref(),
+                )
+                .await;
+            });
+        }
+    }
+
     Json(json!({
         "status": "success",
         "meta_id": meta_id,
@@ -1238,7 +1345,7 @@ pub async fn refresh_imdb_data(
     Path(meta_id): Path<String>,
     Query(params): Query<RefreshImdbQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -1386,10 +1493,25 @@ pub async fn delete_torrent(
     Path(info_hash): Path<String>,
     Query(params): Query<DeleteTorrentQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let _ = params.reason;
+
+    let stream_meta: Option<(String, String, String, String)> = sqlx::query_as(
+        "SELECT s.name, m.title, m.type::text, COALESCE(mei.external_id, 'mf' || m.id::text) \
+         FROM streams s \
+         JOIN stream_media_link sml ON sml.stream_id = s.id \
+         JOIN media m ON m.id = sml.media_id \
+         LEFT JOIN media_external_id mei ON mei.media_id = m.id AND mei.provider = 'imdb' \
+         WHERE LOWER(s.info_hash) = LOWER($1) \
+         LIMIT 1",
+    )
+    .bind(&info_hash)
+    .fetch_optional(&state.pool_ro)
+    .await
+    .unwrap_or(None);
+
     let result = sqlx::query("DELETE FROM streams WHERE LOWER(info_hash) = LOWER($1)")
         .bind(&info_hash)
         .execute(&state.pool)
@@ -1401,12 +1523,45 @@ pub async fn delete_torrent(
             Json(json!({"detail": "Torrent not found"})),
         )
             .into_response(),
-        Ok(_) => Json(json!({
-            "status": "success",
-            "message": "Torrent deleted",
-            "info_hash": info_hash
-        }))
-        .into_response(),
+        Ok(_) => {
+            if let (Some((torrent_name, title, meta_type, meta_id)), Some(bot_token), Some(chat_id)) = (
+                stream_meta,
+                state.config.telegram_bot_token.as_deref(),
+                state.config.telegram_chat_id.as_deref(),
+            ) {
+                let poster = format!(
+                    "{}/poster/{}/{}.jpg",
+                    state.config.poster_host_url.trim_end_matches('/'),
+                    meta_type,
+                    meta_id
+                );
+                let http = state.http.clone();
+                let info_hash = info_hash.clone();
+                let bot_token = bot_token.to_string();
+                let chat_id = chat_id.to_string();
+                crate::bot::notify_if_enabled(&state, async move {
+                    crate::bot::send_block_notification(
+                        &http,
+                        &bot_token,
+                        &chat_id,
+                        &info_hash,
+                        "delete",
+                        &meta_id,
+                        &title,
+                        &meta_type,
+                        &poster,
+                        &torrent_name,
+                    )
+                    .await;
+                });
+            }
+            Json(json!({
+                "status": "success",
+                "message": "Torrent deleted",
+                "info_hash": info_hash
+            }))
+            .into_response()
+        }
         Err(e) => {
             tracing::error!("delete_torrent DB error: {e}");
             (
@@ -1424,7 +1579,7 @@ pub async fn add_tv_metadata(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let title = match body["title"].as_str() {
@@ -1616,39 +1771,11 @@ const SCHEDULER_JOBS: &[(&str, &str, &str, &str, &str)] = &[
         "0 * * * *",
     ),
     (
-        "nowmetv",
-        "NowMeTV",
-        "scraper",
-        "Scrapes TV content from NowMeTV",
-        "0 0 * * 5",
-    ),
-    (
-        "nowsports",
-        "NowSports",
-        "scraper",
-        "Scrapes sports content",
-        "0 10 * * 5",
-    ),
-    (
-        "tamilultra",
-        "Tamil Ultra",
-        "scraper",
-        "Scrapes Tamil Ultra content",
-        "0 8 * * 5",
-    ),
-    (
         "sport_video",
         "Sport Video",
         "scraper",
         "Scrapes sports video content",
         "*/20 * * * *",
-    ),
-    (
-        "dlhd",
-        "DaddyLiveHD",
-        "scraper",
-        "Scrapes live sports streams",
-        "0 0 * * 1",
     ),
     (
         "arab_torrents",
@@ -1835,6 +1962,34 @@ const SCHEDULER_JOBS: &[(&str, &str, &str, &str, &str)] = &[
         "*/3 * * * *",
     ),
     (
+        "discover_prewarm",
+        "Discover Prewarm",
+        "background",
+        "Pre-warms discover catalogs from TMDB trending",
+        "0 4 * * *",
+    ),
+    (
+        "integration_syncs",
+        "Integration Syncs",
+        "background",
+        "Syncs Trakt/Simkl integrations for all enabled profiles",
+        "0 */6 * * *",
+    ),
+    (
+        "update_tv_posters",
+        "Update TV Posters",
+        "maintenance",
+        "Backfills IPTV channel posters from iptv-org",
+        "0 2 * * *",
+    ),
+    (
+        "pending_moderation_reminder",
+        "Pending Moderation Reminder",
+        "maintenance",
+        "Sends Telegram summary of pending moderation queues",
+        "0 */6 * * *",
+    ),
+    (
         "imdb_dataset_import",
         "IMDb Dataset Import",
         "background",
@@ -1863,13 +2018,9 @@ const SCRAPY_SPIDER_IDS: &[&str] = &[
     "bt52",
     "uindex",
     "eztv_rss",
-    "nowmetv",
-    "nowsports",
-    "tamilultra",
     "sport_video",
     "tamil_blasters",
     "tamilmv",
-    "dlhd",
     "arab_torrents",
 ];
 
@@ -1880,6 +2031,7 @@ async fn fetch_job_info(
     category: &str,
     description: &str,
     default_crontab: &str,
+    global_scheduler_disabled: bool,
 ) -> Value {
     use sqlx::Row as _;
 
@@ -1913,10 +2065,11 @@ async fn fetch_job_info(
         None
     };
 
-    let is_enabled = cron_row
-        .as_ref()
-        .and_then(|r| r.try_get::<bool, _>("enabled").ok())
-        .unwrap_or(true);
+    let is_enabled = !global_scheduler_disabled
+        && cron_row
+            .as_ref()
+            .and_then(|r| r.try_get::<bool, _>("enabled").ok())
+            .unwrap_or(true);
 
     let crontab = cron_row
         .as_ref()
@@ -1996,6 +2149,7 @@ fn job_id_to_cron_name(job_id: &str) -> Option<String> {
             "ufc_ext" => Some("spider_ufc_ext".into()),
             "movies_tv_ext" => Some("spider_movies_tv_ext".into()),
             "sport_video" => Some("spider_sport_video".into()),
+            "arab_torrents" => Some("spider_arab_torrents".into()),
             "eztv_rss" => Some("spider_eztv_rss".into()),
             "nyaa" | "animetosho" | "subsplease" | "animepahe" | "bt52" | "uindex" | "x1337"
             | "thepiratebay" | "rutor" | "limetorrents" | "yts" | "bt4g" => {
@@ -2017,6 +2171,11 @@ fn job_id_to_cron_name(job_id: &str) -> Option<String> {
             "validate_tv_streams_in_db" => "validate_tv",
             "cleanup_expired_scraper_task" => "cleanup_scraper_task",
             "cleanup_expired_cache_task" => "cleanup_cache",
+            "background_search" => "background_search",
+            "discover_prewarm" => "discover_prewarm",
+            "integration_syncs" => "integration_syncs",
+            "update_tv_posters" => "update_tv_posters",
+            "pending_moderation_reminder" => "pending_moderation_reminder",
             "imdb_dataset_import" => "imdb_dataset_import",
             id if job_id_to_queue(id) != "default" => id,
             _ => return None,
@@ -2059,6 +2218,7 @@ fn job_id_to_queue(job_id: &str) -> &'static str {
             "ufc_ext" => "spider_ufc_ext",
             "movies_tv_ext" => "spider_movies_tv_ext",
             "sport_video" => "spider_sport_video",
+            "arab_torrents" => "spider_arab_torrents",
             "eztv_rss" => "spider_eztv_rss",
             _ => "spider_registry_crawl",
         };
@@ -2076,6 +2236,10 @@ fn job_id_to_queue(job_id: &str) -> &'static str {
         "cleanup_expired_scraper_task" => "cleanup",
         "cleanup_expired_cache_task" => "cleanup",
         "background_search" => "background_search",
+        "discover_prewarm" => "discover_prewarm",
+        "integration_syncs" => "integration_syncs",
+        "update_tv_posters" => "update_tv_posters",
+        "pending_moderation_reminder" => "pending_moderation_reminder",
         "imdb_dataset_import" => "imdb_dataset_import",
         _ => "default",
     }
@@ -2093,32 +2257,25 @@ pub async fn list_schedulers(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ListSchedulersQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
+    let global_disabled = state.config.disable_all_scheduler;
+
     let futures: Vec<_> = SCHEDULER_JOBS
         .iter()
-        .filter(|(_id, _, cat, _, _)| {
-            params.category.as_deref().is_none_or(|c| c == *cat)
-                && !params.enabled_only.unwrap_or(false)
-                || params.enabled_only == Some(true)
-        })
+        .filter(|(_id, _, cat, _, _)| params.category.as_deref().is_none_or(|c| c == *cat))
         .map(|(id, name, cat, desc, cron)| {
-            fetch_job_info(&state.pool_ro, id, name, cat, desc, cron)
+            fetch_job_info(&state.pool_ro, id, name, cat, desc, cron, global_disabled)
         })
         .collect();
 
-    let jobs: Vec<Value> = futures::future::join_all(futures).await;
+    let mut jobs: Vec<Value> = futures::future::join_all(futures).await;
 
-    // Filter by category after fetch (simpler than pre-filter since join_all needs sized iter)
-    let jobs: Vec<Value> = if let Some(ref cat) = params.category {
-        jobs.into_iter()
-            .filter(|j| j["category"].as_str() == Some(cat.as_str()))
-            .collect()
-    } else {
-        jobs
-    };
+    if params.enabled_only.unwrap_or(false) {
+        jobs.retain(|j| j["is_enabled"].as_bool() == Some(true));
+    }
 
     let total = jobs.len();
     let active = jobs
@@ -2136,7 +2293,7 @@ pub async fn list_schedulers(
         "active": active,
         "disabled": total - active,
         "running": running,
-        "global_scheduler_disabled": false,
+        "global_scheduler_disabled": global_disabled,
     }))
     .into_response()
 }
@@ -2146,37 +2303,52 @@ pub async fn get_scheduler_stats(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
+    let global_disabled = state.config.disable_all_scheduler;
     // Build stats from the same Postgres data
     let futures: Vec<_> = SCHEDULER_JOBS
         .iter()
         .map(|(id, name, cat, desc, cron)| {
-            fetch_job_info(&state.pool_ro, id, name, cat, desc, cron)
+            fetch_job_info(&state.pool_ro, id, name, cat, desc, cron, global_disabled)
         })
         .collect();
     let jobs: Vec<Value> = futures::future::join_all(futures).await;
 
     let total = jobs.len();
+    let active = jobs
+        .iter()
+        .filter(|j| j["is_enabled"].as_bool() == Some(true))
+        .count();
+    let disabled = total - active;
     let running = jobs
         .iter()
         .filter(|j| j["is_running"].as_bool() == Some(true))
         .count();
-    let mut by_category: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let mut by_category: std::collections::HashMap<String, (usize, usize)> =
+        std::collections::HashMap::new();
     for j in &jobs {
         if let Some(cat) = j["category"].as_str() {
-            *by_category.entry(cat).or_insert(0) += 1;
+            let entry = by_category.entry(cat.to_string()).or_insert((0, 0));
+            entry.0 += 1;
+            if j["is_enabled"].as_bool() == Some(true) {
+                entry.1 += 1;
+            }
         }
     }
+    let jobs_by_category: std::collections::HashMap<String, Value> = by_category
+        .into_iter()
+        .map(|(cat, (total, active))| (cat, json!({"total": total, "active": active})))
+        .collect();
 
     Json(json!({
         "total_jobs": total,
-        "active_jobs": total,
-        "disabled_jobs": 0,
+        "active_jobs": active,
+        "disabled_jobs": disabled,
         "running_jobs": running,
-        "jobs_by_category": by_category,
-        "global_scheduler_disabled": false,
+        "jobs_by_category": jobs_by_category,
+        "global_scheduler_disabled": global_disabled,
     }))
     .into_response()
 }
@@ -2187,14 +2359,23 @@ pub async fn get_scheduler_job(
     State(state): State<Arc<AppState>>,
     Path(job_id): Path<String>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     if let Some(&(id, name, cat, desc, cron)) = SCHEDULER_JOBS
         .iter()
         .find(|(id, ..)| *id == job_id.as_str())
     {
-        let info = fetch_job_info(&state.pool_ro, id, name, cat, desc, cron).await;
+        let info = fetch_job_info(
+            &state.pool_ro,
+            id,
+            name,
+            cat,
+            desc,
+            cron,
+            state.config.disable_all_scheduler,
+        )
+        .await;
         Json(info).into_response()
     } else {
         (
@@ -2219,7 +2400,7 @@ pub async fn update_scheduler_job(
     Path(job_id): Path<String>,
     Json(body): Json<UpdateSchedulerJobRequest>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -2307,6 +2488,7 @@ pub async fn update_scheduler_job(
                 _cat,
                 _desc,
                 default_schedule,
+                state.config.disable_all_scheduler,
             )
             .await;
             Json(info).into_response()
@@ -2361,6 +2543,10 @@ async fn dispatch_scheduler_job(
                 "cleanup_expired_scraper_task" => ("cleanup", json!({"task": "scraper_task"})),
                 "cleanup_expired_cache_task" => ("cleanup", json!({"task": "cache"})),
                 "background_search" => ("background_search", json!({})),
+                "discover_prewarm" => ("discover_prewarm", json!({})),
+                "integration_syncs" => ("integration_syncs", json!({})),
+                "update_tv_posters" => ("update_tv_posters", json!({})),
+                "pending_moderation_reminder" => ("pending_moderation_reminder", json!({})),
                 "imdb_dataset_import" => ("imdb_dataset_import", json!({})),
                 _ => return Err(()),
             }
@@ -2389,7 +2575,7 @@ pub async fn run_scheduler_job(
     Query(params): Query<RunSchedulerQuery>,
     body: Option<Json<Value>>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     match dispatch_scheduler_job(
@@ -2419,7 +2605,7 @@ pub async fn run_scheduler_job_inline(
     State(state): State<Arc<AppState>>,
     Path(job_id): Path<String>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     match dispatch_scheduler_job(&state.pool, &job_id, None, None).await {
@@ -2450,7 +2636,7 @@ pub async fn get_job_history(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let limit = params.limit.unwrap_or(50).clamp(1, 200);
@@ -2605,7 +2791,7 @@ pub async fn get_task_overview(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let sample = params.sample_size.unwrap_or(200).clamp(1, 2000);
@@ -2682,7 +2868,7 @@ pub async fn list_tasks(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ListTasksQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let offset = params.offset.unwrap_or(0) as usize;
@@ -2752,7 +2938,7 @@ pub async fn stream_task_snapshots(
     State(state): State<Arc<AppState>>,
     Query(params): Query<StreamTasksQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let sample = params.sample_size.unwrap_or(200).clamp(1, 2000);
@@ -2825,7 +3011,7 @@ pub async fn bulk_cancel_tasks(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -2884,7 +3070,7 @@ pub async fn bulk_retry_tasks(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -2972,7 +3158,7 @@ pub async fn get_task_detail(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -3063,7 +3249,7 @@ pub async fn retry_task(
 ) -> impl IntoResponse {
     use sqlx::Row as _;
 
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -3137,7 +3323,7 @@ pub async fn cancel_task(
     Path(task_id): Path<String>,
     Json(_body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
 
@@ -3199,7 +3385,7 @@ pub async fn get_telegram_stats(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM telegram_stream")
@@ -3215,7 +3401,7 @@ pub async fn migrate_single_stream(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let file_unique_id = match body["file_unique_id"].as_str() {
@@ -3269,7 +3455,7 @@ pub async fn migrate_bulk_streams(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let migrations = match body["migrations"].as_array() {
@@ -3341,7 +3527,7 @@ pub async fn get_exportable_streams(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ExportableQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw).await.is_none() {
         return forbidden();
     }
     let limit = params.limit.unwrap_or(50).clamp(1, 500);

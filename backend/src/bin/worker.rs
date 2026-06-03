@@ -17,9 +17,11 @@ use mediafusion_api::{
             integration_syncs::IntegrationSyncs,
             jackett_feed::JackettFeedScraper,
             m3u_import::M3uImport,
+            pending_moderation_reminder::PendingModerationReminder,
             prowlarr_feed::ProwlarrFeedScraper,
             rss_feed::RssFeedScraper,
             spiders::{
+                arab_torrents::ArabTorrentsCrawl,
                 ext_to::{
                     FormulaExtCrawl, MotogpExtCrawl, MoviesExtCrawl, UfcExtCrawl, WweExtCrawl,
                 },
@@ -148,6 +150,9 @@ async fn main() {
     sync_keywords_from_file(&state.pool).await;
     *state.keyword_filters.write().unwrap() = load_keyword_filter_cache(&state.pool).await;
 
+    mediafusion_api::bot::register_notification_handlers(Arc::clone(&state));
+    mediafusion_api::util::trackers::init_best_trackers(&state).await;
+
     let cancel = CancellationToken::new();
 
     // Graceful shutdown on SIGTERM / SIGINT
@@ -188,6 +193,7 @@ async fn main() {
     reg.register(Arc::new(ImdbDatasetImport));
     reg.register(Arc::new(Cleanup));
     reg.register(Arc::new(IntegrationSyncs));
+    reg.register(Arc::new(PendingModerationReminder));
     reg.register(Arc::new(M3uImport));
     reg.register(Arc::new(XtreamImport));
 
@@ -202,6 +208,7 @@ async fn main() {
     reg.register(Arc::new(UfcExtCrawl));
     reg.register(Arc::new(MoviesExtCrawl));
     reg.register(Arc::new(SportVideoCrawl));
+    reg.register(Arc::new(ArabTorrentsCrawl));
 
     // ── CLI one-shot modes ────────────────────────────────────────────────────
 

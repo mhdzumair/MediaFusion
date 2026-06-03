@@ -142,7 +142,8 @@ pub async fn metrics_middleware(
     next: Next,
 ) -> Response {
     let method = req.method().to_string();
-    let path = req.uri().path().to_string();
+    let raw_path = req.uri().path().to_string();
+    let path = crate::util::telemetry::sanitize_path(&raw_path);
     let route = normalize_route(&path);
 
     state.metrics.in_flight.fetch_add(1, Ordering::Relaxed);
@@ -162,7 +163,7 @@ pub async fn metrics_middleware(
         .record_request(&method, &route, status, duration_ms);
 
     // Skip noisy health/asset paths for Redis metrics
-    if !SKIP_PREFIXES.iter().any(|p| path.starts_with(p)) {
+    if !SKIP_PREFIXES.iter().any(|p| raw_path.starts_with(p)) {
         let redis = state.redis.clone();
         let now = chrono::Utc::now();
         let now_iso = now.to_rfc3339();

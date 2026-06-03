@@ -84,19 +84,134 @@ pub struct M3uEntry {
     pub matched_media_id: Option<String>,
 }
 
-fn classify_entry(group: &Option<String>) -> &'static str {
-    let g = match group.as_deref() {
-        Some(g) => g.to_lowercase(),
-        None => return "tv",
-    };
-    if g.contains("vod") || g.contains("movie") || g.contains("film") {
-        "movie"
-    } else if g.contains("series") || g.contains("show") || g.contains("episode") {
-        "series"
-    } else {
-        // live, sports, news, etc. → tv
-        "tv"
+const TV_KEYWORDS: &[&str] = &[
+    "live",
+    "tv",
+    "channel",
+    "news",
+    "sports",
+    "24/7",
+    "radio",
+    "entertainment",
+    "music",
+    "kids",
+    "documentary",
+    "general",
+];
+const MOVIE_KEYWORDS: &[&str] = &[
+    "movie",
+    "movies",
+    "film",
+    "films",
+    "cinema",
+    "vod movie",
+    "hd movies",
+    "4k movies",
+];
+const SERIES_KEYWORDS: &[&str] = &[
+    "series",
+    "shows",
+    "tv show",
+    "tv shows",
+    "episode",
+    "season",
+    "vod series",
+    "drama",
+    "sitcom",
+];
+const LIVE_STREAM_EXTENSIONS: &[&str] = &[".m3u8", ".ts", ".mpd"];
+const VOD_EXTENSIONS: &[&str] = &[".mp4", ".mkv", ".avi", ".webm", ".mov", ".wmv", ".flv"];
+
+fn group_contains_keyword(group_lower: &str, keywords: &[&str]) -> bool {
+    keywords.iter().any(|kw| group_lower.contains(kw))
+}
+
+fn detect_content_type_from_group(group_title: Option<&str>) -> Option<&'static str> {
+    let group_lower = group_title?.trim().to_lowercase();
+    if group_lower.is_empty() {
+        return None;
     }
+    if group_contains_keyword(&group_lower, SERIES_KEYWORDS) {
+        return Some("series");
+    }
+    if group_contains_keyword(&group_lower, MOVIE_KEYWORDS) {
+        return Some("movie");
+    }
+    if group_contains_keyword(&group_lower, TV_KEYWORDS) {
+        return Some("tv");
+    }
+    None
+}
+
+fn detect_content_type_from_url(url: &str) -> Option<&'static str> {
+    if url.trim().is_empty() {
+        return None;
+    }
+    let path_lower = url::Url::parse(url)
+        .ok()
+        .map(|u| u.path().to_lowercase())
+        .unwrap_or_else(|| url.to_lowercase());
+
+    if LIVE_STREAM_EXTENSIONS
+        .iter()
+        .any(|ext| path_lower.ends_with(ext))
+    {
+        return Some("tv");
+    }
+    if VOD_EXTENSIONS.iter().any(|ext| path_lower.ends_with(ext)) {
+        return None;
+    }
+    if ["/live/", "/tv/", "/channel/"]
+        .iter()
+        .any(|seg| path_lower.contains(seg))
+    {
+        return Some("tv");
+    }
+    if ["/movie/", "/movies/", "/film/"]
+        .iter()
+        .any(|seg| path_lower.contains(seg))
+    {
+        return Some("movie");
+    }
+    if ["/series/", "/show/", "/episode/"]
+        .iter()
+        .any(|seg| path_lower.contains(seg))
+    {
+        return Some("series");
+    }
+    None
+}
+
+/// Multi-signal content type detection (Python `detect_content_type` parity).
+fn detect_content_type(
+    name: &str,
+    url: &str,
+    group_title: Option<&str>,
+) -> (String, String, Option<i32>, Option<i32>, Option<i32>) {
+    let (parsed_title, parsed_year, season, episode) =
+        super::iptv_import::parse_iptv_title_info(name);
+    let is_series = season.is_some() || episode.is_some();
+
+    let entry_type = if is_series {
+        "series".to_string()
+    } else if let Some(t) = detect_content_type_from_group(group_title) {
+        t.to_string()
+    } else if let Some(t) = detect_content_type_from_url(url) {
+        t.to_string()
+    } else {
+        let path_lower = url::Url::parse(url)
+            .ok()
+            .map(|u| u.path().to_lowercase())
+            .unwrap_or_default();
+        let is_vod = VOD_EXTENSIONS.iter().any(|ext| path_lower.ends_with(ext));
+        if is_vod {
+            "movie".to_string()
+        } else {
+            "unknown".to_string()
+        }
+    };
+
+    (entry_type, parsed_title, parsed_year, season, episode)
 }
 
 /// Parse M3U playlist content into a list of entries.
@@ -148,17 +263,14 @@ pub fn parse_m3u(content: &str) -> Vec<M3uEntry> {
         } else if !line.is_empty() && !line.starts_with('#') {
             // This is a URL line
             if let Some((name, logo, group, tvg_id)) = current_meta.take() {
-                let entry_type = classify_entry(&group).to_string();
                 let behavior_hints = if pending_headers.is_empty() {
                     None
                 } else {
                     Some(serde_json::json!({ "headers": pending_headers }))
                 };
                 pending_headers.clear();
-                let (parsed_title, parsed_year, season, episode) =
-                    super::iptv_import::parse_iptv_title_info(&name);
-                let entry_type =
-                    super::iptv_import::refine_entry_type(&entry_type, season, episode).to_string();
+                let (entry_type, parsed_title, parsed_year, season, episode) =
+                    detect_content_type(&name, line, group.as_deref());
                 entries.push(M3uEntry {
                     name,
                     url: line.to_string(),

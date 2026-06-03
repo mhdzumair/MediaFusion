@@ -29,6 +29,13 @@ use crate::{
 
 pub struct IntegrationSyncs;
 
+/// Options for on-demand sync triggered via the API.
+#[derive(Clone, Default)]
+pub struct SyncOptions {
+    pub direction: Option<String>,
+    pub full_sync: bool,
+}
+
 // ─── Job payload ─────────────────────────────────────────────────────────────
 
 #[derive(Deserialize, Default)]
@@ -126,7 +133,7 @@ impl JobHandler for IntegrationSyncs {
             if ctx.is_cancelled() {
                 return Err(JobError::Cancelled);
             }
-            sync_one(&ctx, &row).await;
+            sync_one(&ctx, &row, &SyncOptions::default()).await;
         }
         Ok(())
     }
@@ -136,7 +143,11 @@ impl JobHandler for IntegrationSyncs {
 ///
 /// Used by the `Sync Now` UI button — the route spawns this so the HTTP
 /// response returns instantly while sync proceeds in the background.
-pub async fn sync_integration_inline(state: Arc<AppState>, integration_id: i32) {
+pub async fn sync_integration_inline(
+    state: Arc<AppState>,
+    integration_id: i32,
+    options: SyncOptions,
+) {
     let rows = match fetch_integrations(&state.pool_ro, Some(integration_id)).await {
         Ok(r) => r,
         Err(e) => {
@@ -154,7 +165,7 @@ pub async fn sync_integration_inline(state: Arc<AppState>, integration_id: i32) 
         state,
         cancel: CancellationToken::new(),
     };
-    sync_one(&ctx, &row).await;
+    sync_one(&ctx, &row, &options).await;
 }
 
 // ─── Fetch ────────────────────────────────────────────────────────────────────
@@ -201,8 +212,18 @@ async fn fetch_integrations(
 
 // ─── Per-integration orchestration ───────────────────────────────────────────
 
-async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
+async fn sync_one(ctx: &JobCtx, row: &IntegrationRow, options: &SyncOptions) {
     mark_status(&ctx.state.pool, row.id, "in_progress", None, None).await;
+
+    let effective_last_sync_at = if options.full_sync {
+        None
+    } else {
+        row.last_sync_at
+    };
+    let effective_direction = options
+        .direction
+        .as_deref()
+        .unwrap_or(row.sync_direction.as_str());
 
     let enc = match &row.encrypted_credentials {
         Some(s) if !s.is_empty() => s.clone(),
@@ -253,7 +274,7 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
                 .await;
                 return;
             }
-            if creds.is_expired() {
+            if creds.is_expired() || !trakt_validate(&ctx.state.http, &creds).await {
                 match trakt_refresh(&ctx.state.http, &creds).await {
                     Ok(refreshed) => {
                         save_credentials(
@@ -279,7 +300,14 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
                     }
                 }
             }
-            sync_trakt(ctx, row, &creds).await
+            sync_trakt(
+                ctx,
+                row,
+                &creds,
+                effective_direction,
+                effective_last_sync_at,
+            )
+            .await
         }
         IntegrationType::Simkl => {
             let default_cid = ctx.state.config.simkl_client_id.as_deref().unwrap_or("");
@@ -311,7 +339,7 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
                 .await;
                 return;
             }
-            if creds.is_expired() {
+            if creds.is_expired() || !simkl_validate(&ctx.state.http, &creds).await {
                 match simkl_refresh(&ctx.state.http, &creds).await {
                     Ok(refreshed) => {
                         save_credentials(
@@ -337,7 +365,14 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
                     }
                 }
             }
-            sync_simkl(ctx, row, &creds).await
+            sync_simkl(
+                ctx,
+                row,
+                &creds,
+                effective_direction,
+                effective_last_sync_at,
+            )
+            .await
         }
         other => {
             warn!(
@@ -375,20 +410,31 @@ async fn sync_one(ctx: &JobCtx, row: &IntegrationRow) {
 
 // ─── Trakt ────────────────────────────────────────────────────────────────────
 
-async fn sync_trakt(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds) -> SyncStats {
+async fn sync_trakt(
+    ctx: &JobCtx,
+    row: &IntegrationRow,
+    creds: &Creds,
+    direction: &str,
+    last_sync_at: Option<DateTime<Utc>>,
+) -> SyncStats {
     let mut stats = SyncStats::default();
-    let dir = row.sync_direction.as_str();
-    let bidirectional = dir == "two_way" || dir == "bidirectional";
-    if dir == "platform_to_mf" || bidirectional {
-        trakt_import(ctx, row, creds, &mut stats).await;
+    let bidirectional = direction == "two_way" || direction == "bidirectional";
+    if direction == "platform_to_mf" || bidirectional {
+        trakt_import(ctx, row, creds, &mut stats, last_sync_at).await;
     }
-    if dir == "mf_to_platform" || bidirectional {
-        trakt_export(ctx, row, creds, &mut stats).await;
+    if direction == "mf_to_platform" || bidirectional {
+        trakt_export(ctx, row, creds, &mut stats, last_sync_at).await;
     }
     stats
 }
 
-async fn trakt_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: &mut SyncStats) {
+async fn trakt_import(
+    ctx: &JobCtx,
+    row: &IntegrationRow,
+    creds: &Creds,
+    stats: &mut SyncStats,
+    _last_sync_at: Option<DateTime<Utc>>,
+) {
     let fetch_ctx = crate::scrapers::metadata::FetchCtx {
         tmdb_api_key: ctx.state.config.tmdb_api_key.as_deref(),
         tvdb_api_key: ctx.state.config.tvdb_api_key.as_deref(),
@@ -420,6 +466,8 @@ async fn trakt_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
                 &fetch_ctx,
                 imdb,
                 tmdb.as_deref(),
+                None,
+                None,
                 &title,
                 false,
             )
@@ -437,6 +485,8 @@ async fn trakt_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
                 &title,
                 "movie",
                 None,
+                None,
+                0,
                 None,
                 watched_at,
                 "TRAKT",
@@ -462,6 +512,7 @@ async fn trakt_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
             let s = &show["show"];
             let imdb = s["ids"]["imdb"].as_str();
             let tmdb = s["ids"]["tmdb"].as_i64().map(|n| n.to_string());
+            let tvdb = s["ids"]["tvdb"].as_i64().map(|n| n.to_string());
             let title = s["title"].as_str().unwrap_or("").to_string();
             let Some(mid) = crate::scrapers::metadata::resolve_or_store_media(
                 &ctx.state.pool,
@@ -469,6 +520,8 @@ async fn trakt_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
                 &fetch_ctx,
                 imdb,
                 tmdb.as_deref(),
+                tvdb.as_deref(),
+                None,
                 &title,
                 true,
             )
@@ -492,6 +545,8 @@ async fn trakt_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
                         "series",
                         Some(s_num),
                         Some(e_num),
+                        0,
+                        None,
                         watched_at,
                         "TRAKT",
                     )
@@ -506,8 +561,14 @@ async fn trakt_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
     }
 }
 
-async fn trakt_export(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: &mut SyncStats) {
-    let items = local_history(&ctx.state.pool_ro, row.profile_id, row.last_sync_at).await;
+async fn trakt_export(
+    ctx: &JobCtx,
+    row: &IntegrationRow,
+    creds: &Creds,
+    stats: &mut SyncStats,
+    last_sync_at: Option<DateTime<Utc>>,
+) {
+    let items = local_history(&ctx.state.pool_ro, row.profile_id, last_sync_at).await;
     if items.is_empty() {
         return;
     }
@@ -618,6 +679,29 @@ async fn trakt_get(http: &reqwest::Client, url: &str, creds: &Creds) -> Option<V
         .ok()
 }
 
+async fn trakt_validate(http: &reqwest::Client, creds: &Creds) -> bool {
+    http.get("https://api.trakt.tv/users/me")
+        .bearer_auth(&creds.access_token)
+        .header("trakt-api-version", "2")
+        .header("trakt-api-key", &creds.client_id)
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
+async fn simkl_validate(http: &reqwest::Client, creds: &Creds) -> bool {
+    http.get("https://api.simkl.com/users/settings")
+        .bearer_auth(&creds.access_token)
+        .header("simkl-api-key", &creds.client_id)
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
 async fn trakt_refresh(http: &reqwest::Client, creds: &Creds) -> Result<Creds, String> {
     let res = http
         .post("https://api.trakt.tv/oauth/token")
@@ -655,9 +739,11 @@ async fn trakt_refresh(http: &reqwest::Client, creds: &Creds) -> Result<Creds, S
             .as_str()
             .map(|s| s.to_string())
             .or_else(|| creds.refresh_token.clone()),
-        expires_at: resp["expires_in"]
+        expires_at: resp["created_at"]
             .as_i64()
-            .map(|e| Utc::now().timestamp() + e),
+            .or_else(|| Some(Utc::now().timestamp()))
+            .zip(resp["expires_in"].as_i64())
+            .map(|(created, exp_in)| created + exp_in),
         client_id: creds.client_id.clone(),
         client_secret: creds.client_secret.clone(),
     })
@@ -665,24 +751,43 @@ async fn trakt_refresh(http: &reqwest::Client, creds: &Creds) -> Result<Creds, S
 
 // ─── Simkl ────────────────────────────────────────────────────────────────────
 
-async fn sync_simkl(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds) -> SyncStats {
+async fn sync_simkl(
+    ctx: &JobCtx,
+    row: &IntegrationRow,
+    creds: &Creds,
+    direction: &str,
+    last_sync_at: Option<DateTime<Utc>>,
+) -> SyncStats {
     let mut stats = SyncStats::default();
-    let dir = row.sync_direction.as_str();
-    let bidirectional = dir == "two_way" || dir == "bidirectional";
-    if dir == "platform_to_mf" || bidirectional {
-        simkl_import(ctx, row, creds, &mut stats).await;
+    let bidirectional = direction == "two_way" || direction == "bidirectional";
+    if direction == "platform_to_mf" || bidirectional {
+        simkl_import(ctx, row, creds, &mut stats, last_sync_at).await;
     }
-    if dir == "mf_to_platform" || bidirectional {
-        simkl_export(ctx, row, creds, &mut stats).await;
+    if direction == "mf_to_platform" || bidirectional {
+        simkl_export(ctx, row, creds, &mut stats, last_sync_at).await;
     }
     stats
 }
 
-async fn simkl_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: &mut SyncStats) {
-    let date_from = row
-        .last_sync_at
+async fn simkl_import(
+    ctx: &JobCtx,
+    row: &IntegrationRow,
+    creds: &Creds,
+    stats: &mut SyncStats,
+    last_sync_at: Option<DateTime<Utc>>,
+) {
+    let date_from = last_sync_at
         .map(|dt| format!("&date_from={}", dt.format("%Y-%m-%d")))
         .unwrap_or_default();
+
+    let fetch_ctx = crate::scrapers::metadata::FetchCtx {
+        tmdb_api_key: ctx.state.config.tmdb_api_key.as_deref(),
+        tvdb_api_key: ctx.state.config.tvdb_api_key.as_deref(),
+        mdblist_api_key: ctx.state.config.mdblist_api_key.as_deref(),
+        trakt_client_id: Some(&creds.client_id),
+        trakt_client_secret: Some(&creds.client_secret),
+        cinemeta_fallback: ctx.state.config.imdb_cinemeta_fallback_enabled,
+    };
 
     for kind in &["movies", "shows", "anime"] {
         let url = format!("https://api.simkl.com/sync/all-items/{kind}?extended=full{date_from}");
@@ -710,32 +815,47 @@ async fn simkl_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
         let inner_key = if *kind == "movies" { "movie" } else { "show" };
 
         for item in &items {
-            if item["status"].as_str() != Some("completed") {
-                stats.import_skipped += 1;
-                continue;
-            }
             let inner = &item[inner_key];
             let imdb = inner["ids"]["imdb"].as_str();
             let tmdb = inner["ids"]["tmdb"].as_i64().map(|n| n.to_string());
+            let tvdb = inner["ids"]["tvdb"].as_i64().map(|n| n.to_string());
+            let mal = inner["ids"]["mal"].as_i64().map(|n| n.to_string());
             let title = inner["title"].as_str().unwrap_or("").to_string();
-            let watched_at = parse_dt(item["last_watched_at"].as_str());
+            let is_series = mf_type == "series";
 
-            let Some(mid) = resolve_media_id(&ctx.state.pool_ro, imdb, tmdb.as_deref()).await
-            else {
-                debug!("simkl_import: no local media for '{title}'");
-                stats.import_skipped += 1;
-                continue;
-            };
-
-            if mf_type == "movie" {
+            if *kind == "movies" {
+                if item["status"].as_str() != Some("completed") {
+                    stats.import_skipped += 1;
+                    continue;
+                }
+                let watched_at = parse_dt(item["last_watched_at"].as_str());
+                let Some(mid) = crate::scrapers::metadata::resolve_or_store_media(
+                    &ctx.state.pool,
+                    &ctx.state.http,
+                    &fetch_ctx,
+                    imdb,
+                    tmdb.as_deref(),
+                    tvdb.as_deref(),
+                    mal.as_deref(),
+                    &title,
+                    false,
+                )
+                .await
+                else {
+                    debug!("simkl_import: no local media for '{title}'");
+                    stats.import_skipped += 1;
+                    continue;
+                };
                 match upsert_watch(
                     &ctx.state.pool,
                     row.user_id,
                     row.profile_id,
-                    mid,
+                    mid.0,
                     &title,
                     "movie",
                     None,
+                    None,
+                    0,
                     None,
                     watched_at,
                     "SIMKL",
@@ -745,20 +865,76 @@ async fn simkl_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
                     true => stats.imported += 1,
                     false => stats.import_skipped += 1,
                 }
+                continue;
+            }
+
+            let Some(mid) = crate::scrapers::metadata::resolve_or_store_media(
+                &ctx.state.pool,
+                &ctx.state.http,
+                &fetch_ctx,
+                imdb,
+                tmdb.as_deref(),
+                tvdb.as_deref(),
+                mal.as_deref(),
+                &title,
+                is_series,
+            )
+            .await
+            else {
+                debug!("simkl_import: no local media for '{title}'");
+                stats.import_skipped += 1;
+                continue;
+            };
+
+            if *kind == "anime" {
+                for ep in item["episodes"].as_array().unwrap_or(&vec![]) {
+                    if !ep["watched"].as_bool().unwrap_or(false) {
+                        stats.import_skipped += 1;
+                        continue;
+                    }
+                    let e_num = ep["number"].as_i64().unwrap_or(1) as i32;
+                    let watched_at = parse_dt(ep["watched_at"].as_str());
+                    match upsert_watch(
+                        &ctx.state.pool,
+                        row.user_id,
+                        row.profile_id,
+                        mid.0,
+                        &title,
+                        "series",
+                        None,
+                        Some(e_num),
+                        0,
+                        None,
+                        watched_at,
+                        "SIMKL",
+                    )
+                    .await
+                    {
+                        true => stats.imported += 1,
+                        false => stats.import_skipped += 1,
+                    }
+                }
             } else {
                 for season in item["seasons"].as_array().unwrap_or(&vec![]) {
                     let s_num = season["number"].as_i64().unwrap_or(1) as i32;
                     for ep in season["episodes"].as_array().unwrap_or(&vec![]) {
+                        if !ep["watched"].as_bool().unwrap_or(false) {
+                            stats.import_skipped += 1;
+                            continue;
+                        }
                         let e_num = ep["number"].as_i64().unwrap_or(1) as i32;
+                        let watched_at = parse_dt(ep["watched_at"].as_str());
                         match upsert_watch(
                             &ctx.state.pool,
                             row.user_id,
                             row.profile_id,
-                            mid,
+                            mid.0,
                             &title,
                             "series",
                             Some(s_num),
                             Some(e_num),
+                            0,
+                            None,
                             watched_at,
                             "SIMKL",
                         )
@@ -774,8 +950,14 @@ async fn simkl_import(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: 
     }
 }
 
-async fn simkl_export(ctx: &JobCtx, row: &IntegrationRow, creds: &Creds, stats: &mut SyncStats) {
-    let items = local_history(&ctx.state.pool_ro, row.profile_id, row.last_sync_at).await;
+async fn simkl_export(
+    ctx: &JobCtx,
+    row: &IntegrationRow,
+    creds: &Creds,
+    stats: &mut SyncStats,
+    last_sync_at: Option<DateTime<Utc>>,
+) {
+    let items = local_history(&ctx.state.pool_ro, row.profile_id, last_sync_at).await;
     if items.is_empty() {
         return;
     }
@@ -908,12 +1090,11 @@ async fn local_history(
             "SELECT media_id, media_type, season, episode, watched_at \
              FROM watch_history \
              WHERE profile_id=$1 AND action=$2 \
-             AND source=$3 AND watched_at > $4 \
+             AND watched_at > $3 \
              ORDER BY watched_at ASC",
         )
         .bind(profile_id)
         .bind(WatchAction::Watched)
-        .bind(HistorySource::Mediafusion)
         .bind(since)
         .fetch_all(pool)
         .await
@@ -922,12 +1103,10 @@ async fn local_history(
             "SELECT media_id, media_type, season, episode, watched_at \
              FROM watch_history \
              WHERE profile_id=$1 AND action=$2 \
-             AND source=$3 \
              ORDER BY watched_at ASC",
         )
         .bind(profile_id)
         .bind(WatchAction::Watched)
-        .bind(HistorySource::Mediafusion)
         .fetch_all(pool)
         .await
     };
@@ -958,6 +1137,8 @@ async fn upsert_watch(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    progress: i32,
+    duration: Option<i32>,
     watched_at: DateTime<Utc>,
     source: &str,
 ) -> bool {
@@ -993,9 +1174,9 @@ async fn upsert_watch(
         r#"
         INSERT INTO watch_history
             (user_id, profile_id, media_id, title, media_type,
-             season, episode, progress, watched_at, action, source, stream_info)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 100, $8, $9,
-                $10, '{}')
+             season, episode, progress, duration, watched_at, action, source, stream_info)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                $12, '{}')
         ON CONFLICT DO NOTHING
         "#,
     )
@@ -1006,6 +1187,8 @@ async fn upsert_watch(
     .bind(media_type)
     .bind(season)
     .bind(episode)
+    .bind(progress)
+    .bind(duration)
     .bind(watched_at)
     .bind(WatchAction::Watched)
     .bind(HistorySource::from_wire(source).unwrap_or(HistorySource::Mediafusion))
@@ -1013,28 +1196,6 @@ async fn upsert_watch(
     .await
     .map(|r| r.rows_affected() > 0)
     .unwrap_or(false)
-}
-
-async fn resolve_media_id(pool: &PgPool, imdb: Option<&str>, tmdb: Option<&str>) -> Option<i32> {
-    if let Some(iid) = imdb {
-        let r: Option<(i32,)> = sqlx::query_as(
-            "SELECT media_id FROM media_external_id WHERE provider='imdb' AND external_id=$1 LIMIT 1",
-        )
-        .bind(iid).fetch_optional(pool).await.ok().flatten();
-        if let Some((id,)) = r {
-            return Some(id);
-        }
-    }
-    if let Some(tid) = tmdb {
-        let r: Option<(i32,)> = sqlx::query_as(
-            "SELECT media_id FROM media_external_id WHERE provider='tmdb' AND external_id=$1 LIMIT 1",
-        )
-        .bind(tid).fetch_optional(pool).await.ok().flatten();
-        if let Some((id,)) = r {
-            return Some(id);
-        }
-    }
-    None
 }
 
 async fn resolve_ext_id(pool: &PgPool, media_id: i32, provider: &str) -> Option<String> {

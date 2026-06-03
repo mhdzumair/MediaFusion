@@ -61,6 +61,57 @@ const LIVE_SPORT_GENRES: &[&str] = &[
 ];
 const FIGHTING_GENRES: &[&str] = &["WWE", "UFC"];
 
+const MDBLIST_GENRES: &[&str] = &[
+    "action",
+    "anime",
+    "comedy",
+    "crime",
+    "documentary",
+    "drama",
+    "family",
+    "fantasy",
+    "history",
+    "holiday",
+    "horror",
+    "music",
+    "musical",
+    "mystery",
+    "science-fiction",
+    "short",
+    "sporting-event",
+    "superhero",
+    "suspense",
+    "thriller",
+    "war",
+    "western",
+    "animation",
+    "adventure",
+    "romance",
+    "reality",
+    "soap",
+    "news",
+    "talk-show",
+    "biography",
+    "sci-fi",
+    "sport",
+    "film-noir",
+    "reality-tv",
+    "game-show",
+    "special-interest",
+    "children",
+    "home-and-garden",
+    "tv-movie",
+    "sports",
+    "eastern",
+    "disaster",
+    "donghua",
+    "sci-fi-fantasy",
+    "action-adventure",
+    "talk",
+    "war-politics",
+    "kids",
+];
+
 fn catalog_meta(id: &str) -> Option<CatalogMeta> {
     macro_rules! c {
         ($t:expr, $n:expr) => {
@@ -124,8 +175,8 @@ fn catalog_meta(id: &str) -> Option<CatalogMeta> {
         "english_hdrip" => c!("movie", "English HD Movies"),
         "english_tcrip" => c!("movie", "English TCRip Movies"),
         "english_series" => c!("series", "English Series"),
-        "bangla_movies" => c!("series", "Bangla Movies"),
-        "bangla_series" => c!("movie", "Bangla Series"),
+        "bangla_movies" => c!("movie", "Bangla Movies"),
+        "bangla_series" => c!("series", "Bangla Series"),
         "punjabi_movies" => c!("movie", "Punjabi Movies"),
         "punjabi_series" => c!("series", "Punjabi Series"),
         "arabic_movies" => c!("movie", "Arabic Movies"),
@@ -172,7 +223,10 @@ fn build_manifest(
     genres: &HashMap<String, Vec<String>>,
 ) -> Value {
     let suffix = user_data.addon_name_suffix();
-    let addon_name = format!("{}{suffix}", config.addon_name);
+    let mut addon_name = format!("{}{suffix}", config.addon_name);
+    if user_data.has_mediaflow_config() {
+        addon_name.push_str(" 🕵🏼‍♂️");
+    }
     let addon_id = format!(
         "stremio.addons.{}",
         addon_name.to_lowercase().replace(' ', "")
@@ -218,14 +272,34 @@ fn build_manifest(
 
     // Regular catalogs — source of truth is catalog_configs (cc), not selected_catalogs (sc)
     if user_data.enable_catalogs {
+        let mdblist_by_id: HashMap<String, _> = user_data
+            .mdblist_lists()
+            .into_iter()
+            .map(|l| (l.catalog_id(), l))
+            .collect();
+
         for cfg in user_data.catalog_configs.iter().filter(|c| c.enabled) {
             let cid = &cfg.catalog_id;
-            if cid.starts_with("mdblist_") {
-                continue;
-            }
             if cid.starts_with("my_library_") && user_data.user_id.is_none() {
                 continue;
             }
+
+            if cid.starts_with("mdblist_") {
+                let Some(list) = mdblist_by_id.get(cid) else {
+                    continue;
+                };
+                catalogs.push(json!({
+                    "id": cid,
+                    "type": list.catalog_type,
+                    "name": list.title,
+                    "extra": [
+                        {"name": "skip", "isRequired": false},
+                        {"name": "genre", "isRequired": false, "options": MDBLIST_GENRES},
+                    ],
+                }));
+                continue;
+            }
+
             let Some(meta) = catalog_meta(cid) else {
                 continue;
             };
@@ -308,34 +382,33 @@ async fn serve_manifest(state: Arc<AppState>, user_data: UserData) -> impl IntoR
         return Json(cached).into_response();
     }
 
-    let genres: HashMap<String, Vec<String>> = if let Some(v) =
-        cache::get_json(&state.redis, GENRES_CACHE_KEY).await
-    {
-        serde_json::from_value(v).unwrap_or_default()
-    } else {
-        // Never block manifest for 30s on a cold genres query — cap wait, then refresh in background.
-        const GENRES_WAIT: Duration = Duration::from_secs(3);
-        match tokio::time::timeout(
-            GENRES_WAIT,
-            genres::load_genres_cached(&state.pool_ro, &state.redis),
-        )
-        .await
-        {
-            Ok(g) => g,
-            Err(_) => {
-                tracing::warn!(
+    let genres: HashMap<String, Vec<String>> =
+        if let Some(v) = cache::get_json(&state.redis, GENRES_CACHE_KEY).await {
+            serde_json::from_value(v).unwrap_or_default()
+        } else {
+            // Never block manifest for 30s on a cold genres query — cap wait, then refresh in background.
+            const GENRES_WAIT: Duration = Duration::from_secs(3);
+            match tokio::time::timeout(
+                GENRES_WAIT,
+                genres::load_genres_cached(&state.pool_ro, &state.redis),
+            )
+            .await
+            {
+                Ok(g) => g,
+                Err(_) => {
+                    tracing::warn!(
                     "manifest: genres query exceeded {:?}; serving manifest without dynamic genres",
                     GENRES_WAIT
                 );
-                let pool = state.pool_ro.clone();
-                let redis = state.redis.clone();
-                tokio::spawn(async move {
-                    let _ = genres::load_genres_cached(&pool, &redis).await;
-                });
-                HashMap::new()
+                    let pool = state.pool_ro.clone();
+                    let redis = state.redis.clone();
+                    tokio::spawn(async move {
+                        let _ = genres::load_genres_cached(&pool, &redis).await;
+                    });
+                    HashMap::new()
+                }
             }
-        }
-    };
+        };
     let genres = {
         let keyword_filters = state
             .keyword_filters

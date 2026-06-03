@@ -102,6 +102,148 @@ async fn fetch_oembed(http: &reqwest::Client, video_id: &str) -> Option<(String,
     Some((title, channel))
 }
 
+#[derive(Debug, Default, Clone)]
+struct YouTubeFetchedMeta {
+    title: Option<String>,
+    channel_name: Option<String>,
+    channel_id: Option<String>,
+    duration_seconds: Option<i64>,
+    is_live: bool,
+    geo_restriction_type: Option<String>,
+    geo_restriction_countries: Vec<String>,
+}
+
+fn parse_iso8601_duration(duration: &str) -> i64 {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?").unwrap());
+    let Some(caps) = re.captures(duration) else {
+        return 0;
+    };
+    let hours: i64 = caps
+        .get(1)
+        .and_then(|m| m.as_str().parse().ok())
+        .unwrap_or(0);
+    let minutes: i64 = caps
+        .get(2)
+        .and_then(|m| m.as_str().parse().ok())
+        .unwrap_or(0);
+    let seconds: i64 = caps
+        .get(3)
+        .and_then(|m| m.as_str().parse().ok())
+        .unwrap_or(0);
+    hours * 3600 + minutes * 60 + seconds
+}
+
+fn normalize_country_list(countries: &[serde_json::Value]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for country in countries {
+        let Some(raw) = country.as_str() else {
+            continue;
+        };
+        let mut value = raw.trim().to_string();
+        if value.is_empty() {
+            continue;
+        }
+        if value.len() == 2 {
+            value = value.to_uppercase();
+        }
+        if seen.insert(value.clone()) {
+            out.push(value);
+        }
+    }
+    out
+}
+
+async fn fetch_youtube_metadata(
+    http: &reqwest::Client,
+    video_id: &str,
+    api_key: Option<&str>,
+) -> YouTubeFetchedMeta {
+    let mut meta = YouTubeFetchedMeta::default();
+
+    if let Some(key) = api_key.filter(|k| !k.is_empty()) {
+        let url = "https://www.googleapis.com/youtube/v3/videos";
+        if let Ok(resp) = http
+            .get(url)
+            .query(&[
+                ("id", video_id),
+                ("part", "snippet,contentDetails,status"),
+                ("key", key),
+            ])
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(data) = resp.json::<serde_json::Value>().await {
+                    if let Some(item) = data["items"].as_array().and_then(|a| a.first()) {
+                        let snippet = &item["snippet"];
+                        let content_details = &item["contentDetails"];
+                        let status = &item["status"];
+                        meta.title = snippet["title"].as_str().map(str::to_string);
+                        meta.channel_name = snippet["channelTitle"].as_str().map(str::to_string);
+                        meta.channel_id = snippet["channelId"].as_str().map(str::to_string);
+                        meta.is_live = snippet["liveBroadcastContent"].as_str() == Some("live");
+                        if let Some(dur) = content_details["duration"].as_str() {
+                            let secs = parse_iso8601_duration(dur);
+                            if secs > 0 {
+                                meta.duration_seconds = Some(secs);
+                            }
+                        }
+                        let region = &status["regionRestriction"];
+                        let allowed =
+                            normalize_country_list(region["allowed"].as_array().unwrap_or(&vec![]));
+                        let blocked =
+                            normalize_country_list(region["blocked"].as_array().unwrap_or(&vec![]));
+                        if !allowed.is_empty() {
+                            meta.geo_restriction_type = Some("allowed".to_string());
+                            meta.geo_restriction_countries = allowed;
+                        } else if !blocked.is_empty() {
+                            meta.geo_restriction_type = Some("blocked".to_string());
+                            meta.geo_restriction_countries = blocked;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if meta.title.is_none() || meta.channel_name.is_none() {
+        if let Some((title, channel)) = fetch_oembed(http, video_id).await {
+            if meta.title.is_none() && !title.is_empty() {
+                meta.title = Some(title);
+            }
+            if meta.channel_name.is_none() && !channel.is_empty() {
+                meta.channel_name = Some(channel);
+            }
+        }
+    }
+
+    meta
+}
+
+async fn persist_youtube_geo_restriction(
+    pool: &sqlx::PgPool,
+    stream_id: i64,
+    geo_type: Option<&str>,
+    countries: &[String],
+) {
+    let Some(geo_type) = geo_type.filter(|t| *t == "allowed" || *t == "blocked") else {
+        return;
+    };
+    let countries_json = serde_json::json!(countries);
+    let _ = sqlx::query(
+        "UPDATE youtube_stream SET geo_restriction_type = $1, geo_restriction_countries = $2 \
+         WHERE stream_id = $3",
+    )
+    .bind(geo_type)
+    .bind(countries_json)
+    .bind(stream_id as i32)
+    .execute(pool)
+    .await;
+}
+
 // ─── Request structs ──────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -124,6 +266,8 @@ pub struct ImportYouTubeRequest {
     pub duration_seconds: Option<i64>,
     #[serde(default)]
     pub is_live: bool,
+    pub geo_restriction_type: Option<String>,
+    pub geo_restriction_countries: Option<Vec<String>>,
     pub is_anonymous: Option<bool>,
     pub anonymous_display_name: Option<String>,
     pub languages: Option<Vec<String>>,
@@ -169,7 +313,14 @@ pub async fn analyze_youtube_url(
         }
     };
 
-    // Check if already imported
+    // Fetch metadata (YouTube Data API when configured, oEmbed fallback)
+    let fetched = fetch_youtube_metadata(
+        &state.http,
+        &video_id,
+        state.config.youtube_api_key.as_deref(),
+    )
+    .await;
+
     let already_exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM youtube_stream WHERE video_id = $1)")
             .bind(&video_id)
@@ -177,10 +328,9 @@ pub async fn analyze_youtube_url(
             .await
             .unwrap_or(false);
 
-    // Fetch oEmbed metadata
-    let (title, channel_name) = fetch_oembed(&state.http, &video_id)
-        .await
-        .unwrap_or_else(|| (String::new(), String::new()));
+    // Fetch oEmbed metadata when API did not return title/channel
+    let title = fetched.title.clone().unwrap_or_default();
+    let channel_name = fetched.channel_name.clone().unwrap_or_default();
 
     let meta_type = body.meta_type.as_deref().unwrap_or("movie");
     let mut response = json!({
@@ -189,6 +339,11 @@ pub async fn analyze_youtube_url(
         "url": format!("https://www.youtube.com/watch?v={video_id}"),
         "title": title,
         "channel_name": channel_name,
+        "channel_id": fetched.channel_id,
+        "duration_seconds": fetched.duration_seconds,
+        "is_live": fetched.is_live,
+        "geo_restriction_type": fetched.geo_restriction_type,
+        "geo_restriction_countries": fetched.geo_restriction_countries,
         "already_exists": already_exists,
     });
 
@@ -214,9 +369,14 @@ pub async fn analyze_youtube_for_bot(
             return json!({"success": false, "error": "Could not extract YouTube video ID"});
         }
     };
-    let (title, channel_name) = fetch_oembed(&state.http, &video_id)
-        .await
-        .unwrap_or_else(|| (String::new(), String::new()));
+    let fetched = fetch_youtube_metadata(
+        &state.http,
+        &video_id,
+        state.config.youtube_api_key.as_deref(),
+    )
+    .await;
+    let title = fetched.title.clone().unwrap_or_default();
+    let channel_name = fetched.channel_name.clone().unwrap_or_default();
     let matches = if !title.is_empty() {
         super::import_helpers::search_analyze_matches(state, &title, None, meta_type).await
     } else {
@@ -228,6 +388,9 @@ pub async fn analyze_youtube_for_bot(
         "url": format!("https://www.youtube.com/watch?v={video_id}"),
         "title": title,
         "channel_name": channel_name,
+        "duration_seconds": fetched.duration_seconds,
+        "geo_restriction_type": fetched.geo_restriction_type,
+        "geo_restriction_countries": fetched.geo_restriction_countries,
         "parsed_title": title,
         "matches": matches,
     })
@@ -314,34 +477,51 @@ pub async fn import_youtube_video(
             .into_response();
     }
 
-    // Fetch oEmbed for title/channel if not provided
-    let (oembed_title, oembed_channel) = if body.name.is_none() || body.channel_name.is_none() {
-        fetch_oembed(&state.http, &video_id)
-            .await
-            .unwrap_or_else(|| (String::new(), String::new()))
-    } else {
-        (String::new(), String::new())
-    };
+    // Fetch metadata when title/channel/duration not provided
+    let fetched = fetch_youtube_metadata(
+        &state.http,
+        &video_id,
+        state.config.youtube_api_key.as_deref(),
+    )
+    .await;
 
     let stream_name = body
         .name
         .as_deref()
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| {
-            if !oembed_title.is_empty() {
-                &oembed_title
-            } else {
-                body.title.as_deref().unwrap_or("YouTube Video")
-            }
-        })
+        .or(fetched.title.as_deref())
+        .or(body.title.as_deref())
+        .unwrap_or("YouTube Video")
         .to_string();
 
     let channel_name = body
         .channel_name
         .as_deref()
         .filter(|s| !s.is_empty())
-        .unwrap_or(&oembed_channel)
+        .or(fetched.channel_name.as_deref())
+        .unwrap_or("")
         .to_string();
+
+    let channel_id = body
+        .channel_id
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .or(fetched.channel_id.as_deref())
+        .map(str::to_string);
+
+    let duration_seconds = body.duration_seconds.or(fetched.duration_seconds);
+    let is_live = body.is_live || fetched.is_live;
+    let geo_restriction_type = body
+        .geo_restriction_type
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .or(fetched.geo_restriction_type.as_deref())
+        .map(str::to_string);
+    let geo_restriction_countries = body
+        .geo_restriction_countries
+        .clone()
+        .filter(|c| !c.is_empty())
+        .unwrap_or(fetched.geo_restriction_countries);
 
     let (uploader_name, uploader_user_id) = resolve_uploader_identity(
         resolved_is_anonymous,
@@ -390,10 +570,10 @@ pub async fn import_youtube_video(
     let normalized = crate::db::YoutubeStoreInput {
         base,
         video_id: video_id.clone(),
-        channel_id: body.channel_id.clone(),
+        channel_id: channel_id.clone(),
         channel_name: Some(channel_name.clone()),
-        duration_seconds: body.duration_seconds.map(|n| n as i32),
-        is_live: body.is_live,
+        duration_seconds: duration_seconds.map(|n| n as i32),
+        is_live,
         is_premiere: false,
     };
 
@@ -405,6 +585,7 @@ pub async fn import_youtube_video(
             media_type,
             season: None,
             episode: None,
+            episode_end: None,
             link_source: crate::db::LinkSource::User,
             is_primary: true,
             is_verified: false,
@@ -421,24 +602,27 @@ pub async fn import_youtube_video(
             }
         };
 
-    let effective_meta_id = body
-        .meta_id
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| super::import_helpers::synthetic_import_meta_id("youtube", &video_id));
+    persist_youtube_geo_restriction(
+        &state.pool,
+        stream_id,
+        geo_restriction_type.as_deref(),
+        &geo_restriction_countries,
+    )
+    .await;
 
     let data = serde_json::json!({
         "name": stream_name,
         "title": body.title.as_deref().unwrap_or(&stream_name),
         "video_id": video_id,
         "url": body.url,
-        "channel_id": body.channel_id,
+        "channel_id": channel_id,
         "channel_name": channel_name,
         "meta_type": body.meta_type.as_deref().unwrap_or("movie"),
         "meta_id": effective_meta_id,
-        "duration_seconds": body.duration_seconds,
-        "is_live": body.is_live,
+        "duration_seconds": duration_seconds,
+        "is_live": is_live,
+        "geo_restriction_type": geo_restriction_type,
+        "geo_restriction_countries": geo_restriction_countries,
         "languages": body.languages.clone().unwrap_or_default(),
         "uploader_name": uploader_name,
         "anonymous_display_name": body.anonymous_display_name,

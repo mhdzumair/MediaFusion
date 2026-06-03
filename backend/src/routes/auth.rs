@@ -21,12 +21,14 @@ use std::sync::Arc;
 
 use axum::{
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     Json,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
+use fred::interfaces::KeysInterface;
+use fred::types::Expiration;
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -155,7 +157,7 @@ fn decode_token(token: &str, secret_key: &str) -> Option<serde_json::Value> {
     let expected = hex_encode(&mac.finalize().into_bytes());
 
     // Constant-time comparison
-    if expected != sig {
+    if !constant_time_eq_hex(&expected, sig) {
         return None;
     }
 
@@ -205,6 +207,17 @@ fn create_password_reset_token(user_id: i32, pwd_hash_prefix: &str, secret_key: 
 
 fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn constant_time_eq_hex(expected: &str, actual: &str) -> bool {
+    if expected.len() != actual.len() {
+        return false;
+    }
+    expected
+        .bytes()
+        .zip(actual.bytes())
+        .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+        == 0
 }
 
 // ─── Password helpers ─────────────────────────────────────────────────────────
@@ -401,6 +414,22 @@ pub fn validate_access_token(headers: &HeaderMap, secret_key: &str) -> Option<i3
     data["sub"].as_str()?.parse().ok()
 }
 
+/// Validate access token and ensure the user account is still active.
+pub async fn validate_active_access_token(
+    pool: &PgPool,
+    headers: &HeaderMap,
+    secret_key: &str,
+) -> Option<i32> {
+    let user_id = validate_access_token(headers, secret_key)?;
+    let active: Option<bool> = sqlx::query_scalar("SELECT is_active FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    active.filter(|&a| a).map(|_| user_id)
+}
+
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 pub async fn register(
@@ -496,6 +525,22 @@ pub async fn register(
     .execute(&state.pool)
     .await;
 
+    // ConvertKit newsletter subscription (fire-and-forget)
+    if req.newsletter_opt_in {
+        if let (Some(api_key), Some(form_id)) = (
+            state.config.convertkit_api_key.clone(),
+            state.config.convertkit_form_id.clone(),
+        ) {
+            let email = req.email.clone();
+            let http = state.http.clone();
+            tokio::spawn(async move {
+                if let Err(e) = subscribe_to_convertkit(&http, &api_key, &form_id, &email).await {
+                    tracing::warn!("ConvertKit subscribe failed for {email}: {e}");
+                }
+            });
+        }
+    }
+
     if !auto_verify {
         // Send verification email if SMTP is configured
         let token = create_email_verify_token(user_id, &state.config.secret_key_raw);
@@ -504,7 +549,7 @@ pub async fn register(
         {
             tracing::warn!("send_email_verification failed: {e}");
         }
-        return (StatusCode::CREATED, Json(serde_json::json!({
+        return (StatusCode::OK, Json(serde_json::json!({
             "message": "Registration successful. Please check your email to verify your account.",
             "email": req.email,
             "requires_verification": true,
@@ -526,7 +571,7 @@ pub async fn register(
     let refresh_token = create_refresh_token(user.id, &state.config.secret_key_raw);
 
     (
-        StatusCode::CREATED,
+        StatusCode::OK,
         Json(TokenResponse {
             access_token,
             refresh_token,
@@ -570,6 +615,10 @@ pub async fn login(
     if !user.is_verified && state.config.smtp_host.is_some() {
         return (
             StatusCode::FORBIDDEN,
+            [(
+                axum::http::HeaderName::from_static("x-error-code"),
+                HeaderValue::from_static("EMAIL_NOT_VERIFIED"),
+            )],
             Json(serde_json::json!({
                 "detail": "Email not verified. Please check your inbox for a verification link."
             })),
@@ -676,33 +725,33 @@ pub async fn verify_email(
         }
     };
 
-    let _ = sqlx::query("UPDATE users SET is_verified = true, last_login = NOW() WHERE id = $1")
-        .bind(user_id)
-        .execute(&state.pool)
-        .await;
-
     let user = match fetch_user_by_id(&state.pool, user_id).await {
         Some(u) => u,
         None => {
             return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"detail": "User not found"})),
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"detail": "User not found."})),
             )
                 .into_response()
         }
     };
 
-    let access_token = create_access_token(user.id, &user.role, &state.config.secret_key_raw);
-    let refresh_token = create_refresh_token(user.id, &state.config.secret_key_raw);
+    if user.is_verified {
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({"message": "Email already verified. You can log in."})),
+        )
+            .into_response();
+    }
+
+    let _ = sqlx::query("UPDATE users SET is_verified = true WHERE id = $1")
+        .bind(user_id)
+        .execute(&state.pool)
+        .await;
 
     (
         StatusCode::OK,
-        Json(TokenResponse {
-            access_token,
-            refresh_token,
-            token_type: "bearer".into(),
-            user: user.into(),
-        }),
+        Json(serde_json::json!({"message": "Email verified successfully. You can now log in."})),
     )
         .into_response()
 }
@@ -711,11 +760,34 @@ pub async fn resend_verification(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ResendVerificationRequest>,
 ) -> impl IntoResponse {
-    // Always return 200 to avoid email enumeration
+    if state.config.smtp_host.is_none() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(
+                serde_json::json!({"detail": "Email service is not configured on this instance."}),
+            ),
+        )
+            .into_response();
+    }
+
+    let email_key = req.email.to_lowercase();
+    let cooldown_key = format!("resend_verify:{email_key}");
+    if let Ok(Some(_)) = state.redis.get::<Option<String>, _>(&cooldown_key).await {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({"detail": "Please wait 60 seconds before requesting another email."})),
+        )
+            .into_response();
+    }
+
     if let Some(user) = fetch_user_by_email(&state.pool, &req.email).await {
         if !user.is_verified {
             let token = create_email_verify_token(user.id, &state.config.secret_key_raw);
             let _ = send_email_verification(&state, &user.email, user.username.as_deref(), &token)
+                .await;
+            let _ = state
+                .redis
+                .set::<(), _, _>(cooldown_key, "1", Some(Expiration::EX(60)), None, false)
                 .await;
         }
     }
@@ -725,31 +797,46 @@ pub async fn resend_verification(
             serde_json::json!({"message": "If that email is registered and unverified, you'll receive a new link shortly."}),
         ),
     )
+        .into_response()
 }
 
 pub async fn forgot_password(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ForgotPasswordRequest>,
 ) -> impl IntoResponse {
-    // Always return 200 to avoid email enumeration
+    if state.config.smtp_host.is_none() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(
+                serde_json::json!({"detail": "Email service is not configured on this instance."}),
+            ),
+        )
+            .into_response();
+    }
+
     if let Some(user) = fetch_user_by_email(&state.pool, &req.email).await {
-        let pwd_prefix = user
-            .password_hash
-            .as_deref()
-            .unwrap_or("")
-            .get(..16)
-            .unwrap_or("")
-            .to_string();
-        let token = create_password_reset_token(user.id, &pwd_prefix, &state.config.secret_key_raw);
-        let _ =
-            send_password_reset_email(&state, &user.email, user.username.as_deref(), &token).await;
+        if user.is_active && user.password_hash.is_some() {
+            let pwd_prefix = user
+                .password_hash
+                .as_deref()
+                .unwrap_or("")
+                .get(..16)
+                .unwrap_or("")
+                .to_string();
+            let token =
+                create_password_reset_token(user.id, &pwd_prefix, &state.config.secret_key_raw);
+            let _ =
+                send_password_reset_email(&state, &user.email, user.username.as_deref(), &token)
+                    .await;
+        }
     }
     (
         StatusCode::OK,
-        Json(
-            serde_json::json!({"message": "If that email is registered, you'll receive a password reset link shortly."}),
-        ),
+        Json(serde_json::json!({
+            "message": "If an account with that email exists, a password reset link has been sent."
+        })),
     )
+        .into_response()
 }
 
 pub async fn reset_password(
@@ -813,7 +900,7 @@ pub async fn reset_password(
     }
 
     let new_hash = hash_password(&req.new_password);
-    let _ = sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
+    let _ = sqlx::query("UPDATE users SET password_hash = $1, is_verified = true WHERE id = $2")
         .bind(&new_hash)
         .bind(user_id)
         .execute(&state.pool)
@@ -821,7 +908,9 @@ pub async fn reset_password(
 
     (
         StatusCode::OK,
-        Json(serde_json::json!({"message": "Password reset successful. You can now log in."})),
+        Json(serde_json::json!({
+            "message": "Password reset successfully. You can now log in with your new password."
+        })),
     )
         .into_response()
 }
@@ -839,16 +928,19 @@ pub async fn change_password(
             .into_response();
     }
 
-    let user_id = match validate_access_token(&headers, &state.config.secret_key_raw) {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Authentication required"})),
-            )
-                .into_response()
-        }
-    };
+    let user_id =
+        match validate_active_access_token(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Authentication required"})),
+                )
+                    .into_response()
+            }
+        };
 
     let user = match fetch_user_by_id(&state.pool, user_id).await {
         Some(u) => u,
@@ -891,16 +983,19 @@ pub async fn delete_account(
     headers: HeaderMap,
     Json(req): Json<DeleteAccountRequest>,
 ) -> impl IntoResponse {
-    let user_id = match validate_access_token(&headers, &state.config.secret_key_raw) {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Authentication required"})),
-            )
-                .into_response()
-        }
-    };
+    let user_id =
+        match validate_active_access_token(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Authentication required"})),
+                )
+                    .into_response()
+            }
+        };
 
     let user = match fetch_user_by_id(&state.pool, user_id).await {
         Some(u) => u,
@@ -936,7 +1031,10 @@ pub async fn delete_account(
 pub async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMap) -> impl IntoResponse {
     // Stateless JWT — actual invalidation is client-side.
     // We validate the token so bots can't spam this endpoint without a valid token.
-    if validate_access_token(&headers, &state.config.secret_key_raw).is_none() {
+    if validate_active_access_token(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({"detail": "Authentication required"})),
@@ -951,16 +1049,19 @@ pub async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMap) -> i
 }
 
 pub async fn get_me(State(state): State<Arc<AppState>>, headers: HeaderMap) -> impl IntoResponse {
-    let user_id = match validate_access_token(&headers, &state.config.secret_key_raw) {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Authentication required"})),
-            )
-                .into_response()
-        }
-    };
+    let user_id =
+        match validate_active_access_token(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Authentication required"})),
+                )
+                    .into_response()
+            }
+        };
 
     match fetch_user_by_id(&state.pool, user_id).await {
         Some(u) => (StatusCode::OK, Json(UserResponse::from(u))).into_response(),
@@ -977,16 +1078,19 @@ pub async fn update_me(
     headers: HeaderMap,
     Json(req): Json<UpdateMeRequest>,
 ) -> impl IntoResponse {
-    let user_id = match validate_access_token(&headers, &state.config.secret_key_raw) {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"detail": "Authentication required"})),
-            )
-                .into_response()
-        }
-    };
+    let user_id =
+        match validate_active_access_token(&state.pool, &headers, &state.config.secret_key_raw)
+            .await
+        {
+            Some(id) => id,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"detail": "Authentication required"})),
+                )
+                    .into_response()
+            }
+        };
 
     if let Some(ref username) = req.username {
         if username.len() < 3 || username.len() > 100 {
@@ -1036,6 +1140,33 @@ pub async fn update_me(
 }
 
 // ─── Email helpers ────────────────────────────────────────────────────────────
+
+async fn subscribe_to_convertkit(
+    http: &reqwest::Client,
+    api_key: &str,
+    form_id: &str,
+    email: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let headers = reqwest::header::HeaderMap::from_iter([(
+        reqwest::header::HeaderName::from_static("x-kit-api-key"),
+        reqwest::header::HeaderValue::from_str(api_key)?,
+    )]);
+    http.post("https://api.kit.com/v4/subscribers")
+        .headers(headers.clone())
+        .json(&serde_json::json!({"email_address": email}))
+        .send()
+        .await?
+        .error_for_status()?;
+    http.post(format!(
+        "https://api.kit.com/v4/forms/{form_id}/subscribers"
+    ))
+    .headers(headers)
+    .json(&serde_json::json!({"email_address": email}))
+    .send()
+    .await?
+    .error_for_status()?;
+    Ok(())
+}
 
 async fn send_email_verification(
     state: &AppState,

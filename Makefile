@@ -272,13 +272,15 @@ endif
 worker-run-sport-video:
 	cd backend && cargo run --bin mediafusion-worker -- --run-job spider_sport_video
 
-# PTT backfill: parse stream.name → resolution/quality/languages/HDR/audio links (paginated, auto-continues)
+# PTT backfill: parse stream.name → resolution/quality/languages/HDR/audio links (keyset batches, auto-continues)
 # Usage: make worker-backfill-stream-metadata
-#        make worker-backfill-stream-metadata PAGE_SIZE=1000
-#        make worker-run-job JOB=backfill_stream_metadata JOB_ARGS='{"page":0,"page_size":500,"only_missing":true}'
-PAGE_SIZE ?= 500
+#        make worker-backfill-stream-metadata BATCH_SIZE=1000
+#        make worker-backfill-stream-metadata AFTER_ID=1234567 BATCH_SIZE=2000
+#        make worker-run-job JOB=backfill_stream_metadata JOB_ARGS='{"after_id":0,"batch_size":500,"only_missing":true}'
+BATCH_SIZE ?= 500
+AFTER_ID ?= 0
 worker-backfill-stream-metadata:
-	cd backend && cargo run --bin mediafusion-worker -- --run-job backfill_stream_metadata --args '{"page_size":$(PAGE_SIZE),"only_missing":true,"continuous":true}'
+	cd backend && cargo run --bin mediafusion-worker -- --run-job backfill_stream_metadata --args '{"after_id":$(AFTER_ID),"batch_size":$(BATCH_SIZE),"only_missing":true,"continuous":true}'
 
 # Rust targets
 rust-build:

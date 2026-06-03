@@ -5,7 +5,9 @@
 pub mod cache;
 pub mod debrider;
 pub mod easynews;
+pub mod mgmt;
 pub mod nzb_url;
+pub mod nzbdav;
 pub mod nzbget;
 pub mod sabnzbd;
 pub mod torbox;

@@ -26,7 +26,7 @@ const SCRAPER_PATTERNS: &[&str] = &[
 ];
 
 /// Redis key patterns for provider result caches.
-const PROVIDER_CACHE_PATTERNS: &[&str] = &["mf_cache:*"];
+const PROVIDER_CACHE_PATTERNS: &[&str] = &["mf_cache:*", "debrid_cache:*"];
 
 /// Scan Redis for all keys matching a glob pattern (full scan, all pages).
 async fn scan_all_keys(redis: &fred::clients::Client, pattern: &str) -> Vec<String> {
@@ -145,6 +145,12 @@ async fn run_cache_task(ctx: &JobCtx) -> Result<(), JobError> {
         if checked > 0 {
             info!("cleanup[cache]: pattern={pattern} checked={checked} deleted={deleted}");
         }
+    }
+
+    let debrid_removed =
+        crate::providers::torrents::cache_federation::cleanup_all_services(redis).await;
+    if debrid_removed > 0 {
+        info!("cleanup[cache]: debrid_cache expired entries removed={debrid_removed}");
     }
 
     info!("cleanup[cache]: done — total_checked={total_checked} total_deleted={total_deleted}");

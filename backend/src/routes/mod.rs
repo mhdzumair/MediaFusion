@@ -5,6 +5,7 @@ pub mod admin_keyword_filters;
 pub mod admin_metrics;
 pub mod admin_scrapers;
 pub mod auth;
+pub mod auth_guard;
 pub mod catalog;
 pub mod configure;
 pub mod content;
@@ -58,6 +59,8 @@ use crate::api_error_middleware::api_error_middleware;
 use crate::api_key_middleware::api_key_middleware;
 use crate::make_trace_layer;
 use crate::metrics_middleware::metrics_middleware;
+use crate::rate_limit_middleware::rate_limit_middleware;
+use crate::request_id_middleware::request_id_middleware;
 use crate::state::AppState;
 use crate::stremio_auth_middleware::stremio_auth_middleware;
 
@@ -96,7 +99,7 @@ pub fn router(state: Arc<AppState>) -> Router {
     let api_router = Router::new()
         // ── Health ───────────────────────────────────────────────────────────
         .route("/health", get(health::handler))
-        .route("/ready", get(health::handler))
+        .route("/ready", get(health::ready_handler))
         // ── Configure ────────────────────────────────────────────────────────
         .route("/configure", get(configure::handler))
         .route("/{secret_str}/configure", get(configure::user_handler))
@@ -167,8 +170,16 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(usenet::provider_handler),
         )
         .route(
+            "/streaming_provider/{secret_str}/usenet/{provider_name}/{nzb_guid}/{season}/{episode}/{filename}",
+            get(usenet::provider_seep_filename_handler),
+        )
+        .route(
             "/streaming_provider/{secret_str}/usenet/{provider_name}/{nzb_guid}/{season}/{episode}",
             get(usenet::provider_seep_handler),
+        )
+        .route(
+            "/streaming_provider/{secret_str}/usenet/{provider_name}/{nzb_guid}/{filename}",
+            get(usenet::provider_filename_handler),
         )
         // Delete all watchlist
         .route(
@@ -181,8 +192,16 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(telegram_playback::handler_by_stream_id),
         )
         .route(
+            "/streaming_provider/{secret_str}/telegram/stream/{telegram_stream_id}/{filename}",
+            get(telegram_playback::handler_by_stream_id_filename),
+        )
+        .route(
             "/streaming_provider/{secret_str}/telegram/{chat_id}/{message_id}",
             get(telegram_playback::handler_by_chat_message),
+        )
+        .route(
+            "/streaming_provider/{secret_str}/telegram/{chat_id}/{message_id}/{filename}",
+            get(telegram_playback::handler_by_chat_message_filename),
         )
         // ── Telegram bot webhook ──────────────────────────────────────────────
         .route("/api/v1/telegram/webhook", post(telegram_webhook::handler))
@@ -383,7 +402,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/episode-suggestions/{suggestion_id}", get(content::episode_suggestions::get_episode_suggestion).delete(content::episode_suggestions::delete_episode_suggestion))
         .route("/api/v1/episode-suggestions/{suggestion_id}/review", put(content::episode_suggestions::review_episode_suggestion))
         // ── Old suggestions aliases ───────────────────────────────────────────
-        .route("/api/v1/stream-suggestions/my", get(content::suggestions::list_my_suggestions))
+        .route("/api/v1/stream-suggestions/my", get(content::stream_suggestions::list_my_stream_suggestions))
         .route("/api/v1/suggestions", get(content::suggestions::list_my_suggestions))
         .route("/api/v1/suggestions/my", get(content::suggestions::list_my_suggestions))
         .route("/api/v1/suggestions/pending", get(content::suggestions::list_pending_suggestions))
@@ -461,7 +480,16 @@ pub fn router(state: Arc<AppState>) -> Router {
         // ── Admin ─────────────────────────────────────────────────────────────
         .route("/api/v1/admin/cache/stats", get(admin::cache_stats))
         .route("/api/v1/admin/cache/keys", get(admin::cache_keys))
-        .route("/api/v1/admin/cache/key/{*key}", get(admin::cache_key_get).delete(admin::cache_key_delete))
+        // `{key}` (single segment) — frontend uses encodeURIComponent so keys with
+        // slashes become one segment. Wildcard `{*key}` cannot have a `/item` suffix.
+        .route(
+            "/api/v1/admin/cache/key/{key}/item",
+            delete(admin::cache_key_item_delete),
+        )
+        .route(
+            "/api/v1/admin/cache/key/{key}",
+            get(admin::cache_key_get).delete(admin::cache_key_delete),
+        )
         .route("/api/v1/admin/cache/clear", post(admin::cache_clear))
         .route("/api/v1/admin/cache/image/{*key}", get(admin::cache_image_get))
         .route("/api/v1/admin/db/stats", get(admin::db_stats))
@@ -649,6 +677,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/user-rss/scheduler-status", get(rss::user_get_scheduler_status))
         // ── Downloads ─────────────────────────────────────────────────────────
         .route("/api/v1/downloads", get(downloads::list_downloads).post(downloads::create_download).delete(downloads::clear_downloads))
+        .route("/api/v1/downloads/stats", get(downloads::get_download_stats))
         .route("/api/v1/downloads/{id}", get(downloads::get_download).delete(downloads::delete_download))
         .route("/api/v1/downloads/{id}/retry", post(downloads::retry_download))
         // ── Indexers ──────────────────────────────────────────────────────────
@@ -718,13 +747,20 @@ pub fn router(state: Arc<AppState>) -> Router {
 
     // ── Prometheus metrics (opt-in via ENABLE_PROMETHEUS_METRICS=true) ───────
     let api_router = if state.config.enable_prometheus_metrics {
-        api_router.route("/api/v1/metrics", get(metrics::handler))
+        api_router
+            .route("/api/v1/metrics", get(metrics::handler))
+            .route("/metrics", get(metrics::handler))
     } else {
         api_router
     };
 
     let api_router = api_router
         // ── Middleware ───────────────────────────────────────────────────────
+        .layer(axum::middleware::from_fn(request_id_middleware))
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::clone(&state),
+            rate_limit_middleware,
+        ))
         .layer(axum::middleware::from_fn_with_state(
             Arc::clone(&state),
             api_key_middleware,
@@ -764,4 +800,19 @@ pub fn router(state: Arc<AppState>) -> Router {
         .nest_service("/static", ServeDir::new(resources_dir))
         .layer(axum::middleware::map_response(spa_cache_headers))
         .layer(CorsLayer::permissive())
+}
+
+#[cfg(test)]
+mod route_tests {
+    use axum::{routing::delete, routing::get, Router};
+
+    #[test]
+    fn admin_cache_key_routes_do_not_conflict() {
+        let _router: Router = Router::new()
+            .route("/api/v1/admin/cache/key/{key}/item", delete(|| async {}))
+            .route(
+                "/api/v1/admin/cache/key/{key}",
+                get(|| async {}).delete(|| async {}),
+            );
+    }
 }

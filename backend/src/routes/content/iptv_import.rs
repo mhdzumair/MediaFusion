@@ -345,7 +345,7 @@ pub async fn import_series_entry(
         crate::db::MediaId(media_id),
         crate::db::MediaType::Series,
     )
-    .with_episode(Some(season), Some(episode));
+    .with_episode(Some(season), Some(episode), None);
 
     Ok(crate::db::store_http_stream(ctx.pool, &normalized, &opts)
         .await?

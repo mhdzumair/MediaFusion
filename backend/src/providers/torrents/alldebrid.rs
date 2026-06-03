@@ -5,6 +5,7 @@
 use serde_json::Value;
 
 use crate::providers::{
+    file_selection::select_debrid_file_index,
     response_json,
     torrents::transport::{append_query, encode_form_body, MediaFlowForward},
     ProviderError,
@@ -184,85 +185,23 @@ async fn ad_post_multipart(
 
 // ─── File selection helper ─────────────────────────────────────────────────────
 
-static VIDEO_EXTS: &[&str] = &["mkv", "mp4", "avi", "webm", "mov", "flv", "m4v", "wmv"];
-
-/// Pick the best file index from a list of `(name, size)` pairs.
-///
-/// Priority:
-/// 1. `file_index` if valid
-/// 2. Exact filename match (case-insensitive contains)
-/// 3. Season+episode pattern (`SxxExx` or `XxExx`)
-/// 4. Largest video file
-/// 5. 0 as fallback
 fn select_video_file(
     files: &[(String, i64)],
+    release_name: &str,
     filename: Option<&str>,
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
 ) -> usize {
-    if files.is_empty() {
-        return 0;
-    }
-
-    // 1. file_index hint
-    if let Some(fi) = file_index {
-        if fi >= 0 && (fi as usize) < files.len() {
-            return fi as usize;
-        }
-    }
-
-    // Restrict remaining comparisons to video files only
-    let video_indices: Vec<usize> = files
-        .iter()
-        .enumerate()
-        .filter(|(_, (name, _))| {
-            let ext = std::path::Path::new(name.as_str())
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            VIDEO_EXTS.contains(&ext.as_str())
-        })
-        .map(|(i, _)| i)
-        .collect();
-
-    // 2. Filename match (search all files, not just video, to stay faithful)
-    if let Some(name) = filename {
-        let name_lower = name.to_lowercase();
-        if let Some(idx) = files
-            .iter()
-            .position(|(n, _)| n.to_lowercase().contains(&name_lower))
-        {
-            return idx;
-        }
-    }
-
-    // 3. Season + episode pattern in name
-    if let (Some(s), Some(e)) = (season, episode) {
-        let patterns = [format!("s{:02}e{:02}", s, e), format!("{:01}x{:02}", s, e)];
-        let candidate = video_indices.iter().find(|&&i| {
-            let lower = files[i].0.to_lowercase();
-            patterns.iter().any(|p| lower.contains(p))
-        });
-        if let Some(&idx) = candidate {
-            return idx;
-        }
-        // Also try non-video files as fallback for season/episode matching
-        if let Some(idx) = files.iter().position(|(n, _)| {
-            let lower = n.to_lowercase();
-            patterns.iter().any(|p| lower.contains(p))
-        }) {
-            return idx;
-        }
-    }
-
-    // 4. Largest video file
-    if let Some(&idx) = video_indices.iter().max_by_key(|&&i| files[i].1) {
-        return idx;
-    }
-
-    0
+    select_debrid_file_index(
+        files,
+        release_name,
+        filename,
+        file_index,
+        season,
+        episode,
+        None,
+    )
 }
 
 // ─── Flatten AllDebrid nested file tree ───────────────────────────────────────
@@ -674,7 +613,15 @@ pub async fn get_video_url(
     // Build (name, size) slice for selector
     let name_size: Vec<(String, i64)> = files_raw.iter().map(|(n, s, _)| (n.clone(), *s)).collect();
 
-    let selected_idx = select_video_file(&name_size, filename, file_index, season, episode);
+    let release_name = torrent_name.unwrap_or("");
+    let selected_idx = select_video_file(
+        &name_size,
+        release_name,
+        filename,
+        file_index,
+        season,
+        episode,
+    );
 
     let link = files_raw
         .get(selected_idx)

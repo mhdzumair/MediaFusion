@@ -394,3 +394,54 @@ fn select_file(info: &Value, _name: &str, season: i32, episode: i32) -> i64 {
         .and_then(|f| f.get("id").and_then(|v| v.as_i64()))
         .unwrap_or(0)
 }
+
+// ─── Usenet management (cache / list / delete) ────────────────────────────────
+
+pub async fn list_usenet_downloads(
+    http: &reqwest::Client,
+    token: &str,
+) -> Result<Vec<String>, ProviderError> {
+    let list = mylist(http, token, None).await?;
+    Ok(list
+        .iter()
+        .filter(|item| is_ready(item))
+        .filter_map(|item| {
+            item.get("name")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        })
+        .collect())
+}
+
+pub async fn delete_all_usenet(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
+    let list = mylist(http, token, None).await?;
+    for item in list {
+        if let Some(id) = item.get("id").and_then(|v| v.as_i64()) {
+            let url = format!("{BASE}/usenet/controlusenetdownload");
+            let _ = http
+                .post(&url)
+                .bearer_auth(token)
+                .json(&serde_json::json!({"usenet_id": id, "operation": "delete"}))
+                .send()
+                .await;
+        }
+    }
+    Ok(())
+}
+
+pub async fn update_usenet_cache_status(
+    http: &reqwest::Client,
+    token: &str,
+    stream_names: &[String],
+) -> std::collections::HashMap<String, bool> {
+    let completed: std::collections::HashSet<String> = list_usenet_downloads(http, token)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|n| n.to_lowercase())
+        .collect();
+    stream_names
+        .iter()
+        .map(|n| (n.clone(), completed.contains(&n.to_lowercase())))
+        .collect()
+}

@@ -33,18 +33,16 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
-use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
 
 use crate::{
     db::IntegrationType,
     jobs::{
         enqueue::{enqueue_simple, EnqueueOpts},
-        handlers::integration_syncs::sync_integration_inline,
+        handlers::integration_syncs::{sync_integration_inline, SyncOptions},
     },
+    routes::auth_guard,
     state::AppState,
 };
 
@@ -53,38 +51,6 @@ fn parse_integration_platform(platform: &str) -> Option<IntegrationType> {
 }
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
-
-fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string)?;
-    let dot = token.rfind('.')?;
-    let (payload_str, sig) = token.split_at(dot);
-    let sig = &sig[1..];
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).ok()?;
-    mac.update(payload_str.as_bytes());
-    let expected: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if expected != sig {
-        return None;
-    }
-    let decoded = URL_SAFE_NO_PAD.decode(payload_str).ok()?;
-    let data: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
-    let exp = data["exp"].as_f64()?;
-    if exp < Utc::now().timestamp() as f64 {
-        return None;
-    }
-    if data["type"].as_str() != Some("access") {
-        return None;
-    }
-    data["sub"].as_str()?.parse::<i32>().ok()
-}
 
 fn unauthorized() -> Response {
     (
@@ -209,7 +175,7 @@ pub async fn list_integrations(
     headers: HeaderMap,
     Query(params): Query<ProfileIdQuery>,
 ) -> Response {
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -313,7 +279,7 @@ pub async fn get_sync_status(
     Path(platform): Path<String>,
     Query(params): Query<ProfileIdQuery>,
 ) -> Response {
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -462,7 +428,7 @@ pub async fn connect_trakt(
     Query(params): Query<ProfileIdQuery>,
     Json(body): Json<TraktConnectRequest>,
 ) -> Response {
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -535,11 +501,18 @@ pub async fn connect_trakt(
         .unwrap_or("")
         .to_string();
 
+    let expires_at = token_data["created_at"]
+        .as_i64()
+        .or_else(|| Some(Utc::now().timestamp()))
+        .zip(token_data["expires_in"].as_i64())
+        .map(|(created, exp_in)| created + exp_in);
+
     let secrets = serde_json::json!({
         "access_token": access_token,
         "refresh_token": refresh_token,
         "client_id": client_id,
         "client_secret": client_secret,
+        "expires_at": expires_at,
     });
 
     let encrypted = crate::crypto::profile::encrypt_secrets(&secrets, &state.config.secret_key);
@@ -552,8 +525,8 @@ pub async fn connect_trakt(
     };
 
     if let Err(e) = sqlx::query(
-        r#"INSERT INTO profile_integration (profile_id, platform, encrypted_credentials, is_enabled, sync_direction, scrobble_enabled)
-           VALUES ($1, 'TRAKT', $2, true, 'two_way', true)
+        r#"INSERT INTO profile_integration (profile_id, platform, encrypted_credentials, is_enabled, sync_direction, scrobble_enabled, settings)
+           VALUES ($1, 'TRAKT', $2, true, 'two_way', true, '{"min_watch_percent": 80}'::json)
            ON CONFLICT (profile_id, platform) DO UPDATE SET encrypted_credentials = EXCLUDED.encrypted_credentials, is_enabled = true"#,
     )
     .bind(profile_id)
@@ -578,7 +551,7 @@ pub async fn connect_simkl(
     Query(params): Query<ProfileIdQuery>,
     Json(body): Json<SimklConnectRequest>,
 ) -> Response {
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -657,11 +630,16 @@ pub async fn connect_simkl(
         .unwrap_or("")
         .to_string();
 
+    let expires_at = token_data["expires_in"]
+        .as_i64()
+        .map(|exp_in| Utc::now().timestamp() + exp_in);
+
     let secrets = serde_json::json!({
         "access_token": access_token,
         "refresh_token": refresh_token,
         "client_id": client_id,
         "client_secret": client_secret,
+        "expires_at": expires_at,
     });
 
     let encrypted = crate::crypto::profile::encrypt_secrets(&secrets, &state.config.secret_key);
@@ -700,7 +678,7 @@ pub async fn disconnect_integration(
     Path(platform): Path<String>,
     Query(params): Query<ProfileIdQuery>,
 ) -> Response {
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -760,7 +738,7 @@ pub async fn update_integration_settings(
     Query(params): Query<ProfileIdQuery>,
     Json(body): Json<IntegrationSettingsUpdate>,
 ) -> Response {
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -856,7 +834,7 @@ pub async fn trigger_sync(
     Path(platform): Path<String>,
     Query(params): Query<TriggerSyncQuery>,
 ) -> Response {
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -898,7 +876,15 @@ pub async fn trigger_sync(
     // Run sync synchronously for this single integration so the caller gets the
     // actual result. The background worker handles the scheduled sweep across
     // all users; this endpoint is the per-user "Sync Now" action.
-    sync_integration_inline(Arc::clone(&state), integ_id).await;
+    sync_integration_inline(
+        Arc::clone(&state),
+        integ_id,
+        SyncOptions {
+            direction: params.direction.clone(),
+            full_sync: params.full_sync,
+        },
+    )
+    .await;
 
     // Return the updated status row so the UI can display the result directly.
     type StatusRow = (
@@ -950,7 +936,7 @@ pub async fn trigger_sync_all(
     headers: HeaderMap,
     Query(_params): Query<ProfileIdQuery>,
 ) -> Response {
-    let Some(_user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(_user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -1068,7 +1054,7 @@ pub async fn get_telegram_config(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Response {
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -1104,7 +1090,7 @@ pub async fn update_telegram_config(
     headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -1160,7 +1146,7 @@ pub async fn add_telegram_channel(
     headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -1222,7 +1208,7 @@ pub async fn remove_telegram_channel(
     headers: HeaderMap,
     Path(channel_id): Path<String>,
 ) -> Response {
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -1270,7 +1256,7 @@ pub async fn update_telegram_channel(
     Path(channel_id): Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -1427,7 +1413,7 @@ pub async fn telegram_login(
 ) -> Response {
     use fred::prelude::{Expiration, KeysInterface};
 
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -1553,7 +1539,7 @@ pub async fn telegram_login(
     }
 
     // Refresh the user-mapping cache entry (1-hour TTL, shared with the Python bot)
-    let mapping_key = format!("telegram:user_mapping:{telegram_user_id}");
+    let mapping_key = crate::bot::user_mapping_key(&telegram_user_id);
     if let Err(e) = state
         .redis
         .set::<String, _, _>(
@@ -1571,7 +1557,7 @@ pub async fn telegram_login(
     // Remove the stale cache entry if the user was previously linked to a different account
     if let Some(old_tg_id) = &current_telegram_id {
         if old_tg_id != &telegram_user_id {
-            let stale_key = format!("telegram:user_mapping:{old_tg_id}");
+            let stale_key = crate::bot::user_mapping_key(old_tg_id);
             let _: Result<i64, _> = state.redis.del(&stale_key).await;
         }
     }
@@ -1594,7 +1580,7 @@ pub async fn telegram_login(
 pub async fn telegram_unlink(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     use fred::prelude::KeysInterface;
 
-    let Some(user_id) = validate_token(&headers, &state.config.secret_key_raw) else {
+    let Some(user_id) = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await else {
         return unauthorized();
     };
 
@@ -1619,7 +1605,7 @@ pub async fn telegram_unlink(State(state): State<Arc<AppState>>, headers: Header
 
     // Remove the user-mapping cache entry shared with the Python bot
     if let Some(tg_id) = telegram_user_id {
-        let mapping_key = format!("telegram:user_mapping:{tg_id}");
+        let mapping_key = crate::bot::user_mapping_key(&tg_id);
         let _: Result<i64, _> = state.redis.del(&mapping_key).await;
     }
 

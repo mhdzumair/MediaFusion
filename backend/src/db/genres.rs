@@ -7,7 +7,7 @@ pub const GENRES_CACHE_KEY: &str = "genres:all_by_type:rs";
 /// Genres change rarely; long TTL avoids repeated heavy queries on large DBs.
 pub const GENRES_CACHE_TTL_SECS: u64 = 86_400;
 
-const ADULT_GENRE_NAMES: &[&str] = &["adult", "18+"];
+pub const ADULT_GENRE_NAMES: &[&str] = &["adult", "18+"];
 
 #[derive(sqlx::FromRow)]
 struct GenreByTypeRow {

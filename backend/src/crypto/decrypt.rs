@@ -8,7 +8,7 @@ Python equivalent:
     encrypted = final_data[16:]
     cipher = AES.new(key, AES.MODE_CBC, iv)
     decrypted = unpad(cipher.decrypt(encrypted), 16)
-    json_str = zlib.decompress(decrypted).decode("utf-8")  OR plain utf-8
+    json_str = zlib.decompress(decrypted).decode("utf-8")
 */
 
 use aes::Aes256;
@@ -43,18 +43,11 @@ pub fn decrypt_user_data(
             .decrypt_padded::<Pkcs7>(&mut buf)
             .map_err(|e| format!("AES decrypt: {e}"))?;
 
-        let json_str = if decrypted.starts_with(b"\x78")
-            || decrypted.starts_with(b"\x9c")
-            || decrypted.starts_with(b"\xda")
-        {
-            let mut decoder = flate2::read::ZlibDecoder::new(decrypted);
-            let mut s = String::new();
-            std::io::Read::read_to_string(&mut decoder, &mut s)
-                .map_err(|e| format!("zlib: {e}"))?;
-            s
-        } else {
-            String::from_utf8(decrypted.to_vec()).map_err(|e| format!("utf8: {e}"))?
-        };
+        // Python always zlib-decompresses D- payloads after AES decrypt.
+        let mut decoder = flate2::read::ZlibDecoder::new(decrypted);
+        let mut json_str = String::new();
+        std::io::Read::read_to_string(&mut decoder, &mut json_str)
+            .map_err(|e| format!("zlib: {e}"))?;
 
         return serde_json::from_str(&json_str).map_err(|e| format!("json: {e}").into());
     }

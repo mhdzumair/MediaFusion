@@ -23,7 +23,7 @@ pub fn login_token_key(token: &str) -> String {
     format!("telegram:login_token:{token}")
 }
 
-pub fn user_mapping_key(telegram_user_id: i64) -> String {
+pub fn user_mapping_key(telegram_user_id: impl std::fmt::Display) -> String {
     format!("telegram:user_mapping:{telegram_user_id}")
 }
 

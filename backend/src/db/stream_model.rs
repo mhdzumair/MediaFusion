@@ -185,6 +185,7 @@ pub struct StoreStreamOpts {
     pub media_type: MediaType,
     pub season: Option<i32>,
     pub episode: Option<i32>,
+    pub episode_end: Option<i32>,
     pub link_source: LinkSource,
     pub is_primary: bool,
     pub is_verified: bool,
@@ -207,15 +208,22 @@ impl StoreStreamOpts {
             media_type,
             season: None,
             episode: None,
+            episode_end: None,
             link_source: LinkSource::PttParser,
             is_primary: true,
             is_verified: false,
         }
     }
 
-    pub fn with_episode(mut self, season: Option<i32>, episode: Option<i32>) -> Self {
+    pub fn with_episode(
+        mut self,
+        season: Option<i32>,
+        episode: Option<i32>,
+        episode_end: Option<i32>,
+    ) -> Self {
         self.season = season;
         self.episode = episode;
+        self.episode_end = episode_end;
         self
     }
 
@@ -225,6 +233,7 @@ impl StoreStreamOpts {
             media_type,
             season: None,
             episode: None,
+            episode_end: None,
             link_source: LinkSource::User,
             is_primary: true,
             is_verified: false,

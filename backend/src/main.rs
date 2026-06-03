@@ -101,6 +101,14 @@ async fn main() {
         });
     }
 
+    mediafusion_api::bot::register_notification_handlers(Arc::clone(&state));
+    {
+        let tracker_state = Arc::clone(&state);
+        tokio::spawn(async move {
+            mediafusion_api::util::trackers::init_best_trackers(&tracker_state).await;
+        });
+    }
+
     let app = routes::router(state);
 
     let addr = format!("0.0.0.0:{port}");

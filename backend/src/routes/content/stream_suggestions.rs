@@ -29,7 +29,13 @@ use serde_json::json;
 use sha2::Sha256;
 use uuid::Uuid;
 
-use crate::{db::StreamId, state::AppState};
+use crate::{db::contribution_defaults, db::StreamId, state::AppState};
+
+/// Editable stream scalar fields (Python `STREAM_EDITABLE_FIELDS` subset).
+const STREAM_SCALAR_EDITABLE_FIELDS: &[&str] =
+    &["name", "resolution", "codec", "quality", "bit_depth"];
+
+const ISSUE_SUGGESTION_TYPES: &[&str] = &["report_broken", "other"];
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -202,6 +208,66 @@ async fn fetch_suggestion(pool: &sqlx::PgPool, id: &str) -> Option<SuggestionRow
         issue_triage_note: row.13,
         created_at: row.14,
     })
+}
+
+async fn count_visible_issue_reports(pool: &sqlx::PgPool, stream_id: i32) -> i64 {
+    sqlx::query_scalar(
+        r#"SELECT COUNT(*) FROM stream_suggestions
+           WHERE stream_id = $1
+             AND suggestion_type = ANY($2)
+             AND status != 'rejected'
+             AND (issue_triage_status IS NULL OR issue_triage_status != 'dismissed')"#,
+    )
+    .bind(stream_id)
+    .bind(ISSUE_SUGGESTION_TYPES)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0)
+}
+
+async fn count_legacy_approved_broken_reporters(pool: &sqlx::PgPool, stream_id: i32) -> i64 {
+    sqlx::query_scalar(
+        r#"SELECT COUNT(DISTINCT user_id) FROM stream_suggestions
+           WHERE stream_id = $1
+             AND suggestion_type = 'report_broken'
+             AND status IN ('approved', 'auto_approved')"#,
+    )
+    .bind(stream_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0)
+}
+
+fn sanitize_issue_reason(raw: &str, max_len: usize) -> String {
+    let text = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.len() > max_len {
+        format!("{}…", &text[..max_len.saturating_sub(1)])
+    } else {
+        text
+    }
+}
+
+async fn fetch_recent_issue_reasons(pool: &sqlx::PgPool, stream_id: i32) -> Vec<String> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        r#"SELECT reason FROM stream_suggestions
+           WHERE stream_id = $1
+             AND suggestion_type = ANY($2)
+             AND status != 'rejected'
+             AND (issue_triage_status IS NULL OR issue_triage_status != 'dismissed')
+             AND reason IS NOT NULL
+             AND reason != ''
+           ORDER BY created_at DESC
+           LIMIT 5"#,
+    )
+    .bind(stream_id)
+    .bind(ISSUE_SUGGESTION_TYPES)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    rows.into_iter()
+        .map(|(reason,)| sanitize_issue_reason(&reason, 200))
+        .collect()
 }
 
 async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_json::Value {
@@ -459,12 +525,13 @@ async fn apply_stream_field_change(
     if suggestion_type == "report_broken" {
         // Increment broken report counter or block stream based on threshold
         let threshold: i32 = sqlx::query_scalar(
-            "SELECT COALESCE(auto_block_broken_report_threshold, 10) FROM contribution_settings WHERE id = 'default'",
+            "SELECT COALESCE(broken_report_threshold, $1) FROM contribution_settings WHERE id = 'default'",
         )
+        .bind(contribution_defaults::BROKEN_REPORT_THRESHOLD)
         .fetch_optional(pool)
         .await
         .unwrap_or(None)
-        .unwrap_or(10);
+        .unwrap_or(contribution_defaults::BROKEN_REPORT_THRESHOLD);
 
         let report_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM stream_suggestions WHERE stream_id = $1 AND suggestion_type = 'report_broken' AND status IN ('approved', 'auto_approved')",
@@ -491,6 +558,9 @@ async fn apply_stream_field_change(
         Some(f) => f,
         None => return,
     };
+    if !STREAM_SCALAR_EDITABLE_FIELDS.contains(&field) {
+        return;
+    }
     let val = match value {
         Some(v) => v,
         None => return,
@@ -844,12 +914,13 @@ pub async fn bulk_review_stream_suggestions(
     };
 
     let points_per_edit: i32 = sqlx::query_scalar(
-        "SELECT COALESCE(points_per_stream_edit, 5) FROM contribution_settings WHERE id = 'default'",
+        "SELECT COALESCE(points_per_stream_edit, $1) FROM contribution_settings WHERE id = 'default'",
     )
+    .bind(contribution_defaults::POINTS_PER_STREAM_EDIT as i32)
     .fetch_optional(&state.pool)
     .await
     .unwrap_or(None)
-    .unwrap_or(5);
+    .unwrap_or(contribution_defaults::POINTS_PER_STREAM_EDIT as i32);
 
     let mut approved = 0i64;
     let mut rejected = 0i64;
@@ -1080,12 +1151,13 @@ pub async fn review_stream_suggestion(
     }
 
     let points_per_edit: i32 = sqlx::query_scalar(
-        "SELECT COALESCE(points_per_stream_edit, 5) FROM contribution_settings WHERE id = 'default'",
+        "SELECT COALESCE(points_per_stream_edit, $1) FROM contribution_settings WHERE id = 'default'",
     )
+    .bind(contribution_defaults::POINTS_PER_STREAM_EDIT as i32)
     .fetch_optional(&state.pool)
     .await
     .unwrap_or(None)
-    .unwrap_or(5);
+    .unwrap_or(contribution_defaults::POINTS_PER_STREAM_EDIT as i32);
 
     if new_status == "approved" {
         apply_stream_field_change(
@@ -1259,13 +1331,10 @@ pub async fn get_stream_signals(
 
     let is_blocked = stream_row.map(|(b,)| b).unwrap_or(false);
 
-    let issue_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestions WHERE stream_id = $1 AND suggestion_type = 'report_broken' AND status IN ('approved', 'auto_approved', 'pending')",
-    )
-    .bind(stream_id)
-    .fetch_one(&state.pool_ro)
-    .await
-    .unwrap_or(0);
+    let issue_count = count_visible_issue_reports(&state.pool_ro, stream_id.0).await;
+    let recent_reasons = fetch_recent_issue_reasons(&state.pool_ro, stream_id.0).await;
+    let legacy_approved_broken_reporters =
+        count_legacy_approved_broken_reporters(&state.pool_ro, stream_id.0).await;
 
     let vote_counts: (Option<i64>, Option<i64>) = sqlx::query_as(
         "SELECT COUNT(*) FILTER (WHERE vote_type = 'up'), COUNT(*) FILTER (WHERE vote_type = 'down') FROM stream_votes WHERE stream_id = $1",
@@ -1281,22 +1350,38 @@ pub async fn get_stream_signals(
     let score = upvotes - downvotes;
 
     let threshold: i32 = sqlx::query_scalar(
-        "SELECT COALESCE(auto_block_broken_report_threshold, 10) FROM contribution_settings WHERE id = 'default'",
+        "SELECT COALESCE(broken_report_threshold, $1) FROM contribution_settings WHERE id = 'default'",
     )
+    .bind(contribution_defaults::BROKEN_REPORT_THRESHOLD)
     .fetch_optional(&state.pool_ro)
     .await
     .unwrap_or(None)
-    .unwrap_or(10);
+    .unwrap_or(contribution_defaults::BROKEN_REPORT_THRESHOLD);
 
     let auto_block: bool = sqlx::query_scalar(
-        "SELECT COALESCE(auto_block_on_broken_reports, true) FROM contribution_settings WHERE id = 'default'",
+        "SELECT COALESCE(auto_block_on_broken_reports, false) FROM contribution_settings WHERE id = 'default'",
     )
     .fetch_optional(&state.pool_ro)
     .await
     .unwrap_or(None)
-    .unwrap_or(true);
+    .unwrap_or(false);
 
     let user_has_issue_report = if let Some(uid) = user_id {
+        let has: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM stream_suggestions WHERE stream_id = $1 AND user_id = $2 AND suggestion_type = ANY($3))",
+        )
+        .bind(stream_id)
+        .bind(uid)
+        .bind(ISSUE_SUGGESTION_TYPES)
+        .fetch_one(&state.pool_ro)
+        .await
+        .unwrap_or(false);
+        Some(has)
+    } else {
+        None
+    };
+
+    let user_has_report_broken = if let Some(uid) = user_id {
         let has: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM stream_suggestions WHERE stream_id = $1 AND user_id = $2 AND suggestion_type = 'report_broken')",
         )
@@ -1324,10 +1409,10 @@ pub async fn get_stream_signals(
         None
     };
 
-    let reports_needed = if is_blocked || issue_count >= threshold as i64 {
-        0i64
+    let reports_needed = if auto_block && !is_blocked {
+        (threshold as i64 - legacy_approved_broken_reporters).max(0)
     } else {
-        threshold as i64 - issue_count
+        0
     };
 
     Json(json!({
@@ -1341,10 +1426,10 @@ pub async fn get_stream_signals(
         "rating_score": score,
         "rating_total": total_votes,
         "user_has_issue_report": user_has_issue_report,
-        "user_has_report_broken": user_has_issue_report,
+        "user_has_report_broken": user_has_report_broken,
         "user_vote": user_vote,
-        "recent_reasons": [],
-        "legacy_approved_broken_reporters": 0,
+        "recent_reasons": recent_reasons,
+        "legacy_approved_broken_reporters": legacy_approved_broken_reporters,
         "reports_needed_for_auto_block": reports_needed,
     }))
     .into_response()
@@ -1527,18 +1612,13 @@ pub async fn bulk_stream_signals(
     let mut signals = serde_json::Map::new();
 
     for stream_id in &stream_ids {
-        let issue_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM stream_suggestions WHERE stream_id = $1 AND suggestion_type = 'report_broken' AND status IN ('approved', 'auto_approved', 'pending')",
-        )
-        .bind(stream_id)
-        .fetch_one(&state.pool_ro)
-        .await
-        .unwrap_or(0);
+        let stream_id_i32 = *stream_id as i32;
+        let issue_count = count_visible_issue_reports(&state.pool_ro, stream_id_i32).await;
 
         let vote_counts: (Option<i64>, Option<i64>) = sqlx::query_as(
             "SELECT COUNT(*) FILTER (WHERE vote_type = 'up'), COUNT(*) FILTER (WHERE vote_type = 'down') FROM stream_votes WHERE stream_id = $1",
         )
-        .bind(*stream_id as i32)
+        .bind(stream_id_i32)
         .fetch_one(&state.pool_ro)
         .await
         .unwrap_or((None, None));
@@ -1553,7 +1633,7 @@ pub async fn bulk_stream_signals(
                 "SELECT vote_type FROM stream_votes WHERE user_id = $1 AND stream_id = $2 LIMIT 1",
             )
             .bind(uid)
-            .bind(*stream_id as i32)
+            .bind(stream_id_i32)
             .fetch_optional(&state.pool_ro)
             .await
             .unwrap_or(None);
@@ -1564,10 +1644,11 @@ pub async fn bulk_stream_signals(
 
         let user_has_issue_report = if let Some(uid) = user_id {
             let has: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM stream_suggestions WHERE stream_id = $1 AND user_id = $2 AND suggestion_type = 'report_broken')",
+                "SELECT EXISTS(SELECT 1 FROM stream_suggestions WHERE stream_id = $1 AND user_id = $2 AND suggestion_type = ANY($3))",
             )
-            .bind(stream_id)
+            .bind(stream_id_i32)
             .bind(uid)
+            .bind(ISSUE_SUGGESTION_TYPES)
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(false);

@@ -25,7 +25,7 @@ use serde::Deserialize;
 use serde_json::json;
 use sha2::Sha256;
 
-use crate::state::AppState;
+use crate::{db::contribution_defaults, state::AppState};
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -664,11 +664,25 @@ pub async fn get_my_contribution_info(
 
     let is_mod = is_moderator(&state.pool_ro, user_id).await;
 
-    // Thresholds from Python defaults
+    let thresholds: Option<(i32, i32, i32, i32)> = sqlx::query_as(
+        "SELECT contributor_threshold, trusted_threshold, expert_threshold, auto_approval_threshold FROM contribution_settings WHERE id = 'default'",
+    )
+    .fetch_optional(&state.pool_ro)
+    .await
+    .unwrap_or(None);
+
+    let (contributor_t, trusted_t, expert_t, auto_approval_t) = thresholds.unwrap_or((
+        contribution_defaults::CONTRIBUTOR_THRESHOLD as i32,
+        contribution_defaults::TRUSTED_THRESHOLD as i32,
+        contribution_defaults::EXPERT_THRESHOLD as i32,
+        contribution_defaults::AUTO_APPROVAL_THRESHOLD,
+    ));
+
+    // Calculate points to next level
     let (next_level, points_to_next) = match level.as_str() {
-        "new" => (Some("contributor"), (10i32 - points).max(0)),
-        "contributor" => (Some("trusted"), (50i32 - points).max(0)),
-        "trusted" => (Some("expert"), (200i32 - points).max(0)),
+        "new" => (Some("contributor"), (contributor_t - points).max(0)),
+        "contributor" => (Some("trusted"), (trusted_t - points).max(0)),
+        "trusted" => (Some("expert"), (expert_t - points).max(0)),
         _ => (None, 0),
     };
 
@@ -677,7 +691,7 @@ pub async fn get_my_contribution_info(
         "contribution_level": level,
         "metadata_edits_approved": meta_approved,
         "stream_edits_approved": stream_approved,
-        "can_auto_approve": is_mod || points >= 50,
+        "can_auto_approve": is_mod || points >= auto_approval_t,
         "points_to_next_level": points_to_next,
         "next_level": next_level,
     }))

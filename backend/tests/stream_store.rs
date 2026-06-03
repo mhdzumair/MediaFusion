@@ -240,7 +240,7 @@ async fn store_torrent_series_pack_uses_synthetic_episode_from_opts() {
     let stream = sample_torrent(&info_hash);
 
     let opts = StoreStreamOpts::scraper(MediaId(media_id), MediaType::Series)
-        .with_episode(Some(2), Some(7));
+        .with_episode(Some(2), Some(7), None);
 
     let result = store_torrent_stream(pool, &stream, &opts)
         .await

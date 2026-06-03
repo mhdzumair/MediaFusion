@@ -578,6 +578,8 @@ pub struct StreamPlaybackInfo {
     pub size_bytes: Option<i64>,
     /// Raw .torrent bytes for private/semi-private streams (when stored in DB).
     pub torrent_file: Option<Vec<u8>>,
+    /// PUBLIC vs PRIVATE — controls qBittorrent add path and DHT preferences.
+    pub torrent_type: crate::db::TorrentType,
 }
 
 /// Fetch stream playback info for the given info_hash.
@@ -598,6 +600,7 @@ pub async fn fetch_stream_playback_info(
         Option<i64>,
         Option<i64>,
         Option<Vec<u8>>,
+        crate::db::TorrentType,
     ) = match (season, episode) {
         (Some(s), Some(e)) => {
             sqlx::query_as(
@@ -609,7 +612,8 @@ pub async fn fetch_stream_playback_info(
                     sf.filename,
                     COUNT(sf2.id) AS total_files,
                     ts.total_size,
-                    ts.torrent_file
+                    ts.torrent_file,
+                    ts.torrent_type
                 FROM torrent_stream ts
                 JOIN stream st ON st.id = ts.stream_id
                 LEFT JOIN torrent_tracker_link ttl ON ttl.torrent_id = ts.id
@@ -623,7 +627,7 @@ pub async fn fetch_stream_playback_info(
                     LIMIT 1
                 ) sf ON sf.stream_id = st.id
                 WHERE ts.info_hash = $1
-                GROUP BY st.id, st.name, sf.file_index, sf.filename, ts.total_size, ts.torrent_file
+                GROUP BY st.id, st.name, sf.file_index, sf.filename, ts.total_size, ts.torrent_file, ts.torrent_type
                 "#,
             )
             .bind(info_hash)
@@ -651,13 +655,14 @@ pub async fn fetch_stream_playback_info(
                      LIMIT 1) AS filename,
                     (SELECT COUNT(*) FROM stream_file sf WHERE sf.stream_id = st.id) AS total_files,
                     ts.total_size,
-                    ts.torrent_file
+                    ts.torrent_file,
+                    ts.torrent_type
                 FROM torrent_stream ts
                 JOIN stream st ON st.id = ts.stream_id
                 LEFT JOIN torrent_tracker_link ttl ON ttl.torrent_id = ts.id
                 LEFT JOIN tracker t ON t.id = ttl.tracker_id
                 WHERE ts.info_hash = $1
-                GROUP BY st.id, st.name, ts.total_size, ts.torrent_file
+                GROUP BY st.id, st.name, ts.total_size, ts.torrent_file, ts.torrent_type
                 "#,
             )
             .bind(info_hash)
@@ -677,6 +682,7 @@ pub async fn fetch_stream_playback_info(
         has_no_files: total_files == 0,
         size_bytes: row.5.filter(|&s| s > 0),
         torrent_file: row.6.filter(|bytes| !bytes.is_empty()),
+        torrent_type: row.7,
     })
 }
 
@@ -705,34 +711,65 @@ pub async fn upsert_stream_files(
     .await
 }
 
-/// Fetch HTTP streams for a single media_id (used for live TV playback).
+/// Fetch HTTP and YouTube streams for a single live-TV media_id.
 pub async fn fetch_tv_streams_for_media(pool: &PgPool, media_id: MediaId) -> Vec<Value> {
     let rows: Vec<(Value,)> = sqlx::query_as(
         r#"
-        SELECT
-            jsonb_build_object(
-                'name', st.name,
-                'url', hs.url,
-                'format', hs.format,
-                'quality', st.quality,
-                'resolution', st.resolution,
-                'codec', st.codec,
-                'source', st.source,
-                'size', hs.size,
-                'behavior_hints', hs.behavior_hints,
-                'languages', COALESCE((
-                    SELECT jsonb_agg(l.name ORDER BY l.name)
-                    FROM stream_language_link sll JOIN language l ON l.id = sll.language_id
-                    WHERE sll.stream_id = st.id AND sll.language_type = 'audio'
-                ), '[]'::jsonb)
-            ) AS item
-        FROM stream_media_link sml
-        JOIN stream st ON st.id = sml.stream_id
-        JOIN http_stream hs ON hs.stream_id = st.id
-        WHERE sml.media_id = $1
-          AND st.is_active = true
-          AND st.is_blocked = false
-        ORDER BY st.created_at DESC
+        SELECT item FROM (
+            SELECT
+                jsonb_build_object(
+                    'stream_kind', 'http',
+                    'name', st.name,
+                    'url', hs.url,
+                    'format', hs.format,
+                    'quality', st.quality,
+                    'resolution', st.resolution,
+                    'codec', st.codec,
+                    'source', st.source,
+                    'size', hs.size,
+                    'behavior_hints', hs.behavior_hints,
+                    'drm_key_id', hs.drm_key_id,
+                    'drm_key', hs.drm_key,
+                    'country', tm.country,
+                    'languages', COALESCE((
+                        SELECT jsonb_agg(l.name ORDER BY l.name)
+                        FROM stream_language_link sll JOIN language l ON l.id = sll.language_id
+                        WHERE sll.stream_id = st.id AND sll.language_type = 'audio'
+                    ), '[]'::jsonb)
+                ) AS item,
+                st.created_at AS sort_ts
+            FROM stream_media_link sml
+            JOIN stream st ON st.id = sml.stream_id
+            JOIN http_stream hs ON hs.stream_id = st.id
+            LEFT JOIN tv_metadata tm ON tm.media_id = sml.media_id
+            WHERE sml.media_id = $1
+              AND st.is_active = true
+              AND st.is_blocked = false
+
+            UNION ALL
+
+            SELECT
+                jsonb_build_object(
+                    'stream_kind', 'youtube',
+                    'name', st.name,
+                    'source', st.source,
+                    'quality', st.quality,
+                    'resolution', st.resolution,
+                    'codec', st.codec,
+                    'video_id', ys.video_id,
+                    'country', tm.country
+                ) AS item,
+                st.created_at AS sort_ts
+            FROM stream_media_link sml
+            JOIN stream st ON st.id = sml.stream_id
+            JOIN youtube_stream ys ON ys.stream_id = st.id
+            LEFT JOIN tv_metadata tm ON tm.media_id = sml.media_id
+            WHERE sml.media_id = $1
+              AND st.is_active = true
+              AND st.is_blocked = false
+        ) combined
+        ORDER BY sort_ts DESC
+        LIMIT 100
         "#,
     )
     .bind(media_id)

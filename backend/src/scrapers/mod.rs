@@ -13,12 +13,14 @@ pub mod prowlarr;
 pub mod public_indexer_registry;
 pub mod public_indexers;
 pub mod public_usenet;
+pub mod rpdb;
 pub mod rss;
 pub mod source_health;
 pub mod stream_convert;
 pub mod telegram;
 pub mod title_queries;
 pub mod torbox_search;
+pub mod torrent_info;
 pub mod torrent_metadata;
 pub mod torrentio;
 pub mod torznab;
@@ -112,6 +114,8 @@ pub struct ScrapedTelegramStream {
     pub parsed: crate::parser::ParsedTitle,
     pub season: Option<i32>,
     pub episode: Option<i32>,
+    /// IMDb ID extracted from message caption (feed scrape mode).
+    pub caption_imdb_id: Option<String>,
 }
 
 /// Metadata passed to scrapers at request time.

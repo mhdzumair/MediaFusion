@@ -7,15 +7,30 @@ use crate::db::{
 
 const PROVIDER_PRIORITY: &[&str] = &["imdb", "tmdb", "tvdb", "mal", "kitsu", "anilist"];
 
-fn is_empty_str(opt: &Option<String>) -> bool {
-    opt.as_ref().is_none_or(|s| s.is_empty())
+/// Field-specific provider order (Python `providers.py` FIELD_PRIORITY parity).
+const FIELD_PRIORITY: &[(&str, &[&str])] = &[
+    ("title", &["imdb", "tmdb", "tvdb", "mal"]),
+    ("description", &["tmdb", "imdb", "tvdb", "mal"]),
+    ("runtime", &["imdb", "tmdb", "tvdb"]),
+    ("release_date", &["tmdb", "imdb", "tvdb"]),
+    ("poster", &["fanart", "tmdb", "tvdb", "imdb"]),
+    ("background", &["fanart", "tmdb", "tvdb"]),
+];
+
+fn field_providers(field: &str) -> &'static [&'static str] {
+    FIELD_PRIORITY
+        .iter()
+        .find(|(name, _)| *name == field)
+        .map(|(_, providers)| *providers)
+        .unwrap_or(PROVIDER_PRIORITY)
 }
 
-fn first_scalar<T: Clone>(
+fn first_scalar_with_providers<T: Clone>(
     metas: &[NormalizedMetadata],
+    providers: &[&str],
     pick: impl Fn(&NormalizedMetadata) -> Option<T>,
 ) -> Option<T> {
-    for provider in PROVIDER_PRIORITY {
+    for provider in providers {
         for meta in metas {
             if meta_has_provider(meta, provider) {
                 if let Some(v) = pick(meta) {
@@ -30,6 +45,25 @@ fn first_scalar<T: Clone>(
         }
     }
     None
+}
+
+fn first_scalar_for_field<T: Clone>(
+    field: &str,
+    metas: &[NormalizedMetadata],
+    pick: impl Fn(&NormalizedMetadata) -> Option<T>,
+) -> Option<T> {
+    first_scalar_with_providers(metas, field_providers(field), pick)
+}
+
+fn first_scalar<T: Clone>(
+    metas: &[NormalizedMetadata],
+    pick: impl Fn(&NormalizedMetadata) -> Option<T>,
+) -> Option<T> {
+    first_scalar_with_providers(metas, PROVIDER_PRIORITY, pick)
+}
+
+fn is_empty_str(opt: &Option<String>) -> bool {
+    opt.as_ref().is_none_or(|s| s.is_empty())
 }
 
 fn meta_has_provider(meta: &NormalizedMetadata, provider: &str) -> bool {
@@ -245,7 +279,7 @@ pub fn merge_normalized(metas: Vec<NormalizedMetadata>) -> Option<NormalizedMeta
         return metas.into_iter().next();
     }
 
-    let title = first_scalar(&metas, |m| {
+    let title = first_scalar_for_field("title", &metas, |m| {
         if m.title.is_empty() {
             None
         } else {
@@ -263,14 +297,14 @@ pub fn merge_normalized(metas: Vec<NormalizedMetadata>) -> Option<NormalizedMeta
         title: title.clone(),
         original_title: first_scalar(&metas, |m| m.original_title.clone()),
         year: first_scalar(&metas, |m| m.year),
-        description: first_scalar(&metas, |m| m.description.clone()),
+        description: first_scalar_for_field("description", &metas, |m| m.description.clone()),
         tagline: first_scalar(&metas, |m| m.tagline.clone()),
-        release_date: first_scalar(&metas, |m| m.release_date.clone()),
-        runtime_minutes: first_scalar(&metas, |m| m.runtime_minutes),
+        release_date: first_scalar_for_field("release_date", &metas, |m| m.release_date.clone()),
+        runtime_minutes: first_scalar_for_field("runtime", &metas, |m| m.runtime_minutes),
         original_language: first_scalar(&metas, |m| m.original_language.clone()),
         status: first_scalar(&metas, |m| m.status.clone()),
-        poster_url: first_scalar(&metas, |m| m.poster_url.clone()),
-        backdrop_url: first_scalar(&metas, |m| m.backdrop_url.clone()),
+        poster_url: first_scalar_for_field("poster", &metas, |m| m.poster_url.clone()),
+        backdrop_url: first_scalar_for_field("background", &metas, |m| m.backdrop_url.clone()),
         logo_url: first_scalar(&metas, |m| m.logo_url.clone()),
         website: first_scalar(&metas, |m| m.website.clone()),
         end_date: first_scalar(&metas, |m| m.end_date.clone()),
@@ -356,5 +390,43 @@ mod tests {
             merged.seasons[0].episodes[0].overview.as_deref(),
             Some("Overview")
         );
+    }
+
+    #[test]
+    fn field_priority_prefers_tmdb_description_over_imdb() {
+        let imdb = NormalizedMetadata {
+            title: "Film".into(),
+            media_type: MediaType::Movie,
+            description: Some("IMDb summary".into()),
+            external_ids: vec![("imdb".into(), "tt1".into())],
+            ..Default::default()
+        };
+        let tmdb = NormalizedMetadata {
+            title: "Film".into(),
+            media_type: MediaType::Movie,
+            description: Some("TMDB summary".into()),
+            external_ids: vec![("tmdb".into(), "1".into())],
+            ..Default::default()
+        };
+        let merged = merge_normalized(vec![imdb, tmdb]).unwrap();
+        assert_eq!(merged.description.as_deref(), Some("TMDB summary"));
+    }
+
+    #[test]
+    fn field_priority_prefers_imdb_title_over_tmdb() {
+        let tmdb = NormalizedMetadata {
+            title: "TMDB Title".into(),
+            media_type: MediaType::Movie,
+            external_ids: vec![("tmdb".into(), "1".into())],
+            ..Default::default()
+        };
+        let imdb = NormalizedMetadata {
+            title: "IMDb Title".into(),
+            media_type: MediaType::Movie,
+            external_ids: vec![("imdb".into(), "tt1".into())],
+            ..Default::default()
+        };
+        let merged = merge_normalized(vec![tmdb, imdb]).unwrap();
+        assert_eq!(merged.title, "IMDb Title");
     }
 }

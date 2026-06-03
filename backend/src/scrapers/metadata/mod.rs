@@ -12,7 +12,7 @@ use serde_json::json;
 use sqlx::PgPool;
 
 pub use crate::db::{NormalizedEpisode, NormalizedMetadata, NormalizedSeason};
-pub use mdblist::ingest_list;
+pub use mdblist::{fetch_all_list_imdb_ids, ingest_list};
 pub use trakt::resolve_or_store_media;
 
 pub(crate) const MIN_TITLE_SIMILARITY: u32 = 40;

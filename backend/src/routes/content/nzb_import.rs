@@ -242,6 +242,7 @@ async fn insert_usenet_stream(
             media_type: crate::db::MediaType::Movie,
             season: None,
             episode: None,
+            episode_end: None,
             link_source: crate::db::LinkSource::User,
             is_primary: true,
             is_verified: false,
@@ -574,6 +575,8 @@ pub async fn import_nzb(
             return (StatusCode::BAD_REQUEST, Json(json!({"detail": e}))).into_response();
         }
     };
+
+    crate::util::nzb_storage::store_nzb(&state.config, &info.nzb_guid, &bytes).await;
 
     let resolved_is_anonymous = is_anonymous_field.unwrap_or(user.contribute_anonymously);
     let (uploader_name, uploader_user_id) = resolve_uploader_identity(
@@ -958,26 +961,12 @@ pub async fn download_nzb(
     }
 
     // Verify HMAC-SHA256 signature
-    let message = format!("{}:{}", guid, params.expires);
-    let mut mac = match Hmac::<Sha256>::new_from_slice(state.config.secret_key_raw.as_bytes()) {
-        Ok(m) => m,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"detail": "Server error"})),
-            )
-                .into_response();
-        }
-    };
-    mac.update(message.as_bytes());
-    let expected: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-
-    if expected != params.sig {
+    if !crate::util::nzb_storage::verify_nzb_signature(
+        &state.config,
+        &guid,
+        params.expires,
+        &params.sig,
+    ) {
         return (
             StatusCode::UNAUTHORIZED,
             Json(json!({"detail": "Invalid signature"})),
@@ -985,7 +974,19 @@ pub async fn download_nzb(
             .into_response();
     }
 
-    // Fetch nzb_url
+    if let Some(bytes) = crate::util::nzb_storage::retrieve_nzb(&state.config, &guid).await {
+        return axum::response::Response::builder()
+            .status(StatusCode::OK)
+            .header(axum::http::header::CONTENT_TYPE, "application/x-nzb")
+            .header(
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{guid}.nzb\""),
+            )
+            .body(axum::body::Body::from(bytes))
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    }
+
+    // Fallback: redirect to origin indexer URL when blob storage has no copy.
     let nzb_url: Option<String> =
         sqlx::query_scalar("SELECT nzb_url FROM usenet_stream WHERE nzb_guid = $1 LIMIT 1")
             .bind(&guid)

@@ -23,9 +23,12 @@ use crate::{
     state::AppState,
     template,
     usenet_compat::is_usenet_stream_compatible,
+    util::{live_stream, mediaflow, trackers},
 };
 
 use urlencoding;
+
+use crate::models::user_data::MediaFlowConfig;
 
 // ─── Provider capability constants ────────────────────────────────────────────
 
@@ -228,37 +231,66 @@ async fn dispatch_tv(
         return Json(json!({"streams": []})).into_response();
     }
 
-    let mut streams = db::fetch_tv_streams_for_media(&state.pool_ro, media_id).await;
+    let rows = db::fetch_tv_streams_for_media(&state.pool_ro, media_id).await;
+    let is_mediaflow_proxy_enabled = user_data
+        .mediaflow_config
+        .as_ref()
+        .is_some_and(|m| m.proxy_live_streams);
+    let addon_name = if is_mediaflow_proxy_enabled {
+        format!("{} 🕵🏼‍♂️", state.config.addon_name)
+    } else {
+        format!("{} 📡", state.config.addon_name)
+    };
 
-    // Optionally proxy live streams through MediaFlow
     let mediaflow = user_data.mediaflow_config.as_ref();
-    if mediaflow.is_some_and(|m| m.proxy_live_streams) {
-        if let Some(mf) = mediaflow {
-            if let Some(proxy_url) = mf.proxy_url.as_deref().filter(|s| !s.is_empty()) {
-                let api_pw = mf.api_password.as_deref().unwrap_or("");
-                for row in &mut streams {
-                    if let Some(url_val) = row.get_mut("url") {
-                        if let Some(raw_url) = url_val.as_str() {
-                            let proxied = format!(
-                                "{}/proxy/stream?api_password={}&url={}",
-                                proxy_url.trim_end_matches('/'),
-                                urlencoding::encode(api_pw),
-                                urlencoding::encode(raw_url),
-                            );
-                            *url_val = json!(proxied);
-                        }
-                    }
-                }
-            }
+    let validate_liveness = state.config.validate_m3u8_urls_liveness;
+    let mut rows_rev = rows;
+    rows_rev.reverse();
+
+    let tasks: Vec<_> = rows_rev
+        .iter()
+        .map(|row| {
+            process_tv_stream_row(
+                &state,
+                row,
+                &addon_name,
+                is_mediaflow_proxy_enabled,
+                mediaflow,
+                validate_liveness,
+            )
+        })
+        .collect();
+    let processed = join_all(tasks).await;
+
+    let mut formatted = Vec::new();
+    let mut mediaflow_needed = false;
+    for result in processed {
+        match result {
+            TvProcessResult::Stream(v) => formatted.push(v),
+            TvProcessResult::MediaflowNeeded => mediaflow_needed = true,
+            TvProcessResult::Skip => {}
         }
     }
 
-    let addon_name = &state.config.addon_name;
-    let tpl = user_data.stream_template.as_ref();
-    let formatted: Vec<serde_json::Value> = streams
-        .iter()
-        .filter_map(|row| format_http_stream(row, addon_name, tpl))
-        .collect();
+    if formatted.is_empty() {
+        let (description, file) = if mediaflow_needed {
+            (
+                "🚫 MediaFlow Proxy is required to watch this stream.",
+                "mediaflow_proxy_required.mp4",
+            )
+        } else {
+            (
+                "🚫 No streams are live at the moment.",
+                "no_streams_live.mp4",
+            )
+        };
+        formatted.push(create_tv_exception_stream(
+            &state.config.host_url,
+            &addon_name,
+            description,
+            file,
+        ));
+    }
 
     // Live streams must never be cached by the client
     (
@@ -267,6 +299,195 @@ async fn dispatch_tv(
         Json(json!({"streams": formatted})),
     )
         .into_response()
+}
+
+enum TvProcessResult {
+    Stream(Value),
+    MediaflowNeeded,
+    Skip,
+}
+
+async fn process_tv_stream_row(
+    state: &AppState,
+    row: &Value,
+    addon_name: &str,
+    is_mediaflow_proxy_enabled: bool,
+    mediaflow: Option<&MediaFlowConfig>,
+    validate_liveness: bool,
+) -> TvProcessResult {
+    let kind = row
+        .get("stream_kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("http");
+
+    if kind == "youtube" {
+        return format_tv_youtube_stream(row, addon_name)
+            .map(TvProcessResult::Stream)
+            .unwrap_or(TvProcessResult::Skip);
+    }
+
+    let url = match row
+        .get("url")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        Some(u) => u,
+        None => return TvProcessResult::Skip,
+    };
+
+    let behavior_hints = row.get("behavior_hints").cloned().unwrap_or(json!({}));
+    if validate_liveness
+        && !live_stream::validate_m3u8_or_mpd_url_with_cache(
+            &state.http,
+            &state.redis,
+            url,
+            &behavior_hints,
+        )
+        .await
+    {
+        return TvProcessResult::Skip;
+    }
+
+    let drm_key = row
+        .get("drm_key")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    if drm_key.is_some() && !is_mediaflow_proxy_enabled {
+        return TvProcessResult::MediaflowNeeded;
+    }
+
+    let mut out_hints = behavior_hints.clone();
+    let stream_url = if is_mediaflow_proxy_enabled {
+        let mf = match mediaflow {
+            Some(m) => m,
+            None => return TvProcessResult::Skip,
+        };
+        match build_tv_mediaflow_url(row, url, mf) {
+            Ok(u) => {
+                if let Some(obj) = out_hints.as_object_mut() {
+                    obj.insert("proxyHeaders".into(), Value::Null);
+                }
+                u
+            }
+            Err(e) => {
+                tracing::warn!("tv mediaflow url failed: {e}");
+                return TvProcessResult::Skip;
+            }
+        }
+    } else {
+        url.to_string()
+    };
+
+    let stream_name = row.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let source = row.get("source").and_then(|v| v.as_str()).unwrap_or("");
+    let country = row
+        .get("country")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let country_info = country.map(|c| format!("\n🌐 {c}")).unwrap_or_default();
+    let description = if source.is_empty() {
+        format!("📺 {stream_name}{country_info}")
+    } else {
+        format!("📺 {stream_name}{country_info}\n🔗 {source}")
+    };
+
+    TvProcessResult::Stream(json!({
+        "name": addon_name,
+        "description": description,
+        "url": stream_url,
+        "behaviorHints": out_hints,
+    }))
+}
+
+fn build_tv_mediaflow_url(
+    row: &Value,
+    url: &str,
+    mediaflow: &MediaFlowConfig,
+) -> Result<String, String> {
+    use std::collections::BTreeMap;
+
+    let proxy_url = mediaflow
+        .proxy_url
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "MediaFlow proxy_url missing".to_string())?;
+    let api_password = mediaflow.api_password.as_deref();
+
+    let drm_key = row
+        .get("drm_key")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let endpoint = if drm_key.is_some() {
+        "/proxy/mpd/manifest.m3u8"
+    } else {
+        "/proxy/hls/manifest.m3u8"
+    };
+
+    let mut query_params = BTreeMap::new();
+    if let Some(key_id) = row
+        .get("drm_key_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        query_params.insert("key_id".into(), key_id.to_string());
+    }
+    if let Some(key) = drm_key {
+        query_params.insert("key".into(), key.to_string());
+    }
+
+    let behavior_hints = row.get("behavior_hints").and_then(|v| v.as_object());
+    let request_headers = behavior_hints
+        .and_then(|bh| bh.get("proxyHeaders"))
+        .and_then(|ph| ph.get("request"))
+        .and_then(|v| v.as_object());
+    let response_headers = behavior_hints
+        .and_then(|bh| bh.get("proxyHeaders"))
+        .and_then(|ph| ph.get("response"))
+        .and_then(|v| v.as_object());
+
+    mediaflow::encode_mediaflow_proxy_url(
+        proxy_url,
+        endpoint,
+        Some(url),
+        query_params,
+        request_headers,
+        response_headers,
+        api_password,
+    )
+}
+
+fn format_tv_youtube_stream(row: &Value, addon_name: &str) -> Option<Value> {
+    let video_id = row
+        .get("video_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())?;
+    let stream_name = row.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let source = row.get("source").and_then(|v| v.as_str()).unwrap_or("");
+    let description = if source.is_empty() {
+        "▶️ YouTube".to_string()
+    } else {
+        format!("▶️ {source}")
+    };
+
+    Some(json!({
+        "name": format!("{addon_name}\n{stream_name}"),
+        "description": description,
+        "ytId": video_id,
+    }))
+}
+
+fn create_tv_exception_stream(
+    host_url: &str,
+    addon_name: &str,
+    description: &str,
+    exc_file_name: &str,
+) -> Value {
+    json!({
+        "name": addon_name,
+        "description": description,
+        "url": format!("{host_url}/static/exceptions/{exc_file_name}"),
+        "behaviorHints": { "notWebReady": true },
+    })
 }
 
 // ─── Core orchestration ────────────────────────────────────────────────────────
@@ -654,7 +875,7 @@ pub async fn resolve(
     );
     let http_streams: Vec<Value> = http_sorted
         .iter()
-        .filter_map(|row| format_http_stream(row, addon_name, tpl))
+        .filter_map(|row| format_http_stream(row, addon_name, tpl, false))
         .collect();
 
     let youtube_sorted = sort_stream_rows(
@@ -1216,11 +1437,22 @@ async fn build_pipeline(
     // Per-provider cache lookup
     let per_provider_cached: Vec<HashMap<String, bool>> = {
         let futs = torrent_providers.iter().map(|provider| {
-            let svc = provider.service.clone();
+            let provider_service = provider.service.clone();
+            let cache_service = provider.cache_service_name();
             let tok = provider.token.clone().unwrap_or_default();
             let hashes = all_hashes.clone();
+            let store_stremthru = state.config.store_stremthru_magnet_cache;
             async move {
-                let mut cached = cache::get_debrid_cache_status(&state.redis, &svc, &hashes).await;
+                let mut cached = cache::get_debrid_cache_status_federated(
+                    &state.redis,
+                    Some(&state.http),
+                    &cache_service,
+                    &provider_service,
+                    &hashes,
+                    state.config.sync_debrid_cache_streams,
+                    &state.config.mediafusion_url,
+                )
+                .await;
                 if !tok.is_empty() {
                     let uncached: Vec<String> = hashes
                         .iter()
@@ -1231,10 +1463,12 @@ async fn build_pipeline(
                         let live = crate::providers::torrents::cache::live_check(
                             &state.http,
                             &state.redis,
-                            &svc,
+                            &provider_service,
+                            &cache_service,
                             &tok,
                             &uncached,
                             i32::from(media_id),
+                            store_stremthru,
                         )
                         .await;
                         for (hash, is_cached) in live {
@@ -1471,7 +1705,7 @@ pub async fn resolve_rich(
 
     // HTTP streams
     for row in &p.http_rows {
-        if let Some(stream_val) = format_http_stream(row, addon_name, tpl) {
+        if let Some(stream_val) = format_http_stream(row, addon_name, tpl, false) {
             let meta = json!({
                 "stream_type": "http",
                 "name": row.get("name").and_then(|v| v.as_str()).unwrap_or(""),
@@ -1861,7 +2095,7 @@ fn format_unified_pool(
                     tpl,
                 )
             }
-            2 => format_http_stream(&item.value, addon_name, tpl),
+            2 => format_http_stream(&item.value, addon_name, tpl, false),
             3 => format_youtube_stream(&item.value, addon_name, tpl),
             4 => format_telegram_stream(&item.value, addon_name, host_url, secret_str, tpl),
             5 => format_acestream_stream(&item.value, addon_name, mediaflow, tpl),
@@ -2015,6 +2249,106 @@ const DEFAULT_TITLE_TEMPLATE: &str =
 const DEFAULT_DESC_TEMPLATE: &str =
     "{if stream.hdr_formats}🎨 {stream.hdr_formats|join('|')} {/if}{if stream.quality}📺 {stream.quality} {/if}{if stream.codec}🎞️ {stream.codec} {/if}{if stream.audio_formats}🎵 {stream.audio_formats|join('|')} {/if}{if stream.channels}🔊 {stream.channels|join(' ')}{/if}\n{if stream.size > 0}📦 {stream.size|bytes}{if stream.folderSize > stream.size} / {stream.folderSize|bytes}{/if} {/if}{if stream.seeders > 0}👤 {stream.seeders}{/if}\n{if stream.languages}🌐 {stream.languages|join(' + ')}{/if}\n🔗 {stream.source}{if stream.uploader} | 🧑‍💻 {stream.uploader}{/if}";
 
+/// Build quality detail string for bingeGroup (mirrors Python parser.py:805-815).
+fn build_quality_detail(t: &Value) -> String {
+    let hdr_display: Vec<String> = t
+        .get("hdr_formats")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .filter(|h| *h != "Unknown")
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let audio_formats: Vec<String> = t
+        .get("audio_formats")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let quality = t.get("quality").and_then(|v| v.as_str()).unwrap_or("");
+    let codec = t.get("codec").and_then(|v| v.as_str()).unwrap_or("");
+
+    let mut parts = Vec::new();
+    if !hdr_display.is_empty() {
+        parts.push(format!("🎨 {}", hdr_display.join("|")));
+    }
+    if !quality.is_empty() {
+        parts.push(format!("📺 {quality}"));
+    }
+    if !codec.is_empty() {
+        parts.push(format!("🎞️ {codec}"));
+    }
+    if !audio_formats.is_empty() {
+        parts.push(format!("🎵 {}", audio_formats.join("|")));
+    }
+    parts.join(" ")
+}
+
+fn build_binge_group(t: &Value, addon_name: &str) -> String {
+    let addon_name_dashed = addon_name.replace(' ', "-");
+    let quality_detail = build_quality_detail(t);
+    let resolution_upper = t
+        .get("resolution")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|r| r.to_uppercase())
+        .unwrap_or_else(|| "N/A".to_string());
+    format!("{addon_name_dashed}-{quality_detail}-{resolution_upper}")
+}
+
+fn build_p2p_sources(t: &Value, hash: &str) -> Vec<String> {
+    let mut tracker_urls = trackers::all_trackers();
+    if let Some(announce_list) = t.get("announce_list").and_then(|v| v.as_array()) {
+        for item in announce_list {
+            if let Some(url) = item.as_str() {
+                if !tracker_urls.iter().any(|existing| existing == url) {
+                    tracker_urls.push(url.to_string());
+                }
+            }
+        }
+    }
+    let mut sources: Vec<String> = tracker_urls
+        .iter()
+        .map(|url| format!("tracker:{url}"))
+        .collect();
+    sources.push(format!("dht:{hash}"));
+    sources
+}
+
+fn stream_behavior_filename(t: &Value, filename: &str) -> Option<String> {
+    if !filename.is_empty() {
+        Some(filename.to_string())
+    } else {
+        t.get("name")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    }
+}
+
+fn has_user_stream_template(stream_template: Option<&Value>) -> bool {
+    stream_template.is_some_and(|tpl| {
+        let title = tpl
+            .get("t")
+            .or_else(|| tpl.get("title"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let desc = tpl
+            .get("d")
+            .or_else(|| tpl.get("description"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        !title.is_empty() || !desc.is_empty()
+    })
+}
+
 /// Build a template context for a torrent stream row.
 fn build_stream_context(
     t: &Value,
@@ -2098,19 +2432,9 @@ fn format_streams(
         .iter()
         .filter_map(|t| {
             let hash = t.get("info_hash").and_then(|v| v.as_str())?;
-            let quality = t.get("quality").and_then(|v| v.as_str()).unwrap_or("");
-            let resolution = t.get("resolution").and_then(|v| v.as_str()).unwrap_or("");
             let size = t.get("size").and_then(|v| v.as_i64());
             let file_index = t.get("file_index").and_then(|v| v.as_i64());
             let filename = t.get("filename").and_then(|v| v.as_str()).unwrap_or("");
-
-            let label = if !quality.is_empty() {
-                quality
-            } else if !resolution.is_empty() {
-                resolution
-            } else {
-                "Unknown"
-            };
 
             // Build template context and render title + description
             let is_cached =
@@ -2128,7 +2452,8 @@ fn format_streams(
                 title_str
             };
 
-            let binge_group = format!("{addon_name}-{label}-{resolution}");
+            let binge_group = build_binge_group(t, addon_name);
+            let behavior_filename = stream_behavior_filename(t, filename);
 
             let mut behavior: serde_json::Map<String, Value> = serde_json::Map::new();
             behavior.insert("bingeGroup".into(), json!(binge_group));
@@ -2148,6 +2473,9 @@ fn format_streams(
                     );
                     obj.insert("url".into(), json!(url));
                     behavior.insert("notWebReady".into(), json!(false));
+                    if let Some(fname) = behavior_filename {
+                        behavior.insert("filename".into(), json!(fname));
+                    }
                     obj.insert("behaviorHints".into(), Value::Object(behavior));
                     if let Some(fi) = file_index {
                         obj.insert("fileIdx".into(), json!(fi as i32));
@@ -2158,11 +2486,11 @@ fn format_streams(
 
             // No provider — use infoHash for WebTorrent
             behavior.insert("notWebReady".into(), json!(true));
-            if !filename.is_empty() {
-                behavior.insert("filename".into(), json!(filename));
+            if let Some(fname) = behavior_filename {
+                behavior.insert("filename".into(), json!(fname));
             }
             obj.insert("infoHash".into(), json!(hash));
-            obj.insert("sources".into(), json!([format!("dht:{hash}")]));
+            obj.insert("sources".into(), json!(build_p2p_sources(t, hash)));
             obj.insert("behaviorHints".into(), Value::Object(behavior));
             if let Some(fi) = file_index {
                 obj.insert("fileIdx".into(), json!(fi as i32));
@@ -2188,19 +2516,9 @@ fn format_single_stream(
     let (title_tpl, desc_tpl) = resolve_templates(stream_template);
 
     let hash = t.get("info_hash").and_then(|v| v.as_str())?;
-    let quality = t.get("quality").and_then(|v| v.as_str()).unwrap_or("");
-    let resolution = t.get("resolution").and_then(|v| v.as_str()).unwrap_or("");
     let size = t.get("size").and_then(|v| v.as_i64());
     let file_index = t.get("file_index").and_then(|v| v.as_i64());
     let filename = t.get("filename").and_then(|v| v.as_str()).unwrap_or("");
-
-    let label = if !quality.is_empty() {
-        quality
-    } else if !resolution.is_empty() {
-        resolution
-    } else {
-        "Unknown"
-    };
 
     let is_cached = primary_provider.is_some() && cached_hashes.get(hash).copied().unwrap_or(false);
     let ctx = build_stream_context(t, "torrent", addon_name, primary_provider, is_cached);
@@ -2215,7 +2533,8 @@ fn format_single_stream(
         title_str
     };
 
-    let binge_group = format!("{addon_name}-{label}-{resolution}");
+    let binge_group = build_binge_group(t, addon_name);
+    let behavior_filename = stream_behavior_filename(t, filename);
     let mut behavior: serde_json::Map<String, Value> = serde_json::Map::new();
     behavior.insert("bingeGroup".into(), json!(binge_group));
     if let Some(sz) = size.filter(|&s| s > 0) {
@@ -2233,6 +2552,9 @@ fn format_single_stream(
             );
             obj.insert("url".into(), json!(url));
             behavior.insert("notWebReady".into(), json!(false));
+            if let Some(fname) = behavior_filename {
+                behavior.insert("filename".into(), json!(fname));
+            }
             obj.insert("behaviorHints".into(), Value::Object(behavior));
             if let Some(fi) = file_index {
                 obj.insert("fileIdx".into(), json!(fi as i32));
@@ -2242,11 +2564,11 @@ fn format_single_stream(
     }
 
     behavior.insert("notWebReady".into(), json!(true));
-    if !filename.is_empty() {
-        behavior.insert("filename".into(), json!(filename));
+    if let Some(fname) = behavior_filename {
+        behavior.insert("filename".into(), json!(fname));
     }
     obj.insert("infoHash".into(), json!(hash));
-    obj.insert("sources".into(), json!([format!("dht:{hash}")]));
+    obj.insert("sources".into(), json!(build_p2p_sources(t, hash)));
     obj.insert("behaviorHints".into(), Value::Object(behavior));
     if let Some(fi) = file_index {
         obj.insert("fileIdx".into(), json!(fi as i32));
@@ -2258,6 +2580,7 @@ fn format_http_stream(
     row: &Value,
     addon_name: &str,
     stream_template: Option<&Value>,
+    is_tv: bool,
 ) -> Option<Value> {
     let url = row
         .get("url")
@@ -2273,33 +2596,47 @@ fn format_http_stream(
         "HTTP"
     };
 
-    let (title_tpl, desc_tpl) = resolve_templates(stream_template);
+    let stream_name = row.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let source = row.get("source").and_then(|v| v.as_str()).unwrap_or("");
 
-    let mut stream_obj = serde_json::Map::new();
-    stream_obj.insert("type".into(), json!("http"));
-    for key in &["name", "quality", "resolution", "codec", "source"] {
-        if let Some(v) = row
-            .get(*key)
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-        {
-            stream_obj.insert(key.to_string(), json!(v));
-        }
-    }
-    if let Some(sz) = row.get("size").and_then(|v| v.as_i64()) {
-        stream_obj.insert("size".into(), json!(sz));
-    }
-    if let Some(arr) = row.get("languages").and_then(|v| v.as_array()) {
-        stream_obj.insert("languages".into(), json!(arr));
-    }
-    let ctx = json!({ "stream": Value::Object(stream_obj), "service": {}, "addon": { "name": addon_name } });
-
-    let title_str = template::render(&title_tpl, &ctx);
-    let desc_str = template::render(&desc_tpl, &ctx);
-    let title_str = if title_str.trim().is_empty() {
-        format!("{addon_name} 🌐 {label}")
+    let (title_str, desc_str) = if is_tv && !has_user_stream_template(stream_template) {
+        let title = format!("{addon_name}\n{stream_name}");
+        let description = if !source.is_empty() {
+            format!("📺 {source}")
+        } else {
+            "📺 Live".to_string()
+        };
+        (title, description)
     } else {
-        title_str
+        let (title_tpl, desc_tpl) = resolve_templates(stream_template);
+
+        let mut stream_obj = serde_json::Map::new();
+        stream_obj.insert("type".into(), json!("http"));
+        for key in &["name", "quality", "resolution", "codec", "source"] {
+            if let Some(v) = row
+                .get(*key)
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                stream_obj.insert(key.to_string(), json!(v));
+            }
+        }
+        if let Some(sz) = row.get("size").and_then(|v| v.as_i64()) {
+            stream_obj.insert("size".into(), json!(sz));
+        }
+        if let Some(arr) = row.get("languages").and_then(|v| v.as_array()) {
+            stream_obj.insert("languages".into(), json!(arr));
+        }
+        let ctx = json!({ "stream": Value::Object(stream_obj), "service": {}, "addon": { "name": addon_name } });
+
+        let title_str = template::render(&title_tpl, &ctx);
+        let desc_str = template::render(&desc_tpl, &ctx);
+        let title_str = if title_str.trim().is_empty() {
+            format!("{addon_name} 🌐 {label}")
+        } else {
+            title_str
+        };
+        (title_str, desc_str)
     };
 
     let bh = row.get("behavior_hints").cloned().unwrap_or(json!({}));

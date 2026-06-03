@@ -24,51 +24,20 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
-use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
-use sha2::Sha256;
 
-use crate::state::AppState;
+use crate::{routes::auth_guard, state::AppState};
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
-fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string)?;
-    let dot = token.rfind('.')?;
-    let (payload_str, sig) = token.split_at(dot);
-    let sig = &sig[1..];
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).ok()?;
-    mac.update(payload_str.as_bytes());
-    let expected: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if expected != sig {
-        return None;
-    }
-    let decoded = URL_SAFE_NO_PAD.decode(payload_str).ok()?;
-    let data: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
-    let exp = data["exp"].as_f64()?;
-    if exp < Utc::now().timestamp() as f64 {
-        return None;
-    }
-    if data["type"].as_str() != Some("access") {
-        return None;
-    }
-    data["sub"].as_str()?.parse().ok()
-}
-
-// Optional auth — returns None if no/invalid token (rather than 401)
-fn optional_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
-    validate_token(headers, secret_key)
+// Optional auth — returns None if no/invalid/inactive token (rather than 401)
+async fn optional_token(
+    pool: &sqlx::PgPool,
+    headers: &HeaderMap,
+    secret_key: &str,
+) -> Option<i32> {
+    auth_guard::validate_active_user(pool, headers, secret_key).await
 }
 
 // ─── Request / Response structs ───────────────────────────────────────────────
@@ -179,7 +148,7 @@ pub async fn create_user_catalog(
     State(state): State<Arc<AppState>>,
     Json(body): Json<CatalogCreate>,
 ) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
         Some(id) => id,
         None => {
             return (
@@ -230,7 +199,7 @@ pub async fn list_user_catalogs(
     State(state): State<Arc<AppState>>,
     Query(params): Query<CatalogListQuery>,
 ) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
         Some(id) => id,
         None => {
             return (
@@ -314,7 +283,7 @@ pub async fn list_subscribed_catalogs(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
         Some(id) => id,
         None => {
             return (
@@ -399,7 +368,7 @@ pub async fn get_user_catalog(
     State(state): State<Arc<AppState>>,
     Path(catalog_id): Path<i32>,
 ) -> Response {
-    let user_id = optional_token(&headers, &state.config.secret_key_raw);
+    let user_id = optional_token(&state.pool, &headers, &state.config.secret_key_raw).await;
 
     let row: Option<CatalogRow> = match sqlx::query_as(
         r#"SELECT c.id, c.share_code, c.user_id, c.name, c.description, c.poster_url, c.is_public,
@@ -452,7 +421,7 @@ pub async fn update_user_catalog(
     Path(catalog_id): Path<i32>,
     Json(body): Json<CatalogUpdate>,
 ) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
         Some(id) => id,
         None => {
             return (
@@ -573,7 +542,7 @@ pub async fn delete_user_catalog(
     State(state): State<Arc<AppState>>,
     Path(catalog_id): Path<i32>,
 ) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
         Some(id) => id,
         None => {
             return (
@@ -635,7 +604,7 @@ pub async fn list_catalog_items(
     Path(catalog_id): Path<i32>,
     Query(params): Query<CatalogItemListQuery>,
 ) -> Response {
-    let user_id = optional_token(&headers, &state.config.secret_key_raw);
+    let user_id = optional_token(&state.pool, &headers, &state.config.secret_key_raw).await;
 
     // Check catalog exists and access
     let catalog: Option<(i32, i32, bool)> =
@@ -711,7 +680,7 @@ pub async fn add_catalog_item(
     Path(catalog_id): Path<i32>,
     Json(body): Json<CatalogItemAdd>,
 ) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
         Some(id) => id,
         None => {
             return (
@@ -800,7 +769,7 @@ pub async fn remove_catalog_item(
     State(state): State<Arc<AppState>>,
     Path((catalog_id, item_id)): Path<(i32, i32)>,
 ) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
         Some(id) => id,
         None => {
             return (
@@ -870,7 +839,7 @@ pub async fn reorder_items(
     Path(catalog_id): Path<i32>,
     Json(body): Json<ReorderRequest>,
 ) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
         Some(id) => id,
         None => {
             return (
@@ -958,7 +927,7 @@ pub async fn subscribe_catalog(
     State(state): State<Arc<AppState>>,
     Path(catalog_id): Path<i32>,
 ) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
         Some(id) => id,
         None => {
             return (
@@ -1052,7 +1021,7 @@ pub async fn unsubscribe_catalog(
     State(state): State<Arc<AppState>>,
     Path(catalog_id): Path<i32>,
 ) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
         Some(id) => id,
         None => {
             return (
@@ -1090,7 +1059,7 @@ pub async fn check_subscription(
     State(state): State<Arc<AppState>>,
     Path(catalog_id): Path<i32>,
 ) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await {
         Some(id) => id,
         None => {
             return (

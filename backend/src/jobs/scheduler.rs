@@ -16,7 +16,7 @@ const ADVISORY_LOCK_KEY: i64 = 0x6D666A6F62; // "mfjob"
 const SCHEDULER_TICK_SECS: u64 = 1;
 const LOCK_RETRY_SECS: u64 = 30;
 
-pub async fn run(pool: Arc<PgPool>, cancel: CancellationToken) {
+pub async fn run(pool: Arc<PgPool>, cancel: CancellationToken, disable_all: bool) {
     loop {
         tokio::select! {
             _ = cancel.cancelled() => { info!("scheduler stopping"); return; }
@@ -26,7 +26,7 @@ pub async fn run(pool: Arc<PgPool>, cancel: CancellationToken) {
                     Some(conn) => {
                         info!("scheduler: acquired advisory lock, taking cron ownership");
                         // Hold the dedicated connection alive — dropping it releases the lock.
-                        tick_loop(&pool, conn, &cancel).await;
+                        tick_loop(&pool, conn, &cancel, disable_all).await;
                         info!("scheduler: released advisory lock");
                         // Avoid a tight reconnect loop if the lock connection was recycled.
                         // The select! restarts with a fresh sleep, so without this explicit
@@ -65,13 +65,14 @@ async fn tick_loop(
     pool: &PgPool,
     mut lock_conn: PoolConnection<Postgres>,
     cancel: &CancellationToken,
+    disable_all: bool,
 ) {
     let mut interval = tokio::time::interval(Duration::from_secs(SCHEDULER_TICK_SECS));
     loop {
         tokio::select! {
             _ = cancel.cancelled() => break,
             _ = interval.tick() => {
-                if let Err(e) = tick_once(pool).await {
+                if let Err(e) = tick_once(pool, disable_all).await {
                     warn!("scheduler tick error: {e}");
                 }
                 // Verify lock is still on this connection (pool recycling guard).
@@ -107,7 +108,10 @@ async fn still_holds_lock(conn: &mut PoolConnection<Postgres>) -> bool {
     .unwrap_or(false)
 }
 
-async fn tick_once(pool: &PgPool) -> Result<(), sqlx::Error> {
+async fn tick_once(pool: &PgPool, disable_all: bool) -> Result<(), sqlx::Error> {
+    if disable_all {
+        return Ok(());
+    }
     let now = Utc::now();
     let jobs = sqlx::query!(
         "SELECT name, schedule, queue, payload, last_enqueued_at

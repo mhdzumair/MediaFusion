@@ -17,6 +17,7 @@ const EXEMPT_PREFIXES: &[&str] = &[
     "/api/v1/integrations/simkl/callback",
     "/api/v1/telegram/webhook",
     "/api/v1/telegram/login",
+    "/api/v1/metrics",
 ];
 
 /// Enforces X-API-Key header on all /api/v1/* endpoints for private instances.

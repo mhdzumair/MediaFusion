@@ -2,7 +2,7 @@
 
 use crate::{db::telegram as tg_db, state::AppState};
 
-use super::{api::BotApi, batch, detect, login, state_store, text, wizard};
+use super::{api::BotApi, batch, detect, disabled_content, login, state_store, text, wizard};
 
 pub async fn handle_command(
     state: &AppState,
@@ -17,10 +17,18 @@ pub async fn handle_command(
     match cmd {
         "/start" => {
             let name = None::<&str>;
-            let _ = api.send_message(chat_id, &text::welcome(name), None).await;
+            let enabled =
+                disabled_content::enabled_content_lines(&state.config.disabled_content_types);
+            let _ = api
+                .send_message(chat_id, &text::welcome(name, &enabled), None)
+                .await;
         }
         "/help" => {
-            let _ = api.send_message(chat_id, &text::help_text(), None).await;
+            let enabled =
+                disabled_content::enabled_content_lines(&state.config.disabled_content_types);
+            let _ = api
+                .send_message(chat_id, &text::help_text(&enabled), None)
+                .await;
         }
         "/login" => {
             let result = login::handle_login_command(state, api, user_id, chat_id).await;
@@ -217,6 +225,7 @@ pub async fn handle_content_message(
         message_id,
         content_type,
         raw_input,
+        None,
     )
     .await;
 }

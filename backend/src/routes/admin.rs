@@ -5,7 +5,8 @@
 /// Routes:
 ///   GET    /api/v1/admin/cache/stats
 ///   GET    /api/v1/admin/cache/keys
-///   DELETE /api/v1/admin/cache/key/{*key}
+///   DELETE /api/v1/admin/cache/key/{key}
+///   DELETE /api/v1/admin/cache/key/{key}/item
 ///   POST   /api/v1/admin/cache/clear
 ///   GET    /api/v1/admin/db/stats
 ///   GET    /api/v1/admin/db/tables
@@ -17,60 +18,14 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use chrono::Utc;
 use fred::prelude::*;
 use fred::types::InfoKind;
-use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
-use sha2::Sha256;
 
 use crate::state::AppState;
 
-// ─── Auth helper ─────────────────────────────────────────────────────────────
-
-fn validate_admin(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string)?;
-    let dot = token.rfind('.')?;
-    let (payload_str, sig) = token.split_at(dot);
-    let sig = &sig[1..];
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).ok()?;
-    mac.update(payload_str.as_bytes());
-    let expected: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if expected != sig {
-        return None;
-    }
-    let decoded = URL_SAFE_NO_PAD.decode(payload_str).ok()?;
-    let data: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
-    let exp = data["exp"].as_f64()?;
-    if exp < Utc::now().timestamp() as f64 {
-        return None;
-    }
-    if data["type"].as_str() != Some("access") {
-        return None;
-    }
-    if data["role"].as_str() != Some("admin") {
-        return None;
-    }
-    data["sub"].as_str()?.parse().ok()
-}
-
-fn forbidden() -> impl IntoResponse {
-    (
-        StatusCode::FORBIDDEN,
-        Json(serde_json::json!({"error": "Forbidden"})),
-    )
-}
+use super::auth_guard;
 
 // ─── Cache patterns map ───────────────────────────────────────────────────────
 
@@ -320,8 +275,16 @@ pub async fn cache_stats(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
-        return forbidden().into_response();
+    if let Err(failure) =
+        auth_guard::require_active_role(
+            &state.pool,
+            &headers,
+            &state.config.secret_key_raw,
+            &["admin"],
+        )
+        .await
+    {
+        return auth_guard::auth_failure_response(failure).into_response();
     }
 
     let info_str: String = state
@@ -415,8 +378,16 @@ pub async fn cache_keys(
     State(state): State<Arc<AppState>>,
     Query(params): Query<CacheKeysParamsExt>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
-        return forbidden().into_response();
+    if let Err(failure) =
+        auth_guard::require_active_role(
+            &state.pool,
+            &headers,
+            &state.config.secret_key_raw,
+            &["admin"],
+        )
+        .await
+    {
+        return auth_guard::auth_failure_response(failure).into_response();
     }
 
     let count = params.count.clamp(1, 200) as usize;
@@ -493,8 +464,16 @@ pub async fn cache_key_delete(
     State(state): State<Arc<AppState>>,
     Path(key): Path<String>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
-        return forbidden().into_response();
+    if let Err(failure) =
+        auth_guard::require_active_role(
+            &state.pool,
+            &headers,
+            &state.config.secret_key_raw,
+            &["admin"],
+        )
+        .await
+    {
+        return auth_guard::auth_failure_response(failure).into_response();
     }
 
     let deleted: i64 = state.redis.del(&key).await.unwrap_or(0);
@@ -505,13 +484,147 @@ pub async fn cache_key_delete(
     .into_response()
 }
 
+#[derive(Deserialize)]
+pub struct DeleteCacheItemRequest {
+    pub field: Option<String>,
+    pub member: Option<String>,
+    pub value: Option<String>,
+    pub index: Option<i64>,
+}
+
+pub async fn cache_key_item_delete(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(key): Path<String>,
+    Json(body): Json<DeleteCacheItemRequest>,
+) -> impl IntoResponse {
+    if let Err(failure) =
+        auth_guard::require_active_role(
+            &state.pool,
+            &headers,
+            &state.config.secret_key_raw,
+            &["admin"],
+        )
+        .await
+    {
+        return auth_guard::auth_failure_response(failure).into_response();
+    }
+
+    let key_type: String = state
+        .redis
+        .r#type::<String, _>(&key)
+        .await
+        .unwrap_or_else(|_| "none".to_string());
+
+    if key_type == "none" {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": format!("Key '{key}' not found")})),
+        )
+            .into_response();
+    }
+
+    let removed: i64 = match key_type.as_str() {
+        "hash" => {
+            let Some(field) = body.field.filter(|f| !f.is_empty()) else {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"detail": "Field name is required for hash type"})),
+                )
+                    .into_response();
+            };
+            state.redis.hdel(&key, field).await.unwrap_or(0)
+        }
+        "set" => {
+            let Some(member) = body.member.filter(|m| !m.is_empty()) else {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"detail": "Member value is required for set type"})),
+                )
+                    .into_response();
+            };
+            use fred::prelude::SetsInterface;
+            state.redis.srem(&key, member).await.unwrap_or(0)
+        }
+        "zset" => {
+            let Some(member) = body.member.filter(|m| !m.is_empty()) else {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"detail": "Member value is required for sorted set type"})),
+                )
+                    .into_response();
+            };
+            use fred::prelude::SortedSetsInterface;
+            state.redis.zrem(&key, member).await.unwrap_or(0)
+        }
+        "list" => {
+            if let Some(index) = body.index {
+                const PLACEHOLDER: &str = "__DELETED_ITEM_PLACEHOLDER__";
+                use fred::prelude::ListInterface;
+                if state
+                    .redis
+                    .lset::<(), _, _>(&key, index, PLACEHOLDER)
+                    .await
+                    .is_err()
+                {
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(json!({"detail": "Item not found in the collection"})),
+                    )
+                        .into_response();
+                }
+                state.redis.lrem(&key, 1, PLACEHOLDER).await.unwrap_or(0)
+            } else if let Some(value) = body.value.filter(|v| !v.is_empty()) {
+                use fred::prelude::ListInterface;
+                state.redis.lrem(&key, 0, value).await.unwrap_or(0)
+            } else {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"detail": "Value or index is required for list type"})),
+                )
+                    .into_response();
+            }
+        }
+        other => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": format!("Cannot delete items from type '{other}'. Use DELETE /key/{{key}} instead.")})),
+            )
+                .into_response();
+        }
+    };
+
+    if removed == 0 {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Item not found in the collection"})),
+        )
+            .into_response();
+    }
+
+    Json(json!({
+        "success": true,
+        "message": format!("Item deleted from '{key}'"),
+        "removed_count": removed,
+    }))
+    .into_response()
+}
+
 pub async fn cache_key_get(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Path(key): Path<String>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
-        return forbidden().into_response();
+    if let Err(failure) =
+        auth_guard::require_active_role(
+            &state.pool,
+            &headers,
+            &state.config.secret_key_raw,
+            &["admin"],
+        )
+        .await
+    {
+        return auth_guard::auth_failure_response(failure).into_response();
     }
 
     let key_type: String = state
@@ -603,8 +716,16 @@ pub async fn cache_image_get(
     State(state): State<Arc<AppState>>,
     Path(key): Path<String>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
-        return forbidden().into_response();
+    if let Err(failure) =
+        auth_guard::require_active_role(
+            &state.pool,
+            &headers,
+            &state.config.secret_key_raw,
+            &["admin"],
+        )
+        .await
+    {
+        return auth_guard::auth_failure_response(failure).into_response();
     }
     let value: Option<String> = state.redis.get(&key).await.unwrap_or(None);
     Json(serde_json::json!({"key": key, "value": value})).into_response()
@@ -615,8 +736,16 @@ pub async fn cache_clear(
     State(state): State<Arc<AppState>>,
     Json(body): Json<CacheClearRequest>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
-        return forbidden().into_response();
+    if let Err(failure) =
+        auth_guard::require_active_role(
+            &state.pool,
+            &headers,
+            &state.config.secret_key_raw,
+            &["admin"],
+        )
+        .await
+    {
+        return auth_guard::auth_failure_response(failure).into_response();
     }
 
     // Resolve the set of patterns to delete.
@@ -682,8 +811,16 @@ pub async fn cache_clear(
 }
 
 pub async fn db_stats(headers: HeaderMap, State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
-        return forbidden().into_response();
+    if let Err(failure) =
+        auth_guard::require_active_role(
+            &state.pool,
+            &headers,
+            &state.config.secret_key_raw,
+            &["admin"],
+        )
+        .await
+    {
+        return auth_guard::auth_failure_response(failure).into_response();
     }
 
     let (version, db_name, size_pretty, total_bytes, active_conn, max_conn, deadlocks, commits, rollbacks) =
@@ -752,8 +889,16 @@ pub async fn db_tables(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
-        return forbidden().into_response();
+    if let Err(failure) =
+        auth_guard::require_active_role(
+            &state.pool,
+            &headers,
+            &state.config.secret_key_raw,
+            &["admin"],
+        )
+        .await
+    {
+        return auth_guard::auth_failure_response(failure).into_response();
     }
 
     type TableRow = (

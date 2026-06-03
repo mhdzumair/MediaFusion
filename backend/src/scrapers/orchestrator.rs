@@ -88,9 +88,7 @@ pub async fn run_live_search(
 
     let (torrents, usenet) = tokio::join!(
         run_torrent_scrape(state, user_data, meta, media_type, season, episode),
-        run_usenet(
-            state, user_data, meta, media_type, season, episode, scope, false,
-        ),
+        run_usenet(state, user_data, meta, media_type, season, episode, scope, false,),
     );
 
     (torrents, usenet)
@@ -308,8 +306,9 @@ pub async fn run_usenet(
         &cache_key,
     )
     .await;
-    let is_stale =
-        |scraper_id: &str, ttl: i64| is_scrape_stale(&last_scraped, scraper_id, ttl, now, bypass_ttl);
+    let is_stale = |scraper_id: &str, ttl: i64| {
+        is_scrape_stale(&last_scraped, scraper_id, ttl, now, bypass_ttl)
+    };
 
     let mut results: Vec<ScrapedUsenetStream> = Vec::new();
     let mut scraped_ids: Vec<&str> = Vec::new();
@@ -364,9 +363,7 @@ pub async fn run_usenet(
     }
 
     // ── TorBox Usenet ─────────────────────────────────────────────────────────
-    if is_stale("torbox_search", cfg.torbox_search_ttl)
-        && torbox_search::has_token(user_data)
-    {
+    if is_stale("torbox_search", cfg.torbox_search_ttl) && torbox_search::has_token(user_data) {
         let tb =
             torbox_search::scrape_usenet(&state.http, user_data, meta, media_type, season, episode)
                 .await;
@@ -521,14 +518,7 @@ async fn record_scrape_timestamps(
 
     for scraper_id in scraper_ids {
         let _: Result<i64, _> = redis
-            .zadd(
-                *scraper_id,
-                None,
-                None,
-                false,
-                false,
-                (now, cache_key),
-            )
+            .zadd(*scraper_id, None, None, false, false, (now, cache_key))
             .await;
     }
 }

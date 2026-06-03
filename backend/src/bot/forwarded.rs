@@ -141,10 +141,27 @@ pub async fn store_forwarded_video(
         backup_message_id: backup_message_id.map(|id| id as i32),
     };
 
-    let opts = crate::db::StoreStreamOpts::user_import(
-        crate::db::MediaId(media_id),
-        crate::db::MediaType::Movie,
-    );
+    let media_type = if conv.media_type.as_deref() == Some("series") {
+        crate::db::MediaType::Series
+    } else {
+        crate::db::MediaType::Movie
+    };
+    let season = overrides
+        .get("season_number")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+    let episode = overrides
+        .get("episode_number")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+
+    let episode_end = overrides
+        .get("episode_end")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+
+    let opts = crate::db::StoreStreamOpts::user_import(crate::db::MediaId(media_id), media_type)
+        .with_episode(season, episode, episode_end);
 
     crate::db::store_telegram_stream(&state.pool, &tg, &opts)
         .await
@@ -161,6 +178,33 @@ pub async fn store_forwarded_video(
         .bind(poster_url)
         .execute(&state.pool)
         .await;
+    }
+
+    if let (Some(bot_token), Some(chat_id)) = (
+        state.config.telegram_bot_token.as_deref(),
+        state.config.telegram_chat_id.as_deref(),
+    ) {
+        let http = state.http.clone();
+        let notify_file_name = file_name.to_string();
+        let notify_meta_id = meta_id.to_string();
+        let notify_title = stream_name.to_string();
+        let file_size = data.get("file_size").and_then(|v| v.as_i64()).unwrap_or(0);
+        let bot_token = bot_token.to_string();
+        let chat_id = chat_id.to_string();
+        crate::bot::notify_if_enabled(state, async move {
+            crate::bot::send_content_received_notification(
+                &http,
+                &bot_token,
+                &chat_id,
+                &notify_file_name,
+                file_size,
+                "stored",
+                Some(&notify_meta_id),
+                Some(&notify_title),
+                None,
+            )
+            .await;
+        });
     }
 
     Ok(())

@@ -128,6 +128,7 @@ pub async fn start_batch_item_review(
             "mime_type": item.mime_type,
             "file_size": item.file_size,
         }),
+        Some(item_id.to_string()),
     )
     .await;
 }
@@ -431,7 +432,7 @@ pub async fn handle_season_input(
     render_batch_summary(state, api, &batch).await;
 }
 
-async fn render_batch_summary(state: &AppState, api: &BotApi, batch: &BatchState) {
+pub async fn render_batch_summary(state: &AppState, api: &BotApi, batch: &BatchState) {
     let pending = batch
         .items
         .iter()

@@ -7,31 +7,34 @@ use crate::db::{store_media, MediaId, StoreMediaOpts};
 
 use super::{fetch_normalized, FetchCtx};
 
-/// Resolve a local media id from IMDb/TMDB ids, fetching and storing metadata when absent.
+/// Resolve a local media id from external ids, fetching and storing metadata when absent.
 pub async fn resolve_or_store_media(
     pool: &PgPool,
     http: &reqwest::Client,
     ctx: &FetchCtx<'_>,
     imdb: Option<&str>,
     tmdb: Option<&str>,
+    tvdb: Option<&str>,
+    mal: Option<&str>,
     title: &str,
     is_series: bool,
 ) -> Option<MediaId> {
-    if let Some(iid) = imdb {
-        if let Some(id) = lookup_external(pool, "imdb", iid).await {
-            return Some(id);
-        }
-    }
-    if let Some(tid) = tmdb {
-        if let Some(id) = lookup_external(pool, "tmdb", tid).await {
-            return Some(id);
+    for (provider, id) in [("imdb", imdb), ("tmdb", tmdb), ("tvdb", tvdb), ("mal", mal)] {
+        if let Some(ext_id) = id {
+            if let Some(mid) = lookup_external(pool, provider, ext_id).await {
+                return Some(mid);
+            }
         }
     }
 
-    let meta = if let Some(iid) = imdb {
-        fetch_normalized(http, ctx, "imdb", iid, is_series).await
-    } else if let Some(tid) = tmdb {
+    let meta = if let Some(tid) = tmdb {
         fetch_normalized(http, ctx, "tmdb", tid, is_series).await
+    } else if let Some(iid) = imdb {
+        fetch_normalized(http, ctx, "imdb", iid, is_series).await
+    } else if let Some(vid) = tvdb {
+        fetch_normalized(http, ctx, "tvdb", vid, is_series).await
+    } else if let Some(mid) = mal {
+        fetch_normalized(http, ctx, "mal", mid, is_series).await
     } else {
         None
     }?;

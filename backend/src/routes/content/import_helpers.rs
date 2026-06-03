@@ -12,7 +12,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    db::{MediaType, TorrentType},
+    db::{contribution_defaults, MediaType, TorrentType},
     parser::detect_sports_category,
     state::AppState,
 };
@@ -261,8 +261,12 @@ pub async fn award_contribution_points(pool: &sqlx::PgPool, user_id: i64, contri
     .await
     .unwrap_or(None);
 
-    let (points_per_edit, contributor_t, trusted_t, expert_t) =
-        settings.unwrap_or((5, 10, 50, 200));
+    let (points_per_edit, contributor_t, trusted_t, expert_t) = settings.unwrap_or((
+        contribution_defaults::POINTS_PER_STREAM_EDIT,
+        contribution_defaults::CONTRIBUTOR_THRESHOLD,
+        contribution_defaults::TRUSTED_THRESHOLD,
+        contribution_defaults::EXPERT_THRESHOLD,
+    ));
 
     sqlx::query(
         r#"UPDATE users SET
@@ -1152,6 +1156,7 @@ pub async fn insert_torrent_stream_row(
             media_type: MediaType::Movie,
             season: None,
             episode: None,
+            episode_end: None,
             link_source: crate::db::LinkSource::User,
             is_primary: true,
             is_verified: false,

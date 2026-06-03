@@ -18,6 +18,8 @@ pub struct AppConfig {
     /// Absolute base URL of this service (e.g. "https://mediafusion.example.com").
     /// Used to build poster URLs in meta responses.
     pub host_url: String,
+    /// Base URL for generated poster images. Defaults to [`host_url`] when unset.
+    pub poster_host_url: String,
     // Addon identity fields (shown in Stremio manifest).
     pub addon_name: String,
     pub addon_version: String,
@@ -73,6 +75,8 @@ pub struct AppConfig {
     /// When unset and the endpoint is enabled, it is open to anyone who can
     /// reach the endpoint (rely on network-level controls in that case).
     pub metrics_api_key: Option<String>,
+    /// When false, inbound HTTP rate limiting is disabled (Python `enable_rate_limit`).
+    pub enable_rate_limit: bool,
     /// Enable the Torznab feed endpoint (default: true).
     pub enable_torznab_api: bool,
 
@@ -154,10 +158,14 @@ pub struct AppConfig {
     pub smtp_username: Option<String>,
     pub smtp_password: Option<String>,
     pub smtp_from: String,
+    pub convertkit_api_key: Option<String>,
+    pub convertkit_form_id: Option<String>,
 
     // ── Debrid cache sync ───────────────────────────────────────────────────
     /// Whether to sync debrid cache to a central MediaFusion instance.
     pub sync_debrid_cache_streams: bool,
+    /// Whether to store StremThru magnet cache entries in Redis. Default: false.
+    pub store_stremthru_magnet_cache: bool,
 
     // ── Telegram MTProto (grammers) ─────────────────────────────────────────
     /// Telegram API ID (from https://my.telegram.org).
@@ -186,90 +194,11 @@ pub struct AppConfig {
     pub simkl_client_secret: Option<String>,
 
     // ── Scheduler (global) ───────────────────────────────────────────────────
-    /// When true all scheduler jobs are suppressed regardless of individual flags.
+    /// When true all scheduler jobs are suppressed regardless of cron_jobs.enabled.
     pub disable_all_scheduler: bool,
 
-    // ── Scheduler: Scrapy spiders ────────────────────────────────────────────
-    pub tamilmv_scheduler_crontab: String,
-    pub disable_tamilmv_scheduler: bool,
-    pub tamil_blasters_scheduler_crontab: String,
-    pub disable_tamil_blasters_scheduler: bool,
-    pub formula_ext_scheduler_crontab: String,
-    pub disable_formula_ext_scheduler: bool,
-    pub motogp_ext_scheduler_crontab: String,
-    pub disable_motogp_ext_scheduler: bool,
-    pub wwe_ext_scheduler_crontab: String,
-    pub disable_wwe_ext_scheduler: bool,
-    pub ufc_ext_scheduler_crontab: String,
-    pub disable_ufc_ext_scheduler: bool,
-    pub movies_tv_ext_scheduler_crontab: String,
-    pub disable_movies_tv_ext_scheduler: bool,
-    pub nowmetv_scheduler_crontab: String,
-    pub disable_nowmetv_scheduler: bool,
-    pub nowsports_scheduler_crontab: String,
-    pub disable_nowsports_scheduler: bool,
-    pub tamilultra_scheduler_crontab: String,
-    pub disable_tamilultra_scheduler: bool,
-    pub sport_video_scheduler_crontab: String,
-    pub disable_sport_video_scheduler: bool,
-    pub dlhd_scheduler_crontab: String,
-    pub disable_dlhd_scheduler: bool,
-    pub arab_torrents_scheduler_crontab: String,
-    pub disable_arab_torrents_scheduler: bool,
-    pub x1337_scheduler_crontab: String,
-    pub disable_x1337_scheduler: bool,
-    pub thepiratebay_scheduler_crontab: String,
-    pub disable_thepiratebay_scheduler: bool,
-    pub rutor_scheduler_crontab: String,
-    pub disable_rutor_scheduler: bool,
-    pub limetorrents_scheduler_crontab: String,
-    pub disable_limetorrents_scheduler: bool,
-    pub yts_scheduler_crontab: String,
-    pub disable_yts_scheduler: bool,
-    pub bt4g_scheduler_crontab: String,
-    pub disable_bt4g_scheduler: bool,
-    pub nyaa_scheduler_crontab: String,
-    pub disable_nyaa_scheduler: bool,
-    pub animetosho_scheduler_crontab: String,
-    pub disable_animetosho_scheduler: bool,
-    pub subsplease_scheduler_crontab: String,
-    pub disable_subsplease_scheduler: bool,
-    pub animepahe_scheduler_crontab: String,
-    pub disable_animepahe_scheduler: bool,
-    pub bt52_scheduler_crontab: String,
-    pub disable_bt52_scheduler: bool,
-    pub uindex_scheduler_crontab: String,
-    pub disable_uindex_scheduler: bool,
-    pub eztv_rss_scheduler_crontab: String,
-    pub disable_eztv_rss_scheduler: bool,
-
-    // ── Scheduler: Feed scrapers ─────────────────────────────────────────────
-    pub prowlarr_feed_scraper_crontab: String,
-    pub disable_prowlarr_feed_scraper: bool,
-    pub jackett_feed_scraper_crontab: String,
-    pub disable_jackett_feed_scraper: bool,
-    pub rss_feed_scraper_crontab: String,
-    pub disable_rss_feed_scraper: bool,
-
-    // ── Scheduler: Background scrapers ───────────────────────────────────────
-    pub dmm_hashlist_scraper_crontab: String,
-    pub youtube_background_scraper_crontab: String,
-    pub disable_youtube_background_scraper: bool,
-    pub acestream_background_scraper_crontab: String,
-    pub disable_acestream_background_scraper: bool,
-    pub telegram_background_scraper_crontab: String,
-    pub disable_telegram_background_scraper: bool,
-
-    // ── Scheduler: Maintenance tasks ─────────────────────────────────────────
-    pub validate_tv_streams_in_db_crontab: String,
-    pub disable_validate_tv_streams_in_db: bool,
-    pub update_seeders_crontab: String,
-    pub disable_update_seeders: bool,
-    pub cleanup_expired_scraper_task_crontab: String,
-    pub cleanup_expired_cache_task_crontab: String,
-    pub background_search_crontab: String,
-    pub integration_sync_crontab: String,
-    pub disable_integration_sync_scheduler: bool,
+    /// YouTube Data API key for import metadata (duration, geo-restriction).
+    pub youtube_api_key: Option<String>,
 
     // ── Discover / TMDB ───────────────────────────────────────────
     /// TMDB API key (server-level fallback for discover endpoints).
@@ -290,6 +219,8 @@ pub struct AppConfig {
     pub anime_metadata_source_order: Vec<String>,
     /// Optional HTTP proxy for metadata/scraper requests (Python `requests_proxy_url`).
     pub requests_proxy_url: Option<String>,
+    /// When true, live TV M3U8/MPD URLs are HEAD-checked before being returned (default: true).
+    pub validate_m3u8_urls_liveness: bool,
     /// Enable the Discover feature endpoints (default: true).
     pub discover_enabled: bool,
     /// Allow server-level TMDB key to be used as fallback when user has none (default: false).
@@ -298,8 +229,25 @@ pub struct AppConfig {
     // ── Image upload ──────────────────────────────────────────────
     /// Enable local image upload endpoint (default: false).
     pub image_upload_enabled: bool,
-    /// Directory to store uploaded images (default: "./data/images").
+    /// Directory to store uploaded images when S3 is not configured (default: "./data/images").
     pub images_dir: String,
+    /// Image storage backend: `local` or `s3` (default: `s3` when S3 creds set, else `local`).
+    pub image_storage_backend: String,
+
+    // ── NZB file storage ──────────────────────────────────────────
+    /// Where uploaded NZB files are stored: `local` or `s3` (default: `local`).
+    pub nzb_file_storage_backend: String,
+    /// Local directory for gzip-compressed NZB blobs (default: `./data/nzb`).
+    pub nzb_dir: String,
+    /// Signed NZB download URL lifetime in seconds (default: 3600).
+    pub nzb_download_url_expiry: i64,
+
+    // ── S3 / R2 object storage ────────────────────────────────────
+    pub s3_endpoint_url: Option<String>,
+    pub s3_access_key_id: Option<String>,
+    pub s3_secret_access_key: Option<String>,
+    pub s3_bucket_name: Option<String>,
+    pub s3_region: String,
 
     // ── Exception tracking ────────────────────────────────────────
     pub enable_exception_tracking: bool,
@@ -429,6 +377,16 @@ impl AppConfig {
                 .unwrap_or_else(|_| "http://localhost:8000".into())
                 .trim_end_matches('/')
                 .to_string(),
+            poster_host_url: env("POSTER_HOST_URL")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.trim_end_matches('/').to_string())
+                .unwrap_or_else(|| {
+                    env("HOST_URL")
+                        .unwrap_or_else(|_| "http://localhost:8000".into())
+                        .trim_end_matches('/')
+                        .to_string()
+                }),
             addon_name: env("ADDON_NAME")
                 .unwrap_or_else(|_| "MediaFusion".into()),
             addon_version: env("VERSION")
@@ -479,10 +437,24 @@ impl AppConfig {
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
             api_password: env("API_PASSWORD").ok().filter(|s| !s.is_empty()),
             enable_prometheus_metrics: env("ENABLE_PROMETHEUS_METRICS")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            metrics_api_key: env("PROMETHEUS_METRICS_TOKEN").ok().filter(|s| !s.is_empty()),
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .or_else(|| {
+                    env("ENABLE_METRICS_ENDPOINT")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                })
+                .unwrap_or(false),
+            metrics_api_key: env("PROMETHEUS_METRICS_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .or_else(|| env("METRICS_BEARER_TOKEN").ok().filter(|s| !s.is_empty())),
             enable_torznab_api: env("ENABLE_TORZNAB_API")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            enable_rate_limit: env("ENABLE_RATE_LIMIT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(true),
             is_scrap_from_prowlarr: env("IS_SCRAP_FROM_PROWLARR")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
             is_scrap_from_zilean: env("IS_SCRAP_FROM_ZILEAN")
@@ -563,8 +535,14 @@ impl AppConfig {
             smtp_password: env("SMTP_PASSWORD").ok().filter(|s| !s.is_empty()),
             smtp_from: env("SMTP_FROM_EMAIL")
                 .unwrap_or_else(|_| "noreply@mediafusion.example.com".into()),
+            convertkit_api_key: env("CONVERTKIT_API_KEY").ok().filter(|s| !s.is_empty()),
+            convertkit_form_id: env("CONVERTKIT_FORM_ID").ok().filter(|s| !s.is_empty()),
             sync_debrid_cache_streams: env("SYNC_DEBRID_CACHE_STREAMS")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            store_stremthru_magnet_cache: env("STORE_STREMTHRU_MAGNET_CACHE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(false),
             telegram_api_id: env("TELEGRAM_API_ID")
                 .ok().and_then(|s| s.parse().ok()),
             telegram_api_hash: env("TELEGRAM_API_HASH").ok().filter(|s| !s.is_empty()),
@@ -593,154 +571,7 @@ impl AppConfig {
             simkl_client_secret: env("SIMKL_CLIENT_SECRET").ok().filter(|s| !s.is_empty()),
             disable_all_scheduler: env("DISABLE_ALL_SCHEDULER")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            tamilmv_scheduler_crontab: env("TAMILMV_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 */3 * * *".into()),
-            disable_tamilmv_scheduler: env("DISABLE_TAMILMV_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            tamil_blasters_scheduler_crontab: env("TAMIL_BLASTERS_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 */6 * * *".into()),
-            disable_tamil_blasters_scheduler: env("DISABLE_TAMIL_BLASTERS_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            formula_ext_scheduler_crontab: env("FORMULA_EXT_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "*/30 * * * *".into()),
-            disable_formula_ext_scheduler: env("DISABLE_FORMULA_EXT_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            motogp_ext_scheduler_crontab: env("MOTOGP_EXT_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 5 * * *".into()),
-            disable_motogp_ext_scheduler: env("DISABLE_MOTOGP_EXT_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            wwe_ext_scheduler_crontab: env("WWE_EXT_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "10 */3 * * *".into()),
-            disable_wwe_ext_scheduler: env("DISABLE_WWE_EXT_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            ufc_ext_scheduler_crontab: env("UFC_EXT_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "30 */3 * * *".into()),
-            disable_ufc_ext_scheduler: env("DISABLE_UFC_EXT_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            movies_tv_ext_scheduler_crontab: env("MOVIES_TV_EXT_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 * * * *".into()),
-            disable_movies_tv_ext_scheduler: env("DISABLE_MOVIES_TV_EXT_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            nowmetv_scheduler_crontab: env("NOWMETV_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 0 * * 5".into()),
-            disable_nowmetv_scheduler: env("DISABLE_NOWMETV_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            nowsports_scheduler_crontab: env("NOWSPORTS_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 10 * * 5".into()),
-            disable_nowsports_scheduler: env("DISABLE_NOWSPORTS_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            tamilultra_scheduler_crontab: env("TAMILULTRA_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 8 * * 5".into()),
-            disable_tamilultra_scheduler: env("DISABLE_TAMILULTRA_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            sport_video_scheduler_crontab: env("SPORT_VIDEO_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "*/20 * * * *".into()),
-            disable_sport_video_scheduler: env("DISABLE_SPORT_VIDEO_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            dlhd_scheduler_crontab: env("DLHD_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 0 * * 1".into()),
-            disable_dlhd_scheduler: env("DISABLE_DLHD_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            arab_torrents_scheduler_crontab: env("ARAB_TORRENTS_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 0 * * *".into()),
-            disable_arab_torrents_scheduler: env("DISABLE_ARAB_TORRENTS_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            x1337_scheduler_crontab: env("X1337_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 */6 * * *".into()),
-            disable_x1337_scheduler: env("DISABLE_X1337_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            thepiratebay_scheduler_crontab: env("THEPIRATEBAY_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "30 */6 * * *".into()),
-            disable_thepiratebay_scheduler: env("DISABLE_THEPIRATEBAY_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            rutor_scheduler_crontab: env("RUTOR_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "45 */6 * * *".into()),
-            disable_rutor_scheduler: env("DISABLE_RUTOR_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            limetorrents_scheduler_crontab: env("LIMETORRENTS_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 */8 * * *".into()),
-            disable_limetorrents_scheduler: env("DISABLE_LIMETORRENTS_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            yts_scheduler_crontab: env("YTS_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 */12 * * *".into()),
-            disable_yts_scheduler: env("DISABLE_YTS_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            bt4g_scheduler_crontab: env("BT4G_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "15 */8 * * *".into()),
-            disable_bt4g_scheduler: env("DISABLE_BT4G_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            nyaa_scheduler_crontab: env("NYAA_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "15 */3 * * *".into()),
-            disable_nyaa_scheduler: env("DISABLE_NYAA_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            animetosho_scheduler_crontab: env("ANIMETOSHO_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "30 */4 * * *".into()),
-            disable_animetosho_scheduler: env("DISABLE_ANIMETOSHO_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            subsplease_scheduler_crontab: env("SUBSPLEASE_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "45 */4 * * *".into()),
-            disable_subsplease_scheduler: env("DISABLE_SUBSPLEASE_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            animepahe_scheduler_crontab: env("ANIMEPAHE_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 */6 * * *".into()),
-            disable_animepahe_scheduler: env("DISABLE_ANIMEPAHE_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            bt52_scheduler_crontab: env("BT52_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "30 */6 * * *".into()),
-            disable_bt52_scheduler: env("DISABLE_BT52_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            uindex_scheduler_crontab: env("UINDEX_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 */4 * * *".into()),
-            disable_uindex_scheduler: env("DISABLE_UINDEX_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            eztv_rss_scheduler_crontab: env("EZTV_RSS_SCHEDULER_CRONTAB")
-                .unwrap_or_else(|_| "0 */2 * * *".into()),
-            disable_eztv_rss_scheduler: env("DISABLE_EZTV_RSS_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            prowlarr_feed_scraper_crontab: env("PROWLARR_FEED_SCRAPER_CRONTAB")
-                .unwrap_or_else(|_| "0 */3 * * *".into()),
-            disable_prowlarr_feed_scraper: env("DISABLE_PROWLARR_FEED_SCRAPER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            jackett_feed_scraper_crontab: env("JACKETT_FEED_SCRAPER_CRONTAB")
-                .unwrap_or_else(|_| "0 */3 * * *".into()),
-            disable_jackett_feed_scraper: env("DISABLE_JACKETT_FEED_SCRAPER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            rss_feed_scraper_crontab: env("RSS_FEED_SCRAPER_CRONTAB")
-                .unwrap_or_else(|_| "0 */3 * * *".into()),
-            disable_rss_feed_scraper: env("DISABLE_RSS_FEED_SCRAPER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            dmm_hashlist_scraper_crontab: env("DMM_HASHLIST_SCRAPER_CRONTAB")
-                .unwrap_or_else(|_| "0 * * * *".into()),
-            youtube_background_scraper_crontab: env("YOUTUBE_BACKGROUND_SCRAPER_CRONTAB")
-                .unwrap_or_else(|_| "20 */6 * * *".into()),
-            disable_youtube_background_scraper: env("DISABLE_YOUTUBE_BACKGROUND_SCRAPER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            acestream_background_scraper_crontab: env("ACESTREAM_BACKGROUND_SCRAPER_CRONTAB")
-                .unwrap_or_else(|_| "40 */6 * * *".into()),
-            disable_acestream_background_scraper: env("DISABLE_ACESTREAM_BACKGROUND_SCRAPER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            telegram_background_scraper_crontab: env("TELEGRAM_BACKGROUND_SCRAPER_CRONTAB")
-                .unwrap_or_else(|_| "10 */6 * * *".into()),
-            disable_telegram_background_scraper: env("DISABLE_TELEGRAM_BACKGROUND_SCRAPER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            validate_tv_streams_in_db_crontab: env("VALIDATE_TV_STREAMS_IN_DB_CRONTAB")
-                .unwrap_or_else(|_| "0 0 * * 4".into()),
-            disable_validate_tv_streams_in_db: env("DISABLE_VALIDATE_TV_STREAMS_IN_DB")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
-            update_seeders_crontab: env("UPDATE_SEEDERS_CRONTAB")
-                .unwrap_or_else(|_| "0 0 * * 3".into()),
-            disable_update_seeders: env("DISABLE_UPDATE_SEEDERS")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
-            cleanup_expired_scraper_task_crontab: env("CLEANUP_EXPIRED_SCRAPER_TASK_CRONTAB")
-                .unwrap_or_else(|_| "0 * * * *".into()),
-            cleanup_expired_cache_task_crontab: env("CLEANUP_EXPIRED_CACHE_TASK_CRONTAB")
-                .unwrap_or_else(|_| "0 0 * * *".into()),
-            background_search_crontab: env("BACKGROUND_SEARCH_CRONTAB")
-                .unwrap_or_else(|_| "*/3 * * * *".into()),
-            integration_sync_crontab: env("INTEGRATION_SYNC_CRONTAB")
-                .unwrap_or_else(|_| "0 */6 * * *".into()),
-            disable_integration_sync_scheduler: env("DISABLE_INTEGRATION_SYNC_SCHEDULER")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            youtube_api_key: env("YOUTUBE_API_KEY").ok().filter(|s| !s.is_empty()),
             tmdb_api_key: env("TMDB_API_KEY").ok().filter(|s| !s.is_empty()),
             tvdb_api_key: env("TVDB_API_KEY").ok().filter(|s| !s.is_empty()),
             imdb_cinemeta_fallback_enabled: env("IMDB_CINEMETA_FALLBACK_ENABLED")
@@ -779,6 +610,10 @@ impl AppConfig {
                 .filter(|v: &Vec<String>| !v.is_empty())
                 .unwrap_or_else(|| vec!["kitsu".into(), "anilist".into()]),
             requests_proxy_url: env("REQUESTS_PROXY_URL").ok().filter(|s| !s.is_empty()),
+            validate_m3u8_urls_liveness: env("VALIDATE_M3U8_URLS_LIVENESS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(true),
             discover_enabled: env("DISCOVER_ENABLED")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
             discover_allow_server_key: env("DISCOVER_ALLOW_SERVER_KEY")
@@ -789,6 +624,20 @@ impl AppConfig {
             image_upload_enabled: env("IMAGE_UPLOAD_ENABLED")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
             images_dir: env("IMAGES_DIR").unwrap_or_else(|_| "./data/images".into()),
+            image_storage_backend: env("IMAGE_STORAGE_BACKEND")
+                .unwrap_or_else(|_| "local".into()),
+            nzb_file_storage_backend: env("NZB_FILE_STORAGE_BACKEND")
+                .unwrap_or_else(|_| "local".into()),
+            nzb_dir: env("NZB_DIR").unwrap_or_else(|_| "./data/nzb".into()),
+            nzb_download_url_expiry: env("NZB_DOWNLOAD_URL_EXPIRY")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3600),
+            s3_endpoint_url: env("S3_ENDPOINT_URL").ok().filter(|s| !s.is_empty()),
+            s3_access_key_id: env("S3_ACCESS_KEY_ID").ok().filter(|s| !s.is_empty()),
+            s3_secret_access_key: env("S3_SECRET_ACCESS_KEY").ok().filter(|s| !s.is_empty()),
+            s3_bucket_name: env("S3_BUCKET_NAME").ok().filter(|s| !s.is_empty()),
+            s3_region: env("S3_REGION").unwrap_or_else(|_| "auto".into()),
             enable_exception_tracking: env("ENABLE_EXCEPTION_TRACKING")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
             exception_tracking_ttl: env("EXCEPTION_TRACKING_TTL")
@@ -861,6 +710,41 @@ impl AppConfig {
             premiumize_oauth_client_id: env("PREMIUMIZE_OAUTH_CLIENT_ID").ok().filter(|s| !s.is_empty()),
             premiumize_oauth_client_secret: env("PREMIUMIZE_OAUTH_CLIENT_SECRET").ok().filter(|s| !s.is_empty()),
             branding_description: env("BRANDING_DESCRIPTION").unwrap_or_default(),
+        }
+    }
+
+    /// True when all S3/R2 credentials required for object storage are present.
+    pub fn s3_configured(&self) -> bool {
+        self.s3_endpoint_url.as_ref().is_some_and(|s| !s.is_empty())
+            && self
+                .s3_access_key_id
+                .as_ref()
+                .is_some_and(|s| !s.is_empty())
+            && self
+                .s3_secret_access_key
+                .as_ref()
+                .is_some_and(|s| !s.is_empty())
+            && self.s3_bucket_name.as_ref().is_some_and(|s| !s.is_empty())
+    }
+
+    /// Effective image storage backend (`s3` when S3 creds are set unless forced local).
+    pub fn effective_image_storage_backend(&self) -> &str {
+        if self.image_storage_backend.eq_ignore_ascii_case("local") {
+            return "local";
+        }
+        if self.s3_configured() {
+            "s3"
+        } else {
+            "local"
+        }
+    }
+
+    /// Effective NZB storage backend.
+    pub fn effective_nzb_storage_backend(&self) -> &str {
+        if self.nzb_file_storage_backend.eq_ignore_ascii_case("s3") && self.s3_configured() {
+            "s3"
+        } else {
+            "local"
         }
     }
 }

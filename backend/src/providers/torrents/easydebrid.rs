@@ -6,91 +6,32 @@
 /// IP forwarding: `X-Forwarded-For: {user_ip}` when user_ip is set.
 use serde_json::Value;
 
-use crate::providers::{response_json, torrents::transport::MediaFlowForward, ProviderError};
+use crate::providers::{
+    file_selection::select_debrid_file_index, response_json, torrents::transport::MediaFlowForward,
+    ProviderError,
+};
 
 const BASE_URL: &str = "https://easydebrid.com/api/v1";
 
 // ─── File selection helper ─────────────────────────────────────────────────────
 
-static VIDEO_EXTS: &[&str] = &["mkv", "mp4", "avi", "webm", "mov", "flv", "m4v", "wmv"];
-
-/// Pick the best file index from a list of `(name, size)` pairs.
-///
-/// Priority:
-/// 1. `file_index` if valid
-/// 2. Exact filename match (case-insensitive contains)
-/// 3. Season+episode pattern (`SxxExx` or `XxExx`)
-/// 4. Largest video file
-/// 5. 0 as fallback
 fn select_video_file(
     files: &[(String, i64)],
+    release_name: &str,
     filename: Option<&str>,
     file_index: Option<i32>,
     season: Option<i32>,
     episode: Option<i32>,
 ) -> usize {
-    if files.is_empty() {
-        return 0;
-    }
-
-    // 1. file_index hint
-    if let Some(fi) = file_index {
-        if fi >= 0 && (fi as usize) < files.len() {
-            return fi as usize;
-        }
-    }
-
-    // Collect video-only indices for size-based fallback
-    let video_indices: Vec<usize> = files
-        .iter()
-        .enumerate()
-        .filter(|(_, (name, _))| {
-            let ext = std::path::Path::new(name.as_str())
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            VIDEO_EXTS.contains(&ext.as_str())
-        })
-        .map(|(i, _)| i)
-        .collect();
-
-    // 2. Filename match
-    if let Some(name) = filename {
-        let name_lower = name.to_lowercase();
-        if let Some(idx) = files
-            .iter()
-            .position(|(n, _)| n.to_lowercase().contains(&name_lower))
-        {
-            return idx;
-        }
-    }
-
-    // 3. Season + episode pattern
-    if let (Some(s), Some(e)) = (season, episode) {
-        let patterns = [format!("s{:02}e{:02}", s, e), format!("{:01}x{:02}", s, e)];
-        let candidate = video_indices.iter().find(|&&i| {
-            let lower = files[i].0.to_lowercase();
-            patterns.iter().any(|p| lower.contains(p))
-        });
-        if let Some(&idx) = candidate {
-            return idx;
-        }
-        // Fallback to any file (not just video) matching the pattern
-        if let Some(idx) = files.iter().position(|(n, _)| {
-            let lower = n.to_lowercase();
-            patterns.iter().any(|p| lower.contains(p))
-        }) {
-            return idx;
-        }
-    }
-
-    // 4. Largest video file
-    if let Some(&idx) = video_indices.iter().max_by_key(|&&i| files[i].1) {
-        return idx;
-    }
-
-    0
+    select_debrid_file_index(
+        files,
+        release_name,
+        filename,
+        file_index,
+        season,
+        episode,
+        None,
+    )
 }
 
 // ─── HTTP helper ───────────────────────────────────────────────────────────────

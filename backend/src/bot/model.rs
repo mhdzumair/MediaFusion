@@ -27,6 +27,8 @@ pub struct Message {
     #[serde(default)]
     pub document: Option<Document>,
     #[serde(default)]
+    pub photo: Option<Vec<PhotoSize>>,
+    #[serde(default)]
     pub video: Option<Video>,
     #[serde(default)]
     pub forward_from_chat: Option<Chat>,
@@ -63,6 +65,19 @@ pub struct MessageEntity {
     pub length: i32,
     #[serde(default)]
     pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PhotoSize {
+    pub file_id: String,
+    #[serde(default)]
+    pub file_unique_id: Option<String>,
+    #[serde(default)]
+    pub width: Option<i32>,
+    #[serde(default)]
+    pub height: Option<i32>,
+    #[serde(default)]
+    pub file_size: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

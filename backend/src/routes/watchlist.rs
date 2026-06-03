@@ -16,13 +16,9 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use chrono::Utc;
-use hmac::{Hmac, KeyInit, Mac};
-use sha2::Sha256;
-
 use crate::{
-    crypto, models::user_data::UserData, providers, routes::delete_all_watchlist, state::AppState,
+    crypto, models::user_data::UserData, providers, routes::auth_guard,
+    routes::delete_all_watchlist, state::AppState,
 };
 
 // ─── Providers that support watchlist (cached hash lookup) ───────────────────
@@ -40,37 +36,6 @@ const WATCHLIST_PROVIDERS: &[&str] = &[
     "pikpak",
 ];
 
-fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i64> {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))?;
-    let dot = token.rfind('.')?;
-    let (payload_str, sig) = token.split_at(dot);
-    let sig = &sig[1..];
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).ok()?;
-    mac.update(payload_str.as_bytes());
-    let expected: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if expected != sig {
-        return None;
-    }
-    let decoded = URL_SAFE_NO_PAD.decode(payload_str).ok()?;
-    let data: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
-    let exp = data["exp"].as_f64()?;
-    if exp < Utc::now().timestamp() as f64 {
-        return None;
-    }
-    if data["type"].as_str() != Some("access") {
-        return None;
-    }
-    data["sub"].as_str()?.parse().ok()
-}
-
 // ─── GET /api/v1/watchlist/providers ─────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -84,7 +49,7 @@ pub async fn get_providers(
     Query(params): Query<ProvidersQuery>,
 ) -> Response {
     // Auth is optional — unauthenticated requests return an empty provider list.
-    let user_id = validate_token(&headers, &state.config.secret_key_raw);
+    let user_id = auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await.map(i64::from);
 
     // Fetch the profile config (with secrets decrypted), including the actual profile id.
     type ProfileRecord = (i32, Option<serde_json::Value>, Option<String>);
@@ -229,7 +194,7 @@ pub async fn get_watchlist(
     State(state): State<Arc<AppState>>,
     Query(params): Query<WatchlistQuery>,
 ) -> Response {
-    let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let _user_id = match auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await.map(i64::from) {
         Some(id) => id,
         None => {
             return (

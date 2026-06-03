@@ -126,7 +126,7 @@ pub async fn handler(
                 &state.config.host_url,
             ));
         }
-        results = db::search_by_title(&state.pool_ro, q, media_type, limit).await;
+        results = db::search_by_title(&state.pool_ro, q, media_type, None, limit).await;
     } else if params.t == "search" {
         return xml_response(build_rss(
             &validation_samples(),

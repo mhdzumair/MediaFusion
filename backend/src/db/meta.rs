@@ -27,6 +27,7 @@ pub struct MediaMetaRow {
     pub tmdb_id: Option<String>,
     pub poster_url: Option<String>,
     pub background_url: Option<String>,
+    pub logo_url: Option<String>,
     pub imdb_rating: Option<f64>,
     pub language: Option<String>,
     pub country: Option<String>,
@@ -101,6 +102,7 @@ async fn fetch_media_meta_by_id(
             mei_tmdb.external_id AS tmdb_id,
             mi_poster.url AS poster_url,
             mi_bg.url AS background_url,
+            mi_logo.url AS logo_url,
             mr.rating AS imdb_rating
         FROM media m
         LEFT JOIN media_external_id mei_imdb
@@ -118,6 +120,11 @@ async fn fetch_media_meta_by_id(
             WHERE media_id = m.id AND image_type = 'background' AND is_primary = true
             LIMIT 1
         ) mi_bg ON true
+        LEFT JOIN LATERAL (
+            SELECT url FROM media_image
+            WHERE media_id = m.id AND image_type = 'logo' AND is_primary = true
+            LIMIT 1
+        ) mi_logo ON true
         LEFT JOIN LATERAL (
             SELECT r.rating FROM media_rating r
             JOIN rating_provider rp ON rp.id = r.rating_provider_id
