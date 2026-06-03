@@ -153,7 +153,11 @@ async fn resolve_user_data(state: &AppState, secret_str: &str) -> Result<UserDat
         &state.pool,
         &state.redis,
     )
-    .await;
+    .await
+    .map_err(|e| {
+        tracing::debug!("telegram_playback: {e}");
+        PlaybackError::InvalidConfig
+    })?;
     Ok(serde_json::from_value(raw).unwrap_or_default())
 }
 
@@ -402,6 +406,7 @@ fn error_response(e: PlaybackError) -> Response {
 // ─── Error type ───────────────────────────────────────────────────────────────
 
 enum PlaybackError {
+    InvalidConfig,
     NoMediaFlow,
     NoFileId,
     Unauthorized,
@@ -417,6 +422,7 @@ enum PlaybackError {
 impl PlaybackError {
     fn to_http(&self) -> (StatusCode, String) {
         match self {
+            Self::InvalidConfig => (StatusCode::UNPROCESSABLE_ENTITY, "Invalid user config.".into()),
             Self::NoMediaFlow => (StatusCode::BAD_REQUEST,
                 "MediaFlow Proxy with Telegram support is required. Configure MediaFlow in your profile.".into()),
             Self::NoFileId => (StatusCode::BAD_REQUEST, "Telegram stream has no file_id.".into()),

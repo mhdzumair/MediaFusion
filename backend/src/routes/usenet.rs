@@ -59,13 +59,20 @@ pub async fn nzb_proxy_handler(
     State(state): State<Arc<AppState>>,
 ) -> Response {
     // Decrypt user profile
-    let user_json = crypto::resolve_user_data(
+    let user_json = match crypto::resolve_user_data(
         &secret_str,
         &state.config.secret_key,
         &state.pool_ro,
         &state.redis,
     )
-    .await;
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::debug!("nzb_proxy: {e}");
+            return StatusCode::UNPROCESSABLE_ENTITY.into_response();
+        }
+    };
     let user_data: UserData = match serde_json::from_value(user_json) {
         Ok(u) => u,
         Err(e) => {
@@ -212,13 +219,20 @@ async fn handle_provider(
     filename: Option<&str>,
 ) -> Response {
     // 1. Decrypt user profile
-    let user_json = crypto::resolve_user_data(
+    let user_json = match crypto::resolve_user_data(
         secret_str,
         &state.config.secret_key,
         &state.pool_ro,
         &state.redis,
     )
-    .await;
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::debug!("usenet playback: {e}");
+            return playback_redirect(method, error_video_url(state, "invalid_config.mp4"));
+        }
+    };
     let user_data: UserData = match serde_json::from_value(user_json) {
         Ok(u) => u,
         Err(e) => {

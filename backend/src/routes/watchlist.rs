@@ -257,13 +257,23 @@ async fn dispatch(
     secret_str: &str,
     provider_name: Option<&str>,
 ) -> Result<(), providers::ProviderError> {
-    let raw = crypto::resolve_user_data(
+    let raw = match crypto::resolve_user_data(
         secret_str,
         &state.config.secret_key,
         &state.pool,
         &state.redis,
     )
-    .await;
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::debug!("watchlist dispatch: {e}");
+            return Err(providers::ProviderError::api(
+                "Invalid user config",
+                "invalid_config.mp4",
+            ));
+        }
+    };
     let user_data: UserData = serde_json::from_value(raw).unwrap_or_default();
 
     let service = if let Some(name) = provider_name.filter(|s| !s.is_empty()) {

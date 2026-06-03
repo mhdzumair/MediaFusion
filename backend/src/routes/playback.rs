@@ -217,7 +217,8 @@ async fn resolve(
         &state.pool,
         &state.redis,
     )
-    .await;
+    .await
+    .map_err(|e| providers::ProviderError::api(e.to_string(), "invalid_config.mp4"))?;
     let user_data: UserData = serde_json::from_value(raw_user_data).unwrap_or_default();
 
     // 2. Find provider

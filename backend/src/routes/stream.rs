@@ -129,13 +129,24 @@ pub async fn movie(
             crypto::decode_encoded_user_data(hv)
                 .unwrap_or_else(|| serde_json::Value::Object(Default::default()))
         } else {
-            crypto::resolve_user_data(
+            match crypto::resolve_user_data(
                 &secret_str,
                 &state.config.secret_key,
                 &state.pool,
                 &state.redis,
             )
             .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::debug!("stream movie delete: {e}");
+                    return (
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        Json(json!({"error": "Invalid user data"})),
+                    )
+                        .into_response();
+                }
+            }
         };
         let user_data: crate::models::user_data::UserData =
             serde_json::from_value(raw_user_data).unwrap_or_default();
@@ -195,13 +206,32 @@ async fn dispatch_tv(
         crypto::decode_encoded_user_data(hv)
             .unwrap_or_else(|| serde_json::Value::Object(Default::default()))
     } else {
-        crypto::resolve_user_data(
+        match crypto::resolve_user_data(
             &secret_str,
             &state.config.secret_key,
             &state.pool,
             &state.redis,
         )
         .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::debug!("dispatch_tv: {e}");
+                let error_video = format!(
+                    "{}/static/exceptions/invalid_config.mp4",
+                    state.config.host_url
+                );
+                return Json(json!({
+                    "streams": [{
+                        "name": state.config.addon_name,
+                        "description": "Invalid MediaFusion configuration.\nDelete and reconfigure the addon.",
+                        "url": error_video,
+                        "behaviorHints": { "notWebReady": true }
+                    }]
+                }))
+                .into_response();
+            }
+        }
     };
     let user_data: crate::models::user_data::UserData =
         serde_json::from_value(raw_user_data).unwrap_or_default();
@@ -514,6 +544,22 @@ async fn dispatch(
     {
         Ok(streams) => Json(json!({"streams": streams})).into_response(),
         Err(e) => {
+            if e.downcast_ref::<crypto::DecryptError>().is_some() {
+                tracing::debug!("stream: D-profile decrypt failed for imdb={imdb_id}");
+                let error_video = format!(
+                    "{}/static/exceptions/invalid_config.mp4",
+                    state.config.host_url
+                );
+                return Json(json!({
+                    "streams": [{
+                        "name": state.config.addon_name,
+                        "description": "Invalid MediaFusion configuration.\nDelete and reconfigure the addon.",
+                        "url": error_video,
+                        "behaviorHints": { "notWebReady": true }
+                    }]
+                }))
+                .into_response();
+            }
             tracing::warn!("stream error imdb={imdb_id} type={media_type}: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -1124,7 +1170,6 @@ async fn build_pipeline(
 ) -> Result<StreamPipeline, Box<dyn std::error::Error + Send + Sync>> {
     // 1. Decrypt user config → parse into UserData → derive scope
     // If the `encoded_user_data` header is present, decode it directly (no encryption).
-    let had_encoded_header = headers.get("encoded_user_data").is_some();
     let raw_user_data = if let Some(hv) = headers
         .get("encoded_user_data")
         .and_then(|v| v.to_str().ok())
@@ -1138,24 +1183,8 @@ async fn build_pipeline(
             &state.redis,
         )
         .await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
     };
-    if raw_user_data.as_object().is_none_or(|o| o.is_empty()) {
-        if had_encoded_header {
-            tracing::warn!("stream: encoded_user_data decoded to empty config");
-        } else if let Some(uuid) = secret_str.strip_prefix("U-") {
-            tracing::warn!(
-                profile_uuid = uuid,
-                "stream: U-profile not found or has empty config in database (using public defaults)"
-            );
-        } else if secret_str.starts_with("D-") {
-            tracing::warn!("stream: D-profile decrypt failed or config is empty");
-        } else if !secret_str.is_empty() {
-            tracing::warn!(
-                secret_prefix = &secret_str[..secret_str.len().min(8)],
-                "stream: resolve_user_data returned empty config"
-            );
-        }
-    }
     let user_data: crate::models::user_data::UserData =
         serde_json::from_value(raw_user_data).unwrap_or_default();
 

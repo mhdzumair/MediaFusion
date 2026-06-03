@@ -84,13 +84,17 @@ pub async fn stremio_auth_middleware(
     // U- secrets belong to logged-in users who never store api_password in their profile.
     if first_seg.starts_with("D-") {
         if let Some(ref required) = state.config.api_password {
-            let raw = crypto::resolve_user_data(
+            let raw = match crypto::resolve_user_data(
                 first_seg,
                 &state.config.secret_key,
                 &state.pool,
                 &state.redis,
             )
-            .await;
+            .await
+            {
+                Ok(v) => v,
+                Err(_) => return invalid_secret_response(&state, path),
+            };
             let user_data: UserData = serde_json::from_value(raw).unwrap_or_default();
             let provided = user_data.api_password.as_deref().unwrap_or("");
 

@@ -4,6 +4,19 @@ pub mod profile;
 
 pub use decrypt::decrypt_user_data;
 
+/// Error returned when a D- prefixed secret fails to decrypt.
+/// U-not-found and empty-string are not errors — they fall back to public defaults.
+#[derive(Debug)]
+pub struct DecryptError(pub String);
+
+impl std::fmt::Display for DecryptError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "invalid user config: {}", self.0)
+    }
+}
+
+impl std::error::Error for DecryptError {}
+
 /// Decode a plain base64url-encoded UserData JSON value (no encryption, no compression).
 ///
 /// This is the format used by the `encoded_user_data` HTTP header:
@@ -72,25 +85,25 @@ use serde_json::Value;
 use sqlx::PgPool;
 
 /// Resolve any secret_str (D-prefix, U-prefix, or empty) into a UserData JSON value.
-/// D-prefix: AES-256-CBC decrypt inline.
-/// U-prefix: Redis cache first, then Postgres DB lookup.
-/// Empty/unknown: returns empty object → UserData::default().
+/// D-prefix: AES-256-CBC decrypt inline. Returns `Err(DecryptError)` on failure.
+/// U-prefix: Redis cache first, then Postgres DB lookup. Returns `Ok(empty)` if not found.
+/// Empty/unknown: returns `Ok(empty)` → UserData::default().
 pub async fn resolve_user_data(
     secret_str: &str,
     key: &[u8; 32],
     pool: &PgPool,
     redis: &fred::clients::Client,
-) -> Value {
+) -> Result<Value, DecryptError> {
     if secret_str.is_empty() {
-        return Value::Object(Default::default());
+        return Ok(Value::Object(Default::default()));
     }
     if let Some(uuid) = secret_str.strip_prefix("U-") {
-        return profile::lookup(redis, pool, key, uuid)
+        return Ok(profile::lookup(redis, pool, key, uuid)
             .await
-            .unwrap_or_else(|| Value::Object(Default::default()));
+            .unwrap_or_else(|| Value::Object(Default::default())));
     }
-    decrypt_user_data(secret_str, key).unwrap_or_else(|e| {
-        tracing::debug!("resolve_user_data: {e}");
-        Value::Object(Default::default())
+    decrypt_user_data(secret_str, key).map_err(|e| {
+        tracing::debug!("resolve_user_data D- decrypt failed: {e}");
+        DecryptError(e.to_string())
     })
 }

@@ -357,17 +357,26 @@ pub async fn user_manifest(
     Path(secret_str): Path<String>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let user_data = serde_json::from_value::<UserData>(
-        crypto::resolve_user_data(
-            &secret_str,
-            &state.config.secret_key,
-            &state.pool,
-            &state.redis,
-        )
-        .await,
+    let raw = match crypto::resolve_user_data(
+        &secret_str,
+        &state.config.secret_key,
+        &state.pool,
+        &state.redis,
     )
-    .unwrap_or_default();
-    serve_manifest(state, user_data).await
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::debug!("manifest: {e}");
+            return (
+                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                axum::Json(serde_json::json!({"error": "Invalid user data"})),
+            )
+                .into_response();
+        }
+    };
+    let user_data = serde_json::from_value::<UserData>(raw).unwrap_or_default();
+    serve_manifest(state, user_data).await.into_response()
 }
 
 async fn serve_manifest(state: Arc<AppState>, user_data: UserData) -> impl IntoResponse {

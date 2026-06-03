@@ -180,6 +180,14 @@ async fn dispatch(
             .into_response()
         }
         Err(e) => {
+            if e.downcast_ref::<crate::crypto::DecryptError>().is_some() {
+                tracing::debug!("kodi_stream: D-profile decrypt failed for imdb={imdb_id}");
+                return (
+                    axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(json!({"error": "Invalid user data"})),
+                )
+                    .into_response();
+            }
             tracing::warn!("kodi_stream error imdb={imdb_id} type={media_type}: {e}");
             Json(json!({"streams": []})).into_response()
         }
