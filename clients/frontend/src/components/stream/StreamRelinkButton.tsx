@@ -157,8 +157,6 @@ export function StreamRelinkButton({
 
   const handleSelectMedia = useCallback((result: CombinedSearchResult) => {
     setSelectedMedia(result)
-    // Clear the MF direct-ID input whenever a proper search result is chosen
-    setMfIdInput('')
     setSeasonNumber('')
     setEpisodeNumber('')
     setEpisodeEnd('')

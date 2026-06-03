@@ -103,7 +103,8 @@ export async function fetchCombinedMatchByProviderId(
     throw new Error('Metadata not found for that ID')
   }
 
-  return mapSearchResultToCombined(result, provider, externalId.trim(), metaType)
+  const resolvedType: 'movie' | 'series' = metaType === 'all' ? 'movie' : metaType
+  return mapSearchResultToCombined(result, provider, externalId.trim(), resolvedType)
 }
 
 function mapSearchResultToCombined(
