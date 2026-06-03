@@ -25,6 +25,8 @@ const SKIP_PREFIXES: &[&str] = &[
 
 static RE_UUID: OnceLock<Regex> = OnceLock::new();
 static RE_NUM: OnceLock<Regex> = OnceLock::new();
+static RE_JSON_ID: OnceLock<Regex> = OnceLock::new();
+static RE_CONTENT_ID: OnceLock<Regex> = OnceLock::new();
 
 fn uuid_re() -> &'static Regex {
     RE_UUID.get_or_init(|| {
@@ -37,8 +39,37 @@ fn num_re() -> &'static Regex {
     RE_NUM.get_or_init(|| Regex::new(r"/(\d+)(/|$)").expect("valid numeric segment regex"))
 }
 
+fn json_id_re() -> &'static Regex {
+    RE_JSON_ID.get_or_init(|| {
+        // Any .json segment whose base name contains at least one digit.
+        // Covers: tt28297850.json, tt0264235%3A5%3A1.json, mdblist_movie_2406.json, 93276.json
+        Regex::new(r"/[^/]*\d[^/]*\.json").expect("valid json-id regex")
+    })
+}
+
+fn content_id_re() -> &'static Regex {
+    RE_CONTENT_ID.get_or_init(|| {
+        // tt-style IMDb IDs with any trailing extension or suffix (e.g. poster .jpg paths).
+        // json_id_re already handles the .json case so this catches bare and non-json variants.
+        Regex::new(r"/tt\d[^/]*").expect("valid content-id regex")
+    })
+}
+
+/// Collapse dynamic path segments to `{id}` so every unique IMDb ID, episode key,
+/// catalog slug, or UUID maps to the same route bucket.
+///
+/// Applied in order:
+///   1. UUIDs            → /{id}
+///   2. .json segments with a digit in the name (content API endpoints)  → /{id}
+///   3. tt-style IDs with any extension (poster endpoints, etc.)          → /{id}
+///   4. Pure-numeric segments                                              → /{id}
 fn normalize_route(path: &str) -> String {
     let result = uuid_re().replace_all(path, "/{id}");
+    let result = json_id_re().replace_all(result.as_ref(), "/{id}");
+    let result = content_id_re().replace_all(result.as_ref(), "/{id}");
+    // Apply twice: the trailing `/` is consumed per match, so a second pass picks up
+    // the next consecutive numeric segment (e.g. `/1/3/` for season/episode).
+    let result = num_re().replace_all(result.as_ref(), "/{id}$2");
     let result = num_re().replace_all(result.as_ref(), "/{id}$2");
     result.trim_end_matches('/').to_string()
 }
@@ -136,6 +167,49 @@ async fn record_to_redis(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::normalize_route;
+
+    #[test]
+    fn normalize_route_covers_all_id_patterns() {
+        let cases = [
+            // IMDb movie/series IDs with .json
+            ("/stream/movie/tt28297850.json", "/stream/movie/{id}"),
+            ("/meta/movie/tt1757678.json", "/meta/movie/{id}"),
+            ("/meta/series/tt35050741.json", "/meta/series/{id}"),
+            // URL-encoded episode IDs (tt<id>%3A<s>%3A<e>)
+            ("/stream/series/tt0264235%3A5%3A1.json", "/stream/series/{id}"),
+            ("/stream/series/tt32767294%3A1%3A3.json", "/stream/series/{id}"),
+            // Numeric-only content IDs (TMDB etc.)
+            ("/meta/series/93276.json", "/meta/series/{id}"),
+            // Mixed catalog slugs (provider_name_NNNN)
+            ("/catalog/movie/mdblist_movie_2406.json", "/catalog/movie/{id}"),
+            // Poster paths — .jpg extension consumed along with the tt ID segment
+            ("/poster/movie/tt28245067.jpg", "/poster/movie/{id}"),
+            // Masked secret prefix preserved
+            ("/*MASKED*/stream/movie/tt26443616.json", "/*MASKED*/stream/movie/{id}"),
+            // Playback path: masked segments + numeric season/episode
+            (
+                "/streaming_provider/*MASKED*/playback/torbox/*MASKED*/1/3/*MASKED*",
+                "/streaming_provider/*MASKED*/playback/torbox/*MASKED*/{id}/{id}/*MASKED*",
+            ),
+            // Static routes must NOT be changed
+            ("/manifest.json", "/manifest.json"),
+            ("/configure", "/configure"),
+            ("/health", "/health"),
+        ];
+
+        for (input, expected) in &cases {
+            assert_eq!(
+                normalize_route(input),
+                *expected,
+                "normalize_route({input:?})"
+            );
+        }
+    }
+}
+
 pub async fn metrics_middleware(
     State(state): State<Arc<AppState>>,
     req: axum::http::Request<axum::body::Body>,
@@ -158,9 +232,14 @@ pub async fn metrics_middleware(
     let status = resp.status().as_u16();
     drop(_guard);
 
-    state
-        .metrics
-        .record_request(&method, &route, status, duration_ms);
+    // The in-process HashMap feeds only the Prometheus /metrics endpoint.
+    // Skip populating it when Prometheus is disabled to avoid unbounded memory growth
+    // in long-running pods that never scrape the endpoint.
+    if state.config.enable_prometheus_metrics {
+        state
+            .metrics
+            .record_request(&method, &route, status, duration_ms);
+    }
 
     // Skip noisy health/asset paths for Redis metrics
     if !SKIP_PREFIXES.iter().any(|p| raw_path.starts_with(p)) {
