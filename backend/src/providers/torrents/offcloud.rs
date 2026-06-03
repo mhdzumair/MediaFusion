@@ -1,12 +1,10 @@
 /// OffCloud streaming provider.
 ///
-/// Token format: raw API key used as Bearer token AND `key=` query parameter.
+/// Token format: raw API key used as Bearer token.
 use serde_json::Value;
 
 use crate::providers::{
-    file_selection::select_debrid_file_index,
-    response_json,
-    torrents::transport::{append_query, encode_form_body, MediaFlowForward},
+    file_selection::select_debrid_file_index, response_json, torrents::transport::MediaFlowForward,
     ProviderError,
 };
 
@@ -35,7 +33,7 @@ fn select_video_file(
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
-/// GET request with Bearer auth + `key=` query param.
+/// GET request with Bearer auth.
 async fn oc_get(
     http: &reqwest::Client,
     token: &str,
@@ -44,15 +42,9 @@ async fn oc_get(
 ) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
     let resp = if let Some(fwd) = forward {
-        // Embed key= in destination URL; Bearer forwarded via h_authorization
-        let dest = append_query(&url, &[("key", token)]);
-        fwd.get(http, &dest, token).await?
+        fwd.get(http, &url, token).await?
     } else {
-        http.get(&url)
-            .bearer_auth(token)
-            .query(&[("key", token)])
-            .send()
-            .await?
+        http.get(&url).bearer_auth(token).send().await?
     };
 
     let status = resp.status();
@@ -80,32 +72,28 @@ async fn oc_get(
     Ok(body)
 }
 
-/// POST request with form data; includes `key={token}` in form body.
-async fn oc_post_form(
+/// POST request with JSON body and Bearer auth.
+async fn oc_post_json(
     http: &reqwest::Client,
     token: &str,
     path: &str,
-    mut fields: Vec<(&str, String)>,
+    body: serde_json::Value,
     forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
     let url = format!("{BASE_URL}{path}");
-    fields.push(("key", token.to_string()));
-
+    let body_str = body.to_string();
     let resp = if let Some(fwd) = forward {
-        // Keep key in body; Bearer forwarded via h_authorization
-        let form_ref: Vec<(&str, &str)> = fields.iter().map(|(k, v)| (*k, v.as_str())).collect();
-        let body_str = encode_form_body(&form_ref);
-        fwd.post_form(http, &url, token, body_str).await?
+        fwd.post_json(http, &url, token, body_str).await?
     } else {
         http.post(&url)
             .bearer_auth(token)
-            .form(&fields)
+            .json(&body)
             .send()
             .await?
     };
 
     let status = resp.status();
-    if status == reqwest::StatusCode::FORBIDDEN {
+    if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::UNAUTHORIZED {
         return Err(ProviderError::api(
             "Invalid OffCloud API key",
             "invalid_token.mp4",
@@ -124,7 +112,7 @@ async fn oc_post_form(
         ));
     }
 
-    let body: Value = response_json(resp, "oc_post_form").await?;
+    let body: Value = response_json(resp, "oc_post_json").await?;
     check_offcloud_error(&body)?;
     Ok(body)
 }
@@ -208,11 +196,11 @@ async fn submit_magnet(
     magnet: &str,
     forward: Option<&MediaFlowForward>,
 ) -> Result<String, ProviderError> {
-    let body = oc_post_form(
+    let body = oc_post_json(
         http,
         token,
         "/api/cloud",
-        vec![("url", magnet.to_string())],
+        serde_json::json!({"url": magnet}),
         forward,
     )
     .await?;
@@ -235,11 +223,11 @@ async fn get_torrent_status(
     request_id: &str,
     forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
-    let body = oc_post_form(
+    let body = oc_post_json(
         http,
         token,
         "/api/cloud/status",
-        vec![("requestId", request_id.to_string())],
+        serde_json::json!({"requestId": request_id}),
         forward,
     )
     .await?;
@@ -483,9 +471,14 @@ pub async fn delete_torrent_by_hash(
         None => Ok(false),
         Some(item) => {
             if let Some(request_id) = item.get("requestId").and_then(|v| v.as_str()) {
-                oc_get(http, token, &format!("/cloud/remove/{request_id}"), None)
-                    .await
-                    .ok();
+                oc_get(
+                    http,
+                    token,
+                    &format!("/api/cloud/remove/{request_id}"),
+                    None,
+                )
+                .await
+                .ok();
             }
             Ok(true)
         }
@@ -501,14 +494,28 @@ pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<
         None => return Ok(()),
     };
 
-    for item in items {
-        if let Some(request_id) = item.get("requestId").and_then(|v| v.as_str()) {
-            // Best-effort; ignore individual errors
-            oc_get(http, token, &format!("/cloud/remove/{request_id}"), None)
-                .await
-                .ok();
-        }
+    let request_ids: Vec<serde_json::Value> = items
+        .iter()
+        .filter_map(|item| {
+            item.get("requestId")
+                .and_then(|v| v.as_str())
+                .map(|id| serde_json::Value::String(id.to_string()))
+        })
+        .collect();
+
+    if request_ids.is_empty() {
+        return Ok(());
     }
+
+    oc_post_json(
+        http,
+        token,
+        "/api/cloud/remove",
+        serde_json::json!({"requests": request_ids}),
+        None,
+    )
+    .await
+    .ok();
 
     Ok(())
 }
@@ -582,18 +589,11 @@ pub async fn list_downloaded_torrents(
 
 // ─── Debrid cache check ───────────────────────────────────────────────────────
 
-/// Check which hashes are cached on OffCloud (form-encoded POST /api/cache).
+/// Check which hashes are cached on OffCloud (POST /api/cache).
 pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]) -> Vec<String> {
     let url = "https://offcloud.com/api/cache";
-    let form: Vec<(&str, &str)> = hashes.iter().map(|h| ("hashes", h.as_str())).collect();
-    let resp = match http
-        .post(url)
-        .bearer_auth(token)
-        .query(&[("key", token)])
-        .form(&form)
-        .send()
-        .await
-    {
+    let body = serde_json::json!({"hashes": hashes});
+    let resp = match http.post(url).bearer_auth(token).json(&body).send().await {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!("offcloud cache: {e}");

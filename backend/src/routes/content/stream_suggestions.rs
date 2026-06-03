@@ -514,6 +514,227 @@ pub async fn create_stream_suggestion(
         .into_response()
 }
 
+/// Resolve a target_media_id from the stored link JSON.
+/// Returns the media_id if resolvable, None otherwise.
+async fn resolve_target_media_id(
+    pool: &sqlx::PgPool,
+    link_data: &serde_json::Value,
+) -> Option<i32> {
+    if let Some(id) = link_data.get("target_media_id").and_then(|v| v.as_i64()) {
+        return Some(id as i32);
+    }
+    let ext_id = link_data
+        .get("target_external_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())?;
+    let media_type = link_data.get("target_media_type").and_then(|v| v.as_str());
+    crate::db::get_media_id_by_external_id(pool, ext_id, media_type)
+        .await
+        .ok()
+        .flatten()
+        .map(|mid| mid.0)
+}
+
+/// Apply relink_media: replace stream_media_link(s) and update file_media_link rows.
+async fn apply_relink_media(pool: &sqlx::PgPool, stream_id: i32, link_data: &serde_json::Value) {
+    let Some(target_media_id) = resolve_target_media_id(pool, link_data).await else {
+        tracing::error!(
+            "apply_relink_media: could not resolve target_media_id for stream {stream_id}"
+        );
+        return;
+    };
+
+    let file_index: Option<i32> = link_data
+        .get("file_index")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+
+    // Delete existing stream-level links (optionally scoped to file_index)
+    let del_result = if let Some(fi) = file_index {
+        sqlx::query(
+            "DELETE FROM stream_media_link WHERE stream_id = $1 AND file_index IS NOT DISTINCT FROM $2",
+        )
+        .bind(stream_id)
+        .bind(fi)
+        .execute(pool)
+        .await
+    } else {
+        sqlx::query("DELETE FROM stream_media_link WHERE stream_id = $1")
+            .bind(stream_id)
+            .execute(pool)
+            .await
+    };
+    if let Err(e) = del_result {
+        tracing::warn!("apply_relink_media: delete stream_media_link failed: {e}");
+        return;
+    }
+
+    // Insert new stream-level link
+    if let Err(e) = sqlx::query(
+        "INSERT INTO stream_media_link (stream_id, media_id, file_index, created_at) \
+         VALUES ($1, $2, $3, NOW()) ON CONFLICT DO NOTHING",
+    )
+    .bind(stream_id)
+    .bind(target_media_id)
+    .bind(file_index)
+    .execute(pool)
+    .await
+    {
+        tracing::warn!("apply_relink_media: insert stream_media_link failed: {e}");
+        return;
+    }
+
+    // Update file-level links: point all existing file_media_link rows for this stream's files
+    // to the new target_media_id.
+    let files: Vec<(i32,)> = {
+        let q = if let Some(fi) = file_index {
+            sqlx::query_as("SELECT id FROM stream_file WHERE stream_id = $1 AND file_index = $2")
+                .bind(stream_id)
+                .bind(fi)
+                .fetch_all(pool)
+                .await
+        } else {
+            sqlx::query_as("SELECT id FROM stream_file WHERE stream_id = $1")
+                .bind(stream_id)
+                .fetch_all(pool)
+                .await
+        };
+        q.unwrap_or_default()
+    };
+
+    for (file_id,) in &files {
+        let _ = sqlx::query(
+            "UPDATE file_media_link SET media_id = $1 WHERE file_id = $2 AND media_id != $1",
+        )
+        .bind(target_media_id)
+        .bind(file_id)
+        .execute(pool)
+        .await;
+    }
+
+    // If episode mapping was provided together with a file_index, apply it.
+    let season_number: Option<i32> = link_data
+        .get("season_number")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+    let episode_number: Option<i32> = link_data
+        .get("episode_number")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+    let episode_end: Option<i32> = link_data
+        .get("episode_end")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+
+    if file_index.is_some() && (season_number.is_some() || episode_number.is_some()) {
+        if let Some((file_id,)) = files.first() {
+            // Upsert the file_media_link episode mapping for the target file+media.
+            let _ = sqlx::query(
+                "INSERT INTO file_media_link (file_id, media_id, season_number, episode_number, episode_end, created_at, is_primary, confidence, link_source)
+                 VALUES ($1, $2, $3, $4, $5, NOW(), true, 1.0, 'SUGGESTION')
+                 ON CONFLICT (file_id, media_id, season_number, episode_number)
+                 DO UPDATE SET episode_end = EXCLUDED.episode_end, is_primary = true, confidence = 1.0",
+            )
+            .bind(file_id)
+            .bind(target_media_id)
+            .bind(season_number)
+            .bind(episode_number)
+            .bind(episode_end)
+            .execute(pool)
+            .await;
+        }
+    }
+
+    tracing::info!(
+        "apply_relink_media: stream {stream_id} relinked to media {target_media_id} file_index={file_index:?}"
+    );
+}
+
+/// Apply add_media_link: add an additional stream_media_link without removing existing ones.
+async fn apply_add_media_link(pool: &sqlx::PgPool, stream_id: i32, link_data: &serde_json::Value) {
+    let Some(target_media_id) = resolve_target_media_id(pool, link_data).await else {
+        tracing::error!(
+            "apply_add_media_link: could not resolve target_media_id for stream {stream_id}"
+        );
+        return;
+    };
+
+    let file_index: Option<i32> = link_data
+        .get("file_index")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+
+    let already_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2 AND file_index IS NOT DISTINCT FROM $3)",
+    )
+    .bind(stream_id)
+    .bind(target_media_id)
+    .bind(file_index)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !already_exists {
+        if let Err(e) = sqlx::query(
+            "INSERT INTO stream_media_link (stream_id, media_id, file_index, created_at) VALUES ($1, $2, $3, NOW())",
+        )
+        .bind(stream_id)
+        .bind(target_media_id)
+        .bind(file_index)
+        .execute(pool)
+        .await
+        {
+            tracing::warn!("apply_add_media_link: insert failed: {e}");
+            return;
+        }
+    }
+
+    // Add file-level link if episode info provided
+    let season_number: Option<i32> = link_data
+        .get("season_number")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+    let episode_number: Option<i32> = link_data
+        .get("episode_number")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+    let episode_end: Option<i32> = link_data
+        .get("episode_end")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+
+    if let Some(fi) = file_index {
+        if season_number.is_some() || episode_number.is_some() {
+            let file: Option<(i32,)> = sqlx::query_as(
+                "SELECT id FROM stream_file WHERE stream_id = $1 AND file_index = $2",
+            )
+            .bind(stream_id)
+            .bind(fi)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+            if let Some((file_id,)) = file {
+                let _ = sqlx::query(
+                    "INSERT INTO file_media_link (file_id, media_id, season_number, episode_number, episode_end, created_at, is_primary, confidence, link_source)
+                     VALUES ($1, $2, $3, $4, $5, NOW(), true, 1.0, 'SUGGESTION')
+                     ON CONFLICT (file_id, media_id, season_number, episode_number) DO UPDATE SET episode_end = EXCLUDED.episode_end",
+                )
+                .bind(file_id)
+                .bind(target_media_id)
+                .bind(season_number)
+                .bind(episode_number)
+                .bind(episode_end)
+                .execute(pool)
+                .await;
+            }
+        }
+    }
+
+    tracing::info!(
+        "apply_add_media_link: stream {stream_id} linked to media {target_media_id} file_index={file_index:?}"
+    );
+}
+
 /// Apply a stream field change
 async fn apply_stream_field_change(
     pool: &sqlx::PgPool,
@@ -550,6 +771,19 @@ async fn apply_stream_field_change(
         return;
     }
 
+    if suggestion_type == "relink_media" || suggestion_type == "add_media_link" {
+        if let Some(v) = value {
+            if let Ok(link_data) = serde_json::from_str::<serde_json::Value>(v) {
+                if suggestion_type == "relink_media" {
+                    apply_relink_media(pool, stream_id, &link_data).await;
+                } else {
+                    apply_add_media_link(pool, stream_id, &link_data).await;
+                }
+            }
+        }
+        return;
+    }
+
     if suggestion_type != "field_correction" {
         return;
     }
@@ -558,6 +792,61 @@ async fn apply_stream_field_change(
         Some(f) => f,
         None => return,
     };
+
+    // Handle episode_link:<file_id>:<field> corrections
+    if field.starts_with("episode_link:") {
+        let parts: Vec<&str> = field.splitn(3, ':').collect();
+        if parts.len() == 3 {
+            if let Ok(file_id) = parts[1].parse::<i32>() {
+                let link_field = parts[2];
+                if matches!(
+                    link_field,
+                    "season_number" | "episode_number" | "episode_end"
+                ) {
+                    let new_val: Option<i32> =
+                        value.and_then(|v| if v.is_empty() { None } else { v.parse().ok() });
+                    let result =
+                        match link_field {
+                            "season_number" => sqlx::query(
+                                "UPDATE file_media_link SET season_number = $1 WHERE file_id = $2",
+                            )
+                            .bind(new_val)
+                            .bind(file_id)
+                            .execute(pool)
+                            .await,
+                            "episode_number" => sqlx::query(
+                                "UPDATE file_media_link SET episode_number = $1 WHERE file_id = $2",
+                            )
+                            .bind(new_val)
+                            .bind(file_id)
+                            .execute(pool)
+                            .await,
+                            "episode_end" => sqlx::query(
+                                "UPDATE file_media_link SET episode_end = $1 WHERE file_id = $2",
+                            )
+                            .bind(new_val)
+                            .bind(file_id)
+                            .execute(pool)
+                            .await,
+                            _ => return,
+                        };
+                    if let Err(e) = result {
+                        tracing::warn!(
+                            "apply_stream_field_change: episode_link update failed for \
+                             file_id={file_id} field={link_field}: {e}"
+                        );
+                    } else {
+                        tracing::info!(
+                            "apply_stream_field_change: updated episode_link file_id={file_id} \
+                             {link_field}={new_val:?}"
+                        );
+                    }
+                }
+            }
+        }
+        return;
+    }
+
     if !STREAM_SCALAR_EDITABLE_FIELDS.contains(&field) {
         return;
     }

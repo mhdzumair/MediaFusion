@@ -23,7 +23,7 @@ static VIDEO_EXTS: &[&str] = &["mkv", "mp4", "avi", "webm", "mov", "flv", "m4v",
 
 // ─── Token ────────────────────────────────────────────────────────────────────
 
-fn resolve_token(raw: &str) -> String {
+pub fn resolve_bearer_token(raw: &str) -> String {
     if let Ok(decoded) = STANDARD.decode(raw.trim()) {
         if let Ok(s) = String::from_utf8(decoded) {
             if let Ok(v) = serde_json::from_str::<Value>(&s) {
@@ -837,7 +837,7 @@ pub async fn get_video_url(
     _user_ip: Option<&str>,
     forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<String, ProviderError> {
-    let token = resolve_token(token);
+    let token = resolve_bearer_token(token);
     let hash = info_hash.to_lowercase();
     let magnet = build_magnet(&hash, announce_list);
 
@@ -935,7 +935,7 @@ pub async fn get_video_url(
 pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]) -> Vec<String> {
     use std::collections::HashSet;
 
-    let bearer = resolve_token(token);
+    let bearer = resolve_bearer_token(token);
     let hash_set: HashSet<String> = hashes.iter().map(|h| h.to_lowercase()).collect();
     let mut cached: Vec<String> = Vec::new();
 
@@ -992,7 +992,7 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
 
 /// Delete ALL active tasks and hash-named folders from the Seedr account.
 pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), ProviderError> {
-    let bearer = resolve_token(token);
+    let bearer = resolve_bearer_token(token);
 
     let tasks = list_tasks(http, &bearer, None).await.unwrap_or_default();
     for task in &tasks {
@@ -1029,7 +1029,7 @@ pub async fn delete_torrent_by_hash(
     token: &str,
     info_hash: &str,
 ) -> Result<bool, ProviderError> {
-    let bearer = resolve_token(token);
+    let bearer = resolve_bearer_token(token);
     let hash_lower = info_hash.to_lowercase();
     let mut deleted = false;
 
@@ -1061,7 +1061,7 @@ pub async fn list_downloaded_torrents(
     http: &Client,
     token: &str,
 ) -> Result<Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>, ProviderError> {
-    let bearer = resolve_token(token);
+    let bearer = resolve_bearer_token(token);
     let hash_folders = list_root_hash_folders(http, &bearer, None).await?;
 
     let mut results = Vec::with_capacity(hash_folders.len());

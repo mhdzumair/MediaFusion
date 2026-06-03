@@ -67,8 +67,8 @@ pub async fn validate_nzbget(http: &Client, config: &Value) -> Result<(), Provid
 }
 
 pub async fn validate_easynews(http: &Client, config: &Value) -> Result<(), ProviderError> {
-    let username = str_field(config, &["username", "user"]).unwrap_or_default();
-    let password = str_field(config, &["password", "pass"]).unwrap_or_default();
+    let username = str_field(config, &["username", "un", "user"]).unwrap_or_default();
+    let password = str_field(config, &["password", "pw", "pass"]).unwrap_or_default();
     if username.is_empty() || password.is_empty() {
         return Err(ProviderError::api(
             "EasyNews credentials missing",

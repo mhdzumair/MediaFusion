@@ -115,7 +115,7 @@ fn apply_auth(builder: reqwest::RequestBuilder, auth: &StremThruAuth) -> reqwest
             format!("Bearer {store_token}"),
         ),
         StremThruAuth::Proxy(token) => {
-            builder.header("Proxy-Authorization", format!("Basic {token}"))
+            builder.header("X-StremThru-Authorization", format!("Basic {token}"))
         }
     }
 }
@@ -164,23 +164,35 @@ async fn st_delete(
     Ok(())
 }
 
+// ─── Public validation ────────────────────────────────────────────────────────
+
+/// Validate StremThru credentials by fetching the store user info. Returns Ok(()) on success.
+pub async fn validate_credentials(
+    http: &reqwest::Client,
+    token: &str,
+) -> Result<(), ProviderError> {
+    let cfg = parse_config(token);
+    st_get(http, &cfg, "/v0/store/user").await?;
+    Ok(())
+}
+
 // ─── StremThru API operations ─────────────────────────────────────────────────
 
-async fn add_magnet(
+async fn add_torz(
     http: &reqwest::Client,
     cfg: &StremThruConfig,
     magnet: &str,
 ) -> Result<Value, ProviderError> {
-    let payload = serde_json::json!({ "magnet": magnet });
-    st_post(http, cfg, "/v0/store/magnets", &payload).await
+    let payload = serde_json::json!({ "link": magnet });
+    st_post(http, cfg, "/v0/store/torz", &payload).await
 }
 
-async fn get_magnet_status(
+async fn get_torz_status(
     http: &reqwest::Client,
     cfg: &StremThruConfig,
-    magnet_id: &str,
+    torz_id: &str,
 ) -> Result<Value, ProviderError> {
-    st_get(http, cfg, &format!("/v0/store/magnets/{magnet_id}")).await
+    st_get(http, cfg, &format!("/v0/store/torz/{torz_id}")).await
 }
 
 async fn generate_link(
@@ -189,7 +201,7 @@ async fn generate_link(
     file_link: &str,
 ) -> Result<String, ProviderError> {
     let payload = serde_json::json!({ "link": file_link });
-    let body = st_post(http, cfg, "/v0/store/link/generate", &payload).await?;
+    let body = st_post(http, cfg, "/v0/store/torz/link/generate", &payload).await?;
     body.get("data")
         .and_then(|d| d.get("link"))
         .and_then(|v| v.as_str())
@@ -202,11 +214,11 @@ async fn generate_link(
         })
 }
 
-async fn list_magnets(
+async fn list_torz(
     http: &reqwest::Client,
     cfg: &StremThruConfig,
 ) -> Result<Vec<Value>, ProviderError> {
-    let body = st_get(http, cfg, "/v0/store/magnets").await?;
+    let body = st_get(http, cfg, "/v0/store/torz").await?;
     Ok(body
         .get("data")
         .and_then(|d| d.get("items"))
@@ -220,12 +232,12 @@ async fn list_magnets(
 async fn wait_for_downloaded(
     http: &reqwest::Client,
     cfg: &StremThruConfig,
-    magnet_id: &str,
+    torz_id: &str,
     max_retries: u32,
     retry_interval_secs: u64,
 ) -> Result<Value, ProviderError> {
     for attempt in 0..max_retries {
-        let info = get_magnet_status(http, cfg, magnet_id).await?;
+        let info = get_torz_status(http, cfg, torz_id).await?;
         let status = info
             .get("data")
             .and_then(|d| d.get("status"))
@@ -236,10 +248,9 @@ async fn wait_for_downloaded(
             return Ok(info);
         }
 
-        // Terminal error states
-        if matches!(status, "error" | "failed") {
+        if matches!(status, "failed" | "invalid") {
             return Err(ProviderError::api(
-                format!("StremThru magnet entered error status: {status}"),
+                format!("StremThru torz entered terminal status: {status}"),
                 "transfer_error.mp4",
             ));
         }
@@ -249,20 +260,20 @@ async fn wait_for_downloaded(
         }
     }
     Err(ProviderError::api(
-        format!("StremThru magnet did not reach 'downloaded' status after {max_retries} retries"),
+        format!("StremThru torz did not reach 'downloaded' status after {max_retries} retries"),
         "torrent_not_downloaded.mp4",
     ))
 }
 
 // ─── Public entry points ──────────────────────────────────────────────────────
 
-/// Return all magnets stored in the user's StremThru account.
+/// Return all torz stored in the user's StremThru account.
 pub async fn list_downloaded_torrents(
     http: &reqwest::Client,
     token: &str,
 ) -> Result<Vec<crate::providers::torrents::realdebrid::DownloadedTorrent>, ProviderError> {
     let cfg = parse_config(token);
-    let items = list_magnets(http, &cfg).await?;
+    let items = list_torz(http, &cfg).await?;
     let mut results = Vec::with_capacity(items.len());
     for item in items {
         let info_hash = match item.get("hash").and_then(|v| v.as_str()) {
@@ -320,21 +331,21 @@ pub async fn get_video_url(
             .join("&")
     );
 
-    // Add magnet — StremThru returns the torrent data directly (or existing one)
-    let add_resp = add_magnet(http, &cfg, &magnet).await?;
+    // Add torz — StremThru returns the torrent data directly (or existing one)
+    let add_resp = add_torz(http, &cfg, &magnet).await?;
 
     let data = add_resp.get("data").ok_or_else(|| {
         ProviderError::api(
-            "Missing data in StremThru add magnet response",
+            "Missing data in StremThru add torz response",
             "api_error.mp4",
         )
     })?;
 
-    let magnet_id = data
+    let torz_id = data
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            ProviderError::api("Missing magnet id in StremThru response", "api_error.mp4")
+            ProviderError::api("Missing torz id in StremThru response", "api_error.mp4")
         })?
         .to_string();
 
@@ -344,7 +355,7 @@ pub async fn get_video_url(
     let torrent_data = if status.eq_ignore_ascii_case("downloaded") {
         add_resp.clone()
     } else {
-        wait_for_downloaded(http, &cfg, &magnet_id, MAX_RETRIES, RETRY_INTERVAL).await?
+        wait_for_downloaded(http, &cfg, &torz_id, MAX_RETRIES, RETRY_INTERVAL).await?
     };
 
     // Extract files list
@@ -403,14 +414,14 @@ pub async fn get_video_url(
     generate_link(http, &cfg, file_link).await
 }
 
-/// Delete ALL magnets from the user's StremThru store.
+/// Delete ALL torz from the user's StremThru store.
 pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     let cfg = parse_config(token);
-    let items = list_magnets(http, &cfg).await?;
+    let items = list_torz(http, &cfg).await?;
 
     for item in items {
         if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
-            st_delete(http, &cfg, &format!("/v0/store/magnets/{id}"))
+            st_delete(http, &cfg, &format!("/v0/store/torz/{id}"))
                 .await
                 .ok();
         }
@@ -431,25 +442,25 @@ pub async fn check_cached(
     // Send hashes in chunks to avoid oversized GET URLs (HTTP 414).
     const CHUNK: usize = 80;
     let cfg = parse_config(token);
-    let url = format!("{}/v0/store/magnets/check", cfg.base_url);
+    let url = format!("{}/v0/store/torz/check", cfg.base_url);
     let sid = media_id.to_string();
     let mut cached = Vec::new();
 
     for chunk in hashes.chunks(CHUNK) {
-        let magnet_list = chunk.join(",");
+        let hash_list = chunk.join(",");
         let req = http
             .get(&url)
             .header("User-Agent", USER_AGENT)
-            .query(&[("magnet", magnet_list.as_str()), ("sid", sid.as_str())]);
+            .query(&[("hash", hash_list.as_str()), ("sid", sid.as_str())]);
         let req = apply_auth(req, &cfg.auth);
         let resp = match req.send().await {
             Ok(r) => r,
             Err(e) => {
-                tracing::warn!("stremthru magnets/check: {e}");
+                tracing::warn!("stremthru torz/check: {e}");
                 continue;
             }
         };
-        let body: serde_json::Value = match response_json(resp, "stremthru magnets/check").await {
+        let body: serde_json::Value = match response_json(resp, "stremthru torz/check").await {
             Ok(v) => v,
             Err(_) => continue,
         };

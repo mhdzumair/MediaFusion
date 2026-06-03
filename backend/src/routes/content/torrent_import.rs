@@ -33,7 +33,7 @@ use serde::Deserialize;
 use serde_json::json;
 use sha2::Sha256;
 
-use crate::{parser, state::AppState};
+use crate::{db::UserId, parser, state::AppState};
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -180,6 +180,88 @@ fn enrich_sports_file_entries(files: &mut [FileEntry]) {
     for (idx, f) in files.iter_mut().enumerate() {
         if f.episode_number.is_none() {
             f.episode_number = Some((idx as i32) + 1);
+        }
+    }
+}
+
+/// Apply a caller-supplied episode-name regex to a filename (Python `episode_name_parser` parity).
+///
+/// Prefer named captures `episode_name`, `title`, `name`, `event`; fall back to
+/// the first unnamed group, then the full match.  Dots and underscores are
+/// replaced with spaces and the result is trimmed.
+fn apply_episode_name_parser(pattern: &str, filename: &str) -> Option<String> {
+    let re = regex::Regex::new(pattern).ok()?;
+    let base = std::path::Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(filename);
+    let caps = re.captures(base)?;
+
+    // Prefer well-known named groups.
+    let raw = ["episode_name", "title", "name", "event"]
+        .iter()
+        .find_map(|&grp| caps.name(grp).map(|m| m.as_str()))
+        .or_else(|| caps.get(1).map(|m| m.as_str()))
+        .or_else(|| caps.get(0).map(|m| m.as_str()))?;
+
+    let cleaned: String = raw
+        .chars()
+        .map(|c| if matches!(c, '.' | '_') { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+fn enrich_series_file_entries(
+    files: &mut [FileEntry],
+    torrent_name: &str,
+    episode_name_parser: Option<&str>,
+) {
+    let default_season = parser::parse_title(torrent_name)
+        .seasons
+        .first()
+        .copied()
+        .unwrap_or(1);
+
+    for f in files.iter_mut() {
+        if f.season_number.is_some() && f.episode_number.is_some() {
+            continue;
+        }
+
+        let season_hint = f.season_number.unwrap_or(default_season);
+        if let Some(ep) = parser::episode_detector::detect_episode(&f.filename, season_hint)
+            .or_else(|| parser::episode_detector::detect_episode(torrent_name, season_hint))
+        {
+            f.season_number = Some(ep.season);
+            f.episode_number = Some(ep.episode);
+        } else {
+            let parsed = parser::parse_title(&f.filename);
+            if f.season_number.is_none() {
+                f.season_number = parsed.seasons.first().copied();
+            }
+            if f.episode_number.is_none() {
+                f.episode_number = parsed.episodes.first().copied();
+            }
+        }
+
+        if f.episode_title.as_ref().is_none_or(|t| t.trim().is_empty()) {
+            // 1. User-supplied regex (Python episode_name_parser parity).
+            let extracted =
+                episode_name_parser.and_then(|p| apply_episode_name_parser(p, &f.filename));
+            // 2. PTT's episode_title field (text between SxxExx and first
+            //    release token).  PTT's `title` field is NOT used here — for
+            //    SxxExx filenames it returns the show name, not the episode name.
+            let extracted = extracted.or_else(|| parser::parse_title(&f.filename).episode_title);
+            if let Some(title) = extracted {
+                f.episode_title = Some(title);
+            }
         }
     }
 }
@@ -431,6 +513,73 @@ pub struct MagnetAnalyzeRequest {
 
 // MagnetImportRequest was replaced by multipart form parsing in import_magnet.
 
+fn analyze_file_entry(path: String, size: i64, index: i32) -> serde_json::Value {
+    let filename = std::path::Path::new(&path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.clone());
+    json!({
+        "path": path,
+        "filename": filename,
+        "size": size,
+        "index": index,
+    })
+}
+
+fn analyze_files_from_torrent(torrent: &LavaTorrent) -> Vec<serde_json::Value> {
+    let mut files: Vec<serde_json::Value> = torrent
+        .files
+        .as_ref()
+        .map(|fs| {
+            fs.iter()
+                .enumerate()
+                .map(|(i, f)| {
+                    analyze_file_entry(f.path.to_string_lossy().into_owned(), f.length, i as i32)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if files.is_empty() && !torrent.name.is_empty() {
+        files.push(analyze_file_entry(torrent.name.clone(), torrent.length, 0));
+    }
+
+    files
+}
+
+fn analyze_files_from_dht(meta: &crate::demagnetize::TorrentMeta) -> Vec<serde_json::Value> {
+    meta.files
+        .iter()
+        .enumerate()
+        .map(|(i, f)| analyze_file_entry(f.path.clone(), f.size, i as i32))
+        .collect()
+}
+
+fn analyze_dht_summary(meta: &crate::demagnetize::TorrentMeta) -> serde_json::Value {
+    json!({
+        "name": meta.name,
+        "total_size": meta.total_size,
+        "num_files": meta.files.len(),
+        "files": meta
+            .files
+            .iter()
+            .map(|f| json!({"path": f.path, "size": f.size}))
+            .collect::<Vec<_>>(),
+    })
+}
+
+async fn resolve_dht_metadata(
+    info_hash: &str,
+    resolve_files: bool,
+    resolve_timeout_secs: Option<u64>,
+) -> Option<Result<crate::demagnetize::TorrentMeta, crate::demagnetize::Error>> {
+    if !resolve_files {
+        return None;
+    }
+    let secs = resolve_timeout_secs.unwrap_or(30).clamp(5, 60);
+    Some(crate::demagnetize::resolve(info_hash, std::time::Duration::from_secs(secs)).await)
+}
+
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 pub async fn analyze_magnet(
@@ -438,13 +587,16 @@ pub async fn analyze_magnet(
     headers: HeaderMap,
     Json(body): Json<MagnetAnalyzeRequest>,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
 
     let info_hash = match extract_info_hash_from_magnet(&body.magnet_link) {
         Some(h) => h,
@@ -485,49 +637,57 @@ pub async fn analyze_magnet(
 
     let meta_type = body.meta_type.as_deref().unwrap_or("movie");
     let search_title = parsed.title.as_deref().unwrap_or(&torrent_name);
-    let matches =
-        super::import_helpers::search_analyze_matches(&state, search_title, parsed.year, meta_type)
-            .await;
 
-    // When caller provides meta_id, resolve and return the specific media match
-    let meta_match: Option<serde_json::Value> = if let Some(ref mid) = body.meta_id {
-        if !mid.is_empty() {
-            super::import_helpers::lookup_import_media_id_with_fallback(
-                &state.pool,
-                mid,
-                meta_type,
-                search_title,
-                parsed.year,
-            )
-            .await
-            .and_then(|id| {
-                matches
-                    .iter()
-                    .find(|m| m["media_id"].as_i64() == Some(i64::from(i32::from(id))))
-                    .cloned()
-            })
-        } else {
-            None
-        }
-    } else {
-        None
+    // Run metadata search and optional DHT resolution in parallel — DHT can take
+    // up to resolve_timeout_secs while search hits DB + external providers.
+    let search_started = std::time::Instant::now();
+    let search_future = async {
+        let matches = super::import_helpers::search_analyze_matches(
+            &state,
+            UserId::from_auth_id(user_id),
+            search_title,
+            parsed.year,
+            meta_type,
+        )
+        .await;
+        let meta_match = super::import_helpers::resolve_import_meta_match(
+            &state.pool,
+            body.meta_id.as_deref(),
+            meta_type,
+            search_title,
+            parsed.year,
+            &matches,
+        )
+        .await;
+        (matches, meta_match)
     };
+    let dht_future =
+        resolve_dht_metadata(&info_hash, body.resolve_files, body.resolve_timeout_secs);
+
+    let ((matches, meta_match), dht_result) = tokio::join!(search_future, dht_future);
+    tracing::debug!(
+        info_hash = %info_hash,
+        search_elapsed_ms = search_started.elapsed().as_millis(),
+        match_count = matches.len(),
+        meta_match = meta_match.is_some(),
+        dht_requested = body.resolve_files,
+        "magnet analyze: metadata search complete"
+    );
 
     // Optional: contact DHT to fetch the full file list via BEP-9.
-    // Only triggered when the caller explicitly requests it.
-    let resolved_files: Option<serde_json::Value> = if body.resolve_files {
-        let secs = body.resolve_timeout_secs.unwrap_or(30).clamp(5, 60);
-        match crate::demagnetize::resolve(&info_hash, std::time::Duration::from_secs(secs)).await {
-            Ok(meta) => Some(json!({
-                "name":       meta.name,
-                "total_size": meta.total_size,
-                "num_files":  meta.files.len(),
-                "files": meta.files.iter()
-                    .map(|f| json!({"path": f.path, "size": f.size}))
-                    .collect::<Vec<_>>(),
-            })),
+    let mut files: Vec<serde_json::Value> = Vec::new();
+    let mut file_count: Option<i32> = None;
+    let mut total_size: Option<i64> = None;
+    let resolved_files: Option<serde_json::Value> = if let Some(dht_result) = dht_result {
+        match dht_result {
+            Ok(meta) => {
+                files = analyze_files_from_dht(&meta);
+                file_count = Some(files.len() as i32);
+                total_size = Some(meta.total_size);
+                Some(analyze_dht_summary(&meta))
+            }
             Err(e) => {
-                tracing::warn!("demagnetize {info_hash}: {e}");
+                tracing::warn!(info_hash = %info_hash, error = %e, "magnet analyze: demagnetize failed");
                 Some(json!({"error": e.to_string()}))
             }
         }
@@ -550,6 +710,9 @@ pub async fn analyze_magnet(
             "languages": parsed.languages,
             "matches": matches,
             "meta_match": meta_match,
+            "files": files,
+            "file_count": file_count,
+            "total_size": total_size,
             "resolved": resolved_files,
         })),
     )
@@ -561,16 +724,23 @@ pub async fn analyze_torrent(
     headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
 
     let mut file_bytes: Option<Bytes> = None;
     let mut meta_type = String::from("movie");
+    let mut meta_id: Option<String> = None;
+    let mut title: Option<String> = None;
+    let mut resolve_files = false;
+    let mut resolve_timeout_secs: Option<u64> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
@@ -579,6 +749,25 @@ pub async fn analyze_torrent(
             }
             Some("meta_type") => {
                 meta_type = field.text().await.unwrap_or_else(|_| "movie".into());
+            }
+            Some("meta_id") => {
+                meta_id = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("title") => {
+                title = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("resolve_files") => {
+                resolve_files = field
+                    .text()
+                    .await
+                    .ok()
+                    .map(|v| v == "true" || v == "1")
+                    .unwrap_or(false);
+            }
+            Some("resolve_timeout_secs") => {
+                if let Ok(raw) = field.text().await {
+                    resolve_timeout_secs = raw.parse::<u64>().ok();
+                }
             }
             _ => {}
         }
@@ -612,24 +801,11 @@ pub async fn analyze_torrent(
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
 
-    let name = torrent.name.clone();
-    let total_size = torrent.length;
-    let file_count = torrent.files.as_ref().map(|f| f.len()).unwrap_or(1) as i32;
-
-    let files: Vec<serde_json::Value> = torrent
-        .files
-        .as_ref()
-        .map(|fs: &Vec<lava_torrent::torrent::v1::File>| {
-            fs.iter()
-                .map(|f| {
-                    json!({
-                        "path": f.path.to_string_lossy(),
-                        "size": f.length,
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let name = title.clone().unwrap_or_else(|| torrent.name.clone());
+    let mut files = analyze_files_from_torrent(&torrent);
+    let mut total_size = torrent.length;
+    let mut file_count = files.len().max(1) as i32;
+    let mut resolved_files: Option<serde_json::Value> = None;
 
     let already_exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM torrent_stream WHERE info_hash = $1)")
@@ -655,11 +831,41 @@ pub async fn analyze_torrent(
     let search_title = parsed.title.as_deref().unwrap_or(&name);
     let matches = super::import_helpers::search_analyze_matches(
         &state,
+        UserId::from_auth_id(user_id),
         search_title,
         parsed.year,
         &meta_type,
     )
     .await;
+
+    let meta_match = super::import_helpers::resolve_import_meta_match(
+        &state.pool,
+        meta_id.as_deref(),
+        &meta_type,
+        search_title,
+        parsed.year,
+        &matches,
+    )
+    .await;
+
+    if files.is_empty() {
+        if let Some(dht_result) =
+            resolve_dht_metadata(&info_hash, resolve_files, resolve_timeout_secs).await
+        {
+            match dht_result {
+                Ok(meta) => {
+                    files = analyze_files_from_dht(&meta);
+                    file_count = files.len().max(1) as i32;
+                    total_size = meta.total_size;
+                    resolved_files = Some(analyze_dht_summary(&meta));
+                }
+                Err(e) => {
+                    tracing::warn!("demagnetize {info_hash}: {e}");
+                    resolved_files = Some(json!({"error": e.to_string()}));
+                }
+            }
+        }
+    }
 
     (
         StatusCode::OK,
@@ -678,6 +884,8 @@ pub async fn analyze_torrent(
             "codec": parsed.codec,
             "languages": parsed.languages,
             "matches": matches,
+            "meta_match": meta_match,
+            "resolved": resolved_files,
         })),
     )
         .into_response()
@@ -708,9 +916,14 @@ pub async fn analyze_magnet_for_bot(
         parser::parse_title(&torrent_name)
     };
     let search_title = parsed.title.as_deref().unwrap_or(&torrent_name);
-    let matches =
-        super::import_helpers::search_analyze_matches(state, search_title, parsed.year, meta_type)
-            .await;
+    let matches = super::import_helpers::search_analyze_matches(
+        state,
+        None,
+        search_title,
+        parsed.year,
+        meta_type,
+    )
+    .await;
 
     let mut result = json!({
         "success": true,
@@ -773,32 +986,23 @@ pub async fn analyze_torrent_bytes(
         parser::parse_title(&name)
     };
     let search_title = parsed.title.as_deref().unwrap_or(&name);
-    let matches =
-        super::import_helpers::search_analyze_matches(state, search_title, parsed.year, meta_type)
-            .await;
+    let matches = super::import_helpers::search_analyze_matches(
+        state,
+        None,
+        search_title,
+        parsed.year,
+        meta_type,
+    )
+    .await;
 
-    let files: Vec<serde_json::Value> = torrent
-        .files
-        .as_ref()
-        .map(|fs| {
-            fs.iter()
-                .map(|f| {
-                    json!({
-                        "path": f.path.to_string_lossy(),
-                        "size": f.length,
-                        "filename": f.path.to_string_lossy(),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let files: Vec<serde_json::Value> = analyze_files_from_torrent(&torrent);
 
     Ok(json!({
         "success": true,
         "info_hash": info_hash,
         "torrent_name": name,
         "total_size": torrent.length,
-        "file_count": torrent.files.as_ref().map(|f| f.len()).unwrap_or(1),
+        "file_count": files.len().max(1),
         "files": files,
         "parsed_title": parsed.title,
         "year": parsed.year,
@@ -856,6 +1060,7 @@ pub async fn import_magnet(
     let mut release_date: Option<String> = None;
     let mut form_audio: Vec<String> = Vec::new();
     let mut form_hdr: Vec<String> = Vec::new();
+    let mut episode_name_parser: Option<String> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
@@ -950,6 +1155,9 @@ pub async fn import_magnet(
             }
             Some("created_at") | Some("release_date") => {
                 release_date = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("episode_name_parser") => {
+                episode_name_parser = field.text().await.ok().filter(|s| !s.is_empty());
             }
             _ => {}
         }
@@ -1066,6 +1274,12 @@ pub async fn import_magnet(
 
     if meta_type == "sports" && !file_data.is_empty() {
         enrich_sports_file_entries(&mut file_data);
+    } else if meta_type == "series" && !file_data.is_empty() {
+        enrich_series_file_entries(
+            &mut file_data,
+            &torrent_name,
+            episode_name_parser.as_deref(),
+        );
     }
 
     let primary_meta_id = meta_id
@@ -1141,22 +1355,21 @@ pub async fn import_magnet(
         languages.clone()
     };
 
-    let source = meta_id.as_deref().unwrap_or("manual").to_string();
     let file_count = if !file_data.is_empty() {
         file_data.len() as i32
     } else {
         1
     };
-
     let is_public = super::import_helpers::stream_is_public_on_submit(auto_approve, true);
     let magnet_trackers = extract_trackers_from_magnet(&magnet_link);
+
     let stream_id = match super::import_helpers::persist_torrent_import(
         &state.pool,
         &state.http,
         super::import_helpers::TorrentImportPersist {
             info_hash: &info_hash,
             name: &torrent_name,
-            source: &source,
+            source: super::import_helpers::CONTRIBUTION_STREAM_SOURCE,
             total_size,
             seeders: None,
             file_count,
@@ -1175,6 +1388,8 @@ pub async fn import_magnet(
             prefetch: &prefetch,
             torrent_type: crate::db::TorrentType::Public,
             torrent_file: None,
+            uploader: Some(&uploader_name),
+            uploader_user_id: uploader_user_id.and_then(|id| i32::try_from(id).ok()),
         },
     )
     .await
@@ -1289,6 +1504,7 @@ pub async fn import_torrent(
     let mut poster: Option<String> = None;
     let mut background: Option<String> = None;
     let mut release_date: Option<String> = None;
+    let mut episode_name_parser: Option<String> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name() {
@@ -1321,6 +1537,9 @@ pub async fn import_torrent(
             }
             Some("codec") => {
                 codec = field.text().await.ok().filter(|s| !s.is_empty());
+            }
+            Some("episode_name_parser") => {
+                episode_name_parser = field.text().await.ok().filter(|s| !s.is_empty());
             }
             Some("force_import") => {
                 force_import = field
@@ -1502,6 +1721,12 @@ pub async fn import_torrent(
     };
     if meta_type == "sports" && !effective_files.is_empty() {
         enrich_sports_file_entries(&mut effective_files);
+    } else if meta_type == "series" && !effective_files.is_empty() {
+        enrich_series_file_entries(
+            &mut effective_files,
+            &torrent_name,
+            episode_name_parser.as_deref(),
+        );
     }
 
     let primary_meta_id = meta_id
@@ -1577,7 +1802,7 @@ pub async fn import_torrent(
         languages.clone()
     };
 
-    let source = meta_id.as_deref().unwrap_or("manual").to_string();
+    let source = super::import_helpers::CONTRIBUTION_STREAM_SOURCE;
 
     // Extract trackers from .torrent announce fields
     let mut tracker_urls: Vec<String> = Vec::new();
@@ -1603,7 +1828,7 @@ pub async fn import_torrent(
         super::import_helpers::TorrentImportPersist {
             info_hash: &info_hash,
             name: &torrent_name,
-            source: &source,
+            source,
             total_size: if total_size > 0 {
                 Some(total_size)
             } else {
@@ -1626,6 +1851,8 @@ pub async fn import_torrent(
             prefetch: &prefetch,
             torrent_type: crate::db::TorrentType::Public,
             torrent_file: Some(bytes.as_ref()),
+            uploader: Some(&uploader_name),
+            uploader_user_id: uploader_user_id.and_then(|id| i32::try_from(id).ok()),
         },
     )
     .await

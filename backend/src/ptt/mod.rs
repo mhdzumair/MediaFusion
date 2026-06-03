@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use engine::{FieldValue, Parser};
+use regex::Regex;
 
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ParsedTitle {
     pub title: String,
+    /// Per-episode title extracted from the region between the `SxxExx` marker
+    /// and the first release-metadata token (resolution, quality, codec …).
+    /// Only populated for filenames that contain a season/episode marker.
+    pub episode_title: Option<String>,
     pub year: Option<i32>,
     pub resolution: Option<String>,
     pub quality: Option<String>,
@@ -112,6 +117,86 @@ fn translate_lang(code: &str) -> Option<&'static str> {
     LANG_TABLE.iter().find(|(k, _)| *k == code).map(|(_, v)| *v)
 }
 
+// ── Episode-title extraction ──────────────────────────────────────────────────
+
+/// Matches a `SxxExx` / `S1E4` marker (case-insensitive).
+fn re_sxxexx() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| Regex::new(r"(?i)[sS](\d{1,2})[eE](\d{1,2})").unwrap())
+}
+
+/// Matches the first release-metadata token that reliably ends the episode-title
+/// region.  Uses a leading separator anchor (`^` or `[._\s-]`) so `m.start()`
+/// is the byte-offset of the separator, giving a clean cut-point.
+fn re_episode_title_cutoff() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(
+            r"(?i)(?:^|[._\s-])(?:4k|uhd|2160p|1440p|1080[ip]|720p|576p|480p|360p|240p\
+|web[.-]?dl|webrip|blu[.-]?ray|bdrip|brrip|hdrip|hdtv|dvdrip|dvd|pdtv|satrip|tvrip\
+|cam(?:rip)?\b|telecine|telesync|scr\b|remux|webmux\
+|[hx][._]?26[45]|hevc|avc|xvid|divx\
+|aac|ac3|mp3|dts|truehd|flac|dolby|atmos\
+|multi|dual|proper|repack|extended|remastered|limited|complete|internal|subbed|dubbed)",
+        )
+        .unwrap()
+    })
+}
+
+/// Normalise a title for comparison: dots/underscores → spaces, collapse runs,
+/// lowercase.
+fn norm_title(s: &str) -> String {
+    s.chars()
+        .map(|c| if matches!(c, '.' | '_') { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// Extract the per-episode title from a raw filename string.
+///
+/// Looks for text between the `SxxExx` marker and the first release-metadata
+/// token.  Returns `None` when:
+/// - no `SxxExx` marker is found,
+/// - the extracted text is empty after cleaning, or
+/// - it normalises to the same string as `show_title` (i.e. it is the series
+///   name, not a per-episode title — which is what PTT's `title` returns for
+///   these filenames).
+fn extract_episode_title(raw: &str, show_title: &str) -> Option<String> {
+    // Work on the base name without extension.
+    let stem = std::path::Path::new(raw)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(raw);
+
+    let cap = re_sxxexx().find(stem)?;
+    let after = &stem[cap.end()..];
+    let after = after.trim_start_matches(['.', '_', ' ', '-']);
+
+    let end = re_episode_title_cutoff()
+        .find(after)
+        .map(|m| m.start())
+        .unwrap_or(after.len());
+
+    let raw_slice = after[..end].trim_end_matches(['.', '_', ' ', '-']);
+
+    let title: String = raw_slice
+        .chars()
+        .map(|c| if matches!(c, '.' | '_') { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if title.is_empty() || norm_title(&title) == norm_title(show_title) {
+        return None;
+    }
+
+    Some(title)
+}
+
 // ── Singleton parser (compiled once at startup) ───────────────────────────────
 
 fn global_parser() -> &'static Parser {
@@ -131,7 +216,12 @@ fn global_parser() -> &'static Parser {
 /// language names (e.g. `"en"` → `"English"`).
 pub fn parse(raw: &str, translate_languages: bool) -> ParsedTitle {
     let map = global_parser().parse_raw(raw);
-    from_map(map, translate_languages)
+    let mut out = from_map(map, translate_languages);
+    // Populate episode_title when a season/episode marker is present.
+    if !out.seasons.is_empty() && !out.episodes.is_empty() {
+        out.episode_title = extract_episode_title(raw, &out.title);
+    }
+    out
 }
 
 /// Parse with default options (language codes, not full names).
@@ -276,6 +366,44 @@ mod tests {
         assert_eq!(r.episodes, vec![10]);
         assert_eq!(r.resolution.as_deref(), Some("720p"));
         assert_eq!(r.quality.as_deref(), Some("WEB-DL"));
+        // No episode title text between marker and first release token
+        assert!(r.episode_title.is_none());
+    }
+
+    #[test]
+    fn test_episode_title_extracted() {
+        let r = parse_title("Brothers.and.Sisters.S01E01.The.House.of.SS.2160p.JHS.WEB-DL.MULTi.AAC2.0.H.265-4kHdHub.Com.mkv");
+        assert_eq!(r.title, "Brothers and Sisters");
+        assert_eq!(r.seasons, vec![1]);
+        assert_eq!(r.episodes, vec![1]);
+        assert_eq!(r.episode_title.as_deref(), Some("The House of SS"));
+    }
+
+    #[test]
+    fn test_episode_title_e02() {
+        let r = parse_title("Brothers.and.Sisters.S01E02.Jayshrees.Second.Chance.2160p.JHS.WEB-DL.MULTi.AAC2.0.H.265-4kHdHub.Com.mkv");
+        assert_eq!(r.episode_title.as_deref(), Some("Jayshrees Second Chance"));
+    }
+
+    #[test]
+    fn test_episode_title_e03() {
+        let r = parse_title("Brothers.and.Sisters.S01E03.Priyan.Guides.Jayshree.2160p.JHS.WEB-DL.MULTi.AAC2.0.H.265-4kHdHub.Com.mkv");
+        assert_eq!(r.episode_title.as_deref(), Some("Priyan Guides Jayshree"));
+    }
+
+    #[test]
+    fn test_episode_title_e04() {
+        let r = parse_title("Brothers.and.Sisters.S01E04.Harini.vs.Jayshrees.Secret.2160p.JHS.WEB-DL.MULTi.AAC2.0.H.265-4kHdHub.Com.mkv");
+        assert_eq!(
+            r.episode_title.as_deref(),
+            Some("Harini vs Jayshrees Secret")
+        );
+    }
+
+    #[test]
+    fn test_episode_title_absent_when_no_sxxexx() {
+        let r = parse_title("Some.Movie.2023.1080p.WEB-DL.mkv");
+        assert!(r.episode_title.is_none());
     }
 
     #[test]

@@ -157,12 +157,15 @@ async fn validate_one(
                 None => return ValidationResult::error("OffCloud token is missing"),
             };
             match http
-                .get("https://offcloud.com/api/user/info")
-                .header("Authorization", format!("Bearer {token}"))
+                .get("https://offcloud.com/api/account/info")
+                .bearer_auth(token)
                 .send()
                 .await
             {
                 Ok(r) if r.status().is_success() => ValidationResult::success(),
+                Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED => {
+                    ValidationResult::error("OffCloud API key is invalid or has expired")
+                }
                 Ok(r) => ValidationResult::error(format!(
                     "Failed to validate OffCloud credentials (HTTP {})",
                     r.status()
@@ -178,12 +181,15 @@ async fn validate_one(
                 None => return ValidationResult::error("Seedr token is missing"),
             };
             match http
-                .get("https://www.seedr.cc/rest/user")
-                .header("Authorization", format!("Bearer {token}"))
+                .get("https://v2.seedr.cc/api/v0.1/p/tasks")
+                .bearer_auth(token)
                 .send()
                 .await
             {
                 Ok(r) if r.status().is_success() => ValidationResult::success(),
+                Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED => {
+                    ValidationResult::error("Seedr token is expired or invalid")
+                }
                 Ok(r) => ValidationResult::error(format!(
                     "Failed to validate Seedr credentials (HTTP {})",
                     r.status()
@@ -198,19 +204,8 @@ async fn validate_one(
                 Some(t) => t,
                 None => return ValidationResult::error("StremThru token is missing"),
             };
-            match http
-                .get("https://stremthru.elfhosted.com/stremio/store/configure")
-                .header("Authorization", format!("Bearer {token}"))
-                .send()
-                .await
-            {
-                Ok(r) if r.status().is_success() || r.status().as_u16() == 404 => {
-                    ValidationResult::success()
-                }
-                Ok(r) => ValidationResult::error(format!(
-                    "Failed to validate StremThru credentials (HTTP {})",
-                    r.status()
-                )),
+            match super::torrents::stremthru::validate_credentials(http, token).await {
+                Ok(()) => ValidationResult::success(),
                 Err(e) => ValidationResult::error(format!(
                     "Failed to validate StremThru credentials: {e}"
                 )),

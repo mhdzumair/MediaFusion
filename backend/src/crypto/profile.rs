@@ -219,6 +219,22 @@ pub fn merge_secrets(config: &mut Value, secrets: &Value) {
         }
     }
 
+    // EasyNews credentials (stored under "enc" or "easynews_config")
+    for enc_key in ["enc", "easynews_config"] {
+        if let Some(enc_secrets) = secrets_obj.get(enc_key).and_then(|v| v.as_object()) {
+            if let Some(enc) = config_obj.get_mut(enc_key).and_then(|v| v.as_object_mut()) {
+                for (k, v) in enc_secrets {
+                    if !v.is_null() {
+                        enc.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
+        if secrets_obj.contains_key(enc_key) {
+            break;
+        }
+    }
+
     // Top-level api_password — only fill in if not already present in config.
     // Always stored under the canonical short key "ap" to avoid the serde alias
     // "api_password" appearing alongside "ap" and triggering a duplicate-field error.

@@ -29,12 +29,27 @@ use sha2::Sha256;
 
 use crate::{models::user_data::UserData, providers::validator, state::AppState};
 
+/// Remove long-form alias keys when the canonical short-form key is also present.
+/// This prevents serde "duplicate field" errors when a client sends both forms.
+/// Pairs: ("ap", "api_password")
+fn normalize_config_aliases(config: &mut Value) {
+    if let Some(obj) = config.as_object_mut() {
+        if obj.contains_key("ap") {
+            obj.remove("api_password");
+        } else if let Some(v) = obj.remove("api_password") {
+            obj.insert("ap".into(), v);
+        }
+    }
+}
+
 async fn validate_profile_config(
     state: &AppState,
     headers: &HeaderMap,
     config: &Value,
 ) -> Option<Response> {
-    let user_data: UserData = match serde_json::from_value(config.clone()) {
+    let mut config_normalized = config.clone();
+    normalize_config_aliases(&mut config_normalized);
+    let user_data: UserData = match serde_json::from_value(config_normalized) {
         Ok(u) => u,
         Err(e) => {
             return Some(
@@ -225,6 +240,12 @@ pub fn mask_config(mut config: serde_json::Value) -> serde_json::Value {
                             mask_object_fields(mdb, &["api_key", "ak"]);
                         }
                     }
+                    // easynews_config / enc
+                    for enc_key in &["easynews_config", "enc"] {
+                        if let Some(Value::Object(enc)) = obj.get_mut(*enc_key) {
+                            mask_object_fields(enc, &["username", "un", "password", "pw"]);
+                        }
+                    }
                 }
             }
         }
@@ -253,6 +274,11 @@ pub fn mask_config(mut config: serde_json::Value) -> serde_json::Value {
             for mdb_key in &["mdblist_config", "mdb"] {
                 if let Some(Value::Object(mdb)) = obj.get_mut(*mdb_key) {
                     mask_object_fields(mdb, &["api_key", "ak"]);
+                }
+            }
+            for enc_key in &["easynews_config", "enc"] {
+                if let Some(Value::Object(enc)) = obj.get_mut(*enc_key) {
+                    mask_object_fields(enc, &["username", "un", "password", "pw"]);
                 }
             }
         }
@@ -482,6 +508,23 @@ fn extract_provider_secrets(
             }
         }
     }
+    for sub_key in &["easynews_config", "enc"] {
+        if let Some(Value::Object(sub)) = clean.get_mut(*sub_key) {
+            let mut sub_secrets: serde_json::Map<String, Value> = serde_json::Map::new();
+            for f in &["username", "un", "password", "pw"] {
+                if let Some(v) = sub.remove(*f) {
+                    if v.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
+                        sub_secrets.insert((*f).to_string(), v);
+                    }
+                }
+            }
+            if !sub_secrets.is_empty() {
+                secrets_entry.insert((*sub_key).to_string(), Value::Object(sub_secrets));
+                // Store only under canonical short key to avoid duplicates on re-save
+                break;
+            }
+        }
+    }
     (clean, secrets_entry)
 }
 
@@ -537,13 +580,13 @@ pub fn split_config(config: &Value, key: &[u8; 32]) -> (Value, Option<String>) {
         }
     }
 
-    // Extract top-level api_password / ap
+    // Extract top-level api_password / ap — normalize to "ap" to prevent duplicate-field errors
+    // when secrets are later merged back and the config is deserialized.
+    normalize_config_aliases(&mut clean);
     if let Some(obj) = clean.as_object_mut() {
-        for f in &["api_password", "ap"] {
-            if let Some(v) = obj.remove(*f) {
-                if v.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
-                    all_secrets.insert((*f).to_string(), v);
-                }
+        if let Some(v) = obj.remove("ap") {
+            if v.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
+                all_secrets.insert("ap".to_string(), v);
             }
         }
     }
