@@ -20,11 +20,6 @@ name = "telegram_session"
 path = "src/bin/telegram_session.rs"
 
 [dependencies]
-# Global allocator: dramatically reduces RSS growth vs glibc malloc on long-running services.
-# Windows release builds use the system allocator (jemalloc is not used on Windows targets).
-[target.'cfg(not(windows))'.dependencies]
-tikv-jemallocator = "0.6"
-
 # Async trait support
 async-trait = "0.1"
 
@@ -134,6 +129,11 @@ aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", 
 # Telegram MTProto live scraper (Phase 2c)
 grammers-client = { version = "0.9", default-features = false }
 grammers-session = { version = "0.9", default-features = false }
+
+# Global allocator: dramatically reduces RSS growth vs glibc malloc on long-running services.
+# Windows release builds use the system allocator (jemalloc is not used on Windows targets).
+[target.'cfg(not(windows))'.dependencies]
+tikv-jemallocator = "0.6"
 
 [dev-dependencies]
 wiremock = "0.6"
