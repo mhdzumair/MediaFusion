@@ -67,33 +67,64 @@ export interface LinkMultipleExternalIdsResponse {
 export type MigrateIdRequest = LinkExternalIdRequest
 export type MigrateIdResponse = LinkExternalIdResponse
 
-export interface SearchExternalRequest {
-  title: string
+export interface SearchMatchesRequest {
+  title?: string
   year?: number
-  media_type: 'movie' | 'series'
-  include_anime?: boolean
-  anime_sources?: ('kitsu' | 'anilist')[]
+  external_id?: string
+  media_type: 'movie' | 'series' | 'all' | 'sports' | 'tv'
+  limit?: number
+  include_user_content?: boolean
+  include_official?: boolean
+  include_catalog?: boolean
+  include_external?: boolean
 }
+
+export interface MediaMatchSearchResult extends ExternalSearchResult {
+  source?: 'database' | 'external'
+  is_user_created?: boolean
+  is_own?: boolean
+}
+
+export interface SearchMatchesResponse {
+  results: MediaMatchSearchResult[]
+}
+
+// Legacy alias kept for callers migrating from search-external
+export type SearchExternalRequest = {
+  title?: string
+  year?: number
+  media_type: 'movie' | 'series' | 'all'
+  limit?: number
+  include_user_content?: boolean
+  include_official?: boolean
+  include_catalog?: boolean
+  include_external?: boolean
+}
+
+export type SearchExternalResponse = SearchMatchesResponse
 
 export interface ExternalSearchResult {
   id: string // Primary ID (imdb_id or tmdb/tvdb/mal/kitsu/anilist prefixed ID)
   title: string
   year?: number
+  end_year?: number
   poster?: string
-  description?: string
+  background?: string
+  logo?: string
+  description?: string | null
   provider?: string // 'imdb', 'tmdb', 'tvdb', 'mal', 'kitsu', 'anilist'
   imdb_id?: string
+  imdb_rating?: number
+  runtime?: string
+  release_date?: string
+  media_id?: number
   tmdb_id?: string
   tvdb_id?: string | number
   mal_id?: string | number
   kitsu_id?: string | number
   anilist_id?: string | number
+  type?: 'movie' | 'series'
   external_ids?: Record<string, string | number | null> // All external IDs
-}
-
-export interface SearchExternalResponse {
-  status: string
-  results: ExternalSearchResult[]
 }
 
 // ============================================
@@ -159,26 +190,11 @@ export const metadataApi = {
   },
 
   /**
-   * Search for metadata in external sources (IMDB/TMDB/TVDB/MAL/Kitsu/AniList).
-   * Useful for finding the correct external ID when linking providers.
+   * Unified media match search — DB first (user + catalog), then external providers.
+   * Supports title (+ optional year) or external_id (tt..., tmdb:123, etc.).
    */
-  searchExternal: (
-    title: string,
-    mediaType: 'movie' | 'series',
-    year?: number,
-    options?: {
-      includeAnime?: boolean
-      animeSources?: ('kitsu' | 'anilist')[]
-    },
-  ): Promise<SearchExternalResponse> => {
-    const payload: SearchExternalRequest = { title, media_type: mediaType, year }
-    if (options?.includeAnime !== undefined) {
-      payload.include_anime = options.includeAnime
-    }
-    if (options?.animeSources && options.animeSources.length > 0) {
-      payload.anime_sources = options.animeSources
-    }
-    return apiClient.post<SearchExternalResponse>('/metadata/search-external', payload)
+  searchMatches: (request: SearchMatchesRequest): Promise<SearchMatchesResponse> => {
+    return apiClient.post<SearchMatchesResponse>('/metadata/search/matches', request)
   },
 
   /**

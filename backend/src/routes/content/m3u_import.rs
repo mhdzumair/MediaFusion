@@ -21,7 +21,7 @@ use serde_json::json;
 use sha2::Sha256;
 use uuid::Uuid;
 
-use crate::db::MediaType;
+use crate::db::{MediaType, UserId};
 use crate::state::AppState;
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -432,13 +432,16 @@ pub async fn analyze_m3u(
     State(state): State<Arc<AppState>>,
     req: Request,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
 
     if !state.config.enable_iptv_import {
         return (
@@ -605,6 +608,7 @@ pub async fn analyze_m3u(
             };
             let matches = super::import_helpers::search_analyze_matches(
                 &state,
+                UserId::from_auth_id(user_id),
                 search_title,
                 parsed_year,
                 meta_type,

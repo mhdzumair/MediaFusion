@@ -4,6 +4,8 @@ export interface TorrentFile {
   filename: string
   size: number
   index: number
+  /** Full path within the torrent (when returned by analyze endpoints). */
+  path?: string
   season_number?: number
   episode_number?: number
   /** Detected racing session/episode title (e.g. "Qualifying"), used to prefill annotations. */
@@ -55,13 +57,14 @@ export interface TorrentAnalyzeResponse {
   sports_league?: string
   sports_event_date?: string
   matches?: TorrentMatch[]
+  meta_match?: TorrentMatch | null
   error?: string
   // DHT-resolved file list (only present when resolve_files=true was requested)
   resolved?: {
     name: string
     total_size: number
     num_files: number
-    files: Array<{ path: string; size: number }>
+    files: Array<{ path: string; size: number; filename?: string }>
   }
   // Validation error details
   errors?: Array<{
@@ -80,6 +83,13 @@ export type TorrentMetaType = 'movie' | 'series' | 'sports'
 export interface MagnetAnalyzeRequest {
   magnet_link: string
   meta_type: TorrentMetaType
+  meta_id?: string
+  title?: string
+  resolve_files?: boolean
+  resolve_timeout_secs?: number
+}
+
+export interface TorrentAnalyzeOptions {
   meta_id?: string
   title?: string
   resolve_files?: boolean
@@ -503,22 +513,85 @@ export interface NZBURLImportRequest {
   anonymous_display_name?: string
 }
 
+function filenameFromTorrentPath(path?: string): string | undefined {
+  if (!path) return undefined
+  const normalized = path.replace(/\\/g, '/')
+  const parts = normalized.split('/')
+  return parts[parts.length - 1] || path
+}
+
+function normalizeTorrentAnalyzeResponse(response: TorrentAnalyzeResponse): TorrentAnalyzeResponse {
+  const resolvedFiles = response.resolved?.files ?? []
+  const sourceFiles =
+    response.files && response.files.length > 0
+      ? response.files
+      : resolvedFiles.map((file, index) => ({
+          path: file.path,
+          filename: filenameFromTorrentPath(file.path) || file.path,
+          size: file.size,
+          index,
+        }))
+
+  const normalizedFiles = sourceFiles.map((file, index) => {
+    const path = file.path ?? (file.filename.includes('/') ? file.filename : undefined)
+    const filename = file.filename || filenameFromTorrentPath(path) || path || `file-${index + 1}`
+    return {
+      ...file,
+      path,
+      filename,
+      index: file.index ?? index,
+    }
+  })
+
+  const normalizedResolved = response.resolved
+    ? {
+        ...response.resolved,
+        files: response.resolved.files.map((file) => {
+          const filename = filenameFromTorrentPath(file.path) || file.path
+          return { ...file, filename }
+        }),
+      }
+    : response.resolved
+
+  return {
+    ...response,
+    files: normalizedFiles.length > 0 ? normalizedFiles : response.files,
+    file_count: response.file_count ?? (normalizedFiles.length > 0 ? normalizedFiles.length : undefined),
+    total_size:
+      response.total_size ??
+      (response.resolved?.total_size && normalizedFiles.length > 0 ? response.resolved.total_size : undefined),
+    resolved: normalizedResolved,
+  }
+}
+
 export const contentImportApi = {
   /**
    * Analyze a magnet link
    */
   analyzeMagnet: async (data: MagnetAnalyzeRequest): Promise<TorrentAnalyzeResponse> => {
-    return apiClient.post<TorrentAnalyzeResponse>('/import/magnet/analyze', data)
+    const response = await apiClient.post<TorrentAnalyzeResponse>('/import/magnet/analyze', data)
+    return normalizeTorrentAnalyzeResponse(response)
   },
 
   /**
    * Analyze a torrent file
    */
-  analyzeTorrent: async (file: File, metaType: TorrentMetaType): Promise<TorrentAnalyzeResponse> => {
+  analyzeTorrent: async (
+    file: File,
+    metaType: TorrentMetaType,
+    options?: TorrentAnalyzeOptions,
+  ): Promise<TorrentAnalyzeResponse> => {
     const formData = new FormData()
     formData.append('torrent_file', file)
     formData.append('meta_type', metaType)
-    return apiClient.upload<TorrentAnalyzeResponse>('/import/torrent/analyze', formData)
+    if (options?.meta_id) formData.append('meta_id', options.meta_id)
+    if (options?.title) formData.append('title', options.title)
+    if (options?.resolve_files) formData.append('resolve_files', 'true')
+    if (options?.resolve_timeout_secs != null) {
+      formData.append('resolve_timeout_secs', String(options.resolve_timeout_secs))
+    }
+    const response = await apiClient.upload<TorrentAnalyzeResponse>('/import/torrent/analyze', formData)
+    return normalizeTorrentAnalyzeResponse(response)
   },
 
   /**

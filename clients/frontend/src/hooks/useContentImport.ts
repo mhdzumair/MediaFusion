@@ -10,6 +10,7 @@ import {
   type TorrentImportRequest,
   type ImportJobStatus,
   type TorrentMetaType,
+  type TorrentAnalyzeOptions,
   type NZBImportRequest,
   type NZBMetaType,
   type NZBURLImportRequest,
@@ -23,8 +24,8 @@ export function useAnalyzeMagnet() {
 
 export function useAnalyzeTorrent() {
   return useMutation({
-    mutationFn: ({ file, metaType }: { file: File; metaType: TorrentMetaType }) =>
-      contentImportApi.analyzeTorrent(file, metaType),
+    mutationFn: ({ file, metaType, ...options }: { file: File; metaType: TorrentMetaType } & TorrentAnalyzeOptions) =>
+      contentImportApi.analyzeTorrent(file, metaType, options),
   })
 }
 

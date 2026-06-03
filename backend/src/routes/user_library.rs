@@ -1057,7 +1057,7 @@ async fn find_metadata_match(
     } else {
         "movie"
     };
-    let candidates = crate::db::search_media_candidates(pool, db_type, title).await;
+    let candidates = crate::db::search_media_candidates(pool, db_type, title, None).await;
     if candidates.is_empty() {
         return (None, None);
     }
@@ -2058,6 +2058,8 @@ async fn process_advanced_import(
             prefetch: &prefetch,
             torrent_type: crate::db::TorrentType::Public,
             torrent_file: None,
+            uploader: None,
+            uploader_user_id: None,
         },
     )
     .await

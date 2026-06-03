@@ -23,16 +23,16 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2, Link2, Unlink, Search, Film, Tv, AlertCircle, HardDrive, CheckCircle2 } from 'lucide-react'
-import { getBestExternalId, useCombinedMetadataSearch, type CombinedSearchResult } from '@/hooks'
-import { useDebounce } from '@/hooks/useDebounce'
+import { Loader2, Link2, Unlink, Film, Tv, AlertCircle, HardDrive, CheckCircle2 } from 'lucide-react'
+import { getBestExternalId, type CombinedSearchResult } from '@/hooks'
 import { useToast } from '@/hooks/use-toast'
 import { useCreateStreamSuggestion } from '@/hooks/useStreamSuggestions'
 import { apiClient } from '@/lib/api/client'
+import { MetadataSearchPopover } from '@/components/metadata'
 
-// Types for stream linking
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 interface MediaLinkInfo {
   link_id: number
   media_id: number
@@ -56,39 +56,28 @@ interface StreamRelinkButtonProps {
   onSuccess?: () => void
 }
 
-type ManualIdMode = 'external' | 'mediafusion'
+// ─── API ──────────────────────────────────────────────────────────────────────
 
-// API to get existing links
 const streamLinkingApi = {
   getMediaForStream: async (streamId: number): Promise<{ stream_id: number; media_entries: MediaLinkInfo[] }> => {
     return apiClient.get(`/stream-links/stream/${streamId}`)
   },
 }
 
-function normalizeExternalIdInput(rawValue: string): string {
-  const value = rawValue.trim()
-  if (!value) return ''
-  if (/^\d+$/.test(value)) return `tmdb:${value}`
-  return value
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function normalizeExternalId(raw: string): string {
+  const v = raw.trim()
+  if (!v) return ''
+  if (/^\d+$/.test(v)) return `tmdb:${v}`
+  return v
 }
 
-function parseMediaFusionMediaIdInput(rawValue: string): number | null {
-  const value = rawValue.trim()
-  if (!value) return null
-
-  const match = value.match(/^(?:mf:|mediafusion:)?(\d+)$/i)
-  if (!match) return null
-
-  const parsed = Number.parseInt(match[1], 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) return null
-  return parsed
-}
-
-function parseOptionalInteger(rawValue: string): number | undefined {
-  const value = rawValue.trim()
-  if (!value) return undefined
-  const parsed = Number.parseInt(value, 10)
-  return Number.isFinite(parsed) ? parsed : undefined
+function parseOptionalInt(raw: string): number | undefined {
+  const v = raw.trim()
+  if (!v) return undefined
+  const n = Number.parseInt(v, 10)
+  return Number.isFinite(n) ? n : undefined
 }
 
 function getResultExternalIds(result: CombinedSearchResult): string[] {
@@ -97,21 +86,17 @@ function getResultExternalIds(result: CombinedSearchResult): string[] {
   if (result.imdb_id) ids.add(result.imdb_id)
   if (result.tmdb_id) ids.add(`tmdb:${result.tmdb_id}`)
   if (result.tvdb_id) ids.add(`tvdb:${result.tvdb_id}`)
-
   if (result.external_ids) {
-    Object.entries(result.external_ids).forEach(([provider, providerId]) => {
-      if (!providerId) return
-      const normalizedId = String(providerId)
-      if (provider === 'imdb') {
-        ids.add(normalizedId.startsWith('tt') ? normalizedId : `tt${normalizedId}`)
-        return
-      }
-      ids.add(`${provider}:${normalizedId}`)
+    Object.entries(result.external_ids).forEach(([provider, id]) => {
+      if (!id) return
+      const s = String(id)
+      ids.add(provider === 'imdb' ? (s.startsWith('tt') ? s : `tt${s}`) : `${provider}:${s}`)
     })
   }
-
   return Array.from(ids)
 }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function StreamRelinkButton({
   streamId,
@@ -126,185 +111,74 @@ export function StreamRelinkButton({
   const { toast } = useToast()
   const createSuggestion = useCreateStreamSuggestion()
 
-  // Dialog state
   const [open, setOpen] = useState(false)
-
-  // Existing links state
   const [existingLinks, setExistingLinks] = useState<MediaLinkInfo[]>([])
   const [isLoadingLinks, setIsLoadingLinks] = useState(false)
-
-  // Link action type
   const [linkAction, setLinkAction] = useState<'relink' | 'add'>('add')
 
-  // Search state
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchYear, setSearchYear] = useState('')
   const [selectedMedia, setSelectedMedia] = useState<CombinedSearchResult | null>(null)
-  const [manualIdMode, setManualIdMode] = useState<ManualIdMode>('external')
-  const [manualExternalId, setManualExternalId] = useState('')
-  const [manualMediaType, setManualMediaType] = useState<'movie' | 'series' | 'tv'>('movie')
-  const [fileIndex, setFileIndex] = useState<string>('')
-  const [seasonNumber, setSeasonNumber] = useState<string>('')
-  const [episodeNumber, setEpisodeNumber] = useState<string>('')
-  const [episodeEnd, setEpisodeEnd] = useState<string>('')
+
+  // Episode mapping
+  const [fileIndex, setFileIndex] = useState('')
+  const [seasonNumber, setSeasonNumber] = useState('')
+  const [episodeNumber, setEpisodeNumber] = useState('')
+  const [episodeEnd, setEpisodeEnd] = useState('')
   const [reason, setReason] = useState('')
 
-  const debouncedQuery = useDebounce(searchQuery, 300)
-  const trimmedSearchYear = searchYear.trim()
-  const parsedSearchYear = trimmedSearchYear ? Number(trimmedSearchYear) : undefined
-  const validSearchYear = Number.isFinite(parsedSearchYear) ? parsedSearchYear : undefined
+  // ── Existing links ──────────────────────────────────────────────────────
 
-  // Use combined search
-  const {
-    data: searchResults = [],
-    isLoading: isSearching,
-    isFetching: isFetchingSearch,
-  } = useCombinedMetadataSearch(
-    {
-      query: debouncedQuery,
-      type: 'all',
-      limit: 20,
-      year: validSearchYear,
-    },
-    { enabled: debouncedQuery.length >= 2 && open },
-  )
-
-  // Load existing links when dialog opens
   const loadExistingLinks = useCallback(async () => {
     setIsLoadingLinks(true)
     try {
       const result = await streamLinkingApi.getMediaForStream(streamId)
       setExistingLinks(result.media_entries)
-    } catch (error) {
-      console.error('Failed to load existing links:', error)
+    } catch {
+      // non-critical
     } finally {
       setIsLoadingLinks(false)
     }
   }, [streamId])
 
-  // Load links when dialog opens
   useEffect(() => {
-    if (open) {
-      loadExistingLinks()
-    }
+    if (open) loadExistingLinks()
     if (!open) {
-      // Reset state when closing
-      setSearchQuery('')
       setSelectedMedia(null)
-      setManualIdMode('external')
-      setManualExternalId('')
-      setManualMediaType('movie')
       setFileIndex('')
       setSeasonNumber('')
       setEpisodeNumber('')
       setEpisodeEnd('')
       setReason('')
-      setSearchYear('')
       setLinkAction('add')
       setExistingLinks([])
     }
   }, [open, loadExistingLinks])
 
+  // ── Select via MetadataSearchPopover ────────────────────────────────────
+
   const handleSelectMedia = useCallback((result: CombinedSearchResult) => {
     setSelectedMedia(result)
-    if (result.source === 'external') {
-      const bestExternalId = normalizeExternalIdInput(getBestExternalId(result))
-      if (bestExternalId) {
-        setManualExternalId(bestExternalId)
-      }
-      setManualMediaType(result.type === 'series' ? 'series' : result.type === 'tv' ? 'tv' : 'movie')
-    } else {
-      setManualExternalId('')
-    }
-
-    setSearchOpen(false)
-    setSearchQuery('')
-    setSearchYear('')
+    // Clear the MF direct-ID input whenever a proper search result is chosen
+    setMfIdInput('')
     setSeasonNumber('')
     setEpisodeNumber('')
     setEpisodeEnd('')
   }, [])
 
-  const handleSelectManualExternalId = useCallback(() => {
-    const normalizedExternalId = normalizeExternalIdInput(manualExternalId)
-    const mediaFusionMediaId = parseMediaFusionMediaIdInput(manualExternalId)
+  // ── Submit suggestion ───────────────────────────────────────────────────
 
-    if (manualIdMode === 'mediafusion') {
-      if (!mediaFusionMediaId) {
-        toast({
-          title: 'Media ID required',
-          description: 'Enter a valid MediaFusion media ID like 123 or mf:123.',
-          variant: 'destructive',
-        })
-        return
-      }
-
-      setManualExternalId(String(mediaFusionMediaId))
-      setSelectedMedia({
-        id: `manual-mf-${mediaFusionMediaId}`,
-        title: `MediaFusion media #${mediaFusionMediaId}`,
-        type: manualMediaType,
-        source: 'internal',
-        internal_id: mediaFusionMediaId,
-        external_id: `mf:${mediaFusionMediaId}`,
-      })
-      return
-    }
-
-    if (!normalizedExternalId) {
-      toast({
-        title: 'External ID required',
-        description: 'Enter a valid external ID like tt1234567 or tmdb:550.',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    setManualExternalId(normalizedExternalId)
-    setSelectedMedia({
-      id: `manual-${normalizedExternalId}`,
-      title: `Manual ${manualMediaType} (${normalizedExternalId})`,
-      type: manualMediaType,
-      source: 'external',
-      external_id: normalizedExternalId,
-      provider: normalizedExternalId.startsWith('tt') ? 'imdb' : normalizedExternalId.split(':', 1)[0] || 'external',
-    })
-  }, [manualExternalId, manualIdMode, manualMediaType, toast])
-
-  // Submit suggestion
   const handleSubmit = useCallback(async () => {
-    const normalizedManualExternalId = normalizeExternalIdInput(manualExternalId)
-    const manualMediaFusionId = parseMediaFusionMediaIdInput(manualExternalId)
-    const parsedFileIndex = parseOptionalInteger(fileIndex)
-    const parsedSeasonNumber = parseOptionalInteger(seasonNumber)
-    const parsedEpisodeNumber = parseOptionalInteger(episodeNumber)
-    const parsedEpisodeEnd = parseOptionalInteger(episodeEnd)
-    const selectedExternalId =
-      selectedMedia?.source === 'external' ? normalizeExternalIdInput(getBestExternalId(selectedMedia)) : ''
-    const isInternalSelection = selectedMedia?.source === 'internal' && !!selectedMedia.internal_id
-    const isManualExternalSelection = selectedMedia?.source === 'external' && selectedMedia.id.startsWith('manual-')
-    const hasEpisodeMapping =
-      parsedSeasonNumber !== undefined || parsedEpisodeNumber !== undefined || parsedEpisodeEnd !== undefined
-    const targetMediaId =
-      (isInternalSelection ? selectedMedia.internal_id : undefined) ||
-      (manualIdMode === 'mediafusion' ? (manualMediaFusionId ?? undefined) : undefined)
-    const targetExternalId = targetMediaId
-      ? ''
-      : manualIdMode === 'external'
-        ? normalizedManualExternalId || selectedExternalId
-        : selectedExternalId
+    const targetMediaId = selectedMedia?.source === 'internal' ? selectedMedia.internal_id : undefined
+    const targetExternalId =
+      selectedMedia?.source === 'external' ? normalizeExternalId(getBestExternalId(selectedMedia)) : ''
 
     if (!targetMediaId && !targetExternalId) return
-    if (hasEpisodeMapping && parsedFileIndex === undefined) {
-      toast({
-        title: 'File index required',
-        description: 'Set a file index when adding season/episode mapping.',
-        variant: 'destructive',
-      })
-      return
-    }
-    if (parsedEpisodeEnd !== undefined && parsedEpisodeNumber === undefined) {
+
+    const parsedFileIndex = parseOptionalInt(fileIndex)
+    const parsedSeason = parseOptionalInt(seasonNumber)
+    const parsedEpisode = parseOptionalInt(episodeNumber)
+    const parsedEpisodeEnd = parseOptionalInt(episodeEnd)
+
+    if (parsedEpisodeEnd !== undefined && parsedEpisode === undefined) {
       toast({
         title: 'Episode number required',
         description: 'Set episode number when episode end is provided.',
@@ -325,12 +199,12 @@ export function StreamRelinkButton({
               ? 'series'
               : selectedMedia?.type === 'tv'
                 ? 'tv'
-                : manualMediaType
+                : 'movie'
             : undefined,
-          target_title: !targetMediaId && !isManualExternalSelection ? (selectedMedia?.title ?? undefined) : undefined,
+          target_title: !targetMediaId ? (selectedMedia?.title ?? undefined) : undefined,
           file_index: parsedFileIndex,
-          season_number: parsedSeasonNumber,
-          episode_number: parsedEpisodeNumber,
+          season_number: parsedSeason,
+          episode_number: parsedEpisode,
           episode_end: parsedEpisodeEnd,
           reason:
             reason ||
@@ -338,7 +212,7 @@ export function StreamRelinkButton({
               ? `Link stream to "${selectedMedia?.title || `MediaFusion media #${targetMediaId}`}"`
               : `Link stream to external ID "${targetExternalId}"`),
           current_value:
-            existingLinks.map((link) => `mf:${link.media_id}${link.title ? ` (${link.title})` : ''}`).join(', ') ||
+            existingLinks.map((l) => `mf:${l.media_id}${l.title ? ` (${l.title})` : ''}`).join(', ') ||
             (currentMediaId
               ? `mf:${currentMediaId}${currentMediaTitle ? ` (${currentMediaTitle})` : ''}`
               : undefined) ||
@@ -368,9 +242,6 @@ export function StreamRelinkButton({
   }, [
     streamId,
     selectedMedia,
-    manualIdMode,
-    manualExternalId,
-    manualMediaType,
     linkAction,
     fileIndex,
     seasonNumber,
@@ -385,16 +256,16 @@ export function StreamRelinkButton({
     onSuccess,
   ])
 
-  const normalizedManualExternalId = normalizeExternalIdInput(manualExternalId)
-  const manualMediaFusionId = parseMediaFusionMediaIdInput(manualExternalId)
+  // ── Derived ─────────────────────────────────────────────────────────────
+
   const selectedMediaType = selectedMedia?.type?.toLowerCase()
-  const isEpisodeMappingSupportedTarget = selectedMediaType === 'series' || selectedMediaType === 'tv'
+  const isEpisodeMappingTarget = selectedMediaType === 'series' || selectedMediaType === 'tv'
   const canSubmit = Boolean(
     (selectedMedia?.source === 'internal' && selectedMedia.internal_id) ||
-    (selectedMedia?.source === 'external' && normalizeExternalIdInput(getBestExternalId(selectedMedia))) ||
-    (manualIdMode === 'external' && normalizedManualExternalId) ||
-    (manualIdMode === 'mediafusion' && manualMediaFusionId),
+    (selectedMedia?.source === 'external' && normalizeExternalId(getBestExternalId(selectedMedia))),
   )
+
+  // ── Trigger ─────────────────────────────────────────────────────────────
 
   const defaultTrigger = (
     <TooltipProvider>
@@ -423,16 +294,12 @@ export function StreamRelinkButton({
       cloneElement(trigger as ReactElement<Record<string, unknown>>, {
         onClick: (event: unknown) => {
           const onClick = (trigger.props as Record<string, unknown>).onClick
-          if (typeof onClick === 'function') {
-            onClick(event)
-          }
+          if (typeof onClick === 'function') onClick(event)
           setOpen(true)
         },
         onSelect: (event: unknown) => {
           const onSelect = (trigger.props as Record<string, unknown>).onSelect
-          if (typeof onSelect === 'function') {
-            onSelect(event)
-          }
+          if (typeof onSelect === 'function') onSelect(event)
           setOpen(true)
         },
       })
@@ -441,9 +308,9 @@ export function StreamRelinkButton({
         role="button"
         tabIndex={0}
         onClick={() => setOpen(true)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
             setOpen(true)
           }
         }}
@@ -454,6 +321,8 @@ export function StreamRelinkButton({
   ) : (
     defaultTrigger
   )
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -476,7 +345,7 @@ export function StreamRelinkButton({
 
           <ScrollArea className="flex-1 min-h-0 pr-1">
             <div className="space-y-4 py-1">
-              {/* Stream Info */}
+              {/* Stream info */}
               <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
                 <div className="flex items-start gap-3">
                   <div className="p-2 rounded bg-primary/10">
@@ -495,10 +364,9 @@ export function StreamRelinkButton({
 
               <Separator />
 
-              {/* Existing Links */}
+              {/* Existing links */}
               <div className="space-y-2">
                 <Label className="text-sm text-muted-foreground">Current Links</Label>
-
                 {isLoadingLinks ? (
                   <div className="flex items-center justify-center py-4">
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -539,7 +407,7 @@ export function StreamRelinkButton({
 
               <Separator />
 
-              {/* Link Action Type */}
+              {/* Action type */}
               <div className="space-y-2">
                 <Label className="text-sm text-muted-foreground">Action</Label>
                 <RadioGroup
@@ -564,9 +432,10 @@ export function StreamRelinkButton({
                 </RadioGroup>
               </div>
 
-              {/* Target Media Selection */}
+              {/* Target media — unified search + manual ID via MetadataSearchPopover */}
               <div className="space-y-2">
                 <Label className="text-sm text-muted-foreground">Target Media</Label>
+
                 {selectedMedia ? (
                   <div className="flex items-center gap-2 p-2 rounded-lg border border-primary/30 bg-primary/5">
                     {selectedMedia.poster ? (
@@ -582,7 +451,7 @@ export function StreamRelinkButton({
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{selectedMedia.title}</p>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
                         {selectedMedia.year && <span>{selectedMedia.year}</span>}
                         <Badge variant="outline" className="text-[10px] px-1 py-0">
                           {selectedMedia.type}
@@ -593,14 +462,14 @@ export function StreamRelinkButton({
                           </Badge>
                         ) : (
                           <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-yellow-500/20 text-yellow-700">
-                            {selectedMedia.provider?.toUpperCase() || 'External'}
+                            {selectedMedia.provider?.toUpperCase() ?? 'External'}
                           </Badge>
                         )}
                         {getResultExternalIds(selectedMedia)
                           .slice(0, 2)
-                          .map((externalId) => (
-                            <span key={`${selectedMedia.id}-${externalId}`} className="font-mono text-[10px]">
-                              {externalId}
+                          .map((id) => (
+                            <span key={`${selectedMedia.id}-${id}`} className="font-mono text-[10px]">
+                              {id}
                             </span>
                           ))}
                       </div>
@@ -615,210 +484,25 @@ export function StreamRelinkButton({
                     </Button>
                   </div>
                 ) : (
-                  <Popover open={searchOpen} onOpenChange={setSearchOpen}>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start text-muted-foreground">
-                        <Search className="h-4 w-4 mr-2" />
-                        Search for media...
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      className="w-[calc(100vw-2rem)] sm:w-[400px] p-0 overflow-hidden flex flex-col"
-                      align="start"
-                      style={{
-                        height: '360px',
-                        maxHeight: 'calc(var(--radix-popover-content-available-height) - 10px)',
-                      }}
-                    >
-                      <div className="p-2 border-b shrink-0">
-                        <div className="flex gap-2">
-                          <Input
-                            placeholder="Search movies, series..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="h-9"
-                            autoFocus
-                          />
-                          <Input
-                            type="number"
-                            inputMode="numeric"
-                            min={1878}
-                            max={9999}
-                            step={1}
-                            placeholder="Year"
-                            value={searchYear}
-                            onChange={(e) => setSearchYear(e.target.value)}
-                            className="h-9 w-24 shrink-0"
-                          />
-                        </div>
-                      </div>
-                      <ScrollArea className="flex-1 min-h-0">
-                        {isSearching && searchResults.length === 0 && (
-                          <div className="flex items-center justify-center py-6">
-                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                          </div>
-                        )}
-                        {!isSearching && !isFetchingSearch && searchQuery.length >= 2 && searchResults.length === 0 && (
-                          <div className="py-6 text-center text-sm text-muted-foreground">No results found</div>
-                        )}
-                        {!isSearching && searchQuery.length < 2 && (
-                          <div className="py-6 text-center text-xs text-muted-foreground">
-                            Type at least 2 characters to search
-                          </div>
-                        )}
-                        {searchResults.length > 0 && (
-                          <div className="p-1">
-                            {isFetchingSearch && (
-                              <div className="flex items-center justify-center py-2 text-xs text-muted-foreground gap-1.5">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                <span>Loading...</span>
-                              </div>
-                            )}
-                            {searchResults.map((result) => {
-                              return (
-                                <button
-                                  key={result.id}
-                                  onClick={() => handleSelectMedia(result)}
-                                  className="w-full flex items-center gap-2 p-2 rounded-md text-left hover:bg-muted cursor-pointer"
-                                >
-                                  {result.poster ? (
-                                    <img
-                                      src={result.poster}
-                                      alt=""
-                                      className="w-8 h-12 rounded object-cover flex-shrink-0"
-                                    />
-                                  ) : (
-                                    <div className="w-8 h-12 rounded bg-muted flex items-center justify-center flex-shrink-0">
-                                      {result.type === 'series' ? (
-                                        <Tv className="h-4 w-4 text-muted-foreground" />
-                                      ) : (
-                                        <Film className="h-4 w-4 text-muted-foreground" />
-                                      )}
-                                    </div>
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium truncate">{result.title}</p>
-                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                      {result.year && <span>{result.year}</span>}
-                                      <Badge variant="outline" className="text-[10px] px-1 py-0">
-                                        {result.type}
-                                      </Badge>
-                                      {result.source === 'internal' ? (
-                                        <Badge
-                                          variant="secondary"
-                                          className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700"
-                                        >
-                                          In Library
-                                        </Badge>
-                                      ) : (
-                                        <Badge
-                                          variant="secondary"
-                                          className="text-[10px] px-1 py-0 bg-yellow-500/20 text-yellow-700"
-                                        >
-                                          {result.provider?.toUpperCase() || 'External'}
-                                        </Badge>
-                                      )}
-                                      {getResultExternalIds(result)
-                                        .slice(0, 2)
-                                        .map((externalId) => (
-                                          <span key={`${result.id}-${externalId}`} className="font-mono text-[10px]">
-                                            {externalId}
-                                          </span>
-                                        ))}
-                                    </div>
-                                  </div>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </ScrollArea>
-                    </PopoverContent>
-                  </Popover>
+                  // MetadataSearchPopover: handles title search + manual IMDB/TMDB/TVDB/MAL/Kitsu ID
+                  // entry via /metadata/search/matches — returns real poster/title/year, not placeholders.
+                  // requireInternal=false because suggestion flow accepts external IDs too (resolved at approval).
+                  <MetadataSearchPopover
+                    metaType="all"
+                    requireInternal={false}
+                    onSelect={handleSelectMedia}
+                    onClear={() => setSelectedMedia(null)}
+                    placeholder="Search or enter an ID (IMDB / TMDB / TVDB…)"
+                    popoverWidth="w-[calc(100vw-2rem)] sm:w-[420px]"
+                  />
                 )}
               </div>
 
-              {/* Manual ID */}
-              <div className="space-y-2 p-2 rounded-lg border border-dashed border-border/70 bg-muted/20">
-                <Label className="text-xs text-muted-foreground">Manual ID</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="flex items-center gap-1 rounded border border-border/50 p-1 col-span-2">
-                    <Button
-                      type="button"
-                      variant={manualIdMode === 'external' ? 'default' : 'ghost'}
-                      size="sm"
-                      className="h-6 px-2 text-xs flex-1"
-                      onClick={() => setManualIdMode('external')}
-                    >
-                      External ID
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={manualIdMode === 'mediafusion' ? 'default' : 'ghost'}
-                      size="sm"
-                      className="h-6 px-2 text-xs flex-1"
-                      onClick={() => setManualIdMode('mediafusion')}
-                    >
-                      MediaFusion ID
-                    </Button>
-                  </div>
-                  <Input
-                    value={manualExternalId}
-                    onChange={(e) => setManualExternalId(e.target.value)}
-                    placeholder={manualIdMode === 'external' ? 'tt1234567, tmdb:550, tvdb:121361' : '123 or mf:123'}
-                    className="h-8 text-sm col-span-2"
-                  />
-                  <div className="flex items-center gap-1 rounded border border-border/50 p-1">
-                    <Button
-                      type="button"
-                      variant={manualMediaType === 'movie' ? 'default' : 'ghost'}
-                      size="sm"
-                      className="h-6 px-2 text-xs flex-1"
-                      onClick={() => setManualMediaType('movie')}
-                    >
-                      Movie
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={manualMediaType === 'series' ? 'default' : 'ghost'}
-                      size="sm"
-                      className="h-6 px-2 text-xs flex-1"
-                      onClick={() => setManualMediaType('series')}
-                    >
-                      Series
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={manualMediaType === 'tv' ? 'default' : 'ghost'}
-                      size="sm"
-                      className="h-6 px-2 text-xs flex-1"
-                      onClick={() => setManualMediaType('tv')}
-                    >
-                      TV
-                    </Button>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8"
-                    onClick={handleSelectManualExternalId}
-                    disabled={manualIdMode === 'external' ? !normalizedManualExternalId : !manualMediaFusionId}
-                  >
-                    Use ID
-                  </Button>
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                  External IDs create/fetch metadata during approval. MediaFusion IDs link to an existing internal media
-                  record directly.
-                </p>
-              </div>
-
-              {/* Optional file index for multi-file torrents */}
+              {/* File index */}
               {selectedMedia && (
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">
-                    File Index (optional, for multi-file torrents)
+                    File Index <span className="text-[10px]">(optional — for multi-file torrents)</span>
                   </Label>
                   <Input
                     type="number"
@@ -831,12 +515,29 @@ export function StreamRelinkButton({
                 </div>
               )}
 
-              {/* Optional series episode mapping in the same submission */}
-              {selectedMedia && isEpisodeMappingSupportedTarget && (
-                <div className="space-y-2 rounded-lg border border-border/50 p-2">
-                  <Label className="text-xs text-muted-foreground">
-                    Episode Mapping (optional, requires file index)
-                  </Label>
+              {/* Episode mapping */}
+              {selectedMedia && isEpisodeMappingTarget && (
+                <div className="space-y-1.5 rounded-lg border border-border/50 p-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs text-muted-foreground">
+                      Episode Mapping <span className="text-[10px]">(optional)</span>
+                    </Label>
+                    {(seasonNumber || episodeNumber || episodeEnd) && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 text-[10px] px-1.5 text-muted-foreground hover:text-foreground"
+                        onClick={() => {
+                          setSeasonNumber('')
+                          setEpisodeNumber('')
+                          setEpisodeEnd('')
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
                   <div className="grid grid-cols-3 gap-2">
                     <Input
                       type="number"
@@ -867,7 +568,7 @@ export function StreamRelinkButton({
               )}
 
               {/* Reason */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Reason (optional)</Label>
                 <Textarea
                   value={reason}

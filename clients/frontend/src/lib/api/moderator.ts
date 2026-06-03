@@ -6,7 +6,6 @@ import type {
   MetadataListParams,
   MetadataListResponse,
   MigrateIdRequest,
-  SearchExternalRequest,
   SearchExternalResponse,
 } from './admin'
 
@@ -47,7 +46,19 @@ export const moderatorApi = {
     return apiClient.post<MetadataItem>(`${MODERATOR_METADATA_BASE}/${mediaId}/migrate-id`, request)
   },
 
-  searchExternalMetadata: async (request: SearchExternalRequest): Promise<SearchExternalResponse> => {
-    return apiClient.post<SearchExternalResponse>(`${MODERATOR_METADATA_BASE}/search-external`, request)
+  searchMatches: async (request: {
+    title?: string
+    year?: number
+    external_id?: string
+    media_type?: 'movie' | 'series'
+    limit?: number
+  }): Promise<SearchExternalResponse> => {
+    return apiClient.post<SearchExternalResponse>(`${MODERATOR_METADATA_BASE}/search/matches`, {
+      title: request.title,
+      year: request.year,
+      external_id: request.external_id,
+      media_type: request.media_type ?? 'movie',
+      limit: request.limit,
+    })
   },
 }

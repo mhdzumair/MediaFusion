@@ -282,7 +282,7 @@ pub async fn handle_series_input(
 
     let input = input.trim();
     let matches = crate::routes::content::import_helpers::search_analyze_matches(
-        state, input, None, "series",
+        state, None, input, None, "series",
     )
     .await;
 

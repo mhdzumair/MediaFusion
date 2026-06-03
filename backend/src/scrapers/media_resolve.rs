@@ -785,7 +785,7 @@ async fn pick_best_dmm_db_candidate(
 ) -> Option<crate::scrapers::SearchMeta> {
     let mut best: Option<(i32, crate::scrapers::SearchMeta)> = None;
 
-    for candidate in crate::db::search_media_candidates(pool, media_type, title).await {
+    for candidate in crate::db::search_media_candidates(pool, media_type, title, None).await {
         if !dmm_candidate_has_external_id(&candidate) {
             continue;
         }

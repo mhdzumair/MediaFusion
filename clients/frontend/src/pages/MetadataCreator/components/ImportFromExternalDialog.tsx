@@ -10,6 +10,7 @@ import { Loader2, Download, Search, Film, Tv, Radio, Globe, Lock, AlertCircle, C
 import { useToast } from '@/hooks/use-toast'
 import { userMetadataApi } from '@/lib/api'
 import type { ImportProvider, ImportPreviewResponse } from '@/lib/api'
+import { fetchCombinedMatchByProviderId } from '../../ContentImport/utils/importMetaLookup'
 
 interface ImportFromExternalDialogProps {
   open: boolean
@@ -56,11 +57,26 @@ export function ImportFromExternalDialog({ open, onOpenChange, onSuccess }: Impo
     setPreview(null)
 
     try {
-      const result = await userMetadataApi.previewImport({
+      const match = await fetchCombinedMatchByProviderId(
+        provider,
+        externalId.trim(),
+        mediaType === 'tv' ? 'movie' : mediaType,
+      )
+      const result: ImportPreviewResponse = {
         provider,
         external_id: externalId.trim(),
-        media_type: mediaType,
-      })
+        title: match.title,
+        year: match.year,
+        description: match.description,
+        poster: match.poster,
+        background: undefined,
+        genres: [],
+        imdb_id: match.imdb_id,
+        tmdb_id: match.tmdb_id?.toString(),
+        tvdb_id: match.tvdb_id,
+        mal_id: match.mal_id,
+        kitsu_id: match.kitsu_id,
+      }
       setPreview(result)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch metadata'

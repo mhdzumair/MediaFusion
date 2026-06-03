@@ -21,13 +21,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;
 
-use crate::{db::MediaType, state::AppState};
+use crate::{db::MediaType, db::UserId, state::AppState};
 
 use super::import_helpers;
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
+fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<UserId> {
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -56,7 +56,7 @@ fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
     if data["type"].as_str() != Some("access") {
         return None;
     }
-    data["sub"].as_str()?.parse().ok()
+    data["sub"].as_str()?.parse::<i32>().ok().map(UserId)
 }
 
 // ─── Request / response types ─────────────────────────────────────────────────
@@ -135,13 +135,16 @@ pub async fn refresh_metadata(
     Path(media_id): Path<i32>,
     _req: Request,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
 
     // Check media exists
     let row: Option<(crate::db::MediaType,)> =
@@ -192,22 +195,27 @@ pub async fn refresh_metadata(
     } else {
         "movie"
     };
-    let (refreshed_providers, message) = crate::scrapers::metadata::refresh_media_from_providers(
-        &state.pool,
-        &state.http,
-        media_id,
-        meta_type,
-        crate::scrapers::metadata::FetchCtx {
-            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
-            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
-            mdblist_api_key: state.config.mdblist_api_key.as_deref(),
-            trakt_client_id: state.config.trakt_client_id.as_deref(),
-            trakt_client_secret: state.config.trakt_client_secret.as_deref(),
-            cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
-        },
-        None,
-    )
-    .await;
+    let (refreshed_providers, message) = {
+        let keys = crate::scrapers::metadata::resolve_metadata_keys(
+            &state.pool_ro,
+            Some(user_id),
+            crate::scrapers::metadata::ResolvedMetadataKeys::server_keys_from_config(&state.config),
+        )
+        .await;
+        crate::scrapers::metadata::refresh_media_from_providers(
+            &state.pool,
+            &state.http,
+            media_id,
+            meta_type,
+            keys.fetch_ctx(
+                state.config.trakt_client_id.as_deref(),
+                state.config.trakt_client_secret.as_deref(),
+                state.config.imdb_cinemeta_fallback_enabled,
+            ),
+            None,
+        )
+        .await
+    };
 
     Json(json!({
         "status": "success",
@@ -225,13 +233,16 @@ pub async fn link_external_id(
     Path(media_id): Path<i32>,
     Json(body): Json<LinkExternalIdBody>,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
 
     // Check media exists
     let exists: bool = match sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)")
@@ -336,14 +347,17 @@ pub async fn link_external_id(
     if body.fetch_metadata {
         let meta_type = body.media_type.as_deref().unwrap_or("movie");
         let is_series = meta_type == "series";
-        let ctx = crate::scrapers::metadata::FetchCtx {
-            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
-            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
-            mdblist_api_key: state.config.mdblist_api_key.as_deref(),
-            trakt_client_id: state.config.trakt_client_id.as_deref(),
-            trakt_client_secret: state.config.trakt_client_secret.as_deref(),
-            cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
-        };
+        let keys = crate::scrapers::metadata::resolve_metadata_keys(
+            &state.pool_ro,
+            Some(user_id),
+            crate::scrapers::metadata::ResolvedMetadataKeys::server_keys_from_config(&state.config),
+        )
+        .await;
+        let ctx = keys.fetch_ctx(
+            state.config.trakt_client_id.as_deref(),
+            state.config.trakt_client_secret.as_deref(),
+            state.config.imdb_cinemeta_fallback_enabled,
+        );
         if let Some(meta) = crate::scrapers::metadata::fetch_normalized(
             &state.http,
             &ctx,
@@ -538,52 +552,75 @@ pub async fn get_media_metadata(
     (StatusCode::OK, Json(result)).into_response()
 }
 
-/// POST /api/v1/metadata/search-external
-pub async fn search_external_metadata(
+/// POST /api/v1/metadata/search/matches
+pub async fn search_media_matches_metadata(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     body: Option<Json<serde_json::Value>>,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
-
-    let body = body.map(|b| b.0).unwrap_or_default();
-    let provider = body["provider"].as_str().unwrap_or("imdb");
-    let media_type = body["media_type"].as_str().unwrap_or("movie");
-    let title = match body["title"].as_str() {
-        Some(t) if !t.is_empty() => t.to_string(),
-        _ => {
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
             return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"detail": "title is required"})),
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
-    if provider == "tmdb" && state.config.tmdb_api_key.is_none() {
+    let body = body.map(|b| b.0).unwrap_or_default();
+    let title = body["title"]
+        .as_str()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string);
+    let external_id = body["external_id"]
+        .as_str()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string);
+    let year = body["year"].as_i64().map(|y| y as i32);
+    let media_type = body["media_type"].as_str().unwrap_or("movie");
+    let limit = body["limit"].as_u64().unwrap_or(10) as usize;
+    let include_user_content = body["include_user_content"].as_bool().unwrap_or(true);
+    let include_official = body["include_official"].as_bool().unwrap_or(true);
+    let include_catalog = body["include_catalog"].as_bool().unwrap_or(true);
+    let include_external = body["include_external"].as_bool().unwrap_or(true);
+
+    if title.is_none() && external_id.is_none() {
         return (
-            StatusCode::PRECONDITION_FAILED,
-            Json(json!({"code": "tmdb_key_required", "message": "TMDB API key not configured on server."})),
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "title or external_id is required"})),
         )
             .into_response();
     }
 
-    let results = crate::scrapers::metadata::search_external_for_provider(
+    let keys = crate::scrapers::metadata::resolve_metadata_keys(
+        &state.pool_ro,
+        Some(user_id),
+        crate::scrapers::metadata::ResolvedMetadataKeys::server_keys_from_config(&state.config),
+    )
+    .await;
+
+    let results = crate::scrapers::metadata::search_media_matches(
         &state.http,
         &state.pool_ro,
-        provider,
-        &title,
-        body["year"].as_i64().map(|y| y as i32),
-        media_type,
-        state.config.tmdb_api_key.as_deref(),
-        state.config.tvdb_api_key.as_deref(),
-        state.config.imdb_cinemeta_fallback_enabled,
+        crate::scrapers::metadata::MediaMatchSearchOptions {
+            title: title.as_deref(),
+            year,
+            external_id: external_id.as_deref(),
+            media_type,
+            limit,
+            user_id: Some(user_id),
+            include_user_content,
+            include_official,
+            include_catalog,
+            include_external,
+            tmdb_api_key: keys.tmdb.as_deref(),
+            tvdb_api_key: keys.tvdb.as_deref(),
+            cinemeta_fallback_enabled: state.config.imdb_cinemeta_fallback_enabled,
+        },
     )
     .await;
 

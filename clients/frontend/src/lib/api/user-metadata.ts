@@ -302,33 +302,6 @@ export const userMetadataApi = {
   },
 
   /**
-   * Search for metadata (both user-created and official) for linking purposes.
-   */
-  searchAll: (params: {
-    query: string
-    type?: 'movie' | 'series' | 'tv' | 'all'
-    limit?: number
-    include_official?: boolean
-  }): Promise<MetadataSearchResponse> => {
-    const searchParams = new URLSearchParams()
-    searchParams.set('query', params.query)
-    if (params.type) searchParams.set('type', params.type)
-    if (params.limit) searchParams.set('limit', params.limit.toString())
-    if (params.include_official !== undefined) {
-      searchParams.set('include_official', params.include_official.toString())
-    }
-
-    return apiClient.get<MetadataSearchResponse>(`/metadata/user/search/all?${searchParams}`)
-  },
-
-  /**
-   * Preview metadata from an external provider before importing.
-   */
-  previewImport: (data: ImportFromExternalRequest): Promise<ImportPreviewResponse> => {
-    return apiClient.post<ImportPreviewResponse>('/metadata/user/import/preview', data)
-  },
-
-  /**
    * Import metadata from an external provider and create user-owned metadata.
    */
   importFromExternal: (data: ImportFromExternalRequest): Promise<UserMediaResponse> => {

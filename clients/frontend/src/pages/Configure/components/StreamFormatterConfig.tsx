@@ -56,7 +56,7 @@ const PRESETS = {
     name: 'Detailed',
     description: 'Maximum information density',
     title: `{addon.name} {if stream.type = torrent}🧲 {service.shortName} {if service.cached}⚡️{else}⏳{/if}{elif stream.type = usenet}📰 {service.shortName}{elif stream.type = telegram}📱{elif stream.type = youtube}▶️{elif stream.type = http}🌐{else}🔗{/if} {if stream.resolution}{stream.resolution}{/if}`,
-    desc: `📂 {stream.name}
+    desc: `📂 {stream.name}/{stream.filename}
 {if stream.type = torrent}🧲 Torrent{elif stream.type = usenet}📰 Usenet/NZB{elif stream.type = http}🔗 Direct Stream{else}📺 {stream.type|title}{/if}
 {if stream.quality}🎥 {stream.quality} {/if}{if stream.codec}🎞️ {stream.codec} {/if}{if stream.bit_depth}{stream.bit_depth}-bit {/if}
 {if stream.hdr_formats}🎨 {stream.hdr_formats|join(' ')} {/if}{if stream.audio_formats}🎧 {stream.audio_formats|join(' ')} {/if}{if stream.channels}🔊 {stream.channels|join(' ')} {/if}

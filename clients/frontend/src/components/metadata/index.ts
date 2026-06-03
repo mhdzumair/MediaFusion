@@ -1,4 +1,6 @@
 export { MetadataActions, ContentLikeButton, ContentLikesBadge } from './MetadataActions'
+export { MetadataSearchPopover } from './MetadataSearchPopover'
+export type { MetadataSearchPopoverProps } from './MetadataSearchPopover'
 export { MetadataEditSheet } from './MetadataEditSheet'
 export { ExternalMetadataPanel } from './ExternalMetadataPanel'
 export { RefreshMetadataButton } from './RefreshMetadataButton'

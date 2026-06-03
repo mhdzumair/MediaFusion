@@ -23,7 +23,7 @@ use super::import_helpers::{
     fetch_user_info, notify_pending_contribution, resolve_uploader_identity,
     should_auto_approve_import,
 };
-use crate::state::AppState;
+use crate::{db::UserId, state::AppState};
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -285,13 +285,16 @@ pub async fn analyze_youtube_url(
     State(state): State<Arc<AppState>>,
     Json(body): Json<AnalyzeYouTubeRequest>,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
 
     let url = body.url.trim();
     if url.is_empty() {
@@ -348,8 +351,14 @@ pub async fn analyze_youtube_url(
     });
 
     if !title.is_empty() {
-        let matches =
-            super::import_helpers::search_analyze_matches(&state, &title, None, meta_type).await;
+        let matches = super::import_helpers::search_analyze_matches(
+            &state,
+            UserId::from_auth_id(user_id),
+            &title,
+            None,
+            meta_type,
+        )
+        .await;
         if let Some(obj) = response.as_object_mut() {
             obj.insert("matches".to_string(), serde_json::Value::Array(matches));
         }
@@ -378,7 +387,7 @@ pub async fn analyze_youtube_for_bot(
     let title = fetched.title.clone().unwrap_or_default();
     let channel_name = fetched.channel_name.clone().unwrap_or_default();
     let matches = if !title.is_empty() {
-        super::import_helpers::search_analyze_matches(state, &title, None, meta_type).await
+        super::import_helpers::search_analyze_matches(state, None, &title, None, meta_type).await
     } else {
         vec![]
     };

@@ -1,22 +1,24 @@
 mod anilist;
 mod imdb;
+mod keys;
 mod kitsu;
+mod match_search;
 mod mdblist;
 mod tmdb;
 mod trakt;
 mod tvdb;
 
-use std::collections::HashSet;
-
 use serde_json::json;
 use sqlx::PgPool;
 
 pub use crate::db::{NormalizedEpisode, NormalizedMetadata, NormalizedSeason};
+pub use keys::{resolve_metadata_keys, MetadataServerKeys, ResolvedMetadataKeys};
+pub use match_search::{search_media_matches, MediaMatchSearchOptions};
 pub use mdblist::{fetch_all_list_imdb_ids, ingest_list};
 pub use trakt::resolve_or_store_media;
 
+pub(crate) const IMPORT_SEARCH_LIMIT: usize = 10;
 pub(crate) const MIN_TITLE_SIMILARITY: u32 = 40;
-const IMPORT_SEARCH_LIMIT: usize = 10;
 
 /// Shared credentials/context for metadata provider calls.
 #[derive(Clone, Copy, Default)]
@@ -326,123 +328,108 @@ pub async fn search_import_matches(
     tvdb_api_key: Option<&str>,
     cinemeta_fallback_enabled: bool,
 ) -> Vec<serde_json::Value> {
-    if meta_type == "sports" {
-        return search_import_db_matches(pool, title, meta_type, IMPORT_SEARCH_LIMIT).await;
-    }
-
-    let is_series = meta_type == "series";
-    let media_type = if is_series { "series" } else { "movie" };
-    let ctx = FetchCtx {
-        tmdb_api_key,
-        tvdb_api_key,
-        mdblist_api_key: None,
-        trakt_client_id: None,
-        trakt_client_secret: None,
-        cinemeta_fallback: cinemeta_fallback_enabled,
-    };
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut results: Vec<serde_json::Value> = Vec::new();
-
-    let push_match = |results: &mut Vec<serde_json::Value>,
-                      seen: &mut HashSet<String>,
-                      entry: serde_json::Value| {
-        let dedup_key = entry["imdb_id"]
-            .as_str()
-            .map(|id| format!("imdb:{id}"))
-            .or_else(|| entry["tvdb_id"].as_str().map(|id| format!("tvdb:{id}")))
-            .or_else(|| entry["tmdb_id"].as_str().map(|id| format!("tmdb:{id}")))
-            .or_else(|| entry["id"].as_str().map(|id| format!("primary:{id}")));
-        if let Some(key) = dedup_key {
-            if seen.insert(key) {
-                results.push(entry);
-            }
-        }
-    };
-
-    for entry in search_import_db_matches(pool, title, meta_type, IMPORT_SEARCH_LIMIT).await {
-        push_match(&mut results, &mut seen, entry);
-        if results.len() >= IMPORT_SEARCH_LIMIT {
-            return results;
-        }
-    }
-
-    if cinemeta_fallback_enabled {
-        for m in imdb::search(http, title, year, is_series, IMPORT_SEARCH_LIMIT).await {
-            let imdb_id = m.external_id;
-            push_match(
-                &mut results,
-                &mut seen,
-                json!({
-                    "id": imdb_id,
-                    "imdb_id": imdb_id,
-                    "title": m.title,
-                    "year": m.year,
-                    "poster": m.poster_url,
-                    "type": media_type,
-                }),
-            );
-            if results.len() >= IMPORT_SEARCH_LIMIT {
-                return results;
-            }
-        }
-    }
-
-    if let Some(tvdb_key) = tvdb_api_key {
-        for entry in
-            tvdb::search_import_tvdb(http, tvdb_key, title, media_type, IMPORT_SEARCH_LIMIT).await
-        {
-            push_match(&mut results, &mut seen, entry);
-            if results.len() >= IMPORT_SEARCH_LIMIT {
-                return results;
-            }
-        }
-    }
-
-    if let Some(_key) = tmdb_api_key {
-        for m in tmdb::search(http, &ctx, title, year, is_series, IMPORT_SEARCH_LIMIT).await {
-            let entry = if let Some(meta) =
-                fetch_normalized(http, &ctx, "tmdb", &m.external_id, is_series).await
-            {
-                import_match_from_normalized(&meta, media_type)
-            } else {
-                json!({
-                    "id": format!("tmdb:{}", m.external_id),
-                    "tmdb_id": m.external_id,
-                    "title": m.title,
-                    "year": m.year,
-                    "poster": m.poster_url,
-                    "type": media_type,
-                })
-            };
-            push_match(&mut results, &mut seen, entry);
-            if results.len() >= IMPORT_SEARCH_LIMIT {
-                return results;
-            }
-        }
-    }
-
-    if meta_type == "series" {
-        for entry in anilist::search_import_anilist(http, title, IMPORT_SEARCH_LIMIT).await {
-            push_match(&mut results, &mut seen, entry);
-            if results.len() >= IMPORT_SEARCH_LIMIT {
-                return results;
-            }
-        }
-        for entry in kitsu::search_import_kitsu(http, title, IMPORT_SEARCH_LIMIT).await {
-            push_match(&mut results, &mut seen, entry);
-            if results.len() >= IMPORT_SEARCH_LIMIT {
-                return results;
-            }
-        }
-    }
-
-    results
+    search_media_matches(
+        http,
+        pool,
+        MediaMatchSearchOptions {
+            title: Some(title),
+            year,
+            external_id: None,
+            media_type: meta_type,
+            limit: IMPORT_SEARCH_LIMIT,
+            user_id: None,
+            include_user_content: false,
+            include_official: true,
+            include_catalog: true,
+            include_external: true,
+            tmdb_api_key,
+            tvdb_api_key,
+            cinemeta_fallback_enabled,
+        },
+    )
+    .await
 }
 
-async fn search_import_db_matches(
+#[derive(sqlx::FromRow)]
+struct ImportDbMatchDetails {
+    media_id: i32,
+    description: Option<String>,
+    release_date: Option<chrono::NaiveDate>,
+    runtime_minutes: Option<i32>,
+    poster: Option<String>,
+    background: Option<String>,
+    logo: Option<String>,
+    imdb_rating: Option<f64>,
+}
+
+async fn load_import_db_match_details(
+    pool: &PgPool,
+    media_ids: &[i32],
+) -> std::collections::HashMap<i32, ImportDbMatchDetails> {
+    if media_ids.is_empty() {
+        return std::collections::HashMap::new();
+    }
+
+    let rows: Vec<ImportDbMatchDetails> = sqlx::query_as(
+        r#"
+        SELECT
+            m.id AS media_id,
+            m.description,
+            m.release_date,
+            m.runtime_minutes,
+            mi_poster.url AS poster,
+            mi_bg.url AS background,
+            mi_logo.url AS logo,
+            mr.rating AS imdb_rating
+        FROM media m
+        LEFT JOIN LATERAL (
+            SELECT url FROM media_image
+            WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
+            LIMIT 1
+        ) mi_poster ON true
+        LEFT JOIN LATERAL (
+            SELECT url FROM media_image
+            WHERE media_id = m.id AND image_type = 'background' AND is_primary = true
+            LIMIT 1
+        ) mi_bg ON true
+        LEFT JOIN LATERAL (
+            SELECT url FROM media_image
+            WHERE media_id = m.id AND image_type = 'logo' AND is_primary = true
+            LIMIT 1
+        ) mi_logo ON true
+        LEFT JOIN LATERAL (
+            SELECT r.rating FROM media_rating r
+            JOIN rating_provider rp ON rp.id = r.rating_provider_id
+            WHERE r.media_id = m.id AND lower(rp.name) IN ('imdb', 'tmdb')
+            ORDER BY CASE lower(rp.name) WHEN 'imdb' THEN 0 ELSE 1 END
+            LIMIT 1
+        ) mr ON true
+        WHERE m.id = ANY($1)
+        "#,
+    )
+    .bind(media_ids)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    rows.into_iter().map(|row| (row.media_id, row)).collect()
+}
+
+fn runtime_label(minutes: Option<i32>) -> Option<String> {
+    minutes.map(|mins| {
+        if mins >= 60 {
+            format!("{}h {}m", mins / 60, mins % 60)
+        } else {
+            format!("{mins}m")
+        }
+    })
+}
+
+pub(super) async fn search_import_db_matches(
     pool: &PgPool,
     title: &str,
     meta_type: &str,
+    year: Option<i32>,
     limit: usize,
 ) -> Vec<serde_json::Value> {
     let Some(_) = crate::db::MediaType::from_wire(meta_type) else {
@@ -455,31 +442,48 @@ async fn search_import_db_matches(
         "movie"
     };
 
-    let candidates = crate::db::search_media_candidates(pool, media_type, title).await;
+    let candidates = crate::db::search_media_candidates(pool, media_type, title, year).await;
     let mut results = Vec::with_capacity(candidates.len().min(limit));
+    let mut eligible = Vec::new();
 
     for candidate in candidates {
-        if results.len() >= limit {
+        if eligible.len() >= limit {
             break;
         }
-        if candidate.imdb_id.is_none() && candidate.tmdb_id.is_none() && candidate.tvdb_id.is_none()
+        if year.is_some()
+            && !year_matches(year, candidate.year)
+            && !year_matches(year, candidate.end_year)
         {
             continue;
         }
+        if candidate.imdb_id.is_none()
+            && candidate.tmdb_id.is_none()
+            && candidate.tvdb_id.is_none()
+            && candidate.mal_id.is_none()
+            && candidate.kitsu_id.is_none()
+        {
+            continue;
+        }
+        eligible.push(candidate);
+    }
 
+    let media_ids: Vec<i32> = eligible.iter().map(|c| c.media_id.0).collect();
+    let details_by_id = load_import_db_match_details(pool, &media_ids).await;
+
+    for candidate in eligible {
         let id = candidate.media_id.0;
-        let external_ids = load_media_external_ids(pool, id).await;
-        let imdb_id = external_ids.get("imdb").cloned().or(candidate.imdb_id);
-        let tmdb_id = external_ids.get("tmdb").cloned().or(candidate.tmdb_id);
-        let tvdb_id = external_ids.get("tvdb").cloned().or(candidate.tvdb_id);
-        let mal_id = external_ids.get("mal").cloned();
-        let kitsu_id = external_ids.get("kitsu").cloned();
+        let imdb_id = candidate.imdb_id;
+        let tmdb_id = candidate.tmdb_id;
+        let tvdb_id = candidate.tvdb_id;
+        let mal_id = candidate.mal_id;
+        let kitsu_id = candidate.kitsu_id;
         let primary_id = imdb_id
             .clone()
             .or_else(|| tmdb_id.as_ref().map(|t| format!("tmdb:{t}")))
             .or_else(|| tvdb_id.as_ref().map(|t| format!("tvdb:{t}")))
             .or_else(|| mal_id.as_ref().map(|t| format!("mal:{t}")))
             .unwrap_or_else(|| format!("media:{id}"));
+        let details = details_by_id.get(&id);
         results.push(json!({
             "id": primary_id,
             "imdb_id": imdb_id,
@@ -492,23 +496,106 @@ async fn search_import_db_matches(
             "year": candidate.year,
             "end_year": candidate.end_year,
             "type": media_type,
+            "description": details.and_then(|d| d.description.clone()),
+            "poster": details.and_then(|d| d.poster.clone()),
+            "background": details.and_then(|d| d.background.clone()),
+            "logo": details.and_then(|d| d.logo.clone()),
+            "release_date": details
+                .and_then(|d| d.release_date)
+                .map(|d| d.format("%Y-%m-%d").to_string()),
+            "imdb_rating": details.and_then(|d| d.imdb_rating),
+            "runtime": details.and_then(|d| runtime_label(d.runtime_minutes)),
         }));
     }
     results
 }
 
-async fn load_media_external_ids(
+pub(super) async fn build_db_match_from_media_id(
     pool: &PgPool,
     media_id: i32,
-) -> std::collections::HashMap<String, String> {
-    let rows: Vec<(String, String)> =
+    media_type: &str,
+    user_flags: Option<(bool, bool)>,
+) -> Option<serde_json::Value> {
+    let row: (String, Option<i32>, String) =
+        sqlx::query_as("SELECT title, year, type::text FROM media WHERE id = $1")
+            .bind(media_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()?;
+
+    let (title, year, db_type) = row;
+    let wire_type = if media_type == "sports" {
+        media_type
+    } else if db_type.eq_ignore_ascii_case("series") {
+        "series"
+    } else {
+        "movie"
+    };
+
+    let ext_rows: Vec<(String, String)> =
         sqlx::query_as("SELECT provider, external_id FROM media_external_id WHERE media_id = $1")
             .bind(media_id)
             .fetch_all(pool)
             .await
             .unwrap_or_default();
 
-    rows.into_iter().collect()
+    let mut imdb_id = None;
+    let mut tmdb_id = None;
+    let mut tvdb_id = None;
+    let mut mal_id = None;
+    let mut kitsu_id = None;
+    for (provider, external_id) in ext_rows {
+        match provider.as_str() {
+            "imdb" => imdb_id = Some(external_id),
+            "tmdb" => tmdb_id = Some(external_id),
+            "tvdb" => tvdb_id = Some(external_id),
+            "mal" => mal_id = Some(external_id),
+            "kitsu" => kitsu_id = Some(external_id),
+            _ => {}
+        }
+    }
+
+    let primary_id = imdb_id
+        .clone()
+        .or_else(|| tmdb_id.as_ref().map(|t| format!("tmdb:{t}")))
+        .or_else(|| tvdb_id.as_ref().map(|t| format!("tvdb:{t}")))
+        .or_else(|| mal_id.as_ref().map(|t| format!("mal:{t}")))
+        .unwrap_or_else(|| format!("media:{media_id}"));
+
+    let details_by_id = load_import_db_match_details(pool, &[media_id]).await;
+    let details = details_by_id.get(&media_id);
+
+    let mut entry = json!({
+        "id": primary_id,
+        "imdb_id": imdb_id,
+        "tmdb_id": tmdb_id,
+        "tvdb_id": tvdb_id,
+        "mal_id": mal_id,
+        "kitsu_id": kitsu_id,
+        "media_id": media_id,
+        "title": title,
+        "year": year,
+        "type": wire_type,
+        "description": details.and_then(|d| d.description.clone()),
+        "poster": details.and_then(|d| d.poster.clone()),
+        "background": details.and_then(|d| d.background.clone()),
+        "logo": details.and_then(|d| d.logo.clone()),
+        "release_date": details
+            .and_then(|d| d.release_date)
+            .map(|d| d.format("%Y-%m-%d").to_string()),
+        "imdb_rating": details.and_then(|d| d.imdb_rating),
+        "runtime": details.and_then(|d| runtime_label(d.runtime_minutes)),
+    });
+
+    if let Some((is_user_created, is_own)) = user_flags {
+        if let Some(obj) = entry.as_object_mut() {
+            obj.insert("is_user_created".to_string(), json!(is_user_created));
+            obj.insert("is_own".to_string(), json!(is_own));
+        }
+    }
+
+    Some(entry)
 }
 
 /// Multi-provider metadata refresh — fetches all linked providers, merges, then stores.
@@ -590,48 +677,6 @@ pub async fn refresh_media_from_providers(
     (refreshed, message)
 }
 
-pub async fn search_external_for_provider(
-    http: &reqwest::Client,
-    pool: &PgPool,
-    provider: &str,
-    title: &str,
-    year: Option<i32>,
-    media_type: &str,
-    tmdb_api_key: Option<&str>,
-    tvdb_api_key: Option<&str>,
-    cinemeta_fallback_enabled: bool,
-) -> Vec<serde_json::Value> {
-    let all = search_import_matches(
-        http,
-        pool,
-        title,
-        year,
-        media_type,
-        tmdb_api_key,
-        tvdb_api_key,
-        cinemeta_fallback_enabled,
-    )
-    .await;
-
-    if provider == "all" || provider.is_empty() {
-        return all;
-    }
-
-    all.into_iter()
-        .filter(|entry| match provider {
-            "tmdb" => entry.get("tmdb_id").is_some(),
-            "tvdb" => entry.get("tvdb_id").is_some(),
-            "imdb" => entry.get("imdb_id").is_some(),
-            "mal" => entry.get("mal_id").is_some(),
-            "kitsu" => entry.get("kitsu_id").is_some(),
-            "anilist" => entry["id"]
-                .as_str()
-                .is_some_and(|id| id.starts_with("anilist:")),
-            _ => true,
-        })
-        .collect()
-}
-
 pub(crate) fn year_matches(query: Option<i32>, item: Option<i32>) -> bool {
     match (query, item) {
         (Some(q), Some(i)) => (q - i).abs() <= 1,
@@ -641,7 +686,7 @@ pub(crate) fn year_matches(query: Option<i32>, item: Option<i32>) -> bool {
 
 #[cfg(test)]
 mod parse_tests {
-    use super::parse_import_meta_id;
+    use super::{parse_import_meta_id, year_matches};
 
     #[test]
     fn parses_anime_provider_prefixes() {
@@ -665,5 +710,15 @@ mod parse_tests {
             parse_import_meta_id("603"),
             Some(("tmdb", "603".to_string()))
         );
+    }
+
+    #[test]
+    fn year_matches_allows_plus_minus_one() {
+        assert!(year_matches(Some(2025), Some(2025)));
+        assert!(year_matches(Some(2025), Some(2024)));
+        assert!(year_matches(Some(2025), Some(2026)));
+        assert!(!year_matches(Some(2025), Some(2022)));
+        assert!(year_matches(None, Some(2022)));
+        assert!(year_matches(Some(2025), None));
     }
 }

@@ -98,6 +98,14 @@ db_id!(
     /// Primary key / FK referencing `users.id` (INT4).
     UserId
 );
+
+impl UserId {
+    /// Convert an auth token subject id to `UserId` (JWT `sub` is always INT4).
+    pub fn from_auth_id(id: i64) -> Option<Self> {
+        i32::try_from(id).ok().map(Self)
+    }
+}
+
 db_id!(
     /// Primary key / FK referencing `user_profiles.id` (INT4).
     ProfileId

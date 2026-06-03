@@ -35,6 +35,7 @@ import { MultiContentWizard } from './MultiContentWizard'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { ImageUrlInput } from '@/pages/MetadataCreator/components/ImageUrlInput'
 import type { FileAnnotation, TorrentDialogQueueItem, TorrentImportFormData, TorrentImportSubmitOptions } from './types'
+import { applyImportMatchToForm, fetchImportMatchByMetaId } from '../utils/importMetaLookup'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   getStoredAnonymousDisplayName,
@@ -122,6 +123,8 @@ export function TorrentImportDialog({
   const [contentType, setContentType] = useState<ContentType>(initialContentType)
   const [sportsCategory, setSportsCategory] = useState<SportsCategory | undefined>()
   const [selectedMatchIndex, setSelectedMatchIndex] = useState<number | null>(null)
+  const [activeMatch, setActiveMatch] = useState<ExtendedMatch | null>(null)
+  const [isResolvingMetaId, setIsResolvingMetaId] = useState(false)
 
   // Metadata
   const [metaId, setMetaId] = useState('')
@@ -159,14 +162,19 @@ export function TorrentImportDialog({
   const [validationErrors, setValidationErrors] = useState<Array<{ type: string; message: string }>>([])
   const [selectedEpisodeReleaseByNumber, setSelectedEpisodeReleaseByNumber] = useState<Record<number, string>>({})
 
-  // Derive selected match from index
+  // Derive selected match from active selection or analyze index
   const selectedMatch = useMemo(() => {
+    if (activeMatch) return activeMatch
     if (selectedMatchIndex === null || !analysis?.matches) return null
     return analysis.matches[selectedMatchIndex] as ExtendedMatch | null
-  }, [selectedMatchIndex, analysis?.matches])
+  }, [activeMatch, selectedMatchIndex, analysis?.matches])
   const sportsSearchType = useMemo<'movie' | 'series'>(
     () => (sportsCategory === 'formula_racing' || sportsCategory === 'motogp_racing' ? 'series' : 'movie'),
     [sportsCategory],
+  )
+  const matchLookupType = useMemo<'movie' | 'series'>(
+    () => (contentType === 'sports' ? sportsSearchType : contentType === 'tv' ? 'movie' : contentType),
+    [contentType, sportsSearchType],
   )
   const annotationFilesWithExistingDates = useMemo(() => {
     if (!analysis?.files || analysis.files.length === 0) return analysis?.files || []
@@ -244,12 +252,14 @@ export function TorrentImportDialog({
     setTitle(prefills.title || analysis.parsed_title || analysis.torrent_name || '')
     setApplyToSelected(false)
     setSelectedQueueIndices([])
+    setActiveMatch(null)
 
     if (analysis.matches && analysis.matches.length > 0) {
       const firstMatch = analysis.matches[0] as ExtendedMatch
       const shouldAutoSelectMatch = resolvedContentType !== 'sports'
       if (shouldAutoSelectMatch) {
         setSelectedMatchIndex(0)
+        setActiveMatch(firstMatch)
         if (!prefills.metaId) setMetaId(firstMatch.imdb_id || firstMatch.id)
         if (!prefills.title) setTitle(firstMatch.title)
         if (!prefills.poster && firstMatch.poster) setPoster(firstMatch.poster)
@@ -259,31 +269,44 @@ export function TorrentImportDialog({
         }
       } else {
         setSelectedMatchIndex(null)
+        setActiveMatch(null)
       }
     } else {
       setSelectedMatchIndex(null)
+      setActiveMatch(null)
     }
 
     setCurrentStep('review')
   }
 
+  const applyMatchMetadata = useCallback((match: ExtendedMatch) => {
+    applyImportMatchToForm(match, {
+      setMetaId,
+      setTitle,
+      setPoster,
+      setBackground,
+      setReleaseDate,
+    })
+  }, [])
+
   // Handle match selection
   const handleMatchSelect = useCallback(
     (match: ExtendedMatch, index: number) => {
       // Allow toggling off a selected match.
-      if (selectedMatchIndex === index) {
+      if (activeMatch?.id === match.id && selectedMatchIndex === index) {
         setSelectedMatchIndex(null)
+        setActiveMatch(null)
         setSelectedEpisodeReleaseByNumber({})
+        setPoster('')
+        setBackground('')
+        setReleaseDate('')
         return
       }
       setSelectedMatchIndex(index)
-      setMetaId(match.imdb_id || match.id)
-      setTitle(match.title)
-      if (match.poster) setPoster(match.poster)
-      if (match.background) setBackground(match.background)
-      if (match.release_date) setReleaseDate(match.release_date)
+      setActiveMatch(match)
+      applyMatchMetadata(match)
     },
-    [selectedMatchIndex],
+    [activeMatch, selectedMatchIndex, applyMatchMetadata],
   )
 
   useEffect(() => {
@@ -360,13 +383,27 @@ export function TorrentImportDialog({
     }
   }, [currentStep, goToStep])
 
-  const goForward = useCallback(() => {
+  const goForward = useCallback(async () => {
     if (currentStep === 'review') {
+      const trimmedMetaId = metaId.trim()
+      const needsMetaLookup = trimmedMetaId && !title.trim() && !activeMatch
+      if (needsMetaLookup) {
+        setIsResolvingMetaId(true)
+        try {
+          const match = await fetchImportMatchByMetaId(trimmedMetaId, matchLookupType)
+          setActiveMatch(match)
+          applyMatchMetadata(match)
+        } catch {
+          // Manual lookup in MatchSearchSection handles explicit errors; allow manual metadata entry.
+        } finally {
+          setIsResolvingMetaId(false)
+        }
+      }
       goToStep('metadata')
     } else if (currentStep === 'metadata') {
       goToStep('confirm')
     }
-  }, [currentStep, goToStep])
+  }, [currentStep, goToStep, metaId, title, activeMatch, matchLookupType, applyMatchMetadata])
 
   // Handle file annotation confirm
   const handleAnnotationConfirm = useCallback((files: FileAnnotation[]) => {
@@ -977,12 +1014,21 @@ export function TorrentImportDialog({
 
                 {currentStep !== 'confirm' ? (
                   <Button
-                    onClick={goForward}
-                    disabled={!canProceed}
+                    onClick={() => void goForward()}
+                    disabled={!canProceed || isResolvingMetaId}
                     className="bg-gradient-to-r from-primary to-primary/80"
                   >
-                    Next
-                    <ArrowRight className="h-4 w-4 ml-2" />
+                    {isResolvingMetaId ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Fetching metadata...
+                      </>
+                    ) : (
+                      <>
+                        Next
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </>
+                    )}
                   </Button>
                 ) : (
                   <Button

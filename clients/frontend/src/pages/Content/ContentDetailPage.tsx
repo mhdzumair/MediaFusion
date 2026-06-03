@@ -925,7 +925,7 @@ function getProviderDisplayName(provider: StreamingProviderInfo): string {
 // Main Content Detail Page
 export function ContentDetailPage() {
   const { type, id } = useParams<{ type: string; id: string }>()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const catalogType = type as CatalogType
   const { isAuthenticated, hasMinimumRole } = useAuth()
   const { rpdbApiKey } = useRpdb()
@@ -1080,11 +1080,30 @@ export function ContentDetailPage() {
     if (!item?.id) return
     try {
       await deleteSeasonAdmin.mutateAsync({ mediaId: item.id, seasonNumber })
-      if (selectedSeason === seasonNumber) {
-        setSelectedSeason(undefined)
+      const { data: refreshed } = await refetchCatalogItem()
+      const nextSeasons = refreshed?.seasons ?? []
+      const nextSeason = nextSeasons[0]?.season_number
+      if (
+        selectedSeason === seasonNumber ||
+        (selectedSeason !== undefined && !nextSeasons.some((s) => s.season_number === selectedSeason))
+      ) {
+        setSelectedSeason(nextSeason)
         setSelectedEpisode(undefined)
+        setSearchParams(
+          (prev) => {
+            const params = new URLSearchParams(prev)
+            if (nextSeason !== undefined) {
+              params.set('season', String(nextSeason))
+              params.delete('episode')
+            } else {
+              params.delete('season')
+              params.delete('episode')
+            }
+            return params
+          },
+          { replace: true },
+        )
       }
-      await refetchCatalogItem()
       toast({
         title: 'Season deleted',
         description: `Season ${seasonNumber} was removed successfully.`,
@@ -1133,6 +1152,12 @@ export function ContentDetailPage() {
   // Guard only on selectedSeason === undefined to avoid cached-reference bug (same as profiles above)
   if (seasons.length > 0 && selectedSeason === undefined) {
     setSelectedSeason(seasons[0].season_number)
+  }
+
+  // Drop stale season from URL/deep-link when it no longer exists (e.g. after delete or refresh)
+  if (seasons.length > 0 && selectedSeason !== undefined && !seasons.some((s) => s.season_number === selectedSeason)) {
+    setSelectedSeason(seasons[0].season_number)
+    setSelectedEpisode(undefined)
   }
 
   // Set default episode when season changes (during render, not in effect)

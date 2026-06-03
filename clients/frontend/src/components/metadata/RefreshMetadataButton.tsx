@@ -191,9 +191,14 @@ export function RefreshMetadataButton({
       const trimmedSearchYear = searchYear.trim()
       const parsedSearchYear = trimmedSearchYear ? Number(trimmedSearchYear) : undefined
       const validSearchYear = Number.isFinite(parsedSearchYear) ? parsedSearchYear : undefined
-      return metadataApi.searchExternal(searchQuery, mediaType, validSearchYear, {
-        includeAnime: includeAnimeProviders,
-        animeSources: animeSourceOrder === 'kitsu_first' ? ['kitsu', 'anilist'] : ['anilist', 'kitsu'],
+      return metadataApi.searchMatches({
+        title: searchQuery,
+        year: validSearchYear,
+        media_type: mediaType,
+        include_user_content: true,
+        include_catalog: true,
+        include_external: true,
+        include_official: true,
       })
     },
     onSuccess: (data) => {

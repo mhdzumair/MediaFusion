@@ -4,6 +4,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  metadataApi,
   userMetadataApi,
   type UserMediaCreate,
   type UserMediaUpdate,
@@ -238,7 +239,7 @@ export function useDeleteSeasonAdmin() {
 export function useMetadataSearch(
   params: {
     query: string
-    type?: 'movie' | 'series' | 'all'
+    type?: 'movie' | 'series' | 'tv' | 'all'
     limit?: number
     include_official?: boolean
   },
@@ -246,8 +247,40 @@ export function useMetadataSearch(
 ) {
   return useQuery({
     queryKey: userMetadataKeys.search({ query: params.query, type: params.type }),
-    queryFn: () => userMetadataApi.searchAll(params),
+    queryFn: async () => {
+      const mediaType = params.type === 'tv' ? 'tv' : params.type === 'all' ? 'all' : (params.type ?? 'all')
+      const response = await metadataApi.searchMatches({
+        title: params.query,
+        media_type: mediaType as 'movie' | 'series' | 'all',
+        limit: params.limit ?? 20,
+        include_user_content: true,
+        include_official: params.include_official ?? true,
+        include_catalog: true,
+        include_external: true,
+      })
+
+      return {
+        results: response.results.map((result) => ({
+          id: result.media_id ?? 0,
+          external_id: result.imdb_id || result.id,
+          external_ids: {
+            imdb: result.imdb_id ?? null,
+            tmdb: result.tmdb_id ?? null,
+            tvdb: result.tvdb_id ?? null,
+            mal: result.mal_id ?? null,
+            kitsu: result.kitsu_id ?? null,
+          },
+          title: result.title,
+          year: result.year,
+          type: result.type ?? 'movie',
+          poster: result.poster,
+          is_user_created: result.is_user_created ?? false,
+          is_own: result.is_own ?? false,
+        })),
+        total: response.results.length,
+      }
+    },
     enabled: options?.enabled !== false && params.query.length >= 2,
-    staleTime: 30 * 1000, // 30 seconds for search results
+    staleTime: 30 * 1000,
   })
 }

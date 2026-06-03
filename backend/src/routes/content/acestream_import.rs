@@ -204,6 +204,7 @@ pub async fn analyze_acestream_for_bot(
     };
     let matches = super::import_helpers::search_analyze_matches(
         state,
+        None,
         &format!("AceStream {id}"),
         None,
         meta_type,

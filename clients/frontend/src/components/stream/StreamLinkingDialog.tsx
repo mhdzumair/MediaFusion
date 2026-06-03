@@ -13,14 +13,14 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Loader2, Link2, Unlink, Search, Film, Tv, Plus, Trash2, AlertCircle, HardDrive } from 'lucide-react'
-import { useCombinedMetadataSearch, type CombinedSearchResult } from '@/hooks'
-import { useDebounce } from '@/hooks/useDebounce'
+import { Loader2, Link2, Unlink, Film, Tv, Plus, Trash2, AlertCircle, HardDrive } from 'lucide-react'
+import { type CombinedSearchResult } from '@/hooks'
 import { useToast } from '@/hooks/use-toast'
 import { apiClient } from '@/lib/api/client'
+import { MetadataSearchPopover } from '@/components/metadata'
 
-// Types for stream linking
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 interface MediaLinkInfo {
   link_id: number
   media_id: number
@@ -48,12 +48,12 @@ interface StreamLinkingDialogProps {
   onSuccess?: () => void
 }
 
-// API functions for stream linking
+// ─── API ──────────────────────────────────────────────────────────────────────
+
 const streamLinkingApi = {
   getMediaForStream: async (streamId: number): Promise<{ stream_id: number; media_entries: MediaLinkInfo[] }> => {
     return apiClient.get(`/stream-links/stream/${streamId}`)
   },
-
   createLink: async (data: {
     stream_id: number
     media_id: number
@@ -63,79 +63,61 @@ const streamLinkingApi = {
   }) => {
     return apiClient.post('/stream-links', data)
   },
-
   deleteLink: async (linkId: number): Promise<void> => {
     return apiClient.delete(`/stream-links/${linkId}`)
   },
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatSize(bytes: number | null): string {
+  if (!bytes) return ''
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let i = 0
+  let s = bytes
+  while (s >= 1024 && i < units.length - 1) {
+    s /= 1024
+    i++
+  }
+  return `${s.toFixed(1)} ${units[i]}`
+}
+
+// ─── Dialog ───────────────────────────────────────────────────────────────────
+
 export function StreamLinkingDialog({ open, onOpenChange, stream, onSuccess }: StreamLinkingDialogProps) {
   const { toast } = useToast()
 
-  // State
   const [existingLinks, setExistingLinks] = useState<MediaLinkInfo[]>([])
   const [isLoadingLinks, setIsLoadingLinks] = useState(false)
   const [isCreatingLink, setIsCreatingLink] = useState(false)
   const [deletingLinkId, setDeletingLinkId] = useState<number | null>(null)
 
-  // New link state
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchYear, setSearchYear] = useState('')
+  // New-link form state
   const [selectedMedia, setSelectedMedia] = useState<CombinedSearchResult | null>(null)
-  const [fileIndex, setFileIndex] = useState<string>('')
-  const [season, setSeason] = useState<string>('')
-  const [episode, setEpisode] = useState<string>('')
+  const [fileIndex, setFileIndex] = useState('')
+  const [season, setSeason] = useState('')
+  const [episode, setEpisode] = useState('')
 
-  const debouncedQuery = useDebounce(searchQuery, 300)
-  const trimmedSearchYear = searchYear.trim()
-  const parsedSearchYear = trimmedSearchYear ? Number(trimmedSearchYear) : undefined
-  const validSearchYear = Number.isFinite(parsedSearchYear) ? parsedSearchYear : undefined
+  // ── Load existing links ─────────────────────────────────────────────────
 
-  // Use combined search but only allow linking to internal results (they have media_id)
-  const {
-    data: searchResults = [],
-    isLoading: isSearching,
-    isFetching: isFetchingSearch,
-  } = useCombinedMetadataSearch(
-    {
-      query: debouncedQuery,
-      type: 'all',
-      limit: 20,
-      year: validSearchYear,
-    },
-    { enabled: debouncedQuery.length >= 2 && open },
-  )
-
-  // Load existing links when dialog opens
   const loadExistingLinks = useCallback(async () => {
     if (!stream) return
-
     setIsLoadingLinks(true)
     try {
       const result = await streamLinkingApi.getMediaForStream(stream.stream_id)
       setExistingLinks(result.media_entries)
-    } catch (error) {
-      console.error('Failed to load existing links:', error)
-      toast({
-        title: 'Error',
-        description: 'Failed to load existing links',
-        variant: 'destructive',
-      })
+    } catch {
+      toast({ title: 'Error', description: 'Failed to load existing links', variant: 'destructive' })
     } finally {
       setIsLoadingLinks(false)
     }
   }, [stream, toast])
 
-  // Load links when dialog opens
   useEffect(() => {
     if (open && stream) {
       loadExistingLinks()
     }
     if (!open) {
-      // Reset state when closing
-      setSearchQuery('')
-      setSearchYear('')
       setSelectedMedia(null)
       setFileIndex('')
       setSeason('')
@@ -144,22 +126,31 @@ export function StreamLinkingDialog({ open, onOpenChange, stream, onSuccess }: S
     }
   }, [open, stream, loadExistingLinks])
 
-  // Handle media selection - only allow internal results (they have media_id)
-  const handleSelectMedia = useCallback((result: CombinedSearchResult) => {
-    if (result.source !== 'internal' || !result.internal_id) {
-      // External results can't be linked directly - they don't have a media_id
-      return
-    }
-    setSelectedMedia(result)
-    setSearchOpen(false)
-    setSearchQuery('')
-    setSearchYear('')
-  }, [])
+  // ── Select media ────────────────────────────────────────────────────────
 
-  // Create new link
+  const handleSelectMedia = useCallback(
+    (result: CombinedSearchResult) => {
+      // Stream links require an internal media_id — external results are already
+      // visually disabled in MetadataSearchPopover (requireInternal=true), but
+      // guard here as defence-in-depth.
+      if (!result.internal_id) {
+        toast({
+          title: 'Not in library',
+          description: 'Import this title first, then link it to the stream.',
+          variant: 'destructive',
+        })
+        return
+      }
+      setSelectedMedia(result)
+      // Auto-set type selector to match the selected title
+    },
+    [toast],
+  )
+
+  // ── Create link ─────────────────────────────────────────────────────────
+
   const handleCreateLink = useCallback(async () => {
-    if (!stream || !selectedMedia || !selectedMedia.internal_id) return
-
+    if (!stream || !selectedMedia?.internal_id) return
     setIsCreatingLink(true)
     try {
       await streamLinkingApi.createLink({
@@ -169,13 +160,7 @@ export function StreamLinkingDialog({ open, onOpenChange, stream, onSuccess }: S
         season: season ? parseInt(season) : null,
         episode: episode ? parseInt(episode) : null,
       })
-
-      toast({
-        title: 'Link Created',
-        description: `Stream linked to "${selectedMedia.title}"`,
-      })
-
-      // Reset form and reload links
+      toast({ title: 'Link Created', description: `Stream linked to "${selectedMedia.title}"` })
       setSelectedMedia(null)
       setFileIndex('')
       setSeason('')
@@ -193,18 +178,14 @@ export function StreamLinkingDialog({ open, onOpenChange, stream, onSuccess }: S
     }
   }, [stream, selectedMedia, fileIndex, season, episode, toast, loadExistingLinks, onSuccess])
 
-  // Delete link
+  // ── Delete link ─────────────────────────────────────────────────────────
+
   const handleDeleteLink = useCallback(
     async (linkId: number) => {
       setDeletingLinkId(linkId)
       try {
         await streamLinkingApi.deleteLink(linkId)
-
-        toast({
-          title: 'Link Removed',
-          description: 'Stream link has been removed',
-        })
-
+        toast({ title: 'Link Removed', description: 'Stream link has been removed' })
         await loadExistingLinks()
         onSuccess?.()
       } catch (error) {
@@ -219,19 +200,6 @@ export function StreamLinkingDialog({ open, onOpenChange, stream, onSuccess }: S
     },
     [toast, loadExistingLinks, onSuccess],
   )
-
-  // Format size
-  const formatSize = (bytes: number | null): string => {
-    if (!bytes) return ''
-    const units = ['B', 'KB', 'MB', 'GB', 'TB']
-    let unitIndex = 0
-    let size = bytes
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024
-      unitIndex++
-    }
-    return `${size.toFixed(1)} ${units[unitIndex]}`
-  }
 
   if (!stream) return null
 
@@ -251,7 +219,7 @@ export function StreamLinkingDialog({ open, onOpenChange, stream, onSuccess }: S
 
         <ScrollArea className="flex-1 min-h-0 pr-1">
           <div className="space-y-3 py-1">
-            {/* Stream Info */}
+            {/* Stream info */}
             <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
               <div className="flex items-start gap-3">
                 <div className="p-2 rounded bg-primary/10">
@@ -272,10 +240,9 @@ export function StreamLinkingDialog({ open, onOpenChange, stream, onSuccess }: S
 
             <Separator />
 
-            {/* Existing Links */}
+            {/* Existing links */}
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">Current Links</Label>
-
               {isLoadingLinks ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -331,12 +298,13 @@ export function StreamLinkingDialog({ open, onOpenChange, stream, onSuccess }: S
 
             <Separator />
 
-            {/* Add New Link */}
+            {/* Add new link */}
             <div className="space-y-3">
               <Label className="text-sm text-muted-foreground">Add New Link</Label>
 
-              {/* Metadata Search */}
-              <div className="space-y-2">
+              {/* Metadata search — MetadataSearchPopover handles title search,
+                  manual ID lookup via /matches, and in-library filtering */}
+              <div className="space-y-1">
                 <Label className="text-xs">Search Metadata</Label>
                 {selectedMedia ? (
                   <div className="flex items-center gap-2 p-2 rounded-lg border border-primary/30 bg-primary/5">
@@ -365,128 +333,17 @@ export function StreamLinkingDialog({ open, onOpenChange, stream, onSuccess }: S
                     </Button>
                   </div>
                 ) : (
-                  <Popover open={searchOpen} onOpenChange={setSearchOpen}>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start text-muted-foreground">
-                        <Search className="h-4 w-4 mr-2" />
-                        Search for metadata...
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      className="w-[calc(100vw-2rem)] sm:w-[400px] p-0 overflow-hidden flex flex-col"
-                      align="start"
-                      style={{
-                        height: '360px',
-                        maxHeight: 'calc(var(--radix-popover-content-available-height) - 10px)',
-                      }}
-                    >
-                      <div className="p-2 border-b shrink-0">
-                        <div className="flex gap-2">
-                          <Input
-                            placeholder="Search movies, series, or user metadata..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="h-9"
-                            autoFocus
-                          />
-                          <Input
-                            type="number"
-                            inputMode="numeric"
-                            min={1878}
-                            max={9999}
-                            step={1}
-                            placeholder="Year"
-                            value={searchYear}
-                            onChange={(e) => setSearchYear(e.target.value)}
-                            className="h-9 w-24 shrink-0"
-                          />
-                        </div>
-                      </div>
-                      <ScrollArea className="flex-1 min-h-0">
-                        {isSearching && searchResults.length === 0 && (
-                          <div className="flex items-center justify-center py-6">
-                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                          </div>
-                        )}
-                        {!isSearching && !isFetchingSearch && searchQuery.length >= 2 && searchResults.length === 0 && (
-                          <div className="py-6 text-center text-sm text-muted-foreground">No results found</div>
-                        )}
-                        {!isSearching && searchQuery.length < 2 && (
-                          <div className="py-6 text-center text-xs text-muted-foreground">
-                            Type at least 2 characters to search
-                          </div>
-                        )}
-                        {searchResults.length > 0 && (
-                          <div className="p-1">
-                            {isFetchingSearch && (
-                              <div className="flex items-center justify-center py-2 text-xs text-muted-foreground gap-1.5">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                <span>Loading more...</span>
-                              </div>
-                            )}
-                            {searchResults.map((result) => {
-                              const isExternal = result.source === 'external'
-                              return (
-                                <button
-                                  key={result.id}
-                                  onClick={() => handleSelectMedia(result)}
-                                  disabled={isExternal}
-                                  className={`w-full flex items-center gap-2 p-2 rounded-md text-left ${
-                                    isExternal ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted cursor-pointer'
-                                  }`}
-                                  title={isExternal ? 'External results must be imported first' : undefined}
-                                >
-                                  {result.poster ? (
-                                    <img
-                                      src={result.poster}
-                                      alt=""
-                                      className="w-8 h-12 rounded object-cover flex-shrink-0"
-                                    />
-                                  ) : (
-                                    <div className="w-8 h-12 rounded bg-muted flex items-center justify-center flex-shrink-0">
-                                      {result.type === 'series' ? (
-                                        <Tv className="h-4 w-4 text-muted-foreground" />
-                                      ) : (
-                                        <Film className="h-4 w-4 text-muted-foreground" />
-                                      )}
-                                    </div>
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium truncate">{result.title}</p>
-                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                      {result.year && <span>{result.year}</span>}
-                                      <Badge variant="outline" className="text-[10px] px-1 py-0">
-                                        {result.type}
-                                      </Badge>
-                                      {result.source === 'internal' ? (
-                                        <Badge
-                                          variant="secondary"
-                                          className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700"
-                                        >
-                                          In Library
-                                        </Badge>
-                                      ) : (
-                                        <Badge
-                                          variant="secondary"
-                                          className="text-[10px] px-1 py-0 bg-yellow-500/20 text-yellow-700"
-                                        >
-                                          {result.provider?.toUpperCase() || 'External'}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                  </div>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </ScrollArea>
-                    </PopoverContent>
-                  </Popover>
+                  <MetadataSearchPopover
+                    requireInternal
+                    onSelect={handleSelectMedia}
+                    onClear={() => setSelectedMedia(null)}
+                    placeholder="Search movies, series, or enter an ID…"
+                    popoverWidth="w-[calc(100vw-2rem)] sm:w-[420px]"
+                  />
                 )}
               </div>
 
-              {/* Optional fields */}
+              {/* Episode fields — only shown when a series is selected */}
               {selectedMedia && (
                 <div className="grid grid-cols-3 gap-2">
                   <div className="space-y-1">

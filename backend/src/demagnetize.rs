@@ -61,27 +61,101 @@ pub async fn resolve(info_hash_hex: &str, overall_timeout: Duration) -> Result<T
 }
 
 async fn resolve_inner(hash: [u8; 20], budget: Duration) -> Result<TorrentMeta, Error> {
+    let started = std::time::Instant::now();
+    let info_hash = fmt_hex(&hash);
+
+    tracing::debug!(
+        info_hash = %info_hash,
+        timeout_secs = budget.as_secs(),
+        "demagnetize: starting DHT lookup"
+    );
+
     // First half of budget: DHT peer discovery.
+    let dht_started = std::time::Instant::now();
     let peers = find_peers(hash, budget / 2).await;
+    let dht_elapsed = dht_started.elapsed();
+
     if peers.is_empty() {
+        tracing::info!(
+            info_hash = %info_hash,
+            elapsed_ms = started.elapsed().as_millis(),
+            dht_elapsed_ms = dht_elapsed.as_millis(),
+            "demagnetize: no peers found"
+        );
         return Err(Error::NoPeers);
     }
-    tracing::debug!("demagnetize: {} peers for {}", peers.len(), fmt_hex(&hash));
+
+    tracing::debug!(
+        info_hash = %info_hash,
+        peer_count = peers.len(),
+        dht_elapsed_ms = dht_elapsed.as_millis(),
+        "demagnetize: peers discovered"
+    );
 
     // Second half: race peers to fetch the info dict via BEP-9.
+    let fetch_started = std::time::Instant::now();
     let per_peer = Duration::from_secs(12);
-    tokio::time::timeout(budget / 2, fetch_metadata_from_peers(peers, hash, per_peer))
-        .await
-        .map_err(|_| Error::Timeout)?
-        .ok_or(Error::NoPeers)
-        .and_then(|raw| {
-            // Verify SHA-1 of assembled info bytes matches the info_hash.
+    let fetch_result =
+        tokio::time::timeout(budget / 2, fetch_metadata_from_peers(peers, hash, per_peer)).await;
+
+    match fetch_result {
+        Ok(Some(raw)) => {
             let actual: [u8; 20] = Sha1::digest(&raw).into();
             if actual != hash {
+                tracing::warn!(
+                    info_hash = %info_hash,
+                    elapsed_ms = started.elapsed().as_millis(),
+                    fetch_elapsed_ms = fetch_started.elapsed().as_millis(),
+                    "demagnetize: metadata hash mismatch"
+                );
                 return Err(Error::HashMismatch);
             }
-            parse_info_dict(&raw).map_err(Error::Protocol)
-        })
+            match parse_info_dict(&raw) {
+                Ok(meta) => {
+                    tracing::info!(
+                        info_hash = %info_hash,
+                        name = %meta.name,
+                        file_count = meta.files.len(),
+                        total_size = meta.total_size,
+                        elapsed_ms = started.elapsed().as_millis(),
+                        dht_elapsed_ms = dht_elapsed.as_millis(),
+                        fetch_elapsed_ms = fetch_started.elapsed().as_millis(),
+                        "demagnetize: metadata resolved"
+                    );
+                    Ok(meta)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        info_hash = %info_hash,
+                        error = %e,
+                        elapsed_ms = started.elapsed().as_millis(),
+                        "demagnetize: failed to parse info dict"
+                    );
+                    Err(Error::Protocol(e))
+                }
+            }
+        }
+        Ok(None) => {
+            tracing::info!(
+                info_hash = %info_hash,
+                elapsed_ms = started.elapsed().as_millis(),
+                dht_elapsed_ms = dht_elapsed.as_millis(),
+                fetch_elapsed_ms = fetch_started.elapsed().as_millis(),
+                "demagnetize: peers found but none returned valid metadata"
+            );
+            Err(Error::NoPeers)
+        }
+        Err(_) => {
+            tracing::info!(
+                info_hash = %info_hash,
+                elapsed_ms = started.elapsed().as_millis(),
+                dht_elapsed_ms = dht_elapsed.as_millis(),
+                fetch_elapsed_ms = fetch_started.elapsed().as_millis(),
+                "demagnetize: metadata fetch timed out"
+            );
+            Err(Error::Timeout)
+        }
+    }
 }
 
 // ─── DHT peer discovery ───────────────────────────────────────────────────────

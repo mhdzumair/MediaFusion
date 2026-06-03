@@ -123,6 +123,7 @@ fn parse_rich_stream(item: &Value) -> Option<ScrapedStream> {
         resolution,
         codec,
         title: Some(name.clone()),
+        episode_title: None,
         year: None,
         audio: vec![],
         channels: vec![],

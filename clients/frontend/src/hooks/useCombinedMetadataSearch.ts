@@ -1,34 +1,26 @@
 /**
  * Combined Metadata Search Hook
  *
- * Searches both internal database (user-created + official media) AND
- * external providers (TMDB, IMDB, TVDB, MAL, Kitsu) in parallel.
- * Results are merged and deduplicated, with internal results prioritized.
- *
- * Shows results progressively as each source completes - no waiting for all sources.
+ * Uses the unified POST /metadata/search/matches endpoint which searches
+ * user-accessible DB content, global catalog, and external providers.
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { useMemo } from 'react'
-import { userMetadataApi, metadataApi } from '@/lib/api'
-import type { MetadataSearchResult, ExternalSearchResult } from '@/lib/api'
+import { metadataApi, type MediaMatchSearchResult } from '@/lib/api'
 
-// Unified search result type that works for both internal and external results
 export interface CombinedSearchResult {
-  id: string // Unique identifier for React keys
+  id: string
   title: string
   year?: number
   poster?: string
-  type: string // 'movie' | 'series'
+  type: string
   source: 'internal' | 'external'
 
-  // Internal-specific fields
-  internal_id?: number // Database ID for internal results
-  external_id?: string // External ID (e.g., tt1234567) for internal results
+  internal_id?: number
+  external_id?: string
   is_user_created?: boolean
   is_own?: boolean
 
-  // External-specific fields
   imdb_id?: string
   tmdb_id?: string
   tvdb_id?: string | number
@@ -36,261 +28,98 @@ export interface CombinedSearchResult {
   kitsu_id?: string | number
   anilist_id?: string | number
   external_ids?: Record<string, string | number | null>
-  provider?: string // 'imdb', 'tmdb', 'tvdb', 'mal', 'kitsu', 'anilist'
+  provider?: string
   description?: string
 }
 
 export interface UseCombinedSearchOptions {
   query: string
   type?: 'movie' | 'series' | 'all'
-  sources?: ('internal' | 'external')[] // Default: both
+  sources?: ('internal' | 'external')[]
   limit?: number
   year?: number
   includeAnime?: boolean
   animeSources?: ('kitsu' | 'anilist')[]
 }
 
-// Convert internal search result to combined format
-function internalToCombined(result: MetadataSearchResult): CombinedSearchResult {
+function matchToCombined(result: MediaMatchSearchResult, fallbackType?: string): CombinedSearchResult {
+  const isDatabase = result.source === 'database'
+  const externalId =
+    result.imdb_id ||
+    (result.tmdb_id ? `tmdb:${result.tmdb_id}` : undefined) ||
+    (result.tvdb_id ? `tvdb:${result.tvdb_id}` : undefined) ||
+    (result.mal_id ? `mal:${result.mal_id}` : undefined) ||
+    (result.kitsu_id ? `kitsu:${result.kitsu_id}` : undefined) ||
+    result.id
+
   return {
-    id: `internal-${result.id}`,
+    id: isDatabase ? `internal-${result.media_id ?? result.id}` : `external-${externalId}`,
     title: result.title,
     year: result.year,
     poster: result.poster,
-    type: result.type,
-    source: 'internal',
-    internal_id: result.id,
-    external_id: result.external_id,
-    external_ids: result.external_ids,
+    type: result.type ?? fallbackType ?? 'movie',
+    source: isDatabase ? 'internal' : 'external',
+    internal_id: result.media_id,
+    external_id: externalId,
     is_user_created: result.is_user_created,
     is_own: result.is_own,
-    // Extract IMDB ID if it looks like one
-    imdb_id: result.external_id?.startsWith('tt') ? result.external_id : undefined,
-  }
-}
-
-// Convert external search result to combined format
-function externalToCombined(result: ExternalSearchResult, metaType?: 'movie' | 'series'): CombinedSearchResult {
-  const normalizedExternalIds: Record<string, string | number | null> = {
-    ...(result.external_ids || {}),
-    imdb: result.imdb_id || (result.external_ids?.imdb ?? null),
-    tmdb: result.tmdb_id || (result.external_ids?.tmdb ?? null),
-    tvdb: result.tvdb_id || (result.external_ids?.tvdb ?? null),
-    mal: result.mal_id || (result.external_ids?.mal ?? result.external_ids?.mal_id ?? null),
-    kitsu: result.kitsu_id || (result.external_ids?.kitsu ?? result.external_ids?.kitsu_id ?? null),
-    anilist: result.anilist_id || (result.external_ids?.anilist ?? result.external_ids?.anilist_id ?? null),
-  }
-
-  return {
-    id: `external-${result.imdb_id || result.mal_id || result.kitsu_id || result.anilist_id || result.tmdb_id || result.tvdb_id || result.id}`,
-    title: result.title,
-    year: result.year,
-    poster: result.poster,
-    type: metaType || (result.provider === 'tvdb' ? 'series' : 'movie'),
-    source: 'external',
     imdb_id: result.imdb_id,
     tmdb_id: result.tmdb_id,
     tvdb_id: result.tvdb_id,
     mal_id: result.mal_id,
     kitsu_id: result.kitsu_id,
     anilist_id: result.anilist_id,
-    external_ids: normalizedExternalIds,
     provider: result.provider,
-    description: result.description,
-    external_id:
-      result.imdb_id ||
-      (result.tmdb_id
-        ? `tmdb:${result.tmdb_id}`
-        : result.tvdb_id
-          ? `tvdb:${result.tvdb_id}`
-          : result.mal_id
-            ? `mal:${result.mal_id}`
-            : result.kitsu_id
-              ? `kitsu:${result.kitsu_id}`
-              : result.anilist_id
-                ? `anilist:${result.anilist_id}`
-                : result.id),
+    description: result.description ?? undefined,
   }
 }
 
-// Deduplicate results, prioritizing internal over external
-function deduplicateResults(
-  internalResults: CombinedSearchResult[],
-  externalResults: CombinedSearchResult[],
-): CombinedSearchResult[] {
-  const seen = new Map<string, CombinedSearchResult>()
-
-  // Add internal results first (they take priority)
-  for (const result of internalResults) {
-    // Key by IMDB ID if available, otherwise by normalized title+year
-    const key =
-      result.imdb_id || result.external_id || `${result.title.toLowerCase().trim()}-${result.year || 'unknown'}`
-    seen.set(key, result)
-  }
-
-  // Add external results only if not already present
-  for (const result of externalResults) {
-    const key =
-      result.imdb_id || result.external_id || `${result.title.toLowerCase().trim()}-${result.year || 'unknown'}`
-
-    if (!seen.has(key)) {
-      seen.set(key, result)
-    }
-  }
-
-  return Array.from(seen.values())
-}
-
-// Sort results: internal first, then by year (newest first)
-function sortResults(results: CombinedSearchResult[]): CombinedSearchResult[] {
-  return [...results].sort((a, b) => {
-    // Internal results first
-    if (a.source !== b.source) {
-      return a.source === 'internal' ? -1 : 1
-    }
-    // Then by year (newest first)
-    return (b.year || 0) - (a.year || 0)
-  })
-}
-
-// Query keys for caching
 export const combinedSearchKeys = {
   all: ['combined-metadata-search'] as const,
-  internal: (query: string, type?: string) => [...combinedSearchKeys.all, 'internal', { query, type }] as const,
-  external: (
-    query: string,
-    type?: string,
-    year?: number,
-    includeAnime?: boolean,
-    animeSources?: ('kitsu' | 'anilist')[],
-  ) => [...combinedSearchKeys.all, 'external', { query, type, year, includeAnime, animeSources }] as const,
+  search: (query: string, type?: string, year?: number, limit?: number, sources?: ('internal' | 'external')[]) =>
+    [...combinedSearchKeys.all, { query, type, year, limit, sources }] as const,
 }
 
-/**
- * Combined metadata search hook that searches both internal and external sources
- * Results appear progressively as each source completes
- */
 export function useCombinedMetadataSearch(params: UseCombinedSearchOptions, options?: { enabled?: boolean }) {
-  const {
-    query,
-    type = 'all',
-    sources = ['internal', 'external'],
-    limit = 15,
-    year,
-    includeAnime,
-    animeSources,
-  } = params
+  const { query, type = 'all', sources = ['internal', 'external'], limit = 15, year } = params
   const searchInternal = sources.includes('internal')
   const searchExternal = sources.includes('external')
   const isEnabled = options?.enabled !== false && query.length >= 2
 
-  // Internal search query
-  const internalQuery = useQuery({
-    queryKey: combinedSearchKeys.internal(query, type),
+  const searchQuery = useQuery<CombinedSearchResult[]>({
+    queryKey: combinedSearchKeys.search(query, type, year, limit, sources),
     queryFn: async (): Promise<CombinedSearchResult[]> => {
-      try {
-        const response = await userMetadataApi.searchAll({
-          query,
-          type: type === 'all' ? undefined : type,
-          limit,
-          include_official: true,
-        })
-        return (response.results || []).map(internalToCombined)
-      } catch {
-        return []
-      }
+      const response = await metadataApi.searchMatches({
+        title: query,
+        year,
+        media_type: type === 'all' ? 'all' : type,
+        limit,
+        include_user_content: searchInternal,
+        include_official: true,
+        include_catalog: searchInternal || searchExternal,
+        include_external: searchExternal,
+      })
+
+      return (response.results || []).map((result) => matchToCombined(result, type === 'all' ? undefined : type))
     },
-    enabled: isEnabled && searchInternal,
+    enabled: isEnabled && (searchInternal || searchExternal),
     staleTime: 30 * 1000,
   })
 
-  // External search query (movie)
-  const externalMovieQuery = useQuery({
-    queryKey: combinedSearchKeys.external(query, 'movie', year, includeAnime, animeSources),
-    queryFn: async (): Promise<CombinedSearchResult[]> => {
-      try {
-        const response = await metadataApi.searchExternal(query, 'movie', year, {
-          includeAnime,
-          animeSources,
-        })
-        return (response.results || []).map((r) => externalToCombined(r, 'movie'))
-      } catch {
-        return []
-      }
-    },
-    enabled: isEnabled && searchExternal && (type === 'all' || type === 'movie'),
-    staleTime: 30 * 1000,
-  })
-
-  // External search query (series)
-  const externalSeriesQuery = useQuery({
-    queryKey: combinedSearchKeys.external(query, 'series', year, includeAnime, animeSources),
-    queryFn: async (): Promise<CombinedSearchResult[]> => {
-      try {
-        const response = await metadataApi.searchExternal(query, 'series', year, {
-          includeAnime,
-          animeSources,
-        })
-        return (response.results || []).map((r) => externalToCombined(r, 'series'))
-      } catch {
-        return []
-      }
-    },
-    enabled: isEnabled && searchExternal && (type === 'all' || type === 'series'),
-    staleTime: 30 * 1000,
-  })
-
-  // Combine results from all sources
-  const data = useMemo(() => {
-    const internalResults = internalQuery.data || []
-    const externalMovieResults = externalMovieQuery.data || []
-    const externalSeriesResults = externalSeriesQuery.data || []
-
-    // Combine external results
-    const externalResults = [...externalMovieResults, ...externalSeriesResults]
-
-    // Deduplicate and merge
-    const combined = deduplicateResults(internalResults, externalResults)
-
-    // Sort and limit
-    return sortResults(combined).slice(0, limit)
-  }, [internalQuery.data, externalMovieQuery.data, externalSeriesQuery.data, limit])
-
-  // Determine loading states
-  const isLoading =
-    (searchInternal && internalQuery.isLoading) ||
-    (searchExternal && (type === 'all' || type === 'movie') && externalMovieQuery.isLoading) ||
-    (searchExternal && (type === 'all' || type === 'series') && externalSeriesQuery.isLoading)
-
-  // Still loading if any query is fetching but we have some results
-  const isFetching = internalQuery.isFetching || externalMovieQuery.isFetching || externalSeriesQuery.isFetching
-
-  // Has partial results (some queries complete, some still loading)
-  const hasPartialResults = data.length > 0 && isFetching
-
-  // Error if all enabled queries failed
-  const isError =
-    (!searchInternal || internalQuery.isError) &&
-    (!searchExternal || (type !== 'movie' && type !== 'all') || externalMovieQuery.isError) &&
-    (!searchExternal || (type !== 'series' && type !== 'all') || externalSeriesQuery.isError)
+  const results = searchQuery.data ?? []
 
   return {
-    data,
-    isLoading: isLoading && data.length === 0, // Only show loading if no results yet
-    isFetching, // True if any query is still fetching
-    hasPartialResults, // True if we have some results but more are loading
-    isError,
-    // Individual query states for debugging
-    internalStatus: searchInternal ? internalQuery.status : 'idle',
-    externalMovieStatus: searchExternal && (type === 'all' || type === 'movie') ? externalMovieQuery.status : 'idle',
-    externalSeriesStatus: searchExternal && (type === 'all' || type === 'series') ? externalSeriesQuery.status : 'idle',
+    data: results,
+    isLoading: searchQuery.isLoading && results.length === 0,
+    isFetching: searchQuery.isFetching,
+    hasPartialResults: results.length > 0 && searchQuery.isFetching,
+    isError: searchQuery.isError,
+    internalStatus: searchInternal ? searchQuery.status : 'idle',
+    externalMovieStatus: searchExternal ? searchQuery.status : 'idle',
+    externalSeriesStatus: searchExternal ? searchQuery.status : 'idle',
   }
 }
 
-/**
- * Get the best external ID from a combined search result
- * Useful for import operations
- */
 export function getBestExternalId(result: CombinedSearchResult): string {
   return (
     result.imdb_id ||

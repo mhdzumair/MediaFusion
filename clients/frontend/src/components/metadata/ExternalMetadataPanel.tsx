@@ -66,8 +66,7 @@ export function ExternalMetadataPanel({
   // Search mutation
   const searchMutation = useMutation({
     mutationFn: () =>
-      moderatorApi.searchExternalMetadata({
-        provider,
+      moderatorApi.searchMatches({
         title: searchQuery,
         year: searchYear ? parseInt(searchYear) : undefined,
         media_type: mediaType === 'tv' ? undefined : mediaType,

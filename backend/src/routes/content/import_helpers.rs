@@ -12,10 +12,13 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    db::{contribution_defaults, MediaType, TorrentType},
-    parser::detect_sports_category,
+    db::{contribution_defaults, MediaType, TorrentType, UserId},
+    parser::{detect_sports_category, episode_detector::detect_episode, parse_title},
     state::AppState,
 };
+
+/// Source label shown in Stremio stream descriptions for user contributions.
+pub const CONTRIBUTION_STREAM_SOURCE: &str = "Contribution Stream";
 
 // ─── Adult content filter ─────────────────────────────────────────────────────
 
@@ -65,6 +68,15 @@ pub fn resolve_uploader_identity(
         (name, None)
     } else {
         (username.to_string(), Some(user_id))
+    }
+}
+
+/// Map auth user id to `stream.uploader_user_id` — only when the contribution is not anonymous.
+pub fn uploader_user_id_for_stream(is_anonymous: bool, user_id: Option<i64>) -> Option<i32> {
+    if is_anonymous {
+        None
+    } else {
+        user_id.and_then(|id| i32::try_from(id).ok())
     }
 }
 
@@ -400,21 +412,49 @@ pub async fn lookup_import_media_id_with_fallback(
     row.map(|(id,)| crate::db::MediaId(id))
 }
 
+/// Resolve a caller-provided `meta_id` to a match entry from analyze search results.
+pub async fn resolve_import_meta_match(
+    pool: &PgPool,
+    meta_id: Option<&str>,
+    meta_type: &str,
+    search_title: &str,
+    parsed_year: Option<i32>,
+    matches: &[serde_json::Value],
+) -> Option<serde_json::Value> {
+    let mid = meta_id.filter(|s| !s.is_empty())?;
+    lookup_import_media_id_with_fallback(pool, mid, meta_type, search_title, parsed_year)
+        .await
+        .and_then(|id| {
+            matches
+                .iter()
+                .find(|m| m["media_id"].as_i64() == Some(i64::from(i32::from(id))))
+                .cloned()
+        })
+}
+
 /// External metadata search for import analyze UIs (Python `search_multiple_results`).
 pub async fn search_analyze_matches(
     state: &AppState,
+    user_id: Option<UserId>,
     title: &str,
     year: Option<i32>,
     meta_type: &str,
 ) -> Vec<serde_json::Value> {
+    let keys = crate::scrapers::metadata::resolve_metadata_keys(
+        &state.pool_ro,
+        user_id,
+        crate::scrapers::metadata::ResolvedMetadataKeys::server_keys_from_config(&state.config),
+    )
+    .await;
+
     crate::scrapers::metadata::search_import_matches(
         &state.http,
         &state.pool,
         title,
         year,
         meta_type,
-        state.config.tmdb_api_key.as_deref(),
-        state.config.tvdb_api_key.as_deref(),
+        keys.tmdb.as_deref(),
+        keys.tvdb.as_deref(),
         state.config.imdb_cinemeta_fallback_enabled,
     )
     .await
@@ -924,6 +964,99 @@ pub async fn insert_torrent_import_files(
     Ok(())
 }
 
+/// Infer season/episode numbers and episode titles from filenames (Python `utils/torrent.py`).
+pub fn enrich_series_file_episodes(file_rows: &mut [Value], torrent_name: &str) {
+    let parsed_torrent = parse_title(torrent_name);
+    let default_season = parsed_torrent.seasons.first().copied().unwrap_or(1);
+
+    for row in file_rows.iter_mut() {
+        let Some(obj) = row.as_object_mut() else {
+            continue;
+        };
+
+        let filename = obj
+            .get("filename")
+            .and_then(|v| v.as_str())
+            .or_else(|| obj.get("path").and_then(|v| v.as_str()))
+            .unwrap_or(torrent_name)
+            .to_string();
+
+        let has_season = obj.get("season_number").and_then(|v| v.as_i64()).is_some();
+        let has_episode = obj.get("episode_number").and_then(|v| v.as_i64()).is_some();
+
+        if !has_season || !has_episode {
+            let season_hint = obj
+                .get("season_number")
+                .and_then(|v| v.as_i64())
+                .map(|n| n as i32)
+                .unwrap_or(default_season);
+
+            if let Some(ep) = detect_episode(&filename, season_hint)
+                .or_else(|| detect_episode(torrent_name, season_hint))
+            {
+                obj.insert("season_number".to_string(), json!(ep.season));
+                obj.insert("episode_number".to_string(), json!(ep.episode));
+            } else {
+                let parsed_file = parse_title(&filename);
+                if !has_season {
+                    if let Some(s) = parsed_file.seasons.first() {
+                        obj.insert("season_number".to_string(), json!(s));
+                    }
+                }
+                if !has_episode {
+                    if let Some(e) = parsed_file.episodes.first() {
+                        obj.insert("episode_number".to_string(), json!(e));
+                    }
+                }
+            }
+        }
+
+        let has_title = obj
+            .get("episode_title")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.trim().is_empty());
+        if !has_title {
+            // Use PTT's episode_title (text between SxxExx and first release
+            // token).  PTT's `title` is intentionally NOT used — for SxxExx
+            // filenames it returns the show name, not the per-episode title.
+            if let Some(ep_title) = parse_title(&filename).episode_title {
+                obj.insert("episode_title".to_string(), json!(ep_title));
+            }
+        }
+    }
+}
+
+/// Replace auto/filename placeholders, but keep real editorial titles (Python parity).
+fn should_replace_episode_title(
+    current_title: Option<&str>,
+    proposed_title: &str,
+    filename: Option<&str>,
+    episode_number: i32,
+) -> bool {
+    let cleaned_current = current_title.unwrap_or("").trim();
+    if cleaned_current.is_empty() {
+        return true;
+    }
+    if cleaned_current == proposed_title {
+        return false;
+    }
+    if let Some(fname) = filename.map(str::trim).filter(|s| !s.is_empty()) {
+        if cleaned_current.eq_ignore_ascii_case(fname) {
+            return true;
+        }
+    }
+    static EP_NUM_RE: OnceLock<regex::Regex> = OnceLock::new();
+    static EP_GENERIC_RE: OnceLock<regex::Regex> = OnceLock::new();
+    let ep_num_re = EP_NUM_RE
+        .get_or_init(|| regex::Regex::new(&format!(r"(?i)^Episode\s+{episode_number}$")).unwrap());
+    let ep_generic_re =
+        EP_GENERIC_RE.get_or_init(|| regex::Regex::new(r"(?i)^Episode\s+\d+$").unwrap());
+    if ep_num_re.is_match(cleaned_current) || ep_generic_re.is_match(cleaned_current) {
+        return true;
+    }
+    false
+}
+
 /// Extract an ISO `YYYY-MM-DD` date from a torrent/file name. Supports
 /// `DD.MM.YYYY`, `YYYY.MM.DD` and `.`/`-`/`_`/space separators.
 pub fn extract_iso_date(text: &str) -> Option<String> {
@@ -1128,7 +1261,10 @@ pub async fn insert_torrent_stream_row(
     file_count: i32,
     parsed: &crate::parser::ParsedTitle,
     media_id: Option<i64>,
+    meta_type: &str,
     is_public: bool,
+    uploader: Option<&str>,
+    uploader_user_id: Option<i32>,
     torrent_type: TorrentType,
     torrent_file: Option<&[u8]>,
 ) -> Result<i32, sqlx::Error> {
@@ -1136,6 +1272,8 @@ pub async fn insert_torrent_stream_row(
     let mut base =
         crate::db::StreamStoreBase::from_parsed(name.to_string(), source.to_string(), parsed);
     base.is_public = is_public;
+    base.uploader = uploader.map(str::to_string);
+    base.uploader_user_id = uploader_user_id;
 
     let stream = crate::db::TorrentStoreInput {
         base,
@@ -1148,12 +1286,13 @@ pub async fn insert_torrent_stream_row(
         files: vec![],
     };
 
+    let media_type = MediaType::from_wire(meta_type).unwrap_or(MediaType::Movie);
     let opts = if let Some(mid) = media_id {
-        crate::db::StoreStreamOpts::user_import(crate::db::MediaId(mid as i32), MediaType::Movie)
+        crate::db::StoreStreamOpts::user_import(crate::db::MediaId(mid as i32), media_type)
     } else {
         crate::db::StoreStreamOpts {
             media_id: crate::db::MediaId(0),
-            media_type: MediaType::Movie,
+            media_type,
             season: None,
             episode: None,
             episode_end: None,
@@ -1221,21 +1360,55 @@ pub async fn ensure_series_episode_metadata(
             .and_then(|v| v.as_i64())
             .map(|n| n as i32)
             .unwrap_or((idx as i32) + 1);
+        let filename = f.get("filename").and_then(|v| v.as_str());
+        // Guard: if the stored episode_title is just the series name (happens
+        // when old data was enriched before the PTT episode_title fix), treat
+        // it as absent so we fall back to "Episode N" rather than polluting
+        // every episode with the show title.
+        let norm = |s: &str| {
+            s.chars()
+                .map(|c| if matches!(c, '.' | '_') { ' ' } else { c })
+                .collect::<String>()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase()
+        };
         let episode_title = f
             .get("episode_title")
             .and_then(|v| v.as_str())
             .filter(|s| !s.trim().is_empty())
+            .filter(|s| norm(s) != norm(fallback_title))
             .map(str::to_string)
-            .or_else(|| {
-                f.get("filename")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string)
-            })
             .unwrap_or_else(|| format!("Episode {episode_number}"));
         let air_date = f
             .get("release_date")
             .and_then(|v| v.as_str())
             .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+
+        let existing_title: Option<String> = sqlx::query_scalar(
+            "SELECT e.title FROM episode e \
+             JOIN season s ON e.season_id = s.id \
+             JOIN series_metadata sm ON s.series_id = sm.id \
+             WHERE sm.media_id = $1 AND s.season_number = $2 AND e.episode_number = $3",
+        )
+        .bind(media_id as i32)
+        .bind(season_number)
+        .bind(episode_number)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+
+        let title_to_store = if should_replace_episode_title(
+            existing_title.as_deref(),
+            &episode_title,
+            filename,
+            episode_number,
+        ) {
+            episode_title
+        } else {
+            existing_title.unwrap_or(episode_title)
+        };
 
         let season_id: Option<i32> = sqlx::query_scalar(
             "INSERT INTO season (series_id, season_number, name, episode_count) \
@@ -1265,7 +1438,7 @@ pub async fn ensure_series_episode_metadata(
         )
         .bind(season_id)
         .bind(episode_number)
-        .bind(&episode_title)
+        .bind(&title_to_store)
         .bind(air_date)
         .execute(pool)
         .await
@@ -1349,6 +1522,9 @@ pub struct TorrentImportPersist<'a> {
     pub prefetch: &'a crate::scrapers::media_resolve::ImportMetadataCache,
     pub torrent_type: TorrentType,
     pub torrent_file: Option<&'a [u8]>,
+    pub uploader: Option<&'a str>,
+    /// Maps to `stream.uploader_user_id` — set only for non-anonymous contributions.
+    pub uploader_user_id: Option<i32>,
 }
 
 /// Persist a torrent stream and all of its links in one place: the stream +
@@ -1370,7 +1546,10 @@ pub async fn persist_torrent_import(
         input.file_count,
         input.parsed,
         input.media_id,
+        input.meta_type,
         input.is_public,
+        input.uploader,
+        input.uploader_user_id,
         input.torrent_type,
         input.torrent_file,
     )
@@ -1400,6 +1579,16 @@ pub async fn persist_torrent_import(
     // Organize episodes for user-created series (date/session ordering) before
     // any file/episode links are written, so both use the same numbers.
     let mut file_rows: Vec<Value> = input.file_rows.to_vec();
+    if input.meta_type == "series" {
+        if file_rows.is_empty() {
+            file_rows.push(json!({
+                "index": 0,
+                "filename": input.name,
+                "size": input.total_size,
+            }));
+        }
+        enrich_series_file_episodes(&mut file_rows, input.name);
+    }
     if let Some(mid) = input.media_id {
         organize_user_series_episodes(pool, mid, &mut file_rows, input.sports_category).await;
     }
@@ -1443,6 +1632,30 @@ mod tests {
         assert!(!should_auto_approve_import(false, false, false));
         assert!(!should_auto_approve_import(false, true, true));
         assert!(!should_auto_approve_import(false, false, true));
+    }
+
+    #[test]
+    fn uploader_user_id_omitted_for_anonymous_contributions() {
+        assert_eq!(uploader_user_id_for_stream(true, Some(42)), None);
+        assert_eq!(uploader_user_id_for_stream(false, Some(42)), Some(42));
+        assert_eq!(uploader_user_id_for_stream(false, None), None);
+    }
+
+    #[test]
+    fn enrich_series_file_episodes_detects_sxxexx_from_filename() {
+        let mut rows = vec![json!({
+            "index": 0,
+            "filename": "Brothers.and.Sisters.S01E04.Harini.vs.Jayshrees.Secret.2160p.mkv",
+            "size": 1000,
+        })];
+        enrich_series_file_episodes(&mut rows, "Brothers.and.Sisters.S01E04.2160p");
+        assert_eq!(rows[0]["season_number"], 1);
+        assert_eq!(rows[0]["episode_number"], 4);
+        assert_eq!(
+            rows[0]["episode_title"].as_str(),
+            Some("Harini vs Jayshrees Secret"),
+            "episode_title must be the actual episode name, not the series name"
+        );
     }
 
     #[test]

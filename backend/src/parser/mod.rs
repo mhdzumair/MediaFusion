@@ -30,6 +30,9 @@ use std::sync::OnceLock;
 #[derive(Debug, Default, Clone)]
 pub struct ParsedTitle {
     pub title: Option<String>,
+    /// Per-episode title (text between `SxxExx` marker and first release token).
+    /// `None` for movies and episodes without descriptive title text.
+    pub episode_title: Option<String>,
     pub year: Option<i32>,
     pub resolution: Option<String>,
     pub quality: Option<String>,
@@ -56,6 +59,7 @@ pub fn parse_title(raw: &str) -> ParsedTitle {
     let p = crate::ptt::parse(raw, true);
     ParsedTitle {
         title: Some(p.title),
+        episode_title: p.episode_title,
         year: p.year,
         resolution: p.resolution,
         quality: p.quality,

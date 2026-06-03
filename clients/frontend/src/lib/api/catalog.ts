@@ -67,6 +67,7 @@ export interface CatalogItemBase {
   poster?: string
   background?: string
   description?: string
+  release_date?: string
   runtime?: string
   genres: string[]
   // All ratings

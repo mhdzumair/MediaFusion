@@ -99,7 +99,7 @@ pub async fn search_by_title(
     year: Option<i32>,
     media_type: &str,
 ) -> Vec<Value> {
-    import_helpers::search_analyze_matches(state, title, year, media_type).await
+    import_helpers::search_analyze_matches(state, None, title, year, media_type).await
 }
 
 pub async fn resolve_external_id(
@@ -110,7 +110,7 @@ pub async fn resolve_external_id(
     year: Option<i32>,
 ) -> Option<Value> {
     let matches =
-        import_helpers::search_analyze_matches(state, fallback_title, year, media_type).await;
+        import_helpers::search_analyze_matches(state, None, fallback_title, year, media_type).await;
     if let Some(found) = matches
         .iter()
         .find(|m| {

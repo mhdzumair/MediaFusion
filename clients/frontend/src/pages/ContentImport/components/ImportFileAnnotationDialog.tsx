@@ -14,7 +14,6 @@ import { Switch } from '@/components/ui/switch'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Info,
   Play,
@@ -28,30 +27,15 @@ import {
   CheckSquare,
   Square,
   HelpCircle,
-  Search,
-  Film,
-  Tv,
   Link2,
-  X,
   Layers,
-  AlertCircle,
 } from 'lucide-react'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { useCombinedMetadataSearch, getBestExternalId, type CombinedSearchResult } from '@/hooks'
-import { useDebounce } from '@/hooks/useDebounce'
-import { userMetadataApi, type ImportProvider, type TorrentFile } from '@/lib/api'
+import { getBestExternalId, type CombinedSearchResult } from '@/hooks'
+import { type TorrentFile } from '@/lib/api'
+import { MetadataSearchPopover } from '@/components/metadata'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import type { FileAnnotation } from './types'
-
-// Provider options for manual ID input
-const PROVIDER_OPTIONS: { value: ImportProvider; label: string; placeholder: string; example: string }[] = [
-  { value: 'imdb', label: 'IMDB', placeholder: 'tt1234567', example: 'tt0111161' },
-  { value: 'tmdb', label: 'TMDB', placeholder: '278', example: '278' },
-  { value: 'tvdb', label: 'TVDB', placeholder: '81189', example: '81189' },
-  { value: 'mal', label: 'MAL', placeholder: '5114', example: '5114' },
-  { value: 'kitsu', label: 'Kitsu', placeholder: '1555', example: '1555' },
-]
 
 type AnnotationMode = 'episode' | 'multi-content'
 
@@ -72,9 +56,14 @@ interface ImportFileAnnotationDialogProps {
 }
 
 // Extract just the filename from a full path
-function getFilenameOnly(fullPath: string): string {
+function getFilenameOnly(fullPath?: string | null): string {
+  if (!fullPath) return ''
   const parts = fullPath.split('/')
   return parts[parts.length - 1] || fullPath
+}
+
+function resolveTorrentFilePath(file: TorrentFile): string {
+  return file.filename || file.path || ''
 }
 
 // Get folder structure (everything except the filename)
@@ -154,343 +143,6 @@ interface EditedFile extends FileAnnotation {
   isModified?: boolean
 }
 
-// Metadata search popover component for per-file linking
-// Uses combined search to search both internal DB and external providers
-function MetadataSearchPopover({
-  value,
-  onSelect,
-  onClear,
-  disabled,
-  metaType = 'movie',
-}: {
-  value?: { id: string; title: string; poster?: string; type?: string }
-  onSelect: (result: CombinedSearchResult) => void
-  onClear: () => void
-  disabled?: boolean
-  metaType?: 'movie' | 'series'
-}) {
-  const [open, setOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchYear, setSearchYear] = useState('')
-  const [showManualId, setShowManualId] = useState(false)
-  const [manualProvider, setManualProvider] = useState<ImportProvider>('imdb')
-  const [manualId, setManualId] = useState('')
-  const [isLoadingPreview, setIsLoadingPreview] = useState(false)
-  const [previewError, setPreviewError] = useState<string | null>(null)
-  const debouncedQuery = useDebounce(searchQuery, 300)
-  const trimmedSearchYear = searchYear.trim()
-  const parsedSearchYear = trimmedSearchYear ? Number(trimmedSearchYear) : undefined
-  const validSearchYear = Number.isFinite(parsedSearchYear) ? parsedSearchYear : undefined
-
-  const {
-    data: searchResults = [],
-    isLoading,
-    isFetching,
-  } = useCombinedMetadataSearch(
-    {
-      query: debouncedQuery,
-      type: metaType,
-      limit: 15,
-      year: validSearchYear,
-    },
-    { enabled: debouncedQuery.length >= 2 && !showManualId },
-  )
-
-  const handleSelect = useCallback(
-    (result: CombinedSearchResult) => {
-      onSelect(result)
-      setOpen(false)
-      setSearchQuery('')
-      setSearchYear('')
-      setShowManualId(false)
-    },
-    [onSelect],
-  )
-
-  // Handle manual ID submission - fetches metadata from provider
-  const handleManualIdSubmit = useCallback(async () => {
-    if (!manualId.trim()) return
-
-    setIsLoadingPreview(true)
-    setPreviewError(null)
-
-    try {
-      const preview = await userMetadataApi.previewImport({
-        provider: manualProvider,
-        external_id: manualId.trim(),
-        media_type: metaType,
-      })
-
-      const manualResult: CombinedSearchResult = {
-        id: `manual-${manualProvider}-${manualId.trim()}`,
-        title: preview.title,
-        year: preview.year,
-        poster: preview.poster,
-        type: metaType,
-        source: 'external',
-        imdb_id: preview.imdb_id,
-        tmdb_id: preview.tmdb_id,
-        tvdb_id: preview.tvdb_id,
-        external_id: preview.imdb_id || (preview.tmdb_id ? `tmdb:${preview.tmdb_id}` : manualId.trim()),
-        provider: manualProvider,
-        description: preview.description,
-      }
-
-      onSelect(manualResult)
-      setOpen(false)
-      setShowManualId(false)
-      setManualId('')
-      setManualProvider('imdb')
-    } catch (error) {
-      setPreviewError(error instanceof Error ? error.message : 'Failed to fetch metadata')
-    } finally {
-      setIsLoadingPreview(false)
-    }
-  }, [manualId, manualProvider, metaType, onSelect])
-
-  const currentProviderOption = PROVIDER_OPTIONS.find((p) => p.value === manualProvider)
-
-  if (value?.id) {
-    return (
-      <div className="flex items-center gap-1.5 p-1.5 rounded border border-primary/30 bg-primary/5">
-        {/* Clear button on the LEFT for visibility */}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-5 w-5 flex-shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-          onClick={onClear}
-          disabled={disabled}
-          title="Remove link"
-        >
-          <X className="h-3 w-3" />
-        </Button>
-        {value.poster ? (
-          <img src={value.poster} alt="" className="w-6 h-8 rounded object-cover flex-shrink-0" />
-        ) : (
-          <div className="w-6 h-8 rounded bg-muted flex items-center justify-center flex-shrink-0">
-            {value.type === 'series' ? (
-              <Tv className="h-3 w-3 text-muted-foreground" />
-            ) : (
-              <Film className="h-3 w-3 text-muted-foreground" />
-            )}
-          </div>
-        )}
-        <span className="text-xs truncate flex-1 min-w-0">{value.title}</span>
-      </div>
-    )
-  }
-
-  return (
-    <Popover
-      open={open}
-      onOpenChange={(isOpen) => {
-        setOpen(isOpen)
-        if (!isOpen) {
-          setShowManualId(false)
-        }
-      }}
-    >
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 w-full justify-start text-xs text-muted-foreground"
-          disabled={disabled}
-        >
-          <Search className="h-3 w-3 mr-1.5" />
-          Link to metadata...
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        className="w-[calc(100vw-2rem)] sm:w-[300px] p-0 overflow-hidden flex flex-col"
-        align="start"
-        style={{ height: '380px', maxHeight: 'calc(var(--radix-popover-content-available-height) - 10px)' }}
-      >
-        {showManualId ? (
-          // Manual ID input mode
-          <div className="p-2 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium">Enter ID</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-[10px] px-2"
-                onClick={() => {
-                  setShowManualId(false)
-                  setPreviewError(null)
-                }}
-                disabled={isLoadingPreview}
-              >
-                Back
-              </Button>
-            </div>
-
-            {/* Provider selector */}
-            <Select value={manualProvider} onValueChange={(v) => setManualProvider(v as ImportProvider)}>
-              <SelectTrigger className="h-7 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PROVIDER_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {/* ID input */}
-            <Input
-              placeholder={currentProviderOption?.placeholder || 'Enter ID'}
-              value={manualId}
-              onChange={(e) => {
-                setManualId(e.target.value)
-                setPreviewError(null)
-              }}
-              className="h-7 text-xs"
-              autoFocus
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Example: <code className="bg-muted px-0.5 rounded">{currentProviderOption?.example}</code>
-            </p>
-
-            {/* Error message */}
-            {previewError && (
-              <div className="flex items-start gap-1.5 p-1.5 rounded bg-destructive/10 text-destructive text-[10px]">
-                <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                <span>{previewError}</span>
-              </div>
-            )}
-
-            <Button
-              className="w-full h-7 text-xs"
-              size="sm"
-              onClick={handleManualIdSubmit}
-              disabled={!manualId.trim() || isLoadingPreview}
-            >
-              {isLoadingPreview ? (
-                <>
-                  <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                  Fetching...
-                </>
-              ) : (
-                <>
-                  <Link2 className="h-3 w-3 mr-1.5" />
-                  Fetch & Link
-                </>
-              )}
-            </Button>
-          </div>
-        ) : (
-          // Search mode
-          <>
-            <div className="p-2 border-b space-y-1.5 shrink-0">
-              <div className="flex gap-1.5">
-                <Input
-                  placeholder="Search metadata..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-8 text-sm"
-                  autoFocus
-                />
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={1878}
-                  max={9999}
-                  step={1}
-                  placeholder="Year"
-                  value={searchYear}
-                  onChange={(e) => setSearchYear(e.target.value)}
-                  className="h-8 w-20 text-sm shrink-0"
-                />
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full h-6 text-[10px] text-muted-foreground hover:text-foreground"
-                onClick={() => setShowManualId(true)}
-              >
-                Enter ID manually
-              </Button>
-            </div>
-            <ScrollArea className="flex-1 min-h-0">
-              {isLoading && searchResults.length === 0 && (
-                <div className="flex items-center justify-center py-6">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                </div>
-              )}
-              {!isLoading && !isFetching && searchQuery.length >= 2 && searchResults.length === 0 && (
-                <div className="py-4 text-center">
-                  <p className="text-xs text-muted-foreground mb-2">No results</p>
-                  <Button variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => setShowManualId(true)}>
-                    Enter ID manually
-                  </Button>
-                </div>
-              )}
-              {!isLoading && searchQuery.length < 2 && (
-                <div className="py-6 text-center text-xs text-muted-foreground">
-                  Type at least 2 characters to search
-                </div>
-              )}
-              {searchResults.length > 0 && (
-                <div className="p-1">
-                  {isFetching && (
-                    <div className="flex items-center justify-center py-2 text-xs text-muted-foreground gap-1.5">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      <span>Loading more...</span>
-                    </div>
-                  )}
-                  {searchResults.map((result) => (
-                    <button
-                      key={result.id}
-                      onClick={() => handleSelect(result)}
-                      className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-muted cursor-pointer text-left"
-                    >
-                      {result.poster ? (
-                        <img src={result.poster} alt="" className="w-8 h-12 rounded object-cover flex-shrink-0" />
-                      ) : (
-                        <div className="w-8 h-12 rounded bg-muted flex items-center justify-center flex-shrink-0">
-                          {result.type === 'series' ? (
-                            <Tv className="h-4 w-4 text-muted-foreground" />
-                          ) : (
-                            <Film className="h-4 w-4 text-muted-foreground" />
-                          )}
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{result.title}</p>
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          {result.year && <span>{result.year}</span>}
-                          <Badge variant="outline" className="text-[10px] px-1 py-0">
-                            {result.type}
-                          </Badge>
-                          {result.source === 'internal' ? (
-                            <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700">
-                              In Library
-                            </Badge>
-                          ) : (
-                            result.provider && (
-                              <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                {result.provider.toUpperCase()}
-                              </Badge>
-                            )
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-          </>
-        )}
-      </PopoverContent>
-    </Popover>
-  )
-}
-
 export function ImportFileAnnotationDialog({
   open,
   onOpenChange,
@@ -513,7 +165,7 @@ export function ImportFileAnnotationDialog({
     if (open && files.length > 0) {
       // Sort by filename
       const sorted = [...files].sort((a, b) =>
-        a.filename.localeCompare(b.filename, undefined, {
+        resolveTorrentFilePath(a).localeCompare(resolveTorrentFilePath(b), undefined, {
           numeric: true,
           sensitivity: 'base',
         }),
@@ -521,9 +173,10 @@ export function ImportFileAnnotationDialog({
       setEditedFiles(
         sorted.map((f, idx) => {
           const fileWithExtras = f as TorrentFile & { episode_title?: string; release_date?: string }
-          const inferredEpisode = detectEpisodeMetadata(f.filename)
+          const filePath = resolveTorrentFilePath(f)
+          const inferredEpisode = detectEpisodeMetadata(filePath)
           return {
-            filename: f.filename,
+            filename: getFilenameOnly(filePath) || filePath,
             size: f.size,
             index: f.index ?? idx,
             season_number: f.season_number ?? inferredEpisode.season_number ?? (isSports ? 1 : null),

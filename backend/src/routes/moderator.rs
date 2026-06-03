@@ -3,7 +3,7 @@
 /// Routes (prefix /api/v1/moderator/metadata):
 ///   GET  /                          → moderator_list_metadata
 ///   GET  /{media_id}                → moderator_get_metadata
-///   POST /search-external           → moderator_search_external_metadata   [501]
+///   POST /search/matches              → moderator_search_media_matches
 ///   POST /{media_id}/fetch-external → moderator_fetch_external_metadata    [501]
 ///   POST /{media_id}/apply-external → moderator_apply_external_metadata    [501]
 ///   POST /{media_id}/migrate-id     → moderator_migrate_metadata_id
@@ -487,21 +487,12 @@ pub async fn moderator_get_metadata(
 struct ExternalMetaBody {
     provider: Option<String>,
     external_id: Option<String>,
-    title: Option<String>,
-    year: Option<i32>,
-    #[serde(rename = "media_type")]
-    media_type: Option<String>,
-}
-
-/// Resolve the TMDB server key (no user lookup — moderator context uses server key directly).
-fn get_server_tmdb_key(state: &crate::state::AppState) -> Option<String> {
-    state.config.tmdb_api_key.clone()
 }
 
 // ─── Moderator external metadata handlers ─────────────────────────────────────
 
-/// POST /api/v1/moderator/metadata/search-external
-pub async fn moderator_search_external_metadata(
+/// POST /api/v1/moderator/metadata/search/matches
+pub async fn moderator_search_media_matches(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     body: Option<Json<Value>>,
@@ -511,57 +502,48 @@ pub async fn moderator_search_external_metadata(
     }
 
     let body = body.map(|b| b.0).unwrap_or_default();
-    let params: ExternalMetaBody = match serde_json::from_value(body) {
-        Ok(p) => p,
-        Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"detail": "Invalid request body"})),
-            )
-                .into_response();
-        }
-    };
+    let title = body["title"]
+        .as_str()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string);
+    let external_id = body["external_id"]
+        .as_str()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string);
+    let year = body["year"].as_i64().map(|y| y as i32);
+    let media_type = body["media_type"].as_str().unwrap_or("movie");
+    let limit = body["limit"].as_u64().unwrap_or(10) as usize;
 
-    let provider = params.provider.as_deref().unwrap_or("imdb");
-    let media_type = params.media_type.as_deref().unwrap_or("movie");
-    let title = match params.title {
-        Some(ref t) if !t.is_empty() => t.clone(),
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"detail": "title is required"})),
-            )
-                .into_response()
-        }
-    };
-
-    if provider == "tmdb" && get_server_tmdb_key(&state).is_none() {
+    if title.is_none() && external_id.is_none() {
         return (
-            StatusCode::PRECONDITION_FAILED,
-            Json(json!({"code": "tmdb_key_required", "message": "TMDB API key not configured on server."})),
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "title or external_id is required"})),
         )
             .into_response();
     }
 
-    let mut results = crate::scrapers::metadata::search_external_for_provider(
+    let results = crate::scrapers::metadata::search_media_matches(
         &state.http,
         &state.pool_ro,
-        provider,
-        &title,
-        params.year,
-        media_type,
-        state.config.tmdb_api_key.as_deref(),
-        state.config.tvdb_api_key.as_deref(),
-        state.config.imdb_cinemeta_fallback_enabled,
+        crate::scrapers::metadata::MediaMatchSearchOptions {
+            title: title.as_deref(),
+            year,
+            external_id: external_id.as_deref(),
+            media_type,
+            limit,
+            user_id: None,
+            include_user_content: false,
+            include_official: true,
+            include_catalog: true,
+            include_external: true,
+            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
+            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+            cinemeta_fallback_enabled: state.config.imdb_cinemeta_fallback_enabled,
+        },
     )
     .await;
-
-    if let Some(filter_year) = params.year {
-        results.retain(|r| match r.get("year").and_then(|v| v.as_i64()) {
-            Some(ry) => (ry - filter_year as i64).abs() <= 1,
-            None => true,
-        });
-    }
 
     Json(json!({"results": results})).into_response()
 }

@@ -28,7 +28,7 @@ use super::import_helpers::{
     fetch_user_info, is_adult_content, notify_pending_contribution, resolve_uploader_identity,
     should_auto_approve_import,
 };
-use crate::{parser, state::AppState};
+use crate::{db::UserId, parser, state::AppState};
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -296,13 +296,16 @@ pub async fn analyze_nzb_file(
     headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
 
     let mut file_bytes: Option<Bytes> = None;
     let mut meta_type = String::from("movie");
@@ -330,7 +333,7 @@ pub async fn analyze_nzb_file(
         }
     };
 
-    analyze_nzb_bytes(&state, &bytes, &meta_type).await
+    analyze_nzb_bytes(&state, &bytes, &meta_type, UserId::from_auth_id(user_id)).await
 }
 
 #[derive(Deserialize)]
@@ -344,13 +347,16 @@ pub async fn analyze_nzb_url(
     headers: HeaderMap,
     Json(body): Json<NzbUrlBody>,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
 
     let resp = match state
         .http
@@ -381,10 +387,15 @@ pub async fn analyze_nzb_url(
     };
 
     let meta_type = body.meta_type.as_deref().unwrap_or("movie").to_string();
-    analyze_nzb_bytes(&state, &bytes, &meta_type).await
+    analyze_nzb_bytes(&state, &bytes, &meta_type, UserId::from_auth_id(user_id)).await
 }
 
-async fn analyze_nzb_bytes(state: &Arc<AppState>, bytes: &Bytes, meta_type: &str) -> Response {
+async fn analyze_nzb_bytes(
+    state: &Arc<AppState>,
+    bytes: &Bytes,
+    meta_type: &str,
+    user_id: Option<UserId>,
+) -> Response {
     let info = match parse_nzb(bytes.as_ref()) {
         Ok(i) => i,
         Err(e) => {
@@ -401,9 +412,14 @@ async fn analyze_nzb_bytes(state: &Arc<AppState>, bytes: &Bytes, meta_type: &str
 
     let parsed = parser::parse_title(&info.title);
     let search_title = parsed.title.as_deref().unwrap_or(&info.title);
-    let matches =
-        super::import_helpers::search_analyze_matches(state, search_title, parsed.year, meta_type)
-            .await;
+    let matches = super::import_helpers::search_analyze_matches(
+        state,
+        user_id,
+        search_title,
+        parsed.year,
+        meta_type,
+    )
+    .await;
 
     (
         StatusCode::OK,
@@ -452,9 +468,14 @@ pub async fn analyze_nzb_url_for_bot(
     };
     let parsed = parser::parse_title(&info.title);
     let search_title = parsed.title.as_deref().unwrap_or(&info.title);
-    let matches =
-        super::import_helpers::search_analyze_matches(state, search_title, parsed.year, meta_type)
-            .await;
+    let matches = super::import_helpers::search_analyze_matches(
+        state,
+        None,
+        search_title,
+        parsed.year,
+        meta_type,
+    )
+    .await;
     let mut resp = nzb_info_to_response(&info, false, matches, &parsed);
     resp["success"] = json!(true);
     resp["parsed_title"] = json!(parsed.title);

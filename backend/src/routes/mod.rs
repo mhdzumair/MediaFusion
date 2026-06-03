@@ -334,7 +334,6 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/metadata/reference/parental-certificates", get(content::reference::list_parental_certificates))
         // ── User metadata (must be before /{media_id} catch-all) ─────────────
         .route("/api/v1/metadata/user", get(content::user_metadata::list_user_metadata).post(content::user_metadata::create_user_metadata))
-        .route("/api/v1/metadata/user/search/all", get(content::user_metadata::search_all_metadata))
         .route("/api/v1/metadata/user/import", post(content::user_metadata::import_from_external))
         .route("/api/v1/metadata/user/{media_id}", get(content::user_metadata::get_user_metadata).put(content::user_metadata::update_user_metadata).delete(content::user_metadata::delete_user_metadata))
         .route("/api/v1/metadata/user/{media_id}/seasons", post(content::user_metadata::add_season_to_series))
@@ -343,10 +342,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/metadata/user/{media_id}/episodes/{episode_id}/admin", delete(content::user_metadata::admin_delete_episode))
         .route("/api/v1/metadata/user/{media_id}/seasons/{season_number}", delete(content::user_metadata::delete_season))
         .route("/api/v1/metadata/user/{media_id}/seasons/{season_number}/admin", delete(content::user_metadata::admin_delete_season))
-        .route("/api/v1/metadata/user/import/preview", post(content::user_metadata::import_user_metadata_preview))
         // ── Metadata operations ───────────────────────────────────────────────
         .route("/api/v1/metadata/search", get(content::metadata_ops::search_metadata))
-        .route("/api/v1/metadata/search-external", post(content::metadata_ops::search_external_metadata))
+        .route("/api/v1/metadata/search/matches", post(content::metadata_ops::search_media_matches_metadata))
         .route("/api/v1/metadata/{media_id}/refresh", post(content::metadata_ops::refresh_metadata))
         .route("/api/v1/metadata/{media_id}/link", post(content::metadata_ops::link_external_id))
         .route("/api/v1/metadata/{media_id}/link-external", post(content::metadata_ops::link_external_id))
@@ -635,7 +633,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/telegram/migrate/bulk", post(admin_scrapers::migrate_bulk_streams))
         // ── Moderator metadata ────────────────────────────────────────────────
         .route("/api/v1/moderator/metadata", get(moderator::moderator_list_metadata))
-        .route("/api/v1/moderator/metadata/search-external", post(moderator::moderator_search_external_metadata))
+        .route("/api/v1/moderator/metadata/search/matches", post(moderator::moderator_search_media_matches))
         .route("/api/v1/moderator/metadata/{media_id}", get(moderator::moderator_get_metadata))
         .route("/api/v1/moderator/metadata/{media_id}/fetch-external", post(moderator::moderator_fetch_external_metadata))
         .route("/api/v1/moderator/metadata/{media_id}/apply-external", post(moderator::moderator_apply_external_metadata))

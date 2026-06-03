@@ -14,15 +14,18 @@ pub struct MediaCandidate {
     pub imdb_id: Option<String>,
     pub tmdb_id: Option<String>,
     pub tvdb_id: Option<String>,
+    pub mal_id: Option<String>,
+    pub kitsu_id: Option<String>,
 }
 
 /// Full-text search for media candidates matching `title` and `media_type`.
 /// Returns up to 12 candidates ordered by popularity, with all known external IDs.
-/// Used for metadata enrichment in the missing-torrent import flow.
+/// When `year` is set, results are limited to ±1 year and exact-year matches rank first.
 pub async fn search_media_candidates(
     pool: &PgPool,
     media_type: &str,
     title: &str,
+    year: Option<i32>,
 ) -> Vec<MediaCandidate> {
     let Some(mt) = MediaType::from_wire(media_type) else {
         return vec![];
@@ -30,6 +33,16 @@ pub async fn search_media_candidates(
 
     sqlx::query_as::<_, MediaCandidate>(
         r#"
+        WITH matched AS (
+            SELECT m.id
+            FROM media m
+            WHERE m.type = $1
+              AND m.title_tsv @@ plainto_tsquery('simple', $2)
+            UNION
+            SELECT at.media_id AS id
+            FROM aka_title at
+            WHERE at.title_tsv @@ plainto_tsquery('simple', $2)
+        )
         SELECT
             m.id AS media_id,
             m.title,
@@ -37,27 +50,35 @@ pub async fn search_media_candidates(
             EXTRACT(YEAR FROM m.end_date)::int AS end_year,
             MAX(CASE WHEN mei.provider = 'imdb' THEN mei.external_id END) AS imdb_id,
             MAX(CASE WHEN mei.provider = 'tmdb' THEN mei.external_id END) AS tmdb_id,
-            MAX(CASE WHEN mei.provider = 'tvdb' THEN mei.external_id END) AS tvdb_id
+            MAX(CASE WHEN mei.provider = 'tvdb' THEN mei.external_id END) AS tvdb_id,
+            MAX(CASE WHEN mei.provider = 'mal' THEN mei.external_id END) AS mal_id,
+            MAX(CASE WHEN mei.provider = 'kitsu' THEN mei.external_id END) AS kitsu_id
         FROM media m
+        INNER JOIN matched mt ON mt.id = m.id
         LEFT JOIN media_external_id mei
                ON mei.media_id = m.id
-              AND mei.provider IN ('imdb', 'tmdb', 'tvdb')
+              AND mei.provider IN ('imdb', 'tmdb', 'tvdb', 'mal', 'kitsu')
         WHERE m.type = $1
           AND (
-              m.title_tsv @@ plainto_tsquery('simple', $2)
-              OR EXISTS (
-                  SELECT 1 FROM aka_title at
-                  WHERE at.media_id = m.id
-                    AND at.title_tsv @@ plainto_tsquery('simple', $2)
-              )
+              $3::int IS NULL
+              OR (m.year IS NOT NULL AND m.year BETWEEN $3 - 1 AND $3 + 1)
           )
         GROUP BY m.id, m.title, m.year, m.end_date
-        ORDER BY m.popularity DESC NULLS LAST, m.id
+        ORDER BY
+            CASE
+                WHEN $3::int IS NULL THEN 0
+                WHEN m.year = $3 THEN 0
+                WHEN m.year IS NOT NULL THEN 1
+                ELSE 2
+            END,
+            m.popularity DESC NULLS LAST,
+            m.id
         LIMIT 12
         "#,
     )
     .bind(mt)
     .bind(title)
+    .bind(year)
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {

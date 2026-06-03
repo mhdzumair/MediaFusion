@@ -3,8 +3,7 @@
 /// Routes (prefix /api/v1/metadata/user):
 ///   POST   /                                    → create_user_metadata
 ///   GET    /                                    → list_user_metadata
-///   GET    /search/all                          → search_all_metadata
-///   POST   /import/preview                      → preview_import_from_external  (stub)
+///   GET    /                                    → list_user_metadata
 ///   POST   /import                              → import_from_external          (stub)
 ///   GET    /{media_id}                          → get_user_metadata
 ///   PUT    /{media_id}                          → update_user_metadata
@@ -32,7 +31,7 @@ use serde_json::json;
 use sha2::Sha256;
 
 use crate::{
-    db::{EpisodeId, MediaId, MediaType, NudityStatus, SeasonId, SeriesId, UserRole},
+    db::{EpisodeId, MediaId, MediaType, NudityStatus, SeasonId, SeriesId, UserId, UserRole},
     state::AppState,
 };
 
@@ -674,110 +673,6 @@ pub async fn list_user_metadata(
         "pages": pages,
     }))
     .into_response()
-}
-
-/// GET /api/v1/metadata/user/search/all
-pub async fn search_all_metadata(
-    headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<SearchQuery>,
-) -> Response {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"detail": "Unauthorized"})),
-            )
-                .into_response()
-        }
-    };
-
-    let limit = params.limit.clamp(1, 50);
-    let pattern = format!("%{}%", params.query);
-
-    let mut sql = String::from("SELECT id FROM media WHERE title ILIKE $1");
-
-    if let Some(ref mt) = params.media_type {
-        match mt.as_str() {
-            "movie" => sql.push_str(" AND type = 'MOVIE'::media_type_enum"),
-            "series" => sql.push_str(" AND type = 'SERIES'::media_type_enum"),
-            "tv" => sql.push_str(" AND type = 'TV'::media_type_enum"),
-            _ => {}
-        }
-    }
-
-    if params.include_official {
-        sql.push_str(
-            " AND (is_user_created = false OR created_by_user_id = $2 OR is_public = true)",
-        );
-    } else {
-        sql.push_str(" AND created_by_user_id = $2");
-    }
-
-    sql.push_str(&format!(" ORDER BY total_streams DESC LIMIT {limit}"));
-
-    let ids: Vec<i64> = sqlx::query_scalar::<_, i64>(&sql)
-        .bind(&pattern)
-        .bind(user_id)
-        .fetch_all(&state.pool_ro)
-        .await
-        .unwrap_or_default();
-
-    let mut results = Vec::new();
-    for id in &ids {
-        let row = sqlx::query_as::<_, (String, Option<i32>, MediaType, bool, Option<i32>)>("SELECT title, year, type, is_user_created, created_by_user_id FROM media WHERE id = $1")
-                .bind(id)
-                .fetch_optional(&state.pool_ro)
-                .await
-                .ok()
-                .flatten();
-        if let Some((title, year, mtype, is_user, creator_id)) = row {
-            let poster: Option<String> = sqlx::query_scalar(
-                "SELECT url FROM media_image WHERE media_id = $1 AND image_type = 'poster' ORDER BY display_order ASC LIMIT 1",
-            )
-            .bind(id)
-            .fetch_optional(&state.pool_ro)
-            .await
-            .unwrap_or(None);
-
-            let ext_ids: Vec<(String, String)> = sqlx::query_as(
-                "SELECT provider, external_id FROM media_external_id WHERE media_id = $1",
-            )
-            .bind(id)
-            .fetch_all(&state.pool_ro)
-            .await
-            .unwrap_or_default();
-
-            let mut ext_map = serde_json::Map::new();
-            let mut canonical_id = format!("mf:{id}");
-            for (p, e) in &ext_ids {
-                let formatted = if p == "imdb" {
-                    e.clone()
-                } else {
-                    format!("{p}:{e}")
-                };
-                if p == "imdb" && canonical_id.starts_with("mf:") {
-                    canonical_id = formatted.clone();
-                }
-                ext_map.insert(p.clone(), json!(formatted));
-            }
-
-            results.push(json!({
-                "id": id,
-                "external_id": canonical_id,
-                "external_ids": serde_json::Value::Object(ext_map),
-                "title": title,
-                "year": year,
-                "type": mtype.as_wire(),
-                "poster": poster,
-                "is_user_created": is_user,
-                "is_own": creator_id == Some(user_id as i32),
-            }));
-        }
-    }
-
-    Json(json!({"results": results, "total": results.len()})).into_response()
 }
 
 /// GET /api/v1/metadata/user/{media_id}
@@ -1657,6 +1552,98 @@ pub async fn admin_delete_episode(
     StatusCode::NO_CONTENT.into_response()
 }
 
+enum DeleteSeasonError {
+    SeriesNotFound,
+    SeasonNotFound(i32),
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for DeleteSeasonError {
+    fn from(e: sqlx::Error) -> Self {
+        DeleteSeasonError::Database(e)
+    }
+}
+
+/// Remove a season, its episodes, and file links for that season number.
+async fn delete_series_season(
+    pool: &sqlx::PgPool,
+    media_id: MediaId,
+    season_number: i32,
+) -> Result<(), DeleteSeasonError> {
+    let mut tx = pool.begin().await?;
+
+    let series_id: SeriesId =
+        sqlx::query_scalar("SELECT id FROM series_metadata WHERE media_id = $1")
+            .bind(media_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(DeleteSeasonError::SeriesNotFound)?;
+
+    let season_id: SeasonId =
+        sqlx::query_scalar("SELECT id FROM season WHERE series_id = $1 AND season_number = $2")
+            .bind(series_id)
+            .bind(season_number)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(DeleteSeasonError::SeasonNotFound(season_number))?;
+
+    sqlx::query(
+        "DELETE FROM episode_image WHERE episode_id IN (SELECT id FROM episode WHERE season_id = $1)",
+    )
+    .bind(season_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM episode WHERE season_id = $1")
+        .bind(season_id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("DELETE FROM file_media_link WHERE media_id = $1 AND season_number = $2")
+        .bind(media_id)
+        .bind(season_number)
+        .execute(&mut *tx)
+        .await?;
+
+    let deleted = sqlx::query("DELETE FROM season WHERE id = $1")
+        .bind(season_id)
+        .execute(&mut *tx)
+        .await?;
+
+    if deleted.rows_affected() == 0 {
+        return Err(DeleteSeasonError::SeasonNotFound(season_number));
+    }
+
+    sqlx::query(
+        "UPDATE series_metadata SET \
+            total_seasons = (SELECT COUNT(*)::int FROM season WHERE series_id = $1), \
+            total_episodes = (SELECT COUNT(*)::int FROM episode e \
+                INNER JOIN season s ON s.id = e.season_id WHERE s.series_id = $1) \
+         WHERE id = $1",
+    )
+    .bind(series_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+fn delete_season_error_response(err: DeleteSeasonError) -> Response {
+    match err {
+        DeleteSeasonError::SeriesNotFound => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        DeleteSeasonError::SeasonNotFound(season_number) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": format!("Season {season_number} not found")})),
+        )
+            .into_response(),
+        DeleteSeasonError::Database(e) => {
+            tracing::error!("delete_series_season: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
 /// DELETE /api/v1/metadata/user/{media_id}/seasons/{season_number}
 pub async fn delete_season(
     headers: HeaderMap,
@@ -1699,55 +1686,10 @@ pub async fn delete_season(
         _ => {}
     }
 
-    let series_id: Option<SeriesId> =
-        sqlx::query_scalar("SELECT id FROM series_metadata WHERE media_id = $1")
-            .bind(media_id)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None);
-    let series_id = match series_id {
-        None => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        Some(sid) => sid,
-    };
-
-    let season_row: Option<(i64, i32)> = sqlx::query_as(
-        "SELECT id, episode_count FROM season WHERE series_id = $1 AND season_number = $2",
-    )
-    .bind(series_id)
-    .bind(season_number)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None);
-
-    let (season_id, ep_count) = match season_row {
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({"detail": format!("Season {} not found", season_number)})),
-            )
-                .into_response()
-        }
-        Some(r) => r,
-    };
-
-    if let Err(e) = sqlx::query("DELETE FROM season WHERE id = $1")
-        .bind(season_id)
-        .execute(&state.pool)
-        .await
-    {
-        tracing::error!("delete_season: {e}");
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    match delete_series_season(&state.pool, media_id, season_number).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => delete_season_error_response(e),
     }
-
-    let _ = sqlx::query(
-        "UPDATE series_metadata SET total_seasons = GREATEST(0, COALESCE(total_seasons, 1) - 1), total_episodes = GREATEST(0, COALESCE(total_episodes, $1) - $1) WHERE id = $2",
-    )
-    .bind(ep_count)
-    .bind(series_id)
-    .execute(&state.pool)
-    .await;
-
-    StatusCode::NO_CONTENT.into_response()
 }
 
 /// DELETE /api/v1/metadata/user/{media_id}/seasons/{season_number}/admin
@@ -1785,55 +1727,10 @@ pub async fn admin_delete_season(
             .into_response();
     }
 
-    let series_id: Option<SeriesId> =
-        sqlx::query_scalar("SELECT id FROM series_metadata WHERE media_id = $1")
-            .bind(media_id)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None);
-    let series_id = match series_id {
-        None => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        Some(sid) => sid,
-    };
-
-    let season_row: Option<(i64, i32)> = sqlx::query_as(
-        "SELECT id, episode_count FROM season WHERE series_id = $1 AND season_number = $2",
-    )
-    .bind(series_id)
-    .bind(season_number)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None);
-
-    let (season_id, ep_count) = match season_row {
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({"detail": format!("Season {} not found", season_number)})),
-            )
-                .into_response()
-        }
-        Some(r) => r,
-    };
-
-    if let Err(e) = sqlx::query("DELETE FROM season WHERE id = $1")
-        .bind(season_id)
-        .execute(&state.pool)
-        .await
-    {
-        tracing::error!("delete_season_admin: {e}");
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    match delete_series_season(&state.pool, media_id, season_number).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => delete_season_error_response(e),
     }
-
-    let _ = sqlx::query(
-        "UPDATE series_metadata SET total_seasons = GREATEST(0, COALESCE(total_seasons, 1) - 1), total_episodes = GREATEST(0, COALESCE(total_episodes, $1) - $1) WHERE id = $2",
-    )
-    .bind(ep_count)
-    .bind(series_id)
-    .execute(&state.pool)
-    .await;
-
-    StatusCode::NO_CONTENT.into_response()
 }
 
 // ─── Import request body ──────────────────────────────────────────────────────
@@ -1858,108 +1755,13 @@ fn validate_external_id(provider: &str, external_id: &str) -> Result<(), String>
     Ok(())
 }
 
-/// POST /api/v1/metadata/user/import/preview  (preview only, no DB writes)
-pub async fn import_user_metadata_preview(
-    headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<ImportFromExternalRequest>,
-) -> Response {
-    let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"detail": "Unauthorized"})),
-            )
-                .into_response()
-        }
-    };
-
-    if let Err(msg) = validate_external_id(&body.provider, &body.external_id) {
-        return (StatusCode::BAD_REQUEST, Json(json!({"detail": msg}))).into_response();
-    }
-
-    // Check if media already exists
-    let existing: Option<(i64, String, Option<i32>)> = sqlx::query_as(
-        r#"SELECT m.id, m.title, m.year FROM media m
-           JOIN media_external_id meid ON m.id = meid.media_id
-           WHERE meid.provider = $1 AND meid.external_id = $2
-           LIMIT 1"#,
-    )
-    .bind(&body.provider)
-    .bind(&body.external_id)
-    .fetch_optional(&state.pool_ro)
-    .await
-    .unwrap_or(None);
-
-    match existing {
-        Some((media_id, title, year)) => Json(json!({
-            "exists": true,
-            "media_id": media_id,
-            "title": title,
-            "year": year,
-            "provider": body.provider,
-            "external_id": body.external_id,
-            "media_type": body.media_type,
-            "message": "Media already exists in the database",
-        }))
-        .into_response(),
-        None => {
-            let tmdb_key = state.config.tmdb_api_key.as_deref();
-            let is_series = body.media_type.eq_ignore_ascii_case("series")
-                || body.media_type.eq_ignore_ascii_case("show");
-            match crate::scrapers::metadata::fetch_by_external_id_with_opts(
-                &state.http,
-                &body.provider,
-                &body.external_id,
-                is_series,
-                crate::scrapers::metadata::FetchCtx::with_tmdb_tvdb(
-                    tmdb_key,
-                    state.config.tvdb_api_key.as_deref(),
-                    state.config.imdb_cinemeta_fallback_enabled,
-                ),
-            )
-            .await
-            {
-                Some(details) => Json(json!({
-                    "exists": false,
-                    "media_id": null,
-                    "provider": body.provider,
-                    "external_id": body.external_id,
-                    "media_type": body.media_type,
-                    "preview": {
-                        "title": details.title,
-                        "year": details.year,
-                        "description": details.description,
-                        "poster_url": details.poster_url,
-                        "imdb_id": details.imdb_id,
-                        "tmdb_id": details.tmdb_id,
-                    },
-                    "message": "Media found. Use /import to create it.",
-                }))
-                .into_response(),
-                None => Json(json!({
-                    "exists": false,
-                    "media_id": null,
-                    "provider": body.provider,
-                    "external_id": body.external_id,
-                    "media_type": body.media_type,
-                    "preview": null,
-                    "message": "Media not found in external provider.",
-                }))
-                .into_response(),
-            }
-        }
-    }
-}
-
 /// POST /api/v1/metadata/user/import
 pub async fn import_from_external(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Json(body): Json<ImportFromExternalRequest>,
 ) -> Response {
-    let _user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
         None => {
             return (
@@ -1993,18 +1795,22 @@ pub async fn import_from_external(
             Json(media_json).into_response()
         }
         None => {
-            let tmdb_key = state.config.tmdb_api_key.as_deref();
             let is_series = body.media_type.eq_ignore_ascii_case("series")
                 || body.media_type.eq_ignore_ascii_case("show");
 
-            let ctx = crate::scrapers::metadata::FetchCtx {
-                tmdb_api_key: tmdb_key,
-                tvdb_api_key: state.config.tvdb_api_key.as_deref(),
-                mdblist_api_key: state.config.mdblist_api_key.as_deref(),
-                trakt_client_id: state.config.trakt_client_id.as_deref(),
-                trakt_client_secret: state.config.trakt_client_secret.as_deref(),
-                cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
-            };
+            let keys = crate::scrapers::metadata::resolve_metadata_keys(
+                &state.pool_ro,
+                Some(UserId::from(user_id)),
+                crate::scrapers::metadata::ResolvedMetadataKeys::server_keys_from_config(
+                    &state.config,
+                ),
+            )
+            .await;
+            let ctx = keys.fetch_ctx(
+                state.config.trakt_client_id.as_deref(),
+                state.config.trakt_client_secret.as_deref(),
+                state.config.imdb_cinemeta_fallback_enabled,
+            );
 
             let normalized = match crate::scrapers::metadata::fetch_normalized(
                 &state.http,

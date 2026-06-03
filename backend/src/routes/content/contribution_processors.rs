@@ -116,7 +116,7 @@ async fn process_torrent(
         .get("is_anonymous")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let (uploader_name, uploader_user_id) = resolve_uploader_identity(
+    let (uploader_name, _) = resolve_uploader_identity(
         is_anonymous,
         data_str(data, "anonymous_display_name"),
         username,
@@ -174,6 +174,17 @@ async fn process_torrent(
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
+    let mut file_rows = file_rows;
+    if effective_meta_type == "series" {
+        if file_rows.is_empty() {
+            file_rows.push(json!({
+                "index": 0,
+                "filename": name,
+                "size": data.get("total_size").and_then(|v| v.as_i64()),
+            }));
+        }
+        import_helpers::enrich_series_file_episodes(&mut file_rows, name);
+    }
     let prefetch = import_helpers::prefetch_torrent_import_metadata(
         &state.http,
         state.config.tmdb_api_key.as_deref(),
@@ -269,7 +280,7 @@ async fn process_torrent(
     base.is_dubbed = is_dubbed;
     base.is_subbed = is_subbed;
     base.uploader = Some(uploader_name.clone());
-    base.uploader_user_id = uploader_user_id.map(|id| id as i32);
+    base.uploader_user_id = import_helpers::uploader_user_id_for_stream(is_anonymous, user_id);
     base.is_public = data
         .get("is_public")
         .and_then(|v| v.as_bool())
@@ -340,6 +351,19 @@ async fn process_torrent(
         })?;
     }
 
+    if let Some(mid) = media_id {
+        if effective_meta_type == "series" {
+            let fallback = data_str(data, "title").unwrap_or(name);
+            import_helpers::ensure_series_episode_metadata(
+                &state.pool,
+                mid as i64,
+                &file_rows,
+                fallback,
+            )
+            .await;
+        }
+    }
+
     apply_contribution_stream_extras(state, stream_id, data, media_id, true).await?;
 
     Ok(ImportProcessResult {
@@ -404,7 +428,7 @@ async fn process_nzb(
         .get("is_anonymous")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let (uploader_name, uploader_user_id) = resolve_uploader_identity(
+    let (uploader_name, _) = resolve_uploader_identity(
         is_anonymous,
         data_str(data, "anonymous_display_name"),
         username,
@@ -422,7 +446,7 @@ async fn process_nzb(
         &parsed,
     );
     base.uploader = Some(uploader_name.clone());
-    base.uploader_user_id = uploader_user_id.map(|id| id as i32);
+    base.uploader_user_id = import_helpers::uploader_user_id_for_stream(is_anonymous, user_id);
 
     let normalized = crate::db::UsenetStoreInput {
         base,
@@ -484,7 +508,7 @@ async fn process_http(
         .get("is_anonymous")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let (uploader_name, uploader_user_id) = resolve_uploader_identity(
+    let (uploader_name, _) = resolve_uploader_identity(
         is_anonymous,
         data_str(data, "anonymous_display_name"),
         username,
@@ -518,7 +542,7 @@ async fn process_http(
         name: title.to_string(),
         source: "user_import".to_string(),
         uploader: Some(uploader_name.clone()),
-        uploader_user_id: uploader_user_id.map(|id| id as i32),
+        uploader_user_id: import_helpers::uploader_user_id_for_stream(is_anonymous, user_id),
         is_public: true,
         ..Default::default()
     };
@@ -605,7 +629,7 @@ async fn process_youtube(
         .get("is_anonymous")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let (uploader_name, uploader_user_id) = resolve_uploader_identity(
+    let (uploader_name, _) = resolve_uploader_identity(
         is_anonymous,
         data_str(data, "anonymous_display_name"),
         username,
@@ -618,7 +642,7 @@ async fn process_youtube(
         name: title.to_string(),
         source: "youtube".to_string(),
         uploader: Some(uploader_name.clone()),
-        uploader_user_id: uploader_user_id.map(|id| id as i32),
+        uploader_user_id: import_helpers::uploader_user_id_for_stream(is_anonymous, user_id),
         is_public: true,
         ..Default::default()
     };
@@ -719,7 +743,7 @@ async fn process_acestream(
         .get("is_anonymous")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let (uploader_name, uploader_user_id) = resolve_uploader_identity(
+    let (uploader_name, _) = resolve_uploader_identity(
         is_anonymous,
         data_str(data, "anonymous_display_name"),
         username,
@@ -732,7 +756,7 @@ async fn process_acestream(
         name: title.to_string(),
         source: "user_import".to_string(),
         uploader: Some(uploader_name.clone()),
-        uploader_user_id: uploader_user_id.map(|id| id as i32),
+        uploader_user_id: import_helpers::uploader_user_id_for_stream(is_anonymous, user_id),
         is_public: true,
         ..Default::default()
     };

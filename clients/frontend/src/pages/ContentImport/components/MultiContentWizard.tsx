@@ -25,7 +25,8 @@ import {
 import { cn } from '@/lib/utils'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useCombinedMetadataSearch, getBestExternalId, type CombinedSearchResult } from '@/hooks'
-import { userMetadataApi, type ImportProvider } from '@/lib/api'
+import { type ImportProvider } from '@/lib/api'
+import { fetchCombinedMatchByProviderId } from '../utils/importMetaLookup'
 import type { TorrentAnalyzeResponse } from '@/lib/api'
 import type { FileAnnotation } from './types'
 import type { ImportMode } from '@/lib/constants'
@@ -196,28 +197,7 @@ function MetadataSearchPopover({
     setPreviewError(null)
 
     try {
-      // Fetch metadata from the selected provider
-      const preview = await userMetadataApi.previewImport({
-        provider: manualProvider,
-        external_id: manualId.trim(),
-        media_type: metaType,
-      })
-
-      // Create result from preview
-      const manualResult: CombinedSearchResult = {
-        id: `manual-${manualProvider}-${manualId.trim()}`,
-        title: preview.title,
-        year: preview.year,
-        poster: preview.poster,
-        type: metaType,
-        source: 'external',
-        imdb_id: preview.imdb_id,
-        tmdb_id: preview.tmdb_id,
-        tvdb_id: preview.tvdb_id,
-        external_id: preview.imdb_id || (preview.tmdb_id ? `tmdb:${preview.tmdb_id}` : manualId.trim()),
-        provider: manualProvider,
-        description: preview.description,
-      }
+      const manualResult = await fetchCombinedMatchByProviderId(manualProvider, manualId.trim(), metaType)
 
       onSelect(manualResult)
       setOpen(false)
