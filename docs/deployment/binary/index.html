@@ -1914,7 +1914,8 @@
 
 
 <h1 id="direct-binary-deployment">Direct Binary Deployment<a class="headerlink" href="#direct-binary-deployment" title="Permanent link">¶</a></h1>
-<p>Run MediaFusion with zero container overhead. The API server and background worker are distributed as <strong>statically compiled musl binaries</strong> — no Docker, no runtime dependencies. You only need PostgreSQL and Redis.</p>
+<p>Run MediaFusion with zero container overhead. The API server and background worker are distributed as <strong>pre-built release binaries</strong> — no Docker, no runtime dependencies. You only need PostgreSQL and Redis.</p>
+<p>Linux builds are <strong>statically linked musl binaries</strong>. macOS and Windows builds are native release binaries produced with the same CI pipeline.</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">¶</a></h2>
 <ul>
 <li><strong>PostgreSQL 14+</strong> — primary database</li>
@@ -1923,7 +1924,50 @@
 </ul>
 <h2 id="step-1-download-the-binaries">Step 1: Download the binaries<a class="headerlink" href="#step-1-download-the-binaries" title="Permanent link">¶</a></h2>
 <p>Binaries are published as GitHub Release assets. Find the latest release at <a href="https://github.com/mhdzumair/MediaFusion/releases">github.com/mhdzumair/MediaFusion/releases</a>.</p>
-<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio"><input id="__tabbed_1_2" name="__tabbed_1" type="radio"><div class="tabbed-labels"><label for="__tabbed_1_1">Linux amd64</label><label for="__tabbed_1_2">Linux arm64</label></div>
+<p>Asset names follow <code>mediafusion-{api|worker}-{platform}-{arch}</code> (<code>.exe</code> on Windows).</p>
+<table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Architecture</th>
+<th>API asset</th>
+<th>Worker asset</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux</td>
+<td>amd64</td>
+<td><code>mediafusion-api-linux-amd64</code></td>
+<td><code>mediafusion-worker-linux-amd64</code></td>
+</tr>
+<tr>
+<td>Linux</td>
+<td>arm64</td>
+<td><code>mediafusion-api-linux-arm64</code></td>
+<td><code>mediafusion-worker-linux-arm64</code></td>
+</tr>
+<tr>
+<td>macOS</td>
+<td>amd64 (Intel)</td>
+<td><code>mediafusion-api-macos-amd64</code></td>
+<td><code>mediafusion-worker-macos-amd64</code></td>
+</tr>
+<tr>
+<td>macOS</td>
+<td>arm64 (Apple Silicon)</td>
+<td><code>mediafusion-api-macos-arm64</code></td>
+<td><code>mediafusion-worker-macos-arm64</code></td>
+</tr>
+<tr>
+<td>Windows</td>
+<td>amd64</td>
+<td><code>mediafusion-api-windows-amd64.exe</code></td>
+<td><code>mediafusion-worker-windows-amd64.exe</code></td>
+</tr>
+</tbody>
+</table>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:5"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio"><input id="__tabbed_1_2" name="__tabbed_1" type="radio"><input id="__tabbed_1_3" name="__tabbed_1" type="radio"><input id="__tabbed_1_4" name="__tabbed_1" type="radio"><input id="__tabbed_1_5" name="__tabbed_1" type="radio"><div class="tabbed-labels"><label for="__tabbed_1_1">Linux amd64</label><label for="__tabbed_1_2">Linux arm64</label><label for="__tabbed_1_3">macOS amd64 (Intel)</label><label for="__tabbed_1_4">macOS arm64 (Apple Silicon)</label><label for="__tabbed_1_5">Windows amd64</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nv">RELEASE</span><span class="o">=</span><span class="m">6</span>.0.0<span class="w">   </span><span class="c1"># replace with the latest release tag</span>
@@ -1951,55 +1995,141 @@
 </span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>chmod<span class="w"> </span>+x<span class="w"> </span>mediafusion-api<span class="w"> </span>mediafusion-worker
 </span></code></pre></div>
 </div>
+<div class="tabbed-block">
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nv">RELEASE</span><span class="o">=</span><span class="m">6</span>.0.0<span class="w">   </span><span class="c1"># replace with the latest release tag</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">ARCH</span><span class="o">=</span>amd64
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>curl<span class="w"> </span>-Lo<span class="w"> </span>mediafusion-api<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="s2">"https://github.com/mhdzumair/MediaFusion/releases/download/</span><span class="si">${</span><span class="nv">RELEASE</span><span class="si">}</span><span class="s2">/mediafusion-api-macos-</span><span class="si">${</span><span class="nv">ARCH</span><span class="si">}</span><span class="s2">"</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>curl<span class="w"> </span>-Lo<span class="w"> </span>mediafusion-worker<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="s2">"https://github.com/mhdzumair/MediaFusion/releases/download/</span><span class="si">${</span><span class="nv">RELEASE</span><span class="si">}</span><span class="s2">/mediafusion-worker-macos-</span><span class="si">${</span><span class="nv">ARCH</span><span class="si">}</span><span class="s2">"</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>chmod<span class="w"> </span>+x<span class="w"> </span>mediafusion-api<span class="w"> </span>mediafusion-worker
+</span></code></pre></div>
 </div>
+<div class="tabbed-block">
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nv">RELEASE</span><span class="o">=</span><span class="m">6</span>.0.0<span class="w">   </span><span class="c1"># replace with the latest release tag</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nv">ARCH</span><span class="o">=</span>arm64
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>curl<span class="w"> </span>-Lo<span class="w"> </span>mediafusion-api<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="s2">"https://github.com/mhdzumair/MediaFusion/releases/download/</span><span class="si">${</span><span class="nv">RELEASE</span><span class="si">}</span><span class="s2">/mediafusion-api-macos-</span><span class="si">${</span><span class="nv">ARCH</span><span class="si">}</span><span class="s2">"</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>curl<span class="w"> </span>-Lo<span class="w"> </span>mediafusion-worker<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="s2">"https://github.com/mhdzumair/MediaFusion/releases/download/</span><span class="si">${</span><span class="nv">RELEASE</span><span class="si">}</span><span class="s2">/mediafusion-worker-macos-</span><span class="si">${</span><span class="nv">ARCH</span><span class="si">}</span><span class="s2">"</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>chmod<span class="w"> </span>+x<span class="w"> </span>mediafusion-api<span class="w"> </span>mediafusion-worker
+</span></code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="language-powershell highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nv">$Release</span> <span class="p">=</span> <span class="s2">"6.0.0"</span>   <span class="c"># replace with the latest release tag</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nv">$Base</span> <span class="p">=</span> <span class="s2">"https://github.com/mhdzumair/MediaFusion/releases/download/$Release"</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="nb">Invoke-WebRequest</span> <span class="n">-Uri</span> <span class="s2">"$Base/mediafusion-api-windows-amd64.exe"</span> <span class="n">-OutFile</span> <span class="n">mediafusion-api</span><span class="p">.</span><span class="n">exe</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="nb">Invoke-WebRequest</span> <span class="n">-Uri</span> <span class="s2">"$Base/mediafusion-worker-windows-amd64.exe"</span> <span class="n">-OutFile</span> <span class="n">mediafusion-worker</span><span class="p">.</span><span class="n">exe</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">macOS Gatekeeper</p>
+<p>On first launch, macOS may block unsigned binaries. Allow them in <strong>System Settings → Privacy &amp; Security</strong>, or remove the quarantine attribute:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>xattr<span class="w"> </span>-dr<span class="w"> </span>com.apple.quarantine<span class="w"> </span>mediafusion-api<span class="w"> </span>mediafusion-worker
+</span></code></pre></div>
 </div>
 <h2 id="step-2-configure-environment-variables">Step 2: Configure environment variables<a class="headerlink" href="#step-2-configure-environment-variables" title="Permanent link">¶</a></h2>
 <p>Create a <code>.env</code> file with the required settings:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Required</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">HOST_URL</span><span class="o">=</span>https://your-domain.com
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nv">SECRET_KEY</span><span class="o">=</span><span class="k">$(</span>openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> </span><span class="m">16</span><span class="k">)</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="nv">API_PASSWORD</span><span class="o">=</span>your_strong_password
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nv">CONTACT_EMAIL</span><span class="o">=</span>you@example.com
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nv">POSTGRES_URI</span><span class="o">=</span>postgresql://user:password@localhost:5432/mediafusion
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="c1"># Redis</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="nv">REDIS_URL</span><span class="o">=</span>redis://localhost:6379
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Required</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nv">HOST_URL</span><span class="o">=</span>https://your-domain.com
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nv">SECRET_KEY</span><span class="o">=</span><span class="k">$(</span>openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> </span><span class="m">16</span><span class="k">)</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="nv">API_PASSWORD</span><span class="o">=</span>your_strong_password
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="nv">CONTACT_EMAIL</span><span class="o">=</span>you@example.com
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="nv">POSTGRES_URI</span><span class="o">=</span>postgresql://user:password@localhost:5432/mediafusion
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="c1"># Redis</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="nv">REDIS_URL</span><span class="o">=</span>redis://localhost:6379
 </span></code></pre></div>
 <p>See <a href="../../configuration/">Configuration Overview</a> for all available options.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="2:2"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio"><input id="__tabbed_2_2" name="__tabbed_2" type="radio"><div class="tabbed-labels"><label for="__tabbed_2_1">Linux / macOS</label><label for="__tabbed_2_2">Windows (PowerShell)</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<p>Load variables into your shell before starting:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nb">set</span><span class="w"> </span>-a<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.env<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">set</span><span class="w"> </span>+a
+</span></code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="language-powershell highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nb">Get-Content</span> <span class="p">.</span><span class="n">env</span> <span class="p">|</span> <span class="k">ForEach</span><span class="n">-Object</span> <span class="p">{</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>  <span class="k">if</span> <span class="p">(</span><span class="nv">$_</span> <span class="o">-match</span> <span class="s1">'^\s*([^#][^=]+)=(.*)$'</span><span class="p">)</span> <span class="p">{</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="no">[Environment]</span><span class="p">::</span><span class="n">SetEnvironmentVariable</span><span class="p">(</span><span class="nv">$matches</span><span class="p">[</span><span class="n">1</span><span class="p">].</span><span class="n">Trim</span><span class="p">(),</span> <span class="nv">$matches</span><span class="p">[</span><span class="n">2</span><span class="p">].</span><span class="n">Trim</span><span class="p">(),</span> <span class="s1">'Process'</span><span class="p">)</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  <span class="p">}</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="p">}</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
 <h2 id="step-3-start-the-api-server">Step 3: Start the API server<a class="headerlink" href="#step-3-start-the-api-server" title="Permanent link">¶</a></h2>
 <p>Database migrations run automatically on first startup:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">export</span><span class="w"> </span><span class="k">$(</span>cat<span class="w"> </span>.env<span class="w"> </span><span class="p">|</span><span class="w"> </span>xargs<span class="k">)</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>./mediafusion-api
+<div class="tabbed-set tabbed-alternate" data-tabs="3:2"><input checked="checked" id="__tabbed_3_1" name="__tabbed_3" type="radio"><input id="__tabbed_3_2" name="__tabbed_3" type="radio"><div class="tabbed-labels"><label for="__tabbed_3_1">Linux / macOS</label><label for="__tabbed_3_2">Windows</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>./mediafusion-api
 </span></code></pre></div>
-<p>Or with a process manager like <code>systemd</code>, source your <code>.env</code> file before starting.</p>
+</div>
+<div class="tabbed-block">
+<div class="language-powershell highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">.\</span><span class="n">mediafusion-api</span><span class="p">.</span><span class="n">exe</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<p>Or with a process manager (<code>systemd</code> on Linux, <code>launchd</code> on macOS, Windows Service).</p>
 <h2 id="step-4-start-the-background-worker">Step 4: Start the background worker<a class="headerlink" href="#step-4-start-the-background-worker" title="Permanent link">¶</a></h2>
 <p>In a second terminal (or as a separate service):</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">export</span><span class="w"> </span><span class="k">$(</span>cat<span class="w"> </span>.env<span class="w"> </span><span class="p">|</span><span class="w"> </span>xargs<span class="k">)</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>./mediafusion-worker
+<div class="tabbed-set tabbed-alternate" data-tabs="4:2"><input checked="checked" id="__tabbed_4_1" name="__tabbed_4" type="radio"><input id="__tabbed_4_2" name="__tabbed_4" type="radio"><div class="tabbed-labels"><label for="__tabbed_4_1">Linux / macOS</label><label for="__tabbed_4_2">Windows</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>./mediafusion-worker
 </span></code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="language-powershell highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="p">.\</span><span class="n">mediafusion-worker</span><span class="p">.</span><span class="n">exe</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
 <div class="admonition tip">
-<p class="admonition-title">systemd example</p>
+<p class="admonition-title">systemd example (Linux)</p>
 <p>Create a service file at <code>/etc/systemd/system/mediafusion-api.service</code>:</p>
-<div class="language-ini highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">[Unit]</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="na">Description</span><span class="o">=</span><span class="s">MediaFusion API</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="na">After</span><span class="o">=</span><span class="s">network.target postgresql.service redis.service</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="k">[Service]</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="na">EnvironmentFile</span><span class="o">=</span><span class="s">/path/to/.env</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="na">ExecStart</span><span class="o">=</span><span class="s">/path/to/mediafusion-api</span>
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="na">Restart</span><span class="o">=</span><span class="s">always</span>
-</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="na">RestartSec</span><span class="o">=</span><span class="s">5</span>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
-</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="k">[Install]</span>
-</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="na">WantedBy</span><span class="o">=</span><span class="s">multi-user.target</span>
+<div class="language-ini highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="k">[Unit]</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="na">Description</span><span class="o">=</span><span class="s">MediaFusion API</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="na">After</span><span class="o">=</span><span class="s">network.target postgresql.service redis.service</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="k">[Service]</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="na">EnvironmentFile</span><span class="o">=</span><span class="s">/path/to/.env</span>
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="na">ExecStart</span><span class="o">=</span><span class="s">/path/to/mediafusion-api</span>
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="na">Restart</span><span class="o">=</span><span class="s">always</span>
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="na">RestartSec</span><span class="o">=</span><span class="s">5</span>
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>
+</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="k">[Install]</span>
+</span><span id="__span-13-12"><a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="na">WantedBy</span><span class="o">=</span><span class="s">multi-user.target</span>
 </span></code></pre></div>
 <p>Then <code>systemctl enable --now mediafusion-api</code>.</p>
 </div>
 <hr>
 <h2 id="checking-migration-status">Checking migration status<a class="headerlink" href="#checking-migration-status" title="Permanent link">¶</a></h2>
 <p>Set <code>MEDIAFUSION_MIGRATE=status</code> to print the current schema version and exit:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nv">MEDIAFUSION_MIGRATE</span><span class="o">=</span>status<span class="w"> </span>./mediafusion-api
+<div class="tabbed-set tabbed-alternate" data-tabs="5:2"><input checked="checked" id="__tabbed_5_1" name="__tabbed_5" type="radio"><input id="__tabbed_5_2" name="__tabbed_5" type="radio"><div class="tabbed-labels"><label for="__tabbed_5_1">Linux / macOS</label><label for="__tabbed_5_2">Windows</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nv">MEDIAFUSION_MIGRATE</span><span class="o">=</span>status<span class="w"> </span>./mediafusion-api
 </span></code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="language-powershell highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nv">$env:MEDIAFUSION_MIGRATE</span> <span class="p">=</span> <span class="s2">"status"</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="p">.\</span><span class="n">mediafusion-api</span><span class="p">.</span><span class="n">exe</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
 <p>For rollback instructions see <a href="../migrations/">Database Migrations</a>.</p>
 
 

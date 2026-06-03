@@ -2009,7 +2009,7 @@
 </tr>
 </tbody>
 </table>
-<p>Both binaries share the same codebase (<code>backend/</code>), compiled as two separate static musl binaries.</p>
+<p>Both binaries share the same codebase (<code>backend/</code>), compiled as two separate release binaries (Linux: static musl; macOS/Windows: native targets via <code>cargo-zigbuild</code> in CI).</p>
 <h2 id="route-performance-characteristics">Route performance characteristics<a class="headerlink" href="#route-performance-characteristics" title="Permanent link">¶</a></h2>
 <table>
 <thead>
@@ -2183,7 +2183,7 @@
 <tbody>
 <tr>
 <td>API server</td>
-<td>Rust (Axum), static musl binary</td>
+<td>Rust (Axum), pre-built release binary</td>
 </tr>
 <tr>
 <td>Background worker</td>
