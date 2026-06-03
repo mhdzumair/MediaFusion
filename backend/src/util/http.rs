@@ -18,8 +18,16 @@ pub fn transport_error_kind(e: &reqwest::Error) -> &'static str {
         "connect"
     } else if e.is_request() {
         "request"
+    } else if e.is_body() {
+        "body"
     } else if e.is_decode() {
         "decode"
+    } else if e.is_redirect() {
+        "redirect"
+    } else if e.is_builder() {
+        "builder"
+    } else if e.is_upgrade() {
+        "upgrade"
     } else if e.is_status() {
         "status"
     } else {
