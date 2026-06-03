@@ -3,7 +3,15 @@
 /// When configured, all debrid API requests are routed through the MediaFlow
 /// `/proxy/forward` endpoint so that debrid services see MediaFlow's IP on
 /// the TCP connection instead of the addon server's IP.
+use reqwest::StatusCode;
 use urlencoding::encode as urlencode;
+
+use crate::providers::ProviderError;
+
+/// Debrid API calls routed through `/proxy/forward` failed (MediaFlow unreachable, timeout, etc.).
+const MEDIAFLOW_FORWARD_ERROR_VIDEO: &str = "mediaflow_proxy_error.mp4";
+/// `/proxy/ip` lookup failed — used for CDN geo hints, not forward transport.
+const MEDIAFLOW_IP_ERROR_VIDEO: &str = "mediaflow_ip_error.mp4";
 
 pub struct MediaFlowForward {
     pub base_url: String,
@@ -22,6 +30,81 @@ impl MediaFlowForward {
         format!("{}/proxy/forward", self.base_url)
     }
 
+    fn map_forward_request_error(&self, err: reqwest::Error) -> ProviderError {
+        let reason = if err.is_timeout() {
+            "forward request timed out"
+        } else if err.is_connect() {
+            "could not connect"
+        } else {
+            "forward request failed"
+        };
+        ProviderError::api(
+            format!(
+                "MediaFlow {reason} at {base}. Check that MediaFlow is running, reachable, and your proxy URL and API password are correct.",
+                base = self.base_url
+            ),
+            MEDIAFLOW_FORWARD_ERROR_VIDEO,
+        )
+    }
+
+    fn map_ip_lookup_request_error(&self, err: reqwest::Error) -> ProviderError {
+        let reason = if err.is_timeout() {
+            "IP lookup timed out"
+        } else if err.is_connect() {
+            "could not connect"
+        } else {
+            "IP lookup failed"
+        };
+        ProviderError::api(
+            format!(
+                "MediaFlow {reason} at {base}. Check your MediaFlow proxy URL and API password.",
+                base = self.base_url
+            ),
+            MEDIAFLOW_IP_ERROR_VIDEO,
+        )
+    }
+
+    /// Validate a direct MediaFlow `/proxy/ip` response.
+    async fn check_ip_lookup_response(
+        &self,
+        resp: reqwest::Response,
+    ) -> Result<reqwest::Response, ProviderError> {
+        if resp.status().is_success() {
+            return Ok(resp);
+        }
+
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        let preview = if text.len() > 200 {
+            format!("{}…", &text[..200])
+        } else {
+            text
+        };
+
+        let message = if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+            format!(
+                "MediaFlow IP lookup rejected (HTTP {status}). Check your MediaFlow API password."
+            )
+        } else {
+            format!(
+                "MediaFlow IP lookup error (HTTP {status}) at {}: {preview}",
+                self.base_url
+            )
+        };
+
+        Err(ProviderError::api(message, MEDIAFLOW_IP_ERROR_VIDEO))
+    }
+
+    async fn send(
+        &self,
+        builder: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, ProviderError> {
+        builder
+            .send()
+            .await
+            .map_err(|e| self.map_forward_request_error(e))
+    }
+
     /// Route a GET request through /proxy/forward.
     /// `dest` is the full destination URL (query params already embedded).
     pub async fn get(
@@ -29,12 +112,13 @@ impl MediaFlowForward {
         http: &reqwest::Client,
         dest: &str,
         bearer: &str,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        http.get(self.forward_url())
-            .query(&[("d", dest), ("api_password", &self.api_password)])
-            .query(&[("h_authorization", format!("Bearer {}", bearer))])
-            .send()
-            .await
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.send(
+            http.get(self.forward_url())
+                .query(&[("d", dest), ("api_password", &self.api_password)])
+                .query(&[("h_authorization", format!("Bearer {}", bearer))]),
+        )
+        .await
     }
 
     /// Route a form POST through /proxy/forward.
@@ -46,14 +130,15 @@ impl MediaFlowForward {
         dest: &str,
         bearer: &str,
         form_body: String,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        http.post(self.forward_url())
-            .query(&[("d", dest), ("api_password", &self.api_password)])
-            .query(&[("h_authorization", format!("Bearer {}", bearer))])
-            .query(&[("h_content-type", "application/x-www-form-urlencoded")])
-            .body(form_body)
-            .send()
-            .await
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.send(
+            http.post(self.forward_url())
+                .query(&[("d", dest), ("api_password", &self.api_password)])
+                .query(&[("h_authorization", format!("Bearer {}", bearer))])
+                .query(&[("h_content-type", "application/x-www-form-urlencoded")])
+                .body(form_body),
+        )
+        .await
     }
 
     /// Route a JSON POST through /proxy/forward.
@@ -64,14 +149,15 @@ impl MediaFlowForward {
         dest: &str,
         bearer: &str,
         json_body: String,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        http.post(self.forward_url())
-            .query(&[("d", dest), ("api_password", &self.api_password)])
-            .query(&[("h_authorization", format!("Bearer {}", bearer))])
-            .query(&[("h_content-type", "application/json")])
-            .body(json_body)
-            .send()
-            .await
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.send(
+            http.post(self.forward_url())
+                .query(&[("d", dest), ("api_password", &self.api_password)])
+                .query(&[("h_authorization", format!("Bearer {}", bearer))])
+                .query(&[("h_content-type", "application/json")])
+                .body(json_body),
+        )
+        .await
     }
 
     /// Route a DELETE request through /proxy/forward.
@@ -80,12 +166,13 @@ impl MediaFlowForward {
         http: &reqwest::Client,
         dest: &str,
         bearer: &str,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        http.delete(self.forward_url())
-            .query(&[("d", dest), ("api_password", &self.api_password)])
-            .query(&[("h_authorization", format!("Bearer {}", bearer))])
-            .send()
-            .await
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.send(
+            http.delete(self.forward_url())
+                .query(&[("d", dest), ("api_password", &self.api_password)])
+                .query(&[("h_authorization", format!("Bearer {}", bearer))]),
+        )
+        .await
     }
 
     /// Route a GET request through /proxy/forward with a verbatim Authorization header value.
@@ -95,12 +182,13 @@ impl MediaFlowForward {
         http: &reqwest::Client,
         dest: &str,
         authorization: &str,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        http.get(self.forward_url())
-            .query(&[("d", dest), ("api_password", &self.api_password)])
-            .query(&[("h_authorization", authorization)])
-            .send()
-            .await
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.send(
+            http.get(self.forward_url())
+                .query(&[("d", dest), ("api_password", &self.api_password)])
+                .query(&[("h_authorization", authorization)]),
+        )
+        .await
     }
 
     /// Route a POST request through /proxy/forward with a raw body and explicit Content-Type.
@@ -113,14 +201,15 @@ impl MediaFlowForward {
         bearer: &str,
         content_type: &str,
         body: Vec<u8>,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        http.post(self.forward_url())
-            .query(&[("d", dest), ("api_password", &self.api_password)])
-            .query(&[("h_authorization", format!("Bearer {}", bearer))])
-            .query(&[("h_content-type", content_type)])
-            .body(body)
-            .send()
-            .await
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.send(
+            http.post(self.forward_url())
+                .query(&[("d", dest), ("api_password", &self.api_password)])
+                .query(&[("h_authorization", format!("Bearer {}", bearer))])
+                .query(&[("h_content-type", content_type)])
+                .body(body),
+        )
+        .await
     }
 
     /// Route a PUT request through /proxy/forward with a raw body and explicit Content-Type.
@@ -131,14 +220,15 @@ impl MediaFlowForward {
         bearer: &str,
         content_type: &str,
         body: Vec<u8>,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        http.put(self.forward_url())
-            .query(&[("d", dest), ("api_password", &self.api_password)])
-            .query(&[("h_authorization", format!("Bearer {}", bearer))])
-            .query(&[("h_content-type", content_type)])
-            .body(body)
-            .send()
-            .await
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.send(
+            http.put(self.forward_url())
+                .query(&[("d", dest), ("api_password", &self.api_password)])
+                .query(&[("h_authorization", format!("Bearer {}", bearer))])
+                .query(&[("h_content-type", content_type)])
+                .body(body),
+        )
+        .await
     }
 
     /// Route a GET request through /proxy/forward without an Authorization header.
@@ -147,11 +237,12 @@ impl MediaFlowForward {
         &self,
         http: &reqwest::Client,
         dest: &str,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        http.get(self.forward_url())
-            .query(&[("d", dest), ("api_password", &self.api_password)])
-            .send()
-            .await
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.send(
+            http.get(self.forward_url())
+                .query(&[("d", dest), ("api_password", &self.api_password)]),
+        )
+        .await
     }
 
     /// Route a POST request through /proxy/forward without an Authorization header.
@@ -161,13 +252,14 @@ impl MediaFlowForward {
         http: &reqwest::Client,
         dest: &str,
         form_body: String,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        http.post(self.forward_url())
-            .query(&[("d", dest), ("api_password", &self.api_password)])
-            .query(&[("h_content-type", "application/x-www-form-urlencoded")])
-            .body(form_body)
-            .send()
-            .await
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.send(
+            http.post(self.forward_url())
+                .query(&[("d", dest), ("api_password", &self.api_password)])
+                .query(&[("h_content-type", "application/x-www-form-urlencoded")])
+                .body(form_body),
+        )
+        .await
     }
 
     /// Route a POST with a raw binary body through /proxy/forward without Authorization.
@@ -177,26 +269,50 @@ impl MediaFlowForward {
         dest: &str,
         content_type: &str,
         body: Vec<u8>,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        http.post(self.forward_url())
-            .query(&[("d", dest), ("api_password", &self.api_password)])
-            .query(&[("h_content-type", content_type)])
-            .body(body)
-            .send()
-            .await
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.send(
+            http.post(self.forward_url())
+                .query(&[("d", dest), ("api_password", &self.api_password)])
+                .query(&[("h_content-type", content_type)])
+                .body(body),
+        )
+        .await
     }
 
     /// Fetch MediaFlow's public IP from its /proxy/ip endpoint.
-    /// Returns `None` if the request fails or the response cannot be parsed.
-    pub async fn get_public_ip(&self, http: &reqwest::Client) -> Option<String> {
+    pub async fn get_public_ip(&self, http: &reqwest::Client) -> Result<String, ProviderError> {
         let url = format!(
             "{}/proxy/ip?api_password={}",
             self.base_url,
             urlencode(&self.api_password)
         );
-        let resp = http.get(&url).send().await.ok()?;
-        let json: serde_json::Value = resp.json().await.ok()?;
-        json.get("ip")?.as_str().map(str::to_string)
+        let resp = http
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| self.map_ip_lookup_request_error(e))?;
+        let resp = self.check_ip_lookup_response(resp).await?;
+        let json: serde_json::Value = resp.json().await.map_err(|e| {
+            ProviderError::api(
+                format!(
+                    "MediaFlow returned an invalid /proxy/ip response at {}: {e}",
+                    self.base_url
+                ),
+                MEDIAFLOW_IP_ERROR_VIDEO,
+            )
+        })?;
+        json.get("ip")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .ok_or_else(|| {
+                ProviderError::api(
+                    format!(
+                        "MediaFlow /proxy/ip response missing IP at {}",
+                        self.base_url
+                    ),
+                    MEDIAFLOW_IP_ERROR_VIDEO,
+                )
+            })
     }
 
     /// Check whether a proxy URL points to a loopback or private address.

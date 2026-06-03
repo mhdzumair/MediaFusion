@@ -64,6 +64,16 @@ fn check_torbox_error(body: &Value) -> Result<(), ProviderError> {
             "api_error.mp4",
         ));
     }
+    if body.get("success").and_then(|v| v.as_bool()) == Some(false) {
+        let detail = body
+            .get("detail")
+            .and_then(|v| v.as_str())
+            .unwrap_or("TorBox request failed");
+        return Err(ProviderError::api(
+            format!("TorBox: {detail}"),
+            "transfer_error.mp4",
+        ));
+    }
     Ok(())
 }
 
@@ -238,11 +248,17 @@ async fn submit_torrent(
     torrent_name: Option<&str>,
     forward: Option<&MediaFlowForward>,
 ) -> Result<Value, ProviderError> {
-    if let Some(bytes) = torrent_file.filter(|b| !b.is_empty()) {
-        create_torrent_file(http, token, bytes, torrent_name, forward).await
-    } else {
-        create_torrent(http, token, magnet, forward).await
+    // Prefer magnet (fast). Fall back to .torrent upload if magnet fails.
+    let magnet_resp = create_torrent(http, token, magnet, forward).await;
+    match magnet_resp {
+        Ok(resp) => return Ok(resp),
+        Err(e) if torrent_file.filter(|b| !b.is_empty()).is_none() => return Err(e),
+        Err(_) => {}
     }
+    let bytes = torrent_file.filter(|b| !b.is_empty()).ok_or_else(|| {
+        ProviderError::api("TorBox rejected the magnet link", "transfer_error.mp4")
+    })?;
+    create_torrent_file(http, token, bytes, torrent_name, forward).await
 }
 
 /// Build a TorBox `requestdl` URL with `redirect=true` so the player follows
@@ -326,6 +342,61 @@ fn build_download_link_from_torrent(
     Ok(request_download_link(token, torrent_id, file_id, user_ip))
 }
 
+async fn ready_playback_from_mylist(
+    http: &reqwest::Client,
+    token: &str,
+    info_hash: &str,
+    forward: Option<&MediaFlowForward>,
+    filename: Option<&str>,
+    file_index: Option<i32>,
+    season: Option<i32>,
+    episode: Option<i32>,
+    user_ip: Option<&str>,
+) -> Result<String, ProviderError> {
+    let resolved_user_ip = resolve_user_ip(http, user_ip, forward).await?;
+    let mylist = get_mylist(http, token, forward).await?;
+    if let Some(torrent) = find_torrent_in_list(&mylist, info_hash) {
+        let finished = torrent
+            .get("download_finished")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let present = torrent
+            .get("download_present")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if finished && present {
+            return build_download_link_from_torrent(
+                token,
+                &torrent,
+                filename,
+                file_index,
+                season,
+                episode,
+                resolved_user_ip.as_deref(),
+            );
+        }
+    }
+    Err(ProviderError::api(
+        "Torrent is queued on TorBox but not yet downloaded",
+        "torrent_not_downloaded.mp4",
+    ))
+}
+
+async fn resolve_user_ip(
+    http: &reqwest::Client,
+    user_ip: Option<&str>,
+    forward: Option<&MediaFlowForward>,
+) -> Result<Option<String>, ProviderError> {
+    match user_ip {
+        Some("{mediaflow_ip}") => match forward {
+            Some(fwd) => fwd.get_public_ip(http).await.map(Some),
+            None => Ok(None),
+        },
+        Some(ip) if !ip.is_empty() => Ok(Some(ip.to_string())),
+        _ => Ok(None),
+    }
+}
+
 // ─── Public entry points ──────────────────────────────────────────────────────
 
 /// Resolve a direct video URL from TorBox for the given torrent.
@@ -367,14 +438,20 @@ pub async fn get_video_url(
             .unwrap_or(false);
 
         if finished && present {
+            let resolved_user_ip = resolve_user_ip(http, user_ip, forward).await?;
             return build_download_link_from_torrent(
-                token, &torrent, filename, file_index, season, episode, user_ip,
+                token,
+                &torrent,
+                filename,
+                file_index,
+                season,
+                episode,
+                resolved_user_ip.as_deref(),
             );
         }
-        // Torrent exists but not ready yet
         return Err(ProviderError::api(
-            "Torrent is not yet downloaded on TorBox",
-            "torrent_not_downloaded.mp4",
+            "Torrent is downloading on TorBox",
+            "torrent_downloading.mp4",
         ));
     }
 
@@ -384,37 +461,21 @@ pub async fn get_video_url(
         .unwrap_or(Value::Null);
     if is_torrent_queued(&queued, info_hash) {
         return Err(ProviderError::api(
-            "Torrent is queued on TorBox but not yet downloaded",
-            "torrent_not_downloaded.mp4",
+            "Torrent is downloading on TorBox",
+            "torrent_downloading.mp4",
         ));
     }
 
     // Add the torrent; DIFF_ISSUE means TorBox already has it (caching race with
-    // our earlier mylist/queued check) — treat it like "Found Cached" by retrying.
+    // our earlier mylist/queued check) — re-check mylist once.
     let create_resp =
         match submit_torrent(http, token, &magnet, torrent_file, torrent_name, forward).await {
             Ok(r) => r,
             Err(ProviderError::Api { ref message, .. }) if message.contains("DIFF_ISSUE") => {
-                let mylist2 = get_mylist(http, token, forward).await?;
-                if let Some(torrent) = find_torrent_in_list(&mylist2, info_hash) {
-                    let finished = torrent
-                        .get("download_finished")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    let present = torrent
-                        .get("download_present")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    if finished && present {
-                        return build_download_link_from_torrent(
-                            token, &torrent, filename, file_index, season, episode, user_ip,
-                        );
-                    }
-                }
-                return Err(ProviderError::api(
-                    "Torrent is queued on TorBox but not yet downloaded",
-                    "torrent_not_downloaded.mp4",
-                ));
+                return ready_playback_from_mylist(
+                    http, token, info_hash, forward, filename, file_index, season, episode, user_ip,
+                )
+                .await;
             }
             Err(e) => return Err(e),
         };
@@ -425,23 +486,10 @@ pub async fn get_video_url(
         .unwrap_or("");
 
     if detail.contains("Found Cached") {
-        // Re-check mylist — should now be present
-        let mylist2 = get_mylist(http, token, forward).await?;
-        if let Some(torrent) = find_torrent_in_list(&mylist2, info_hash) {
-            let finished = torrent
-                .get("download_finished")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let present = torrent
-                .get("download_present")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            if finished && present {
-                return build_download_link_from_torrent(
-                    token, &torrent, filename, file_index, season, episode, user_ip,
-                );
-            }
-        }
+        return ready_playback_from_mylist(
+            http, token, info_hash, forward, filename, file_index, season, episode, user_ip,
+        )
+        .await;
     }
 
     Err(ProviderError::api(

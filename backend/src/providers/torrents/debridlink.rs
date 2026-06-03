@@ -571,7 +571,7 @@ pub async fn get_video_url(
     // Append ip= to CDN URL: if forward is set, get MediaFlow's actual public IP;
     // otherwise use the user_ip hint passed by the caller.
     let ip_to_append = if let Some(fwd) = forward {
-        fwd.get_public_ip(http).await
+        Some(fwd.get_public_ip(http).await?)
     } else {
         user_ip.map(str::to_string)
     };

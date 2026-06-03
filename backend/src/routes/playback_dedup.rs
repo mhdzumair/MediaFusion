@@ -1,27 +1,33 @@
-/// Deduplicate concurrent playback resolution (e.g. parallel player probes).
+/// Deduplicate concurrent playback resolution (e.g. parallel HEAD + GET probes).
 ///
-/// One request holds a short-lived Redis lock while resolving; peers poll the URL
-/// cache until the holder finishes or the client wait budget expires.
+/// Matches Python `acquire_redis_lock(..., block=True)`: one request resolves while
+/// peers wait for the cache. The lock is released when the holder finishes, times out,
+/// or its HTTP connection is dropped (see `ResolveLockGuard::Drop`).
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use fred::prelude::{Expiration, KeysInterface};
+use fred::prelude::{Expiration, KeysInterface, SetOptions};
 use tokio::task::JoinHandle;
 
 use crate::providers::ProviderError;
 
-/// Max time a waiter polls for a peer before returning an error video to the player.
-pub const CLIENT_WAIT_BUDGET_SECS: u64 = 18;
+/// Max time waiters poll for a peer to finish (Python blocked on the lock until release).
+pub const CLIENT_WAIT_BUDGET_SECS: u64 = 105;
 
 /// Max time the lock holder may spend resolving a provider URL.
 pub const HOLDER_RESOLVE_TIMEOUT_SECS: u64 = 90;
+
+/// Browser streamability probes use HEAD with ~5s client timeout — cap server HEAD work so
+/// the lock is released for the follow-up GET.
+pub const HEAD_RESOLVE_BUDGET: Duration = Duration::from_secs(8);
 
 /// Lock TTL — extended by the holder while resolving.
 pub const RESOLVE_LOCK_TTL_SECS: i64 = 30;
 
 const LOCK_REFRESH_INTERVAL_SECS: u64 = 10;
 
-/// Reclaim orphaned locks (crash/restart) when the acquire timestamp is this old.
-const STALE_LOCK_SECS: u64 = 25;
+/// Reclaim orphaned locks only after the holder resolve budget (not while a live resolve runs).
+const STALE_LOCK_SECS: u64 = HOLDER_RESOLVE_TIMEOUT_SECS;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
@@ -65,16 +71,18 @@ async fn lock_age_secs(redis: &fred::clients::Client, cache_key: &str) -> Option
 
 pub async fn try_acquire_lock(redis: &fred::clients::Client, cache_key: &str) -> bool {
     let started = now_secs().to_string();
-    redis
-        .set::<bool, _, _>(
+    let result: Option<String> = redis
+        .set(
             &lock_key(cache_key),
             started.as_str(),
             Some(Expiration::EX(RESOLVE_LOCK_TTL_SECS)),
-            None,
-            true,
+            Some(SetOptions::NX),
+            false,
         )
         .await
-        .unwrap_or(false)
+        .ok()
+        .flatten();
+    result.is_some()
 }
 
 pub async fn release_lock(redis: &fred::clients::Client, cache_key: &str) {
@@ -112,7 +120,7 @@ async fn read_cache_value(redis: &fred::clients::Client, cache_key: &str) -> Opt
         .filter(|s| !s.is_empty())
 }
 
-/// Drop orphaned playback locks left after a crash/restart.
+/// Drop orphaned playback locks left after a crash/restart or a holder that exceeded its budget.
 pub async fn reclaim_stale_lock(redis: &fred::clients::Client, cache_key: &str) -> bool {
     if read_cache_value(redis, cache_key).await.is_some() {
         return false;
@@ -149,6 +157,7 @@ pub struct ResolveLockGuard {
     redis: fred::clients::Client,
     cache_key: String,
     refresh_task: Option<JoinHandle<()>>,
+    released: AtomicBool,
 }
 
 impl ResolveLockGuard {
@@ -172,14 +181,38 @@ impl ResolveLockGuard {
             redis: redis.clone(),
             cache_key: cache_key.to_string(),
             refresh_task: Some(refresh_task),
+            released: AtomicBool::new(false),
         })
     }
 
     pub async fn release(mut self) {
+        if self.released.swap(true, Ordering::SeqCst) {
+            return;
+        }
         if let Some(task) = self.refresh_task.take() {
             task.abort();
         }
         release_lock(&self.redis, &self.cache_key).await;
+    }
+}
+
+impl Drop for ResolveLockGuard {
+    fn drop(&mut self) {
+        if self.released.load(Ordering::SeqCst) {
+            return;
+        }
+        if let Some(task) = self.refresh_task.take() {
+            task.abort();
+        }
+        let redis = self.redis.clone();
+        let cache_key = self.cache_key.clone();
+        tracing::debug!(
+            cache_key = %cache_key,
+            "releasing playback resolve lock (client disconnect or task cancelled)"
+        );
+        tokio::spawn(async move {
+            release_lock(&redis, &cache_key).await;
+        });
     }
 }
 
@@ -189,7 +222,7 @@ pub enum DedupWaitResult {
     TimedOut,
 }
 
-/// Check cache, reclaim stale locks, or wait for an in-flight peer to finish.
+/// Check cache, then wait for an in-flight peer (Python blocking lock) without stealing a young lock.
 pub async fn prepare_resolve(redis: &fred::clients::Client, cache_key: &str) -> DedupWaitResult {
     if let Some(url) = read_cache_value(redis, cache_key).await {
         return DedupWaitResult::Cached(url);
@@ -218,7 +251,23 @@ pub async fn prepare_resolve(redis: &fred::clients::Client, cache_key: &str) -> 
         return DedupWaitResult::Cached(url);
     }
 
-    if reclaim_stale_lock(redis, cache_key).await {
+    if let Some(url) = read_cache_value(redis, cache_key).await {
+        return DedupWaitResult::Cached(url);
+    }
+
+    if !lock_held(redis, cache_key).await {
+        return DedupWaitResult::ReadyToResolve;
+    }
+
+    // Peer still resolving within budget — do not start a duplicate TorBox add.
+    if lock_age_secs(redis, cache_key)
+        .await
+        .is_some_and(|age| age < STALE_LOCK_SECS)
+    {
+        return DedupWaitResult::TimedOut;
+    }
+
+    if reclaim_stale_lock(redis, cache_key).await && !lock_held(redis, cache_key).await {
         return DedupWaitResult::ReadyToResolve;
     }
 
@@ -227,6 +276,50 @@ pub async fn prepare_resolve(redis: &fred::clients::Client, cache_key: &str) -> 
     }
 
     DedupWaitResult::TimedOut
+}
+
+/// After a wait timeout, try cache once more; only become resolver if lock is free or truly stale.
+pub async fn try_ready_after_wait(
+    redis: &fred::clients::Client,
+    cache_key: &str,
+) -> DedupWaitResult {
+    if let Some(url) = read_cache_value(redis, cache_key).await {
+        return DedupWaitResult::Cached(url);
+    }
+
+    if !lock_held(redis, cache_key).await {
+        return DedupWaitResult::ReadyToResolve;
+    }
+
+    if lock_age_secs(redis, cache_key)
+        .await
+        .is_some_and(|age| age >= STALE_LOCK_SECS)
+    {
+        let _ = reclaim_stale_lock(redis, cache_key).await;
+        if !lock_held(redis, cache_key).await {
+            return DedupWaitResult::ReadyToResolve;
+        }
+    }
+
+    DedupWaitResult::TimedOut
+}
+
+/// Acquire the resolve lock, retrying briefly when a peer just released it (HEAD disconnect).
+pub async fn acquire_resolve_lock(
+    redis: &fred::clients::Client,
+    cache_key: &str,
+) -> Option<ResolveLockGuard> {
+    const RETRIES: usize = 10;
+    for attempt in 0..RETRIES {
+        if let Some(guard) = ResolveLockGuard::acquire(redis, cache_key).await {
+            return Some(guard);
+        }
+        let _ = reclaim_stale_lock(redis, cache_key).await;
+        if attempt + 1 < RETRIES {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+        }
+    }
+    None
 }
 
 /// Poll Redis until a cached URL appears or the lock is released.
@@ -272,7 +365,12 @@ mod tests {
     }
 
     #[test]
-    fn client_wait_fits_player_timeout() {
-        const _: () = assert!(CLIENT_WAIT_BUDGET_SECS <= 20);
+    fn stale_lock_not_before_holder_timeout() {
+        const _: () = assert!(STALE_LOCK_SECS >= HOLDER_RESOLVE_TIMEOUT_SECS);
+    }
+
+    #[test]
+    fn client_wait_covers_holder_resolve() {
+        const _: () = assert!(CLIENT_WAIT_BUDGET_SECS >= HOLDER_RESOLVE_TIMEOUT_SECS);
     }
 }

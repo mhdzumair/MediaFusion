@@ -1,7 +1,7 @@
 /// Streaming provider playback proxy.
 ///
 /// Routes:
-///   GET /{secret_str}/playback/{provider_name}/{info_hash}
+///   GET|HEAD /{secret_str}/playback/{provider_name}/{info_hash}
 ///   GET /{secret_str}/playback/{provider_name}/{info_hash}/{filename}
 ///   GET /{secret_str}/playback/{provider_name}/{info_hash}/{season}/{episode}
 ///   GET /{secret_str}/playback/{provider_name}/{info_hash}/{season}/{episode}/{filename}
@@ -18,7 +18,7 @@ use std::sync::Arc;
 use axum::{
     body::Body,
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{header, Method, StatusCode},
     response::{IntoResponse, Response},
 };
 use fred::prelude::{Expiration, KeysInterface};
@@ -72,10 +72,12 @@ pub struct PlaybackPathSeEpFilename {
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 pub async fn handler_base(
+    method: Method,
     Path(p): Path<PlaybackPath>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
     dispatch(
+        method,
         state,
         p.secret_str,
         p.provider_name,
@@ -88,10 +90,12 @@ pub async fn handler_base(
 }
 
 pub async fn handler_with_filename(
+    method: Method,
     Path(p): Path<PlaybackPathWithFilename>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
     dispatch(
+        method,
         state,
         p.secret_str,
         p.provider_name,
@@ -104,10 +108,12 @@ pub async fn handler_with_filename(
 }
 
 pub async fn handler_seep(
+    method: Method,
     Path(p): Path<PlaybackPathSeEp>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
     dispatch(
+        method,
         state,
         p.secret_str,
         p.provider_name,
@@ -120,10 +126,12 @@ pub async fn handler_seep(
 }
 
 pub async fn handler_seep_filename(
+    method: Method,
     Path(p): Path<PlaybackPathSeEpFilename>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
     dispatch(
+        method,
         state,
         p.secret_str,
         p.provider_name,
@@ -138,6 +146,7 @@ pub async fn handler_seep_filename(
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
 async fn dispatch(
+    method: Method,
     state: Arc<AppState>,
     secret_str: String,
     provider_name: String,
@@ -148,7 +157,7 @@ async fn dispatch(
 ) -> Response {
     let info_hash = info_hash.to_lowercase();
 
-    let video_url = match resolve(
+    let resolve_fut = resolve(
         Arc::clone(&state),
         &secret_str,
         &provider_name,
@@ -156,9 +165,25 @@ async fn dispatch(
         season,
         episode,
         filename.as_deref(),
-    )
-    .await
-    {
+    );
+
+    let resolved = if method == Method::HEAD {
+        match tokio::time::timeout(playback_dedup::HEAD_RESOLVE_BUDGET, resolve_fut).await {
+            Ok(result) => result,
+            Err(_) => {
+                tracing::debug!(
+                    provider = %provider_name,
+                    hash = %info_hash,
+                    "playback HEAD budget exceeded; releasing lock for follow-up GET"
+                );
+                Err(playback_dedup::playback_resolve_timed_out())
+            }
+        }
+    } else {
+        resolve_fut.await
+    };
+
+    let video_url = match resolved {
         Ok(url) => url,
         Err(e) => {
             let kind = match &e {
@@ -173,7 +198,7 @@ async fn dispatch(
         }
     };
 
-    redirect(video_url)
+    playback_redirect(method, video_url)
 }
 
 async fn resolve(
@@ -258,29 +283,29 @@ async fn resolve(
             tracing::debug!(
                 provider = %provider_name,
                 hash = %info_hash,
-                "playback resolve timed out waiting for in-flight peer"
+                "playback resolve timed out waiting for in-flight peer; retrying lock"
             );
-            return Err(playback_dedup::playback_resolve_timed_out());
+            match playback_dedup::try_ready_after_wait(&state.redis, &cache_key).await {
+                playback_dedup::DedupWaitResult::Cached(url) => return Ok(url),
+                playback_dedup::DedupWaitResult::ReadyToResolve => {}
+                playback_dedup::DedupWaitResult::TimedOut => {
+                    return Err(playback_dedup::playback_resolve_timed_out());
+                }
+            }
         }
         playback_dedup::DedupWaitResult::ReadyToResolve => {}
     }
 
-    let lock_guard = match playback_dedup::ResolveLockGuard::acquire(&state.redis, &cache_key).await
-    {
-        Some(guard) => guard,
-        None => {
-            let _ = playback_dedup::reclaim_stale_lock(&state.redis, &cache_key).await;
-            playback_dedup::ResolveLockGuard::acquire(&state.redis, &cache_key)
-                .await
-                .ok_or_else(playback_dedup::playback_resolve_timed_out)?
-        }
-    };
+    let lock_guard = playback_dedup::acquire_resolve_lock(&state.redis, &cache_key)
+        .await
+        .ok_or_else(playback_dedup::playback_resolve_timed_out)?;
 
     if let Some(cached) = get_playback_cache(&state.redis, &cache_key).await {
         lock_guard.release().await;
         return Ok(cached);
     }
 
+    let resolve_started = std::time::Instant::now();
     tracing::info!(
         provider = %provider_name,
         hash = %info_hash,
@@ -315,6 +340,14 @@ async fn resolve(
             Err(playback_dedup::playback_resolve_timed_out())
         }
     };
+
+    tracing::info!(
+        provider = %provider_name,
+        hash = %info_hash,
+        elapsed_ms = resolve_started.elapsed().as_millis(),
+        success = result.is_ok(),
+        "finished playback provider resolve"
+    );
 
     if let Ok(ref url) = result {
         set_playback_cache(&state.redis, &cache_key, url).await;
@@ -381,6 +414,8 @@ async fn resolve_playback_url(
     });
     let fwd = forward.as_ref();
 
+    let http = &state.debrid_http;
+
     // Dispatch to provider — realdebrid returns (url, files); others just url.
     //
     // Only providers where forward IS fully wired (api calls routed through MediaFlow)
@@ -393,7 +428,7 @@ async fn resolve_playback_url(
         ($module:path) => {{
             use $module as p;
             let url = p::get_video_url(
-                &state.http,
+                http,
                 token,
                 info_hash,
                 &stream_info.announce_list,
@@ -413,7 +448,7 @@ async fn resolve_playback_url(
         ($module:path) => {{
             use $module as p;
             let url = p::get_video_url(
-                &state.http,
+                http,
                 token,
                 info_hash,
                 &stream_info.announce_list,
@@ -444,7 +479,7 @@ async fn resolve_playback_url(
         "realdebrid" => {
             // forward wired + ip= form field supported
             providers::torrents::realdebrid::get_video_url(
-                &state.http,
+                http,
                 token,
                 info_hash,
                 &stream_info.announce_list,
@@ -462,7 +497,7 @@ async fn resolve_playback_url(
             // forward wired + ip= query/body supported
             use providers::torrents::alldebrid as p;
             let url = p::get_video_url(
-                &state.http,
+                http,
                 token,
                 info_hash,
                 &stream_info.announce_list,
@@ -486,7 +521,7 @@ async fn resolve_playback_url(
             // forward wired + user_ip= query param supported — pass placeholder
             use providers::torrents::torbox as p;
             let url = p::get_video_url(
-                &state.http,
+                http,
                 token,
                 info_hash,
                 &stream_info.announce_list,
@@ -509,7 +544,7 @@ async fn resolve_playback_url(
         "seedr" => {
             use providers::torrents::seedr as p;
             let url = p::get_video_url(
-                &state.http,
+                http,
                 token,
                 info_hash,
                 &stream_info.announce_list,
@@ -529,7 +564,7 @@ async fn resolve_playback_url(
         "pikpak" => {
             use providers::torrents::pikpak as p;
             let first = p::get_video_url(
-                &state.http,
+                http,
                 token,
                 info_hash,
                 &stream_info.announce_list,
@@ -564,7 +599,7 @@ async fn resolve_playback_url(
                     )
                     .await;
                     let url = p::get_video_url(
-                        &state.http,
+                        http,
                         &new_token,
                         info_hash,
                         &stream_info.announce_list,
@@ -585,7 +620,7 @@ async fn resolve_playback_url(
         "debrider" => {
             let magnet = build_magnet_link(info_hash, &stream_info.announce_list);
             let (url, files) = providers::torrents::debrider::get_video_url_with_files(
-                &state.http,
+                http,
                 token,
                 &magnet,
                 &stream_info.name,
@@ -611,7 +646,7 @@ async fn resolve_playback_url(
                 crate::db::TorrentType::Public | crate::db::TorrentType::WebSeed
             );
             let url = providers::torrents::qbittorrent::get_video_url(
-                &state.http,
+                http,
                 cfg,
                 info_hash,
                 &magnet,
@@ -836,11 +871,24 @@ fn error_video_url(state: &AppState, video_file: &str) -> String {
     format!("{}/static/exceptions/{video_file}", state.config.host_url)
 }
 
-fn redirect(url: String) -> Response {
-    Response::builder()
+/// 302 redirect for playback. HEAD uses the same resolve path as GET but returns
+/// headers only (no body), matching Stremio/Kodi probe behavior.
+pub(crate) fn playback_redirect(method: Method, url: String) -> Response {
+    let mut builder = Response::builder()
         .status(StatusCode::FOUND)
-        .header(header::LOCATION, url)
-        .header(header::CACHE_CONTROL, "no-store, no-cache, must-revalidate")
+        .header(header::LOCATION, &url)
+        .header(
+            header::CACHE_CONTROL,
+            "no-store, no-cache, must-revalidate, max-age=0",
+        )
+        .header(header::PRAGMA, "no-cache")
+        .header(header::EXPIRES, "0");
+
+    if method == Method::HEAD {
+        builder = builder.header(header::CONTENT_LENGTH, 0);
+    }
+
+    builder
         .body(Body::empty())
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }

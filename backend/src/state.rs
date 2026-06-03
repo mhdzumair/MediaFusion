@@ -60,6 +60,8 @@ pub struct AppState {
     pub id_cache: Cache<String, (MediaId, Vec<MediaId>)>,
     /// HTTP client shared across all scrapers.
     pub http: reqwest::Client,
+    /// Longer-timeout client for debrid playback resolution.
+    pub debrid_http: reqwest::Client,
     /// HTTP request metrics collector.
     pub metrics: Arc<Metrics>,
     /// Optional Telegram MTProto client for live scraping (Phase 2c).
@@ -101,6 +103,7 @@ impl AppState {
             .build();
 
         let http = crate::util::http::build(config.requests_proxy_url.as_deref());
+        let debrid_http = crate::util::http::build_debrid(config.requests_proxy_url.as_deref());
 
         let telegram = crate::scrapers::telegram::init_client(&config).await;
 
@@ -116,6 +119,7 @@ impl AppState {
             redis,
             id_cache,
             http,
+            debrid_http,
             metrics: Metrics::new(),
             telegram,
             keyword_filters,

@@ -23,7 +23,7 @@ use std::sync::Arc;
 use axum::{
     body::Body,
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{header, Method, StatusCode},
     response::{IntoResponse, Response},
 };
 use tracing::warn;
@@ -36,7 +36,7 @@ use crate::{
         self,
         usenet::{cache, debrider, easynews, nzb_url, nzbdav, nzbget, sabnzbd, torbox},
     },
-    routes::playback_dedup,
+    routes::{playback::playback_redirect, playback_dedup},
     state::AppState,
 };
 
@@ -110,16 +110,28 @@ pub async fn nzb_proxy_handler(
 
 // ─── Authenticated provider handlers ──────────────────────────────────────────
 
-/// `GET /streaming_provider/{secret}/usenet/{provider}/{nzb_guid}`
+/// `GET|HEAD /streaming_provider/{secret}/usenet/{provider}/{nzb_guid}`
 pub async fn provider_handler(
+    method: Method,
     Path((secret_str, provider_name, nzb_guid)): Path<(String, String, String)>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    handle_provider(&state, &secret_str, &provider_name, &nzb_guid, 0, 0, None).await
+    handle_provider(
+        method,
+        &state,
+        &secret_str,
+        &provider_name,
+        &nzb_guid,
+        0,
+        0,
+        None,
+    )
+    .await
 }
 
-/// `GET /streaming_provider/{secret}/usenet/{provider}/{nzb_guid}/{season}/{episode}`
+/// `GET|HEAD /streaming_provider/{secret}/usenet/{provider}/{nzb_guid}/{season}/{episode}`
 pub async fn provider_seep_handler(
+    method: Method,
     Path((secret_str, provider_name, nzb_guid, season, episode)): Path<(
         String,
         String,
@@ -130,6 +142,7 @@ pub async fn provider_seep_handler(
     State(state): State<Arc<AppState>>,
 ) -> Response {
     handle_provider(
+        method,
         &state,
         &secret_str,
         &provider_name,
@@ -141,12 +154,14 @@ pub async fn provider_seep_handler(
     .await
 }
 
-/// `GET /streaming_provider/{secret}/usenet/{provider}/{nzb_guid}/{filename}`
+/// `GET|HEAD /streaming_provider/{secret}/usenet/{provider}/{nzb_guid}/{filename}`
 pub async fn provider_filename_handler(
+    method: Method,
     Path((secret_str, provider_name, nzb_guid, filename)): Path<(String, String, String, String)>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
     handle_provider(
+        method,
         &state,
         &secret_str,
         &provider_name,
@@ -158,8 +173,9 @@ pub async fn provider_filename_handler(
     .await
 }
 
-/// `GET /streaming_provider/{secret}/usenet/{provider}/{nzb_guid}/{season}/{episode}/{filename}`
+/// `GET|HEAD /streaming_provider/{secret}/usenet/{provider}/{nzb_guid}/{season}/{episode}/{filename}`
 pub async fn provider_seep_filename_handler(
+    method: Method,
     Path((secret_str, provider_name, nzb_guid, season, episode, filename)): Path<(
         String,
         String,
@@ -171,6 +187,7 @@ pub async fn provider_seep_filename_handler(
     State(state): State<Arc<AppState>>,
 ) -> Response {
     handle_provider(
+        method,
         &state,
         &secret_str,
         &provider_name,
@@ -185,6 +202,7 @@ pub async fn provider_seep_filename_handler(
 // ─── Core dispatch ─────────────────────────────────────────────────────────────
 
 async fn handle_provider(
+    method: Method,
     state: &AppState,
     secret_str: &str,
     provider_name: &str,
@@ -205,19 +223,19 @@ async fn handle_provider(
         Ok(u) => u,
         Err(e) => {
             warn!("usenet playback: parse user_data: {e}");
-            return make_redirect(&error_video_url(state, "invalid_token.mp4"));
+            return playback_redirect(method, error_video_url(state, "invalid_token.mp4"));
         }
     };
 
     // 2. Fetch stream from DB
     let Some(stream) = fetch_stream_info(state, nzb_guid).await else {
-        return make_redirect(&error_video_url(state, "stream_not_found.mp4"));
+        return playback_redirect(method, error_video_url(state, "stream_not_found.mp4"));
     };
 
     // 3. Redis cache check, then deduplicate concurrent HEAD/GET resolution.
     let ck = cache::cache_key(secret_str, nzb_guid, season, episode);
     if let Some(cached) = cache::get(&state.redis, &ck).await {
-        return make_redirect(&cached);
+        return playback_redirect(method, cached);
     }
 
     // 4. Locate provider config in user's profile
@@ -281,76 +299,97 @@ async fn handle_provider(
     let fwd = forward.as_ref();
 
     match playback_dedup::prepare_resolve(&state.redis, &ck).await {
-        playback_dedup::DedupWaitResult::Cached(url) => return make_redirect(&url),
+        playback_dedup::DedupWaitResult::Cached(url) => return playback_redirect(method, url),
         playback_dedup::DedupWaitResult::TimedOut => {
-            warn!("usenet playback {provider_name}/{nzb_guid}: resolve timed out");
-            return make_redirect(&error_video_url(
-                state,
-                playback_dedup::playback_resolve_timed_out().video_file(),
-            ));
+            tracing::debug!(
+                provider = %provider_name,
+                nzb_guid = %nzb_guid,
+                "usenet playback timed out waiting for peer; retrying lock"
+            );
+            match playback_dedup::try_ready_after_wait(&state.redis, &ck).await {
+                playback_dedup::DedupWaitResult::Cached(url) => {
+                    return playback_redirect(method, url)
+                }
+                playback_dedup::DedupWaitResult::ReadyToResolve => {}
+                playback_dedup::DedupWaitResult::TimedOut => {
+                    return playback_redirect(
+                        method,
+                        error_video_url(
+                            state,
+                            playback_dedup::playback_resolve_timed_out().video_file(),
+                        ),
+                    );
+                }
+            }
         }
         playback_dedup::DedupWaitResult::ReadyToResolve => {}
     }
 
-    let lock_guard = match playback_dedup::ResolveLockGuard::acquire(&state.redis, &ck).await {
-        Some(guard) => guard,
-        None => {
-            let _ = playback_dedup::reclaim_stale_lock(&state.redis, &ck).await;
-            match playback_dedup::ResolveLockGuard::acquire(&state.redis, &ck).await {
-                Some(guard) => guard,
-                None => {
-                    warn!("usenet playback {provider_name}/{nzb_guid}: failed to acquire lock");
-                    return make_redirect(&error_video_url(
-                        state,
-                        playback_dedup::playback_resolve_timed_out().video_file(),
-                    ));
-                }
+    let resolve_work = async {
+        let lock_guard = playback_dedup::acquire_resolve_lock(&state.redis, &ck)
+            .await
+            .ok_or_else(playback_dedup::playback_resolve_timed_out)?;
+
+        if let Some(cached) = cache::get(&state.redis, &ck).await {
+            lock_guard.release().await;
+            return Ok(cached);
+        }
+
+        let result = match tokio::time::timeout(
+            playback_dedup::holder_resolve_timeout(),
+            dispatch(
+                &state.debrid_http,
+                &state.config,
+                &state.pool_ro,
+                provider_name,
+                provider_cfg,
+                &submission_url,
+                &fallback_url,
+                &stream.nzb_guid,
+                &stream.name,
+                filename,
+                season,
+                episode,
+                fwd,
+            ),
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(_) => {
+                warn!("usenet playback {provider_name}/{nzb_guid}: provider dispatch timed out");
+                Err(playback_dedup::playback_resolve_timed_out())
+            }
+        };
+
+        if let Ok(ref url) = result {
+            cache::set(&state.redis, &ck, url).await;
+        }
+        lock_guard.release().await;
+        result
+    };
+
+    let result = if method == Method::HEAD {
+        match tokio::time::timeout(playback_dedup::HEAD_RESOLVE_BUDGET, resolve_work).await {
+            Ok(r) => r,
+            Err(_) => {
+                tracing::debug!(
+                    provider = %provider_name,
+                    nzb_guid = %nzb_guid,
+                    "usenet playback HEAD budget exceeded; releasing lock for follow-up GET"
+                );
+                Err(playback_dedup::playback_resolve_timed_out())
             }
         }
+    } else {
+        resolve_work.await
     };
-
-    if let Some(cached) = cache::get(&state.redis, &ck).await {
-        lock_guard.release().await;
-        return make_redirect(&cached);
-    }
-
-    let result = match tokio::time::timeout(
-        playback_dedup::holder_resolve_timeout(),
-        dispatch(
-            &state.http,
-            &state.config,
-            &state.pool_ro,
-            provider_name,
-            provider_cfg,
-            &submission_url,
-            &fallback_url,
-            &stream.nzb_guid,
-            &stream.name,
-            filename,
-            season,
-            episode,
-            fwd,
-        ),
-    )
-    .await
-    {
-        Ok(r) => r,
-        Err(_) => {
-            warn!("usenet playback {provider_name}/{nzb_guid}: provider dispatch timed out");
-            Err(playback_dedup::playback_resolve_timed_out())
-        }
-    };
-
-    if let Ok(ref url) = result {
-        cache::set(&state.redis, &ck, url).await;
-    }
-    lock_guard.release().await;
 
     match result {
-        Ok(url) => make_redirect(&url),
+        Ok(url) => playback_redirect(method, url),
         Err(e) => {
             e.log(&format!("usenet playback {provider_name}/{nzb_guid}"));
-            make_redirect(&error_video_url(state, e.video_file()))
+            playback_redirect(method, error_video_url(state, e.video_file()))
         }
     }
 }
@@ -599,15 +638,6 @@ fn error_video_url(state: &AppState, video_file: &str) -> String {
     )
 }
 
-fn make_redirect(url: &str) -> Response {
-    Response::builder()
-        .status(StatusCode::FOUND)
-        .header(header::LOCATION, url)
-        .header(header::CACHE_CONTROL, "no-store, no-cache, must-revalidate")
-        .body(Body::empty())
-        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
-}
-
 async fn public_redirect(state: &AppState, nzb_guid: &str) -> Response {
     let row: Option<(Option<String>,)> =
         sqlx::query_as("SELECT nzb_url FROM usenet_stream WHERE nzb_guid = $1")
@@ -617,7 +647,7 @@ async fn public_redirect(state: &AppState, nzb_guid: &str) -> Response {
             .unwrap_or(None);
 
     match row {
-        Some((Some(url),)) if !url.is_empty() => make_redirect(&url),
+        Some((Some(url),)) if !url.is_empty() => playback_redirect(Method::GET, url),
         _ => StatusCode::NOT_FOUND.into_response(),
     }
 }

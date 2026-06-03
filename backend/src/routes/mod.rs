@@ -145,19 +145,19 @@ pub fn router(state: Arc<AppState>) -> Router {
         // Debrid playback proxy
         .route(
             "/streaming_provider/{secret_str}/playback/{provider_name}/{info_hash}",
-            get(playback::handler_base),
+            get(playback::handler_base).head(playback::handler_base),
         )
         .route(
             "/streaming_provider/{secret_str}/playback/{provider_name}/{info_hash}/{filename}",
-            get(playback::handler_with_filename),
+            get(playback::handler_with_filename).head(playback::handler_with_filename),
         )
         .route(
             "/streaming_provider/{secret_str}/playback/{provider_name}/{info_hash}/{season}/{episode}",
-            get(playback::handler_seep),
+            get(playback::handler_seep).head(playback::handler_seep),
         )
         .route(
             "/streaming_provider/{secret_str}/playback/{provider_name}/{info_hash}/{season}/{episode}/{filename}",
-            get(playback::handler_seep_filename),
+            get(playback::handler_seep_filename).head(playback::handler_seep_filename),
         )
         // Usenet NZB proxy (providers fetch NZB bytes through this endpoint)
         .route(
@@ -167,19 +167,19 @@ pub fn router(state: Arc<AppState>) -> Router {
         // Usenet via provider
         .route(
             "/streaming_provider/{secret_str}/usenet/{provider_name}/{nzb_guid}",
-            get(usenet::provider_handler),
+            get(usenet::provider_handler).head(usenet::provider_handler),
         )
         .route(
             "/streaming_provider/{secret_str}/usenet/{provider_name}/{nzb_guid}/{season}/{episode}/{filename}",
-            get(usenet::provider_seep_filename_handler),
+            get(usenet::provider_seep_filename_handler).head(usenet::provider_seep_filename_handler),
         )
         .route(
             "/streaming_provider/{secret_str}/usenet/{provider_name}/{nzb_guid}/{season}/{episode}",
-            get(usenet::provider_seep_handler),
+            get(usenet::provider_seep_handler).head(usenet::provider_seep_handler),
         )
         .route(
             "/streaming_provider/{secret_str}/usenet/{provider_name}/{nzb_guid}/{filename}",
-            get(usenet::provider_filename_handler),
+            get(usenet::provider_filename_handler).head(usenet::provider_filename_handler),
         )
         // Delete all watchlist
         .route(
