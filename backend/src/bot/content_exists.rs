@@ -21,7 +21,7 @@ pub async fn check_content_already_exists(
                 .filter(|s| !s.is_empty())?;
             let normalized = info_hash.to_lowercase();
             let exists: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM torrent_stream WHERE lower(info_hash) = $1)",
+                "SELECT EXISTS(SELECT 1 FROM torrent_stream WHERE info_hash = $1)",
             )
             .bind(&normalized)
             .fetch_one(pool)

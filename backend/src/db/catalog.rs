@@ -213,6 +213,8 @@ pub async fn get_watchlist_items(
         return vec![];
     };
 
+    // info_hash is always stored lowercase; normalise the input to match so the
+    // btree index (ix_torrent_stream_info_hash) can be used without lower().
     let info_hashes_lower: Vec<String> = info_hashes.iter().map(|h| h.to_lowercase()).collect();
     let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
     let ord = order_clause(sort, sort_dir);
@@ -240,7 +242,7 @@ pub async fn get_watchlist_items(
         WHERE m.type = $1
           AND m.total_streams > 0
           AND NOT m.is_blocked
-          AND lower(ts.info_hash) = ANY($2)
+          AND ts.info_hash = ANY($2)
           AND (cardinality($3::nuditystatus[]) = 0 OR m.nudity_status <> ALL($3))
           AND (cardinality($4::text[]) IS NULL OR NOT EXISTS (
               SELECT 1 FROM media_parental_certificate_link mpcl
