@@ -134,11 +134,14 @@ async fn get_access_token(
         form.push(("ip", ip.to_string()));
     }
 
-    let resp = http
-        .post(format!("{OAUTH_URL}/token"))
-        .form(&form)
-        .send()
-        .await?;
+    let resp = retry::with_transport_retry("rd get_access_token", || async {
+        http.post(format!("{OAUTH_URL}/token"))
+            .form(&form)
+            .send()
+            .await
+    })
+    .await
+    .map_err(ProviderError::Http)?;
 
     let body: Value = response_json(resp, "rd get_access_token").await?;
     check_rd_error(&body)?;

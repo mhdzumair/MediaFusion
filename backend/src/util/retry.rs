@@ -14,13 +14,14 @@ pub fn scrape_retry() -> ExponentialBuilder {
 }
 
 /// Latency-bounded retry policy for user-facing API calls.
-/// Up to 2 retries (3 total attempts), short backoff so a transient blip doesn't noticeably
-/// delay the response.
+/// Up to 3 retries (4 total attempts), short backoff. The extra attempt covers HTTP/2
+/// connection-pool scenarios where multiple stale connections can fail in sequence before
+/// a fresh one is established (GOAWAY/RST_STREAM appear as Kind::Request errors).
 pub fn api_retry() -> ExponentialBuilder {
     ExponentialBuilder::default()
         .with_min_delay(Duration::from_millis(200))
         .with_max_delay(Duration::from_secs(2))
-        .with_max_times(2)
+        .with_max_times(3)
         .with_jitter()
 }
 
