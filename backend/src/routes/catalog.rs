@@ -18,6 +18,7 @@ use crate::{
     scrapers::metadata::fetch_all_list_imdb_ids,
     scrapers::rpdb,
     state::AppState,
+    util::retry,
 };
 
 const MDBLIST_BASE: &str = "https://api.mdblist.com";
@@ -255,14 +256,19 @@ async fn fetch_mdblist_catalog(
         url.push_str(&format!("&filter_genre={genre}"));
     }
 
-    let resp = match state.http.get(&url).send().await {
+    let resp = match retry::with_transport_retry("mdblist catalog", || state.http.get(&url).send())
+        .await
+    {
         Ok(r) if r.status().is_success() => r,
         Ok(r) => {
             tracing::warn!("mdblist catalog [{catalog_id}]: HTTP {}", r.status());
             return Metas { metas: vec![] };
         }
         Err(e) => {
-            tracing::warn!("mdblist catalog [{catalog_id}]: request failed: {e}");
+            tracing::warn!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "mdblist catalog [{catalog_id}]: request failed: {e}"
+            );
             return Metas { metas: vec![] };
         }
     };
@@ -482,5 +488,7 @@ pub async fn user_catalog(
         }
     };
     let user_data = serde_json::from_value::<UserData>(raw).unwrap_or_default();
-    handle_catalog(state, user_data, &media_type, &rest).await.into_response()
+    handle_catalog(state, user_data, &media_type, &rest)
+        .await
+        .into_response()
 }

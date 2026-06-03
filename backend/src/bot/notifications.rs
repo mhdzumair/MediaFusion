@@ -220,7 +220,10 @@ async fn send_text_message(http: &reqwest::Client, bot_token: &str, chat_id: &st
         "disable_web_page_preview": true,
     });
     if let Err(e) = http.post(&url).json(&payload).send().await {
-        tracing::warn!("telegram notification sendMessage failed: {e}");
+        tracing::warn!(
+            error_kind = crate::util::http::transport_error_kind(&e),
+            "telegram notification sendMessage failed: {e}"
+        );
     }
 }
 
@@ -239,7 +242,10 @@ async fn send_photo_message(
         "parse_mode": "Markdown",
     });
     if let Err(e) = http.post(&url).json(&payload).send().await {
-        tracing::warn!("telegram notification sendPhoto failed: {e}, falling back to text");
+        tracing::warn!(
+            error_kind = crate::util::http::transport_error_kind(&e),
+            "telegram notification sendPhoto failed: {e}, falling back to text"
+        );
         send_text_message(http, bot_token, chat_id, caption).await;
     }
 }

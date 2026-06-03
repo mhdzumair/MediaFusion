@@ -628,7 +628,12 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
         {
             Ok(r) => r,
             Err(e) => {
-                tracing::warn!("torbox checkcached: {e}");
+                // Best-effort: transport failure just skips the chunk; treat hashes as uncached.
+                tracing::debug!(
+                    hashes = chunk.len(),
+                    error_kind = crate::util::http::transport_error_kind(&e),
+                    "torbox checkcached: {e}"
+                );
                 continue;
             }
         };

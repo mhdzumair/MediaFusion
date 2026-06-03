@@ -176,6 +176,9 @@ pub async fn init_best_trackers(state: &AppState) {
             }
         }
         Ok(resp) => warn!("Failed to load best trackers: HTTP {}", resp.status()),
-        Err(e) => warn!("Failed to fetch best trackers: {e}"),
+        Err(e) => warn!(
+            error_kind = crate::util::http::transport_error_kind(&e),
+            "Failed to fetch best trackers: {e}"
+        ),
     }
 }

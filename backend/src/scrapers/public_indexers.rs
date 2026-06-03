@@ -242,7 +242,11 @@ async fn scrape_rss(
                 continue;
             }
             Err(e) => {
-                tracing::debug!("{}: rss fetch: {e}", indexer.key);
+                tracing::debug!(
+                    error_kind = crate::util::http::transport_error_kind(&e),
+                    "{}: rss fetch: {e}",
+                    indexer.key
+                );
                 continue;
             }
         };
@@ -335,7 +339,10 @@ async fn scrape_subsplease(
             return (vec![], false);
         }
         Err(e) => {
-            tracing::debug!("subsplease fetch: {e}");
+            tracing::debug!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "subsplease fetch: {e}"
+            );
             return (vec![], false);
         }
     };

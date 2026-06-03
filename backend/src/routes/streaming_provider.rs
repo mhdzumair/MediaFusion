@@ -20,7 +20,7 @@ use fred::prelude::HashesInterface;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::state::AppState;
+use crate::{state::AppState, util::http as http_util, util::retry};
 
 const CACHE_KEY_PREFIX: &str = "debrid_cache:";
 const EXPIRY_DAYS_SECS: i64 = 7 * 86400;
@@ -165,7 +165,9 @@ pub async fn realdebrid_get_device_code(State(state): State<Arc<AppState>>) -> R
         "https://api.real-debrid.com/oauth/v2/device/code?client_id={}&new_credentials=yes",
         REALDEBRID_CLIENT_ID
     );
-    match state.http.get(&url).send().await {
+    match retry::with_transport_retry("realdebrid_get_device_code", || state.http.get(&url).send())
+        .await
+    {
         Ok(resp) => {
             let status = resp.status();
             match resp.json::<Value>().await {
@@ -185,7 +187,10 @@ pub async fn realdebrid_get_device_code(State(state): State<Arc<AppState>>) -> R
             }
         }
         Err(e) => {
-            tracing::error!("realdebrid_get_device_code: request error: {e}");
+            tracing::error!(
+                error_kind = http_util::transport_error_kind(&e),
+                "realdebrid_get_device_code: request error: {e}"
+            );
             (
                 StatusCode::BAD_GATEWAY,
                 Json(serde_json::json!({"detail": "Failed to contact Real-Debrid"})),

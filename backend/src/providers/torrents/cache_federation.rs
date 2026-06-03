@@ -58,7 +58,10 @@ pub async fn fetch_federated_status(
     {
         Ok(r) => r,
         Err(e) => {
-            warn!("debrid_cache federation fetch [{service}]: {e}");
+            warn!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "debrid_cache federation fetch [{service}]: {e}"
+            );
             return HashMap::new();
         }
     };

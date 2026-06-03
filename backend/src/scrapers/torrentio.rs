@@ -42,7 +42,10 @@ pub async fn scrape(
     {
         Ok(r) => r,
         Err(e) => {
-            tracing::debug!("torrentio request failed url={url}: {e}");
+            tracing::debug!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "torrentio request failed url={url}: {e}"
+            );
             return vec![];
         }
     };

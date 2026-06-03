@@ -1,6 +1,7 @@
 use sqlx::PgPool;
 use tracing::warn;
 
+use super::retry;
 use super::types::{nudity_statuses_from_filter, MediaId, MediaType, UserId};
 
 const LIMIT: i64 = 100;
@@ -252,18 +253,21 @@ pub async fn get_watchlist_items(
         "#
     );
 
-    sqlx::query_as::<_, CatalogRow>(&sql)
-        .bind(mt) // $1
-        .bind(&info_hashes_lower) // $2
-        .bind(&nudity_exclude_enums) // $3
-        .bind(cert_excludes) // $4
-        .bind(skip) // $5
-        .fetch_all(pool)
-        .await
-        .unwrap_or_else(|e| {
-            warn!("watchlist catalog query [type={media_type}]: {e}");
-            vec![]
-        })
+    retry::with_retry("watchlist catalog query", || async {
+        sqlx::query_as::<_, CatalogRow>(&sql)
+            .bind(mt) // $1
+            .bind(&info_hashes_lower) // $2
+            .bind(&nudity_exclude_enums) // $3
+            .bind(cert_excludes) // $4
+            .bind(skip) // $5
+            .fetch_all(pool)
+            .await
+    })
+    .await
+    .unwrap_or_else(|e| {
+        warn!("watchlist catalog query [type={media_type}]: {e}");
+        vec![]
+    })
 }
 
 pub async fn search_metadata(

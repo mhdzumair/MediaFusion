@@ -158,7 +158,11 @@ pub async fn scrape_indexer(
         {
             Ok(r) => r,
             Err(e) => {
-                tracing::debug!("jackett indexer {} request failed: {e}", idx.name);
+                tracing::debug!(
+                    error_kind = crate::util::http::transport_error_kind(&e),
+                    "jackett indexer {} request failed: {e}",
+                    idx.name
+                );
                 continue;
             }
         };

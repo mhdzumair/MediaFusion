@@ -67,7 +67,10 @@ impl JobHandler for JackettFeedScraper {
         {
             Ok(r) => r,
             Err(e) => {
-                warn!("jackett_feed: search request failed: {e}");
+                warn!(
+                    error_kind = crate::util::http::transport_error_kind(&e),
+                    "jackett_feed: search request failed: {e}"
+                );
                 return Ok(());
             }
         };

@@ -75,7 +75,10 @@ pub async fn fetch_all_list_imdb_ids(
                 break;
             }
             Err(e) => {
-                warn!("mdblist all_ids list={}: request failed: {e}", list.id);
+                warn!(
+                    error_kind = crate::util::http::transport_error_kind(&e),
+                    "mdblist all_ids list={}: request failed: {e}", list.id
+                );
                 break;
             }
         };

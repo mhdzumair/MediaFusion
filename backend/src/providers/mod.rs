@@ -108,6 +108,16 @@ impl ProviderError {
         }
     }
 
+    /// Short label for the error suitable as a structured log field.
+    pub fn error_kind(&self) -> &'static str {
+        match self {
+            Self::Http(e) => crate::util::http::transport_error_kind(e),
+            Self::Api { .. } => "api",
+            Self::Json(_) => "decode",
+            Self::Other(_) => "other",
+        }
+    }
+
     /// Log a provider error at WARN (unexpected) or DEBUG (expected user/account issue).
     pub fn log(&self, message: &str) {
         if self.is_unexpected() {

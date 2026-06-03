@@ -769,7 +769,10 @@ async fn ensure_enough_space(
     let root = match api_get(http, token, "/fs/root/contents", forward).await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("Seedr: could not fetch root contents for space check: {e}");
+            tracing::warn!(
+                error_kind = e.error_kind(),
+                "Seedr: could not fetch root contents for space check: {e}"
+            );
             return;
         }
     };
@@ -943,7 +946,10 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
     let root = match api_get(http, &bearer, "/fs/root/contents", None).await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("Seedr check_cached: failed to fetch root contents: {e}");
+            tracing::warn!(
+                error_kind = e.error_kind(),
+                "Seedr check_cached: failed to fetch root contents: {e}"
+            );
             return cached;
         }
     };

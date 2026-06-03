@@ -112,14 +112,22 @@ pub async fn fetch_torrent_via_browser(
 
     debug!("browser: POST {endpoint} for {torrent_url}");
 
-    let resp = client
+    let resp = match client
         .post(&endpoint)
         .json(&body)
         .timeout(std::time::Duration::from_secs(120))
         .send()
         .await
-        .map_err(|e| warn!("browser: request to browserless failed: {e}"))
-        .ok()?;
+    {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "browser: request to browserless failed: {e}"
+            );
+            return None;
+        }
+    };
 
     if !resp.status().is_success() {
         warn!(

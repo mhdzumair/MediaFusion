@@ -1,5 +1,32 @@
 use std::time::Duration;
 
+/// Returns `true` for transport-level failures that are safe to retry:
+/// connection errors, timeouts, and low-level request build/send failures.
+/// HTTP 4xx/5xx responses are *not* transport errors — only `Err(reqwest::Error)` arms
+/// (before `.status()` is read) need this check.
+pub fn is_transport_error(e: &reqwest::Error) -> bool {
+    e.is_timeout() || e.is_connect() || e.is_request()
+}
+
+/// Short label for a reqwest error useful as a structured log field.
+/// Distinguishes the most actionable categories without requiring the caller to read the
+/// full error string.
+pub fn transport_error_kind(e: &reqwest::Error) -> &'static str {
+    if e.is_timeout() {
+        "timeout"
+    } else if e.is_connect() {
+        "connect"
+    } else if e.is_request() {
+        "request"
+    } else if e.is_decode() {
+        "decode"
+    } else if e.is_status() {
+        "status"
+    } else {
+        "other"
+    }
+}
+
 /// Shared reqwest client for all outbound HTTP (scrapers, RPDB, etc.).
 pub fn build(proxy_url: Option<&str>) -> reqwest::Client {
     let mut builder = reqwest::Client::builder()

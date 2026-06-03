@@ -8,7 +8,7 @@ use axum::{
 };
 use tracing::{debug, warn};
 
-use crate::{cache, db::MediaType, poster::AnnotateParams, state::AppState};
+use crate::{cache, db::MediaType, poster::AnnotateParams, state::AppState, util::http};
 
 pub async fn handler(
     Path((media_type, id_jpg)): Path<(String, String)>,
@@ -249,7 +249,12 @@ async fn fetch_annotate_cache(
             return StatusCode::NOT_FOUND.into_response();
         }
         Err(e) => {
-            warn!("poster fetch {url}: {e}");
+            // Downgrade to debug: third-party image hosts being unreachable is expected
+            // noise and not actionable from the backend. Response is still 502 to the client.
+            debug!(
+                error_kind = http::transport_error_kind(&e),
+                "poster fetch {url}: {e}"
+            );
             return StatusCode::BAD_GATEWAY.into_response();
         }
     };

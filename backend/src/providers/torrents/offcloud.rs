@@ -596,7 +596,11 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
     let resp = match http.post(url).bearer_auth(token).json(&body).send().await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("offcloud cache: {e}");
+            // Best-effort: transport failure just returns empty; treat all hashes as uncached.
+            tracing::debug!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "offcloud cache: {e}"
+            );
             return vec![];
         }
     };

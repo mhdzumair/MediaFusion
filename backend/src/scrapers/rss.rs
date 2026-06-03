@@ -552,7 +552,10 @@ pub async fn scrape_feed(
             };
         }
         Err(e) => {
-            warn!("rss_scraper: could not fetch feed {feed_name}: {e}");
+            warn!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "rss_scraper: could not fetch feed {feed_name}: {e}"
+            );
             update_feed_metrics(pool, feed_id, 0, 0, 0, 1, start.elapsed().as_secs_f64()).await;
             return ScrapeResult {
                 items_found: 0,

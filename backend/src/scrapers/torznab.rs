@@ -133,7 +133,11 @@ async fn query_endpoint(
             }
         },
         Err(e) => {
-            tracing::debug!("torznab {}: request failed: {e}", ep.name);
+            tracing::debug!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "torznab {}: request failed: {e}",
+                ep.name
+            );
             return vec![];
         }
     };

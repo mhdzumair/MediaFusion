@@ -206,5 +206,7 @@ pub async fn user_meta(
         }
     };
     let user_data = serde_json::from_value::<UserData>(raw).unwrap_or_default();
-    serve_meta(state, user_data, &media_type, &raw_id).await.into_response()
+    serve_meta(state, user_data, &media_type, &raw_id)
+        .await
+        .into_response()
 }

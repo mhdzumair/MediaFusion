@@ -28,7 +28,10 @@ pub async fn scrape_search(
     let raw_items = match resp {
         Ok(r) => parse_json_array(r).await,
         Err(e) => {
-            tracing::debug!("zilean /dmm/search request error: {e}");
+            tracing::debug!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "zilean /dmm/search request error: {e}"
+            );
             vec![]
         }
     };
@@ -69,7 +72,10 @@ pub async fn scrape_filtered(
     let raw_items = match resp {
         Ok(r) => parse_json_array(r).await,
         Err(e) => {
-            tracing::debug!("zilean /dmm/filtered request error: {e}");
+            tracing::debug!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "zilean /dmm/filtered request error: {e}"
+            );
             vec![]
         }
     };

@@ -33,7 +33,10 @@ pub async fn get_torrent_info(
             return TorrentInfoPage::default();
         }
         Err(e) => {
-            tracing::debug!("torrent_info: fetch failed for {fetch_url}: {e}");
+            tracing::debug!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "torrent_info: fetch failed for {fetch_url}: {e}"
+            );
             return TorrentInfoPage::default();
         }
     };

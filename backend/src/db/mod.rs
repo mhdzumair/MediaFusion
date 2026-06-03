@@ -39,6 +39,7 @@ pub mod metadata_merge;
 pub mod metadata_model;
 pub mod metadata_store;
 pub mod pool;
+pub mod retry;
 pub mod stream_backfill;
 pub mod stream_links;
 pub mod stream_model;

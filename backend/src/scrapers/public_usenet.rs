@@ -261,7 +261,10 @@ async fn search_nzbindex(client: &Client, query: &str, page: u32) -> IndexerOutc
             return IndexerOutcome::Error;
         }
         Err(e) => {
-            tracing::debug!("nzbindex fetch: {e}");
+            tracing::debug!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "nzbindex fetch: {e}"
+            );
             return IndexerOutcome::Error;
         }
     };
@@ -387,7 +390,10 @@ async fn search_binsearch(client: &Client, query: &str, page: u32) -> IndexerOut
             return IndexerOutcome::Error;
         }
         Err(e) => {
-            tracing::debug!("binsearch fetch: {e}");
+            tracing::debug!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "binsearch fetch: {e}"
+            );
             return IndexerOutcome::Error;
         }
     };

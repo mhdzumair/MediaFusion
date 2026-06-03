@@ -7,11 +7,14 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::providers::{
-    file_selection::select_debrid_file_index,
-    response_json,
-    torrents::transport::{append_query, encode_form_body, MediaFlowForward},
-    ProviderError,
+use crate::{
+    providers::{
+        file_selection::select_debrid_file_index,
+        response_json,
+        torrents::transport::{append_query, encode_form_body, MediaFlowForward},
+        ProviderError,
+    },
+    util::retry,
 };
 
 const BASE_URL: &str = "https://api.real-debrid.com/rest/1.0";
@@ -168,11 +171,15 @@ async fn rd_get(
         };
         fwd.get(http, &dest, bearer).await?
     } else {
-        let mut req = http.get(url).bearer_auth(bearer);
-        if let Some(ip) = user_ip {
-            req = req.query(&[("ip", ip)]);
-        }
-        req.send().await?
+        // Rebuild the RequestBuilder on each attempt (RequestBuilder is not Clone).
+        retry::with_transport_retry("rd_get", || async {
+            let mut req = http.get(url).bearer_auth(bearer);
+            if let Some(ip) = user_ip {
+                req = req.query(&[("ip", ip)]);
+            }
+            req.send().await
+        })
+        .await?
     };
     if resp.status() == 204 {
         return Ok(Value::Null);
