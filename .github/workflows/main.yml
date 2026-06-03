@@ -283,9 +283,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: clients/kodi/dist
           enable_jekyll: false
-          # Do NOT use force_orphan here — it would wipe the /docs/ subdirectory
-          # that the docs CI deploys to. Kodi files live at the root; docs live
-          # at /docs/. Both coexist on the same gh-pages branch.
+          keep_files: true
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
