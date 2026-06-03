@@ -130,6 +130,10 @@ jobs:
           workspaces: backend
 
       - name: Build release binaries
+        env:
+          # Cross-compiling for apple-darwin via zig cannot compile aws-lc-sys
+          # jitterentropy (needs CoreServices.h). Fall back to other entropy sources.
+          AWS_LC_SYS_NO_JITTER_ENTROPY: "1"
         run: |
           cd backend
           cargo zigbuild --release \
