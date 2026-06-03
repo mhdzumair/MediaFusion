@@ -125,9 +125,9 @@ regex = "1.12.3"
 fancy-regex = "0.18"
 scraper = "0.26"
 once_cell = "1"
-aws-config = { version = "1", features = ["behavior-version-latest", "rustls"] }
+aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-credential-types = "1"
-aws-sdk-s3 = { version = "1", features = ["rustls"] }
+aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", "default-https-client", "http-1x"] }
 
 # Telegram MTProto live scraper (Phase 2c)
 grammers-client = { version = "0.9", default-features = false }
