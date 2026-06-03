@@ -22,27 +22,33 @@ MediaFusion supports multiple deployment strategies to cater to different infras
 
 ## Direct Binary Deployment ⚡
 
-Run MediaFusion with zero container overhead. The API server and worker are distributed as **statically compiled musl binaries** — no Docker, no system libraries, no runtime dependencies required. You only need PostgreSQL and Redis.
+Run MediaFusion with zero container overhead. The API server and worker are distributed as **pre-built release binaries** — no Docker required. You only need PostgreSQL and Redis.
+
+Linux builds are statically linked **musl** binaries. macOS and Windows builds are native release binaries (`.exe` on Windows).
 
 ### Download
 
-Binaries are published as GitHub Release assets. Grab the right pair for your architecture:
+Binaries are published as GitHub Release assets. See the full docs at [`docs/deployment/binary.md`](/docs/deployment/binary.md).
 
-| Binary | amd64 | arm64 |
-|--------|-------|-------|
-| API server | `mediafusion-api-linux-amd64` | `mediafusion-api-linux-arm64` |
-| Background worker | `mediafusion-worker-linux-amd64` | `mediafusion-worker-linux-arm64` |
+| Platform | Architecture | API server | Background worker |
+|----------|--------------|------------|-------------------|
+| Linux | amd64 | `mediafusion-api-linux-amd64` | `mediafusion-worker-linux-amd64` |
+| Linux | arm64 | `mediafusion-api-linux-arm64` | `mediafusion-worker-linux-arm64` |
+| macOS | amd64 (Intel) | `mediafusion-api-macos-amd64` | `mediafusion-worker-macos-amd64` |
+| macOS | arm64 (Apple Silicon) | `mediafusion-api-macos-arm64` | `mediafusion-worker-macos-arm64` |
+| Windows | amd64 | `mediafusion-api-windows-amd64.exe` | `mediafusion-worker-windows-amd64.exe` |
 
 ```bash
-# Example: download amd64 binaries for a specific release
+# Example: download Linux amd64 binaries for a specific release
 RELEASE=6.0.0-beta.5
+PLATFORM=linux
 ARCH=amd64   # or arm64
 
 curl -Lo mediafusion-api \
-  "https://github.com/mhdzumair/MediaFusion/releases/download/${RELEASE}/mediafusion-api-linux-${ARCH}"
+  "https://github.com/mhdzumair/MediaFusion/releases/download/${RELEASE}/mediafusion-api-${PLATFORM}-${ARCH}"
 
 curl -Lo mediafusion-worker \
-  "https://github.com/mhdzumair/MediaFusion/releases/download/${RELEASE}/mediafusion-worker-linux-${ARCH}"
+  "https://github.com/mhdzumair/MediaFusion/releases/download/${RELEASE}/mediafusion-worker-${PLATFORM}-${ARCH}"
 
 chmod +x mediafusion-api mediafusion-worker
 ```

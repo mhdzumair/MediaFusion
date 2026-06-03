@@ -69,17 +69,41 @@ jobs:
           git push origin HEAD:main
 
   rust-build:
-    name: Build Rust Binaries (${{ matrix.docker_arch }})
+    name: Build Rust Binaries (${{ matrix.label }})
     needs: update_version
     strategy:
       matrix:
         include:
           - runner: ubuntu-24.04
-            docker_arch: amd64
-            musl_target: x86_64-unknown-linux-musl
+            label: linux-amd64
+            platform: linux
+            arch: amd64
+            rust_target: x86_64-unknown-linux-musl
+            exe_suffix: ""
           - runner: ubuntu-24.04-arm
-            docker_arch: arm64
-            musl_target: aarch64-unknown-linux-musl
+            label: linux-arm64
+            platform: linux
+            arch: arm64
+            rust_target: aarch64-unknown-linux-musl
+            exe_suffix: ""
+          - runner: ubuntu-24.04
+            label: macos-amd64
+            platform: macos
+            arch: amd64
+            rust_target: x86_64-apple-darwin
+            exe_suffix: ""
+          - runner: ubuntu-24.04-arm
+            label: macos-arm64
+            platform: macos
+            arch: arm64
+            rust_target: aarch64-apple-darwin
+            exe_suffix: ""
+          - runner: ubuntu-24.04
+            label: windows-amd64
+            platform: windows
+            arch: amd64
+            rust_target: x86_64-pc-windows-gnu
+            exe_suffix: ".exe"
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
@@ -90,7 +114,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
-          targets: ${{ matrix.musl_target }}
+          targets: ${{ matrix.rust_target }}
 
       - name: Install Zig (for cargo-zigbuild)
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
@@ -105,27 +129,33 @@ jobs:
         with:
           workspaces: backend
 
-      - name: Build static binaries (musl)
+      - name: Build release binaries
         run: |
           cd backend
           cargo zigbuild --release \
-            --target ${{ matrix.musl_target }} \
+            --target ${{ matrix.rust_target }} \
             --bin mediafusion-api \
             --bin mediafusion-worker
 
       - name: Stage artifacts
         run: |
-          ARCH=${{ matrix.docker_arch }}
-          TARGET=${{ matrix.musl_target }}
+          PLATFORM=${{ matrix.platform }}
+          ARCH=${{ matrix.arch }}
+          TARGET=${{ matrix.rust_target }}
+          SUFFIX=${{ matrix.exe_suffix }}
           mkdir -p dist
-          cp backend/target/$TARGET/release/mediafusion-api    dist/mediafusion-api-linux-$ARCH
-          cp backend/target/$TARGET/release/mediafusion-worker dist/mediafusion-worker-linux-$ARCH
-          chmod +x dist/*
+          cp "backend/target/$TARGET/release/mediafusion-api${SUFFIX}" \
+            "dist/mediafusion-api-${PLATFORM}-${ARCH}${SUFFIX}"
+          cp "backend/target/$TARGET/release/mediafusion-worker${SUFFIX}" \
+            "dist/mediafusion-worker-${PLATFORM}-${ARCH}${SUFFIX}"
+          if [ -z "$SUFFIX" ]; then
+            chmod +x dist/*
+          fi
 
       - name: Upload binaries artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: rust-dist-${{ matrix.docker_arch }}
+          name: rust-dist-${{ matrix.label }}
           path: dist/
           retention-days: 1
 
@@ -136,17 +166,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download amd64 binaries
+      - name: Download all release binaries
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: rust-dist-amd64
+          pattern: rust-dist-*
           path: dist/
-
-      - name: Download arm64 binaries
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: rust-dist-arm64
-          path: dist/
+          merge-multiple: true
 
       - name: Upload binaries to GitHub release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
@@ -164,16 +189,16 @@ jobs:
         with:
           ref: main
 
-      - name: Download amd64 binaries
+      - name: Download linux amd64 binaries
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: rust-dist-amd64
+          name: rust-dist-linux-amd64
           path: rust-dist/amd64/
 
-      - name: Download arm64 binaries
+      - name: Download linux arm64 binaries
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: rust-dist-arm64
+          name: rust-dist-linux-arm64
           path: rust-dist/arm64/
 
       - name: Rename artifacts to match Dockerfile expectations

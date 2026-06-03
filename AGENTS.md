@@ -176,4 +176,4 @@ REDIS_URL=redis://host:6379
 
 ## Release Process
 
-Releases are triggered by creating a GitHub release. The CI pipeline (`main.yml`) extracts the version from the release body, updates `Cargo.toml`/`pyproject.toml`, builds musl static binaries via `cargo-zigbuild`, pushes multi-platform Docker images, and deploys the Kodi addon to GitHub Pages.
+Releases are triggered by creating a GitHub release. The CI pipeline (`main.yml`) extracts the version from the release body, updates `Cargo.toml`/`pyproject.toml`, builds release binaries via `cargo-zigbuild` (Linux musl, macOS, Windows), uploads them as GitHub Release assets, pushes multi-platform Docker images, and deploys the Kodi addon to GitHub Pages.

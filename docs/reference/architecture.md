@@ -62,7 +62,7 @@ Stremio / Kodi / Browser
 | `mediafusion-api` | Main HTTP server — Stremio/Kodi requests, web UI | `backend/src/bin/` |
 | `mediafusion-worker` | Background jobs — scrapers, feeds, imports, maintenance | `backend/src/bin/worker.rs` |
 
-Both binaries share the same codebase (`backend/`), compiled as two separate static musl binaries.
+Both binaries share the same codebase (`backend/`), compiled as two separate release binaries (Linux: static musl; macOS/Windows: native targets via `cargo-zigbuild` in CI).
 
 ## Route performance characteristics
 
@@ -124,7 +124,7 @@ The worker binary runs a `JobRegistry` — a scheduler that fires registered job
 
 | Component | Technology |
 |---|---|
-| API server | Rust (Axum), static musl binary |
+| API server | Rust (Axum), pre-built release binary |
 | Background worker | Rust (custom `JobRegistry` scheduler) |
 | Database | PostgreSQL + sqlx (async, compile-time checked queries) |
 | Migrations | sqlx (`backend/migrations/`) |

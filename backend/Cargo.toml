@@ -20,7 +20,9 @@ name = "telegram_session"
 path = "src/bin/telegram_session.rs"
 
 [dependencies]
-# Global allocator: dramatically reduces RSS growth vs glibc malloc on long-running services
+# Global allocator: dramatically reduces RSS growth vs glibc malloc on long-running services.
+# Windows release builds use the system allocator (jemalloc is not used on Windows targets).
+[target.'cfg(not(windows))'.dependencies]
 tikv-jemallocator = "0.6"
 
 # Async trait support
