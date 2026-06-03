@@ -67,11 +67,12 @@ pub async fn api_error_middleware(request: Request, next: Next) -> Response {
     // at debug (4xx / extractor rejections that never reach a handler).
     if status.is_server_error() {
         tracing::error!(method = %method, path, status = status_code, "{detail}");
+        // Never expose internal detail (panic messages, stack traces, etc.) to callers.
+        error_response("Internal Server Error".to_string(), status_code)
     } else {
         tracing::debug!(method = %method, path, status = status_code, "{detail}");
+        error_response(detail, status_code)
     }
-
-    error_response(detail, status_code)
 }
 
 fn extract_detail(bytes: &[u8], status: StatusCode) -> String {
