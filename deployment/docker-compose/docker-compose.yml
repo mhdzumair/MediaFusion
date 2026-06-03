@@ -1,7 +1,7 @@
 services:
   # ── Primary API (Rust) ────────────────────────────────────────────────────
   mediafusion-api:
-    image: mhdzumair/mediafusion:6.0.0-beta.16
+    image: mhdzumair/mediafusion:6.0.0-beta.17
     ports:
       - "8000:8000"
     env_file: .env
@@ -31,7 +31,7 @@ services:
 
   # ── Background Worker (Rust) ──────────────────────────────────────────────
   mediafusion-worker:
-    image: mhdzumair/mediafusion:6.0.0-beta.16
+    image: mhdzumair/mediafusion:6.0.0-beta.17
     command: ["/usr/local/bin/mediafusion-worker"]
     env_file: .env
     environment:
