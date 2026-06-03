@@ -981,8 +981,7 @@ pub async fn get_streams_needing_annotation(
                 WHERE ard.stream_id = sml.stream_id AND ard.media_id = sml.media_id
             )"#;
 
-    const INNER_COLS: &str =
-        "s.id, s.name, s.source, ts.total_size, s.resolution, s.created_at, \
+    const INNER_COLS: &str = "s.id, s.name, s.source, ts.total_size, s.resolution, s.created_at, \
          ts.info_hash, m.id AS media_id, m.title, m.year, m.type AS media_type, img.url";
 
     let rows: Vec<Row> = if let Some(ref pat) = search_pattern {
