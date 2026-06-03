@@ -80,30 +80,40 @@ jobs:
             arch: amd64
             rust_target: x86_64-unknown-linux-musl
             exe_suffix: ""
+            use_zigbuild: true
+            jemalloc: true
           - runner: ubuntu-24.04-arm
             label: linux-arm64
             platform: linux
             arch: arm64
             rust_target: aarch64-unknown-linux-musl
             exe_suffix: ""
-          - runner: ubuntu-24.04
+            use_zigbuild: true
+            jemalloc: true
+          - runner: macos-14
             label: macos-amd64
             platform: macos
             arch: amd64
             rust_target: x86_64-apple-darwin
             exe_suffix: ""
-          - runner: ubuntu-24.04-arm
+            use_zigbuild: false
+            jemalloc: true
+          - runner: macos-14
             label: macos-arm64
             platform: macos
             arch: arm64
             rust_target: aarch64-apple-darwin
             exe_suffix: ""
+            use_zigbuild: false
+            jemalloc: true
           - runner: ubuntu-24.04
             label: windows-amd64
             platform: windows
             arch: amd64
             rust_target: x86_64-pc-windows-gnu
             exe_suffix: ".exe"
+            use_zigbuild: true
+            jemalloc: false
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
@@ -117,9 +127,11 @@ jobs:
           targets: ${{ matrix.rust_target }}
 
       - name: Install Zig (for cargo-zigbuild)
+        if: matrix.use_zigbuild
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
 
       - name: Install cargo-zigbuild
+        if: matrix.use_zigbuild
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-zigbuild
@@ -129,14 +141,35 @@ jobs:
         with:
           workspaces: backend
 
-      - name: Build release binaries
+      - name: Build release binaries (cross-compile)
+        if: matrix.use_zigbuild
         env:
           # Cross-compiling for apple-darwin via zig cannot compile aws-lc-sys
           # jitterentropy (needs CoreServices.h). Fall back to other entropy sources.
           AWS_LC_SYS_NO_JITTER_ENTROPY: "1"
+          SQLX_OFFLINE: "true"
         run: |
           cd backend
-          cargo zigbuild --release \
+          FEATURE_FLAGS=""
+          if [ "${{ matrix.jemalloc }}" != "true" ]; then
+            FEATURE_FLAGS="--no-default-features"
+          fi
+          cargo zigbuild --release $FEATURE_FLAGS \
+            --target ${{ matrix.rust_target }} \
+            --bin mediafusion-api \
+            --bin mediafusion-worker
+
+      - name: Build release binaries (native)
+        if: ${{ !matrix.use_zigbuild }}
+        env:
+          SQLX_OFFLINE: "true"
+        run: |
+          cd backend
+          FEATURE_FLAGS=""
+          if [ "${{ matrix.jemalloc }}" != "true" ]; then
+            FEATURE_FLAGS="--no-default-features"
+          fi
+          cargo build --release $FEATURE_FLAGS \
             --target ${{ matrix.rust_target }} \
             --bin mediafusion-api \
             --bin mediafusion-worker

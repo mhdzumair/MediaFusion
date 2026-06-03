@@ -3,6 +3,10 @@ name = "mediafusion-api"
 version = "6.0.0-beta.15"
 edition = "2021"
 
+[features]
+default = ["jemalloc"]
+jemalloc = ["dep:tikv-jemallocator"]
+
 [lib]
 name = "mediafusion_api"
 path = "src/lib.rs"
@@ -130,10 +134,10 @@ aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", 
 grammers-client = { version = "0.9", default-features = false }
 grammers-session = { version = "0.9", default-features = false }
 
-# Global allocator: dramatically reduces RSS growth vs glibc malloc on long-running services.
-# Windows release builds use the system allocator (jemalloc is not used on Windows targets).
-[target.'cfg(not(windows))'.dependencies]
-tikv-jemallocator = "0.6"
+# See tikv-jemallocator docs: cfg(not(target_env = "msvc")). Optional so CI can
+# disable it for Windows GNU cross-compiles where jemalloc does not link.
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { version = "0.6", optional = true }
 
 [dev-dependencies]
 wiremock = "0.6"
