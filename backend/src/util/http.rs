@@ -36,9 +36,13 @@ pub fn transport_error_kind(e: &reqwest::Error) -> &'static str {
 }
 
 /// Shared reqwest client for all outbound HTTP (scrapers, RPDB, etc.).
+/// HTTP/1.1 only: the deployment runs behind a Cloudflare WARP tunnel which silently
+/// resets HTTP/2 multiplexed connections mid-flight (GOAWAY/RST_STREAM). Python used
+/// requests/aiohttp which never negotiated HTTP/2, so this restores that behaviour.
 pub fn build(proxy_url: Option<&str>) -> reqwest::Client {
     let mut builder = reqwest::Client::builder()
         .user_agent("MediaFusion/1.0 (+https://github.com/mhdzumair/MediaFusion)")
+        .http1_only()
         .timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(10))
         .tcp_keepalive(Duration::from_secs(60))
@@ -55,9 +59,11 @@ pub fn build(proxy_url: Option<&str>) -> reqwest::Client {
 /// Outbound HTTP for debrid playback (TorBox createtorrent, mylist, etc.).
 /// Sync adds can exceed the 30s scraper timeout; Python used a 15s client but blocked
 /// on a Redis lock so only one resolve ran — Rust must match that dedup behavior.
+/// HTTP/1.1 only for the same WARP tunnel reason as the general client.
 pub fn build_debrid(proxy_url: Option<&str>) -> reqwest::Client {
     let mut builder = reqwest::Client::builder()
         .user_agent("MediaFusion/1.0 (+https://github.com/mhdzumair/MediaFusion)")
+        .http1_only()
         .timeout(Duration::from_secs(90))
         .connect_timeout(Duration::from_secs(15))
         .tcp_keepalive(Duration::from_secs(60))
