@@ -267,6 +267,7 @@ async fn fetch_mdblist_catalog(
         Err(e) => {
             tracing::warn!(
                 error_kind = crate::util::http::transport_error_kind(&e),
+                root_cause = crate::util::http::root_cause(&e),
                 "mdblist catalog [{catalog_id}]: request failed: {e}"
             );
             return Metas { metas: vec![] };

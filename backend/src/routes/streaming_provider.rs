@@ -189,6 +189,7 @@ pub async fn realdebrid_get_device_code(State(state): State<Arc<AppState>>) -> R
         Err(e) => {
             tracing::error!(
                 error_kind = http_util::transport_error_kind(&e),
+                root_cause = http_util::root_cause(&e),
                 "realdebrid_get_device_code: request error: {e}"
             );
             (

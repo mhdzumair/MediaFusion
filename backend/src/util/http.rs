@@ -1,5 +1,21 @@
 use std::time::Duration;
 
+/// Walks the `std::error::Error` source chain and returns the deepest (root) error message.
+/// reqwest's top-level Display is always "error sending request for url (...)" which hides
+/// the actual cause — use this alongside `{e}` to surface the real error in logs, e.g.:
+///   "error sending request ... — caused by: certificate verify failed: UnknownIssuer"
+///   "error sending request ... — caused by: connection refused (os error 111)"
+pub fn root_cause(e: &reqwest::Error) -> String {
+    use std::error::Error;
+    let mut source = e.source();
+    let mut last = e.to_string();
+    while let Some(s) = source {
+        last = s.to_string();
+        source = s.source();
+    }
+    last
+}
+
 /// Returns `true` for transport-level failures that are safe to retry:
 /// connection errors, timeouts, and low-level request build/send failures.
 /// HTTP 4xx/5xx responses are *not* transport errors — only `Err(reqwest::Error)` arms
