@@ -2560,16 +2560,16 @@
 </thead>
 <tbody>
 <tr>
-<td><code>page</code></td>
+<td><code>after_id</code></td>
 <td><code>int</code></td>
 <td><code>0</code></td>
-<td>Starting page index</td>
+<td>Resume after this stream id (keyset pagination)</td>
 </tr>
 <tr>
-<td><code>page_size</code></td>
+<td><code>batch_size</code></td>
 <td><code>int</code></td>
 <td><code>500</code></td>
-<td>Streams per page (max 5000)</td>
+<td>Streams per batch (max 5000). Alias: <code>page_size</code></td>
 </tr>
 <tr>
 <td><code>only_missing</code></td>
@@ -2587,13 +2587,13 @@
 <td><code>continuous</code></td>
 <td><code>bool</code></td>
 <td><code>true</code></td>
-<td>Loop pages in-process until done</td>
+<td>Loop batches in-process until done</td>
 </tr>
 <tr>
-<td><code>max_pages</code></td>
+<td><code>max_batches</code></td>
 <td><code>int</code></td>
 <td>—</td>
-<td>Optional cap (for test runs)</td>
+<td>Optional cap (for test runs). Alias: <code>max_pages</code></td>
 </tr>
 </tbody>
 </table>
@@ -2602,19 +2602,24 @@
 </span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
 </span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># Larger batches, same behavior</span>
 </span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>backfill_stream_metadata<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">  </span>--args<span class="w"> </span><span class="s1">'{"page_size": 2000}'</span>
+</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">  </span>--args<span class="w"> </span><span class="s1">'{"batch_size": 2000}'</span>
 </span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>
-</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="c1"># Test run: first 3 pages only</span>
+</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="c1"># Resume after a specific stream id (e.g. after stopping a run)</span>
 </span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>backfill_stream_metadata<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-15-10"><a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="w">  </span>--args<span class="w"> </span><span class="s1">'{"page_size": 500, "max_pages": 3}'</span>
+</span><span id="__span-15-10"><a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="w">  </span>--args<span class="w"> </span><span class="s1">'{"after_id": 1234567, "batch_size": 2000}'</span>
 </span><span id="__span-15-11"><a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>
-</span><span id="__span-15-12"><a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="c1"># Re-parse everything (overwrite columns from PTT; links are additive)</span>
+</span><span id="__span-15-12"><a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="c1"># Test run: first 3 batches only</span>
 </span><span id="__span-15-13"><a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>backfill_stream_metadata<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-15-14"><a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="w">  </span>--args<span class="w"> </span><span class="s1">'{"only_missing": false, "page_size": 1000}'</span>
+</span><span id="__span-15-14"><a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="w">  </span>--args<span class="w"> </span><span class="s1">'{"batch_size": 500, "max_batches": 3}'</span>
+</span><span id="__span-15-15"><a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a>
+</span><span id="__span-15-16"><a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a><span class="c1"># Re-parse everything (overwrite columns from PTT; links are additive)</span>
+</span><span id="__span-15-17"><a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a>./mediafusion-worker<span class="w"> </span>--run-job<span class="w"> </span>backfill_stream_metadata<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-15-18"><a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="w">  </span>--args<span class="w"> </span><span class="s1">'{"only_missing": false, "batch_size": 1000}'</span>
 </span></code></pre></div>
 <p>Makefile shortcut:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>make<span class="w"> </span>worker-backfill-stream-metadata
-</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>make<span class="w"> </span>worker-backfill-stream-metadata<span class="w"> </span><span class="nv">PAGE_SIZE</span><span class="o">=</span><span class="m">2000</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>make<span class="w"> </span>worker-backfill-stream-metadata<span class="w"> </span><span class="nv">BATCH_SIZE</span><span class="o">=</span><span class="m">2000</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>make<span class="w"> </span>worker-backfill-stream-metadata<span class="w"> </span><span class="nv">AFTER_ID</span><span class="o">=</span><span class="m">1234567</span><span class="w"> </span><span class="nv">BATCH_SIZE</span><span class="o">=</span><span class="m">2000</span>
 </span></code></pre></div>
 <p>After backfill, Stremio stream descriptions should show language lines (<code>🌐 English</code>, etc.) and language filtering in the addon will work for streams that PTT can parse.</p>
 <hr>
