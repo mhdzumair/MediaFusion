@@ -82,6 +82,7 @@ jobs:
             exe_suffix: ""
             use_zigbuild: true
             jemalloc: true
+            tls_features: "tls-native,vendored-openssl"
           - runner: ubuntu-24.04-arm
             label: linux-arm64
             platform: linux
@@ -90,6 +91,7 @@ jobs:
             exe_suffix: ""
             use_zigbuild: true
             jemalloc: true
+            tls_features: "tls-native,vendored-openssl"
           - runner: macos-14
             label: macos-amd64
             platform: macos
@@ -98,6 +100,7 @@ jobs:
             exe_suffix: ""
             use_zigbuild: false
             jemalloc: true
+            tls_features: "tls-native"
           - runner: macos-14
             label: macos-arm64
             platform: macos
@@ -106,6 +109,7 @@ jobs:
             exe_suffix: ""
             use_zigbuild: false
             jemalloc: true
+            tls_features: "tls-native"
           - runner: ubuntu-24.04
             label: windows-amd64
             platform: windows
@@ -114,6 +118,7 @@ jobs:
             exe_suffix: ".exe"
             use_zigbuild: true
             jemalloc: false
+            tls_features: "tls-rustls"
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
@@ -150,9 +155,10 @@ jobs:
           SQLX_OFFLINE: "true"
         run: |
           cd backend
-          FEATURE_FLAGS=""
           if [ "${{ matrix.jemalloc }}" != "true" ]; then
-            FEATURE_FLAGS="--no-default-features"
+            FEATURE_FLAGS="--no-default-features --features ${{ matrix.tls_features }}"
+          else
+            FEATURE_FLAGS="--features ${{ matrix.tls_features }}"
           fi
           cargo zigbuild --release $FEATURE_FLAGS \
             --target ${{ matrix.rust_target }} \
@@ -165,9 +171,10 @@ jobs:
           SQLX_OFFLINE: "true"
         run: |
           cd backend
-          FEATURE_FLAGS=""
           if [ "${{ matrix.jemalloc }}" != "true" ]; then
-            FEATURE_FLAGS="--no-default-features"
+            FEATURE_FLAGS="--no-default-features --features ${{ matrix.tls_features }}"
+          else
+            FEATURE_FLAGS="--features ${{ matrix.tls_features }}"
           fi
           cargo build --release $FEATURE_FLAGS \
             --target ${{ matrix.rust_target }} \
