@@ -936,7 +936,11 @@ pub async fn get_streams_needing_annotation(
     // Start from stream_media_link (one row per stream-media pair — no DISTINCT needed).
     // EXISTS/NOT EXISTS terminate early and use existing indexes:
     //   idx_stream_file_stream, ix_file_media_link_file_id, unique(stream_id,media_id) on dismissal.
-    let rows: Vec<(
+    //
+    // When a search pattern is present the OR is split into a UNION so each branch
+    // can use its own GIN trigram index (idx_stream_name_trgm / idx_media_title_trgm)
+    // instead of forcing a cross-join seq-scan over the 5 GB stream table.
+    type Row = (
         i32,
         Option<String>,
         Option<String>,
@@ -950,21 +954,9 @@ pub async fn get_streams_needing_annotation(
         crate::db::MediaType,
         Option<String>,
         i64,
-    )> = sqlx::query_as(
-        r#"SELECT
-                s.id,
-                s.name,
-                s.source,
-                ts.total_size,
-                s.resolution,
-                s.created_at,
-                ts.info_hash,
-                m.id,
-                m.title,
-                m.year,
-                m.type,
-                img.url,
-                COUNT(*) OVER() AS total_count
+    );
+
+    const BASE_FROM: &str = r#"
             FROM stream_media_link sml
             INNER JOIN stream s ON s.id = sml.stream_id
                 AND s.is_active = true
@@ -987,17 +979,47 @@ pub async fn get_streams_needing_annotation(
             AND NOT EXISTS (
                 SELECT 1 FROM annotation_request_dismissal ard
                 WHERE ard.stream_id = sml.stream_id AND ard.media_id = sml.media_id
-            )
-            AND ($3::text IS NULL OR s.name ILIKE $3 OR m.title ILIKE $3)
-            ORDER BY s.created_at DESC
-            LIMIT $1 OFFSET $2"#,
-    )
-    .bind(per_page)
-    .bind(offset)
-    .bind(&search_pattern)
-    .fetch_all(&state.pool_ro)
-    .await
-    .unwrap_or_default();
+            )"#;
+
+    const INNER_COLS: &str =
+        "s.id, s.name, s.source, ts.total_size, s.resolution, s.created_at, \
+         ts.info_hash, m.id AS media_id, m.title, m.year, m.type AS media_type, img.url";
+
+    let rows: Vec<Row> = if let Some(ref pat) = search_pattern {
+        sqlx::query_as::<_, Row>(&format!(
+            r#"SELECT id, name, source, total_size, resolution, created_at, info_hash,
+                      media_id, title, year, media_type, url,
+                      COUNT(*) OVER() AS total_count
+               FROM (
+                   (SELECT {INNER_COLS}{BASE_FROM} AND s.name  ILIKE $3)
+                   UNION
+                   (SELECT {INNER_COLS}{BASE_FROM} AND m.title ILIKE $3)
+               ) sub
+               ORDER BY created_at DESC
+               LIMIT $1 OFFSET $2"#
+        ))
+        .bind(per_page)
+        .bind(offset)
+        .bind(pat)
+        .fetch_all(&state.pool_ro)
+        .await
+        .unwrap_or_default()
+    } else {
+        sqlx::query_as::<_, Row>(&format!(
+            r#"SELECT
+                    s.id, s.name, s.source, ts.total_size, s.resolution, s.created_at,
+                    ts.info_hash, m.id, m.title, m.year, m.type, img.url,
+                    COUNT(*) OVER() AS total_count
+               {BASE_FROM}
+               ORDER BY s.created_at DESC
+               LIMIT $1 OFFSET $2"#
+        ))
+        .bind(per_page)
+        .bind(offset)
+        .fetch_all(&state.pool_ro)
+        .await
+        .unwrap_or_default()
+    };
 
     if rows.is_empty() {
         return Json(json!({

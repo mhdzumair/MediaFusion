@@ -156,9 +156,14 @@ pub async fn search_by_title(
     };
     let limit_ph = format!("${next_param}");
 
+    // UNION splits the OR into two single-table ILIKE branches so each can use
+    // its own GIN trigram index instead of forcing a cross-join seq-scan.
     let sql = format!(
-        "SELECT {SELECT_COLS}
-         AND (m.title ILIKE $1 OR st.name ILIKE $1){year_clause}{mt_clause}{GROUP_BY}
+        "(SELECT {SELECT_COLS}
+          AND m.title ILIKE $1{year_clause}{mt_clause}{GROUP_BY})
+         UNION
+         (SELECT {SELECT_COLS}
+          AND st.name ILIKE $1{year_clause}{mt_clause}{GROUP_BY})
          LIMIT {limit_ph}"
     );
 
