@@ -294,6 +294,16 @@ pub struct AppConfig {
     pub public_indexers_source_health_scope: String,
     pub public_indexers_source_health_metrics_ttl_seconds: i64,
 
+    // ── RealDebrid filename block patterns ────────────────────────
+    /// Comma-separated substrings (case-insensitive) that cause RD to refuse a file.
+    /// Default: webrip,bdrip,hdrip,dvdrip
+    /// Set via env: RD_BLOCKED_SUBSTRINGS=webrip,bdrip,hdrip,dvdrip
+    pub rd_blocked_substrings: Vec<String>,
+    /// Comma-separated dot-adjacent source.codec pairs (case-insensitive) blocked by RD.
+    /// Default: bluray.x264,hdtv.x264,hdtv.xvid,web.x264,web.h264
+    /// Set via env: RD_BLOCKED_DOT_PAIRS=bluray.x264,hdtv.x264,hdtv.xvid,web.x264,web.h264
+    pub rd_blocked_dot_pairs: Vec<String>,
+
     // ── Provider restrictions ─────────────────────────────────────
     /// Mirrors Python's `disabled_providers`. JSON array of provider service names to
     /// block globally, e.g. `'["p2p","realdebrid"]'`. "p2p" disables WebTorrent fallback.
@@ -692,6 +702,34 @@ impl AppConfig {
                 .unwrap_or_else(|_| String::new()),
             public_indexers_source_health_metrics_ttl_seconds: env("PUBLIC_INDEXERS_SOURCE_HEALTH_METRICS_TTL_SECONDS")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(86400),
+            rd_blocked_substrings: env("RD_BLOCKED_SUBSTRINGS")
+                .ok()
+                .map(|s| {
+                    s.split(',')
+                        .map(|p| p.trim().to_lowercase())
+                        .filter(|p| !p.is_empty())
+                        .collect()
+                })
+                .unwrap_or_else(|| {
+                    vec!["webrip".into(), "bdrip".into(), "hdrip".into(), "dvdrip".into()]
+                }),
+            rd_blocked_dot_pairs: env("RD_BLOCKED_DOT_PAIRS")
+                .ok()
+                .map(|s| {
+                    s.split(',')
+                        .map(|p| p.trim().to_lowercase())
+                        .filter(|p| !p.is_empty())
+                        .collect()
+                })
+                .unwrap_or_else(|| {
+                    vec![
+                        "bluray.x264".into(),
+                        "hdtv.x264".into(),
+                        "hdtv.xvid".into(),
+                        "web.x264".into(),
+                        "web.h264".into(),
+                    ]
+                }),
             disabled_providers: env("DISABLED_PROVIDERS")
                 .ok().and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
                 .unwrap_or_default(),

@@ -1438,7 +1438,11 @@ pub async fn get_media_streams(
                         .as_deref()
                         .filter(|s| !s.is_empty())
                         .unwrap_or(r.name.as_str());
-                    crate::routes::stream::is_rd_blocked_filename(check)
+                    crate::routes::stream::is_rd_blocked_filename(
+                        check,
+                        &state.config.rd_blocked_substrings,
+                        &state.config.rd_blocked_dot_pairs,
+                    )
                 };
 
             // Build playback URL for torrent streams when a provider is configured

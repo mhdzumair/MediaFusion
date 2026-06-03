@@ -679,7 +679,11 @@ pub async fn resolve(
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| t.get("name").and_then(|v| v.as_str()).unwrap_or(""));
-            !is_rd_blocked_filename(check)
+            !is_rd_blocked_filename(
+                check,
+                &state.config.rd_blocked_substrings,
+                &state.config.rd_blocked_dot_pairs,
+            )
         })
         .collect();
 
@@ -2171,35 +2175,19 @@ fn sort_and_cap_torrents(
 /// it). Should be checked against the torrent filename, falling back to the
 /// release name when no filename is stored.
 ///
-/// Rule 1 – substring match (case-insensitive):
-///   web-dl, webrip, bdrip, hdrip, dvdrip
-///
-/// Rule 2 – dot-adjacent source.codec pair (case-insensitive):
-///   BluRay.x264, HDTV.x264, HDTV.XviD, WEB.x264, WEB.h264
-pub(crate) fn is_rd_blocked_filename(filename: &str) -> bool {
+/// Returns true if `filename` matches any RealDebrid-blocked pattern.
+/// Patterns are operator-configurable via `RD_BLOCKED_SUBSTRINGS` and
+/// `RD_BLOCKED_DOT_PAIRS` env vars; all comparisons are case-insensitive.
+pub(crate) fn is_rd_blocked_filename(
+    filename: &str,
+    blocked_substrings: &[String],
+    blocked_dot_pairs: &[String],
+) -> bool {
     let lower = filename.to_lowercase();
-
-    const BLOCKED_SUBSTRINGS: &[&str] = &["web-dl", "webrip", "bdrip", "hdrip", "dvdrip"];
-    for pat in BLOCKED_SUBSTRINGS {
-        if lower.contains(pat) {
-            return true;
-        }
-    }
-
-    const BLOCKED_DOT_PAIRS: &[&str] = &[
-        "bluray.x264",
-        "hdtv.x264",
-        "hdtv.xvid",
-        "web.x264",
-        "web.h264",
-    ];
-    for pat in BLOCKED_DOT_PAIRS {
-        if lower.contains(pat) {
-            return true;
-        }
-    }
-
-    false
+    blocked_substrings
+        .iter()
+        .any(|p| lower.contains(p.as_str()))
+        || blocked_dot_pairs.iter().any(|p| lower.contains(p.as_str()))
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
