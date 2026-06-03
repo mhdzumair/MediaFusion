@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use axum::{
     extract::Request,
     http::StatusCode,
@@ -5,6 +7,25 @@ use axum::{
     response::{IntoResponse, Json, Response},
 };
 use serde_json::json;
+
+/// Panic handler for `CatchPanicLayer`.
+///
+/// Formats the panic payload as `{"error": "panic: <message>"}` so that
+/// `api_error_middleware` can extract and log the message like any other 5xx.
+pub fn handle_panic(err: Box<dyn Any + Send + 'static>) -> Response {
+    let msg = if let Some(s) = err.downcast_ref::<String>() {
+        s.clone()
+    } else if let Some(s) = err.downcast_ref::<&str>() {
+        s.to_string()
+    } else {
+        "unknown panic payload".to_string()
+    };
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": format!("panic: {msg}") })),
+    )
+        .into_response()
+}
 
 /// Wraps all /api/v1/* error responses (4xx/5xx) as HTTP 200 with an error
 /// envelope, mirroring the Python exception_handlers behaviour.
@@ -42,11 +63,10 @@ pub async fn api_error_middleware(request: Request, next: Next) -> Response {
 
     let detail = extract_detail(&bytes, status);
 
-    // Log client errors (4xx) at debug and server errors (5xx) at warn so they
-    // appear in server logs — Axum extractor rejections (422 etc.) never reach
-    // the handler and would otherwise be completely silent.
+    // Log server errors at error level (panics, unhandled 5xx) and client errors
+    // at debug (4xx / extractor rejections that never reach a handler).
     if status.is_server_error() {
-        tracing::warn!(method = %method, path, status = status_code, "{detail}");
+        tracing::error!(method = %method, path, status = status_code, "{detail}");
     } else {
         tracing::debug!(method = %method, path, status = status_code, "{detail}");
     }

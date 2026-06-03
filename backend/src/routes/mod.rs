@@ -49,13 +49,14 @@ use axum::{
     Router,
 };
 use tower_http::{
+    catch_panic::CatchPanicLayer,
     compression::CompressionLayer,
     cors::CorsLayer,
     services::{ServeDir, ServeFile},
     timeout::TimeoutLayer,
 };
 
-use crate::api_error_middleware::api_error_middleware;
+use crate::api_error_middleware::{api_error_middleware, handle_panic};
 use crate::api_key_middleware::api_key_middleware;
 use crate::make_trace_layer;
 use crate::metrics_middleware::metrics_middleware;
@@ -767,6 +768,9 @@ pub fn router(state: Arc<AppState>) -> Router {
             Arc::clone(&state),
             stremio_auth_middleware,
         ))
+        // Catch handler panics and format them as JSON 500 so api_error_middleware
+        // can extract and log the panic message.
+        .layer(CatchPanicLayer::custom(handle_panic))
         .layer(axum::middleware::from_fn_with_state(
             Arc::clone(&state),
             metrics_middleware,
