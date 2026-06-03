@@ -362,7 +362,11 @@ pub async fn fetch_youtube_streams_bulk(
     .fetch_all(pool)
     .await
     .unwrap_or_else(|e| {
-        warn!("youtube streams query: {e}");
+        if matches!(e, sqlx::Error::PoolTimedOut) {
+            tracing::debug!("youtube streams query: pool timeout");
+        } else {
+            warn!("youtube streams query: {e}");
+        }
         vec![]
     });
     let mut map: std::collections::HashMap<MediaId, Vec<Value>> = std::collections::HashMap::new();

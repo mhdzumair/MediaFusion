@@ -42,6 +42,13 @@ pub async fn response_json(
         };
     }
 
+    // 5xx = gateway/upstream error (e.g. 504 with HTML body). No point trying to parse.
+    if status.is_server_error() {
+        let preview = if text.len() > 200 { &text[..200] } else { &text };
+        tracing::debug!("{context}: server error (HTTP {status}) — body: {preview}");
+        return Err(ProviderError::api(format!("HTTP {status}"), "api_error.mp4"));
+    }
+
     serde_json::from_str(&text).map_err(|e| {
         // Auth failures with non-JSON bodies (HTML proxy error pages) should show
         // the credentials error video, not the generic api_error.

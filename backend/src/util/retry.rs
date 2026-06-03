@@ -53,12 +53,11 @@ where
     f.retry(policy)
         .when(|e: &reqwest::Error| crate::util::http::is_transport_error(e))
         .notify(|err: &reqwest::Error, dur: Duration| {
+            let kind = crate::util::http::transport_error_kind(err);
+            let root = crate::util::http::root_cause(err);
             warn!(
-                label,
-                error_kind = crate::util::http::transport_error_kind(err),
-                root_cause = crate::util::http::root_cause(err),
-                delay_ms = dur.as_millis(),
-                "retrying transport error: {err}"
+                "retrying transport error [{label}]: kind={kind}, root=\"{root}\", delay={}ms — {err}",
+                dur.as_millis()
             );
         })
         .await

@@ -9,7 +9,13 @@ use tracing::warn;
 /// - SQLSTATE 40001 (`serialization_failure`): repeatable-read / serializable transaction
 ///   race; the standard retry target for multi-version concurrency control.
 pub fn is_retryable(e: &sqlx::Error) -> bool {
+    // Pool timeout = momentary saturation spike; worth one backoff retry.
+    if matches!(e, sqlx::Error::PoolTimedOut) {
+        return true;
+    }
     if let sqlx::Error::Database(dbe) = e {
+        // 57014 = query_canceled (hot-standby recovery conflict)
+        // 40001 = serialization_failure (MVCC race)
         matches!(dbe.code().as_deref(), Some("57014") | Some("40001"))
     } else {
         false

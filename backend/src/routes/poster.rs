@@ -130,7 +130,11 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
         .fetch_optional(&state.pool_ro)
         .await
         .unwrap_or_else(|e| {
-            warn!("poster meta mf{internal_id}: {e}");
+            if matches!(e, sqlx::Error::PoolTimedOut) {
+                tracing::debug!("poster meta mf{internal_id}: pool timeout");
+            } else {
+                warn!("poster meta mf{internal_id}: {e}");
+            }
             None
         })
     } else {
@@ -164,7 +168,11 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
         .fetch_optional(&state.pool_ro)
         .await
         .unwrap_or_else(|e| {
-            warn!("poster meta {id}: {e}");
+            if matches!(e, sqlx::Error::PoolTimedOut) {
+                tracing::debug!("poster meta {id}: pool timeout");
+            } else {
+                warn!("poster meta {id}: {e}");
+            }
             None
         })
     };
