@@ -337,9 +337,7 @@ async fn scrobble_trakt(
         );
         Ok(())
     } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-        debug!(
-            "Trakt scrobble {action} rate limited (429); will retry on next event"
-        );
+        debug!("Trakt scrobble {action} rate limited (429); will retry on next event");
         Ok(())
     } else {
         Err(format!("Trakt scrobble HTTP {status}"))

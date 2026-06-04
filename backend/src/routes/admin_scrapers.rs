@@ -273,11 +273,10 @@ pub async fn block_torrent(
     .await
     .unwrap_or(None);
 
-    let result =
-        sqlx::query("UPDATE stream SET is_blocked = true WHERE info_hash = $1")
-            .bind(&info_hash)
-            .execute(&state.pool)
-            .await;
+    let result = sqlx::query("UPDATE stream SET is_blocked = true WHERE info_hash = $1")
+        .bind(&info_hash)
+        .execute(&state.pool)
+        .await;
 
     match result {
         Ok(r) if r.rows_affected() == 0 => (
@@ -361,11 +360,10 @@ pub async fn unblock_torrent(
                 .into_response();
         }
     };
-    let result =
-        sqlx::query("UPDATE stream SET is_blocked = false WHERE info_hash = $1")
-            .bind(&info_hash)
-            .execute(&state.pool)
-            .await;
+    let result = sqlx::query("UPDATE stream SET is_blocked = false WHERE info_hash = $1")
+        .bind(&info_hash)
+        .execute(&state.pool)
+        .await;
 
     match result {
         Ok(r) if r.rows_affected() == 0 => (

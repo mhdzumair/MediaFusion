@@ -1250,11 +1250,7 @@ pub async fn get_missing_torrents(
             Ok(t) => t,
             Err(e) => {
                 e.log(&format!("get_missing_torrents {provider} list"));
-                return (
-                    e.http_status(),
-                    Json(json!({"detail": e.to_string()})),
-                )
-                    .into_response();
+                return (e.http_status(), Json(json!({"detail": e.to_string()}))).into_response();
             }
         };
 
@@ -1279,10 +1275,7 @@ pub async fn get_missing_torrents(
                 Ok(b) => b,
                 Err(e) => {
                     e.log("get_missing_torrents rd bearer");
-                    return (
-                        e.http_status(),
-                        Json(json!({"detail": e.to_string()})),
-                    )
+                    return (e.http_status(), Json(json!({"detail": e.to_string()})))
                         .into_response();
                 }
             };
@@ -1499,11 +1492,7 @@ pub async fn import_torrents(
         Ok(t) => t,
         Err(e) => {
             e.log(&format!("import_torrents fetch {provider}"));
-            return (
-                e.http_status(),
-                Json(json!({"detail": e.to_string()})),
-            )
-                .into_response();
+            return (e.http_status(), Json(json!({"detail": e.to_string()}))).into_response();
         }
     };
     let by_hash: std::collections::HashMap<String, _> = torrents
@@ -1825,11 +1814,7 @@ pub async fn advanced_import_torrents(
         Ok(t) => t,
         Err(e) => {
             e.log(&format!("advanced_import_torrents fetch {provider}"));
-            return (
-                e.http_status(),
-                Json(json!({"detail": e.to_string()})),
-            )
-                .into_response();
+            return (e.http_status(), Json(json!({"detail": e.to_string()}))).into_response();
         }
     };
     let by_hash: std::collections::HashMap<String, _> = torrents
