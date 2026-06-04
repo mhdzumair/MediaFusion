@@ -1380,7 +1380,9 @@ async fn send_email(
     // SMTP_USE_SSL=true  → implicit TLS wrapper (port 465)
     // SMTP_USE_TLS=true  → STARTTLS (port 587, default)
     // both false         → plaintext (internal relay / mailhog)
-    let mut builder = if state.config.smtp_use_ssl {
+    // Port 465 always implies implicit SSL regardless of flags.
+    let use_ssl = state.config.smtp_use_ssl || state.config.smtp_port == 465;
+    let mut builder = if use_ssl {
         let tls = TlsParameters::new(smtp_host.to_string())?;
         AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(smtp_host)
             .port(state.config.smtp_port)

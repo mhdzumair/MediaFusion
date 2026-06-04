@@ -10,8 +10,8 @@ jemalloc = ["dep:tikv-jemallocator"]
 # tls-native uses the OS TLS stack (SecureTransport on macOS, OpenSSL on Linux).
 # vendored-openssl compiles OpenSSL from source (needed for musl/cross-compile
 # targets where system OpenSSL is unavailable; works with cargo-zigbuild).
-tls-rustls        = ["reqwest/rustls"]
-tls-native        = ["reqwest/native-tls"]
+tls-rustls        = ["reqwest/rustls", "lettre/tokio1-rustls-tls"]
+tls-native        = ["reqwest/native-tls", "lettre/tokio1-native-tls"]
 vendored-openssl  = ["openssl/vendored"]
 
 [lib]
@@ -120,7 +120,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 prometheus-client = "0.24"
 
 # Email (SMTP) for auth flows
-lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder"] }
 
 # Tracing
 tracing = "0.1"
