@@ -1249,10 +1249,10 @@ pub async fn get_missing_torrents(
         {
             Ok(t) => t,
             Err(e) => {
-                tracing::warn!("get_missing_torrents {provider} list: {e}");
+                e.log(&format!("get_missing_torrents {provider} list"));
                 return (
-                    StatusCode::BAD_GATEWAY,
-                    Json(json!({"detail": format!("Provider error: {e}")})),
+                    e.http_status(),
+                    Json(json!({"detail": e.to_string()})),
                 )
                     .into_response();
             }
@@ -1278,10 +1278,10 @@ pub async fn get_missing_torrents(
             {
                 Ok(b) => b,
                 Err(e) => {
-                    tracing::warn!("get_missing_torrents rd bearer: {e}");
+                    e.log("get_missing_torrents rd bearer");
                     return (
-                        StatusCode::BAD_GATEWAY,
-                        Json(json!({"detail": format!("Provider error: {e}")})),
+                        e.http_status(),
+                        Json(json!({"detail": e.to_string()})),
                     )
                         .into_response();
                 }
@@ -1498,10 +1498,10 @@ pub async fn import_torrents(
     let torrents = match fetch_downloaded_torrents(&state, &provider, &token).await {
         Ok(t) => t,
         Err(e) => {
-            tracing::warn!("import_torrents fetch {provider}: {e}");
+            e.log(&format!("import_torrents fetch {provider}"));
             return (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"detail": format!("Provider error: {e}")})),
+                e.http_status(),
+                Json(json!({"detail": e.to_string()})),
             )
                 .into_response();
         }
@@ -1737,13 +1737,14 @@ async fn fetch_downloaded_torrents(
     state: &AppState,
     provider: &str,
     token: &str,
-) -> Result<Vec<crate::providers::torrents::DownloadedTorrent>, String> {
+) -> Result<Vec<crate::providers::torrents::DownloadedTorrent>, crate::providers::ProviderError> {
     if !crate::providers::torrents::supports_download_list(provider) {
-        return Err(format!("Unsupported provider: {provider}"));
+        return Err(crate::providers::ProviderError::api(
+            format!("Unsupported provider: {provider}"),
+            "api_error.mp4",
+        ));
     }
-    crate::providers::torrents::list_downloaded_torrents(&state.http, provider, token)
-        .await
-        .map_err(|e| e.to_string())
+    crate::providers::torrents::list_downloaded_torrents(&state.http, provider, token).await
 }
 
 // ─── Remove / clear-all body shapes ─────────────────────────────────────────
@@ -1823,10 +1824,10 @@ pub async fn advanced_import_torrents(
     let torrents = match fetch_downloaded_torrents(&state, &provider, &token).await {
         Ok(t) => t,
         Err(e) => {
-            tracing::warn!("advanced_import_torrents fetch {provider}: {e}");
+            e.log(&format!("advanced_import_torrents fetch {provider}"));
             return (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"detail": format!("Provider error: {e}")})),
+                e.http_status(),
+                Json(json!({"detail": e.to_string()})),
             )
                 .into_response();
         }
@@ -2157,10 +2158,10 @@ pub async fn remove_torrent_from_debrid(
         )
             .into_response(),
         Err(e) => {
-            tracing::warn!("remove_torrent_from_debrid {provider}: {e}");
+            e.log(&format!("remove_torrent_from_debrid {provider}"));
             (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"success": false, "detail": format!("Provider error: {e}")})),
+                e.http_status(),
+                Json(json!({"success": false, "detail": e.to_string()})),
             )
                 .into_response()
         }
@@ -2241,10 +2242,10 @@ pub async fn clear_all_torrents_from_debrid(
     match result {
         Ok(()) => Json(json!({"success": true, "provider": provider})).into_response(),
         Err(e) => {
-            tracing::warn!("clear_all_torrents_from_debrid {provider}: {e}");
+            e.log(&format!("clear_all_torrents_from_debrid {provider}"));
             (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"success": false, "detail": format!("Provider error: {e}")})),
+                e.http_status(),
+                Json(json!({"success": false, "detail": e.to_string()})),
             )
                 .into_response()
         }

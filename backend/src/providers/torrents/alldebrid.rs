@@ -33,6 +33,20 @@ fn map_ad_error(code: &str) -> Option<(&'static str, &'static str)> {
     })
 }
 
+fn strip_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut depth = 0usize;
+    for c in s.chars() {
+        match c {
+            '<' => depth += 1,
+            '>' if depth > 0 => depth -= 1,
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    out.trim().to_string()
+}
+
 fn check_ad_error(body: &Value) -> Result<(), ProviderError> {
     if body.get("status").and_then(|v| v.as_str()) == Some("error") {
         let code = body
@@ -40,11 +54,12 @@ fn check_ad_error(body: &Value) -> Result<(), ProviderError> {
             .and_then(|e| e.get("code"))
             .and_then(|v| v.as_str())
             .unwrap_or("UNKNOWN");
-        let message = body
-            .get("error")
-            .and_then(|e| e.get("message"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown error");
+        let message = strip_html(
+            body.get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown error"),
+        );
 
         if let Some((label, file)) = map_ad_error(code) {
             return Err(ProviderError::api(format!("{label}: {message}"), file));

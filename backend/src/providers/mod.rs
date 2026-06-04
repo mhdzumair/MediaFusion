@@ -132,6 +132,22 @@ impl ProviderError {
         }
     }
 
+    /// HTTP status code for non-playback (UI) responses.
+    ///
+    /// Expected user/account errors (wrong key, blocked, limits) → 422 so the
+    /// middleware passes the detail through to the caller instead of stripping it.
+    /// Transport failures → 502.  Unexpected/internal errors → 500.
+    pub fn http_status(&self) -> axum::http::StatusCode {
+        use axum::http::StatusCode;
+        match self {
+            Self::Api { video_file, .. } if *video_file != "api_error.mp4" => {
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
+            Self::Http(_) => StatusCode::BAD_GATEWAY,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
     /// Log a provider error at WARN (unexpected) or DEBUG (expected user/account issue).
     pub fn log(&self, message: &str) {
         if self.is_unexpected() {
