@@ -60,6 +60,25 @@ Just set `POSTGRES_URI` (and optionally `POSTGRES_READ_URI`) to the connection s
 | `REDIS_CONNECTION_TIMEOUT` | `10` | Connection timeout in seconds |
 | `REDIS_ENABLE_CIRCUIT_BREAKER` | `true` | Open circuit on repeated Redis failures |
 
+### Rust binary connection pool
+
+The `mediafusion-api` / `mediafusion-worker` binaries manage their own SQLx connection pool, separate from the Python workers.
+
+| Variable | Default | Description |
+|---|---|---|
+| `DB_POOL_SIZE` | `10` | Max connections for the read-write pool |
+| `DB_POOL_SIZE_RO` | `DB_POOL_SIZE` | Max connections for the read-only replica pool. Defaults to `DB_POOL_SIZE` when unset. Set this to size the two pools independently (the DB sees `DB_POOL_SIZE + DB_POOL_SIZE_RO` total from this process). |
+| `DB_POOL_MIN` | `2` | Minimum idle connections to keep warm |
+| `DB_ACQUIRE_TIMEOUT_SECS` | `5` | Seconds to wait for a free connection before returning an error |
+| `DB_IDLE_TIMEOUT_SECS` | `600` | Drop connections idle longer than this many seconds |
+| `DB_MAX_LIFETIME_SECS` | `1800` | Recycle connections older than this many seconds — ensures DNS / endpoint re-resolution after a failover |
+| `DB_STATEMENT_TIMEOUT_MS` | `60000` | Per-session `statement_timeout` in milliseconds. Applied on every new connection via `SET statement_timeout`. Matches the DB-side guard recommended for production. |
+| `DB_IDLE_TX_TIMEOUT_MS` | `60000` | Per-session `idle_in_transaction_session_timeout` in milliseconds. Bounds any accidentally leaked transaction so a stalled request cannot hold row locks indefinitely. |
+
+**Pool sizing guidance:** With a default pool of 10 RW + 10 RO, a single `mediafusion-api` process uses up to 20 connections. Multiply by your replica count when planning Postgres `max_connections`. `DB_POOL_SIZE=20`–`40` is typical for production; always leave headroom above the total for admin connections and `pg_stat_activity` queries.
+
+---
+
 ### Redis URL for the Rust components
 
 | Variable | Default | Description |

@@ -7,9 +7,26 @@ pub struct AppConfig {
     pub secret_key_raw: String,
     pub postgres_uri: String,
     pub postgres_ro_uri: Option<String>,
-    /// Max connections per pool. Two pools exist (rw + ro), so the DB sees up to 2× this.
-    /// Default 10 keeps dev instances under the 100-connection limit.
+    /// Max connections for the read-write pool (`DB_POOL_SIZE`, default 10).
+    /// Two pools exist (rw + ro), so the DB sees up to `db_pool_size + db_pool_size_ro` total.
     pub db_pool_size: u32,
+    /// Max connections for the read-only pool (`DB_POOL_SIZE_RO`). Defaults to `db_pool_size`
+    /// when unset so existing deployments are unchanged.
+    pub db_pool_size_ro: Option<u32>,
+    /// Minimum idle connections per pool (`DB_POOL_MIN`, default 2).
+    pub db_pool_min: u32,
+    /// How long a connection checkout waits before failing (`DB_ACQUIRE_TIMEOUT_SECS`, default 5).
+    pub db_acquire_timeout_secs: u64,
+    /// Drop idle connections older than this many seconds (`DB_IDLE_TIMEOUT_SECS`, default 600).
+    pub db_idle_timeout_secs: u64,
+    /// Recycle connections older than this many seconds — ensures endpoint re-resolution after
+    /// a failover (`DB_MAX_LIFETIME_SECS`, default 1800).
+    pub db_max_lifetime_secs: u64,
+    /// Per-session `statement_timeout` in milliseconds (`DB_STATEMENT_TIMEOUT_MS`, default 60 000).
+    pub db_statement_timeout_ms: u64,
+    /// Per-session `idle_in_transaction_session_timeout` in milliseconds
+    /// (`DB_IDLE_TX_TIMEOUT_MS`, default 60 000).
+    pub db_idle_tx_timeout_ms: u64,
     /// Redis URL — shared with the Python background workers. Reads REDIS_URL.
     pub redis_url: String,
     pub port: u16,
@@ -373,6 +390,33 @@ impl AppConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(10),
+            db_pool_size_ro: env("DB_POOL_SIZE_RO")
+                .ok()
+                .and_then(|v| v.parse().ok()),
+            db_pool_min: env("DB_POOL_MIN")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(2),
+            db_acquire_timeout_secs: env("DB_ACQUIRE_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5),
+            db_idle_timeout_secs: env("DB_IDLE_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(600),
+            db_max_lifetime_secs: env("DB_MAX_LIFETIME_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1800),
+            db_statement_timeout_ms: env("DB_STATEMENT_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(60_000),
+            db_idle_tx_timeout_ms: env("DB_IDLE_TX_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(60_000),
             redis_url: env("REDIS_URL")
                 .unwrap_or_else(|_| "redis://127.0.0.1:6379".into()),
             port: env("STREAM_RS_PORT")

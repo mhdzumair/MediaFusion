@@ -8,11 +8,10 @@ use tracing::warn;
 ///   replay cancelled this read statement. Re-running usually succeeds once replay advances.
 /// - SQLSTATE 40001 (`serialization_failure`): repeatable-read / serializable transaction
 ///   race; the standard retry target for multi-version concurrency control.
+///
+/// **Not** included: `PoolTimedOut`. Retrying on pool exhaustion re-queues for connections
+/// and amplifies saturation into a cascade — it must fail fast and shed load instead.
 pub fn is_retryable(e: &sqlx::Error) -> bool {
-    // Pool timeout = momentary saturation spike; worth one backoff retry.
-    if matches!(e, sqlx::Error::PoolTimedOut) {
-        return true;
-    }
     if let sqlx::Error::Database(dbe) = e {
         // 57014 = query_canceled (hot-standby recovery conflict)
         // 40001 = serialization_failure (MVCC race)

@@ -77,19 +77,31 @@ impl AppState {
     ) -> Result<Arc<Self>, Box<dyn std::error::Error + Send + Sync>> {
         use crate::{cache::client as redis_client, db::pool as db_pool};
 
+        let base_pool_cfg = db_pool::PoolConfig {
+            max_connections: config.db_pool_size,
+            min_connections: config.db_pool_min,
+            acquire_timeout_secs: config.db_acquire_timeout_secs,
+            idle_timeout_secs: config.db_idle_timeout_secs,
+            max_lifetime_secs: config.db_max_lifetime_secs,
+            statement_timeout_ms: config.db_statement_timeout_ms,
+            idle_in_transaction_timeout_ms: config.db_idle_tx_timeout_ms,
+        };
+
         tracing::info!("connecting to PostgreSQL (primary)…");
-        let pool = db_pool::build(&config.postgres_uri, config.db_pool_size)
+        let pool = db_pool::build(&config.postgres_uri, base_pool_cfg.clone())
             .await
             .map_err(|e| format!("PostgreSQL primary: {e}"))?;
 
         let pool_ro = if let Some(ro_uri) = &config.postgres_ro_uri {
             tracing::info!("connecting to PostgreSQL (read-replica)…");
-            db_pool::build(ro_uri, config.db_pool_size)
-                .await
-                .unwrap_or_else(|e| {
-                    tracing::warn!("read-replica unavailable ({e}), falling back to primary");
-                    pool.clone()
-                })
+            let ro_cfg = db_pool::PoolConfig {
+                max_connections: config.db_pool_size_ro.unwrap_or(config.db_pool_size),
+                ..base_pool_cfg
+            };
+            db_pool::build(ro_uri, ro_cfg).await.unwrap_or_else(|e| {
+                tracing::warn!("read-replica unavailable ({e}), falling back to primary");
+                pool.clone()
+            })
         } else {
             pool.clone()
         };
