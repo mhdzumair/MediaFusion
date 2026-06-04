@@ -100,6 +100,9 @@ pub struct GenreListQuery {
     #[serde(default = "default_page_size")]
     pub page_size: i64,
     pub search: Option<String>,
+    /// Filter to genres that have a pairing with this media type (any visibility).
+    /// Wire values: "movie" | "series" | "tv" | "events"
+    pub media_type: Option<String>,
 }
 
 fn default_page() -> i64 {
@@ -174,44 +177,99 @@ pub async fn list_genres(
     let page = q.page.max(1);
     let page_size = q.page_size.clamp(1, 500);
     let offset = (page - 1) * page_size;
+    let search_pat = q.search.as_deref().map(|s| format!("%{s}%"));
+    let mt = q.media_type.as_deref().map(|s| s.to_ascii_lowercase());
 
     // Step 1: paginated genre list with usage counts.
-    let (genres, total) = if let Some(ref search) = q.search {
-        let pattern = format!("%{}%", search);
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM genre WHERE name ILIKE $1")
-            .bind(&pattern)
+    // Four query variants: (search?, media_type?).
+    let (genres, total) = match (&search_pat, &mt) {
+        (Some(pat), Some(mt)) => {
+            let total: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM genre g \
+                 WHERE g.name ILIKE $1 \
+                   AND EXISTS (SELECT 1 FROM genre_media_type WHERE genre_id = g.id AND media_type = $2)",
+            )
+            .bind(pat)
+            .bind(mt)
             .fetch_one(&state.pool)
             .await
             .unwrap_or(0);
-        let genres: Vec<GenreRow> = sqlx::query_as(
-            "SELECT g.id, g.name, COUNT(mgl.media_id) AS usage_count \
-             FROM genre g LEFT JOIN media_genre_link mgl ON mgl.genre_id = g.id \
-             WHERE g.name ILIKE $1 \
-             GROUP BY g.id ORDER BY g.name LIMIT $2 OFFSET $3",
-        )
-        .bind(&pattern)
-        .bind(page_size)
-        .bind(offset)
-        .fetch_all(&state.pool)
-        .await
-        .unwrap_or_default();
-        (genres, total)
-    } else {
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM genre")
+            let genres: Vec<GenreRow> = sqlx::query_as(
+                "SELECT g.id, g.name, COUNT(mgl.media_id) AS usage_count \
+                 FROM genre g LEFT JOIN media_genre_link mgl ON mgl.genre_id = g.id \
+                 WHERE g.name ILIKE $1 \
+                   AND EXISTS (SELECT 1 FROM genre_media_type WHERE genre_id = g.id AND media_type = $2) \
+                 GROUP BY g.id ORDER BY g.name LIMIT $3 OFFSET $4",
+            )
+            .bind(pat)
+            .bind(mt)
+            .bind(page_size)
+            .bind(offset)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
+            (genres, total)
+        }
+        (Some(pat), None) => {
+            let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM genre WHERE name ILIKE $1")
+                .bind(pat)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap_or(0);
+            let genres: Vec<GenreRow> = sqlx::query_as(
+                "SELECT g.id, g.name, COUNT(mgl.media_id) AS usage_count \
+                 FROM genre g LEFT JOIN media_genre_link mgl ON mgl.genre_id = g.id \
+                 WHERE g.name ILIKE $1 \
+                 GROUP BY g.id ORDER BY g.name LIMIT $2 OFFSET $3",
+            )
+            .bind(pat)
+            .bind(page_size)
+            .bind(offset)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
+            (genres, total)
+        }
+        (None, Some(mt)) => {
+            let total: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM genre g \
+                 WHERE EXISTS (SELECT 1 FROM genre_media_type WHERE genre_id = g.id AND media_type = $1)",
+            )
+            .bind(mt)
             .fetch_one(&state.pool)
             .await
             .unwrap_or(0);
-        let genres: Vec<GenreRow> = sqlx::query_as(
-            "SELECT g.id, g.name, COUNT(mgl.media_id) AS usage_count \
-             FROM genre g LEFT JOIN media_genre_link mgl ON mgl.genre_id = g.id \
-             GROUP BY g.id ORDER BY g.name LIMIT $1 OFFSET $2",
-        )
-        .bind(page_size)
-        .bind(offset)
-        .fetch_all(&state.pool)
-        .await
-        .unwrap_or_default();
-        (genres, total)
+            let genres: Vec<GenreRow> = sqlx::query_as(
+                "SELECT g.id, g.name, COUNT(mgl.media_id) AS usage_count \
+                 FROM genre g LEFT JOIN media_genre_link mgl ON mgl.genre_id = g.id \
+                 WHERE EXISTS (SELECT 1 FROM genre_media_type WHERE genre_id = g.id AND media_type = $1) \
+                 GROUP BY g.id ORDER BY g.name LIMIT $2 OFFSET $3",
+            )
+            .bind(mt)
+            .bind(page_size)
+            .bind(offset)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
+            (genres, total)
+        }
+        (None, None) => {
+            let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM genre")
+                .fetch_one(&state.pool)
+                .await
+                .unwrap_or(0);
+            let genres: Vec<GenreRow> = sqlx::query_as(
+                "SELECT g.id, g.name, COUNT(mgl.media_id) AS usage_count \
+                 FROM genre g LEFT JOIN media_genre_link mgl ON mgl.genre_id = g.id \
+                 GROUP BY g.id ORDER BY g.name LIMIT $1 OFFSET $2",
+            )
+            .bind(page_size)
+            .bind(offset)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
+            (genres, total)
+        }
     };
 
     if genres.is_empty() {

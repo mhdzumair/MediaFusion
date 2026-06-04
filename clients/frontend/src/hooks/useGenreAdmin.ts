@@ -4,11 +4,11 @@ import { genreAdminApi, type CreateGenreRequest, type UpdateGenreRequest } from 
 
 export const genreAdminKeys = {
   all: ['admin-genres'] as const,
-  list: (params?: { page?: number; page_size?: number; search?: string }) =>
+  list: (params?: { page?: number; page_size?: number; search?: string; media_type?: string }) =>
     [...genreAdminKeys.all, 'list', params] as const,
 }
 
-export function useAdminGenres(params?: { page?: number; page_size?: number; search?: string }) {
+export function useAdminGenres(params?: { page?: number; page_size?: number; search?: string; media_type?: string }) {
   return useQuery({
     queryKey: genreAdminKeys.list(params),
     queryFn: () => genreAdminApi.list(params),

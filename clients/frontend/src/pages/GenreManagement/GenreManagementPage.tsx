@@ -353,6 +353,7 @@ export function GenreManagementPage() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
+  const [typeFilter, setTypeFilter] = useState<MediaTypeWire | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<GenreDetail | null>(null)
 
@@ -360,6 +361,7 @@ export function GenreManagementPage() {
     page,
     page_size: PAGE_SIZE,
     search: debouncedSearch || undefined,
+    media_type: typeFilter ?? undefined,
   })
   const reloadCache = useReloadGenresCache()
 
@@ -422,11 +424,41 @@ export function GenreManagementPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-2">
-          {/* Legend */}
-          <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground pb-2 border-b">
-            <span>Click a type badge to toggle hide/show.</span>
-            <span className="flex items-center gap-1">
-              <EyeOff className="h-3 w-3" /> = hidden from Stremio &amp; search.
+          {/* Type filter strip */}
+          <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b">
+            <button
+              type="button"
+              onClick={() => {
+                setTypeFilter(null)
+                setPage(1)
+              }}
+              className={`px-3 py-1 rounded-full border text-xs font-medium transition-all ${
+                typeFilter === null
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-muted/40 text-muted-foreground border-border hover:border-muted-foreground'
+              }`}
+            >
+              All
+            </button>
+            {MEDIA_TYPES.map((mt) => (
+              <button
+                key={mt}
+                type="button"
+                onClick={() => {
+                  setTypeFilter(typeFilter === mt ? null : mt)
+                  setPage(1)
+                }}
+                className={`px-3 py-1 rounded-full border text-xs font-medium transition-all ${
+                  typeFilter === mt
+                    ? MEDIA_TYPE_COLORS[mt]
+                    : 'bg-muted/40 text-muted-foreground border-border hover:border-muted-foreground'
+                }`}
+              >
+                {MEDIA_TYPE_LABELS[mt]}
+              </button>
+            ))}
+            <span className="ml-auto text-xs text-muted-foreground">
+              Click a type badge on any genre row to hide/show it. <EyeOff className="inline h-3 w-3" /> = hidden.
             </span>
           </div>
 

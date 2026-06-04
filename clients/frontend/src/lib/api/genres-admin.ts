@@ -39,11 +39,17 @@ export interface UpdateGenreRequest {
 }
 
 export const genreAdminApi = {
-  list: async (params?: { page?: number; page_size?: number; search?: string }): Promise<GenreListResponse> => {
+  list: async (params?: {
+    page?: number
+    page_size?: number
+    search?: string
+    media_type?: string
+  }): Promise<GenreListResponse> => {
     const sp = new URLSearchParams()
     if (params?.page) sp.set('page', String(params.page))
     if (params?.page_size) sp.set('page_size', String(params.page_size))
     if (params?.search) sp.set('search', params.search)
+    if (params?.media_type) sp.set('media_type', params.media_type)
     const q = sp.toString()
     return apiClient.get<GenreListResponse>(`/admin/genres${q ? `?${q}` : ''}`)
   },
