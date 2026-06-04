@@ -329,14 +329,20 @@ async fn scrobble_trakt(
         .await
         .map_err(|e| format!("network error: {e}"))?;
 
-    if res.status().is_success() {
+    let status = res.status();
+    if status.is_success() {
         debug!(
             "Trakt scrobble {action} successful for {}",
             data.imdb_id.as_deref().unwrap_or(&data.title)
         );
         Ok(())
+    } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        debug!(
+            "Trakt scrobble {action} rate limited (429); will retry on next event"
+        );
+        Ok(())
     } else {
-        Err(format!("Trakt scrobble HTTP {}", res.status()))
+        Err(format!("Trakt scrobble HTTP {status}"))
     }
 }
 

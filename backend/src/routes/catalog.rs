@@ -260,6 +260,23 @@ async fn fetch_mdblist_catalog(
         .await
     {
         Ok(r) if r.status().is_success() => r,
+        Ok(r) if r.status() == reqwest::StatusCode::TOO_MANY_REQUESTS => {
+            tracing::warn!("mdblist catalog [{catalog_id}]: HTTP 429 Too Many Requests");
+            return Metas {
+                metas: vec![MetaPreview {
+                    id: "mdblist_rate_limited".to_string(),
+                    media_type: media_type.to_string(),
+                    name: "\u{26a0} MDBList Rate Limited".to_string(),
+                    release_info: None,
+                    poster: None,
+                    background: None,
+                    description: Some(
+                        "MDBList API rate limit reached. Please wait a moment before scrolling."
+                            .to_string(),
+                    ),
+                }],
+            };
+        }
         Ok(r) => {
             tracing::warn!("mdblist catalog [{catalog_id}]: HTTP {}", r.status());
             return Metas { metas: vec![] };
