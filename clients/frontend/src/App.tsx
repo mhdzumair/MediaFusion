@@ -41,6 +41,7 @@ import { MetadataCreatorPage } from '@/pages/MetadataCreator'
 import { SettingsPage } from '@/pages/Settings'
 import { TaskManagementPage } from '@/pages/TaskManagement'
 import { KeywordFiltersPage } from '@/pages/KeywordFilters'
+import { GenreManagementPage } from '@/pages/GenreManagement'
 import { PrivacyPolicyPage, TermsOfServicePage, DMCAPage } from '@/pages/Legal'
 import { ReleaseNotesPage } from '@/pages/ReleaseNotes'
 
@@ -310,6 +311,14 @@ function AppRoutes() {
           element={
             <RoleGuard requiredRole="admin">
               <KeywordFiltersPage />
+            </RoleGuard>
+          }
+        />
+        <Route
+          path="genres"
+          element={
+            <RoleGuard requiredRole="admin">
+              <GenreManagementPage />
             </RoleGuard>
           }
         />

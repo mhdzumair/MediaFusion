@@ -275,8 +275,13 @@ pub async fn link_to_catalogs(pool: &PgPool, media_id: i32, catalog_ids: &[&str]
     crate::db::link_to_catalogs(pool, media_id, catalog_ids).await;
 }
 
-pub async fn link_genre(pool: &PgPool, media_id: i32, genre_name: &str) {
-    crate::db::link_genre(pool, media_id, genre_name).await;
+pub async fn link_genre(
+    pool: &PgPool,
+    media_id: i32,
+    genre_name: &str,
+    media_type: crate::db::MediaType,
+) {
+    crate::db::link_genre(pool, media_id, genre_name, media_type).await;
 }
 
 pub struct ImportMediaOverrides<'a> {

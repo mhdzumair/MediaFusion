@@ -306,6 +306,16 @@ export {
   type KeywordCacheStats,
 } from './keyword-filters'
 export {
+  genreAdminApi,
+  type MediaTypeWire,
+  type GenreTypeEntry,
+  type GenreDetail,
+  type GenreListResponse,
+  type CreateGenreRequest,
+  type TypeUpdate,
+  type UpdateGenreRequest,
+} from './genres-admin'
+export {
   contributionSettingsApi,
   type ContributionSettings,
   type ContributionSettingsUpdate,

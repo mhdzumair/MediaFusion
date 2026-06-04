@@ -1,13 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use sqlx::PgPool;
-use tracing::{info, warn};
+use tracing::info;
+use tracing::warn;
 
 pub const GENRES_CACHE_KEY: &str = "genres:all_by_type:rs";
-/// Genres change rarely; long TTL avoids repeated heavy queries on large DBs.
+/// Genres change rarely; long TTL avoids repeated queries.
 pub const GENRES_CACHE_TTL_SECS: u64 = 86_400;
-
-pub const ADULT_GENRE_NAMES: &[&str] = &["adult", "18+"];
 
 #[derive(sqlx::FromRow)]
 struct GenreByTypeRow {
@@ -15,40 +14,18 @@ struct GenreByTypeRow {
     name: String,
 }
 
-/// Distinct genres per media type (Python `get_all_genres_by_type` parity).
-///
-/// Uses three indexed `EXISTS` probes (one per manifest media type) over the ~450-row
-/// `genre` table instead of scanning all `media` / `media_genre_link` rows.
+/// Distinct, visible genres per media type — reads directly from `genre_media_type`
+/// (no media scan). `is_hidden = false` at the (genre, type) level is the sole filter;
+/// the old hardcoded `ADULT_GENRE_NAMES` list is replaced by seeding those genres with
+/// `is_hidden = true` in migration 0017.
 pub async fn get_all_genres_by_type(pool: &PgPool) -> HashMap<String, Vec<String>> {
     let rows = match sqlx::query_as::<_, GenreByTypeRow>(
         r#"
-        SELECT 'movie' AS media_type, g.name
-        FROM genre g
-        WHERE EXISTS (
-            SELECT 1
-            FROM media_genre_link mgl
-            INNER JOIN media m ON m.id = mgl.media_id AND m.type = 'MOVIE'
-            WHERE mgl.genre_id = g.id
-        )
-        UNION ALL
-        SELECT 'series' AS media_type, g.name
-        FROM genre g
-        WHERE EXISTS (
-            SELECT 1
-            FROM media_genre_link mgl
-            INNER JOIN media m ON m.id = mgl.media_id AND m.type = 'SERIES'
-            WHERE mgl.genre_id = g.id
-        )
-        UNION ALL
-        SELECT 'tv' AS media_type, g.name
-        FROM genre g
-        WHERE EXISTS (
-            SELECT 1
-            FROM media_genre_link mgl
-            INNER JOIN media m ON m.id = mgl.media_id AND m.type = 'TV'
-            WHERE mgl.genre_id = g.id
-        )
-        ORDER BY media_type, name
+        SELECT gmt.media_type, g.name
+        FROM   genre_media_type gmt
+        JOIN   genre g ON g.id = gmt.genre_id
+        WHERE  gmt.is_hidden = false
+        ORDER  BY gmt.media_type, g.name
         "#,
     )
     .fetch_all(pool)
@@ -63,10 +40,6 @@ pub async fn get_all_genres_by_type(pool: &PgPool) -> HashMap<String, Vec<String
 
     let mut by_type: HashMap<String, HashSet<String>> = HashMap::new();
     for row in rows {
-        let lower = row.name.to_ascii_lowercase();
-        if ADULT_GENRE_NAMES.contains(&lower.as_str()) {
-            continue;
-        }
         by_type.entry(row.media_type).or_default().insert(row.name);
     }
 
@@ -107,6 +80,19 @@ pub async fn load_genres_cached(
     let gv = serde_json::to_value(&genres).unwrap_or_default();
     crate::cache::set_json(redis, GENRES_CACHE_KEY, &gv, GENRES_CACHE_TTL_SECS).await;
     genres
+}
+
+/// Clear all genre-related Redis cache keys.
+pub async fn invalidate_genres_cache(redis: &fred::clients::Client) {
+    use fred::prelude::KeysInterface;
+    let keys: Vec<&str> = vec![
+        GENRES_CACHE_KEY,
+        "genres:MOVIE",
+        "genres:SERIES",
+        "genres:TV",
+        "genres:EVENTS",
+    ];
+    let _: Result<i64, _> = redis.del(keys).await;
 }
 
 /// Fire-and-forget cache warm (API startup).

@@ -242,31 +242,27 @@ pub async fn get_genres(
         return Json(cached).into_response();
     }
 
-    let Some(media_type) = crate::db::MediaType::from_wire(&catalog_type.to_ascii_lowercase())
-    else {
+    let media_type_wire = catalog_type.to_ascii_lowercase();
+    if crate::db::MediaType::from_wire(&media_type_wire).is_none() {
         return Json(json!([])).into_response();
-    };
+    }
 
+    // Read directly from genre_media_type — no media scan required.
+    // is_hidden = false is the single filter (replaces the old ADULT_GENRE_NAMES list).
     let rows: Vec<(i32, String)> = sqlx::query_as(
-        r#"SELECT g.id, g.name
-           FROM genre g
-           WHERE EXISTS (
-               SELECT 1 FROM media_genre_link mgl
-               JOIN media m ON m.id = mgl.media_id
-               WHERE mgl.genre_id = g.id AND m.type = $1
-           )
-           ORDER BY g.name"#,
+        "SELECT g.id, g.name
+         FROM   genre_media_type gmt
+         JOIN   genre g ON g.id = gmt.genre_id
+         WHERE  gmt.media_type = $1 AND gmt.is_hidden = false
+         ORDER  BY g.name",
     )
-    .bind(media_type)
+    .bind(&media_type_wire)
     .fetch_all(&state.pool_ro)
     .await
     .unwrap_or_default();
 
     let genres: Vec<serde_json::Value> = rows
         .into_iter()
-        .filter(|(_, name)| {
-            !crate::db::genres::ADULT_GENRE_NAMES.contains(&name.to_ascii_lowercase().as_str())
-        })
         .map(|(id, name)| json!({"id": id, "name": name}))
         .collect();
 
@@ -483,8 +479,17 @@ pub async fn browse_catalog(
 
     if let Some(ref genre) = params.genre {
         bind_idx += 1;
+        // Also require that the (genre, media_type) pairing is not hidden so a crafted URL
+        // cannot browse a genre that was hidden by an admin.
         where_parts.push(format!(
-            "EXISTS (SELECT 1 FROM media_genre_link mgl JOIN genre g ON g.id = mgl.genre_id WHERE mgl.media_id = m.id AND g.name = ${bind_idx})"
+            "EXISTS (\
+                SELECT 1 FROM media_genre_link mgl \
+                JOIN genre g ON g.id = mgl.genre_id \
+                JOIN genre_media_type gmt ON gmt.genre_id = g.id \
+                    AND gmt.media_type = lower(m.type::text) \
+                    AND gmt.is_hidden = false \
+                WHERE mgl.media_id = m.id AND g.name = ${bind_idx}\
+            )"
         ));
         genre_name_bind = Some(genre.clone());
     }

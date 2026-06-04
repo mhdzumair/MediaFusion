@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod admin_database;
 pub mod admin_extended;
+pub mod admin_genres;
 pub mod admin_keyword_filters;
 pub mod admin_metrics;
 pub mod admin_scrapers;
@@ -518,6 +519,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/contribution-settings", get(admin_extended::get_contribution_settings).put(admin_extended::update_contribution_settings))
         .route("/api/v1/admin/contribution-levels", get(admin_extended::get_contribution_levels))
         .route("/api/v1/admin/contribution-settings/reset", post(admin_extended::reset_contribution_settings))
+        // ── Admin genre management ────────────────────────────────────────────
+        .route("/api/v1/admin/genres", get(admin_genres::list_genres).post(admin_genres::create_genre))
+        .route("/api/v1/admin/genres/reload", post(admin_genres::reload_genres_cache))
+        .route("/api/v1/admin/genres/{id}", patch(admin_genres::update_genre).delete(admin_genres::delete_genre))
+        .route("/api/v1/admin/genres/{id}/types/{media_type}", delete(admin_genres::delete_genre_type))
         // ── Admin keyword filters ─────────────────────────────────────────────
         .route("/api/v1/admin/keyword-filters", get(admin_keyword_filters::list_keyword_filters).post(admin_keyword_filters::add_keyword_filter))
         .route("/api/v1/admin/keyword-filters/reload", post(admin_keyword_filters::reload_keyword_cache))

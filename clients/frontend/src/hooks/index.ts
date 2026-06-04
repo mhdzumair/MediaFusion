@@ -225,6 +225,17 @@ export {
   keywordFilterKeys,
 } from './useKeywordFilters'
 
+// Genre Management hooks (Admin)
+export {
+  useAdminGenres,
+  useCreateGenre,
+  useUpdateGenre,
+  useDeleteGenre,
+  useDeleteGenreType,
+  useReloadGenresCache,
+  genreAdminKeys,
+} from './useGenreAdmin'
+
 // Scheduler Management hooks (Admin)
 export {
   useSchedulerJobs,

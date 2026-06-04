@@ -31,7 +31,7 @@ pub async fn store_media(
     };
 
     upsert_external_ids(pool, media_id, &meta.external_ids).await;
-    upsert_genres(pool, media_id.0, &meta.genres).await;
+    upsert_genres(pool, media_id.0, &meta.genres, meta.media_type).await;
     upsert_catalogs(pool, media_id.0, &meta.catalogs).await;
     upsert_images(pool, media_id.0, meta).await;
     upsert_cast(pool, media_id.0, &meta.cast).await;
@@ -281,11 +281,11 @@ async fn upsert_external_ids(pool: &PgPool, media_id: MediaId, external_ids: &[(
     }
 }
 
-pub async fn link_genre(pool: &PgPool, media_id: i32, genre_name: &str) {
+pub async fn link_genre(pool: &PgPool, media_id: i32, genre_name: &str, media_type: MediaType) {
+    // INSERT ... DO NOTHING avoids the hot-row lock that DO UPDATE SET name=EXCLUDED.name
+    // causes on high-concurrency ingests.  If the row already exists we fall through to SELECT.
     let genre_id: Option<i32> = sqlx::query_scalar(
-        "INSERT INTO genre (name) VALUES ($1) \
-         ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name \
-         RETURNING id",
+        "INSERT INTO genre (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING id",
     )
     .bind(genre_name)
     .fetch_optional(pool)
@@ -293,22 +293,41 @@ pub async fn link_genre(pool: &PgPool, media_id: i32, genre_name: &str) {
     .ok()
     .flatten();
 
-    if let Some(gid) = genre_id {
-        let _ = sqlx::query(
-            "INSERT INTO media_genre_link (media_id, genre_id) VALUES ($1, $2) \
-             ON CONFLICT DO NOTHING",
-        )
-        .bind(media_id)
-        .bind(gid)
-        .execute(pool)
-        .await;
-    }
+    let genre_id = match genre_id {
+        Some(id) => id,
+        None => match sqlx::query_scalar("SELECT id FROM genre WHERE name = $1")
+            .bind(genre_name)
+            .fetch_optional(pool)
+            .await
+        {
+            Ok(Some(id)) => id,
+            _ => return,
+        },
+    };
+
+    let _ = sqlx::query(
+        "INSERT INTO media_genre_link (media_id, genre_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    )
+    .bind(media_id)
+    .bind(genre_id)
+    .execute(pool)
+    .await;
+
+    // Register (genre, media_type) pairing. DO NOTHING preserves any admin is_hidden edits.
+    let _ = sqlx::query(
+        "INSERT INTO genre_media_type (genre_id, media_type) VALUES ($1, $2) \
+         ON CONFLICT (genre_id, media_type) DO NOTHING",
+    )
+    .bind(genre_id)
+    .bind(media_type.as_wire())
+    .execute(pool)
+    .await;
 }
 
-async fn upsert_genres(pool: &PgPool, media_id: i32, genres: &[String]) {
+async fn upsert_genres(pool: &PgPool, media_id: i32, genres: &[String], media_type: MediaType) {
     for genre in genres {
         if !genre.is_empty() {
-            link_genre(pool, media_id, genre).await;
+            link_genre(pool, media_id, genre, media_type).await;
         }
     }
 }

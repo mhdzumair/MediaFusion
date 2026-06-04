@@ -22,6 +22,7 @@ import {
   Activity,
   Workflow,
   Ban,
+  Tags,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/ui/logo'
@@ -72,6 +73,7 @@ const adminNavItems: NavItem[] = [
   { title: 'Exceptions', href: '/dashboard/exceptions', icon: Bug, requiredRole: 'admin' },
   { title: 'Request Metrics', href: '/dashboard/request-metrics', icon: Activity, requiredRole: 'admin' },
   { title: 'Keyword Filters', href: '/dashboard/keyword-filters', icon: Ban, requiredRole: 'admin' },
+  { title: 'Genres', href: '/dashboard/genres', icon: Tags, requiredRole: 'admin' },
 ]
 
 function SectionLabel({ children }: { children: React.ReactNode }) {

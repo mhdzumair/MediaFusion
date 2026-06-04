@@ -106,6 +106,8 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
           AND ($4::text IS NULL OR EXISTS (
               SELECT 1 FROM media_genre_link mgl
               JOIN genre g ON g.id = mgl.genre_id
+              JOIN genre_media_type gmt ON gmt.genre_id = g.id
+                  AND gmt.media_type = lower(m.type::text) AND gmt.is_hidden = false
               WHERE mgl.media_id = m.id AND g.name = $4
           ))
           AND (cardinality($5::nuditystatus[]) = 0 OR m.nudity_status <> ALL($5))
