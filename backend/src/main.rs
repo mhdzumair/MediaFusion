@@ -82,12 +82,6 @@ async fn main() {
     sync_keywords_from_file(&state.pool).await;
     *state.keyword_filters.write().unwrap() = load_keyword_filter_cache(&state.pool).await;
 
-    // Warm manifest genre list in Redis so the first Stremio install does not scan millions of rows.
-    mediafusion_api::db::genres::spawn_genres_cache_warm(
-        state.pool_ro.clone(),
-        state.redis.clone(),
-    );
-
     // Start the exception tracker background worker now that Redis is ready
     if let Some((rx, ttl, max_entries)) = exc_rx {
         tokio::spawn(exception_tracker::run_worker(

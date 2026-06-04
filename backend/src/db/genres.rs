@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use sqlx::PgPool;
-use tracing::info;
 use tracing::warn;
 
 pub const GENRES_CACHE_KEY: &str = "genres:all_by_type:rs";
@@ -53,7 +52,9 @@ pub async fn get_all_genres_by_type(pool: &PgPool) -> HashMap<String, Vec<String
         .collect()
 }
 
-/// Load genres from Redis, or compute and cache. Used by manifest and startup warm.
+/// Load genres from Redis cache, or query `genre_media_type` on a miss and cache the result.
+/// Called by the manifest and catalog endpoints on demand — no startup warming needed since
+/// the underlying query is a small direct table read (not a media scan).
 pub async fn load_genres_cached(
     pool: &PgPool,
     redis: &fred::clients::Client,
@@ -64,19 +65,7 @@ pub async fn load_genres_cached(
         }
     }
 
-    let started = std::time::Instant::now();
     let genres = get_all_genres_by_type(pool).await;
-    let elapsed = started.elapsed();
-    if elapsed.as_secs() >= 1 {
-        info!(
-            elapsed_ms = elapsed.as_millis(),
-            movie = genres.get("movie").map(|v| v.len()).unwrap_or(0),
-            series = genres.get("series").map(|v| v.len()).unwrap_or(0),
-            tv = genres.get("tv").map(|v| v.len()).unwrap_or(0),
-            "genres: computed all_by_type from database"
-        );
-    }
-
     let gv = serde_json::to_value(&genres).unwrap_or_default();
     crate::cache::set_json(redis, GENRES_CACHE_KEY, &gv, GENRES_CACHE_TTL_SECS).await;
     genres
@@ -93,11 +82,4 @@ pub async fn invalidate_genres_cache(redis: &fred::clients::Client) {
         "genres:EVENTS",
     ];
     let _: Result<i64, _> = redis.del(keys).await;
-}
-
-/// Fire-and-forget cache warm (API startup).
-pub fn spawn_genres_cache_warm(pool: PgPool, redis: fred::clients::Client) {
-    tokio::spawn(async move {
-        let _ = load_genres_cached(&pool, &redis).await;
-    });
 }
