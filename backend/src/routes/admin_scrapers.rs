@@ -250,7 +250,7 @@ pub async fn block_torrent(
         return forbidden();
     }
     let info_hash = match body["info_hash"].as_str() {
-        Some(h) => h.to_string(),
+        Some(h) => h.to_lowercase(),
         None => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -261,11 +261,11 @@ pub async fn block_torrent(
     };
     let stream_meta: Option<(String, String, String, String)> = sqlx::query_as(
         "SELECT s.name, m.title, m.type::text, COALESCE(mei.external_id, 'mf' || m.id::text) \
-         FROM streams s \
+         FROM stream s \
          JOIN stream_media_link sml ON sml.stream_id = s.id \
          JOIN media m ON m.id = sml.media_id \
          LEFT JOIN media_external_id mei ON mei.media_id = m.id AND mei.provider = 'imdb' \
-         WHERE LOWER(s.info_hash) = LOWER($1) \
+         WHERE s.info_hash = $1 \
          LIMIT 1",
     )
     .bind(&info_hash)
@@ -274,7 +274,7 @@ pub async fn block_torrent(
     .unwrap_or(None);
 
     let result =
-        sqlx::query("UPDATE streams SET is_blocked = true WHERE LOWER(info_hash) = LOWER($1)")
+        sqlx::query("UPDATE stream SET is_blocked = true WHERE info_hash = $1")
             .bind(&info_hash)
             .execute(&state.pool)
             .await;
@@ -352,7 +352,7 @@ pub async fn unblock_torrent(
         return forbidden();
     }
     let info_hash = match body["info_hash"].as_str() {
-        Some(h) => h.to_string(),
+        Some(h) => h.to_lowercase(),
         None => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -362,7 +362,7 @@ pub async fn unblock_torrent(
         }
     };
     let result =
-        sqlx::query("UPDATE streams SET is_blocked = false WHERE LOWER(info_hash) = LOWER($1)")
+        sqlx::query("UPDATE stream SET is_blocked = false WHERE info_hash = $1")
             .bind(&info_hash)
             .execute(&state.pool)
             .await;
@@ -1533,9 +1533,10 @@ pub struct DeleteTorrentQuery {
 pub async fn delete_torrent(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Path(info_hash): Path<String>,
+    Path(info_hash_raw): Path<String>,
     Query(params): Query<DeleteTorrentQuery>,
 ) -> impl IntoResponse {
+    let info_hash = info_hash_raw.to_lowercase();
     if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
         .await
         .is_none()
@@ -1546,11 +1547,11 @@ pub async fn delete_torrent(
 
     let stream_meta: Option<(String, String, String, String)> = sqlx::query_as(
         "SELECT s.name, m.title, m.type::text, COALESCE(mei.external_id, 'mf' || m.id::text) \
-         FROM streams s \
+         FROM stream s \
          JOIN stream_media_link sml ON sml.stream_id = s.id \
          JOIN media m ON m.id = sml.media_id \
          LEFT JOIN media_external_id mei ON mei.media_id = m.id AND mei.provider = 'imdb' \
-         WHERE LOWER(s.info_hash) = LOWER($1) \
+         WHERE s.info_hash = $1 \
          LIMIT 1",
     )
     .bind(&info_hash)
@@ -1558,7 +1559,7 @@ pub async fn delete_torrent(
     .await
     .unwrap_or(None);
 
-    let result = sqlx::query("DELETE FROM streams WHERE LOWER(info_hash) = LOWER($1)")
+    let result = sqlx::query("DELETE FROM stream WHERE info_hash = $1")
         .bind(&info_hash)
         .execute(&state.pool)
         .await;

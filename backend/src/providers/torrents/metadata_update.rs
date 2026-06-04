@@ -49,7 +49,7 @@ async fn annotation_lock_acquired(redis: &fred::clients::Client, info_hash: &str
 async fn block_stream(pool: &PgPool, info_hash: &str) {
     if let Err(e) = sqlx::query(
         "UPDATE stream SET is_blocked = true, updated_at = NOW() \
-         FROM torrent_stream ts WHERE ts.stream_id = stream.id AND LOWER(ts.info_hash) = LOWER($1)",
+         FROM torrent_stream ts WHERE ts.stream_id = stream.id AND ts.info_hash = $1",
     )
     .bind(info_hash)
     .execute(pool)
@@ -63,7 +63,7 @@ async fn stream_name_for_hash(pool: &PgPool, info_hash: &str) -> Option<String> 
     sqlx::query_scalar(
         "SELECT s.name FROM stream s \
          JOIN torrent_stream ts ON ts.stream_id = s.id \
-         WHERE LOWER(ts.info_hash) = LOWER($1) LIMIT 1",
+         WHERE ts.info_hash = $1 LIMIT 1",
     )
     .bind(info_hash)
     .fetch_optional(pool)
