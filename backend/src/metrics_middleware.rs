@@ -74,61 +74,6 @@ fn normalize_route(path: &str) -> String {
     result.trim_end_matches('/').to_string()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::normalize_route;
-
-    #[test]
-    fn normalize_route_covers_all_id_patterns() {
-        let cases = [
-            // IMDb movie/series IDs with .json
-            ("/stream/movie/tt28297850.json", "/stream/movie/{id}"),
-            ("/meta/movie/tt1757678.json", "/meta/movie/{id}"),
-            ("/meta/series/tt35050741.json", "/meta/series/{id}"),
-            // URL-encoded episode IDs (tt<id>%3A<s>%3A<e>)
-            (
-                "/stream/series/tt0264235%3A5%3A1.json",
-                "/stream/series/{id}",
-            ),
-            (
-                "/stream/series/tt32767294%3A1%3A3.json",
-                "/stream/series/{id}",
-            ),
-            // Numeric-only content IDs (TMDB etc.)
-            ("/meta/series/93276.json", "/meta/series/{id}"),
-            // Mixed catalog slugs (provider_name_NNNN)
-            (
-                "/catalog/movie/mdblist_movie_2406.json",
-                "/catalog/movie/{id}",
-            ),
-            // Poster paths — .jpg extension consumed along with the tt ID segment
-            ("/poster/movie/tt28245067.jpg", "/poster/movie/{id}"),
-            // Masked secret prefix preserved
-            (
-                "/*MASKED*/stream/movie/tt26443616.json",
-                "/*MASKED*/stream/movie/{id}",
-            ),
-            // Playback path: masked segments + numeric season/episode
-            (
-                "/streaming_provider/*MASKED*/playback/torbox/*MASKED*/1/3/*MASKED*",
-                "/streaming_provider/*MASKED*/playback/torbox/*MASKED*/{id}/{id}/*MASKED*",
-            ),
-            // Static routes must NOT be changed
-            ("/manifest.json", "/manifest.json"),
-            ("/configure", "/configure"),
-            ("/health", "/health"),
-        ];
-
-        for (input, expected) in &cases {
-            assert_eq!(
-                normalize_route(input),
-                *expected,
-                "normalize_route({input:?})"
-            );
-        }
-    }
-}
-
 /// RAII guard that decrements the in-flight counter when dropped.
 /// Ensures the decrement happens even when a future is cancelled (client disconnect).
 struct InFlightGuard<'a> {
@@ -266,4 +211,59 @@ pub async fn metrics_middleware(
     }
 
     resp
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_route;
+
+    #[test]
+    fn normalize_route_covers_all_id_patterns() {
+        let cases = [
+            // IMDb movie/series IDs with .json
+            ("/stream/movie/tt28297850.json", "/stream/movie/{id}"),
+            ("/meta/movie/tt1757678.json", "/meta/movie/{id}"),
+            ("/meta/series/tt35050741.json", "/meta/series/{id}"),
+            // URL-encoded episode IDs (tt<id>%3A<s>%3A<e>)
+            (
+                "/stream/series/tt0264235%3A5%3A1.json",
+                "/stream/series/{id}",
+            ),
+            (
+                "/stream/series/tt32767294%3A1%3A3.json",
+                "/stream/series/{id}",
+            ),
+            // Numeric-only content IDs (TMDB etc.)
+            ("/meta/series/93276.json", "/meta/series/{id}"),
+            // Mixed catalog slugs (provider_name_NNNN)
+            (
+                "/catalog/movie/mdblist_movie_2406.json",
+                "/catalog/movie/{id}",
+            ),
+            // Poster paths — .jpg extension consumed along with the tt ID segment
+            ("/poster/movie/tt28245067.jpg", "/poster/movie/{id}"),
+            // Masked secret prefix preserved
+            (
+                "/*MASKED*/stream/movie/tt26443616.json",
+                "/*MASKED*/stream/movie/{id}",
+            ),
+            // Playback path: masked segments + numeric season/episode
+            (
+                "/streaming_provider/*MASKED*/playback/torbox/*MASKED*/1/3/*MASKED*",
+                "/streaming_provider/*MASKED*/playback/torbox/*MASKED*/{id}/{id}/*MASKED*",
+            ),
+            // Static routes must NOT be changed
+            ("/manifest.json", "/manifest.json"),
+            ("/configure", "/configure"),
+            ("/health", "/health"),
+        ];
+
+        for (input, expected) in &cases {
+            assert_eq!(
+                normalize_route(input),
+                *expected,
+                "normalize_route({input:?})"
+            );
+        }
+    }
 }
