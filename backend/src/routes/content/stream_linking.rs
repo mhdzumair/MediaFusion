@@ -208,7 +208,7 @@ pub async fn create_stream_link(
     }
 
     let link_row: (i32, i32, i32, Option<i32>, DateTime<Utc>) = match sqlx::query_as(
-        "INSERT INTO stream_media_link (stream_id, media_id, file_index, created_at) VALUES ($1, $2, $3, NOW()) RETURNING id, stream_id, media_id, file_index, created_at",
+        "INSERT INTO stream_media_link (stream_id, media_id, file_index, is_primary, is_verified, created_at) VALUES ($1, $2, $3, TRUE, TRUE, NOW()) RETURNING id, stream_id, media_id, file_index, created_at",
     )
     .bind(body.stream_id)
     .bind(body.media_id)
@@ -326,7 +326,7 @@ pub async fn create_bulk_stream_links(
         }
 
         match sqlx::query(
-            "INSERT INTO stream_media_link (stream_id, media_id, file_index, created_at) VALUES ($1, $2, $3, NOW())",
+            "INSERT INTO stream_media_link (stream_id, media_id, file_index, is_primary, is_verified, created_at) VALUES ($1, $2, $3, TRUE, TRUE, NOW())",
         )
         .bind(link_req.stream_id)
         .bind(link_req.media_id)

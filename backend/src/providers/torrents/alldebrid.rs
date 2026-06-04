@@ -18,7 +18,9 @@ const AGENT: &str = "mediafusion";
 
 fn map_ad_error(code: &str) -> Option<(&'static str, &'static str)> {
     Some(match code {
-        "AUTH_BAD_APIKEY" => ("Invalid AllDebrid API key", "invalid_token.mp4"),
+        "AUTH_BAD_APIKEY" | "AUTH_MISSING_APIKEY" => {
+            ("Invalid or missing AllDebrid API key", "invalid_token.mp4")
+        }
         "AUTH_BLOCKED" => ("API got blocked on AllDebrid", "alldebrid_api_blocked.mp4"),
         "MAGNET_MUST_BE_PREMIUM" => ("Torrent must be premium on AllDebrid", "need_premium.mp4"),
         "MAGNET_TOO_MANY_ACTIVE" | "MAGNET_TOO_MANY" => {

@@ -153,6 +153,12 @@ fn check_offcloud_error(body: &Value) -> Result<(), ProviderError> {
                 "need_premium.mp4",
             ));
         }
+        if matches!(msg, "NOAUTH" | "UNAUTHORIZED") {
+            return Err(ProviderError::api(
+                "OffCloud authentication required",
+                "invalid_token.mp4",
+            ));
+        }
         return Err(ProviderError::api(
             format!("OffCloud error: {msg}"),
             "api_error.mp4",

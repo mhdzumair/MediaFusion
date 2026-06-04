@@ -78,7 +78,7 @@ pub async fn validate_live_stream_url(
     };
 
     if !resp.status().is_success() {
-        warn!("live stream HEAD status [{url}]: {}", resp.status());
+        tracing::debug!("live stream HEAD status [{url}]: {}", resp.status());
         return false;
     }
 

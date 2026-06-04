@@ -92,7 +92,7 @@ async fn lookup_postgres(
     });
 
     let Some((config, profile_id, user_id, encrypted_secrets)) = row else {
-        warn!("profile postgres lookup uuid={uuid}: no row in user_profiles");
+        tracing::debug!("profile postgres lookup uuid={uuid}: no row in user_profiles");
         return None;
     };
 

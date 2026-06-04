@@ -571,8 +571,8 @@ async fn apply_relink_media(pool: &sqlx::PgPool, stream_id: i32, link_data: &ser
 
     // Insert new stream-level link
     if let Err(e) = sqlx::query(
-        "INSERT INTO stream_media_link (stream_id, media_id, file_index, created_at) \
-         VALUES ($1, $2, $3, NOW()) ON CONFLICT DO NOTHING",
+        "INSERT INTO stream_media_link (stream_id, media_id, file_index, is_primary, is_verified, created_at) \
+         VALUES ($1, $2, $3, TRUE, TRUE, NOW()) ON CONFLICT DO NOTHING",
     )
     .bind(stream_id)
     .bind(target_media_id)
@@ -676,7 +676,7 @@ async fn apply_add_media_link(pool: &sqlx::PgPool, stream_id: i32, link_data: &s
 
     if !already_exists {
         if let Err(e) = sqlx::query(
-            "INSERT INTO stream_media_link (stream_id, media_id, file_index, created_at) VALUES ($1, $2, $3, NOW())",
+            "INSERT INTO stream_media_link (stream_id, media_id, file_index, is_primary, is_verified, created_at) VALUES ($1, $2, $3, FALSE, FALSE, NOW())",
         )
         .bind(stream_id)
         .bind(target_media_id)

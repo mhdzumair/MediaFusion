@@ -52,7 +52,16 @@ pub async fn response_json(
         tracing::debug!("{context}: server error (HTTP {status}) — body: {preview}");
         return Err(ProviderError::api(
             format!("HTTP {status}"),
-            "api_error.mp4",
+            "debrid_service_down_error.mp4",
+        ));
+    }
+
+    // 429 = rate limited; body is often an HTML page — catch before JSON parsing.
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        tracing::debug!("{context}: rate limited (HTTP 429)");
+        return Err(ProviderError::api(
+            "HTTP 429 Too Many Requests",
+            "too_many_requests.mp4",
         ));
     }
 
