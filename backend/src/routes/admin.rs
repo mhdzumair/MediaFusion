@@ -815,7 +815,7 @@ pub async fn db_stats(headers: HeaderMap, State(state): State<Arc<AppState>>) ->
         return auth_guard::auth_failure_response(failure).into_response();
     }
 
-    let (version, db_name, size_pretty, total_bytes, active_conn, max_conn, deadlocks, commits, rollbacks) =
+    let (version, db_name, size_pretty, total_bytes, connection_count, active_queries, max_conn, deadlocks, commits, rollbacks, cache_hit, uptime) =
         tokio::join!(
             fetch_scalar_str(&state.pool_ro, "SELECT version()"),
             fetch_scalar_str(&state.pool_ro, "SELECT current_database()"),
@@ -824,9 +824,15 @@ pub async fn db_stats(headers: HeaderMap, State(state): State<Arc<AppState>>) ->
                 "SELECT pg_size_pretty(pg_database_size(current_database()))"
             ),
             fetch_scalar_i64(&state.pool_ro, "SELECT pg_database_size(current_database())"),
+            // Section C: total connections to current DB (not just active)
             fetch_scalar_i64(
                 &state.pool_ro,
-                "SELECT count(*)::bigint FROM pg_stat_activity WHERE state = 'active'"
+                "SELECT count(*)::bigint FROM pg_stat_activity WHERE datname = current_database()"
+            ),
+            // Section C: active queries excluding self
+            fetch_scalar_i64(
+                &state.pool_ro,
+                "SELECT count(*)::bigint FROM pg_stat_activity WHERE state='active' AND pid != pg_backend_pid()"
             ),
             fetch_scalar_i64(
                 &state.pool_ro,
@@ -844,32 +850,34 @@ pub async fn db_stats(headers: HeaderMap, State(state): State<Arc<AppState>>) ->
                 &state.pool_ro,
                 "SELECT COALESCE(xact_rollback, 0) FROM pg_stat_database WHERE datname = current_database()"
             ),
+            // Section C: fold cache_hit into the join
+            async {
+                sqlx::query_scalar::<_, f64>(
+                    "SELECT CASE WHEN (blks_hit + blks_read) > 0 \
+                     THEN round(blks_hit::numeric / (blks_hit + blks_read) * 100, 2) \
+                     ELSE 0.0 END \
+                     FROM pg_stat_database WHERE datname = current_database()",
+                )
+                .fetch_one(&state.pool_ro)
+                .await
+                .unwrap_or(0.0)
+            },
+            fetch_scalar_i64(
+                &state.pool_ro,
+                "SELECT EXTRACT(EPOCH FROM (now() - pg_postmaster_start_time()))::bigint",
+            ),
         );
-
-    let cache_hit = sqlx::query_scalar::<_, f64>(
-        "SELECT CASE WHEN (blks_hit + blks_read) > 0 \
-         THEN round(blks_hit::numeric / (blks_hit + blks_read) * 100, 2) \
-         ELSE 0.0 END \
-         FROM pg_stat_database WHERE datname = current_database()",
-    )
-    .fetch_one(&state.pool_ro)
-    .await
-    .unwrap_or(0.0);
 
     Json(DbStatsResponse {
         version,
         database_name: db_name,
         size_human: size_pretty,
         total_size_bytes: total_bytes,
-        connection_count: active_conn,
+        connection_count,
         max_connections: max_conn,
         cache_hit_ratio: cache_hit,
-        uptime_seconds: fetch_scalar_i64(
-            &state.pool_ro,
-            "SELECT EXTRACT(EPOCH FROM (now() - pg_postmaster_start_time()))::bigint",
-        )
-        .await,
-        active_queries: active_conn,
+        uptime_seconds: uptime,
+        active_queries,
         deadlocks,
         transactions_committed: commits,
         transactions_rolled_back: rollbacks,
@@ -911,7 +919,7 @@ pub async fn db_tables(
         SELECT
             t.relname::text                                                          AS name,
             n.nspname::text                                                          AS schema_name,
-            COALESCE(s.n_live_tup, 0)::bigint                                       AS row_count,
+            GREATEST(t.reltuples::bigint, COALESCE(s.n_live_tup, 0), 0)             AS row_count,
             pg_size_pretty(pg_total_relation_size(t.oid))                           AS size_human,
             pg_total_relation_size(t.oid)::bigint                                   AS size_bytes,
             pg_size_pretty(pg_indexes_size(t.oid))                                  AS index_size_human,
