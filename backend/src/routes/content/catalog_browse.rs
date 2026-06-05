@@ -1215,7 +1215,7 @@ pub async fn get_media_streams(
             ts.seeders,
             s.uploader,
             s.release_group,
-            sml.filename,
+            (SELECT sf.filename FROM stream_file sf WHERE sf.stream_id = s.id LIMIT 1) AS filename,
             COALESCE(ts.total_size, sml.file_size) AS file_size,
             ts.info_hash,
             ys.video_id AS yt_id,
