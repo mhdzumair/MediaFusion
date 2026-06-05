@@ -13,7 +13,7 @@
 
 use std::time::Duration;
 
-use sqlx::{postgres::PgConnection, Connection, PgPool};
+use sqlx::{postgres::PgConnection, ConnectOptions, Connection, PgPool};
 use tracing::{info, warn};
 use url::Url;
 
@@ -115,7 +115,32 @@ pub async fn run(pool: &PgPool) -> Result<(), MigrateError> {
     // returns VersionMissing and the API panics on startup.
     remove_orphaned_migration_rows(pool, &migrator).await?;
 
-    migrator.run(pool).await?;
+    // Run migrations on a dedicated connection rather than borrowing one from
+    // the shared pool. Two reasons, both observed in production:
+    //
+    //  1. statement_timeout: a pool may set a per-session statement_timeout via
+    //     an after_connect hook (e.g. an app-wide query-safety limit). The
+    //     migration advisory-lock acquisition below — and any heavy DDL — would
+    //     then be subject to it and fail with `57014 canceling statement due to
+    //     statement timeout`. Migrations must not inherit the app query timeout.
+    //
+    //  2. advisory-lock leak: sqlx's `Migrator::run` takes a session-level
+    //     `pg_advisory_lock` and, if a migration fails, returns early WITHOUT
+    //     `pg_advisory_unlock`. A *pooled* connection is then returned to the
+    //     pool (not closed) still holding the lock, so every subsequent
+    //     migration attempt (other replicas, restarts) blocks forever on
+    //     `pg_advisory_lock`. A dedicated connection is closed here on both the
+    //     success and failure paths, ending the session and releasing the lock.
+    let mut conn = pool.connect_options().connect().await?;
+    sqlx::query("SET statement_timeout = 0")
+        .execute(&mut conn)
+        .await?;
+    let result = migrator.run(&mut conn).await;
+    // Always close so the session ends and the advisory lock is released, even
+    // when `result` is an error (sqlx skips its own unlock on failure).
+    let _ = conn.close().await;
+    result?;
+
     info!("database migrations complete");
     Ok(())
 }
