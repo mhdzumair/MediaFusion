@@ -366,6 +366,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/contributions/{contribution_id}/review", patch(content::contributions::review_contribution))
         .route("/api/v1/contributions/{contribution_id}/flag-admin-review", patch(content::contributions::flag_contribution_for_admin_review))
         .route("/api/v1/contributions/{contribution_id}/reject-approved", patch(content::contributions::reject_approved_contribution))
+        .route("/api/v1/contributions/{contribution_id}/admin-reject", patch(content::contributions::reject_approved_contribution))
         // ── Stream Linking ────────────────────────────────────────────────────
         .route("/api/v1/stream-links", post(content::stream_linking::create_stream_link))
         .route("/api/v1/stream-links/bulk", post(content::stream_linking::create_bulk_stream_links))

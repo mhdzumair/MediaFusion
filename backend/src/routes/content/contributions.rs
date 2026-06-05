@@ -157,6 +157,23 @@ fn default_limit() -> i64 {
     80
 }
 
+fn parse_review_status(status: &str) -> Option<crate::db::ContributionStatus> {
+    crate::db::ContributionStatus::from_wire(status).filter(|s| {
+        matches!(
+            s,
+            crate::db::ContributionStatus::Approved | crate::db::ContributionStatus::Rejected
+        )
+    })
+}
+
+fn parse_bulk_review_action(action: &str) -> Option<crate::db::ContributionStatus> {
+    match action {
+        "approve" => Some(crate::db::ContributionStatus::Approved),
+        "reject" => Some(crate::db::ContributionStatus::Rejected),
+        _ => None,
+    }
+}
+
 // ─── DB row helper ────────────────────────────────────────────────────────────
 
 struct ContribRow {
@@ -523,7 +540,7 @@ pub async fn get_contribution_stats(
             .unwrap_or(0);
 
     let stream_pending: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestions WHERE user_id = $1 AND status = 'PENDING'",
+        "SELECT COUNT(*) FROM stream_suggestions WHERE user_id = $1 AND status = 'pending'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
@@ -539,7 +556,7 @@ pub async fn get_contribution_stats(
     .unwrap_or(0);
 
     let stream_rejected: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM stream_suggestions WHERE user_id = $1 AND status = 'REJECTED'",
+        "SELECT COUNT(*) FROM stream_suggestions WHERE user_id = $1 AND status = 'rejected'",
     )
     .bind(user_id)
     .fetch_one(&state.pool_ro)
@@ -843,7 +860,7 @@ pub async fn get_all_contribution_stats(
         .await
         .unwrap_or(0);
     let stream_pending: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestions WHERE status = 'PENDING'")
+        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestions WHERE status = 'pending'")
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
@@ -854,7 +871,7 @@ pub async fn get_all_contribution_stats(
     .await
     .unwrap_or(0);
     let stream_rejected: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestions WHERE status = 'REJECTED'")
+        sqlx::query_scalar("SELECT COUNT(*) FROM stream_suggestions WHERE status = 'rejected'")
             .fetch_one(&state.pool_ro)
             .await
             .unwrap_or(0);
@@ -1124,11 +1141,9 @@ pub async fn review_contribution(
             .into_response();
     }
 
-    // row.status is normalized to lowercase; DB comparisons need uppercase for the ENUM
-    let new_status = match body.status.as_str() {
-        "APPROVED" | "approved" => "APPROVED",
-        "REJECTED" | "rejected" => "REJECTED",
-        _ => {
+    let new_status = match parse_review_status(&body.status) {
+        Some(status) => status,
+        None => {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "status must be approved or rejected"})),
@@ -1140,7 +1155,7 @@ pub async fn review_contribution(
     let mut final_notes = body.review_notes.clone();
     let mut updated_data = row.data.clone();
 
-    if new_status == "APPROVED"
+    if new_status == crate::db::ContributionStatus::Approved
         && PROCESSABLE_IMPORT_TYPES.contains(&row.contribution_type.as_str())
     {
         let username: String = if let Some(uid) = row.user_id {
@@ -1216,7 +1231,7 @@ pub async fn review_contribution(
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
-    if new_status == "APPROVED" {
+    if new_status == crate::db::ContributionStatus::Approved {
         if let Some(uid) = row.user_id {
             award_contribution_points(&state.pool, uid as i64, &row.contribution_type).await;
         }
@@ -1546,13 +1561,14 @@ pub async fn reject_approved_contribution(
 
     if let Err(e) = sqlx::query(
         r#"UPDATE contributions
-           SET status = 'REJECTED',
-               reviewed_by = $1,
+           SET status = $1,
+               reviewed_by = $2,
                reviewed_at = NOW(),
                admin_review_requested = false,
-               review_notes = $2
-           WHERE id = $3"#,
+               review_notes = $3
+           WHERE id = $4"#,
     )
+    .bind(crate::db::ContributionStatus::Rejected)
     .bind(user_id.to_string())
     .bind(&notes)
     .bind(&contribution_id)
@@ -1627,10 +1643,9 @@ pub async fn bulk_review_contributions(
             .into_response();
     }
 
-    let new_status = match body.action.as_str() {
-        "approve" => "APPROVED",
-        "reject" => "REJECTED",
-        _ => {
+    let new_status = match parse_bulk_review_action(&body.action) {
+        Some(status) => status,
+        None => {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "action must be approve or reject"})),
@@ -1639,38 +1654,53 @@ pub async fn bulk_review_contributions(
         }
     };
 
-    let rows: Vec<(String, String, Option<i32>, serde_json::Value)> = if let Some(ref ct) =
-        body.contribution_type
-    {
-        sqlx::query_as(
-            "SELECT id, contribution_type, user_id, data::jsonb FROM contributions WHERE status = 'PENDING' AND contribution_type = $1 ORDER BY created_at ASC",
-        )
-        .bind(ct)
-        .fetch_all(&state.pool)
-        .await
-        .unwrap_or_default()
-    } else {
-        sqlx::query_as(
-            "SELECT id, contribution_type, user_id, data::jsonb FROM contributions WHERE status = 'PENDING' ORDER BY created_at ASC",
-        )
-        .fetch_all(&state.pool)
-        .await
-        .unwrap_or_default()
-    };
+    enum BulkFetchBind {
+        Type(String),
+        Ids(Vec<String>),
+    }
+
+    let pending = crate::db::ContributionStatus::Pending;
+    let mut fetch_sql = String::from(
+        "SELECT id, contribution_type, user_id, data::jsonb FROM contributions WHERE status = $1",
+    );
+    let mut fetch_binds: Vec<BulkFetchBind> = Vec::new();
+    let mut bind_idx = 2;
+
+    if let Some(ref ct) = body.contribution_type {
+        fetch_sql.push_str(&format!(" AND contribution_type = ${bind_idx}"));
+        fetch_binds.push(BulkFetchBind::Type(ct.clone()));
+        bind_idx += 1;
+    }
+    if let Some(ref ids) = body.contribution_ids {
+        if !ids.is_empty() {
+            fetch_sql.push_str(&format!(" AND id = ANY(${bind_idx})"));
+            fetch_binds.push(BulkFetchBind::Ids(ids.clone()));
+        }
+    }
+    fetch_sql.push_str(" ORDER BY created_at ASC");
+
+    let mut fetch_query =
+        sqlx::query_as::<_, (String, String, Option<i32>, serde_json::Value)>(&fetch_sql)
+            .bind(pending);
+    for bind in &fetch_binds {
+        match bind {
+            BulkFetchBind::Type(ct) => {
+                fetch_query = fetch_query.bind(ct);
+            }
+            BulkFetchBind::Ids(ids) => {
+                fetch_query = fetch_query.bind(ids);
+            }
+        }
+    }
+
+    let rows = fetch_query.fetch_all(&state.pool).await.unwrap_or_default();
 
     let mut approved = 0i64;
     let mut rejected = 0i64;
     let mut skipped = 0i64;
 
     for (id, contribution_type, contrib_user_id, data) in rows {
-        if let Some(ref allowed_ids) = body.contribution_ids {
-            if !allowed_ids.contains(&id) {
-                skipped += 1;
-                continue;
-            }
-        }
-
-        if new_status == "APPROVED" {
+        if new_status == crate::db::ContributionStatus::Approved {
             let cache = state
                 .keyword_filters
                 .read()
@@ -1686,7 +1716,7 @@ pub async fn bulk_review_contributions(
         let mut final_notes = body.review_notes.clone();
         let mut updated_data = data.clone();
 
-        if new_status == "APPROVED"
+        if new_status == crate::db::ContributionStatus::Approved
             && PROCESSABLE_IMPORT_TYPES.contains(&contribution_type.as_str())
         {
             let username: String = if let Some(uid) = contrib_user_id {
@@ -1740,19 +1770,20 @@ pub async fn bulk_review_contributions(
         }
 
         let result = sqlx::query(
-            "UPDATE contributions SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3, data = $4 WHERE id = $5 AND status = 'PENDING'",
+            "UPDATE contributions SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3, data = $4 WHERE id = $5 AND status = $6",
         )
         .bind(new_status)
         .bind(user_id.to_string())
         .bind(&final_notes)
         .bind(&updated_data)
         .bind(&id)
+        .bind(crate::db::ContributionStatus::Pending)
         .execute(&state.pool)
         .await;
 
         match result {
             Ok(r) if r.rows_affected() > 0 => {
-                if new_status == "APPROVED" {
+                if new_status == crate::db::ContributionStatus::Approved {
                     approved += 1;
                     if let Some(uid) = contrib_user_id {
                         award_contribution_points(&state.pool, uid as i64, &contribution_type)
