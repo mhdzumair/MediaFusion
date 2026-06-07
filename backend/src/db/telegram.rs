@@ -190,13 +190,16 @@ pub async fn delete_telegram_user_forward(pool: &PgPool, telegram_stream_id: i64
 
 /// Get the telegram_user_id for a given MediaFusion user_id.
 pub async fn get_user_telegram_id(pool: &PgPool, user_id: UserId) -> Option<i64> {
-    sqlx::query_scalar::<_, Option<i64>>("SELECT telegram_user_id FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .flatten()
+    // Column is character varying; read as String then parse to i64.
+    let val: Option<String> =
+        sqlx::query_scalar::<_, Option<String>>("SELECT telegram_user_id FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .flatten();
+    val.and_then(|s| s.parse().ok())
 }
 
 /// Look up MediaFusion user by linked Telegram user ID (for /status and bot imports).
@@ -204,11 +207,12 @@ pub async fn get_user_by_telegram_id(
     pool: &PgPool,
     telegram_user_id: i64,
 ) -> Option<(UserId, String)> {
+    // Column is character varying; bind as String to avoid operator type mismatch.
     let row: Option<(UserId, String)> = sqlx::query_as(
         "SELECT id, COALESCE(NULLIF(username, ''), NULLIF(email, ''), 'User #' || id::text) \
          FROM users WHERE telegram_user_id = $1 LIMIT 1",
     )
-    .bind(telegram_user_id)
+    .bind(telegram_user_id.to_string())
     .fetch_optional(pool)
     .await
     .ok()?;
@@ -226,6 +230,7 @@ pub async fn resolve_mediafusion_user_id(
     if let Some((uid, _)) = get_user_by_telegram_id(pool, telegram_user_id).await {
         return Some(uid);
     }
+    // Fall back to the short-lived Redis mapping cache written at link time.
     let key = crate::bot::user_mapping_key(telegram_user_id);
     let cached: Option<String> = redis.get(&key).await.ok()?;
     cached.and_then(|s| s.parse::<i32>().ok()).map(UserId)
