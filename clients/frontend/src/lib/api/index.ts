@@ -251,7 +251,14 @@ export {
   type StreamFieldName,
   type EpisodeLinkFieldName,
 } from './stream-suggestions'
-export { streamsApi } from './streams'
+export {
+  streamsApi,
+  type MyStreamItem,
+  type MyStreamsListParams,
+  type MyStreamsListResponse,
+  type UpdateMyStreamRequest,
+  type BlockMyStreamResponse,
+} from './streams'
 export {
   episodeSuggestionsApi,
   type EpisodeSuggestionStatus,

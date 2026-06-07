@@ -844,7 +844,11 @@ pub async fn get_request_metrics_status(
     let mut total_requests: i64 = 0;
     for ep_key in &all_ep_keys {
         let agg_key = format!("{AGG_PREFIX}{ep_key}");
-        let count: Option<String> = state.redis.hget(&agg_key, "total_requests").await.unwrap_or(None);
+        let count: Option<String> = state
+            .redis
+            .hget(&agg_key, "total_requests")
+            .await
+            .unwrap_or(None);
         if let Some(c) = count.and_then(|s| s.parse::<i64>().ok()) {
             total_requests += c;
         }
@@ -949,10 +953,7 @@ pub async fn list_endpoint_stats(
 
 /// Compute p50, p95, p99 percentiles from a latency sorted set.
 /// Mirrors Python `_compute_percentiles` in `python-deprecated/utils/request_tracker.py`.
-async fn compute_percentiles(
-    redis: &fred::clients::Client,
-    latency_key: &str,
-) -> (f64, f64, f64) {
+async fn compute_percentiles(redis: &fred::clients::Client, latency_key: &str) -> (f64, f64, f64) {
     use fred::prelude::SortedSetsInterface;
     let members: Vec<String> = redis
         .zrange(latency_key, 0i64, -1i64, None, false, None, false)
@@ -1192,7 +1193,12 @@ pub async fn get_request_metrics_timeseries(
     let mut s3: std::collections::HashMap<String, String> = Default::default();
     let mut s4: std::collections::HashMap<String, String> = Default::default();
     let mut s5: std::collections::HashMap<String, String> = Default::default();
-    for (digit, map) in [("2", &mut s2), ("3", &mut s3), ("4", &mut s4), ("5", &mut s5)] {
+    for (digit, map) in [
+        ("2", &mut s2),
+        ("3", &mut s3),
+        ("4", &mut s4),
+        ("5", &mut s5),
+    ] {
         *map = state
             .redis
             .hgetall(format!("{TS_STATUS_PREFIX}{digit}"))

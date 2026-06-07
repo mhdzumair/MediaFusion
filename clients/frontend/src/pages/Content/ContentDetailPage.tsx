@@ -947,8 +947,13 @@ export function ContentDetailPage() {
   const [streamDialogOpen, setStreamDialogOpen] = useState(false)
   const [selectedStream, setSelectedStream] = useState<CatalogStreamInfo | null>(null)
 
-  // Stream filtering and view mode
-  const [streamFilters, setStreamFilters] = useState<StreamFilterState>(defaultStreamFilters)
+  // Stream filtering and view mode (stream_id query param deep-links to a single stream)
+  const [streamFilters, setStreamFilters] = useState<StreamFilterState>(() => ({
+    ...defaultStreamFilters,
+    streamIdFilter: searchParams.get('stream_id') || '',
+  }))
+  const [autoOpenedStreamId, setAutoOpenedStreamId] = useState<string | null>(null)
+  const hasStreamDeepLink = streamFilters.streamIdFilter.length > 0
   const [viewMode, setViewMode] = useState<ViewMode>('list')
 
   // Player state (hoisted from StreamActionDialog for proper modal layering)
@@ -1037,7 +1042,9 @@ export function ContentDetailPage() {
         selectedProvider !== undefined && // Wait for provider to be selected
         (catalogType === 'movie' ||
           catalogType === 'tv' ||
-          (selectedSeason !== undefined && selectedEpisode !== undefined)),
+          (selectedSeason !== undefined && selectedEpisode !== undefined) ||
+          hasStreamDeepLink),
+      streamId: hasStreamDeepLink ? streamFilters.streamIdFilter : undefined,
     },
     selectedProfileUuid,
   )
@@ -1150,7 +1157,8 @@ export function ContentDetailPage() {
 
   // Set default season when data loads (during render, not in effect)
   // Guard only on selectedSeason === undefined to avoid cached-reference bug (same as profiles above)
-  if (seasons.length > 0 && selectedSeason === undefined) {
+  // Skip while stream_id deep link is resolving season/episode from the API
+  if (!hasStreamDeepLink && seasons.length > 0 && selectedSeason === undefined) {
     setSelectedSeason(seasons[0].season_number)
   }
 
@@ -1162,8 +1170,56 @@ export function ContentDetailPage() {
 
   // Set default episode when season changes (during render, not in effect)
   // Guard only on selectedEpisode === undefined to avoid cached-reference bug (same as profiles above)
-  if (episodes.length > 0 && selectedEpisode === undefined) {
+  if (!hasStreamDeepLink && episodes.length > 0 && selectedEpisode === undefined) {
     setSelectedEpisode(episodes[0].episode_number)
+  }
+
+  // Resolve series season/episode from backend when deep-linking by stream_id (during render)
+  const resolvedDeepLinkSeason =
+    hasStreamDeepLink && streamsData ? (streamsData.resolved_season ?? streamsData.season) : undefined
+  const resolvedDeepLinkEpisode =
+    hasStreamDeepLink && streamsData ? (streamsData.resolved_episode ?? streamsData.episode) : undefined
+  const [prevResolvedDeepLinkSeason, setPrevResolvedDeepLinkSeason] = useState<number | undefined>()
+  const [prevResolvedDeepLinkEpisode, setPrevResolvedDeepLinkEpisode] = useState<number | undefined>()
+  if (
+    hasStreamDeepLink &&
+    catalogType === 'series' &&
+    resolvedDeepLinkSeason !== undefined &&
+    resolvedDeepLinkEpisode !== undefined &&
+    (prevResolvedDeepLinkSeason !== resolvedDeepLinkSeason || prevResolvedDeepLinkEpisode !== resolvedDeepLinkEpisode)
+  ) {
+    setPrevResolvedDeepLinkSeason(resolvedDeepLinkSeason)
+    setPrevResolvedDeepLinkEpisode(resolvedDeepLinkEpisode)
+    if (selectedSeason !== resolvedDeepLinkSeason) setSelectedSeason(resolvedDeepLinkSeason)
+    if (selectedEpisode !== resolvedDeepLinkEpisode) setSelectedEpisode(resolvedDeepLinkEpisode)
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev)
+        params.set('season', String(resolvedDeepLinkSeason))
+        params.set('episode', String(resolvedDeepLinkEpisode))
+        return params
+      },
+      { replace: true },
+    )
+  }
+
+  // Reset deep-link state when stream_id changes (during render)
+  const [prevDeepLinkStreamId, setPrevDeepLinkStreamId] = useState(streamFilters.streamIdFilter)
+  if (streamFilters.streamIdFilter !== prevDeepLinkStreamId) {
+    setPrevDeepLinkStreamId(streamFilters.streamIdFilter)
+    setAutoOpenedStreamId(null)
+    setPrevResolvedDeepLinkSeason(undefined)
+    setPrevResolvedDeepLinkEpisode(undefined)
+  }
+
+  // Auto-open stream dialog when navigated with ?stream_id= (during render)
+  if (hasStreamDeepLink && autoOpenedStreamId !== streamFilters.streamIdFilter && streamsData?.streams) {
+    const match = streamsData.streams.find((s) => s.id !== undefined && String(s.id) === streamFilters.streamIdFilter)
+    if (match) {
+      setAutoOpenedStreamId(streamFilters.streamIdFilter)
+      if (selectedStream?.id !== match.id) setSelectedStream(match)
+      if (!streamDialogOpen) setStreamDialogOpen(true)
+    }
   }
 
   // Helper function for partial case-insensitive matching (for instant client-side filtering)
@@ -1272,6 +1328,11 @@ export function ContentDetailPage() {
       result = result.filter((s) => s.info_hash?.toLowerCase().includes(needle) ?? false)
     }
 
+    // Apply stream id filter (from contributions deep link)
+    if (streamFilters.streamIdFilter.length > 0) {
+      result = result.filter((s) => s.id !== undefined && String(s.id) === streamFilters.streamIdFilter)
+    }
+
     // Apply sorting
     result.sort((a, b) => {
       let comparison = 0
@@ -1372,6 +1433,22 @@ export function ContentDetailPage() {
     setSelectedStream(stream)
     setStreamDialogOpen(true)
   }
+
+  const handleStreamFiltersChange = useCallback(
+    (filters: StreamFilterState) => {
+      setStreamFilters(filters)
+      const current = searchParams.get('stream_id') || ''
+      if (filters.streamIdFilter === current) return
+      const newParams = new URLSearchParams(searchParams)
+      if (filters.streamIdFilter) {
+        newParams.set('stream_id', filters.streamIdFilter)
+      } else {
+        newParams.delete('stream_id')
+      }
+      setSearchParams(newParams, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
 
   // Handle watch action - opens player at page level (outside of StreamActionDialog)
   const handleWatchStream = useCallback(
@@ -1938,7 +2015,7 @@ export function ContentDetailPage() {
                 {streamsData?.streams && streamsData.streams.length > 0 && (
                   <StreamFilters
                     filters={streamFilters}
-                    onFiltersChange={setStreamFilters}
+                    onFiltersChange={handleStreamFiltersChange}
                     availableSources={availableSources}
                     availableResolutions={availableResolutions}
                     availableQualities={availableQualities}
@@ -1996,7 +2073,7 @@ export function ContentDetailPage() {
                     variant="outline"
                     size="sm"
                     className="mt-4 rounded-xl"
-                    onClick={() => setStreamFilters(defaultStreamFilters)}
+                    onClick={() => handleStreamFiltersChange(defaultStreamFilters)}
                   >
                     Clear Filters
                   </Button>
@@ -2011,7 +2088,10 @@ export function ContentDetailPage() {
                       stream={stream}
                       onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
                       mediaType={catalogType === 'series' ? 'series' : 'movie'}
-                      isLastPlayed={stream.id !== undefined && String(stream.id) === lastPlayedStreamId}
+                      isLastPlayed={
+                        stream.id !== undefined &&
+                        (String(stream.id) === lastPlayedStreamId || String(stream.id) === streamFilters.streamIdFilter)
+                      }
                     />
                   )}
                 />
@@ -2023,7 +2103,10 @@ export function ContentDetailPage() {
                       stream={stream}
                       onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
                       mediaType={catalogType === 'series' ? 'series' : 'movie'}
-                      isLastPlayed={stream.id !== undefined && String(stream.id) === lastPlayedStreamId}
+                      isLastPlayed={
+                        stream.id !== undefined &&
+                        (String(stream.id) === lastPlayedStreamId || String(stream.id) === streamFilters.streamIdFilter)
+                      }
                     />
                   ))}
                 </div>

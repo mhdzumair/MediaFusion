@@ -21,7 +21,7 @@ import { Edit, Trash2, Ban, Loader2, MoreVertical, Flag, FileVideo, Link2 } from
 import { useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useBlockTorrentStream } from '@/hooks/useAdmin'
-import { useCreateStreamSuggestion, useDeleteStream } from '@/hooks'
+import { useBlockMyStream, useCreateStreamSuggestion, useDeleteStream } from '@/hooks'
 import type { CatalogStreamInfo } from '@/lib/api'
 import { StreamEditSheet } from './StreamEditSheet'
 import { StreamRelinkButton } from './StreamRelinkButton'
@@ -35,9 +35,13 @@ interface StreamCardProps {
   onClick: () => void
   showActions?: boolean
   showModeratorActions?: boolean
+  showOwnerActions?: boolean
+  fileCount?: number
   onDeleted?: () => void
   mediaType?: 'movie' | 'series'
   isLastPlayed?: boolean // Highlight this stream as the last played
+  /** Actions-only mode for embedding inside poster cards */
+  embedded?: boolean
 }
 
 // Helper to format HDR formats array as string
@@ -56,9 +60,12 @@ export function StreamCard({
   onClick,
   showActions = true,
   showModeratorActions = true,
+  showOwnerActions = false,
+  fileCount,
   onDeleted,
   mediaType = 'movie',
   isLastPlayed = false,
+  embedded = false,
 }: StreamCardProps) {
   const hdrFormatsString = getHdrFormatsString(stream)
   const audioFormatsString = getAudioFormatsString(stream)
@@ -80,12 +87,19 @@ export function StreamCard({
 
   // Moderator mutations
   const blockStream = useBlockTorrentStream()
+  const blockMyStream = useBlockMyStream()
   const deleteStream = useDeleteStream()
   const createSuggestion = useCreateStreamSuggestion()
 
-  const isDeleting = blockStream.isPending || deleteStream.isPending
+  const isDeleting = blockStream.isPending || blockMyStream.isPending || deleteStream.isPending
 
   const handleBlock = async () => {
+    if (showOwnerActions && stream.id) {
+      await blockMyStream.mutateAsync(stream.id)
+      setBlockDialogOpen(false)
+      onDeleted?.()
+      return
+    }
     if (!torrentAdminStreamId) return
     await blockStream.mutateAsync(torrentAdminStreamId)
     setBlockDialogOpen(false)
@@ -244,8 +258,214 @@ export function StreamCard({
     [stream.id, annotationFiles, createSuggestion, onDeleted],
   )
 
-  // Check if we should show the annotate option (series with episode data)
-  const hasEpisodeFiles = mediaType === 'series' && isAuthenticated
+  const resolvedFileCount = fileCount ?? stream.file_count ?? 0
+  const canAnnotateFiles =
+    isAuthenticated && (mediaType === 'series' || stream.stream_type === 'torrent' || resolvedFileCount > 1)
+
+  const actionsMenu = showActions && stream.id && (
+    <div className="relative z-10 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant={embedded ? 'outline' : 'ghost'}
+            size={embedded ? 'sm' : 'icon'}
+            className={embedded ? 'h-8 gap-1.5' : 'h-8 w-8 text-muted-foreground hover:text-foreground'}
+          >
+            <MoreVertical className="h-4 w-4" />
+            {embedded && <span className="text-xs">Actions</span>}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <StreamEditSheet
+            streamId={stream.id}
+            streamName={rawStreamName}
+            ownerDirect={showOwnerActions}
+            onSuccess={onDeleted}
+            currentValues={{
+              name: rawStreamName,
+              resolution: stream.resolution,
+              quality: stream.quality,
+              codec: stream.codec,
+              bit_depth: stream.bit_depth,
+              audio_formats: audioFormatsString,
+              channels: stream.channels,
+              hdr_formats: hdrFormatsString,
+              source: stream.source,
+              languages: stream.languages,
+              size: stream.size,
+            }}
+            mediaType={mediaType}
+            episodeLinks={stream.episode_links || []}
+            trigger={
+              <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                <Edit className="h-4 w-4 mr-2" />
+                {showOwnerActions ? 'Edit Stream' : 'Suggest Edit'}
+              </DropdownMenuItem>
+            }
+          />
+
+          {isAuthenticated && (
+            <StreamRelinkButton
+              streamId={stream.id}
+              streamName={rawStreamName}
+              onSuccess={onDeleted}
+              trigger={
+                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                  <Link2 className="h-4 w-4 mr-2" />
+                  Link to Media
+                </DropdownMenuItem>
+              }
+            />
+          )}
+
+          {canAnnotateFiles && (
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault()
+                handleOpenAnnotation()
+              }}
+              disabled={isLoadingFiles}
+            >
+              {isLoadingFiles ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <FileVideo className="h-4 w-4 mr-2" />
+              )}
+              Annotate Files
+            </DropdownMenuItem>
+          )}
+
+          {!showOwnerActions && (
+            <StreamReport
+              streamId={stream.id}
+              streamName={stream.name}
+              currentQuality={stream.quality || stream.resolution}
+              currentLanguage={audioFormatsString}
+              trigger={
+                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                  <Flag className="h-4 w-4 mr-2" />
+                  Report Issue
+                </DropdownMenuItem>
+              }
+            />
+          )}
+
+          {showOwnerActions && stream.id && (
+            <>
+              <DropdownMenuSeparator />
+              {!stream.is_blocked && (
+                <DropdownMenuItem
+                  className="text-primary"
+                  onSelect={() => setBlockDialogOpen(true)}
+                  disabled={isDeleting}
+                >
+                  {blockMyStream.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Ban className="h-4 w-4 mr-2" />
+                  )}
+                  Block Stream
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                className="text-red-600"
+                onSelect={() => setDeleteDialogOpen(true)}
+                disabled={isDeleting}
+              >
+                {deleteStream.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-2" />
+                )}
+                Delete Stream
+              </DropdownMenuItem>
+            </>
+          )}
+
+          {showModeratorActions && isModerator && stream.id && !showOwnerActions && (
+            <>
+              <DropdownMenuSeparator />
+              {isTorrentStream && torrentAdminStreamId && (
+                <DropdownMenuItem
+                  className="text-primary"
+                  onSelect={() => setBlockDialogOpen(true)}
+                  disabled={isDeleting}
+                >
+                  {blockStream.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Ban className="h-4 w-4 mr-2" />
+                  )}
+                  Block Stream
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                className="text-red-600"
+                onSelect={() => setDeleteDialogOpen(true)}
+                disabled={isDeleting}
+              >
+                {deleteStream.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-2" />
+                )}
+                Delete Stream
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <FileAnnotationDialog
+        open={annotationDialogOpen}
+        onOpenChange={setAnnotationDialogOpen}
+        streamName={stream.name}
+        initialFiles={annotationFiles}
+        onSave={handleSaveAnnotation}
+        isLoading={isSavingAnnotation}
+      />
+
+      <AlertDialog open={blockDialogOpen} onOpenChange={setBlockDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Block this stream?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {showOwnerActions
+                ? 'This will hide your stream from the catalog. This is one-way — only a moderator can restore it.'
+                : 'This will block the stream from appearing in search results. The stream can be unblocked later.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBlock} className="bg-primary hover:bg-primary/90">
+              Block Stream
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this stream?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The stream will be permanently deleted from the database.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
+              Delete Stream
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  )
+
+  if (embedded) {
+    return actionsMenu
+  }
 
   return (
     <div
@@ -284,168 +504,7 @@ export function StreamCard({
         {stream.id && <StreamCommunityRow streamId={stream.id} className="pt-1" />}
       </div>
 
-      {/* Compact Actions Menu */}
-      {showActions && stream.id && (
-        <div className="relative z-10 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <StreamEditSheet
-                streamId={stream.id}
-                streamName={rawStreamName}
-                currentValues={{
-                  name: rawStreamName,
-                  resolution: stream.resolution,
-                  quality: stream.quality,
-                  codec: stream.codec,
-                  bit_depth: stream.bit_depth,
-                  audio_formats: audioFormatsString,
-                  channels: stream.channels,
-                  hdr_formats: hdrFormatsString,
-                  source: stream.source,
-                  languages: stream.languages,
-                  size: stream.size,
-                }}
-                mediaType={mediaType}
-                episodeLinks={stream.episode_links || []}
-                trigger={
-                  <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                    <Edit className="h-4 w-4 mr-2" />
-                    Edit Stream
-                  </DropdownMenuItem>
-                }
-              />
-
-              {isAuthenticated && (
-                <StreamRelinkButton
-                  streamId={stream.id}
-                  streamName={rawStreamName}
-                  onSuccess={onDeleted}
-                  trigger={
-                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                      <Link2 className="h-4 w-4 mr-2" />
-                      Link to Media
-                    </DropdownMenuItem>
-                  }
-                />
-              )}
-
-              {/* Annotate Files option for series */}
-              {hasEpisodeFiles && (
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault()
-                    handleOpenAnnotation()
-                  }}
-                  disabled={isLoadingFiles}
-                >
-                  {isLoadingFiles ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <FileVideo className="h-4 w-4 mr-2" />
-                  )}
-                  Annotate Files
-                </DropdownMenuItem>
-              )}
-
-              <StreamReport
-                streamId={stream.id}
-                streamName={stream.name}
-                currentQuality={stream.quality || stream.resolution}
-                currentLanguage={audioFormatsString}
-                trigger={
-                  <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                    <Flag className="h-4 w-4 mr-2" />
-                    Report Issue
-                  </DropdownMenuItem>
-                }
-              />
-
-              {/* Moderator Actions */}
-              {showModeratorActions && isModerator && stream.id && (
-                <>
-                  <DropdownMenuSeparator />
-                  {isTorrentStream && torrentAdminStreamId && (
-                    <DropdownMenuItem
-                      className="text-primary"
-                      onSelect={() => setBlockDialogOpen(true)}
-                      disabled={isDeleting}
-                    >
-                      {blockStream.isPending ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Ban className="h-4 w-4 mr-2" />
-                      )}
-                      Block Stream
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem
-                    className="text-red-600"
-                    onSelect={() => setDeleteDialogOpen(true)}
-                    disabled={isDeleting}
-                  >
-                    {deleteStream.isPending ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4 mr-2" />
-                    )}
-                    Delete Stream
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* File Annotation Dialog */}
-          <FileAnnotationDialog
-            open={annotationDialogOpen}
-            onOpenChange={setAnnotationDialogOpen}
-            streamName={stream.name}
-            initialFiles={annotationFiles}
-            onSave={handleSaveAnnotation}
-            isLoading={isSavingAnnotation}
-          />
-
-          {/* Moderator Dialogs */}
-          <AlertDialog open={blockDialogOpen} onOpenChange={setBlockDialogOpen}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Block this stream?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will block the stream from appearing in search results. The stream can be unblocked later.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleBlock} className="bg-primary hover:bg-primary/90">
-                  Block Stream
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-
-          <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete this stream?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This action cannot be undone. The stream will be permanently deleted from the database.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
-                  Delete Stream
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      )}
+      {actionsMenu}
     </div>
   )
 }

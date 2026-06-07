@@ -269,7 +269,7 @@ export {
 export { useDeleteMetadata, useBlockTorrentStream } from './useAdmin'
 
 // Stream hooks
-export { useDeleteStream } from './useStreams'
+export { useMyStreams, useUpdateMyStream, useBlockMyStream, useDeleteStream, myStreamsKeys } from './useStreams'
 
 // File Links hooks (for annotation)
 export {

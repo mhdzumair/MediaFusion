@@ -46,6 +46,7 @@ export interface StreamFilterState {
   maxSizeGB: number | null
   lastPlayedOnly: boolean // Show only last played stream
   infoHashSearch: string
+  streamIdFilter: string // Show only a specific stream by database id
 }
 
 const RESOLUTION_OPTIONS = ['4K', '2160p', '1080p', '720p', '480p', 'SD']
@@ -129,6 +130,7 @@ export function StreamFilters({
       maxSizeGB: null,
       lastPlayedOnly: false,
       infoHashSearch: '',
+      streamIdFilter: '',
     })
   }
 
@@ -143,7 +145,8 @@ export function StreamFilters({
     filters.minSizeGB !== null ||
     filters.maxSizeGB !== null ||
     filters.lastPlayedOnly ||
-    filters.infoHashSearch.length > 0
+    filters.infoHashSearch.length > 0 ||
+    filters.streamIdFilter.length > 0
 
   const activeFilterCount =
     filters.qualityFilter.length +
@@ -156,7 +159,8 @@ export function StreamFilters({
     (filters.minSizeGB !== null ? 1 : 0) +
     (filters.maxSizeGB !== null ? 1 : 0) +
     (filters.lastPlayedOnly ? 1 : 0) +
-    (filters.infoHashSearch.length > 0 ? 1 : 0)
+    (filters.infoHashSearch.length > 0 ? 1 : 0) +
+    (filters.streamIdFilter.length > 0 ? 1 : 0)
 
   return (
     <div className="flex flex-col gap-3">
@@ -601,6 +605,16 @@ export function StreamFilters({
               />
             </Badge>
           )}
+          {filters.streamIdFilter.length > 0 && (
+            <Badge variant="secondary" className="text-[10px] sm:text-xs gap-1 py-0.5 px-1.5 sm:px-2 font-mono">
+              <Hash className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
+              Stream #{filters.streamIdFilter}
+              <X
+                className="h-2.5 w-2.5 sm:h-3 sm:w-3 cursor-pointer shrink-0"
+                onClick={() => updateFilter('streamIdFilter', '')}
+              />
+            </Badge>
+          )}
         </div>
       )}
     </div>
@@ -622,4 +636,5 @@ export const defaultStreamFilters: StreamFilterState = {
   maxSizeGB: null,
   lastPlayedOnly: false,
   infoHashSearch: '',
+  streamIdFilter: '',
 }

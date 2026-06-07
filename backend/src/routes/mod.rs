@@ -441,9 +441,14 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/catalog/{catalog_type}/{media_id}/streams", get(content::catalog_browse::get_media_streams))
         .route("/api/v1/catalog/{catalog_type}/{media_id}/streams/{stream_id}/report", post(content::catalog_browse::report_stream))
         // ── Content stream management ─────────────────────────────────────────
+        .route("/api/v1/streams/mine", get(content::streams::list_my_streams))
         .route(
             "/api/v1/streams/{stream_id}",
-            delete(content::streams::delete_stream),
+            delete(content::streams::delete_stream).patch(content::streams::update_my_stream),
+        )
+        .route(
+            "/api/v1/streams/{stream_id}/block",
+            post(content::streams::block_my_stream),
         )
         // ── Content voting ────────────────────────────────────────────────────
         .route(

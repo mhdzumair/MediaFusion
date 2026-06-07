@@ -15,7 +15,8 @@ export const catalogKeys = {
     episode?: number,
     profileId?: number,
     provider?: string,
-  ) => [...catalogKeys.all, 'streams', type, id, season, episode, profileId, provider] as const,
+    streamId?: string,
+  ) => [...catalogKeys.all, 'streams', type, id, season, episode, profileId, provider, streamId] as const,
 }
 
 // Get available catalogs
@@ -68,20 +69,25 @@ export function useCatalogStreams(
   episode?: number,
   profileId?: number,
   provider?: string,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; streamId?: string },
   profileUuid?: string,
 ) {
+  const streamId = options?.streamId
   return useQuery({
-    queryKey: catalogKeys.streams(catalogType, mediaId.toString(), season, episode, profileId, provider),
-    queryFn: () => catalogApi.getStreams(catalogType, mediaId, season, episode, profileId, provider, profileUuid),
+    queryKey: catalogKeys.streams(catalogType, mediaId.toString(), season, episode, profileId, provider, streamId),
+    queryFn: () =>
+      catalogApi.getStreams(catalogType, mediaId, season, episode, profileId, provider, profileUuid, streamId),
     // Require profileId and provider to be set to avoid unnecessary API calls
-    // Movie and TV channels don't need season/episode, series does
+    // Movie and TV channels don't need season/episode, series does (unless stream_id deep link)
     enabled:
       options?.enabled !== false &&
       !!mediaId &&
       profileId !== undefined &&
       provider !== undefined &&
-      (catalogType === 'movie' || catalogType === 'tv' || (season !== undefined && episode !== undefined)),
+      (catalogType === 'movie' ||
+        catalogType === 'tv' ||
+        (season !== undefined && episode !== undefined) ||
+        !!streamId),
     staleTime: 2 * 60 * 1000, // 2 minutes (streams can change)
     refetchOnMount: 'always', // Always refetch when navigating to the detail page
   })

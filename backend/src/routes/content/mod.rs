@@ -15,6 +15,7 @@ pub mod nzb_import;
 pub mod reference;
 pub mod scraping;
 pub mod stream_linking;
+pub mod stream_rows;
 pub mod stream_suggestions;
 pub mod streams;
 pub mod suggestions;

@@ -111,15 +111,22 @@ async fn insert_test_user(pool: &sqlx::PgPool, suffix: &str) -> i32 {
 }
 
 async fn insert_test_stream(pool: &sqlx::PgPool) -> i32 {
+    insert_test_stream_for_user(pool, None).await
+}
+
+async fn insert_test_stream_for_user(pool: &sqlx::PgPool, uploader_user_id: Option<i32>) -> i32 {
     sqlx::query_scalar::<_, i32>(
         r#"INSERT INTO stream (
                stream_type, name, source, is_active, is_blocked, is_public, playback_count,
+               uploader_user_id,
                is_remastered, is_upscaled, is_proper, is_repack, is_extended,
                is_complete, is_dubbed, is_subbed, created_at
            ) VALUES ('HTTP', 'test stream', 'test', true, false, true, 0,
+                     $1,
                      false, false, false, false, false, false, false, false, NOW())
            RETURNING id"#,
     )
+    .bind(uploader_user_id)
     .fetch_one(pool)
     .await
     .expect("insert stream")
@@ -186,6 +193,182 @@ async fn stream_suggestion_stats_use_lowercase_status() {
         .ok();
     sqlx::query("DELETE FROM users WHERE id = $1")
         .bind(user_id)
+        .execute(pool)
+        .await
+        .ok();
+}
+
+/// Owner streams are listed only when `uploader_user_id` matches; anonymous streams are excluded.
+#[tokio::test]
+async fn owner_streams_list_filters_by_uploader_user_id() {
+    let _db = common::lock_db_tests().await;
+    let pool = common::test_pool().await;
+
+    let suffix = Uuid::new_v4().simple().to_string();
+    let owner_id = insert_test_user(pool, &format!("owner_{suffix}")).await;
+    let other_id = insert_test_user(pool, &format!("other_{suffix}")).await;
+
+    let owned_stream_id = insert_test_stream_for_user(pool, Some(owner_id)).await;
+    let anonymous_stream_id = insert_test_stream_for_user(pool, None).await;
+    let other_stream_id = insert_test_stream_for_user(pool, Some(other_id)).await;
+
+    let owned_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM stream WHERE uploader_user_id = $1")
+            .bind(owner_id)
+            .fetch_one(pool)
+            .await
+            .expect("count owned streams");
+
+    assert_eq!(owned_count, 1);
+
+    let anonymous_in_owner_list: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM stream WHERE uploader_user_id = $1 AND id = $2")
+            .bind(owner_id)
+            .bind(anonymous_stream_id)
+            .fetch_one(pool)
+            .await
+            .expect("count anonymous in owner list");
+
+    assert_eq!(anonymous_in_owner_list, 0);
+
+    let other_owner_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM stream WHERE uploader_user_id = $1 AND id = $2")
+            .bind(owner_id)
+            .bind(other_stream_id)
+            .fetch_one(pool)
+            .await
+            .expect("count other user's stream in owner list");
+
+    assert_eq!(other_owner_count, 0);
+
+    for stream_id in [owned_stream_id, anonymous_stream_id, other_stream_id] {
+        sqlx::query("DELETE FROM stream WHERE id = $1")
+            .bind(stream_id)
+            .execute(pool)
+            .await
+            .ok();
+    }
+    for user_id in [owner_id, other_id] {
+        sqlx::query("DELETE FROM users WHERE id = $1")
+            .bind(user_id)
+            .execute(pool)
+            .await
+            .ok();
+    }
+}
+
+/// Owner block is one-way: sets blocked + inactive; owner cannot self-unblock.
+#[tokio::test]
+async fn owner_block_is_one_way() {
+    let _db = common::lock_db_tests().await;
+    let pool = common::test_pool().await;
+
+    let suffix = Uuid::new_v4().simple().to_string();
+    let owner_id = insert_test_user(pool, &format!("block_{suffix}")).await;
+    let stream_id = insert_test_stream_for_user(pool, Some(owner_id)).await;
+
+    sqlx::query(
+        "UPDATE stream SET is_blocked = true, is_active = false WHERE id = $1 AND uploader_user_id = $2",
+    )
+    .bind(stream_id)
+    .bind(owner_id)
+    .execute(pool)
+    .await
+    .expect("block stream");
+
+    let (is_blocked, is_active): (bool, bool) =
+        sqlx::query_as("SELECT is_blocked, is_active FROM stream WHERE id = $1")
+            .bind(stream_id)
+            .fetch_one(pool)
+            .await
+            .expect("fetch blocked state");
+
+    assert!(is_blocked);
+    assert!(!is_active);
+
+    sqlx::query("DELETE FROM stream WHERE id = $1")
+        .bind(stream_id)
+        .execute(pool)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(owner_id)
+        .execute(pool)
+        .await
+        .ok();
+}
+
+/// Direct owner field updates mutate stream rows immediately.
+#[tokio::test]
+async fn owner_direct_edit_updates_stream_fields() {
+    use mediafusion_api::routes::content::stream_suggestions::apply_stream_field_change;
+
+    let _db = common::lock_db_tests().await;
+    let pool = common::test_pool().await;
+
+    let suffix = Uuid::new_v4().simple().to_string();
+    let owner_id = insert_test_user(pool, &format!("edit_{suffix}")).await;
+    let stream_id = insert_test_stream_for_user(pool, Some(owner_id)).await;
+
+    apply_stream_field_change(
+        pool,
+        stream_id,
+        "field_correction",
+        Some("resolution"),
+        Some("1080p"),
+    )
+    .await;
+    apply_stream_field_change(
+        pool,
+        stream_id,
+        "field_correction",
+        Some("source"),
+        Some("WEB-DL"),
+    )
+    .await;
+    apply_stream_field_change(
+        pool,
+        stream_id,
+        "field_correction",
+        Some("languages"),
+        Some(r#"["English","Tamil"]"#),
+    )
+    .await;
+
+    let (resolution, source): (Option<String>, Option<String>) =
+        sqlx::query_as("SELECT resolution, source FROM stream WHERE id = $1")
+            .bind(stream_id)
+            .fetch_one(pool)
+            .await
+            .expect("fetch stream fields");
+
+    assert_eq!(resolution.as_deref(), Some("1080p"));
+    assert_eq!(source.as_deref(), Some("WEB-DL"));
+
+    let lang_count: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*) FROM stream_language_link sll
+           JOIN language l ON l.id = sll.language_id
+           WHERE sll.stream_id = $1 AND l.name IN ('English', 'Tamil')"#,
+    )
+    .bind(stream_id)
+    .fetch_one(pool)
+    .await
+    .expect("count languages");
+
+    assert_eq!(lang_count, 2);
+
+    sqlx::query("DELETE FROM stream_language_link WHERE stream_id = $1")
+        .bind(stream_id)
+        .execute(pool)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM stream WHERE id = $1")
+        .bind(stream_id)
+        .execute(pool)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(owner_id)
         .execute(pool)
         .await
         .ok();

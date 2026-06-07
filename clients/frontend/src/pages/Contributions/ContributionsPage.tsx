@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -14,25 +15,14 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  FileEdit,
   Magnet,
-  Tag,
-  Eye,
-  Trash2,
-  MoreVertical,
   Library,
   ArrowRight,
   Film,
   Zap,
-  ArrowUpDown,
-  ExternalLink,
-  Copy,
-  Check,
-  MessageSquare,
-  Youtube,
-  Download,
-  Globe,
-  Radio,
+  ShieldOff,
+  Search,
+  Upload,
 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
@@ -45,20 +35,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import {
-  useContributions,
-  useContributionStats,
-  useDeleteContribution,
-  useMyStreamSuggestions,
-  useDeleteStreamSuggestion,
-} from '@/hooks'
-import type { ContributionStatus, ContributionType, StreamSuggestion, StreamSuggestionStatus } from '@/lib/api'
+import { useMyStreamSuggestions, useDeleteStreamSuggestion, useMyStreams, useStreamSuggestionStats } from '@/hooks'
+import { useDebounce } from '@/hooks/useDebounce'
+import type { StreamSuggestion, StreamSuggestionStatus } from '@/lib/api'
+import { MyStreamPosterCard } from './MyStreamPosterCard'
+import { StreamEditSuggestionCard } from './StreamEditSuggestionCard'
 
-const statusConfig: Record<ContributionStatus, { label: string; icon: typeof Clock; color: string }> = {
-  pending: { label: 'Pending', icon: Clock, color: 'text-primary' },
-  approved: { label: 'Approved', icon: CheckCircle, color: 'text-emerald-500' },
-  rejected: { label: 'Rejected', icon: XCircle, color: 'text-red-500' },
-}
+type MyStreamStatusFilter = 'active' | 'blocked' | 'inactive' | undefined
 
 const streamStatusConfig: Record<StreamSuggestionStatus, { label: string; icon: typeof Clock; color: string }> = {
   pending: { label: 'Pending', icon: Clock, color: 'text-primary' },
@@ -67,105 +50,25 @@ const streamStatusConfig: Record<StreamSuggestionStatus, { label: string; icon: 
   rejected: { label: 'Rejected', icon: XCircle, color: 'text-red-500' },
 }
 
-const typeConfig: Record<ContributionType, { label: string; icon: typeof FileEdit; color: string }> = {
-  metadata: { label: 'Metadata Fix', icon: FileEdit, color: 'text-primary bg-primary/10' },
-  stream: { label: 'New Stream', icon: Magnet, color: 'text-blue-500 bg-blue-500/10' },
-  torrent: { label: 'Torrent Import', icon: Tag, color: 'text-orange-500 bg-orange-500/10' },
-  telegram: { label: 'Telegram Upload', icon: MessageSquare, color: 'text-sky-500 bg-sky-500/10' },
-  youtube: { label: 'YouTube Import', icon: Youtube, color: 'text-red-500 bg-red-500/10' },
-  nzb: { label: 'NZB Import', icon: Download, color: 'text-green-500 bg-green-500/10' },
-  http: { label: 'HTTP Import', icon: Globe, color: 'text-violet-500 bg-violet-500/10' },
-  acestream: { label: 'AceStream Import', icon: Radio, color: 'text-amber-500 bg-amber-500/10' },
-}
+const STREAM_TYPE_OPTIONS = [
+  { value: undefined, label: 'All Types' },
+  { value: 'torrent', label: 'Torrent' },
+  { value: 'http', label: 'HTTP' },
+  { value: 'youtube', label: 'YouTube' },
+  { value: 'usenet', label: 'Usenet' },
+  { value: 'telegram', label: 'Telegram' },
+  { value: 'acestream', label: 'AceStream' },
+] as const
 
-// Helper to format bytes
-function formatBytes(bytes: number | string): string {
-  const size = typeof bytes === 'string' ? parseFloat(bytes) : bytes
-  if (isNaN(size) || size === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(size) / Math.log(k))
-  return parseFloat((size / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
+const EDIT_TYPE_OPTIONS = [
+  { value: undefined, label: 'All Types' },
+  { value: 'field_correction', label: 'Field Correction' },
+  { value: 'relink_media', label: 'Relink Media' },
+  { value: 'add_media_link', label: 'Add Media Link' },
+  { value: 'report_broken', label: 'Report Broken' },
+  { value: 'other', label: 'Other' },
+] as const
 
-// Parse contribution data into displayable fields
-function parseContributionData(
-  data: Record<string, unknown>,
-  type: ContributionType,
-): { label: string; value: string; type: 'text' | 'link' | 'badge' | 'size' | 'code' }[] {
-  const fields: { label: string; value: string; type: 'text' | 'link' | 'badge' | 'size' | 'code' }[] = []
-
-  if (type === 'torrent' || type === 'stream') {
-    if (data.name) fields.push({ label: 'Torrent Name', value: String(data.name), type: 'text' })
-    if (data.title) fields.push({ label: 'Title', value: String(data.title), type: 'text' })
-    if (data.meta_type) fields.push({ label: 'Content Type', value: String(data.meta_type), type: 'badge' })
-    if (data.meta_id) fields.push({ label: 'Media ID', value: String(data.meta_id), type: 'link' })
-    if (data.info_hash) fields.push({ label: 'Info Hash', value: String(data.info_hash), type: 'code' })
-    if (data.resolution) fields.push({ label: 'Resolution', value: String(data.resolution), type: 'badge' })
-    if (data.quality) fields.push({ label: 'Quality', value: String(data.quality), type: 'badge' })
-    if (data.codec) fields.push({ label: 'Codec', value: String(data.codec), type: 'badge' })
-    if (data.total_size) fields.push({ label: 'Size', value: String(data.total_size), type: 'size' })
-    if (data.file_count) fields.push({ label: 'Files', value: String(data.file_count), type: 'text' })
-    if (data.languages && Array.isArray(data.languages) && data.languages.length > 0) {
-      fields.push({ label: 'Languages', value: (data.languages as string[]).join(', '), type: 'text' })
-    }
-    if (data.catalogs && Array.isArray(data.catalogs) && data.catalogs.length > 0) {
-      fields.push({ label: 'Catalogs', value: (data.catalogs as string[]).join(', '), type: 'text' })
-    }
-    if (data.is_anonymous !== undefined) {
-      fields.push({
-        label: 'Uploader',
-        value: data.is_anonymous === true ? 'Anonymous' : 'Linked to profile',
-        type: 'badge',
-      })
-    }
-  } else if (type === 'telegram') {
-    if (data.file_name) fields.push({ label: 'File Name', value: String(data.file_name), type: 'text' })
-    if (data.meta_id) fields.push({ label: 'Media ID', value: String(data.meta_id), type: 'link' })
-    if (data.file_size) fields.push({ label: 'Size', value: String(data.file_size), type: 'size' })
-    if (data.resolution) fields.push({ label: 'Resolution', value: String(data.resolution), type: 'badge' })
-    if (data.quality) fields.push({ label: 'Quality', value: String(data.quality), type: 'badge' })
-    if (data.codec) fields.push({ label: 'Codec', value: String(data.codec), type: 'badge' })
-    if (data.season_number != null) fields.push({ label: 'Season', value: String(data.season_number), type: 'badge' })
-    if (data.episode_number != null)
-      fields.push({ label: 'Episode', value: String(data.episode_number), type: 'badge' })
-  } else if (type === 'youtube') {
-    if (data.title) fields.push({ label: 'Title', value: String(data.title), type: 'text' })
-    if (data.video_id) fields.push({ label: 'Video ID', value: String(data.video_id), type: 'code' })
-    if (data.meta_id) fields.push({ label: 'Media ID', value: String(data.meta_id), type: 'link' })
-    if (data.resolution) fields.push({ label: 'Resolution', value: String(data.resolution), type: 'badge' })
-  } else if (type === 'nzb') {
-    if (data.title) fields.push({ label: 'Title', value: String(data.title), type: 'text' })
-    if (data.nzb_guid) fields.push({ label: 'NZB GUID', value: String(data.nzb_guid), type: 'code' })
-    if (data.meta_id) fields.push({ label: 'Media ID', value: String(data.meta_id), type: 'link' })
-    if (data.resolution) fields.push({ label: 'Resolution', value: String(data.resolution), type: 'badge' })
-  } else if (type === 'http') {
-    if (data.title) fields.push({ label: 'Title', value: String(data.title), type: 'text' })
-    if (data.url) fields.push({ label: 'URL', value: String(data.url), type: 'text' })
-    if (data.meta_id) fields.push({ label: 'Media ID', value: String(data.meta_id), type: 'link' })
-    if (data.resolution) fields.push({ label: 'Resolution', value: String(data.resolution), type: 'badge' })
-  } else if (type === 'acestream') {
-    if (data.title) fields.push({ label: 'Title', value: String(data.title), type: 'text' })
-    if (data.content_id) fields.push({ label: 'Content ID', value: String(data.content_id), type: 'code' })
-    if (data.meta_id) fields.push({ label: 'Media ID', value: String(data.meta_id), type: 'link' })
-    if (data.resolution) fields.push({ label: 'Resolution', value: String(data.resolution), type: 'badge' })
-  } else if (type === 'metadata') {
-    // For metadata contributions, show what was changed
-    Object.entries(data).forEach(([key, value]) => {
-      if (value !== null && value !== undefined) {
-        fields.push({
-          label: key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
-          value: typeof value === 'object' ? JSON.stringify(value) : String(value),
-          type: 'text',
-        })
-      }
-    })
-  }
-
-  return fields
-}
-
-// Format stream suggestion type for display
 function formatSuggestionType(type: string): string {
   const typeMap: Record<string, string> = {
     report_broken: 'Report Broken',
@@ -173,16 +76,15 @@ function formatSuggestionType(type: string): string {
     language_add: 'Add Language',
     language_remove: 'Remove Language',
     mark_duplicate: 'Mark Duplicate',
+    relink_media: 'Relink Media',
+    add_media_link: 'Add Media Link',
     other: 'Other',
   }
   return typeMap[type] || type
 }
 
-// Format field name for display
 function formatFieldName(fieldName: string | null): string {
   if (!fieldName) return ''
-
-  // Handle episode link fields (episode_link:123:season_number)
   if (fieldName.startsWith('episode_link:')) {
     const parts = fieldName.split(':')
     if (parts.length >= 3) {
@@ -195,7 +97,6 @@ function formatFieldName(fieldName: string | null): string {
       return `Episode Link (${fieldDisplay[field] || field})`
     }
   }
-
   const nameMap: Record<string, string> = {
     name: 'Name',
     resolution: 'Resolution',
@@ -211,208 +112,92 @@ function formatFieldName(fieldName: string | null): string {
   return nameMap[fieldName] || fieldName
 }
 
-// Contribution details content component for cleaner display
-function ContributionDetailsContent({
-  contribution,
+function PaginationBar({
+  page,
+  total,
+  pageSize,
+  hasMore,
+  onPageChange,
 }: {
-  contribution: {
-    id: string
-    contribution_type: ContributionType
-    status: ContributionStatus
-    target_id?: string
-    data: Record<string, unknown>
-    created_at: string
-    reviewed_at?: string
-    review_notes?: string
-  }
+  page: number
+  total: number
+  pageSize: number
+  hasMore: boolean
+  onPageChange: (page: number) => void
 }) {
-  const [copied, setCopied] = useState(false)
-  const parsedFields = parseContributionData(contribution.data, contribution.contribution_type)
-  const torrentData = contribution.data as Record<string, unknown>
-
-  // Extract values for TypeScript
-  const torrentName = torrentData.name ? String(torrentData.name) : null
-  const torrentTitle = torrentData.title ? String(torrentData.title) : null
-  const displayName = torrentName || torrentTitle
-  const magnetLink = torrentData.magnet_link ? String(torrentData.magnet_link) : null
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
+  if (total <= pageSize) return null
   return (
-    <div className="space-y-5 py-2">
-      {/* Status and Type Badges */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Badge variant="secondary" className={`${statusConfig[contribution.status]?.color ?? ''} bg-opacity-10`}>
-          {(() => {
-            const StatusIcon = statusConfig[contribution.status]?.icon ?? Clock
-            return <StatusIcon className="mr-1.5 h-3.5 w-3.5" />
-          })()}
-          {statusConfig[contribution.status]?.label ?? 'Unknown'}
-        </Badge>
-        <Badge variant="outline" className="capitalize">
-          {typeConfig[contribution.contribution_type]?.label ?? 'Unknown'}
-        </Badge>
-        {contribution.target_id && (
-          <Badge variant="outline" className="font-mono text-xs">
-            {contribution.target_id}
-          </Badge>
-        )}
-      </div>
-
-      {/* Main Content - Torrent Name */}
-      {displayName && (
-        <div className="p-4 rounded-md hero-gradient border border-primary/20">
-          <p className="text-xs text-muted-foreground mb-1.5">
-            {contribution.contribution_type === 'torrent' ? 'Torrent Name' : 'Title'}
-          </p>
-          <p className="font-medium text-lg break-all font-display">{displayName}</p>
-        </div>
-      )}
-
-      {/* Structured Data Fields */}
-      {parsedFields.length > 0 && (
-        <div className="space-y-3">
-          <h4 className="text-sm font-medium text-muted-foreground">Details</h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {parsedFields
-              .filter((f) => f.label !== 'Torrent Name' && f.label !== 'Title')
-              .map((field, idx) => (
-                <div
-                  key={idx}
-                  className={`p-3 rounded-md bg-muted/40 border border-border/50 ${
-                    field.type === 'code' || (field.type === 'text' && String(field.value).length > 40)
-                      ? 'sm:col-span-2'
-                      : ''
-                  }`}
-                >
-                  <p className="text-xs text-muted-foreground mb-1.5">{field.label}</p>
-                  {field.type === 'badge' ? (
-                    <Badge variant="secondary" className="text-sm">
-                      {field.value}
-                    </Badge>
-                  ) : field.type === 'link' ? (
-                    <a
-                      href={field.value.startsWith('tt') ? `https://www.imdb.com/title/${field.value}` : `#`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-medium text-primary hover:underline inline-flex items-center gap-1.5"
-                    >
-                      {field.value}
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  ) : field.type === 'size' ? (
-                    <p className="text-sm font-medium">{formatBytes(field.value)}</p>
-                  ) : field.type === 'code' ? (
-                    <div className="flex items-center gap-2">
-                      <code className="text-xs font-mono bg-background/50 px-2 py-1 rounded flex-1 break-all">
-                        {field.value}
-                      </code>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 flex-shrink-0"
-                        onClick={() => copyToClipboard(field.value)}
-                      >
-                        {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-                      </Button>
-                    </div>
-                  ) : (
-                    <p className="text-sm font-medium break-all">{field.value}</p>
-                  )}
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
-
-      {/* Magnet Link */}
-      {magnetLink && (
-        <div className="space-y-2">
-          <h4 className="text-sm font-medium text-muted-foreground">Magnet Link</h4>
-          <div className="p-3 rounded-md bg-muted/40 border border-border/50">
-            <div className="flex items-start gap-2">
-              <code className="text-xs font-mono break-all line-clamp-3 flex-1">{magnetLink}</code>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 flex-shrink-0"
-                onClick={() => magnetLink && copyToClipboard(magnetLink)}
-              >
-                {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Timeline */}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pt-2 border-t border-border/50">
-        <span>Submitted: {new Date(contribution.created_at).toLocaleString()}</span>
-        {contribution.reviewed_at && <span>Reviewed: {new Date(contribution.reviewed_at).toLocaleString()}</span>}
-      </div>
-
-      {/* Reviewer Notes */}
-      {contribution.review_notes && (
-        <div className="p-4 rounded-md bg-primary/5 border border-primary/20">
-          <p className="text-xs font-medium text-primary dark:text-primary mb-1.5">Reviewer Notes</p>
-          <p className="text-sm">{contribution.review_notes}</p>
-        </div>
-      )}
+    <div className="flex justify-center gap-2 pt-4">
+      <Button variant="outline" size="sm" disabled={page === 1} onClick={() => onPageChange(page - 1)}>
+        Previous
+      </Button>
+      <span className="flex items-center px-4 text-sm text-muted-foreground">
+        Page {page} of {Math.ceil(total / pageSize)}
+      </span>
+      <Button variant="outline" size="sm" disabled={!hasMore} onClick={() => onPageChange(page + 1)}>
+        Next
+      </Button>
     </div>
   )
 }
 
 export function ContributionsPage() {
-  const [activeTab, setActiveTab] = useState<'metadata' | 'streams'>('streams')
-  const [statusFilter, setStatusFilter] = useState<ContributionStatus | undefined>()
+  const [activeTab, setActiveTab] = useState<'my-streams' | 'edits'>('my-streams')
+
+  const [myStreamsStatusFilter, setMyStreamsStatusFilter] = useState<MyStreamStatusFilter>()
+  const [myStreamsTypeFilter, setMyStreamsTypeFilter] = useState<string | undefined>()
+  const [myStreamsSearch, setMyStreamsSearch] = useState('')
+  const [myStreamsPage, setMyStreamsPage] = useState(1)
+
   const [streamStatusFilter, setStreamStatusFilter] = useState<StreamSuggestionStatus | undefined>()
-  const [typeFilter, setTypeFilter] = useState<ContributionType | undefined>()
-  const [page, setPage] = useState(1)
+  const [editTypeFilter, setEditTypeFilter] = useState<string | undefined>()
+  const [editsSearch, setEditsSearch] = useState('')
   const [streamPage, setStreamPage] = useState(1)
-  const [detailsDialogOpen, setDetailsDialogOpen] = useState<string | null>(null)
-  const [deleteId, setDeleteId] = useState<string | null>(null)
+
   const [deleteStreamId, setDeleteStreamId] = useState<string | null>(null)
   const [streamDetailsOpen, setStreamDetailsOpen] = useState<StreamSuggestion | null>(null)
 
-  // Metadata contributions
-  const { data: contributions, isLoading } = useContributions({
-    contribution_status: statusFilter,
-    contribution_type: typeFilter,
-    me_only: true,
-    page,
-    page_size: 20,
+  const debouncedMyStreamsSearch = useDebounce(myStreamsSearch, 300)
+  const debouncedEditsSearch = useDebounce(editsSearch, 300)
+
+  const {
+    data: myStreams,
+    isLoading: myStreamsLoading,
+    refetch: refetchMyStreams,
+  } = useMyStreams({
+    status: myStreamsStatusFilter,
+    stream_type: myStreamsTypeFilter,
+    search: debouncedMyStreamsSearch || undefined,
+    page: myStreamsPage,
+    page_size: 12,
   })
 
-  // Stream suggestions
+  const { data: blockedStreams } = useMyStreams({
+    status: 'blocked',
+    page: 1,
+    page_size: 1,
+  })
+
   const { data: streamSuggestions, isLoading: streamLoading } = useMyStreamSuggestions({
     status: streamStatusFilter,
+    suggestion_type: editTypeFilter,
+    search: debouncedEditsSearch || undefined,
     page: streamPage,
-    page_size: 20,
+    page_size: 12,
   })
 
-  const { data: stats, isLoading: statsLoading } = useContributionStats()
-  const deleteContribution = useDeleteContribution()
+  const { data: editStats, isLoading: editStatsLoading } = useStreamSuggestionStats()
   const deleteStreamSuggestion = useDeleteStreamSuggestion()
-
-  const handleDelete = async (id: string) => {
-    await deleteContribution.mutateAsync(id)
-    setDeleteId(null)
-  }
 
   const handleDeleteStreamSuggestion = async (id: string) => {
     await deleteStreamSuggestion.mutateAsync(id)
     setDeleteStreamId(null)
   }
 
-  const selectedContribution = contributions?.items.find((c) => c.id === detailsDialogOpen)
+  const approvedEdits = (editStats?.user_approved ?? 0) + (editStats?.user_auto_approved ?? 0)
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight flex items-center gap-3">
           <div className="p-2 rounded-md bg-primary/10 border border-primary/20">
@@ -420,47 +205,56 @@ export function ContributionsPage() {
           </div>
           My Contributions
         </h1>
-        <p className="text-muted-foreground mt-1">Track the status of your metadata and stream corrections</p>
+        <p className="text-muted-foreground mt-1">
+          Manage streams you uploaded and track edit suggestions awaiting review
+        </p>
       </div>
 
-      {/* Info Banner */}
       <Card className="border-primary/30 hero-gradient">
         <CardContent className="p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <Library className="h-5 w-5 text-primary" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <Upload className="h-5 w-5 text-primary mt-0.5 shrink-0" />
               <div>
                 <p className="font-medium">Want to contribute?</p>
                 <p className="text-sm text-muted-foreground">
-                  Browse content in the Library and use the "Edit Metadata" button to suggest corrections.
+                  Import torrents, NZBs, and other streams from Content Import, or suggest metadata fixes from the
+                  Library.
                 </p>
               </div>
             </div>
-            <Button asChild variant="outline" className="shrink-0">
-              <Link to="/dashboard/library">
-                Go to Library
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <Button asChild>
+                <Link to="/dashboard/import">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import Content
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/dashboard/library">
+                  <Library className="mr-2 h-4 w-4" />
+                  Browse Library
+                </Link>
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-md bg-primary/10">
-                <GitPullRequest className="h-4 w-4 text-primary" />
+                <Magnet className="h-4 w-4 text-primary" />
               </div>
               <div>
-                {statsLoading ? (
+                {myStreamsLoading ? (
                   <Skeleton className="h-7 w-12" />
                 ) : (
-                  <p className="text-2xl font-bold">{stats?.total_contributions ?? 0}</p>
+                  <p className="text-2xl font-bold">{myStreams?.total ?? 0}</p>
                 )}
-                <p className="text-xs text-muted-foreground">Total Contributions</p>
+                <p className="text-xs text-muted-foreground">My Streams</p>
               </div>
             </div>
           </CardContent>
@@ -472,12 +266,12 @@ export function ContributionsPage() {
                 <Clock className="h-4 w-4 text-primary" />
               </div>
               <div>
-                {statsLoading ? (
+                {editStatsLoading ? (
                   <Skeleton className="h-7 w-12" />
                 ) : (
-                  <p className="text-2xl font-bold">{stats?.pending ?? 0}</p>
+                  <p className="text-2xl font-bold">{editStats?.user_pending ?? 0}</p>
                 )}
-                <p className="text-xs text-muted-foreground">Pending Review</p>
+                <p className="text-xs text-muted-foreground">Pending Edits</p>
               </div>
             </div>
           </CardContent>
@@ -489,12 +283,12 @@ export function ContributionsPage() {
                 <CheckCircle className="h-4 w-4 text-emerald-500" />
               </div>
               <div>
-                {statsLoading ? (
+                {editStatsLoading ? (
                   <Skeleton className="h-7 w-12" />
                 ) : (
-                  <p className="text-2xl font-bold">{stats?.approved ?? 0}</p>
+                  <p className="text-2xl font-bold">{approvedEdits}</p>
                 )}
-                <p className="text-xs text-muted-foreground">Approved</p>
+                <p className="text-xs text-muted-foreground">Approved Edits</p>
               </div>
             </div>
           </CardContent>
@@ -503,26 +297,30 @@ export function ContributionsPage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-md bg-red-500/10">
-                <XCircle className="h-4 w-4 text-red-500" />
+                <ShieldOff className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                {statsLoading ? (
-                  <Skeleton className="h-7 w-12" />
-                ) : (
-                  <p className="text-2xl font-bold">{stats?.rejected ?? 0}</p>
-                )}
-                <p className="text-xs text-muted-foreground">Rejected</p>
+                <p className="text-2xl font-bold">{blockedStreams?.total ?? 0}</p>
+                <p className="text-xs text-muted-foreground">Blocked Streams</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Contributions Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'metadata' | 'streams')} className="space-y-4">
-        <div className="flex items-center justify-between">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'my-streams' | 'edits')} className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <TabsList>
-            <TabsTrigger value="streams" className="gap-2">
+            <TabsTrigger value="my-streams" className="gap-2">
+              <Magnet className="h-4 w-4" />
+              My Streams
+              {myStreams?.total ? (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {myStreams.total}
+                </Badge>
+              ) : null}
+            </TabsTrigger>
+            <TabsTrigger value="edits" className="gap-2">
               <Film className="h-4 w-4" />
               Stream Edits
               {streamSuggestions?.total ? (
@@ -531,367 +329,274 @@ export function ContributionsPage() {
                 </Badge>
               ) : null}
             </TabsTrigger>
-            <TabsTrigger value="metadata" className="gap-2">
-              <FileEdit className="h-4 w-4" />
-              Metadata & Torrents
-              {contributions?.total ? (
-                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                  {contributions.total}
-                </Badge>
-              ) : null}
-            </TabsTrigger>
           </TabsList>
 
-          {/* Tab-specific filters */}
-          {activeTab === 'streams' && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Filter className="mr-2 h-4 w-4" />
-                  {streamStatusFilter ? streamStatusConfig[streamStatusFilter].label : 'All Status'}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setStreamStatusFilter(undefined)}>All Status</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setStreamStatusFilter('pending')}>Pending</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setStreamStatusFilter('approved')}>Approved</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setStreamStatusFilter('auto_approved')}>
-                  Auto-Approved
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setStreamStatusFilter('rejected')}>Rejected</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-
-          {activeTab === 'metadata' && (
-            <div className="flex items-center gap-2">
+          {activeTab === 'my-streams' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative w-full sm:w-56">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search streams..."
+                  value={myStreamsSearch}
+                  onChange={(e) => {
+                    setMyStreamsSearch(e.target.value)
+                    setMyStreamsPage(1)
+                  }}
+                  className="pl-9 h-9"
+                />
+              </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm">
                     <Filter className="mr-2 h-4 w-4" />
-                    {statusFilter ? statusConfig[statusFilter].label : 'All Status'}
+                    {myStreamsStatusFilter
+                      ? myStreamsStatusFilter.charAt(0).toUpperCase() + myStreamsStatusFilter.slice(1)
+                      : 'All Status'}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setStatusFilter(undefined)}>All Status</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setStatusFilter('pending')}>Pending</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setStatusFilter('approved')}>Approved</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setStatusFilter('rejected')}>Rejected</DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setMyStreamsStatusFilter(undefined)
+                      setMyStreamsPage(1)
+                    }}
+                  >
+                    All Status
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setMyStreamsStatusFilter('active')
+                      setMyStreamsPage(1)
+                    }}
+                  >
+                    Active
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setMyStreamsStatusFilter('blocked')
+                      setMyStreamsPage(1)
+                    }}
+                  >
+                    Blocked
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setMyStreamsStatusFilter('inactive')
+                      setMyStreamsPage(1)
+                    }}
+                  >
+                    Inactive
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm">
-                    <ArrowUpDown className="mr-2 h-4 w-4" />
-                    {typeFilter ? typeConfig[typeFilter].label : 'All Types'}
+                    {STREAM_TYPE_OPTIONS.find((o) => o.value === myStreamsTypeFilter)?.label ?? 'All Types'}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setTypeFilter(undefined)}>All Types</DropdownMenuItem>
-                  {(Object.entries(typeConfig) as [ContributionType, (typeof typeConfig)[ContributionType]][]).map(
-                    ([key, cfg]) => (
-                      <DropdownMenuItem key={key} onClick={() => setTypeFilter(key)}>
-                        {cfg.label}
-                      </DropdownMenuItem>
-                    ),
-                  )}
+                  {STREAM_TYPE_OPTIONS.map((opt) => (
+                    <DropdownMenuItem
+                      key={opt.label}
+                      onClick={() => {
+                        setMyStreamsTypeFilter(opt.value)
+                        setMyStreamsPage(1)
+                      }}
+                    >
+                      {opt.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
+
+          {activeTab === 'edits' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative w-full sm:w-56">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search edits..."
+                  value={editsSearch}
+                  onChange={(e) => {
+                    setEditsSearch(e.target.value)
+                    setStreamPage(1)
+                  }}
+                  className="pl-9 h-9"
+                />
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    {streamStatusFilter ? streamStatusConfig[streamStatusFilter].label : 'All Status'}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setStreamStatusFilter(undefined)
+                      setStreamPage(1)
+                    }}
+                  >
+                    All Status
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setStreamStatusFilter('pending')
+                      setStreamPage(1)
+                    }}
+                  >
+                    Pending
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setStreamStatusFilter('approved')
+                      setStreamPage(1)
+                    }}
+                  >
+                    Approved
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setStreamStatusFilter('auto_approved')
+                      setStreamPage(1)
+                    }}
+                  >
+                    Auto-Approved
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setStreamStatusFilter('rejected')
+                      setStreamPage(1)
+                    }}
+                  >
+                    Rejected
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    {EDIT_TYPE_OPTIONS.find((o) => o.value === editTypeFilter)?.label ?? 'All Types'}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {EDIT_TYPE_OPTIONS.map((opt) => (
+                    <DropdownMenuItem
+                      key={opt.label}
+                      onClick={() => {
+                        setEditTypeFilter(opt.value)
+                        setStreamPage(1)
+                      }}
+                    >
+                      {opt.label}
+                    </DropdownMenuItem>
+                  ))}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
           )}
         </div>
 
-        {/* Stream Suggestions Tab */}
-        <TabsContent value="streams" className="space-y-4">
+        <TabsContent value="my-streams" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="font-display">Your Stream Edit Suggestions</CardTitle>
-              <CardDescription>Corrections to stream metadata (quality, language, episode info, etc.)</CardDescription>
+              <CardTitle className="font-display">Your Streams</CardTitle>
+              <CardDescription>
+                Only streams linked to your account (non-anonymous uploads). Edit, annotate, relink, block, or delete.
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              {streamLoading ? (
-                <div className="space-y-4">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="flex items-center gap-4 p-4 rounded-xl border border-border/50">
-                      <Skeleton className="h-10 w-10 rounded-lg" />
-                      <div className="flex-1 space-y-2">
-                        <Skeleton className="h-4 w-3/4" />
-                        <Skeleton className="h-3 w-1/2" />
-                      </div>
-                      <Skeleton className="h-6 w-20" />
-                    </div>
+              {myStreamsLoading ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {[...Array(4)].map((_, i) => (
+                    <Skeleton key={i} className="h-48 rounded-xl" />
                   ))}
                 </div>
-              ) : !streamSuggestions?.suggestions.length ? (
+              ) : !myStreams?.items.length ? (
                 <div className="text-center py-12 text-muted-foreground">
-                  <Film className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No stream edit suggestions yet.</p>
-                  <p className="text-sm mt-2">Browse content and click on streams to suggest corrections.</p>
+                  <Magnet className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No streams found.</p>
+                  <p className="text-sm mt-2">
+                    {debouncedMyStreamsSearch || myStreamsStatusFilter || myStreamsTypeFilter
+                      ? 'Try adjusting your search or filters.'
+                      : 'Import content with your profile linked (non-anonymous) to manage streams here.'}
+                  </p>
+                  {!debouncedMyStreamsSearch && !myStreamsStatusFilter && (
+                    <Button asChild className="mt-4">
+                      <Link to="/dashboard/import">
+                        <Upload className="mr-2 h-4 w-4" />
+                        Import Content
+                      </Link>
+                    </Button>
+                  )}
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {streamSuggestions.suggestions.map((suggestion) => {
-                    const status = streamStatusConfig[suggestion.status]
-                    const StatusIcon = status?.icon ?? Clock
-
-                    return (
-                      <div
-                        key={suggestion.id}
-                        className="flex items-start gap-3 p-4 rounded-md border border-border/50 hover:border-primary/30 transition-colors"
-                      >
-                        {/* Type Icon */}
-                        <div className="p-2 rounded-lg bg-blue-500/10 flex-shrink-0 mt-0.5">
-                          <Film className="h-5 w-5 text-blue-500" />
-                        </div>
-
-                        {/* Info + Status */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 space-y-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-medium">{formatSuggestionType(suggestion.suggestion_type)}</p>
-                                {suggestion.field_name && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {formatFieldName(suggestion.field_name)}
-                                  </Badge>
-                                )}
-                              </div>
-
-                              {suggestion.stream_name && (
-                                <p className="text-sm text-muted-foreground truncate" title={suggestion.stream_name}>
-                                  Stream: {suggestion.stream_name}
-                                </p>
-                              )}
-
-                              {/* Show value changes */}
-                              {suggestion.field_name && (suggestion.current_value || suggestion.suggested_value) && (
-                                <div className="flex items-center gap-2 text-sm">
-                                  <span
-                                    className="text-red-400 line-through truncate max-w-[120px]"
-                                    title={suggestion.current_value || ''}
-                                  >
-                                    {suggestion.current_value || '(empty)'}
-                                  </span>
-                                  <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                                  <span
-                                    className="text-emerald-400 truncate max-w-[120px]"
-                                    title={suggestion.suggested_value || ''}
-                                  >
-                                    {suggestion.suggested_value || '(empty)'}
-                                  </span>
-                                </div>
-                              )}
-
-                              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                                <span>{new Date(suggestion.created_at).toLocaleDateString()}</span>
-                                {suggestion.was_auto_approved && (
-                                  <>
-                                    <span>•</span>
-                                    <Badge variant="outline" className="text-xs h-5 px-1.5">
-                                      <Zap className="h-3 w-3 mr-1" />
-                                      Auto
-                                    </Badge>
-                                  </>
-                                )}
-                                {suggestion.reviewed_at && (
-                                  <>
-                                    <span>•</span>
-                                    <span>Reviewed {new Date(suggestion.reviewed_at).toLocaleDateString()}</span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Status */}
-                            <Badge variant="secondary" className={`${status?.color} bg-opacity-10 flex-shrink-0`}>
-                              <StatusIcon className="mr-1 h-3 w-3" />
-                              {status?.label}
-                            </Badge>
-                          </div>
-                        </div>
-
-                        {/* Actions */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setStreamDetailsOpen(suggestion)}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              View Details
-                            </DropdownMenuItem>
-                            {suggestion.status === 'pending' && (
-                              <DropdownMenuItem
-                                className="text-destructive"
-                                onClick={() => setDeleteStreamId(suggestion.id)}
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Withdraw
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    )
-                  })}
-
-                  {/* Pagination */}
-                  {streamSuggestions && streamSuggestions.total > 20 && (
-                    <div className="flex justify-center gap-2 pt-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={streamPage === 1}
-                        onClick={() => setStreamPage((p) => p - 1)}
-                      >
-                        Previous
-                      </Button>
-                      <span className="flex items-center px-4 text-sm text-muted-foreground">
-                        Page {streamPage} of {Math.ceil(streamSuggestions.total / 20)}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={!streamSuggestions.has_more}
-                        onClick={() => setStreamPage((p) => p + 1)}
-                      >
-                        Next
-                      </Button>
-                    </div>
-                  )}
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {myStreams.items.map((stream) => (
+                    <MyStreamPosterCard key={stream.id} stream={stream} onUpdated={() => refetchMyStreams()} />
+                  ))}
+                  <div className="lg:col-span-2">
+                    <PaginationBar
+                      page={myStreamsPage}
+                      total={myStreams.total}
+                      pageSize={12}
+                      hasMore={myStreams.has_more}
+                      onPageChange={setMyStreamsPage}
+                    />
+                  </div>
                 </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Metadata Contributions Tab */}
-        <TabsContent value="metadata" className="space-y-4">
+        <TabsContent value="edits" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="font-display">Your Metadata & Torrent Contributions</CardTitle>
-              <CardDescription>Metadata corrections and torrent imports</CardDescription>
+              <CardTitle className="font-display">Your Stream Edit Suggestions</CardTitle>
+              <CardDescription>
+                Corrections and link changes you submitted on any stream — only your own suggestions are shown.
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              {isLoading ? (
-                <div className="space-y-4">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="flex items-center gap-4 p-4 rounded-xl border border-border/50">
-                      <Skeleton className="h-10 w-10 rounded-lg" />
-                      <div className="flex-1 space-y-2">
-                        <Skeleton className="h-4 w-3/4" />
-                        <Skeleton className="h-3 w-1/2" />
-                      </div>
-                      <Skeleton className="h-6 w-20" />
-                    </div>
+              {streamLoading ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {[...Array(4)].map((_, i) => (
+                    <Skeleton key={i} className="h-36 rounded-xl" />
                   ))}
                 </div>
-              ) : contributions?.items.length === 0 ? (
+              ) : !streamSuggestions?.suggestions.length ? (
                 <div className="text-center py-12 text-muted-foreground">
-                  <FileEdit className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No metadata contributions yet.</p>
+                  <Film className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No stream edit suggestions found.</p>
                   <p className="text-sm mt-2">
-                    Browse content in the Library and use the "Edit Metadata" button to suggest corrections.
+                    {debouncedEditsSearch || streamStatusFilter || editTypeFilter
+                      ? 'Try adjusting your search or filters.'
+                      : 'Browse content and suggest corrections from stream menus.'}
                   </p>
-                  <Button asChild className="mt-4">
-                    <Link to="/dashboard/library">
-                      <Library className="mr-2 h-4 w-4" />
-                      Browse Library
-                    </Link>
-                  </Button>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {contributions?.items.map((item) => {
-                    const status = statusConfig[item.status]
-                    const type = typeConfig[item.contribution_type]
-                    const StatusIcon = status?.icon ?? Clock
-                    const TypeIcon = type?.icon ?? FileEdit
-
-                    return (
-                      <div
-                        key={item.id}
-                        className="flex items-start gap-3 p-4 rounded-md border border-border/50 hover:border-primary/30 transition-colors"
-                      >
-                        {/* Type Icon */}
-                        <div className="p-2 rounded-md bg-primary/10 flex-shrink-0 mt-0.5">
-                          <TypeIcon className="h-5 w-5 text-primary" />
-                        </div>
-
-                        {/* Info + Status */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-medium">{type?.label}</p>
-                                {item.target_id && (
-                                  <Badge variant="outline" className="text-xs font-mono">
-                                    {item.target_id}
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground mt-0.5">
-                                <span>{new Date(item.created_at).toLocaleDateString()}</span>
-                                {item.reviewed_at && (
-                                  <>
-                                    <span>•</span>
-                                    <span>Reviewed {new Date(item.reviewed_at).toLocaleDateString()}</span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                            <Badge variant="secondary" className={`${status?.color} bg-opacity-10 flex-shrink-0`}>
-                              <StatusIcon className="mr-1 h-3 w-3" />
-                              {status?.label}
-                            </Badge>
-                          </div>
-                        </div>
-
-                        {/* Actions */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setDetailsDialogOpen(item.id)}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              View Details
-                            </DropdownMenuItem>
-                            {item.status === 'pending' && (
-                              <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(item.id)}>
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Withdraw
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    )
-                  })}
-
-                  {/* Pagination */}
-                  {contributions && contributions.total > 20 && (
-                    <div className="flex justify-center gap-2 pt-4">
-                      <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
-                        Previous
-                      </Button>
-                      <span className="flex items-center px-4 text-sm text-muted-foreground">
-                        Page {page} of {Math.ceil(contributions.total / 20)}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={!contributions.has_more}
-                        onClick={() => setPage((p) => p + 1)}
-                      >
-                        Next
-                      </Button>
-                    </div>
-                  )}
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {streamSuggestions.suggestions.map((suggestion) => (
+                    <StreamEditSuggestionCard
+                      key={suggestion.id}
+                      suggestion={suggestion}
+                      onViewDetails={() => setStreamDetailsOpen(suggestion)}
+                      onWithdraw={() => setDeleteStreamId(suggestion.id)}
+                    />
+                  ))}
+                  <div className="lg:col-span-2">
+                    <PaginationBar
+                      page={streamPage}
+                      total={streamSuggestions.total}
+                      pageSize={12}
+                      hasMore={streamSuggestions.has_more}
+                      onPageChange={setStreamPage}
+                    />
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -899,56 +604,6 @@ export function ContributionsPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Details Dialog */}
-      <Dialog open={!!detailsDialogOpen} onOpenChange={() => setDetailsDialogOpen(null)}>
-        <DialogContent
-          scrollMode="contained"
-          className="sm:max-w-[700px] max-h-[90vh] flex flex-col overflow-hidden min-h-0"
-        >
-          <DialogHeader className="shrink-0">
-            <DialogTitle className="flex items-center gap-2">
-              {selectedContribution &&
-                (() => {
-                  const TypeIcon = typeConfig[selectedContribution.contribution_type]?.icon ?? FileEdit
-                  const typeColor =
-                    typeConfig[selectedContribution.contribution_type]?.color ?? 'text-primary bg-primary/10'
-                  return (
-                    <div className={`p-2 rounded-lg ${typeColor.split(' ')[1]}`}>
-                      <TypeIcon className={`h-4 w-4 ${typeColor.split(' ')[0]}`} />
-                    </div>
-                  )
-                })()}
-              Contribution Details
-            </DialogTitle>
-          </DialogHeader>
-          <ScrollArea className="flex-1 min-h-0 pr-1">
-            {selectedContribution && <ContributionDetailsContent contribution={selectedContribution} />}
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete/Withdraw Dialog */}
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Withdraw contribution?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently withdraw your contribution. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deleteId && handleDelete(deleteId)}
-            >
-              Withdraw
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Stream Suggestion Details Dialog */}
       <Dialog open={!!streamDetailsOpen} onOpenChange={() => setStreamDetailsOpen(null)}>
         <DialogContent
           scrollMode="contained"
@@ -986,14 +641,13 @@ export function ContributionsPage() {
                   </div>
                 )}
 
-                {streamDetailsOpen.media_id && (
+                {streamDetailsOpen.source_media_title && (
                   <div>
-                    <Label className="text-muted-foreground">Media ID</Label>
-                    <p className="font-mono text-sm">{streamDetailsOpen.media_id}</p>
+                    <Label className="text-muted-foreground">Linked Content</Label>
+                    <p className="text-sm">{streamDetailsOpen.source_media_title}</p>
                   </div>
                 )}
 
-                {/* Value changes */}
                 {(streamDetailsOpen.current_value || streamDetailsOpen.suggested_value) && (
                   <div className="p-4 rounded-md bg-muted/50 space-y-2">
                     <Label className="text-muted-foreground">Change</Label>
@@ -1039,7 +693,6 @@ export function ContributionsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Stream Suggestion Dialog */}
       <AlertDialog open={!!deleteStreamId} onOpenChange={() => setDeleteStreamId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

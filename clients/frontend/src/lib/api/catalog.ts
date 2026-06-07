@@ -191,6 +191,12 @@ export interface StreamInfo {
   // Episode links for series (for fixing season/episode detection)
   episode_links?: EpisodeLinkInfo[]
 
+  // Management status (owner/moderator views)
+  is_blocked?: boolean
+  is_active?: boolean
+  is_public?: boolean
+  file_count?: number
+
   // Release flags
   is_remastered?: boolean
   is_upscaled?: boolean
@@ -216,6 +222,10 @@ export interface StreamListResponse {
   streams: StreamInfo[]
   season?: number
   episode?: number
+  /** Season resolved from stream_id deep link (series only) */
+  resolved_season?: number
+  /** Episode resolved from stream_id deep link (series only) */
+  resolved_episode?: number
   // Web playback requires MediaFlow - this indicates if it's available
   web_playback_enabled?: boolean // Whether web browser playback is enabled (requires MediaFlow)
   // Multi-provider support
@@ -302,6 +312,7 @@ export const catalogApi = {
     profileId?: number,
     provider?: string,
     profileUuid?: string,
+    streamId?: string,
   ): Promise<StreamListResponse> => {
     const searchParams = new URLSearchParams()
 
@@ -310,6 +321,7 @@ export const catalogApi = {
     if (profileId !== undefined) searchParams.set('profile_id', profileId.toString())
     if (profileUuid) searchParams.set('profile_uuid', profileUuid)
     if (provider !== undefined) searchParams.set('provider', provider)
+    if (streamId) searchParams.set('stream_id', streamId)
 
     const queryString = searchParams.toString()
     const url = `/catalog/${catalogType}/${mediaId}/streams${queryString ? `?${queryString}` : ''}`

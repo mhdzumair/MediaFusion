@@ -32,8 +32,17 @@ use uuid::Uuid;
 use crate::{db::contribution_defaults, db::StreamId, state::AppState};
 
 /// Editable stream scalar fields (Python `STREAM_EDITABLE_FIELDS` subset).
-const STREAM_SCALAR_EDITABLE_FIELDS: &[&str] =
-    &["name", "resolution", "codec", "quality", "bit_depth"];
+pub const STREAM_SCALAR_EDITABLE_FIELDS: &[&str] = &[
+    "name",
+    "resolution",
+    "codec",
+    "quality",
+    "bit_depth",
+    "source",
+];
+
+/// Editable stream link-table fields (languages, audio, hdr).
+pub const STREAM_LINK_EDITABLE_FIELDS: &[&str] = &["languages", "audio_formats", "hdr_formats"];
 
 const ISSUE_SUGGESTION_TYPES: &[&str] = &["report_broken", "other"];
 
@@ -111,6 +120,7 @@ pub struct TriageRequest {
 pub struct ListSuggestionsQuery {
     pub status: Option<String>,
     pub suggestion_type: Option<String>,
+    pub search: Option<String>,
     #[serde(default = "default_page")]
     pub page: i64,
     #[serde(default = "default_page_size")]
@@ -315,6 +325,26 @@ async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_j
         .map(|(id, t, mt, y)| (Some(id), Some(t), Some(mt.as_wire().to_string()), y))
         .unwrap_or((None, None, None, None));
 
+    let (src_poster_url, src_imdb_id) = if let Some(mid) = src_media_id {
+        let poster: Option<String> = sqlx::query_scalar(
+            "SELECT url FROM media_image WHERE media_id = $1 AND image_type = 'poster' AND is_primary = true LIMIT 1",
+        )
+        .bind(mid)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+        let imdb: Option<String> = sqlx::query_scalar(
+            "SELECT external_id FROM media_external_id WHERE media_id = $1 AND provider = 'imdb' LIMIT 1",
+        )
+        .bind(mid)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+        (poster, imdb)
+    } else {
+        (None, None)
+    };
+
     let user_info: Option<(String, i32)> =
         sqlx::query_as("SELECT contribution_level, contribution_points FROM users WHERE id = $1")
             .bind(row.user_id)
@@ -336,7 +366,8 @@ async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_j
         "source_media_type": src_media_type,
         "source_media_title": src_media_title,
         "source_media_year": src_media_year,
-        "source_media_poster_url": null,
+        "source_media_poster_url": src_poster_url,
+        "source_media_imdb_id": src_imdb_id,
         "target_media_id": null,
         "target_media_type": null,
         "target_media_title": null,
@@ -735,8 +766,33 @@ async fn apply_add_media_link(pool: &sqlx::PgPool, stream_id: i32, link_data: &s
     );
 }
 
-/// Apply a stream field change
-async fn apply_stream_field_change(
+fn parse_string_list_value(value: &str) -> Vec<String> {
+    if value.trim().is_empty() {
+        return vec![];
+    }
+    if value.starts_with('[') {
+        serde_json::from_str::<Vec<String>>(value).unwrap_or_default()
+    } else if value.contains('|') {
+        value
+            .split('|')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect()
+    } else if value.contains(" + ") {
+        value
+            .split(" + ")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect()
+    } else {
+        vec![value.trim().to_string()]
+    }
+}
+
+/// Apply a stream field change (shared by suggestion approval and owner direct edit).
+pub async fn apply_stream_field_change(
     pool: &sqlx::PgPool,
     stream_id: i32,
     suggestion_type: &str,
@@ -847,6 +903,55 @@ async fn apply_stream_field_change(
         return;
     }
 
+    if STREAM_LINK_EDITABLE_FIELDS.contains(&field) {
+        let val = match value {
+            Some(v) => v,
+            None => return,
+        };
+        let items = parse_string_list_value(val);
+        let result = match field {
+            "languages" => {
+                if let Err(e) = sqlx::query("DELETE FROM stream_language_link WHERE stream_id = $1")
+                    .bind(stream_id)
+                    .execute(pool)
+                    .await
+                {
+                    Err(e)
+                } else {
+                    crate::db::stream_links::link_stream_languages(pool, stream_id, &items).await
+                }
+            }
+            "audio_formats" => {
+                if let Err(e) = sqlx::query("DELETE FROM stream_audio_link WHERE stream_id = $1")
+                    .bind(stream_id)
+                    .execute(pool)
+                    .await
+                {
+                    Err(e)
+                } else {
+                    crate::db::stream_links::link_stream_audio_formats(pool, stream_id, &items)
+                        .await
+                }
+            }
+            "hdr_formats" => {
+                if let Err(e) = sqlx::query("DELETE FROM stream_hdr_link WHERE stream_id = $1")
+                    .bind(stream_id)
+                    .execute(pool)
+                    .await
+                {
+                    Err(e)
+                } else {
+                    crate::db::stream_links::link_stream_hdr_formats(pool, stream_id, &items).await
+                }
+            }
+            _ => return,
+        };
+        if let Err(e) = result {
+            tracing::warn!("apply_stream_field_change failed for link field {field}: {e}");
+        }
+        return;
+    }
+
     if !STREAM_SCALAR_EDITABLE_FIELDS.contains(&field) {
         return;
     }
@@ -886,6 +991,13 @@ async fn apply_stream_field_change(
         }
         "bit_depth" => {
             sqlx::query("UPDATE stream SET bit_depth = $1 WHERE id = $2")
+                .bind(val)
+                .bind(stream_id)
+                .execute(pool)
+                .await
+        }
+        "source" => {
+            sqlx::query("UPDATE stream SET source = $1 WHERE id = $2")
                 .bind(val)
                 .bind(stream_id)
                 .execute(pool)
@@ -938,6 +1050,24 @@ pub async fn list_my_stream_suggestions(
         next_idx += 1;
     }
 
+    let search_pattern = params
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("%{s}%"));
+
+    if search_pattern.is_some() {
+        let search_clause = format!(
+            " AND (suggestion_type ILIKE ${next_idx} OR COALESCE(field_name, '') ILIKE ${next_idx} \
+             OR COALESCE(reason, '') ILIKE ${next_idx} \
+             OR EXISTS (SELECT 1 FROM stream s WHERE s.id = stream_suggestions.stream_id AND s.name ILIKE ${next_idx}))"
+        );
+        count_sql.push_str(&search_clause);
+        fetch_sql.push_str(&search_clause);
+        next_idx += 1;
+    }
+
     fetch_sql.push_str(&format!(
         " ORDER BY created_at DESC LIMIT ${next_idx} OFFSET ${}",
         next_idx + 1
@@ -947,11 +1077,17 @@ pub async fn list_my_stream_suggestions(
     for v in &extra_binds {
         cq = cq.bind(v.clone());
     }
+    if let Some(ref pattern) = search_pattern {
+        cq = cq.bind(pattern.clone());
+    }
     let total: i64 = cq.fetch_one(&state.pool_ro).await.unwrap_or(0);
 
     let mut fq = sqlx::query_as::<_, (String,)>(&fetch_sql).bind(user_id);
     for v in &extra_binds {
         fq = fq.bind(v.clone());
+    }
+    if let Some(ref pattern) = search_pattern {
+        fq = fq.bind(pattern.clone());
     }
     fq = fq.bind(page_size).bind(offset);
     let ids: Vec<(String,)> = fq.fetch_all(&state.pool_ro).await.unwrap_or_default();

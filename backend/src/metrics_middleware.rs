@@ -316,14 +316,7 @@ pub async fn metrics_middleware(
         let now_ts = now.timestamp() as f64;
         let duration_s = duration_ms / 1000.0;
         tokio::spawn(record_to_redis(
-            redis,
-            method,
-            route,
-            status,
-            duration_s,
-            client_ip,
-            now_iso,
-            now_ts,
+            redis, method, route, status, duration_s, client_ip, now_iso, now_ts,
         ));
     }
 

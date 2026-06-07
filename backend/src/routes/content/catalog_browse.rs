@@ -31,7 +31,12 @@ use crate::{
         cap_streams, compare_sort_keys, filter_streams_by_preferences, torrent_sort_key,
         FilterContext,
     },
-    routes::user_library::extract_streaming_providers,
+    routes::{
+        content::stream_rows::{
+            format_size, BrowseStreamRow, STREAM_BASE_COLS, STREAM_LINK_AGG_COLS,
+        },
+        user_library::extract_streaming_providers,
+    },
     state::AppState,
 };
 
@@ -90,58 +95,6 @@ fn bad_request(msg: &str) -> Response {
     (StatusCode::BAD_REQUEST, Json(json!({"detail": msg}))).into_response()
 }
 
-fn format_size(bytes: i64) -> String {
-    if bytes <= 0 {
-        return String::new();
-    }
-    let units = ["B", "KB", "MB", "GB", "TB"];
-    let mut v = bytes as f64;
-    let mut i = 0usize;
-    while v >= 1000.0 && i < units.len() - 1 {
-        v /= 1000.0;
-        i += 1;
-    }
-    if i == 0 {
-        format!("{} B", bytes)
-    } else {
-        format!("{:.1} {}", v, units[i])
-    }
-}
-
-// ─── DB row structs ───────────────────────────────────────────────────────────
-
-#[derive(sqlx::FromRow)]
-struct StreamRow {
-    id: i32,
-    name: String,
-    stream_type: StreamType,
-    source: Option<String>,
-    resolution: Option<String>,
-    quality: Option<String>,
-    codec: Option<String>,
-    bit_depth: Option<String>,
-    seeders: Option<i32>,
-    uploader: Option<String>,
-    release_group: Option<String>,
-    filename: Option<String>,
-    file_size: Option<i64>,
-    info_hash: Option<String>,
-    yt_id: Option<String>,
-    audio_formats: Option<String>,
-    channels: Option<String>,
-    hdr_formats: Option<String>,
-    languages: Option<String>,
-    is_remastered: bool,
-    is_upscaled: bool,
-    is_proper: bool,
-    is_repack: bool,
-    is_extended: bool,
-    is_complete: bool,
-    is_dubbed: bool,
-    is_subbed: bool,
-    created_at: Option<chrono::DateTime<chrono::Utc>>,
-}
-
 // ─── Query param structs ──────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -177,6 +130,9 @@ pub struct StreamsQuery {
     pub profile_id: Option<i32>,
     pub profile_uuid: Option<String>,
     pub provider: Option<String>,
+    /// When set, the response always includes this stream (if compatible with the selected provider)
+    /// and, for series, season/episode are resolved from the stream's file links when omitted.
+    pub stream_id: Option<i32>,
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -951,8 +907,34 @@ pub async fn get_media_streams(
         return bad_request("Invalid catalog_type");
     }
 
-    if catalog_type == "series" && (params.season.is_none() || params.episode.is_none()) {
-        return bad_request("Season and episode parameters are required for series");
+    let mut effective_season = params.season;
+    let mut effective_episode = params.episode;
+
+    if catalog_type == "series" {
+        if let Some(sid) = params.stream_id {
+            let ep_row: Option<(i32, i32)> = sqlx::query_as(
+                r#"SELECT fml.season_number, fml.episode_number
+                   FROM stream_file sf
+                   JOIN file_media_link fml ON fml.file_id = sf.id
+                   WHERE sf.stream_id = $1 AND fml.media_id = $2
+                     AND fml.season_number IS NOT NULL
+                     AND fml.episode_number IS NOT NULL
+                   ORDER BY fml.season_number, fml.episode_number
+                   LIMIT 1"#,
+            )
+            .bind(sid)
+            .bind(media_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None);
+            if let Some((s, e)) = ep_row {
+                effective_season = Some(s);
+                effective_episode = Some(e);
+            }
+        }
+        if effective_season.is_none() || effective_episode.is_none() {
+            return bad_request("Season and episode parameters are required for series");
+        }
     }
 
     // Load streaming providers from the user's profile
@@ -1128,55 +1110,25 @@ pub async fn get_media_streams(
     } else {
         ud.quality_filter.clone()
     };
-    let season = params.season;
-    let episode = params.episode;
+    let season = effective_season;
+    let episode = effective_episode;
 
     tracing::debug!(
-        "get_media_streams: fetching streams for {catalog_type}/{media_id} season={:?} episode={:?}",
-        params.season,
-        params.episode
+        "get_media_streams: fetching streams for {catalog_type}/{media_id} season={season:?} episode={episode:?} stream_id={:?}",
+        params.stream_id
     );
 
-    let stream_rows: Vec<StreamRow> = if catalog_type == "series" {
-        let season = params.season.unwrap();
-        let episode = params.episode.unwrap();
-        sqlx::query_as(
+    let stream_rows: Vec<BrowseStreamRow> = if catalog_type == "series" {
+        let season = season.unwrap();
+        let episode = episode.unwrap();
+        sqlx::query_as(&format!(
             r#"SELECT DISTINCT ON (s.id)
-            s.id,
-            s.name,
-            s.stream_type,
-            s.source,
-            s.resolution,
-            s.quality,
-            s.codec,
-            s.bit_depth,
-            ts.seeders,
-            s.uploader,
-            s.release_group,
+            {STREAM_BASE_COLS},
             sf.filename,
             COALESCE(ts.total_size, sf.size) AS file_size,
             ts.info_hash,
             ys.video_id AS yt_id,
-            (SELECT STRING_AGG(af.name, '|' ORDER BY af.name)
-             FROM stream_audio_link sal JOIN audio_format af ON af.id = sal.audio_format_id
-             WHERE sal.stream_id = s.id) AS audio_formats,
-            (SELECT STRING_AGG(ac.name, '|' ORDER BY ac.name)
-             FROM stream_channel_link scl JOIN audio_channel ac ON ac.id = scl.channel_id
-             WHERE scl.stream_id = s.id) AS channels,
-            (SELECT STRING_AGG(hf.name, '|' ORDER BY hf.name)
-             FROM stream_hdr_link shl JOIN hdr_format hf ON hf.id = shl.hdr_format_id
-             WHERE shl.stream_id = s.id) AS hdr_formats,
-            (SELECT STRING_AGG(l.name, ' + ' ORDER BY l.name)
-             FROM stream_language_link sll JOIN language l ON l.id = sll.language_id
-             WHERE sll.stream_id = s.id) AS languages,
-            s.is_remastered,
-            s.is_upscaled,
-            s.is_proper,
-            s.is_repack,
-            s.is_extended,
-            s.is_complete,
-            s.is_dubbed,
-            s.is_subbed,
+            {STREAM_LINK_AGG_COLS},
             ts.created_at
            FROM stream s
            JOIN stream_file sf ON sf.stream_id = s.id
@@ -1188,8 +1140,8 @@ pub async fn get_media_streams(
            LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
            WHERE s.is_active = true
              AND s.is_blocked = false
-           ORDER BY s.id"#,
-        )
+           ORDER BY s.id"#
+        ))
         .bind(media_id)
         .bind(season)
         .bind(episode)
@@ -1202,43 +1154,14 @@ pub async fn get_media_streams(
             vec![]
         })
     } else {
-        sqlx::query_as(
+        sqlx::query_as(&format!(
             r#"SELECT
-            s.id,
-            s.name,
-            s.stream_type,
-            s.source,
-            s.resolution,
-            s.quality,
-            s.codec,
-            s.bit_depth,
-            ts.seeders,
-            s.uploader,
-            s.release_group,
+            {STREAM_BASE_COLS},
             (SELECT sf.filename FROM stream_file sf WHERE sf.stream_id = s.id LIMIT 1) AS filename,
             COALESCE(ts.total_size, sml.file_size) AS file_size,
             ts.info_hash,
             ys.video_id AS yt_id,
-            (SELECT STRING_AGG(af.name, '|' ORDER BY af.name)
-             FROM stream_audio_link sal JOIN audio_format af ON af.id = sal.audio_format_id
-             WHERE sal.stream_id = s.id) AS audio_formats,
-            (SELECT STRING_AGG(ac.name, '|' ORDER BY ac.name)
-             FROM stream_channel_link scl JOIN audio_channel ac ON ac.id = scl.channel_id
-             WHERE scl.stream_id = s.id) AS channels,
-            (SELECT STRING_AGG(hf.name, '|' ORDER BY hf.name)
-             FROM stream_hdr_link shl JOIN hdr_format hf ON hf.id = shl.hdr_format_id
-             WHERE shl.stream_id = s.id) AS hdr_formats,
-            (SELECT STRING_AGG(l.name, ' + ' ORDER BY l.name)
-             FROM stream_language_link sll JOIN language l ON l.id = sll.language_id
-             WHERE sll.stream_id = s.id) AS languages,
-            s.is_remastered,
-            s.is_upscaled,
-            s.is_proper,
-            s.is_repack,
-            s.is_extended,
-            s.is_complete,
-            s.is_dubbed,
-            s.is_subbed,
+            {STREAM_LINK_AGG_COLS},
             ts.created_at
            FROM stream s
            JOIN stream_media_link sml ON sml.stream_id = s.id
@@ -1246,8 +1169,8 @@ pub async fn get_media_streams(
            LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
            WHERE sml.media_id = $1
              AND s.is_active = true
-             AND s.is_blocked = false"#,
-        )
+             AND s.is_blocked = false"#
+        ))
         .bind(media_id)
         .fetch_all(&state.pool_ro)
         .await
@@ -1549,6 +1472,17 @@ pub async fn get_media_streams(
         });
     }
 
+    // Keep provider-compatible outputs for stream_id deep-link pinning (bypasses preference/cap only).
+    let provider_compatible_outputs: std::collections::HashMap<i32, serde_json::Value> =
+        stream_pairs
+            .iter()
+            .filter_map(|(ctx, out)| {
+                ctx.get("_id")
+                    .and_then(|x| x.as_i64())
+                    .map(|id| (id as i32, out.clone()))
+            })
+            .collect();
+
     let allow_public_usenet = state.config.is_scrap_from_public_usenet_indexers;
     let filter_ctx = FilterContext {
         user_data: &ud,
@@ -1602,12 +1536,26 @@ pub async fn get_media_streams(
         });
     }
 
-    let streams: Vec<serde_json::Value> = stream_pairs.into_iter().map(|(_, out)| out).collect();
+    let mut streams: Vec<serde_json::Value> =
+        stream_pairs.into_iter().map(|(_, out)| out).collect();
+
+    if let Some(pin_id) = params.stream_id {
+        let already_present = streams
+            .iter()
+            .any(|s| s.get("id").and_then(|v| v.as_i64()) == Some(pin_id as i64));
+        if !already_present {
+            if let Some(pinned) = provider_compatible_outputs.get(&pin_id) {
+                streams.insert(0, pinned.clone());
+            }
+        }
+    }
 
     Json(json!({
         "streams": streams,
-        "season": params.season,
-        "episode": params.episode,
+        "season": season,
+        "episode": episode,
+        "resolved_season": if catalog_type == "series" { season } else { None },
+        "resolved_episode": if catalog_type == "series" { episode } else { None },
         "web_playback_enabled": true,
         "streaming_providers": streaming_providers,
         "selected_provider": selected_provider,

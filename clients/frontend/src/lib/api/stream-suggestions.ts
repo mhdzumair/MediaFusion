@@ -60,6 +60,7 @@ export interface StreamSuggestion {
   source_media_title: string | null
   source_media_year: number | null
   source_media_poster_url: string | null
+  source_media_imdb_id: string | null
   target_media_id: number | null
   target_media_type: 'movie' | 'series' | 'tv' | null
   target_media_title: string | null
@@ -130,6 +131,8 @@ export interface StreamEditableFields {
 
 export interface StreamSuggestionListParams {
   status?: StreamSuggestionStatus
+  suggestion_type?: string
+  search?: string
   page?: number
   page_size?: number
   uploader_query?: string
@@ -216,11 +219,13 @@ export const streamSuggestionsApi = {
   getMySuggestions: async (params: StreamSuggestionListParams = {}): Promise<StreamSuggestionListResponse> => {
     const searchParams = new URLSearchParams()
     if (params.status) searchParams.set('status', params.status)
+    if (params.suggestion_type) searchParams.set('suggestion_type', params.suggestion_type)
+    if (params.search) searchParams.set('search', params.search)
     if (params.page) searchParams.set('page', params.page.toString())
     if (params.page_size) searchParams.set('page_size', params.page_size.toString())
 
     const queryString = searchParams.toString()
-    return apiClient.get<StreamSuggestionListResponse>(`/stream-suggestions/my${queryString ? `?${queryString}` : ''}`)
+    return apiClient.get<StreamSuggestionListResponse>(`/stream-suggestions${queryString ? `?${queryString}` : ''}`)
   },
 
   // Get pending suggestions (moderator only)

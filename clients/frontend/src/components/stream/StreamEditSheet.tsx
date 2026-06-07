@@ -18,7 +18,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Edit, Loader2, CheckCircle2, AlertCircle, Monitor, Volume2, Film, Languages, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useCreateStreamSuggestion } from '@/hooks'
+import { useCreateStreamSuggestion, useUpdateMyStream } from '@/hooks'
 import { useToast } from '@/hooks/use-toast'
 import { MultiSelect } from '@/components/ui/multi-select'
 import type { StreamFieldName as ApiStreamFieldName } from '@/lib/api'
@@ -116,6 +116,7 @@ interface StreamEditSheetProps {
   }
   trigger?: React.ReactNode
   onSuccess?: () => void
+  ownerDirect?: boolean
   mediaType?: 'movie' | 'series'
   episodeLinks?: {
     file_id: number
@@ -128,7 +129,14 @@ interface StreamEditSheetProps {
 
 const CLEAR_VALUE = '__CLEAR__'
 
-export function StreamEditSheet({ streamId, streamName, currentValues, trigger, onSuccess }: StreamEditSheetProps) {
+export function StreamEditSheet({
+  streamId,
+  streamName,
+  currentValues,
+  trigger,
+  onSuccess,
+  ownerDirect = false,
+}: StreamEditSheetProps) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -137,6 +145,7 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
   const { toast } = useToast()
 
   const createSuggestion = useCreateStreamSuggestion()
+  const updateMyStream = useUpdateMyStream()
 
   const getInitialFields = useCallback(
     (): Record<StreamFieldName, FieldState> => ({
@@ -229,6 +238,40 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
 
     setIsSubmitting(true)
     setSubmitResults([])
+
+    if (ownerDirect) {
+      try {
+        const body: Record<string, string | string[]> = {}
+        for (const { field, newValue } of modifiedFields) {
+          if (field === 'languages') {
+            body.languages = JSON.parse(newValue) as string[]
+          } else if (field === 'audio_formats') {
+            body.audio_formats = newValue ? newValue.split('|').filter(Boolean) : []
+          } else if (field === 'hdr_formats') {
+            body.hdr_formats = newValue ? newValue.split('|').filter(Boolean) : []
+          } else {
+            body[field] = newValue
+          }
+        }
+        await updateMyStream.mutateAsync({ streamId, body })
+        setOpen(false)
+        onSuccess?.()
+        toast({
+          title: 'Changes Saved',
+          description: `${modifiedCount} field${modifiedCount !== 1 ? 's' : ''} updated successfully.`,
+        })
+      } catch {
+        toast({
+          title: 'Save Failed',
+          description: 'Failed to save changes. Please try again.',
+          variant: 'destructive',
+        })
+      } finally {
+        setIsSubmitting(false)
+      }
+      return
+    }
+
     const results: { field: string; success: boolean; autoApproved: boolean }[] = []
 
     for (const { field, currentValue, newValue } of modifiedFields) {
@@ -353,7 +396,9 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
             <Edit className="h-5 w-5 text-emerald-500" />
             Edit Stream
           </SheetTitle>
-          <SheetDescription className="line-clamp-1">Suggest corrections to stream information</SheetDescription>
+          <SheetDescription className="line-clamp-1">
+            {ownerDirect ? 'Edit your stream information directly' : 'Suggest corrections to stream information'}
+          </SheetDescription>
         </SheetHeader>
 
         <ScrollArea className="flex-1 min-h-0 px-6">
@@ -519,8 +564,10 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
               {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Submitting...
+                  {ownerDirect ? 'Saving...' : 'Submitting...'}
                 </>
+              ) : ownerDirect ? (
+                `Save ${modifiedCount} Change${modifiedCount !== 1 ? 's' : ''}`
               ) : (
                 `Submit ${modifiedCount} Edit${modifiedCount !== 1 ? 's' : ''}`
               )}
