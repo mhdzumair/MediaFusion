@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useReducer, useEffect, useCallback, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { authApi, apiClient, onAuthStateChange } from '@/lib/api'
+import { authApi, apiClient, onAuthStateChange, ApiRequestError } from '@/lib/api'
 import { hasPermission, hasMinimumRole } from '@/lib/permissions'
 import type { User, UserRole, LoginRequest, RegisterRequest, RegisterResponse, AuthResponse } from '@/types'
 import { Permission } from '@/types'
@@ -203,16 +203,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const result = await refetchUser()
       if (result.isError || result.error) {
-        apiClient.clearTokens()
-        dispatch({ type: 'SET_USER', payload: null })
+        const status = (result.error as ApiRequestError)?.status
+        if (status === 401 || status === 403) {
+          apiClient.clearTokens()
+          dispatch({ type: 'SET_USER', payload: null })
+        }
         return
       }
       if (result.data) {
         dispatch({ type: 'SET_USER', payload: result.data })
       }
-    } catch {
-      apiClient.clearTokens()
-      dispatch({ type: 'SET_USER', payload: null })
+    } catch (err) {
+      const status = (err as ApiRequestError)?.status
+      if (status === 401 || status === 403) {
+        apiClient.clearTokens()
+        dispatch({ type: 'SET_USER', payload: null })
+      }
     }
   }
 
