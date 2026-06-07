@@ -758,7 +758,10 @@ pub async fn clear_single_exception(
 
 // ─── request_metrics.py endpoints ────────────────────────────────────────────
 
-use crate::metrics_middleware::{AGG_PREFIX, ENDPOINTS_KEY, RECENT_KEY};
+use crate::metrics_middleware::{
+    AGG_PREFIX, ENDPOINTS_KEY, LATENCY_PREFIX, RECENT_KEY, TS_COUNT_KEY, TS_ERR_KEY,
+    TS_STATUS_PREFIX, TS_TIME_KEY, UV_GLOBAL_KEY, UV_PREFIX,
+};
 
 #[derive(Deserialize)]
 pub struct MetricsEndpointListQuery {
@@ -824,7 +827,7 @@ pub async fn get_request_metrics_status(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    use fred::prelude::SortedSetsInterface;
+    use fred::prelude::{HyperloglogInterface, SortedSetsInterface};
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
@@ -832,15 +835,37 @@ pub async fn get_request_metrics_status(
     let total_endpoints: i64 = state.redis.zcard(ENDPOINTS_KEY).await.unwrap_or(0);
     let total_recent: i64 = state.redis.llen::<i64, _>(RECENT_KEY).await.unwrap_or(0);
 
+    // Sum total_requests across all endpoints (mirrors Python get_status)
+    let all_ep_keys: Vec<String> = state
+        .redis
+        .zrange(ENDPOINTS_KEY, 0i64, -1i64, None, false, None, false)
+        .await
+        .unwrap_or_default();
+    let mut total_requests: i64 = 0;
+    for ep_key in &all_ep_keys {
+        let agg_key = format!("{AGG_PREFIX}{ep_key}");
+        let count: Option<String> = state.redis.hget(&agg_key, "total_requests").await.unwrap_or(None);
+        if let Some(c) = count.and_then(|s| s.parse::<i64>().ok()) {
+            total_requests += c;
+        }
+    }
+
+    // Approximate unique visitors via HyperLogLog
+    let unique_visitors: i64 = state
+        .redis
+        .pfcount::<i64, _>(UV_GLOBAL_KEY)
+        .await
+        .unwrap_or(0);
+
     Json(json!({
         "enabled": true,
         "ttl_seconds": 86400,
         "recent_ttl_seconds": 3600,
         "max_recent": 10000,
         "total_endpoints": total_endpoints,
-        "total_requests": 0,
+        "total_requests": total_requests,
         "total_recent": total_recent,
-        "unique_visitors": 0,
+        "unique_visitors": unique_visitors,
     }))
     .into_response()
 }
@@ -851,7 +876,7 @@ pub async fn list_endpoint_stats(
     State(state): State<Arc<AppState>>,
     Query(params): Query<MetricsEndpointListQuery>,
 ) -> impl IntoResponse {
-    use fred::prelude::SortedSetsInterface;
+    use fred::prelude::{HyperloglogInterface, SortedSetsInterface};
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
@@ -874,7 +899,11 @@ pub async fn list_endpoint_stats(
         let data: std::collections::HashMap<String, String> =
             state.redis.hgetall(&agg_key).await.unwrap_or_default();
         if !data.is_empty() {
-            items.push(agg_hash_to_item(ep_key, data));
+            let uv_key = format!("{UV_PREFIX}{ep_key}");
+            let unique_visitors: i64 = state.redis.pfcount::<i64, _>(&uv_key).await.unwrap_or(0);
+            let mut item = agg_hash_to_item(ep_key, data);
+            item["unique_visitors"] = serde_json::json!(unique_visitors);
+            items.push(item);
         }
     }
 
@@ -918,12 +947,53 @@ pub async fn list_endpoint_stats(
     .into_response()
 }
 
+/// Compute p50, p95, p99 percentiles from a latency sorted set.
+/// Mirrors Python `_compute_percentiles` in `python-deprecated/utils/request_tracker.py`.
+async fn compute_percentiles(
+    redis: &fred::clients::Client,
+    latency_key: &str,
+) -> (f64, f64, f64) {
+    use fred::prelude::SortedSetsInterface;
+    let members: Vec<String> = redis
+        .zrange(latency_key, 0i64, -1i64, None, false, None, false)
+        .await
+        .unwrap_or_default();
+    if members.is_empty() {
+        return (0.0, 0.0, 0.0);
+    }
+
+    // Members are stored as "{duration_s:.6}:{uuid_suffix}"; extract the leading float.
+    let mut latencies: Vec<f64> = members
+        .iter()
+        .filter_map(|m| m.split(':').next()?.parse::<f64>().ok())
+        .collect();
+    if latencies.is_empty() {
+        return (0.0, 0.0, 0.0);
+    }
+
+    latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = latencies.len();
+
+    let percentile = |p: f64| -> f64 {
+        let idx = (p / 100.0) * (n as f64 - 1.0);
+        let lower = idx.floor() as usize;
+        let upper = (lower + 1).min(n - 1);
+        let w = idx - lower as f64;
+        let v = latencies[lower] * (1.0 - w) + latencies[upper] * w;
+        // Round to 6 decimal places
+        (v * 1_000_000.0).round() / 1_000_000.0
+    };
+
+    (percentile(50.0), percentile(95.0), percentile(99.0))
+}
+
 /// GET /api/v1/admin/request-metrics/endpoints/{method}/{route}
 pub async fn get_endpoint_detail(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Path((method, route)): Path<(String, String)>,
 ) -> impl IntoResponse {
+    use fred::prelude::HyperloglogInterface;
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
@@ -947,7 +1017,19 @@ pub async fn get_endpoint_detail(
             .into_response();
     }
 
-    Json(agg_hash_to_item(&ep_key, data)).into_response()
+    let uv_key = format!("{UV_PREFIX}{ep_key}");
+    let unique_visitors: i64 = state.redis.pfcount::<i64, _>(&uv_key).await.unwrap_or(0);
+
+    let latency_key = format!("{LATENCY_PREFIX}{ep_key}");
+    let (p50, p95, p99) = compute_percentiles(&state.redis, &latency_key).await;
+
+    let mut item = agg_hash_to_item(&ep_key, data);
+    item["unique_visitors"] = serde_json::json!(unique_visitors);
+    item["p50"] = serde_json::json!(p50);
+    item["p95"] = serde_json::json!(p95);
+    item["p99"] = serde_json::json!(p99);
+
+    Json(item).into_response()
 }
 
 /// GET /api/v1/admin/request-metrics/recent
@@ -1033,20 +1115,143 @@ pub async fn clear_request_metrics(
 
     let mut cleared: i64 = 0;
     for ep_key in &all_ep_keys {
-        let n: i64 = state
+        cleared += state
             .redis
             .del::<i64, _>(format!("{AGG_PREFIX}{ep_key}"))
             .await
             .unwrap_or(0);
-        cleared += n;
+        cleared += state
+            .redis
+            .del::<i64, _>(format!("{UV_PREFIX}{ep_key}"))
+            .await
+            .unwrap_or(0);
+        cleared += state
+            .redis
+            .del::<i64, _>(format!("{LATENCY_PREFIX}{ep_key}"))
+            .await
+            .unwrap_or(0);
     }
+
+    // Global index + recent log
     let _: Result<i64, _> = state.redis.del(ENDPOINTS_KEY).await;
     let _: Result<i64, _> = state.redis.del(RECENT_KEY).await;
-    cleared += 2;
+    let _: Result<i64, _> = state.redis.del(UV_GLOBAL_KEY).await;
+    cleared += 3;
+
+    // Time-series hashes
+    let _: Result<i64, _> = state.redis.del(TS_COUNT_KEY).await;
+    let _: Result<i64, _> = state.redis.del(TS_TIME_KEY).await;
+    let _: Result<i64, _> = state.redis.del(TS_ERR_KEY).await;
+    for digit in ["2", "3", "4", "5"] {
+        let key = format!("{TS_STATUS_PREFIX}{digit}");
+        let _: Result<i64, _> = state.redis.del(&key).await;
+    }
+    cleared += 7;
 
     Json(json!({
         "cleared": cleared,
         "message": format!("Cleared {cleared} request metrics key(s)."),
+    }))
+    .into_response()
+}
+
+// ─── Timeseries query ─────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct TimeseriesQuery {
+    pub window: Option<i64>,
+}
+
+/// GET /api/v1/admin/request-metrics/timeseries?window=<seconds>
+///
+/// Returns per-minute aggregated time-series data for the given look-back window.
+/// Default window = 3600 s (1 h); max = 86400 s (1 d).
+pub async fn get_request_metrics_timeseries(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<TimeseriesQuery>,
+) -> impl IntoResponse {
+    use fred::prelude::HashesInterface;
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return forbidden();
+    }
+
+    let window_secs = params.window.unwrap_or(3600).clamp(60, 86_400);
+    let now_ts = chrono::Utc::now().timestamp();
+    let cutoff = ((now_ts - window_secs) / 60) * 60;
+
+    // Read all time-series hashes in one pass
+    let counts: std::collections::HashMap<String, String> =
+        state.redis.hgetall(TS_COUNT_KEY).await.unwrap_or_default();
+    let times: std::collections::HashMap<String, String> =
+        state.redis.hgetall(TS_TIME_KEY).await.unwrap_or_default();
+    let errs: std::collections::HashMap<String, String> =
+        state.redis.hgetall(TS_ERR_KEY).await.unwrap_or_default();
+
+    let mut s2: std::collections::HashMap<String, String> = Default::default();
+    let mut s3: std::collections::HashMap<String, String> = Default::default();
+    let mut s4: std::collections::HashMap<String, String> = Default::default();
+    let mut s5: std::collections::HashMap<String, String> = Default::default();
+    for (digit, map) in [("2", &mut s2), ("3", &mut s3), ("4", &mut s4), ("5", &mut s5)] {
+        *map = state
+            .redis
+            .hgetall(format!("{TS_STATUS_PREFIX}{digit}"))
+            .await
+            .unwrap_or_default();
+    }
+
+    // Collect buckets within the window, fill count/time/err/status
+    let mut bucket_set: std::collections::BTreeMap<i64, serde_json::Value> =
+        std::collections::BTreeMap::new();
+
+    for (bucket_str, count_str) in &counts {
+        let bucket: i64 = match bucket_str.parse() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if bucket < cutoff {
+            continue;
+        }
+        let count: i64 = count_str.parse().unwrap_or(0);
+        let total_time: f64 = times
+            .get(bucket_str)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.0);
+        let errors: i64 = errs
+            .get(bucket_str)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let status_2xx: i64 = s2.get(bucket_str).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let status_3xx: i64 = s3.get(bucket_str).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let status_4xx: i64 = s4.get(bucket_str).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let status_5xx: i64 = s5.get(bucket_str).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let avg_time = if count > 0 {
+            (total_time / count as f64 * 1_000_000.0).round() / 1_000_000.0
+        } else {
+            0.0
+        };
+
+        bucket_set.insert(
+            bucket,
+            serde_json::json!({
+                "ts": bucket,
+                "count": count,
+                "errors": errors,
+                "avg_time": avg_time,
+                "status_2xx": status_2xx,
+                "status_3xx": status_3xx,
+                "status_4xx": status_4xx,
+                "status_5xx": status_5xx,
+            }),
+        );
+    }
+
+    let points: Vec<serde_json::Value> = bucket_set.into_values().collect();
+
+    Json(json!({
+        "bucket_seconds": 60,
+        "window_seconds": window_secs,
+        "points": points,
     }))
     .into_response()
 }

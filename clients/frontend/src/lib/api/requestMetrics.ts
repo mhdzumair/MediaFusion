@@ -93,6 +93,23 @@ export interface RequestMetricsClearResponse {
   message: string
 }
 
+export interface TimeseriesPoint {
+  ts: number
+  count: number
+  errors: number
+  avg_time: number
+  status_2xx: number
+  status_3xx: number
+  status_4xx: number
+  status_5xx: number
+}
+
+export interface RequestMetricsTimeseriesResponse {
+  bucket_seconds: number
+  window_seconds: number
+  points: TimeseriesPoint[]
+}
+
 // ============================================
 // Helpers
 // ============================================
@@ -182,4 +199,8 @@ export const requestMetricsApi = {
 
   /** Clear all request metrics. */
   clearAll: () => adminDelete<RequestMetricsClearResponse>('/request-metrics'),
+
+  /** Get time-series data for the given look-back window (in seconds). */
+  getTimeseries: (windowSecs: number = 3600) =>
+    adminGet<RequestMetricsTimeseriesResponse>(`/request-metrics/timeseries?window=${windowSecs}`),
 }

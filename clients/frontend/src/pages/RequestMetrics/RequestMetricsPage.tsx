@@ -14,7 +14,9 @@ import {
   Server,
   Users,
   X,
+  BarChart2,
 } from 'lucide-react'
+import { OverviewTab } from './OverviewTab'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -65,6 +67,7 @@ function timeAgo(isoString: string): string {
 }
 
 function formatDuration(seconds: number): string {
+  if (seconds == null || !Number.isFinite(seconds)) return '—'
   if (seconds < 0.001) return `${(seconds * 1_000_000).toFixed(0)}us`
   if (seconds < 1) return `${(seconds * 1000).toFixed(1)}ms`
   return `${seconds.toFixed(2)}s`
@@ -807,11 +810,19 @@ export function RequestMetricsPage() {
       ) : null}
 
       {/* Tabs */}
-      <Tabs defaultValue="endpoints">
+      <Tabs defaultValue="overview">
         <TabsList>
+          <TabsTrigger value="overview" className="gap-1.5">
+            <BarChart2 className="h-3.5 w-3.5" />
+            Overview
+          </TabsTrigger>
           <TabsTrigger value="endpoints">Endpoints</TabsTrigger>
           <TabsTrigger value="recent">Recent Requests</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="overview" className="mt-4">
+          <OverviewTab />
+        </TabsContent>
 
         <TabsContent value="endpoints" className="mt-4">
           <EndpointsTab />

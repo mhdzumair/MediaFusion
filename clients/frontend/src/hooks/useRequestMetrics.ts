@@ -8,6 +8,7 @@ import {
   type EndpointStatsListParams,
   type RecentRequestsListParams,
 } from '@/lib/api/requestMetrics'
+export type { TimeseriesPoint, RequestMetricsTimeseriesResponse } from '@/lib/api/requestMetrics'
 
 export const requestMetricsKeys = {
   all: ['requestMetrics'] as const,
@@ -16,6 +17,7 @@ export const requestMetricsKeys = {
   endpointDetail: (method: string, route: string) =>
     [...requestMetricsKeys.all, 'endpointDetail', method, route] as const,
   recent: (params?: RecentRequestsListParams) => [...requestMetricsKeys.all, 'recent', params] as const,
+  timeseries: (windowSecs: number) => [...requestMetricsKeys.all, 'timeseries', windowSecs] as const,
 }
 
 /** Fetch request metrics tracking status (enabled, TTL, counts). */
@@ -54,6 +56,16 @@ export function useRecentRequests(params: RecentRequestsListParams = {}) {
     queryFn: () => requestMetricsApi.listRecent(params),
     staleTime: 10_000,
     refetchInterval: 15_000,
+  })
+}
+
+/** Fetch per-minute time-series data for the given window (seconds). */
+export function useRequestMetricsTimeseries(windowSecs: number) {
+  return useQuery({
+    queryKey: requestMetricsKeys.timeseries(windowSecs),
+    queryFn: () => requestMetricsApi.getTimeseries(windowSecs),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   })
 }
 

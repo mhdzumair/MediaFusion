@@ -3,17 +3,56 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 
 use axum::{extract::State, middleware::Next, response::Response};
-use fred::prelude::{HashesInterface, KeysInterface, ListInterface, SortedSetsInterface};
+use fred::prelude::{
+    HashesInterface, HyperloglogInterface, KeysInterface, ListInterface, SortedSetsInterface,
+};
 use regex::Regex;
+use sha2::{Digest, Sha256};
+
+fn to_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        s.push(HEX[(b >> 4) as usize] as char);
+        s.push(HEX[(b & 0xf) as usize] as char);
+    }
+    s
+}
 
 use crate::state::AppState;
 
-pub const AGG_PREFIX: &str = "req_metrics:agg:";
-pub const ENDPOINTS_KEY: &str = "req_metrics:endpoints";
-pub const RECENT_KEY: &str = "req_metrics:recent";
-const METRICS_TTL: i64 = 86400;
-const RECENT_TTL: i64 = 3600;
-const MAX_RECENT: i64 = 10000;
+// ─── Redis key constants ─────────────────────────────────────────────────────
+
+/// Common prefix that separates Rust-server metrics from the Python-server
+/// metrics (`req_metrics:*`) when both are pointed at the same Redis.
+pub const KEY_PREFIX: &str = "req_metrics_rs:";
+
+pub const AGG_PREFIX: &str = "req_metrics_rs:agg:";
+pub const ENDPOINTS_KEY: &str = "req_metrics_rs:endpoints";
+pub const RECENT_KEY: &str = "req_metrics_rs:recent";
+
+/// Global HyperLogLog — approximate unique visitors across all endpoints.
+pub const UV_GLOBAL_KEY: &str = "req_metrics_rs:uv:global";
+/// Per-endpoint HyperLogLog prefix; append `{method}:{route}`.
+pub const UV_PREFIX: &str = "req_metrics_rs:uv:";
+
+/// Per-endpoint latency sorted-set prefix; append `{method}:{route}`.
+/// Members are `"{duration_s:.6}:{uuid_suffix}"`, score = Unix timestamp.
+pub const LATENCY_PREFIX: &str = "req_metrics_rs:latency:";
+
+/// Time-series hashes: field = minute-aligned Unix timestamp (as string),
+/// value = accumulated count / duration / error count.
+pub const TS_COUNT_KEY: &str = "req_metrics_rs:ts:count";
+pub const TS_TIME_KEY: &str = "req_metrics_rs:ts:time";
+pub const TS_ERR_KEY: &str = "req_metrics_rs:ts:err";
+/// Prefix for per-status-class time-series; append "2", "3", "4", or "5".
+pub const TS_STATUS_PREFIX: &str = "req_metrics_rs:ts:s";
+
+const METRICS_TTL: i64 = 86_400;
+const RECENT_TTL: i64 = 3_600;
+const MAX_RECENT: i64 = 10_000;
+/// Maximum latency samples kept per endpoint (oldest evicted beyond this window).
+const LATENCY_WINDOW: i64 = 1_000;
 
 const SKIP_PREFIXES: &[&str] = &[
     "/health",
@@ -22,6 +61,8 @@ const SKIP_PREFIXES: &[&str] = &[
     "/app/assets",
     "/favicon.ico",
 ];
+
+// ─── Route-normalisation regexes ──────────────────────────────────────────────
 
 static RE_UUID: OnceLock<Regex> = OnceLock::new();
 static RE_NUM: OnceLock<Regex> = OnceLock::new();
@@ -74,6 +115,8 @@ fn normalize_route(path: &str) -> String {
     result.trim_end_matches('/').to_string()
 }
 
+// ─── In-flight guard ──────────────────────────────────────────────────────────
+
 /// RAII guard that decrements the in-flight counter when dropped.
 /// Ensures the decrement happens even when a future is cancelled (client disconnect).
 struct InFlightGuard<'a> {
@@ -86,18 +129,35 @@ impl Drop for InFlightGuard<'_> {
     }
 }
 
+// ─── IP hashing ───────────────────────────────────────────────────────────────
+
+/// Hash a client IP with a daily-rotating salt using SHA-256 so the original IP
+/// is never stored while HyperLogLog cardinality estimation remains accurate.
+/// Mirrors Python's `_hash_ip` in `python-deprecated/utils/request_tracker.py`.
+fn hash_ip(ip: &str) -> String {
+    let day_salt = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let input = format!("{ip}:{day_salt}");
+    let digest = Sha256::digest(input.as_bytes());
+    to_hex(&digest)
+}
+
+// ─── Redis recording ──────────────────────────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
 async fn record_to_redis(
     redis: fred::clients::Client,
     method: String,
     route: String,
     status: u16,
     duration_s: f64,
+    client_ip: Option<String>,
     now_iso: String,
     now_ts: f64,
 ) {
     let endpoint_key = format!("{method}:{route}");
     let agg_key = format!("{AGG_PREFIX}{endpoint_key}");
-
+    let bucket = (now_ts as i64 / 60) * 60;
+    let bucket_str = bucket.to_string();
     let status_class = format!("status_{}xx", status / 100);
 
     // Aggregate stats (atomic increments — no read-modify-write race)
@@ -151,8 +211,55 @@ async fn record_to_redis(
         .await;
     let _: Result<(), _> = redis.expire(ENDPOINTS_KEY, METRICS_TTL, None).await;
 
-    // Recent requests list
+    // ── Unique visitor tracking (HyperLogLog with daily-salted hashed IP) ──
+    if let Some(ip) = client_ip {
+        let hashed = hash_ip(&ip);
+        let _: Result<i64, _> = redis.pfadd(UV_GLOBAL_KEY, hashed.clone()).await;
+        let _: Result<(), _> = redis.expire(UV_GLOBAL_KEY, METRICS_TTL, None).await;
+        let uv_ep_key = format!("{UV_PREFIX}{endpoint_key}");
+        let _: Result<i64, _> = redis.pfadd(&uv_ep_key, hashed).await;
+        let _: Result<(), _> = redis.expire(&uv_ep_key, METRICS_TTL, None).await;
+    }
+
+    // ── Per-endpoint latency distribution (sorted set keyed by timestamp) ──
+    let latency_key = format!("{LATENCY_PREFIX}{endpoint_key}");
+    let latency_member = format!("{duration_s:.6}:{}", uuid::Uuid::new_v4().simple());
+    let _: Result<i64, _> = redis
+        .zadd(
+            &latency_key,
+            None,
+            None,
+            false,
+            false,
+            (now_ts, latency_member.as_str()),
+        )
+        .await;
+    // Cap to LATENCY_WINDOW most-recent samples
+    let _: Result<i64, _> = redis
+        .zremrangebyrank(&latency_key, 0, -(LATENCY_WINDOW + 1))
+        .await;
+    let _: Result<(), _> = redis.expire(&latency_key, METRICS_TTL, None).await;
+
+    // ── Per-minute time-series ────────────────────────────────────────────────
+    let _: Result<i64, _> = redis.hincrby(TS_COUNT_KEY, &bucket_str, 1).await;
+    let _: Result<f64, _> = redis
+        .hincrbyfloat(TS_TIME_KEY, &bucket_str, duration_s)
+        .await;
+    let status_class_digit = (status / 100).to_string();
+    let ts_status_key = format!("{TS_STATUS_PREFIX}{status_class_digit}");
+    let _: Result<i64, _> = redis.hincrby(&ts_status_key, &bucket_str, 1).await;
+    if status >= 400 {
+        let _: Result<i64, _> = redis.hincrby(TS_ERR_KEY, &bucket_str, 1).await;
+        let _: Result<(), _> = redis.expire(TS_ERR_KEY, METRICS_TTL, None).await;
+    }
+    let _: Result<(), _> = redis.expire(TS_COUNT_KEY, METRICS_TTL, None).await;
+    let _: Result<(), _> = redis.expire(TS_TIME_KEY, METRICS_TTL, None).await;
+    let _: Result<(), _> = redis.expire(&ts_status_key, METRICS_TTL, None).await;
+
+    // ── Recent requests list ──────────────────────────────────────────────────
+    let request_id = uuid::Uuid::new_v4().simple().to_string();
     let entry = serde_json::json!({
+        "request_id": request_id,
         "method": method,
         "path": route,
         "route_template": route,
@@ -176,6 +283,9 @@ pub async fn metrics_middleware(
     let raw_path = req.uri().path().to_string();
     let path = crate::util::telemetry::sanitize_path(&raw_path);
     let route = normalize_route(&path);
+
+    // Extract client IP before consuming the request.
+    let client_ip = crate::providers::validator::client_ip_from_headers(req.headers());
 
     state.metrics.in_flight.fetch_add(1, Ordering::Relaxed);
     // Guard ensures decrement on drop — covers both normal completion and future cancellation.
@@ -206,7 +316,14 @@ pub async fn metrics_middleware(
         let now_ts = now.timestamp() as f64;
         let duration_s = duration_ms / 1000.0;
         tokio::spawn(record_to_redis(
-            redis, method, route, status, duration_s, now_iso, now_ts,
+            redis,
+            method,
+            route,
+            status,
+            duration_s,
+            client_ip,
+            now_iso,
+            now_ts,
         ));
     }
 

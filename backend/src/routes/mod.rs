@@ -541,6 +541,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/exceptions", get(admin_extended::list_exceptions).delete(admin_extended::clear_all_exceptions))
         .route("/api/v1/admin/exceptions/{fingerprint}", get(admin_extended::get_exception).delete(admin_extended::clear_single_exception))
         .route("/api/v1/admin/request-metrics/status", get(admin_extended::get_request_metrics_status))
+        .route("/api/v1/admin/request-metrics/timeseries", get(admin_extended::get_request_metrics_timeseries))
         .route("/api/v1/admin/request-metrics/endpoints", get(admin_extended::list_endpoint_stats))
         .route("/api/v1/admin/request-metrics/endpoints/{method}/{*route}", get(admin_extended::get_endpoint_detail))
         .route("/api/v1/admin/request-metrics/recent", get(admin_extended::list_recent_requests))
