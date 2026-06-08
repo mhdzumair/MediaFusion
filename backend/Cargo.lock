@@ -3418,7 +3418,7 @@ checksum = "ae960838283323069879657ca3de837e9f7bbb4c7bf6ea7f1b290d5e9476d2e0"
 
 [[package]]
 name = "mediafusion-api"
-version = "6.0.0-beta.20"
+version = "6.0.0-beta.21"
 dependencies = [
  "ab_glyph",
  "aes 0.9.0",
