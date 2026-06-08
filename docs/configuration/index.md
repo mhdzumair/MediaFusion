@@ -63,6 +63,7 @@ You must set these before MediaFusion will start:
 | [Content Sources](content-sources.md) | Scrapers, RSS feeds, Prowlarr, Zilean |
 | [MediaFlow Proxy](mediaflow.md) | Proxy config for debrid and live streams |
 | [Security](security.md) | API password, encryption, rate limiting |
+| [Stream Formatting](stream-formatting.md) | Custom stream title/description templates |
 
 ## Full reference
 
