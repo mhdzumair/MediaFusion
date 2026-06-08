@@ -661,7 +661,11 @@ async fn send_email(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use lettre::{
         message::header::ContentType,
-        transport::smtp::{authentication::Credentials, AsyncSmtpTransport},
+        transport::smtp::{
+            authentication::Credentials,
+            client::{Tls, TlsParameters},
+            AsyncSmtpTransport,
+        },
         AsyncTransport, Message, Tokio1Executor,
     };
 
@@ -678,8 +682,25 @@ async fn send_email(
         .header(ContentType::TEXT_PLAIN)
         .body(body)?;
 
-    let mut builder =
-        AsyncSmtpTransport::<Tokio1Executor>::relay(smtp_host)?.port(state.config.smtp_port);
+    // SMTP_USE_SSL=true  → implicit TLS wrapper (port 465)
+    // SMTP_USE_TLS=true  → STARTTLS (port 587, default)
+    // both false         → plaintext (internal relay / mailhog)
+    // Port 465 always implies implicit SSL regardless of flags.
+    let use_ssl = state.config.smtp_use_ssl || state.config.smtp_port == 465;
+    let mut builder = if use_ssl {
+        let tls = TlsParameters::new(smtp_host.to_string())?;
+        AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(smtp_host)
+            .port(state.config.smtp_port)
+            .tls(Tls::Wrapper(tls))
+    } else if state.config.smtp_use_tls {
+        // STARTTLS: connect plaintext then upgrade. relay() would build an
+        // implicit-TLS (Tls::Wrapper) transport and fail on port 587 with
+        // "received corrupt message of type InvalidContentType".
+        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(smtp_host)?.port(state.config.smtp_port)
+    } else {
+        AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(smtp_host)
+            .port(state.config.smtp_port)
+    };
 
     if let (Some(user), Some(pass)) = (
         state.config.smtp_username.as_deref(),
