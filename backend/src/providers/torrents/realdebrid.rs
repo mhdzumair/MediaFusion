@@ -217,11 +217,14 @@ async fn rd_post(
             owned_ip = ip.to_string();
             form.push(("ip", &owned_ip));
         }
-        http.post(url)
-            .bearer_auth(bearer)
-            .form(&form)
-            .send()
-            .await?
+        retry::with_transport_retry("rd_post", || async {
+            http.post(url)
+                .bearer_auth(bearer)
+                .form(&form)
+                .send()
+                .await
+        })
+        .await?
     };
     if resp.status() == 204 {
         return Ok(Value::Null);
@@ -253,15 +256,18 @@ async fn rd_put(
         )
         .await?
     } else {
-        let mut req = http
-            .put(url)
-            .bearer_auth(bearer)
-            .header("Content-Type", "application/x-bittorrent")
-            .body(torrent_bytes.to_vec());
-        if let Some(ip) = user_ip {
-            req = req.query(&[("ip", ip)]);
-        }
-        req.send().await?
+        retry::with_transport_retry("rd_put", || async {
+            let mut req = http
+                .put(url)
+                .bearer_auth(bearer)
+                .header("Content-Type", "application/x-bittorrent")
+                .body(torrent_bytes.to_vec());
+            if let Some(ip) = user_ip {
+                req = req.query(&[("ip", ip)]);
+            }
+            req.send().await
+        })
+        .await?
     };
     if resp.status() == 204 {
         return Ok(Value::Null);

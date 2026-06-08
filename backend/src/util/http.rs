@@ -83,8 +83,8 @@ pub fn build_debrid(proxy_url: Option<&str>) -> reqwest::Client {
         .connect_timeout(Duration::from_secs(15))
         // Keep pool idle timeout well under the server-side HTTP keep-alive timeout (typically
         // 30–60 s on debrid APIs) so we never reuse a connection the server has already closed.
-        // This eliminates "connection closed before message completed" (Kind::Request) errors.
-        .pool_idle_timeout(Duration::from_secs(20))
+        // 8 s gives a ~22 s safety margin and still benefits from short-burst connection reuse.
+        .pool_idle_timeout(Duration::from_secs(8))
         .pool_max_idle_per_host(4);
     if let Some(proxy) = proxy_url.filter(|s| !s.is_empty()) {
         if let Ok(p) = reqwest::Proxy::all(proxy) {
