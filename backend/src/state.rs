@@ -162,12 +162,16 @@ impl AppState {
     }
 }
 
-/// Run `recompute_all_keyword_blocked()` without a statement timeout.
+const KW_BLOCKED_RECOMPUTE_ID: &str = "keyword-blocked-recompute";
+
+/// Run `recompute_all_keyword_blocked()` without a statement timeout, then record
+/// `version_tag` so [`maybe_recompute_keyword_blocked`] can skip future restarts
+/// when keywords haven't changed.
 ///
-/// The function does a full `UPDATE media SET ...` which can take minutes on large tables.
-/// We use `SET LOCAL statement_timeout = 0` inside a transaction so the override is
-/// automatically reverted when the connection returns to the pool — no leakage.
-pub async fn recompute_keyword_blocked(pool: &PgPool) {
+/// Uses `SET LOCAL statement_timeout = 0` inside a transaction — the override is
+/// scoped to that transaction and never leaks to other pool connections.
+pub async fn recompute_keyword_blocked(pool: &PgPool, version_tag: u64) {
+    let ver_str = format!("{:016x}", version_tag);
     let result: Result<_, sqlx::Error> = async {
         let mut tx = pool.begin().await?;
         sqlx::query("SET LOCAL statement_timeout = 0")
@@ -176,6 +180,15 @@ pub async fn recompute_keyword_blocked(pool: &PgPool) {
         sqlx::query("SELECT recompute_all_keyword_blocked()")
             .execute(&mut *tx)
             .await?;
+        // Record which keyword version was just recomputed so we skip on next startup.
+        sqlx::query(
+            "INSERT INTO keyword_sync_state (id, file_hash, synced_at) VALUES ($1, $2, NOW())
+             ON CONFLICT (id) DO UPDATE SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
+        )
+        .bind(KW_BLOCKED_RECOMPUTE_ID)
+        .bind(&ver_str)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await
     }
     .await;
@@ -185,6 +198,36 @@ pub async fn recompute_keyword_blocked(pool: &PgPool) {
     } else {
         tracing::info!("keyword filter: is_keyword_blocked recomputed for all media");
     }
+}
+
+/// Check whether `is_keyword_blocked` needs a recompute and, if so, spawn one.
+///
+/// Compares the current keyword `version_tag` against the last-recomputed version
+/// stored in `keyword_sync_state`.  On a normal restart with unchanged keywords
+/// this is a single cheap SELECT and the heavy UPDATE is skipped entirely.
+pub async fn maybe_recompute_keyword_blocked(pool: &PgPool, kf: &KeywordFilterCache) {
+    if kf.keywords.is_empty() {
+        return;
+    }
+    let ver = kf.version_tag();
+    let ver_str = format!("{:016x}", ver);
+
+    let stored: Option<String> = sqlx::query_scalar(
+        "SELECT file_hash FROM keyword_sync_state WHERE id = $1",
+    )
+    .bind(KW_BLOCKED_RECOMPUTE_ID)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    if stored.as_deref() == Some(ver_str.as_str()) {
+        tracing::debug!("keyword blocked: column up to date (version {ver_str}), skipping recompute");
+        return;
+    }
+
+    tracing::info!("keyword blocked: version changed ({ver_str}), recomputing in background");
+    let pool = pool.clone();
+    tokio::spawn(async move { recompute_keyword_blocked(&pool, ver).await });
 }
 
 pub async fn load_keyword_filter_cache(pool: &PgPool) -> KeywordFilterCache {
@@ -336,7 +379,12 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
         return;
     }
 
-    recompute_keyword_blocked(pool).await;
+    let ver = KeywordFilterCache {
+        keywords: keywords.clone(),
+        whitelist: whitelist.clone(),
+    }
+    .version_tag();
+    recompute_keyword_blocked(pool, ver).await;
 
     tracing::info!(
         "keyword sync: done — {} keywords, {} whitelist phrases (hash {hash})",

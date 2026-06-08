@@ -44,7 +44,7 @@ use mediafusion_api::{
         metrics::JobMetrics,
         JobRegistry,
     },
-    state::{load_keyword_filter_cache, recompute_keyword_blocked, sync_keywords_from_file, AppState},
+    state::{load_keyword_filter_cache, maybe_recompute_keyword_blocked, sync_keywords_from_file, AppState},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -154,10 +154,9 @@ async fn main() {
     sync_keywords_from_file(&state.pool).await;
     *state.keyword_filters.write().unwrap() = load_keyword_filter_cache(&state.pool).await;
 
-    // Recompute is_keyword_blocked for all existing media rows in the background.
     {
-        let pool = state.pool.clone();
-        tokio::spawn(async move { recompute_keyword_blocked(&pool).await });
+        let kf = state.keyword_filters.read().unwrap().clone();
+        maybe_recompute_keyword_blocked(&state.pool, &kf).await;
     }
 
     mediafusion_api::bot::register_notification_handlers(Arc::clone(&state));

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use mediafusion_api::{
     config::AppConfig,
     exception_tracker, routes,
-    state::{load_keyword_filter_cache, recompute_keyword_blocked, sync_keywords_from_file, AppState},
+    state::{load_keyword_filter_cache, maybe_recompute_keyword_blocked, sync_keywords_from_file, AppState},
 };
 use tracing::info;
 
@@ -82,11 +82,11 @@ async fn main() {
     sync_keywords_from_file(&state.pool).await;
     *state.keyword_filters.write().unwrap() = load_keyword_filter_cache(&state.pool).await;
 
-    // Recompute is_keyword_blocked for all existing media rows in the background.
-    // Runs non-blocking so it doesn't delay server startup.
+    // Recompute is_keyword_blocked only if the keyword version has changed since
+    // the last recompute (one cheap SELECT; skips the heavy UPDATE on normal restarts).
     {
-        let pool = state.pool.clone();
-        tokio::spawn(async move { recompute_keyword_blocked(&pool).await });
+        let kf = state.keyword_filters.read().unwrap().clone();
+        maybe_recompute_keyword_blocked(&state.pool, &kf).await;
     }
 
     // Start the exception tracker background worker now that Redis is ready
