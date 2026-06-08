@@ -47,12 +47,16 @@
 ///   POST /migrate                        → migrate_single_stream
 ///   POST /migrate/bulk                   → migrate_bulk_streams
 ///   GET  /exportable                     → get_exportable_streams
+use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 
+use async_stream::stream;
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    response::sse::{Event, KeepAlive, Sse},
+    response::{IntoResponse, Response},
     Json,
 };
 use chrono::Utc;
@@ -517,7 +521,7 @@ pub async fn get_dmm_hashlist_status(
     }
 
     Json(json!({
-        "enabled": false,
+        "enabled": state.config.is_scrap_from_dmm_hashlist,
         "scheduler_disabled": true,
         "message": "DMM hashlist status not available"
     }))
@@ -2087,22 +2091,13 @@ async fn fetch_job_info(
 ) -> Value {
     use sqlx::Row as _;
 
-    // Map job_id → Postgres queue name
-    let queue_name = job_id_to_queue(job_id);
     let cron_name = job_id_to_cron_name(job_id);
 
-    // Query the most recent job for this queue
-    let row = sqlx::query(
-        r#"SELECT status, finished_at, started_at, created_at
-           FROM jobs
-           WHERE queue = $1
-           ORDER BY created_at DESC
-           LIMIT 1"#,
-    )
-    .bind(queue_name)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+    // Query the most recent job for this scheduler entry (per-indexer for registry spiders)
+    let row = fetch_recent_scheduler_jobs(pool, job_id, 1)
+        .await
+        .into_iter()
+        .next();
 
     // Query cron_jobs for schedule, payload, enabled state and last_enqueued_at
     let cron_row = if let Some(ref name) = cron_name {
@@ -2137,9 +2132,11 @@ async fn fetch_job_info(
 
     let (last_run, last_run_status, is_running, time_since_last_run) = if let Some(ref r) = row {
         let status: String = r.get::<String, _>("status");
+        let started_at: Option<chrono::DateTime<chrono::Utc>> =
+            r.try_get("started_at").ok().flatten();
         let finished_at: Option<chrono::DateTime<chrono::Utc>> =
             r.try_get("finished_at").ok().flatten();
-        let is_running_now = status == "running" || status == "pending";
+        let (effective_status, is_running_now) = effective_job_status(&status, started_at);
 
         let (last_run_str, time_since) = if let Some(dt) = finished_at {
             let delta = Utc::now() - dt;
@@ -2163,9 +2160,18 @@ async fn fetch_job_info(
             (None, "Never completed".to_string())
         };
 
-        (last_run_str, status, is_running_now, time_since)
+        (last_run_str, effective_status, is_running_now, time_since)
     } else {
         (None, "unknown".to_string(), false, "Never run".to_string())
+    };
+
+    let (next_run_in, next_run_timestamp) = if is_enabled {
+        match crate::jobs::scheduler::next_scheduled_run(&crontab) {
+            Some(next) => (Some(format_time_until(next)), Some(next.timestamp())),
+            None => (None, None),
+        }
+    } else {
+        (None, None)
     };
 
     json!({
@@ -2180,10 +2186,28 @@ async fn fetch_job_info(
         "last_run": last_run,
         "last_run_status": last_run_status,
         "time_since_last_run": time_since_last_run,
-        "next_run_in": null,
-        "next_run_timestamp": null,
+        "next_run_in": next_run_in,
+        "next_run_timestamp": next_run_timestamp,
         "is_running": is_running,
     })
+}
+
+fn format_time_until(target: chrono::DateTime<Utc>) -> String {
+    let delta = target - Utc::now();
+    let secs = delta.num_seconds();
+    if secs <= 0 {
+        return "Due now".to_string();
+    }
+    let mins = secs / 60;
+    if mins < 60 {
+        return format!("in {mins} minute{}", if mins == 1 { "" } else { "s" });
+    }
+    let hrs = mins / 60;
+    if hrs < 24 {
+        return format!("in {hrs} hour{}", if hrs == 1 { "" } else { "s" });
+    }
+    let days = hrs / 24;
+    format!("in {days} day{}", if days == 1 { "" } else { "s" })
 }
 
 fn is_valid_cron_schedule(schedule: &str) -> bool {
@@ -2295,6 +2319,54 @@ fn job_id_to_queue(job_id: &str) -> &'static str {
         "imdb_dataset_import" => "imdb_dataset_import",
         _ => "default",
     }
+}
+
+/// Registry indexers share the `spider_registry_crawl` queue; filter jobs by payload index.
+const REGISTRY_SPIDER_IDS: &[&str] = &[
+    "nyaa",
+    "animetosho",
+    "subsplease",
+    "animepahe",
+    "bt52",
+    "uindex",
+    "x1337",
+    "thepiratebay",
+    "rutor",
+    "limetorrents",
+    "yts",
+    "bt4g",
+];
+
+fn job_payload_indexer_filter(job_id: &str) -> Option<&str> {
+    if REGISTRY_SPIDER_IDS.contains(&job_id) {
+        Some(job_id)
+    } else {
+        None
+    }
+}
+
+async fn fetch_recent_scheduler_jobs(
+    pool: &sqlx::PgPool,
+    job_id: &str,
+    limit: i64,
+) -> Vec<sqlx::postgres::PgRow> {
+    let queue_name = job_id_to_queue(job_id);
+    let indexer = job_payload_indexer_filter(job_id);
+
+    sqlx::query(
+        r#"SELECT id, status, created_at, started_at, finished_at, last_error, attempts
+           FROM jobs
+           WHERE queue = $1
+             AND ($2::text IS NULL OR payload->>'indexer' = $2)
+           ORDER BY created_at DESC
+           LIMIT $3"#,
+    )
+    .bind(queue_name)
+    .bind(indexer)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
 }
 
 /// GET /api/v1/admin/schedulers?category=...&enabled_only=...
@@ -2713,20 +2785,7 @@ pub async fn get_job_history(
         return forbidden();
     }
     let limit = params.limit.unwrap_or(50).clamp(1, 200);
-    let queue_name = job_id_to_queue(&job_id);
-
-    let rows = sqlx::query(
-        r#"SELECT id, status, created_at, started_at, finished_at, last_error, attempts
-           FROM jobs
-           WHERE queue = $1
-           ORDER BY created_at DESC
-           LIMIT $2"#,
-    )
-    .bind(queue_name)
-    .bind(limit)
-    .fetch_all(&state.pool_ro)
-    .await
-    .unwrap_or_default();
+    let rows = fetch_recent_scheduler_jobs(&state.pool_ro, &job_id, limit).await;
 
     let entries: Vec<serde_json::Value> = rows
         .iter()
@@ -2761,11 +2820,132 @@ pub async fn get_job_history(
     .into_response()
 }
 
+/// GET /api/v1/admin/schedulers/{job_id}/logs?limit=...
+#[derive(Deserialize)]
+pub struct SchedulerJobLogsQuery {
+    pub limit: Option<i64>,
+}
+
+pub async fn get_scheduler_job_logs(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(job_id): Path<String>,
+    Query(params): Query<SchedulerJobLogsQuery>,
+) -> impl IntoResponse {
+    use sqlx::Row as _;
+
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
+        return forbidden();
+    }
+
+    let limit = params.limit.unwrap_or(20).clamp(1, 100);
+    let display_name = SCHEDULER_JOBS
+        .iter()
+        .find(|(id, ..)| *id == job_id.as_str())
+        .map(|(_, name, ..)| *name)
+        .unwrap_or("");
+
+    let job_rows = fetch_recent_scheduler_jobs(&state.pool_ro, &job_id, limit).await;
+
+    let mut runs: Vec<Value> = Vec::new();
+    for job_row in &job_rows {
+        let pg_job_id: i64 = job_row.get("id");
+        let event_rows = sqlx::query(
+            "SELECT event, detail, at FROM job_events WHERE job_id = $1 ORDER BY at ASC",
+        )
+        .bind(pg_job_id)
+        .fetch_all(&state.pool_ro)
+        .await
+        .unwrap_or_default();
+
+        let events: Vec<Value> = event_rows
+            .iter()
+            .map(|r| {
+                let at: Option<chrono::DateTime<chrono::Utc>> = r.try_get("at").ok().flatten();
+                json!({
+                    "event": r.get::<String, _>("event"),
+                    "detail": r.try_get::<Option<String>, _>("detail").ok().flatten(),
+                    "at": at.map(|t| t.to_rfc3339()),
+                })
+            })
+            .collect();
+
+        let created_at: Option<chrono::DateTime<chrono::Utc>> =
+            job_row.try_get("created_at").ok().flatten();
+        let started_at: Option<chrono::DateTime<chrono::Utc>> =
+            job_row.try_get("started_at").ok().flatten();
+        let finished_at: Option<chrono::DateTime<chrono::Utc>> =
+            job_row.try_get("finished_at").ok().flatten();
+
+        runs.push(json!({
+            "job_id": pg_job_id,
+            "status": job_row.get::<String, _>("status"),
+            "created_at": created_at.map(|t| t.to_rfc3339()),
+            "started_at": started_at.map(|t| t.to_rfc3339()),
+            "finished_at": finished_at.map(|t| t.to_rfc3339()),
+            "error": job_row.try_get::<Option<String>, _>("last_error").ok().flatten(),
+            "attempts": job_row.get::<i32, _>("attempts"),
+            "events": events,
+        }));
+    }
+
+    Json(json!({
+        "job_id": job_id,
+        "display_name": display_name,
+        "runs": runs,
+        "total": runs.len(),
+    }))
+    .into_response()
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TASKS  /api/v1/admin/tasks
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─── Task Postgres helpers ────────────────────────────────────────────────────
+
+/// Jobs stuck in `running` longer than this are shown as stale in the admin UI.
+const STALE_RUNNING_MINUTES: i64 = 30;
+/// Jobs stuck in `running` longer than this are auto-marked error in admin streams.
+const ANCIENT_RUNNING_DAYS: i64 = 7;
+
+fn effective_job_status(
+    status: &str,
+    started_at: Option<chrono::DateTime<chrono::Utc>>,
+) -> (String, bool) {
+    if status == "running" {
+        if let Some(started) = started_at {
+            let age = Utc::now().signed_duration_since(started);
+            if age.num_minutes() >= STALE_RUNNING_MINUTES {
+                return ("stale".to_string(), false);
+            }
+        }
+        return ("running".to_string(), true);
+    }
+    (status.to_string(), false)
+}
+
+async fn reclaim_ancient_running_jobs(pool: &sqlx::PgPool) {
+    let result = sqlx::query(
+        r#"UPDATE jobs
+           SET status = 'error',
+               finished_at = COALESCE(started_at, created_at, now()),
+               last_error = 'Job stale — worker no longer running',
+               worker_id = NULL
+           WHERE status = 'running'
+             AND started_at < now() - ($1 * interval '1 day')"#,
+    )
+    .bind(ANCIENT_RUNNING_DAYS)
+    .execute(pool)
+    .await;
+
+    if let Err(e) = result {
+        tracing::warn!("reclaim_ancient_running_jobs error: {e}");
+    }
+}
 
 async fn load_tasks(pool: &sqlx::PgPool, limit: i64) -> Vec<Value> {
     use sqlx::Row as _;
@@ -2793,12 +2973,12 @@ async fn load_tasks(pool: &sqlx::PgPool, limit: i64) -> Vec<Value> {
             let finished_at: Option<chrono::DateTime<chrono::Utc>> =
                 r.try_get("finished_at").ok().flatten();
             let queue: String = r.get("queue");
-            let is_running = status == "running";
+            let (effective_status, is_running) = effective_job_status(&status, started_at);
             json!({
                 "task_id": id.to_string(),
                 "actor_name": queue,
                 "queue_name": queue,
-                "status": status,
+                "status": effective_status,
                 "is_running": is_running,
                 "attempts": r.get::<i32, _>("attempts"),
                 "error": r.try_get::<Option<String>, _>("last_error").ok().flatten(),
@@ -2950,6 +3130,7 @@ pub async fn list_tasks(
     {
         return forbidden();
     }
+    reclaim_ancient_running_jobs(&state.pool).await;
     let offset = params.offset.unwrap_or(0) as usize;
     let limit = params.limit.unwrap_or(25).clamp(1, 200) as usize;
     let fetch_size = (limit * 5 + offset).clamp(200, 2000) as i64;
@@ -3000,7 +3181,7 @@ pub async fn list_tasks(
 }
 
 /// GET /api/v1/admin/tasks/stream — SSE stream of task snapshots
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct StreamTasksQuery {
     pub sample_size: Option<i64>,
     pub list_limit: Option<i64>,
@@ -3012,22 +3193,14 @@ pub struct StreamTasksQuery {
     pub interval_ms: Option<i64>,
 }
 
-pub async fn stream_task_snapshots(
-    headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<StreamTasksQuery>,
-) -> impl IntoResponse {
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
-        .await
-        .is_none()
-    {
-        return forbidden();
-    }
+async fn build_task_stream_snapshot(pool: &sqlx::PgPool, params: &StreamTasksQuery) -> Value {
+    reclaim_ancient_running_jobs(pool).await;
+
     let sample = params.sample_size.unwrap_or(200).clamp(1, 2000);
     let list_offset = params.list_offset.unwrap_or(0) as usize;
     let list_limit = params.list_limit.unwrap_or(25).clamp(1, 200) as usize;
 
-    let all_records = load_tasks(&state.pool_ro, sample).await;
+    let all_records = load_tasks(pool, sample).await;
 
     let filtered: Vec<&Value> = all_records
         .iter()
@@ -3061,9 +3234,10 @@ pub async fn stream_task_snapshots(
         .cloned()
         .collect();
 
-    let snapshot = json!({
+    json!({
         "timestamp": Utc::now().to_rfc3339(),
         "overview": {
+            "timestamp": Utc::now().to_rfc3339(),
             "total_recent_tasks": all_records.len(),
             "running_task_ids": &running_task_ids,
             "queue_summaries": [],
@@ -3077,14 +3251,155 @@ pub async fn stream_task_snapshots(
             "status_counts": &status_counts,
             "running_task_ids": &running_task_ids,
         }
-    });
-    let body = format!("event: snapshot\ndata: {}\n\n", snapshot);
-    axum::response::Response::builder()
-        .status(axum::http::StatusCode::OK)
-        .header("content-type", "text/event-stream")
-        .header("cache-control", "no-cache")
-        .body(axum::body::Body::from(body))
-        .unwrap_or_else(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response())
+    })
+}
+
+pub async fn stream_task_snapshots(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<StreamTasksQuery>,
+) -> Response {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
+        return forbidden();
+    }
+
+    let interval_ms = params.interval_ms.unwrap_or(3000).clamp(1000, 15000) as u64;
+    let state = state.clone();
+
+    let stream = stream! {
+        loop {
+            let snapshot = build_task_stream_snapshot(&state.pool_ro, &params).await;
+            if let Ok(event) = Event::default().event("snapshot").json_data(snapshot) {
+                yield Ok::<Event, Infallible>(event);
+            }
+            tokio::time::sleep(Duration::from_millis(interval_ms)).await;
+        }
+    };
+
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+
+/// GET /api/v1/admin/schedulers/stream — SSE stream of scheduler snapshots
+#[derive(Deserialize, Clone)]
+pub struct StreamSchedulersQuery {
+    pub category: Option<String>,
+    pub enabled_only: Option<bool>,
+    pub interval_ms: Option<i64>,
+}
+
+async fn build_scheduler_stream_snapshot(
+    pool: &sqlx::PgPool,
+    global_disabled: bool,
+    list_params: &ListSchedulersQuery,
+) -> Value {
+    reclaim_ancient_running_jobs(pool).await;
+
+    let futures: Vec<_> = SCHEDULER_JOBS
+        .iter()
+        .filter(|(_id, _, cat, _, _)| list_params.category.as_deref().is_none_or(|c| c == *cat))
+        .map(|(id, name, cat, desc, cron)| {
+            fetch_job_info(pool, id, name, cat, desc, cron, global_disabled)
+        })
+        .collect();
+
+    let mut jobs: Vec<Value> = futures::future::join_all(futures).await;
+
+    if list_params.enabled_only.unwrap_or(false) {
+        jobs.retain(|j| j["is_enabled"].as_bool() == Some(true));
+    }
+
+    let total = jobs.len();
+    let active = jobs
+        .iter()
+        .filter(|j| j["is_enabled"].as_bool() == Some(true))
+        .count();
+    let running = jobs
+        .iter()
+        .filter(|j| j["is_running"].as_bool() == Some(true))
+        .count();
+    let disabled = total - active;
+
+    let mut by_category: std::collections::HashMap<String, (usize, usize)> =
+        std::collections::HashMap::new();
+    for j in &jobs {
+        if let Some(cat) = j["category"].as_str() {
+            let entry = by_category.entry(cat.to_string()).or_insert((0, 0));
+            entry.0 += 1;
+            if j["is_enabled"].as_bool() == Some(true) {
+                entry.1 += 1;
+            }
+        }
+    }
+    let jobs_by_category: std::collections::HashMap<String, Value> = by_category
+        .into_iter()
+        .map(|(cat, (cat_total, cat_active))| {
+            (cat, json!({"total": cat_total, "active": cat_active}))
+        })
+        .collect();
+
+    json!({
+        "timestamp": Utc::now().to_rfc3339(),
+        "list": {
+            "jobs": jobs,
+            "total": total,
+            "active": active,
+            "disabled": disabled,
+            "running": running,
+            "global_scheduler_disabled": global_disabled,
+        },
+        "stats": {
+            "total_jobs": total,
+            "active_jobs": active,
+            "disabled_jobs": disabled,
+            "running_jobs": running,
+            "jobs_by_category": jobs_by_category,
+            "global_scheduler_disabled": global_disabled,
+        },
+    })
+}
+
+pub async fn stream_scheduler_snapshots(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<StreamSchedulersQuery>,
+) -> Response {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
+        return forbidden();
+    }
+
+    let interval_ms = params.interval_ms.unwrap_or(3000).clamp(1000, 15000) as u64;
+    let state = state.clone();
+    let list_params = ListSchedulersQuery {
+        category: params.category.clone(),
+        enabled_only: params.enabled_only,
+    };
+
+    let stream = stream! {
+        loop {
+            let snapshot = build_scheduler_stream_snapshot(
+                &state.pool_ro,
+                state.config.disable_all_scheduler,
+                &list_params,
+            )
+            .await;
+            if let Ok(event) = Event::default().event("snapshot").json_data(snapshot) {
+                yield Ok::<Event, Infallible>(event);
+            }
+            tokio::time::sleep(Duration::from_millis(interval_ms)).await;
+        }
+    };
+
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
 }
 
 /// POST /api/v1/admin/tasks/bulk-cancel
@@ -3239,30 +3554,10 @@ pub async fn bulk_retry_tasks(
 }
 
 /// GET /api/v1/admin/tasks/{task_id}
-pub async fn get_task_detail(
-    headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
-    Path(task_id): Path<String>,
-) -> impl IntoResponse {
+async fn load_task_detail_json(pool: &sqlx::PgPool, task_id: &str) -> Option<Value> {
     use sqlx::Row as _;
 
-    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
-        .await
-        .is_none()
-    {
-        return forbidden();
-    }
-
-    let job_id: i64 = match task_id.parse() {
-        Ok(id) => id,
-        Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"detail": "task_id must be an integer"})),
-            )
-                .into_response();
-        }
-    };
+    let job_id: i64 = task_id.parse().ok()?;
 
     let row = sqlx::query(
         r#"SELECT id, queue, payload, status, attempts, last_error,
@@ -3270,20 +3565,9 @@ pub async fn get_task_detail(
            FROM jobs WHERE id = $1"#,
     )
     .bind(job_id)
-    .fetch_optional(&state.pool_ro)
+    .fetch_optional(pool)
     .await
-    .unwrap_or(None);
-
-    let row = match row {
-        Some(r) => r,
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({"detail": "Task not found"})),
-            )
-                .into_response();
-        }
-    };
+    .ok()??;
 
     let created_at: Option<chrono::DateTime<chrono::Utc>> =
         row.try_get("created_at").ok().flatten();
@@ -3292,12 +3576,12 @@ pub async fn get_task_detail(
     let finished_at: Option<chrono::DateTime<chrono::Utc>> =
         row.try_get("finished_at").ok().flatten();
     let status: String = row.get("status");
+    let (effective_status, is_running) = effective_job_status(&status, started_at);
 
-    // Fetch job events
     let event_rows =
         sqlx::query("SELECT event, detail, at FROM job_events WHERE job_id = $1 ORDER BY at DESC")
             .bind(job_id)
-            .fetch_all(&state.pool_ro)
+            .fetch_all(pool)
             .await
             .unwrap_or_default();
 
@@ -3313,13 +3597,13 @@ pub async fn get_task_detail(
         })
         .collect();
 
-    Json(json!({
+    Some(json!({
         "task_id": job_id.to_string(),
         "actor_name": row.get::<String, _>("queue"),
         "queue_name": row.get::<String, _>("queue"),
         "payload": row.get::<serde_json::Value, _>("payload"),
-        "status": status,
-        "is_running": status == "running",
+        "status": effective_status,
+        "is_running": is_running,
         "attempts": row.get::<i32, _>("attempts"),
         "error": row.try_get::<Option<String>, _>("last_error").ok().flatten(),
         "worker_id": row.try_get::<Option<String>, _>("worker_id").ok().flatten(),
@@ -3329,7 +3613,102 @@ pub async fn get_task_detail(
         "finished_at": finished_at.map(|t| t.to_rfc3339()),
         "events": events,
     }))
-    .into_response()
+}
+
+const TERMINAL_TASK_STATUSES: [&str; 5] = ["success", "error", "cancelled", "dead", "stale"];
+
+pub async fn get_task_detail(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(task_id): Path<String>,
+) -> impl IntoResponse {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
+        return forbidden();
+    }
+
+    if task_id.parse::<i64>().is_err() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "task_id must be an integer"})),
+        )
+            .into_response();
+    }
+
+    match load_task_detail_json(&state.pool_ro, &task_id).await {
+        Some(detail) => Json(detail).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Task not found"})),
+        )
+            .into_response(),
+    }
+}
+
+/// GET /api/v1/admin/tasks/{task_id}/stream — SSE stream of task detail
+#[derive(Deserialize, Clone)]
+pub struct StreamTaskDetailQuery {
+    pub interval_ms: Option<i64>,
+}
+
+pub async fn stream_task_detail(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(task_id): Path<String>,
+    Query(params): Query<StreamTaskDetailQuery>,
+) -> Response {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
+        return forbidden();
+    }
+
+    if task_id.parse::<i64>().is_err() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "task_id must be an integer"})),
+        )
+            .into_response();
+    }
+
+    let interval_ms = params.interval_ms.unwrap_or(3000).clamp(1000, 15000) as u64;
+    let state = state.clone();
+    let task_id = task_id.clone();
+
+    let stream = stream! {
+        loop {
+            match load_task_detail_json(&state.pool_ro, &task_id).await {
+                Some(detail) => {
+                    let status = detail["status"].as_str().unwrap_or("").to_string();
+                    if let Ok(event) = Event::default().event("snapshot").json_data(detail) {
+                        yield Ok::<Event, Infallible>(event);
+                    }
+                    if TERMINAL_TASK_STATUSES.contains(&status.as_str()) {
+                        tokio::time::sleep(Duration::from_millis(interval_ms)).await;
+                        if let Some(final_detail) =
+                            load_task_detail_json(&state.pool_ro, &task_id).await
+                        {
+                            if let Ok(event) =
+                                Event::default().event("snapshot").json_data(final_detail)
+                            {
+                                yield Ok::<Event, Infallible>(event);
+                            }
+                        }
+                        break;
+                    }
+                }
+                None => break,
+            }
+            tokio::time::sleep(Duration::from_millis(interval_ms)).await;
+        }
+    };
+
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
 }
 
 /// POST /api/v1/admin/tasks/{task_id}/retry

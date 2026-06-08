@@ -339,11 +339,16 @@ export {
   type InlineRunResponse,
   type JobHistoryEntry,
   type JobHistoryResponse,
+  type SchedulerJobLogsResponse,
   type SchedulerListParams,
+  type SchedulerStreamParams,
+  computeHistoryDurationSeconds,
 } from './scheduler'
 export {
   taskManagementApi,
   type TaskRecord,
+  type TaskDetailRecord,
+  type TaskEvent,
   type TaskListResponse,
   type QueueSummary,
   type TaskOverviewResponse,

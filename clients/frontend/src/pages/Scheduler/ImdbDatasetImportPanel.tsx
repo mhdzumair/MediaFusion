@@ -3,7 +3,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
@@ -39,8 +38,6 @@ export function ImdbDatasetImportPanel() {
   const runImport = useRunImdbDatasetImport()
 
   const [localOverrides, setLocalOverrides] = useState<{
-    enabled?: boolean
-    schedule?: string
     includeAdult?: boolean
     selectedDatasets?: string[]
   }>({})
@@ -51,8 +48,6 @@ export function ImdbDatasetImportPanel() {
   const liveStatus = liveStatusQuery.data
   const isRunning = !!liveStatus?.phase && !['idle', 'complete', 'error'].includes(liveStatus.phase)
 
-  const enabled = localOverrides.enabled ?? config?.enabled ?? false
-  const schedule = localOverrides.schedule ?? config?.schedule ?? '0 4 * * 0'
   const includeAdult = localOverrides.includeAdult ?? config?.include_adult ?? false
   const selectedDatasets = localOverrides.selectedDatasets ?? config?.datasets ?? config?.available_datasets ?? []
 
@@ -78,17 +73,11 @@ export function ImdbDatasetImportPanel() {
 
   const handleSaveConfig = async () => {
     if (selectedDatasets.length === 0) {
-      toast({
-        title: 'Select at least one dataset',
-        variant: 'destructive',
-      })
+      toast({ title: 'Select at least one dataset', variant: 'destructive' })
       return
     }
-
     try {
       await updateConfig.mutateAsync({
-        enabled,
-        schedule,
         datasets: selectedDatasets,
         include_adult: includeAdult,
       })
@@ -105,13 +94,9 @@ export function ImdbDatasetImportPanel() {
 
   const handleRunImport = async () => {
     if (selectedDatasets.length === 0) {
-      toast({
-        title: 'Select at least one dataset',
-        variant: 'destructive',
-      })
+      toast({ title: 'Select at least one dataset', variant: 'destructive' })
       return
     }
-
     try {
       await runImport.mutateAsync({
         datasets: selectedDatasets,
@@ -137,6 +122,7 @@ export function ImdbDatasetImportPanel() {
   return (
     <Card className="glass border-border/50">
       <CardContent className="p-4 space-y-4">
+        {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-emerald-500/10">
@@ -209,6 +195,7 @@ export function ImdbDatasetImportPanel() {
           </div>
         ) : (
           <>
+            {/* Live status bar — only when a run is in progress */}
             {liveStatus && liveStatus.phase !== 'idle' && (
               <div className="rounded-xl border border-border/50 bg-muted/20 p-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div>
@@ -233,31 +220,29 @@ export function ImdbDatasetImportPanel() {
               </div>
             )}
 
+            {/* Note: cron enable/disable and schedule are managed in the Scheduler tab */}
+            <p className="text-xs text-muted-foreground rounded-lg border border-border/40 bg-muted/20 px-3 py-2">
+              Schedule and enable/disable are configured via the{' '}
+              <span className="font-medium text-foreground">Schedules</span> tab (imdb_dataset_import job).
+            </p>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Import settings */}
               <div className="space-y-4 rounded-xl border border-border/50 bg-muted/20 p-4">
-                <p className="text-sm font-medium">Scheduler Settings</p>
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <Label htmlFor="imdb-cron-enabled">Enable weekly cron</Label>
-                    <p className="text-xs text-muted-foreground">Runs automatically on the configured schedule.</p>
-                  </div>
-                  <Switch
-                    id="imdb-cron-enabled"
-                    checked={enabled}
-                    onCheckedChange={(value) => setLocalOverrides((current) => ({ ...current, enabled: value }))}
-                    aria-label="Enable IMDb import cron"
-                  />
+                <p className="text-sm font-medium">Import Settings</p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {(config?.available_datasets ?? []).map((dataset) => (
+                    <label key={dataset} className="flex items-center gap-2 rounded-lg border border-border/40 p-2">
+                      <Checkbox
+                        checked={selectedDatasets.includes(dataset)}
+                        onCheckedChange={(checked) => toggleDataset(dataset, checked === true)}
+                      />
+                      <span className="text-sm capitalize">{dataset}</span>
+                    </label>
+                  ))}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="imdb-cron-schedule">Cron schedule</Label>
-                  <Input
-                    id="imdb-cron-schedule"
-                    value={schedule}
-                    onChange={(event) => setLocalOverrides((current) => ({ ...current, schedule: event.target.value }))}
-                    placeholder="0 4 * * 0"
-                    className="font-mono"
-                  />
-                </div>
+
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <Label htmlFor="imdb-include-adult">Include adult titles</Label>
@@ -270,6 +255,7 @@ export function ImdbDatasetImportPanel() {
                     aria-label="Include adult titles"
                   />
                 </div>
+
                 <Button
                   size="sm"
                   variant="outline"
@@ -286,19 +272,9 @@ export function ImdbDatasetImportPanel() {
                 </Button>
               </div>
 
+              {/* Manual run options */}
               <div className="space-y-4 rounded-xl border border-border/50 bg-muted/20 p-4">
                 <p className="text-sm font-medium">Manual Run Options</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {(config?.available_datasets ?? []).map((dataset) => (
-                    <label key={dataset} className="flex items-center gap-2 rounded-lg border border-border/40 p-2">
-                      <Checkbox
-                        checked={selectedDatasets.includes(dataset)}
-                        onCheckedChange={(checked) => toggleDataset(dataset, checked === true)}
-                      />
-                      <span className="text-sm capitalize">{dataset}</span>
-                    </label>
-                  ))}
-                </div>
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <Label htmlFor="imdb-run-force">Force re-download</Label>
@@ -326,6 +302,7 @@ export function ImdbDatasetImportPanel() {
               </div>
             </div>
 
+            {/* Per-dataset import state */}
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
               {(config?.available_datasets ?? []).map((dataset) => {
                 const row = importStateByDataset.get(dataset)

@@ -12,21 +12,20 @@ import {
   useBulkCancelTasks,
   useBulkRetryTasks,
   useCancelTask,
-  useRedisMetrics,
   useRetryTask,
   useScraperMetrics,
   useScraperSearchRuns,
   useScraperHistory,
   useTaskDetail,
+  useTaskDetailStream,
   useTaskList,
   useTaskOverview,
   useTaskStreamUpdates,
   useToast,
-  useWorkerMemoryMetrics,
 } from '@/hooks'
 import type { TaskRecord } from '@/lib/api'
 import type { ScraperMetricsSummary } from '@/lib/api/metrics'
-import { Ban, Cpu, Database, Loader2, RefreshCw, RotateCcw, Workflow } from 'lucide-react'
+import { Ban, Loader2, RefreshCw, RotateCcw, Workflow } from 'lucide-react'
 import { SchedulerManagementSection } from './components/SchedulerManagementSection'
 import {
   BulkActionConfirmDialog,
@@ -35,7 +34,6 @@ import {
   TaskDetailsDialog,
 } from './components/TaskManagementDialogs'
 import {
-  formatBytes,
   formatDate,
   formatDuration,
   formatDurationMs,
@@ -90,11 +88,11 @@ export function TaskManagementPage() {
   const [mediaSearchMetaId, setMediaSearchMetaId] = useState('')
   const [selectedSearchRun, setSelectedSearchRun] = useState<ScraperMetricsSummary | null>(null)
   const [searchRunDetailsOpen, setSearchRunDetailsOpen] = useState(false)
-  const [memoryStatusFilter, setMemoryStatusFilter] = useState<string>('all')
-  const [memoryActorFilter, setMemoryActorFilter] = useState<string>('all')
   const [taskPage, setTaskPage] = useState(0)
+  const [activeTab, setActiveTab] = useState('tasks')
 
   const { toast } = useToast()
+  const tasksStreamEnabled = liveUpdatesEnabled && activeTab === 'tasks'
   const listParams = useMemo(
     () => ({
       limit: TASKS_PAGE_SIZE,
@@ -106,29 +104,35 @@ export function TaskManagementPage() {
     [queueFilter, search, statusFilter, taskPage],
   )
 
-  const overviewQuery = useTaskOverview(800)
-  const listQuery = useTaskList(listParams)
-  const detailQuery = useTaskDetail(selectedTaskId)
+  const overviewQuery = useTaskOverview(800, { streamEnabled: tasksStreamEnabled })
+  const listQuery = useTaskList(listParams, { streamEnabled: tasksStreamEnabled })
+  const detailStreamEnabled = detailsOpen && liveUpdatesEnabled && activeTab === 'tasks'
+  const detailQuery = useTaskDetail(selectedTaskId, {
+    enabled: !!selectedTaskId,
+    streamEnabled: detailStreamEnabled,
+  })
+  const detailStreamState = useTaskDetailStream(selectedTaskId, detailStreamEnabled)
   const cancelTask = useCancelTask()
   const retryTask = useRetryTask()
   const bulkCancel = useBulkCancelTasks()
   const bulkRetry = useBulkRetryTasks()
   const streamState = useTaskStreamUpdates({
-    enabled: liveUpdatesEnabled,
+    enabled: tasksStreamEnabled,
     sampleSize: 800,
     listParams,
     intervalMs: 3000,
   })
 
-  const scraperQuery = useScraperMetrics()
+  const scraperQuery = useScraperMetrics({ enabled: activeTab === 'scrapers' })
   const scraperHistoryQuery = useScraperHistory(selectedScraperName, 30)
-  const scraperSearchRunsQuery = useScraperSearchRuns({
-    query: mediaSearchQuery.trim() || undefined,
-    meta_id: mediaSearchMetaId.trim() || undefined,
-    limit: 80,
-  })
-  const redisQuery = useRedisMetrics()
-  const workerMemoryQuery = useWorkerMemoryMetrics(100)
+  const scraperSearchRunsQuery = useScraperSearchRuns(
+    {
+      query: mediaSearchQuery.trim() || undefined,
+      meta_id: mediaSearchMetaId.trim() || undefined,
+      limit: 80,
+    },
+    { enabled: activeTab === 'scrapers' },
+  )
 
   const statusOptions = useMemo(() => {
     const keys = Object.keys(overviewQuery.data?.global_status_counts || {})
@@ -154,27 +158,6 @@ export function TaskManagementPage() {
     })
   }, [scraperItems, scraperSearch, scraperHealthFilter])
 
-  const memoryEntries = workerMemoryQuery.data?.entries || []
-  const memoryStatusOptions = useMemo(() => {
-    const statuses = new Set(memoryEntries.map((entry) => entry.status).filter(Boolean))
-    return ['all', ...Array.from(statuses).sort()]
-  }, [memoryEntries])
-  const memoryActorOptions = useMemo(() => {
-    const actors = new Set(memoryEntries.map((entry) => entry.actor_name).filter(Boolean))
-    return ['all', ...Array.from(actors).sort()]
-  }, [memoryEntries])
-  const filteredMemoryEntries = useMemo(() => {
-    return memoryEntries.filter((entry) => {
-      if (memoryStatusFilter !== 'all' && entry.status !== memoryStatusFilter) {
-        return false
-      }
-      if (memoryActorFilter !== 'all' && entry.actor_name !== memoryActorFilter) {
-        return false
-      }
-      return true
-    })
-  }, [memoryEntries, memoryStatusFilter, memoryActorFilter])
-
   useEffect(() => {
     setTaskPage(0)
   }, [statusFilter, queueFilter, search])
@@ -192,15 +175,19 @@ export function TaskManagementPage() {
   }, [taskPage, totalTaskPages, listQuery.data])
 
   const handleRefreshAll = () => {
-    overviewQuery.refetch()
-    listQuery.refetch()
-    scraperQuery.refetch()
-    redisQuery.refetch()
-    workerMemoryQuery.refetch()
-    if (selectedTaskId) {
+    if (!tasksStreamEnabled) {
+      overviewQuery.refetch()
+      listQuery.refetch()
+    }
+    if (activeTab === 'scrapers') {
+      scraperQuery.refetch()
+    }
+    if (selectedTaskId && !detailStreamEnabled) {
       detailQuery.refetch()
     }
   }
+
+  const tasksLoading = tasksStreamEnabled ? !listQuery.data && !streamState.lastEventAt : listQuery.isLoading
 
   const handleOpenTaskDetails = (taskId: string) => {
     setSelectedTaskId(taskId)
@@ -390,12 +377,11 @@ export function TaskManagementPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="tasks" className="space-y-4">
-        <TabsList className="grid grid-cols-4 w-full max-w-3xl">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="grid grid-cols-3 w-full max-w-3xl">
           <TabsTrigger value="tasks">Tasks</TabsTrigger>
           <TabsTrigger value="scrapers">Scrapers</TabsTrigger>
           <TabsTrigger value="schedules">Schedules</TabsTrigger>
-          <TabsTrigger value="resources">Resources</TabsTrigger>
         </TabsList>
 
         <TabsContent value="tasks" className="space-y-4">
@@ -491,7 +477,7 @@ export function TaskManagementPage() {
             ))}
           </div>
 
-          {listQuery.isLoading ? (
+          {tasksLoading ? (
             <Card className="glass border-border/50">
               <CardContent className="p-6 space-y-3">
                 {[...Array(6)].map((_, index) => (
@@ -749,134 +735,6 @@ export function TaskManagementPage() {
         <TabsContent value="schedules" className="space-y-4">
           <SchedulerManagementSection />
         </TabsContent>
-
-        <TabsContent value="resources" className="space-y-4">
-          <div className="grid md:grid-cols-2 gap-4">
-            <Card className="glass border-border/50">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Database className="h-4 w-4 text-primary" />
-                  Redis
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Used Memory</span>
-                  <span>{redisQuery.data?.memory?.used_memory_human || 'N/A'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Ops/sec</span>
-                  <span>{redisQuery.data?.performance?.instantaneous_ops_per_sec || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Connected Clients</span>
-                  <span>{redisQuery.data?.connections?.connected_clients || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Cache Hit Rate</span>
-                  <span>{redisQuery.data?.cache?.hit_rate?.toFixed(1) || '0'}%</span>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="glass border-border/50">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Cpu className="h-4 w-4 text-blue-500" />
-                  Worker Memory
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Events</span>
-                  <span>{workerMemoryQuery.data?.summary?.total_events || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Last RSS</span>
-                  <span>{formatBytes(workerMemoryQuery.data?.summary?.last_rss_bytes)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Peak RSS</span>
-                  <span>{formatBytes(workerMemoryQuery.data?.summary?.peak_rss_bytes)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Error Samples</span>
-                  <span>{workerMemoryQuery.data?.summary?.status_counts?.error || 0}</span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card className="glass border-border/50">
-            <CardHeader>
-              <CardTitle>Worker Memory Events</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid md:grid-cols-2 gap-3">
-                <Select value={memoryStatusFilter} onValueChange={setMemoryStatusFilter}>
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue placeholder="Status filter" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {memoryStatusOptions.map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {status}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={memoryActorFilter} onValueChange={setMemoryActorFilter}>
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue placeholder="Actor filter" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {memoryActorOptions.map((actor) => (
-                      <SelectItem key={actor} value={actor}>
-                        {actor}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {workerMemoryQuery.isLoading ? (
-                <Skeleton className="h-40 rounded-lg" />
-              ) : (
-                <div className="rounded-xl border border-border/50 overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Time</TableHead>
-                        <TableHead>Actor</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>RSS Before</TableHead>
-                        <TableHead>RSS After</TableHead>
-                        <TableHead>Delta</TableHead>
-                        <TableHead>Peak</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredMemoryEntries.slice(0, 50).map((entry, index) => (
-                        <TableRow key={`${entry.message_id}-${index}`}>
-                          <TableCell className="text-xs text-muted-foreground">{formatDate(entry.timestamp)}</TableCell>
-                          <TableCell className="text-xs">{entry.actor_name}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={statusBadgeClass(entry.status)}>
-                              {entry.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-xs">{formatBytes(entry.rss_before_bytes)}</TableCell>
-                          <TableCell className="text-xs">{formatBytes(entry.rss_after_bytes)}</TableCell>
-                          <TableCell className="text-xs">{formatBytes(entry.rss_delta_bytes)}</TableCell>
-                          <TableCell className="text-xs">{formatBytes(entry.peak_rss_bytes)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
 
       <ScraperDetailsDialog
@@ -906,7 +764,7 @@ export function TaskManagementPage() {
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
         selectedTaskId={selectedTaskId}
-        isLoading={detailQuery.isLoading}
+        isLoading={detailStreamEnabled ? !detailQuery.data && !detailStreamState.lastEventAt : detailQuery.isLoading}
         task={detailQuery.data}
       />
     </div>

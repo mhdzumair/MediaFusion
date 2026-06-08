@@ -120,12 +120,13 @@ export function usePublicIndexerSourceHealth(animeOnly: boolean = false) {
 }
 
 // Scraper Metrics Hooks
-export function useScraperMetrics() {
+export function useScraperMetrics(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: [...METRICS_QUERY_KEY, 'scraper-metrics'],
     queryFn: metricsApi.getScraperMetrics,
-    staleTime: 30 * 1000, // 30 seconds
-    refetchInterval: 60 * 1000, // Refetch every minute
+    staleTime: 30 * 1000,
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.enabled === false ? false : 60 * 1000,
   })
 }
 
@@ -147,12 +148,15 @@ export function useScraperHistory(scraperName: string | null, limit: number = 20
   })
 }
 
-export function useScraperSearchRuns(params?: {
-  query?: string
-  meta_id?: string
-  scraper_name?: string
-  limit?: number
-}) {
+export function useScraperSearchRuns(
+  params?: {
+    query?: string
+    meta_id?: string
+    scraper_name?: string
+    limit?: number
+  },
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: [
       ...METRICS_QUERY_KEY,
@@ -164,7 +168,8 @@ export function useScraperSearchRuns(params?: {
     ],
     queryFn: () => metricsApi.getScraperSearchRuns(params),
     staleTime: 15 * 1000,
-    refetchInterval: 30 * 1000,
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.enabled === false ? false : 30 * 1000,
   })
 }
 

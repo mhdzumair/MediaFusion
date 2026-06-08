@@ -14,7 +14,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Activity } from 'lucide-react'
 
-import type { TaskRecord } from '@/lib/api'
+import type { TaskDetailRecord } from '@/lib/api'
 import type { ScraperMetricsData, ScraperHistoryResponse, ScraperMetricsSummary } from '@/lib/api/metrics'
 import {
   formatDate,
@@ -24,15 +24,30 @@ import {
   statusBadgeClass,
 } from '../taskManagementUtils'
 
+function computeDetailDurationMs(task: TaskDetailRecord): number | null {
+  if (!task.started_at || !task.finished_at) {
+    return null
+  }
+  const started = Date.parse(task.started_at)
+  const finished = Date.parse(task.finished_at)
+  if (Number.isNaN(started) || Number.isNaN(finished)) {
+    return null
+  }
+  const ms = finished - started
+  return ms >= 0 ? ms : null
+}
+
 interface TaskDetailsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   selectedTaskId: string | null
   isLoading: boolean
-  task: TaskRecord | undefined
+  task: TaskDetailRecord | undefined
 }
 
 export function TaskDetailsDialog({ open, onOpenChange, selectedTaskId, isLoading, task }: TaskDetailsDialogProps) {
+  const durationMs = task ? computeDetailDurationMs(task) : null
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[760px]">
@@ -67,35 +82,70 @@ export function TaskDetailsDialog({ open, onOpenChange, selectedTaskId, isLoadin
               <div className="rounded-lg bg-muted/40 p-3">
                 <p className="text-xs text-muted-foreground">Status</p>
                 <Badge variant="outline" className={statusBadgeClass(task.status)}>
-                  {task.cancellation_requested && task.status !== 'cancelled'
+                  {task.cancel_requested && task.status !== 'cancelled'
                     ? `${task.status} (cancel requested)`
                     : task.status}
                 </Badge>
               </div>
               <div className="rounded-lg bg-muted/40 p-3">
                 <p className="text-xs text-muted-foreground">Duration</p>
-                <p>{formatDurationMs(task.duration_ms)}</p>
+                <p>{formatDurationMs(durationMs)}</p>
               </div>
             </div>
 
-            {task.error_message && (
+            {(task.error || task.error_message) && (
               <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500">
                 <p className="font-medium mb-1">{task.error_type || 'Error'}</p>
-                <p>{task.error_message}</p>
+                <p>{task.error || task.error_message}</p>
+              </div>
+            )}
+
+            {task.events && task.events.length > 0 && (
+              <div className="rounded-lg border border-border/50 p-3">
+                <p className="text-sm font-medium mb-2">Event Timeline</p>
+                <ScrollArea className="h-40">
+                  <div className="space-y-2">
+                    {task.events.map((event, index) => (
+                      <div
+                        key={`${event.event}-${event.at ?? index}`}
+                        className="flex items-start justify-between gap-3 rounded-lg bg-muted/30 p-2 text-xs"
+                      >
+                        <Badge variant="outline" className={statusBadgeClass(event.event)}>
+                          {event.event}
+                        </Badge>
+                        <div className="text-right">
+                          <p className="text-muted-foreground">{formatDate(event.at)}</p>
+                          {event.detail && <p className="mt-1">{event.detail}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
               </div>
             )}
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <p className="text-xs text-muted-foreground mb-2">Arguments</p>
+                <p className="text-xs text-muted-foreground mb-2">Payload</p>
                 <ScrollArea className="h-40 rounded-lg bg-muted/40 p-3 font-mono text-xs">
-                  <pre>{JSON.stringify(task.args_preview, null, 2)}</pre>
+                  <pre>{JSON.stringify(task.payload ?? task.args_preview ?? {}, null, 2)}</pre>
                 </ScrollArea>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground mb-2">Keyword Arguments</p>
+                <p className="text-xs text-muted-foreground mb-2">Metadata</p>
                 <ScrollArea className="h-40 rounded-lg bg-muted/40 p-3 font-mono text-xs">
-                  <pre>{JSON.stringify(task.kwargs_preview, null, 2)}</pre>
+                  <pre>
+                    {JSON.stringify(
+                      {
+                        attempts: task.attempts,
+                        worker_id: task.worker_id,
+                        cancel_requested: task.cancel_requested,
+                        kwargs_preview: task.kwargs_preview,
+                      },
+                      null,
+                      2,
+                    )}
+                  </pre>
                 </ScrollArea>
               </div>
             </div>

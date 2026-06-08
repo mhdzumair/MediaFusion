@@ -33,6 +33,7 @@ path = "src/bin/telegram_session.rs"
 [dependencies]
 # Async trait support
 async-trait = "0.1"
+async-stream = "0.3"
 
 # Async runtime + HTTP server
 axum = { version = "0.8", features = ["macros", "multipart"] }

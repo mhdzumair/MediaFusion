@@ -58,6 +58,34 @@ static INFO_HASH_RE: Lazy<Regex> =
 
 // ─── GitHub API helpers ───────────────────────────────────────────────────────
 
+/// Parse the X-RateLimit-Reset header and sleep until that epoch second (+ 1s buffer).
+async fn wait_for_rate_limit_reset(resp: &reqwest::Response) {
+    let reset_epoch = resp
+        .headers()
+        .get("x-ratelimit-reset")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<i64>().ok());
+
+    let remaining = resp
+        .headers()
+        .get("x-ratelimit-remaining")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(-1);
+
+    if let Some(reset) = reset_epoch {
+        let now = chrono::Utc::now().timestamp();
+        let wait_secs = (reset - now + 1).max(1).min(120) as u64;
+        warn!(
+            "dmm_hashlist: GitHub rate limit hit (remaining={remaining}, reset in {wait_secs}s) — sleeping"
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(wait_secs)).await;
+    } else {
+        warn!("dmm_hashlist: GitHub rate limit hit but no reset header, sleeping 60s");
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+    }
+}
+
 async fn github_get_json(
     http: &reqwest::Client,
     url: &str,
@@ -74,13 +102,33 @@ async fn github_get_json(
         .timeout(std::time::Duration::from_secs(40))
         .send()
         .await?;
-    if !resp.status().is_success() {
+
+    let status = resp.status();
+    if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+    {
+        wait_for_rate_limit_reset(&resp).await;
         return Err(JobError::other(format!(
-            "GitHub API {} returned HTTP {}",
-            url,
-            resp.status()
+            "GitHub API rate limited on {url} (HTTP {status}) — will retry next run"
         )));
     }
+    if !status.is_success() {
+        return Err(JobError::other(format!(
+            "GitHub API {url} returned HTTP {status}"
+        )));
+    }
+
+    // Warn proactively when remaining budget is low so operators notice before hitting 0.
+    if let Some(remaining) = resp
+        .headers()
+        .get("x-ratelimit-remaining")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<i64>().ok())
+    {
+        if remaining < 10 {
+            warn!("dmm_hashlist: GitHub rate limit almost exhausted (remaining={remaining}). Set DMM_HASHLIST_GITHUB_TOKEN to raise the limit.");
+        }
+    }
+
     let val: serde_json::Value = resp.json().await?;
     Ok(val)
 }
@@ -98,11 +146,18 @@ async fn github_get_text(
         req = req.header("Authorization", format!("Bearer {tok}"));
     }
     let resp = req.send().await?;
-    if !resp.status().is_success() {
+
+    let status = resp.status();
+    if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+    {
+        wait_for_rate_limit_reset(&resp).await;
         return Err(JobError::other(format!(
-            "raw fetch {} returned HTTP {}",
-            url,
-            resp.status()
+            "GitHub raw fetch rate limited on {url} (HTTP {status}) — will retry next run"
+        )));
+    }
+    if !status.is_success() {
+        return Err(JobError::other(format!(
+            "raw fetch {url} returned HTTP {status}"
         )));
     }
     Ok(resp.text().await?)
@@ -840,6 +895,12 @@ async fn run_ingestion(
             }
         };
 
+        // Only persist the backfill position when we actually had a starting SHA.
+        // If next_sha is None here it means latest_commit_sha hasn't been established
+        // yet (first ever run), so we must NOT write __done__ — otherwise backfill
+        // would be considered complete before a single commit was processed.
+        let had_backfill_start = next_sha.is_some();
+
         let mut current_sha = next_sha;
         while let Some(ref sha) = current_sha.clone() {
             if ctx.is_cancelled() {
@@ -875,11 +936,20 @@ async fn run_ingestion(
             }
         }
 
-        let sentinel = current_sha.as_deref().unwrap_or(BACKFILL_DONE);
-        let _ = redis
-            .set::<(), _, _>(BACKFILL_SHA_KEY, sentinel, None, None, false)
-            .await;
+        if had_backfill_start {
+            let sentinel = current_sha.as_deref().unwrap_or(BACKFILL_DONE);
+            let _ = redis
+                .set::<(), _, _>(BACKFILL_SHA_KEY, sentinel, None, None, false)
+                .await;
+        }
     }
+
+    // Refresh the TTL on the processed-file-shas set so it never grows
+    // unbounded: if the set goes untouched for 90 days it will be evicted.
+    const PROCESSED_FILES_TTL_SECS: i64 = 90 * 24 * 3600; // 90 days
+    let _ = redis
+        .expire::<i64, _>(PROCESSED_FILES_KEY, PROCESSED_FILES_TTL_SECS, None)
+        .await;
 
     info!(
         "dmm_hashlist: incremental commits={} files={} streams={} | backfill commits={} files={} streams={}",

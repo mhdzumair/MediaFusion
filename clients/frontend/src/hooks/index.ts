@@ -242,6 +242,8 @@ export {
   useSchedulerStats,
   useSchedulerJob,
   useSchedulerJobHistory,
+  useSchedulerJobLogs,
+  useSchedulerStreamUpdates,
   useDmmHashlistStatus,
   useRunSchedulerJob,
   useRunSchedulerJobInline,
@@ -257,12 +259,14 @@ export {
   useTaskOverview,
   useTaskList,
   useTaskDetail,
+  useTaskDetailStream,
   useCancelTask,
   useRetryTask,
   useBulkCancelTasks,
   useBulkRetryTasks,
   useTaskStreamUpdates,
   taskManagementKeys,
+  type TaskDetailRecord,
 } from './useTaskManagement'
 
 // Admin Database Management hooks

@@ -59,6 +59,7 @@ export function summarizeTopMap(data: Record<string, number> | undefined, top: n
 
 export function statusBadgeClass(status: string): string {
   if (status === 'running') return 'bg-blue-500/10 text-blue-500 border-blue-500/30'
+  if (status === 'stale') return 'bg-amber-500/10 text-amber-500 border-amber-500/30'
   if (status === 'queued' || status === 'scheduled') return 'bg-primary/10 text-primary border-primary/30'
   if (status === 'cancel_requested') return 'bg-orange-500/10 text-orange-500 border-orange-500/30'
   if (status === 'success') return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30'
@@ -76,7 +77,7 @@ export function isTaskCancellable(task: TaskRecord): boolean {
 }
 
 export function isTaskRetryable(task: TaskRecord): boolean {
-  return ['error', 'cancelled', 'skipped', 'enqueue_failed'].includes(task.status)
+  return ['error', 'cancelled', 'skipped', 'enqueue_failed', 'stale'].includes(task.status)
 }
 
 export function getTaskStatusLabel(task: TaskRecord): string {

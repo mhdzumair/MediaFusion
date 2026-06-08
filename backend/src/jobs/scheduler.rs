@@ -195,3 +195,8 @@ fn to_cron_schedule(five_field: &str) -> Result<Schedule, cron::error::Error> {
     let seven_field = format!("0 {} *", five_field);
     Schedule::from_str(&seven_field)
 }
+
+/// Next fire time for a 5-field cron expression, counting from now.
+pub fn next_scheduled_run(five_field: &str) -> Option<chrono::DateTime<Utc>> {
+    to_cron_schedule(five_field).ok()?.upcoming(Utc).next()
+}

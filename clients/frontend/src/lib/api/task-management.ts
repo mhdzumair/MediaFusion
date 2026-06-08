@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import { connectEventStream } from './sse'
 
 export interface TaskRecord {
   task_id: string
@@ -22,6 +23,33 @@ export interface TaskRecord {
   args_preview: unknown[]
   kwargs_preview: Record<string, unknown>
   is_running_now: boolean
+}
+
+export interface TaskEvent {
+  event: string
+  detail: string | null
+  at: string | null
+}
+
+export interface TaskDetailRecord {
+  task_id: string
+  actor_name: string | null
+  queue_name: string | null
+  status: string
+  created_at: string | null
+  started_at: string | null
+  finished_at: string | null
+  payload?: Record<string, unknown>
+  is_running?: boolean
+  attempts?: number | null
+  error?: string | null
+  error_message?: string | null
+  error_type?: string | null
+  worker_id?: string | null
+  cancel_requested?: boolean
+  args_preview?: unknown[]
+  kwargs_preview?: Record<string, unknown>
+  events?: TaskEvent[]
 }
 
 export interface TaskListResponse {
@@ -140,8 +168,8 @@ export const taskManagementApi = {
     return apiClient.get<TaskListResponse>(`/admin/tasks${query}`)
   },
 
-  getTask: async (taskId: string): Promise<TaskRecord> => {
-    return apiClient.get<TaskRecord>(`/admin/tasks/${taskId}`)
+  getTask: async (taskId: string): Promise<TaskDetailRecord> => {
+    return apiClient.get<TaskDetailRecord>(`/admin/tasks/${taskId}`)
   },
 
   cancelTask: async (taskId: string, payload: CancelTaskRequest = {}): Promise<CancelTaskResponse> => {
@@ -166,80 +194,39 @@ export const taskManagementApi = {
     onError: (error: Error) => void,
     signal?: AbortSignal,
   ): Promise<void> => {
-    const query = buildQuery({
-      sample_size: params.sample_size,
-      list_limit: params.list_limit,
-      list_offset: params.list_offset,
-      status: params.status,
-      queue_name: params.queue_name,
-      actor_name: params.actor_name,
-      search: params.search,
-      interval_ms: params.interval_ms,
-    })
-
-    const headers: HeadersInit = {}
-    const token = apiClient.getAccessToken()
-    const apiKey = apiClient.getApiKey()
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
-    if (apiKey) {
-      headers['X-API-Key'] = apiKey
-    }
-
-    const response = await fetch(`/api/v1/admin/tasks/stream${query}`, {
-      method: 'GET',
-      headers,
+    return connectEventStream<TaskStreamSnapshot>(
+      '/admin/tasks/stream',
+      {
+        sample_size: params.sample_size,
+        list_limit: params.list_limit,
+        list_offset: params.list_offset,
+        status: params.status,
+        queue_name: params.queue_name,
+        actor_name: params.actor_name,
+        search: params.search,
+        interval_ms: params.interval_ms,
+      },
+      'snapshot',
+      onSnapshot,
+      onError,
       signal,
-    })
+    )
+  },
 
-    if (!response.ok) {
-      throw new Error(`Task stream failed: HTTP ${response.status}`)
-    }
-    if (!response.body) {
-      throw new Error('Task stream failed: empty response body')
-    }
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) {
-          break
-        }
-        buffer += decoder.decode(value, { stream: true })
-
-        const chunks = buffer.split('\n\n')
-        buffer = chunks.pop() ?? ''
-        for (const chunk of chunks) {
-          const dataLines = chunk
-            .split('\n')
-            .filter((line) => line.startsWith('data:'))
-            .map((line) => line.slice(5).trim())
-
-          if (dataLines.length === 0) {
-            continue
-          }
-
-          const data = dataLines.join('\n')
-          try {
-            const parsed = JSON.parse(data) as TaskStreamSnapshot
-            onSnapshot(parsed)
-          } catch (error) {
-            onError(error instanceof Error ? error : new Error('Failed to parse task stream payload'))
-          }
-        }
-      }
-    } catch (error) {
-      if (signal?.aborted) {
-        return
-      }
-      onError(error instanceof Error ? error : new Error('Task stream connection closed'))
-    } finally {
-      reader.releaseLock()
-    }
+  connectTaskDetailStream: async (
+    taskId: string,
+    onSnapshot: (detail: TaskDetailRecord) => void,
+    onError: (error: Error) => void,
+    signal?: AbortSignal,
+    intervalMs: number = 3000,
+  ): Promise<void> => {
+    return connectEventStream<TaskDetailRecord>(
+      `/admin/tasks/${taskId}/stream`,
+      { interval_ms: intervalMs },
+      'snapshot',
+      onSnapshot,
+      onError,
+      signal,
+    )
   },
 }

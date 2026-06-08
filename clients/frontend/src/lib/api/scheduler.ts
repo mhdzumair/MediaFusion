@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import { connectEventStream } from './sse'
 
 // Types
 export type SchedulerCategory = 'scraper' | 'feed' | 'maintenance' | 'background'
@@ -55,11 +56,13 @@ export interface InlineRunResponse {
 }
 
 export interface JobHistoryEntry {
-  run_at: string
-  duration_seconds: number | null
+  job_id: number
   status: string
-  items_scraped: number | null
+  created_at: string | null
+  started_at: string | null
+  finished_at: string | null
   error: string | null
+  attempts: number
 }
 
 export interface JobHistoryResponse {
@@ -69,15 +72,64 @@ export interface JobHistoryResponse {
   total: number
 }
 
+export interface SchedulerJobEvent {
+  event: string
+  detail: string | null
+  at: string | null
+}
+
+export interface SchedulerJobLogRun {
+  job_id: number
+  status: string
+  created_at: string | null
+  started_at: string | null
+  finished_at: string | null
+  error: string | null
+  attempts: number
+  events: SchedulerJobEvent[]
+}
+
+export interface SchedulerJobLogsResponse {
+  job_id: string
+  display_name: string
+  runs: SchedulerJobLogRun[]
+  total: number
+}
+
+export interface SchedulerStreamSnapshot {
+  timestamp: string
+  list: SchedulerJobsResponse
+  stats: SchedulerStatsResponse
+}
+
 export interface SchedulerListParams {
   category?: SchedulerCategory
   enabled_only?: boolean
+}
+
+export interface SchedulerStreamParams {
+  category?: SchedulerCategory
+  enabled_only?: boolean
+  interval_ms?: number
 }
 
 export interface UpdateSchedulerJobRequest {
   enabled?: boolean
   schedule?: string
   payload?: Record<string, unknown>
+}
+
+export function computeHistoryDurationSeconds(startedAt: string | null, finishedAt: string | null): number | null {
+  if (!startedAt || !finishedAt) {
+    return null
+  }
+  const started = Date.parse(startedAt)
+  const finished = Date.parse(finishedAt)
+  if (Number.isNaN(started) || Number.isNaN(finished)) {
+    return null
+  }
+  const seconds = (finished - started) / 1000
+  return seconds >= 0 ? seconds : null
 }
 
 // API functions
@@ -145,5 +197,32 @@ export const schedulerApi = {
    */
   getHistory: async (jobId: string, limit: number = 20): Promise<JobHistoryResponse> => {
     return apiClient.get<JobHistoryResponse>(`/admin/schedulers/${jobId}/history?limit=${limit}`)
+  },
+
+  /**
+   * Get per-run job event logs (admin only)
+   */
+  getLogs: async (jobId: string, limit: number = 20): Promise<SchedulerJobLogsResponse> => {
+    return apiClient.get<SchedulerJobLogsResponse>(`/admin/schedulers/${jobId}/logs?limit=${limit}`)
+  },
+
+  connectStream: async (
+    params: SchedulerStreamParams,
+    onSnapshot: (snapshot: SchedulerStreamSnapshot) => void,
+    onError: (error: Error) => void,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    return connectEventStream<SchedulerStreamSnapshot>(
+      '/admin/schedulers/stream',
+      {
+        category: params.category,
+        enabled_only: params.enabled_only ? 'true' : undefined,
+        interval_ms: params.interval_ms,
+      },
+      'snapshot',
+      onSnapshot,
+      onError,
+      signal,
+    )
   },
 }

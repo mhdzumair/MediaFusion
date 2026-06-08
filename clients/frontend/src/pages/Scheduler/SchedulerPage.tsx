@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -26,6 +26,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Calendar,
@@ -39,7 +41,6 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  History,
   Server,
   Rss,
   Settings,
@@ -49,17 +50,25 @@ import {
   Power,
   PowerOff,
   FlaskConical,
+  Save,
+  Radio,
 } from 'lucide-react'
 import {
   useSchedulerJobs,
   useSchedulerStats,
+  useSchedulerJob,
   useRunSchedulerJob,
   useRunSchedulerJobInline,
   useSchedulerJobHistory,
+  useSchedulerJobLogs,
+  useSchedulerStreamUpdates,
+  useUpdateSchedulerJob,
   useDmmHashlistStatus,
   useRunDmmHashlistFull,
 } from '@/hooks'
 import { useToast } from '@/hooks/use-toast'
+import { ApiRequestError } from '@/lib/api'
+import { computeHistoryDurationSeconds } from '@/lib/api/scheduler'
 import type { SchedulerCategory, SchedulerJobInfo } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ImdbDatasetImportPanel } from './ImdbDatasetImportPanel'
@@ -119,86 +128,240 @@ function shortSha(sha: string | null | undefined): string {
   return sha.length > 12 ? sha.slice(0, 12) : sha
 }
 
-// Job Detail Dialog
-function JobDetailDialog({
-  job,
-  open,
-  onOpenChange,
-}: {
-  job: SchedulerJobInfo | null
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
-  const { data: history, isLoading: historyLoading } = useSchedulerJobHistory(open && job ? job.id : undefined, 10)
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
 
-  if (!job) return null
+const CRON_PRESETS = [
+  { label: 'Every 5 minutes', value: '*/5 * * * *' },
+  { label: 'Every 15 minutes', value: '*/15 * * * *' },
+  { label: 'Every 30 minutes', value: '*/30 * * * *' },
+  { label: 'Every hour', value: '0 * * * *' },
+  { label: 'Daily at midnight', value: '0 0 * * *' },
+  { label: 'Daily at 3 AM', value: '0 3 * * *' },
+]
+
+function historyStatusClass(status: string): string {
+  if (status === 'success') return 'bg-emerald-500/10'
+  if (status === 'error' || status === 'failed' || status === 'dead') return 'bg-red-500/10'
+  if (status === 'running' || status === 'pending') return 'bg-blue-500/10'
+  return 'bg-muted/50'
+}
+
+// Job Detail Dialog
+function JobDetailForm({
+  job,
+  globalSchedulerDisabled,
+  onClose,
+}: {
+  job: SchedulerJobInfo
+  globalSchedulerDisabled: boolean
+  onClose: () => void
+}) {
+  const { data: history, isLoading: historyLoading } = useSchedulerJobHistory(job.id, 10)
+  const { data: logs, isLoading: logsLoading } = useSchedulerJobLogs(job.id, 10)
+  const updateJob = useUpdateSchedulerJob()
+  const { toast } = useToast()
+  const [scheduleDraft, setScheduleDraft] = useState(job.crontab)
+  const [payloadDraft, setPayloadDraft] = useState(JSON.stringify(job.payload ?? {}, null, 2))
+
+  const handleToggleEnabled = async (enabled: boolean) => {
+    try {
+      const updated = await updateJob.mutateAsync({ jobId: job.id, payload: { enabled } })
+      toast({
+        title: updated.is_enabled ? 'Job Enabled' : 'Job Disabled',
+        description: `${job.display_name} has been ${updated.is_enabled ? 'enabled' : 'disabled'}.`,
+      })
+    } catch (error) {
+      toast({
+        title: 'Update Failed',
+        description: error instanceof Error ? error.message : 'An error occurred',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const handleSaveSchedule = async () => {
+    try {
+      await updateJob.mutateAsync({ jobId: job.id, payload: { schedule: scheduleDraft.trim() } })
+      toast({ title: 'Schedule Updated', description: `${job.display_name} schedule saved.` })
+    } catch (error) {
+      const message =
+        error instanceof ApiRequestError && error.status === 422
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'An error occurred'
+      toast({ title: 'Invalid Schedule', description: message, variant: 'destructive' })
+    }
+  }
+
+  const handleSavePayload = async () => {
+    try {
+      const parsed = JSON.parse(payloadDraft) as Record<string, unknown>
+      await updateJob.mutateAsync({ jobId: job.id, payload: { payload: parsed } })
+      toast({ title: 'Payload Updated', description: `${job.display_name} payload saved.` })
+    } catch (error) {
+      const message =
+        error instanceof SyntaxError
+          ? 'Payload must be valid JSON.'
+          : error instanceof Error
+            ? error.message
+            : 'An error occurred'
+      toast({ title: 'Invalid Payload', description: message, variant: 'destructive' })
+    }
+  }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {getCategoryIcon(job.category)}
-            {job.display_name}
-          </DialogTitle>
-          <DialogDescription>{job.description}</DialogDescription>
-        </DialogHeader>
+    <>
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          {getCategoryIcon(job.category)}
+          {job.display_name}
+        </DialogTitle>
+        <DialogDescription>{job.description}</DialogDescription>
+      </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          {/* Job Details */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Status</label>
-              <div className="flex items-center gap-2">
-                {job.is_running ? (
-                  <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/30">
-                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                    Running
-                  </Badge>
-                ) : job.is_enabled ? (
-                  <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
-                    <Power className="mr-1 h-3 w-3" />
-                    Enabled
-                  </Badge>
-                ) : (
-                  <Badge className="bg-red-500/10 text-red-500 border-red-500/30">
-                    <PowerOff className="mr-1 h-3 w-3" />
-                    Disabled
-                  </Badge>
-                )}
-              </div>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Schedule</label>
-              <p className="font-mono text-sm">{job.crontab}</p>
-              <p className="text-xs text-muted-foreground">{formatCrontab(job.crontab)}</p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Last Run</label>
-              <p className="text-sm">{job.time_since_last_run}</p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Next Run</label>
-              <p className="text-sm">{job.next_run_in || 'N/A'}</p>
+      <div className="space-y-6 py-4">
+        <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/20 p-3">
+          <div>
+            <p className="text-sm font-medium">Enabled</p>
+            <p className="text-xs text-muted-foreground">
+              {globalSchedulerDisabled
+                ? 'Global scheduler is disabled in server configuration.'
+                : 'Toggle whether this job runs on its schedule.'}
+            </p>
+          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Switch
+                  checked={job.is_enabled}
+                  disabled={globalSchedulerDisabled || updateJob.isPending}
+                  onCheckedChange={handleToggleEnabled}
+                  aria-label={`Toggle ${job.display_name}`}
+                />
+              </span>
+            </TooltipTrigger>
+            {globalSchedulerDisabled && (
+              <TooltipContent>
+                <p>Enable the global scheduler in server configuration first.</p>
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Scheduled</label>
+            <div className="flex items-center gap-2">
+              {job.is_enabled ? (
+                <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
+                  <Power className="mr-1 h-3 w-3" />
+                  Enabled
+                </Badge>
+              ) : (
+                <Badge className="bg-red-500/10 text-red-500 border-red-500/30">
+                  <PowerOff className="mr-1 h-3 w-3" />
+                  Disabled
+                </Badge>
+              )}
             </div>
           </div>
-
-          {/* Last Run State */}
-          {job.last_run_state && (
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Last Run Stats</label>
-              <ScrollArea className="h-32 rounded-lg bg-muted/50 p-3 font-mono text-xs">
-                <pre>{JSON.stringify(job.last_run_state, null, 2)}</pre>
-              </ScrollArea>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Running</label>
+            <div className="flex items-center gap-2">
+              {job.is_running ? (
+                <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/30">
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  Running
+                </Badge>
+              ) : (
+                <span className="text-sm text-muted-foreground">—</span>
+              )}
             </div>
-          )}
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Last Run</label>
+            <p className="text-sm">{job.time_since_last_run}</p>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Next Run</label>
+            <p className="text-sm">{job.is_enabled ? job.next_run_in || '—' : '—'}</p>
+          </div>
+        </div>
 
-          {/* History */}
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-muted-foreground">Edit Schedule</label>
+          <Input
+            value={scheduleDraft}
+            onChange={(event) => setScheduleDraft(event.target.value)}
+            className="font-mono text-sm"
+            placeholder="*/15 * * * *"
+          />
+          <p className="text-xs text-muted-foreground">{formatCrontab(scheduleDraft)}</p>
+          <div className="flex flex-wrap gap-2">
+            {CRON_PRESETS.map((preset) => (
+              <Button
+                key={preset.value}
+                type="button"
+                size="sm"
+                variant="outline"
+                className="rounded-lg text-xs"
+                onClick={() => setScheduleDraft(preset.value)}
+              >
+                {preset.label}
+              </Button>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            onClick={handleSaveSchedule}
+            disabled={updateJob.isPending || scheduleDraft.trim() === job.crontab}
+          >
+            {updateJob.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            Save Schedule
+          </Button>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-muted-foreground">Edit Payload (JSON)</label>
+          <Textarea
+            value={payloadDraft}
+            onChange={(event) => setPayloadDraft(event.target.value)}
+            className="font-mono text-xs min-h-[120px]"
+          />
+          <Button size="sm" onClick={handleSavePayload} disabled={updateJob.isPending}>
+            {updateJob.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            Save Payload
+          </Button>
+        </div>
+
+        {job.last_run_state && (
           <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-              <History className="h-4 w-4" />
-              Recent History
-            </label>
+            <label className="text-xs font-medium text-muted-foreground">Last Run Stats</label>
+            <ScrollArea className="h-32 rounded-lg bg-muted/50 p-3 font-mono text-xs">
+              <pre>{JSON.stringify(job.last_run_state, null, 2)}</pre>
+            </ScrollArea>
+          </div>
+        )}
+
+        <Tabs defaultValue="history">
+          <TabsList>
+            <TabsTrigger value="history">History</TabsTrigger>
+            <TabsTrigger value="logs">Logs</TabsTrigger>
+          </TabsList>
+          <TabsContent value="history" className="space-y-2 mt-3">
             {historyLoading ? (
               <div className="space-y-2">
                 {[...Array(3)].map((_, i) => (
@@ -208,45 +371,113 @@ function JobDetailDialog({
             ) : history?.entries.length === 0 ? (
               <p className="text-sm text-muted-foreground">No execution history available</p>
             ) : (
-              <ScrollArea className="h-40">
+              <ScrollArea className="h-48">
                 <div className="space-y-1">
-                  {history?.entries.map((entry, i) => (
-                    <div
-                      key={i}
-                      className={cn(
-                        'flex items-center justify-between p-2 rounded text-xs',
-                        entry.status === 'success'
-                          ? 'bg-emerald-500/10'
-                          : entry.status === 'failed'
-                            ? 'bg-red-500/10'
-                            : 'bg-muted/50',
-                      )}
-                    >
-                      <span className="text-muted-foreground">{entry.run_at}</span>
-                      <div className="flex items-center gap-2">
-                        {entry.items_scraped !== null && <span>{entry.items_scraped} items</span>}
-                        {entry.duration_seconds !== null && <span>{entry.duration_seconds.toFixed(1)}s</span>}
-                        {entry.status === 'success' ? (
-                          <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                        ) : entry.status === 'failed' ? (
-                          <XCircle className="h-3 w-3 text-red-500" />
-                        ) : (
-                          <Clock className="h-3 w-3" />
+                  {history?.entries.map((entry) => {
+                    const duration = computeHistoryDurationSeconds(entry.started_at, entry.finished_at)
+                    return (
+                      <div
+                        key={entry.job_id}
+                        className={cn(
+                          'flex items-center justify-between p-2 rounded text-xs',
+                          historyStatusClass(entry.status),
                         )}
+                      >
+                        <div className="space-y-0.5">
+                          <span className="text-muted-foreground">{formatDateTime(entry.created_at)}</span>
+                          {entry.error && <p className="text-red-500 line-clamp-1">{entry.error}</p>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {typeof entry.attempts === 'number' && <span>attempt {entry.attempts}</span>}
+                          {typeof duration === 'number' && <span>{duration.toFixed(1)}s</span>}
+                          {entry.status === 'success' ? (
+                            <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                          ) : entry.status === 'error' || entry.status === 'failed' || entry.status === 'dead' ? (
+                            <XCircle className="h-3 w-3 text-red-500" />
+                          ) : (
+                            <Clock className="h-3 w-3" />
+                          )}
+                        </div>
                       </div>
+                    )
+                  })}
+                </div>
+              </ScrollArea>
+            )}
+          </TabsContent>
+          <TabsContent value="logs" className="space-y-2 mt-3">
+            {logsLoading ? (
+              <div className="space-y-2">
+                {[...Array(3)].map((_, i) => (
+                  <Skeleton key={i} className="h-12 rounded" />
+                ))}
+              </div>
+            ) : logs?.runs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No run logs available</p>
+            ) : (
+              <ScrollArea className="h-48">
+                <div className="space-y-2">
+                  {logs?.runs.map((run) => (
+                    <div key={run.job_id} className={cn('rounded-lg p-2 text-xs', historyStatusClass(run.status))}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium">Run #{run.job_id}</span>
+                        <span className="text-muted-foreground">{formatDateTime(run.created_at)}</span>
+                      </div>
+                      {run.events.length === 0 ? (
+                        <p className="text-muted-foreground">No events recorded</p>
+                      ) : (
+                        <div className="space-y-1 pl-2 border-l border-border/50">
+                          {run.events.map((event, index) => (
+                            <div key={`${run.job_id}-${index}`} className="flex justify-between gap-2">
+                              <span>{event.event}</span>
+                              <span className="text-muted-foreground shrink-0">
+                                {formatDateTime(event.at)}
+                                {event.detail ? ` · ${event.detail}` : ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
               </ScrollArea>
             )}
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
+      </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
-          </Button>
-        </DialogFooter>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          Close
+        </Button>
+      </DialogFooter>
+    </>
+  )
+}
+
+function JobDetailDialog({
+  job,
+  open,
+  onOpenChange,
+  globalSchedulerDisabled,
+}: {
+  job: SchedulerJobInfo | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  globalSchedulerDisabled: boolean
+}) {
+  if (!job) return null
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[700px]">
+        <JobDetailForm
+          key={job.id}
+          job={job}
+          globalSchedulerDisabled={globalSchedulerDisabled}
+          onClose={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
   )
@@ -260,6 +491,7 @@ function JobRow({
   onViewDetails,
   isRunning,
   isRunningInline,
+  globalSchedulerDisabled,
 }: {
   job: SchedulerJobInfo
   onRun: () => void
@@ -267,9 +499,44 @@ function JobRow({
   onViewDetails: () => void
   isRunning: boolean
   isRunningInline: boolean
+  globalSchedulerDisabled: boolean
 }) {
+  const updateJob = useUpdateSchedulerJob()
+  const { toast } = useToast()
+
+  const handleToggleEnabled = async (enabled: boolean) => {
+    try {
+      await updateJob.mutateAsync({ jobId: job.id, payload: { enabled } })
+    } catch (error) {
+      toast({
+        title: 'Update Failed',
+        description: error instanceof Error ? error.message : 'An error occurred',
+        variant: 'destructive',
+      })
+    }
+  }
+
   return (
     <TableRow className="hover:bg-muted/20">
+      <TableCell>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>
+              <Switch
+                checked={job.is_enabled}
+                disabled={globalSchedulerDisabled || updateJob.isPending || job.is_running}
+                onCheckedChange={handleToggleEnabled}
+                aria-label={`Toggle ${job.display_name}`}
+              />
+            </span>
+          </TooltipTrigger>
+          {globalSchedulerDisabled && (
+            <TooltipContent>
+              <p>Global scheduler is disabled in server configuration.</p>
+            </TooltipContent>
+          )}
+        </Tooltip>
+      </TableCell>
       <TableCell>
         <div className="flex items-center gap-3">
           <div className={cn('p-2 rounded-lg', getCategoryColor(job.category).split(' ')[0])}>
@@ -297,15 +564,20 @@ function JobRow({
         </Tooltip>
       </TableCell>
       <TableCell>
+        {job.is_enabled ? (
+          <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30">Enabled</Badge>
+        ) : (
+          <Badge className="bg-red-500/10 text-red-500 border-red-500/30">Disabled</Badge>
+        )}
+      </TableCell>
+      <TableCell>
         {job.is_running ? (
           <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/30">
             <Loader2 className="mr-1 h-3 w-3 animate-spin" />
             Running
           </Badge>
-        ) : job.is_enabled ? (
-          <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30">Active</Badge>
         ) : (
-          <Badge className="bg-red-500/10 text-red-500 border-red-500/30">Disabled</Badge>
+          <span className="text-sm text-muted-foreground">—</span>
         )}
       </TableCell>
       <TableCell className="text-sm text-muted-foreground">{job.time_since_last_run}</TableCell>
@@ -369,21 +641,36 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
   const [forceRun, setForceRun] = useState(false)
   const [confirmDmmFullRunOpen, setConfirmDmmFullRunOpen] = useState(false)
   const [resetDmmCheckpoints, setResetDmmCheckpoints] = useState(false)
+  const [liveUpdatesEnabled, setLiveUpdatesEnabled] = useState(true)
 
-  const {
-    data: jobsData,
-    isLoading,
-    refetch,
-  } = useSchedulerJobs({
-    category: categoryFilter === 'all' ? undefined : categoryFilter,
+  const listParams = useMemo(
+    () => ({
+      category: categoryFilter === 'all' ? undefined : categoryFilter,
+    }),
+    [categoryFilter],
+  )
+
+  const streamEnabled = liveUpdatesEnabled
+
+  const { data: jobsData, isLoading: jobsQueryLoading, refetch } = useSchedulerJobs(listParams, { streamEnabled })
+  const { data: stats, refetch: refetchStats } = useSchedulerStats({ streamEnabled })
+  const streamState = useSchedulerStreamUpdates({
+    enabled: streamEnabled,
+    listParams,
+    intervalMs: 3000,
   })
-  const { data: stats } = useSchedulerStats()
+  const selectedJobLive = useMemo(() => {
+    if (!selectedJob) return null
+    return jobsData?.jobs.find((job) => job.id === selectedJob.id) ?? selectedJob
+  }, [jobsData?.jobs, selectedJob])
+  const isLoading = streamEnabled ? !jobsData && !streamState.lastEventAt : jobsQueryLoading
   const {
     data: dmmStatus,
     isLoading: dmmStatusLoading,
     isError: dmmStatusError,
     refetch: refetchDmmStatus,
   } = useDmmHashlistStatus()
+  const { data: dmmSchedulerJob } = useSchedulerJob('dmm_hashlist_scraper')
   const runJob = useRunSchedulerJob()
   const runJobInline = useRunSchedulerJobInline()
   const runDmmHashlistFull = useRunDmmHashlistFull()
@@ -487,7 +774,10 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
           </div>
           <Button
             onClick={() => {
-              refetch()
+              if (!streamEnabled) {
+                refetch()
+                refetchStats()
+              }
               refetchDmmStatus()
             }}
             variant="outline"
@@ -501,22 +791,66 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
 
       {embedded && (
         <div className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/20 p-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <Calendar className="h-4 w-4 text-primary" />
             <p className="text-sm font-medium">Scheduler Management</p>
+            <Badge
+              variant="outline"
+              className={
+                streamState.isConnected
+                  ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30'
+                  : 'bg-muted text-muted-foreground'
+              }
+            >
+              <Radio className="mr-1 h-3 w-3" />
+              {streamState.isConnected ? 'Live' : 'Offline'}
+            </Badge>
           </div>
-          <Button
-            onClick={() => {
-              refetch()
-              refetchDmmStatus()
-            }}
+          <div className="flex items-center gap-2">
+            <Switch checked={liveUpdatesEnabled} onCheckedChange={setLiveUpdatesEnabled} aria-label="Live updates" />
+            <Button
+              onClick={() => {
+                if (!streamEnabled) {
+                  refetch()
+                  refetchStats()
+                }
+                refetchDmmStatus()
+              }}
+              variant="outline"
+              size="sm"
+              className="rounded-lg"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!embedded && (
+        <div className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/20 p-3">
+          <div className="flex items-center gap-2">
+            <Switch checked={liveUpdatesEnabled} onCheckedChange={setLiveUpdatesEnabled} aria-label="Live updates" />
+            <div>
+              <p className="text-sm font-medium">Live stream updates</p>
+              <p className="text-xs text-muted-foreground">
+                {streamState.lastEventAt
+                  ? `last update: ${new Date(streamState.lastEventAt).toLocaleString()}`
+                  : 'waiting for stream'}
+              </p>
+            </div>
+          </div>
+          <Badge
             variant="outline"
-            size="sm"
-            className="rounded-lg"
+            className={
+              streamState.isConnected
+                ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30'
+                : 'bg-muted text-muted-foreground'
+            }
           >
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
+            <Radio className="mr-1 h-3 w-3" />
+            {streamState.isConnected ? 'Live' : 'Offline'}
+          </Badge>
         </div>
       )}
 
@@ -632,12 +966,12 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
               </Badge>
               <Badge
                 className={
-                  dmmStatus?.scheduler_disabled
+                  dmmSchedulerJob?.is_enabled === false
                     ? 'bg-primary/10 text-primary border-primary/30'
                     : 'bg-blue-500/10 text-blue-500 border-blue-500/30'
                 }
               >
-                {dmmStatus?.scheduler_disabled ? 'Scheduler Off' : 'Scheduler On'}
+                {dmmSchedulerJob?.is_enabled === false ? 'Scheduler Off' : 'Scheduler On'}
               </Badge>
             </div>
           </div>
@@ -735,10 +1069,12 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30">
+                <TableHead className="w-[70px]">On</TableHead>
                 <TableHead>Job</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Schedule</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Scheduled</TableHead>
+                <TableHead>Running</TableHead>
                 <TableHead>Last Run</TableHead>
                 <TableHead>Next Run</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -749,6 +1085,7 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
                 <JobRow
                   key={job.id}
                   job={job}
+                  globalSchedulerDisabled={stats?.global_scheduler_disabled ?? false}
                   onRun={() => {
                     setForceRun(false)
                     setConfirmRun({ job, mode: 'queue' })
@@ -765,7 +1102,12 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
       )}
 
       {/* Job Detail Dialog */}
-      <JobDetailDialog job={selectedJob} open={detailsOpen} onOpenChange={setDetailsOpen} />
+      <JobDetailDialog
+        job={selectedJobLive}
+        open={detailsOpen}
+        onOpenChange={setDetailsOpen}
+        globalSchedulerDisabled={stats?.global_scheduler_disabled ?? false}
+      />
 
       {/* Confirm Run Dialog */}
       <AlertDialog
