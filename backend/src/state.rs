@@ -162,6 +162,31 @@ impl AppState {
     }
 }
 
+/// Run `recompute_all_keyword_blocked()` without a statement timeout.
+///
+/// The function does a full `UPDATE media SET ...` which can take minutes on large tables.
+/// We use `SET LOCAL statement_timeout = 0` inside a transaction so the override is
+/// automatically reverted when the connection returns to the pool — no leakage.
+pub async fn recompute_keyword_blocked(pool: &PgPool) {
+    let result: Result<_, sqlx::Error> = async {
+        let mut tx = pool.begin().await?;
+        sqlx::query("SET LOCAL statement_timeout = 0")
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("SELECT recompute_all_keyword_blocked()")
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await
+    }
+    .await;
+
+    if let Err(e) = result {
+        tracing::error!("recompute_all_keyword_blocked failed: {e}");
+    } else {
+        tracing::info!("keyword filter: is_keyword_blocked recomputed for all media");
+    }
+}
+
 pub async fn load_keyword_filter_cache(pool: &PgPool) -> KeywordFilterCache {
     let keywords: Vec<String> = sqlx::query_scalar(
         "SELECT LOWER(keyword) FROM keyword_filters WHERE is_active = true ORDER BY keyword",
@@ -311,13 +336,7 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
         return;
     }
 
-    // Recompute the precomputed is_keyword_blocked flag for all media rows.
-    if let Err(e) = sqlx::query("SELECT recompute_all_keyword_blocked()")
-        .execute(pool)
-        .await
-    {
-        tracing::error!("keyword sync: recompute_all_keyword_blocked failed: {e}");
-    }
+    recompute_keyword_blocked(pool).await;
 
     tracing::info!(
         "keyword sync: done — {} keywords, {} whitelist phrases (hash {hash})",

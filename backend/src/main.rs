@@ -10,7 +10,7 @@ use std::sync::Arc;
 use mediafusion_api::{
     config::AppConfig,
     exception_tracker, routes,
-    state::{load_keyword_filter_cache, sync_keywords_from_file, AppState},
+    state::{load_keyword_filter_cache, recompute_keyword_blocked, sync_keywords_from_file, AppState},
 };
 use tracing::info;
 
@@ -86,16 +86,7 @@ async fn main() {
     // Runs non-blocking so it doesn't delay server startup.
     {
         let pool = state.pool.clone();
-        tokio::spawn(async move {
-            if let Err(e) = sqlx::query("SELECT recompute_all_keyword_blocked()")
-                .execute(&pool)
-                .await
-            {
-                tracing::error!("startup: recompute_all_keyword_blocked failed: {e}");
-            } else {
-                tracing::info!("startup: is_keyword_blocked column recomputed");
-            }
-        });
+        tokio::spawn(async move { recompute_keyword_blocked(&pool).await });
     }
 
     // Start the exception tracker background worker now that Redis is ready

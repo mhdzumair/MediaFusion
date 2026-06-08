@@ -44,7 +44,7 @@ use mediafusion_api::{
         metrics::JobMetrics,
         JobRegistry,
     },
-    state::{load_keyword_filter_cache, sync_keywords_from_file, AppState},
+    state::{load_keyword_filter_cache, recompute_keyword_blocked, sync_keywords_from_file, AppState},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -157,16 +157,7 @@ async fn main() {
     // Recompute is_keyword_blocked for all existing media rows in the background.
     {
         let pool = state.pool.clone();
-        tokio::spawn(async move {
-            if let Err(e) = sqlx::query("SELECT recompute_all_keyword_blocked()")
-                .execute(&pool)
-                .await
-            {
-                tracing::error!("startup: recompute_all_keyword_blocked failed: {e}");
-            } else {
-                tracing::info!("startup: is_keyword_blocked column recomputed");
-            }
-        });
+        tokio::spawn(async move { recompute_keyword_blocked(&pool).await });
     }
 
     mediafusion_api::bot::register_notification_handlers(Arc::clone(&state));
