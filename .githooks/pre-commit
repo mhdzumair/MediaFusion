@@ -19,6 +19,8 @@ STAGED_RUST_FILES=$(echo "$STAGED_FILES" | grep '^backend/.*\.rs$' || true)
 STAGED_PY_FILES=$(echo "$STAGED_FILES" | grep '\.py$' | grep -v '^python-deprecated/' || true)
 STAGED_FRONTEND_FILES=$(echo "$STAGED_FILES" | grep '^clients/frontend/' || true)
 
+make fmt
+
 # --- Rust checks (only on staged .rs files) ---
 # Uses SQLX_OFFLINE=true so no live database is required locally.
 # The CI rust-build job runs `cargo sqlx prepare --check` against a real DB
