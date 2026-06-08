@@ -74,6 +74,21 @@ pub async fn response_json(
                 "invalid_token.mp4",
             );
         }
+        // Other 4xx client errors (e.g. 405 Method Not Allowed) with non-JSON bodies
+        // are known API-level failures, not parse bugs — log at debug and let the
+        // caller surface it as a service error rather than double-WARNing.
+        if status.is_client_error() {
+            let preview = if text.len() > 200 {
+                &text[..200]
+            } else {
+                &text
+            };
+            tracing::debug!("{context}: non-JSON client error (HTTP {status}) — body: {preview}");
+            return ProviderError::api(
+                format!("HTTP {status}"),
+                "debrid_service_down_error.mp4",
+            );
+        }
         // Log up to 500 chars so HTML error pages are visible without flooding logs.
         let preview = if text.len() > 500 {
             &text[..500]

@@ -124,9 +124,21 @@ async fn handle_response(resp: reqwest::Response) -> Result<Value, ProviderError
     if !status.is_success() {
         let msg = body["error_description"]
             .as_str()
-            .or_else(|| body["error"].as_str())
-            .unwrap_or("Seedr API error");
-        return Err(ProviderError::api(msg.to_string(), "api_error.mp4"));
+            .or_else(|| body["error"].as_str());
+        if let Some(msg) = msg {
+            return Err(ProviderError::api(msg.to_string(), "api_error.mp4"));
+        }
+        // No recognisable error fields — use HTTP status for context and treat as
+        // a service-level failure so the user sees the right error video.
+        let video = if status.is_client_error() {
+            "invalid_token.mp4"
+        } else {
+            "debrid_service_down_error.mp4"
+        };
+        return Err(ProviderError::api(
+            format!("Seedr error (HTTP {status})"),
+            video,
+        ));
     }
     Ok(body)
 }

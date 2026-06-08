@@ -109,8 +109,19 @@ pub async fn nzb_proxy_handler(
             .body(Body::from(bytes))
             .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
         Err(e) => {
-            warn!("nzb_proxy {nzb_guid}: {e}");
-            StatusCode::BAD_GATEWAY.into_response()
+            if e.is_unexpected() {
+                warn!("nzb_proxy {nzb_guid}: {e}");
+            } else {
+                tracing::debug!("nzb_proxy {nzb_guid}: {e}");
+            }
+            // Map to a proxy-appropriate status so providers can distinguish
+            // auth failures (403) from missing NZBs (404) vs. server errors (502).
+            let status = match e.video_file() {
+                "invalid_token.mp4" => StatusCode::FORBIDDEN,
+                "stream_not_found.mp4" => StatusCode::NOT_FOUND,
+                _ => StatusCode::BAD_GATEWAY,
+            };
+            status.into_response()
         }
     }
 }

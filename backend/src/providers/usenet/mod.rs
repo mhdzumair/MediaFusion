@@ -36,9 +36,20 @@ pub async fn fetch_nzb_bytes(
         .to_string();
     tracing::debug!("fetch_nzb_bytes: status={status} content-type={content_type}");
     if !status.is_success() {
+        let video = if status == reqwest::StatusCode::UNAUTHORIZED
+            || status == reqwest::StatusCode::FORBIDDEN
+        {
+            "invalid_token.mp4"
+        } else if status == reqwest::StatusCode::NOT_FOUND {
+            "stream_not_found.mp4"
+        } else if status.is_server_error() {
+            "debrid_service_down_error.mp4"
+        } else {
+            "usenet_transfer_error.mp4"
+        };
         return Err(crate::providers::ProviderError::api(
             format!("failed to fetch NZB file (HTTP {status}) from indexer"),
-            "usenet_transfer_error.mp4",
+            video,
         ));
     }
     let bytes = resp
