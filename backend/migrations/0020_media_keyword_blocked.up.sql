@@ -50,5 +50,5 @@ CREATE TRIGGER trg_media_title_keyword_check
     BEFORE INSERT OR UPDATE OF title ON media
     FOR EACH ROW EXECUTE FUNCTION check_media_keyword_blocked();
 
--- Initial backfill
-SELECT recompute_all_keyword_blocked();
+-- No inline backfill here — recompute_all_keyword_blocked() is called from Rust
+-- in a background task after startup so it does not block migrations or the server.

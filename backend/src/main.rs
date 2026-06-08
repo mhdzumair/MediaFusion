@@ -82,6 +82,22 @@ async fn main() {
     sync_keywords_from_file(&state.pool).await;
     *state.keyword_filters.write().unwrap() = load_keyword_filter_cache(&state.pool).await;
 
+    // Recompute is_keyword_blocked for all existing media rows in the background.
+    // Runs non-blocking so it doesn't delay server startup.
+    {
+        let pool = state.pool.clone();
+        tokio::spawn(async move {
+            if let Err(e) = sqlx::query("SELECT recompute_all_keyword_blocked()")
+                .execute(&pool)
+                .await
+            {
+                tracing::error!("startup: recompute_all_keyword_blocked failed: {e}");
+            } else {
+                tracing::info!("startup: is_keyword_blocked column recomputed");
+            }
+        });
+    }
+
     // Start the exception tracker background worker now that Redis is ready
     if let Some((rx, ttl, max_entries)) = exc_rx {
         tokio::spawn(exception_tracker::run_worker(

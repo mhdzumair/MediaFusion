@@ -154,6 +154,21 @@ async fn main() {
     sync_keywords_from_file(&state.pool).await;
     *state.keyword_filters.write().unwrap() = load_keyword_filter_cache(&state.pool).await;
 
+    // Recompute is_keyword_blocked for all existing media rows in the background.
+    {
+        let pool = state.pool.clone();
+        tokio::spawn(async move {
+            if let Err(e) = sqlx::query("SELECT recompute_all_keyword_blocked()")
+                .execute(&pool)
+                .await
+            {
+                tracing::error!("startup: recompute_all_keyword_blocked failed: {e}");
+            } else {
+                tracing::info!("startup: is_keyword_blocked column recomputed");
+            }
+        });
+    }
+
     mediafusion_api::bot::register_notification_handlers(Arc::clone(&state));
     mediafusion_api::util::trackers::init_best_trackers(&state).await;
 
