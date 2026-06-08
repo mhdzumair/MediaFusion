@@ -25,7 +25,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
-use crate::{db::MediaId, state::AppState};
+use crate::{db::MediaId, state::{AppState, KeywordFilterCache}};
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -220,6 +220,24 @@ async fn paginated_response(
     })
 }
 
+/// Remove items whose title matches the global keyword blocklist.
+/// Checks `title` first (TMDB/MDBList convention), falls back to `name` (TVDB convention).
+fn filter_items_by_keyword(kf: &KeywordFilterCache, items: Vec<Value>) -> Vec<Value> {
+    if kf.keywords.is_empty() {
+        return items;
+    }
+    items
+        .into_iter()
+        .filter(|item| {
+            let title = item["title"]
+                .as_str()
+                .or_else(|| item["name"].as_str())
+                .unwrap_or("");
+            !kf.matches_blocked_keyword(title)
+        })
+        .collect()
+}
+
 // ─── Query param structs ──────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -401,10 +419,12 @@ pub async fn discover_trending(
         }
     };
 
-    let items = data["results"]
+    let kf = { state.keyword_filters.read().unwrap().clone() };
+    let items: Vec<Value> = data["results"]
         .as_array()
         .map(|arr| arr.iter().map(normalize_tmdb_item).collect())
         .unwrap_or_default();
+    let items = filter_items_by_keyword(&kf, items);
     let page = data["page"].as_u64().unwrap_or(params.page);
     let total_pages = data["total_pages"].as_u64().unwrap_or(1);
     let total_results = data["total_results"].as_u64().unwrap_or(0);
@@ -486,7 +506,8 @@ pub async fn discover_list(
 
     // Inject media_type for normalization since list endpoints don't include it in items
     let mt = media_type.as_str();
-    let items = data["results"]
+    let kf = { state.keyword_filters.read().unwrap().clone() };
+    let items: Vec<Value> = data["results"]
         .as_array()
         .map(|arr| {
             arr.iter()
@@ -500,6 +521,7 @@ pub async fn discover_list(
                 .collect()
         })
         .unwrap_or_default();
+    let items = filter_items_by_keyword(&kf, items);
     let page = data["page"].as_u64().unwrap_or(params.page);
     let total_pages = data["total_pages"].as_u64().unwrap_or(1);
     let total_results = data["total_results"].as_u64().unwrap_or(0);
@@ -658,7 +680,8 @@ pub async fn discover_provider_feed(
     };
 
     let mt = media_type.as_str();
-    let items = data["results"]
+    let kf = { state.keyword_filters.read().unwrap().clone() };
+    let items: Vec<Value> = data["results"]
         .as_array()
         .map(|arr| {
             arr.iter()
@@ -672,6 +695,7 @@ pub async fn discover_provider_feed(
                 .collect()
         })
         .unwrap_or_default();
+    let items = filter_items_by_keyword(&kf, items);
     let page = data["page"].as_u64().unwrap_or(params.page);
     let total_pages = data["total_pages"].as_u64().unwrap_or(1);
     let total_results = data["total_results"].as_u64().unwrap_or(0);
@@ -743,6 +767,7 @@ pub async fn discover_anime(
     let empty = vec![];
     let media_list = data["data"]["Page"]["media"].as_array().unwrap_or(&empty);
 
+    let kf = { state.keyword_filters.read().unwrap().clone() };
     let items: Vec<Value> = media_list
         .iter()
         .map(|item| {
@@ -765,6 +790,7 @@ pub async fn discover_anime(
             })
         })
         .collect();
+    let items = filter_items_by_keyword(&kf, items);
 
     let total = items.len() as u64;
     Json(json!({
@@ -865,7 +891,8 @@ pub async fn discover_search(
     };
 
     let mt = params.media_type.as_str();
-    let items = data["results"]
+    let kf = { state.keyword_filters.read().unwrap().clone() };
+    let items: Vec<Value> = data["results"]
         .as_array()
         .map(|arr| {
             arr.iter()
@@ -880,6 +907,7 @@ pub async fn discover_search(
                 .collect()
         })
         .unwrap_or_default();
+    let items = filter_items_by_keyword(&kf, items);
     let page = data["page"].as_u64().unwrap_or(params.page);
     let total_pages = data["total_pages"].as_u64().unwrap_or(1);
     let total_results = data["total_results"].as_u64().unwrap_or(0);
@@ -989,10 +1017,12 @@ pub async fn discover_tvdb_filter(
         }
     };
 
-    let items = data["data"]
+    let kf = { state.keyword_filters.read().unwrap().clone() };
+    let items: Vec<Value> = data["data"]
         .as_array()
         .map(|arr| arr.to_vec())
         .unwrap_or_default();
+    let items = filter_items_by_keyword(&kf, items);
     let total = items.len() as u64;
 
     Json(json!({
@@ -1100,12 +1130,14 @@ pub async fn discover_mdblist(
         }
     };
 
-    let items = data["movies"]
+    let kf = { state.keyword_filters.read().unwrap().clone() };
+    let items: Vec<Value> = data["movies"]
         .as_array()
         .or_else(|| data["shows"].as_array())
         .or_else(|| data.as_array())
         .cloned()
         .unwrap_or_default();
+    let items = filter_items_by_keyword(&kf, items);
     let total = items.len() as u64;
 
     Json(json!({

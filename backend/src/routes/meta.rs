@@ -22,6 +22,15 @@ use crate::{
 
 async fn build_meta(state: &AppState, media_type: &str, meta_id: &str) -> Option<Meta> {
     let row = db_meta::get_media_meta(&state.pool_ro, meta_id, media_type).await?;
+
+    // Hard-block media whose title matches the global keyword filter.
+    {
+        let kf = state.keyword_filters.read().unwrap();
+        if kf.matches_blocked_keyword(&row.title) {
+            return None;
+        }
+    }
+
     let id = row.media_id;
 
     let (genres, cast) = tokio::join!(
@@ -124,7 +133,9 @@ async fn serve_meta(
         }
     }
 
-    let cache_key = format!("meta:{media_type}:{meta_id}");
+    // Embed keyword-filter version so any keyword change invalidates cached meta responses.
+    let kf_ver = { state.keyword_filters.read().unwrap().version_tag() };
+    let cache_key = format!("meta:{media_type}:{meta_id}:{kf_ver}");
     let ttl = state.config.meta_cache_ttl;
 
     if let Some(cached) = cache::get_json(&state.redis, &cache_key).await {

@@ -13,7 +13,7 @@ const ADULT_GENRES: &[&str] = &[
     "porn",
 ];
 
-#[derive(sqlx::FromRow, Debug)]
+#[derive(sqlx::FromRow, Debug, serde::Serialize)]
 pub struct MediaMetaRow {
     pub media_id: MediaId,
     pub media_type: MediaType,
@@ -80,7 +80,7 @@ pub async fn get_media_meta(
     fetch_media_meta_by_id(pool, media_id, media_type).await
 }
 
-async fn fetch_media_meta_by_id(
+pub async fn fetch_media_meta_by_id(
     pool: &PgPool,
     media_id: MediaId,
     media_type: MediaType,

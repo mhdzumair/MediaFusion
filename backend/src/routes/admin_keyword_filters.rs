@@ -136,6 +136,16 @@ async fn reload_cache(state: &AppState) {
     if let Ok(mut w) = state.keyword_filters.write() {
         *w = new_cache;
     }
+    // Recompute precomputed is_keyword_blocked for all media rows in the background.
+    let pool = state.pool.clone();
+    tokio::spawn(async move {
+        if let Err(e) = sqlx::query("SELECT recompute_all_keyword_blocked()")
+            .execute(&pool)
+            .await
+        {
+            tracing::error!("keyword filter: recompute_all_keyword_blocked failed: {e}");
+        }
+    });
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────

@@ -514,6 +514,18 @@ pub async fn get_media_metadata(
             }
         };
 
+    // Hard-block media whose title matches the global keyword filter.
+    {
+        let kf = state.keyword_filters.read().unwrap();
+        if kf.matches_blocked_keyword(&title) {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Media not found"})),
+            )
+                .into_response();
+        }
+    }
+
     // Fetch external IDs
     let ext_rows: Vec<(String, String)> = match sqlx::query_as(
         "SELECT provider, external_id FROM media_external_id WHERE media_id = $1",
@@ -762,21 +774,22 @@ pub async fn search_metadata(
     let offset = (page - 1) * page_size;
     let q = &params.q;
 
-    // Build query depending on whether type filter is provided
+    // Read keyword filter once (clone out to drop the lock before awaits).
+    let kf = { state.keyword_filters.read().unwrap().clone() };
+
     let (rows, total): (Vec<(i32, String, String, Option<i32>, bool)>, i64) =
         if let Some(ref media_type) = params.media_type {
-            let count: i64 = match sqlx::query_scalar(
-                "SELECT COUNT(*) FROM media
-                 WHERE title ILIKE '%' || $1 || '%'
-                   AND type = $2",
-            )
-            .bind(q)
-            .bind(
-                MediaType::from_wire(&media_type.to_ascii_lowercase()).unwrap_or(MediaType::Movie),
-            )
-            .fetch_one(&state.pool_ro)
-            .await
-            {
+            let kf_frag = kf.keyword_title_block_fragment();
+            let count_sql = format!(
+                "SELECT COUNT(*) FROM media m \
+                 WHERE m.title ILIKE '%' || $1 || '%' \
+                   AND m.type = $2\
+                 {kf_frag}"
+            );
+            let mt_val =
+                MediaType::from_wire(&media_type.to_ascii_lowercase()).unwrap_or(MediaType::Movie);
+            let count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(q).bind(mt_val);
+            let count: i64 = match count_q.fetch_one(&state.pool_ro).await {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::error!("search_metadata: count error: {e}");
@@ -788,47 +801,49 @@ pub async fn search_metadata(
                 }
             };
 
-            let rows: Vec<(i32, String, String, Option<i32>, bool)> = match sqlx::query_as(
-                "SELECT id, title, type, year, is_blocked
-                 FROM media
-                 WHERE title ILIKE '%' || $1 || '%'
-                   AND type = $2
-                 ORDER BY
-                   CASE WHEN LOWER(title) = LOWER($1) THEN 0
-                        WHEN LOWER(title) LIKE LOWER($1) || '%' THEN 1
-                        ELSE 2 END,
-                   id DESC
-                 LIMIT $3 OFFSET $4",
+            let rows_sql = format!(
+                "SELECT m.id, m.title, m.type::text, m.year, m.is_blocked \
+                 FROM media m \
+                 WHERE m.title ILIKE '%' || $1 || '%' \
+                   AND m.type = $2\
+                 {kf_frag} \
+                 ORDER BY \
+                   CASE WHEN LOWER(m.title) = LOWER($1) THEN 0 \
+                        WHEN LOWER(m.title) LIKE LOWER($1) || '%' THEN 1 \
+                        ELSE 2 END, \
+                   m.id DESC \
+                 LIMIT $3 OFFSET $4"
+            );
+            let rows_q = sqlx::query_as::<_, (i32, String, String, Option<i32>, bool)>(
+                &rows_sql,
             )
             .bind(q)
-            .bind(
-                MediaType::from_wire(&media_type.to_ascii_lowercase()).unwrap_or(MediaType::Movie),
-            )
+            .bind(mt_val)
             .bind(page_size)
-            .bind(offset)
-            .fetch_all(&state.pool_ro)
-            .await
-            {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::error!("search_metadata: rows error: {e}");
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({"detail": "Database error"})),
-                    )
-                        .into_response();
-                }
-            };
+            .bind(offset);
+            let rows: Vec<(i32, String, String, Option<i32>, bool)> =
+                match rows_q.fetch_all(&state.pool_ro).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::error!("search_metadata: rows error: {e}");
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({"detail": "Database error"})),
+                        )
+                            .into_response();
+                    }
+                };
 
             (rows, count)
         } else {
-            let count: i64 = match sqlx::query_scalar(
-                "SELECT COUNT(*) FROM media WHERE title ILIKE '%' || $1 || '%'",
-            )
-            .bind(q)
-            .fetch_one(&state.pool_ro)
-            .await
-            {
+            let kf_frag = kf.keyword_title_block_fragment();
+            let count_sql = format!(
+                "SELECT COUNT(*) FROM media m \
+                 WHERE m.title ILIKE '%' || $1 || '%'\
+                 {kf_frag}"
+            );
+            let count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(q);
+            let count: i64 = match count_q.fetch_one(&state.pool_ro).await {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::error!("search_metadata: count error: {e}");
@@ -840,33 +855,36 @@ pub async fn search_metadata(
                 }
             };
 
-            let rows: Vec<(i32, String, String, Option<i32>, bool)> = match sqlx::query_as(
-                "SELECT id, title, type, year, is_blocked
-                 FROM media
-                 WHERE title ILIKE '%' || $1 || '%'
-                 ORDER BY
-                   CASE WHEN LOWER(title) = LOWER($1) THEN 0
-                        WHEN LOWER(title) LIKE LOWER($1) || '%' THEN 1
-                        ELSE 2 END,
-                   id DESC
-                 LIMIT $2 OFFSET $3",
+            let rows_sql = format!(
+                "SELECT m.id, m.title, m.type::text, m.year, m.is_blocked \
+                 FROM media m \
+                 WHERE m.title ILIKE '%' || $1 || '%'\
+                 {kf_frag} \
+                 ORDER BY \
+                   CASE WHEN LOWER(m.title) = LOWER($1) THEN 0 \
+                        WHEN LOWER(m.title) LIKE LOWER($1) || '%' THEN 1 \
+                        ELSE 2 END, \
+                   m.id DESC \
+                 LIMIT $2 OFFSET $3"
+            );
+            let rows_q = sqlx::query_as::<_, (i32, String, String, Option<i32>, bool)>(
+                &rows_sql,
             )
             .bind(q)
             .bind(page_size)
-            .bind(offset)
-            .fetch_all(&state.pool_ro)
-            .await
-            {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::error!("search_metadata: rows error: {e}");
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({"detail": "Database error"})),
-                    )
-                        .into_response();
-                }
-            };
+            .bind(offset);
+            let rows: Vec<(i32, String, String, Option<i32>, bool)> =
+                match rows_q.fetch_all(&state.pool_ro).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::error!("search_metadata: rows error: {e}");
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({"detail": "Database error"})),
+                        )
+                            .into_response();
+                    }
+                };
 
             (rows, count)
         };

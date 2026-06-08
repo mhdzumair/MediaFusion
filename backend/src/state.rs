@@ -36,6 +36,29 @@ impl KeywordFilterCache {
             .any(|keyword| lower.contains(keyword.as_str()))
     }
 
+    /// Returns a SQL WHERE fragment that excludes media whose `m.title` is keyword-blocked.
+    /// Relies on the precomputed `m.is_keyword_blocked` column (maintained by a DB trigger
+    /// and `recompute_all_keyword_blocked()`).  Returns an empty string when the blocklist
+    /// is empty so callers remain a no-op with zero overhead when no keywords are configured.
+    pub fn keyword_title_block_fragment(&self) -> &'static str {
+        if self.keywords.is_empty() {
+            return "";
+        }
+        " AND m.is_keyword_blocked = false"
+    }
+
+    /// A deterministic tag derived from the current keyword/whitelist content.
+    /// Embed this in Redis cache keys so that adding or removing keywords
+    /// automatically invalidates previously-cached responses.
+    pub fn version_tag(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut h = DefaultHasher::new();
+        self.keywords.hash(&mut h);
+        self.whitelist.hash(&mut h);
+        h.finish()
+    }
+
     /// Remove genres whose names match blacklist keywords.
     pub fn filter_genres_by_type(
         &self,
@@ -286,6 +309,14 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
     if let Err(e) = tx.commit().await {
         tracing::error!("keyword sync: commit failed: {e}");
         return;
+    }
+
+    // Recompute the precomputed is_keyword_blocked flag for all media rows.
+    if let Err(e) = sqlx::query("SELECT recompute_all_keyword_blocked()")
+        .execute(pool)
+        .await
+    {
+        tracing::error!("keyword sync: recompute_all_keyword_blocked failed: {e}");
     }
 
     tracing::info!(

@@ -163,6 +163,7 @@ async fn handle_watchlist_catalog(
         .cloned()
         .collect();
 
+    let kf = { state.keyword_filters.read().unwrap().clone() };
     let rows = db_catalog::get_watchlist_items(
         &state.pool_ro,
         media_type,
@@ -172,6 +173,7 @@ async fn handle_watchlist_catalog(
         &cert_excludes,
         &sort,
         &sort_dir,
+        &kf,
     )
     .await;
 
@@ -215,6 +217,8 @@ async fn fetch_mdblist_catalog(
         .cloned()
         .collect();
 
+    let kf = { state.keyword_filters.read().unwrap().clone() };
+
     if list.use_filters {
         let Some(mt) = MediaType::from_wire(media_type) else {
             return Metas { metas: vec![] };
@@ -241,6 +245,7 @@ async fn fetch_mdblist_catalog(
             MDBLIST_PAGE_LIMIT as i64,
             &nudity_excludes,
             &cert_excludes,
+            &kf,
         )
         .await;
 
@@ -319,6 +324,10 @@ async fn fetch_mdblist_catalog(
                 return None;
             }
             let title = item["title"].as_str()?.to_string();
+            // Block titles that match the global keyword filter.
+            if kf.matches_blocked_keyword(&title) {
+                return None;
+            }
             let year = item["release_year"].as_i64().map(|y| y as i32);
             let release_info = format_release_info(
                 if media_type == "series" {
@@ -402,12 +411,17 @@ async fn handle_catalog(
         .cloned()
         .collect();
 
+    // Read the keyword filter once (clone out so the lock isn't held across awaits).
+    let kf = { state.keyword_filters.read().unwrap().clone() };
+    let kf_ver = kf.version_tag();
+
     // Build cache key: user-scoped for personal catalogs, shared for public ones.
+    // Embed the keyword-filter version so any keyword change invalidates cached pages.
     let is_personal = catalog_id.starts_with("my_library_");
     let cache_key: Option<String> = if is_personal {
         user_data.user_id.map(|uid| {
             format!(
-                "catalog:{media_type}:{catalog_id}:{}:user:{uid}",
+                "catalog:{media_type}:{catalog_id}:{}:user:{uid}:kf{kf_ver}",
                 extra.skip
             )
         })
@@ -417,7 +431,7 @@ async fn handle_catalog(
         let nudity_part = nudity_excludes.join(",");
         let cert_part = cert_excludes.join(",");
         Some(format!(
-            "catalog:{media_type}:{catalog_id}:{}:{}:{}:{}:{}:{}:{}",
+            "catalog:{media_type}:{catalog_id}:{}:{}:{}:{}:{}:{}:{}:kf{kf_ver}",
             extra.skip, genre_part, search_part, nudity_part, cert_part, sort, sort_dir,
         ))
     };
@@ -443,6 +457,7 @@ async fn handle_catalog(
             extra.skip,
             &nudity_excludes,
             &cert_excludes,
+            &kf,
         )
         .await
     } else {
@@ -459,6 +474,7 @@ async fn handle_catalog(
                 sort_dir: &sort_dir,
                 user_id: user_data.user_id,
             },
+            &kf,
         )
         .await
     };

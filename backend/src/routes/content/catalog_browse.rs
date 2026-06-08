@@ -246,27 +246,31 @@ pub async fn search_catalog(
     let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM media m WHERE (m.title ILIKE $1) AND m.adult = false",
-    )
-    .bind(&q)
-    .fetch_one(&state.pool_ro)
-    .await
-    .unwrap_or(0);
+    let kf = { state.keyword_filters.read().unwrap().clone() };
+    let kf_frag = kf.keyword_title_block_fragment();
 
-    let rows: Vec<(i32, String, MediaType, Option<i32>)> = sqlx::query_as(
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM media m WHERE (m.title ILIKE $1) AND m.adult = false{kf_frag}"
+    );
+    let total: i64 = sqlx::query_scalar::<_, i64>(&count_sql)
+        .bind(&q)
+        .fetch_one(&state.pool_ro)
+        .await
+        .unwrap_or(0);
+
+    let list_sql = format!(
         r#"SELECT m.id, m.title, m.type, m.year
            FROM media m
-           WHERE (m.title ILIKE $1) AND m.adult = false
+           WHERE (m.title ILIKE $1) AND m.adult = false{kf_frag}
            ORDER BY m.title
-           LIMIT $2 OFFSET $3"#,
-    )
-    .bind(&q)
-    .bind(page_size)
-    .bind(offset)
-    .fetch_all(&state.pool_ro)
-    .await
-    .unwrap_or_default();
+           LIMIT $2 OFFSET $3"#
+    );
+    let list_q = sqlx::query_as::<_, (i32, String, MediaType, Option<i32>)>(&list_sql)
+        .bind(&q)
+        .bind(page_size)
+        .bind(offset);
+    let rows: Vec<(i32, String, MediaType, Option<i32>)> =
+        list_q.fetch_all(&state.pool_ro).await.unwrap_or_default();
 
     let items: Vec<serde_json::Value> = rows
         .into_iter()
@@ -343,9 +347,14 @@ pub async fn browse_catalog(
         .into_response();
     }
 
-    // Full-response cache (2 min TTL) — browse pages rarely change within a session
+    // Read keyword filter once (before any await, clone out to drop the lock).
+    let kf = { state.keyword_filters.read().unwrap().clone() };
+    let kf_ver = kf.version_tag();
+
+    // Full-response cache (2 min TTL) — browse pages rarely change within a session.
+    // Embed keyword-filter version so keyword changes invalidate cached pages.
     let browse_cache_key = format!(
-        "catalog:browse:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+        "catalog:browse:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:kf{}",
         catalog_type,
         params.sort.as_deref().unwrap_or("latest"),
         params.sort_dir.as_deref().unwrap_or("desc"),
@@ -356,6 +365,7 @@ pub async fn browse_catalog(
         params.has_streams.unwrap_or(true),
         params.search.as_deref().unwrap_or(""),
         params.external_id.as_deref().unwrap_or(""),
+        kf_ver,
     );
     if let Some(cached) = cache::get_json(&state.redis, &browse_cache_key).await {
         return Json(cached).into_response();
@@ -463,6 +473,11 @@ pub async fn browse_catalog(
         external_id_media_bind = Some(mid);
     }
 
+    let kw_frag = kf.keyword_title_block_fragment();
+    if !kw_frag.is_empty() {
+        where_parts.push("m.is_keyword_blocked = false".to_string());
+    }
+
     let where_clause = where_parts.join(" AND ");
 
     let limit_idx = bind_idx + 1;
@@ -482,9 +497,10 @@ pub async fn browse_catalog(
            LIMIT ${limit_idx} OFFSET ${offset_idx}"#
     );
 
-    // COUNT result cache — keyed on the full filter tuple (changes rarely)
+    // COUNT result cache — keyed on the full filter tuple (changes rarely).
+    // Include keyword-filter version so count cache is invalidated on keyword changes.
     let count_cache_key = format!(
-        "catalog:count:{}:{}:{}:{}:{}:{}",
+        "catalog:count:{}:{}:{}:{}:{}:{}:kf{}",
         catalog_type,
         genre_name_bind.as_deref().unwrap_or(""),
         catalog_name_bind.as_deref().unwrap_or(""),
@@ -493,6 +509,7 @@ pub async fn browse_catalog(
         external_id_media_bind
             .map(|id| id.to_string())
             .unwrap_or_default(),
+        kf_ver,
     );
 
     let total: i64 = if let Some(cached_count) = cache::get_json(&state.redis, &count_cache_key)
@@ -720,6 +737,18 @@ pub async fn get_media_detail(
         end_date,
         tagline,
     ) = row;
+
+    // Hard-block media whose title matches the global keyword filter.
+    {
+        let kf = state.keyword_filters.read().unwrap();
+        if kf.matches_blocked_keyword(&title) {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "Media not found"})),
+            )
+                .into_response();
+        }
+    }
 
     // Parallel queries
     let (genres, catalogs, ext_ids, poster, background, imdb_rating) = tokio::join!(
@@ -1112,6 +1141,22 @@ pub async fn get_media_streams(
     };
     let season = effective_season;
     let episode = effective_episode;
+
+    // Guard: don't serve streams for keyword-blocked media.
+    {
+        let blocked: bool = sqlx::query_scalar::<_, bool>(
+            "SELECT is_keyword_blocked FROM media WHERE id = $1",
+        )
+        .bind(media_id)
+        .fetch_optional(&state.pool_ro)
+        .await
+        .unwrap_or(None)
+        .unwrap_or(false);
+
+        if blocked {
+            return Json(json!({ "streams": [] })).into_response();
+        }
+    }
 
     tracing::debug!(
         "get_media_streams: fetching streams for {catalog_type}/{media_id} season={season:?} episode={episode:?} stream_id={:?}",

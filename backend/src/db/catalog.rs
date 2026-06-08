@@ -3,6 +3,7 @@ use tracing::warn;
 
 use super::retry;
 use super::types::{nudity_statuses_from_filter, MediaId, MediaType, UserId};
+use crate::state::KeywordFilterCache;
 
 const LIMIT: i64 = 100;
 const WATCHLIST_LIMIT: i64 = 25;
@@ -56,7 +57,11 @@ pub struct CatalogQuery<'a> {
     pub user_id: Option<UserId>,
 }
 
-pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<CatalogRow> {
+pub async fn get_catalog_items(
+    pool: &PgPool,
+    q: CatalogQuery<'_>,
+    kw: &KeywordFilterCache,
+) -> Vec<CatalogRow> {
     let CatalogQuery {
         catalog_id,
         media_type,
@@ -75,11 +80,13 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
 
     // my_library_* catalogs join through user_library_item instead of catalog/media_catalog_link.
     if catalog_id.starts_with("my_library_") {
-        return get_library_items(pool, mt, skip, nudity_excludes, cert_excludes, user_id).await;
+        return get_library_items(pool, mt, skip, nudity_excludes, cert_excludes, user_id, kw)
+            .await;
     }
 
     let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
     let ord = order_clause(sort, sort_dir);
+    let frag = kw.keyword_title_block_fragment();
     let sql = format!(
         r#"
         SELECT
@@ -116,24 +123,23 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
               WHERE mpcl.media_id = m.id AND pc.name = ANY($6)
           ))
+        {frag}
         ORDER BY {ord}
         LIMIT {LIMIT} OFFSET $3
         "#
     );
 
-    sqlx::query_as::<_, CatalogRow>(&sql)
+    let q = sqlx::query_as::<_, CatalogRow>(&sql)
         .bind(catalog_id) // $1
         .bind(mt) // $2
         .bind(skip) // $3
         .bind(genre) // $4 - Option<&str> → NULL when None
         .bind(&nudity_exclude_enums) // $5 - nuditystatus[]
-        .bind(cert_excludes) // $6 - &[String] → text[]
-        .fetch_all(pool)
-        .await
-        .unwrap_or_else(|e| {
-            warn!("catalog query [{catalog_id}]: {e}");
-            vec![]
-        })
+        .bind(cert_excludes); // $6 - &[String] → text[]
+    q.fetch_all(pool).await.unwrap_or_else(|e| {
+        warn!("catalog query [{catalog_id}]: {e}");
+        vec![]
+    })
 }
 
 async fn get_library_items(
@@ -143,12 +149,14 @@ async fn get_library_items(
     nudity_excludes: &[String],
     cert_excludes: &[String],
     user_id: Option<UserId>,
+    kw: &KeywordFilterCache,
 ) -> Vec<CatalogRow> {
     let Some(uid) = user_id else {
         return vec![];
     };
     let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
-    sqlx::query_as::<_, CatalogRow>(
+    let frag = kw.keyword_title_block_fragment();
+    let sql = format!(
         r#"
         SELECT
             m.id AS media_id,
@@ -176,24 +184,26 @@ async fn get_library_items(
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
               WHERE mpcl.media_id = m.id AND pc.name = ANY($5)
           ))
+        {frag}
         ORDER BY uli.added_at DESC
         LIMIT 100 OFFSET $4
-        "#,
-    )
-    .bind(uid) // $1
-    .bind(media_type) // $2
-    .bind(&nudity_exclude_enums) // $3
-    .bind(skip) // $4
-    .bind(cert_excludes) // $5
-    .fetch_all(pool)
-    .await
-    .unwrap_or_else(|e| {
-        warn!(
-            "library query [uid={uid} type={}]: {e}",
-            media_type.as_wire()
-        );
-        vec![]
-    })
+        "#
+    );
+    let q = sqlx::query_as::<_, CatalogRow>(&sql)
+        .bind(uid) // $1
+        .bind(media_type) // $2
+        .bind(&nudity_exclude_enums) // $3
+        .bind(skip) // $4
+        .bind(cert_excludes); // $5
+    q.fetch_all(pool)
+        .await
+        .unwrap_or_else(|e| {
+            warn!(
+                "library query [uid={uid} type={}]: {e}",
+                media_type.as_wire()
+            );
+            vec![]
+        })
 }
 
 /// Watchlist catalog rows: media linked to any of the given torrent info_hashes.
@@ -206,6 +216,7 @@ pub async fn get_watchlist_items(
     cert_excludes: &[String],
     sort: &str,
     sort_dir: &str,
+    kw: &KeywordFilterCache,
 ) -> Vec<CatalogRow> {
     if info_hashes.is_empty() {
         return vec![];
@@ -220,6 +231,7 @@ pub async fn get_watchlist_items(
     let info_hashes_lower: Vec<String> = info_hashes.iter().map(|h| h.to_lowercase()).collect();
     let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
     let ord = order_clause(sort, sort_dir);
+    let frag = kw.keyword_title_block_fragment();
     let sql = format!(
         r#"
         SELECT
@@ -251,6 +263,7 @@ pub async fn get_watchlist_items(
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
               WHERE mpcl.media_id = m.id AND pc.name = ANY($4)
           ))
+        {frag}
         GROUP BY m.id, m.type, m.title, m.year, m.end_date, m.description, mei.external_id, mi.url
         ORDER BY {ord}
         LIMIT {WATCHLIST_LIMIT} OFFSET $5
@@ -258,14 +271,13 @@ pub async fn get_watchlist_items(
     );
 
     retry::with_retry("watchlist catalog query", || async {
-        sqlx::query_as::<_, CatalogRow>(&sql)
+        let q = sqlx::query_as::<_, CatalogRow>(&sql)
             .bind(mt) // $1
             .bind(&info_hashes_lower) // $2
             .bind(&nudity_exclude_enums) // $3
             .bind(cert_excludes) // $4
-            .bind(skip) // $5
-            .fetch_all(pool)
-            .await
+            .bind(skip); // $5
+        q.fetch_all(pool).await
     })
     .await
     .unwrap_or_else(|e| {
@@ -281,13 +293,15 @@ pub async fn search_metadata(
     skip: i64,
     nudity_excludes: &[String],
     cert_excludes: &[String],
+    kw: &KeywordFilterCache,
 ) -> Vec<CatalogRow> {
     let Some(mt) = MediaType::from_wire(media_type) else {
         return vec![];
     };
 
     let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
-    sqlx::query_as::<_, CatalogRow>(
+    let frag = kw.keyword_title_block_fragment();
+    let sql = format!(
         r#"
         SELECT
             m.id AS media_id,
@@ -329,23 +343,25 @@ pub async fn search_metadata(
               WHERE m3.title % $2
                 AND m3.type = $1
           )
+        {frag}
         ORDER BY
             ts_rank_cd(m.title_tsv, plainto_tsquery('simple', $2)) DESC,
             m.total_streams DESC
         LIMIT 100 OFFSET $4
-        "#,
-    )
-    .bind(mt) // $1
-    .bind(query) // $2
-    .bind(&nudity_exclude_enums) // $3
-    .bind(skip) // $4
-    .bind(cert_excludes) // $5
-    .fetch_all(pool)
-    .await
-    .unwrap_or_else(|e| {
-        warn!("search query [type={media_type} q={query}]: {e}");
-        vec![]
-    })
+        "#
+    );
+    let q = sqlx::query_as::<_, CatalogRow>(&sql)
+        .bind(mt) // $1
+        .bind(query) // $2
+        .bind(&nudity_exclude_enums) // $3
+        .bind(skip) // $4
+        .bind(cert_excludes); // $5
+    q.fetch_all(pool)
+        .await
+        .unwrap_or_else(|e| {
+            warn!("search query [type={media_type} q={query}]: {e}");
+            vec![]
+        })
 }
 
 /// Filter MDBList IMDb ids through PostgreSQL with parental-guide filters and stream availability.
@@ -357,6 +373,7 @@ pub async fn get_mdblist_filtered_items(
     limit: i64,
     nudity_excludes: &[String],
     cert_excludes: &[String],
+    kw: &KeywordFilterCache,
 ) -> Vec<CatalogRow> {
     if imdb_ids.is_empty() {
         return vec![];
@@ -369,6 +386,7 @@ pub async fn get_mdblist_filtered_items(
         _ => return vec![],
     };
 
+    let frag = kw.keyword_title_block_fragment();
     let sql = format!(
         r#"
         SELECT
@@ -397,19 +415,20 @@ pub async fn get_mdblist_filtered_items(
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
               WHERE mpcl.media_id = m.id AND pc.name = ANY($4)
           ))
+        {frag}
         ORDER BY m.last_stream_added DESC NULLS LAST, m.id ASC
         LIMIT $5 OFFSET $6
         "#
     );
 
-    sqlx::query_as::<_, CatalogRow>(&sql)
-        .bind(imdb_ids)
-        .bind(media_type)
-        .bind(&nudity_exclude_enums)
-        .bind(cert_excludes)
-        .bind(limit)
-        .bind(skip)
-        .fetch_all(pool)
+    let q = sqlx::query_as::<_, CatalogRow>(&sql)
+        .bind(imdb_ids) // $1
+        .bind(media_type) // $2
+        .bind(&nudity_exclude_enums) // $3
+        .bind(cert_excludes) // $4
+        .bind(limit) // $5
+        .bind(skip); // $6
+    q.fetch_all(pool)
         .await
         .unwrap_or_else(|e| {
             warn!(

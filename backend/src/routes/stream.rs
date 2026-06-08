@@ -761,6 +761,7 @@ pub async fn resolve(
                 episode,
                 p.user_data.stream_template.as_ref(),
                 &HashMap::new(),
+                p.media_meta.as_ref(),
             )
         } else {
             // No torrent-capable provider and P2P not allowed (usenet-only or disabled).
@@ -827,6 +828,7 @@ pub async fn resolve(
                     episode,
                     p.user_data.stream_template.as_ref(),
                     &p.per_provider_cached[*pi],
+                    p.media_meta.as_ref(),
                 )
             })
             .collect()
@@ -904,6 +906,7 @@ pub async fn resolve(
                 season,
                 episode,
                 tpl,
+                p.media_meta.as_ref(),
             )
         })
         .collect();
@@ -925,7 +928,7 @@ pub async fn resolve(
     );
     let http_streams: Vec<Value> = http_sorted
         .iter()
-        .filter_map(|row| format_http_stream(row, addon_name, tpl, false))
+        .filter_map(|row| format_http_stream(row, addon_name, tpl, false, p.media_meta.as_ref(), season, episode))
         .collect();
 
     let youtube_sorted = sort_stream_rows(
@@ -942,7 +945,7 @@ pub async fn resolve(
     );
     let youtube_streams: Vec<Value> = youtube_sorted
         .iter()
-        .filter_map(|row| format_youtube_stream(row, addon_name, tpl))
+        .filter_map(|row| format_youtube_stream(row, addon_name, tpl, p.media_meta.as_ref(), season, episode))
         .collect();
 
     let mediaflow = p.user_data.mediaflow_config.as_ref();
@@ -960,7 +963,7 @@ pub async fn resolve(
     );
     let telegram_streams: Vec<Value> = telegram_sorted
         .iter()
-        .filter_map(|row| format_telegram_stream(row, addon_name, host_url, secret_str, tpl))
+        .filter_map(|row| format_telegram_stream(row, addon_name, host_url, secret_str, tpl, p.media_meta.as_ref(), season, episode))
         .collect();
 
     let acestream_sorted = sort_stream_rows(
@@ -1161,6 +1164,8 @@ struct StreamPipeline {
     media_id: db::MediaId,
     /// Whether P2P/WebTorrent streams should be shown (mirrors Python's P2P decision).
     show_p2p: bool,
+    /// Media-level metadata for template rendering (title, year, rating, etc.).
+    media_meta: Option<Value>,
 }
 
 async fn build_pipeline(
@@ -1266,6 +1271,59 @@ async fn build_pipeline(
 
     let disabled = &state.config.disabled_providers;
 
+    // Guard: don't serve streams for keyword-blocked media.
+    if media_id != db::MediaId(0) {
+        let blocked: bool = sqlx::query_scalar::<_, bool>(
+            "SELECT is_keyword_blocked FROM media WHERE id = $1",
+        )
+        .bind(media_id.0)
+        .fetch_optional(&state.pool)
+        .await
+        .unwrap_or(None)
+        .unwrap_or(false);
+
+        if blocked {
+            let torrent_providers: Vec<crate::models::user_data::StreamingProvider> = user_data
+                .streaming_providers
+                .iter()
+                .filter(|p| {
+                    p.enabled
+                        && TORRENT_CAPABLE.contains(&p.service.as_str())
+                        && !disabled.contains(&p.service)
+                })
+                .cloned()
+                .collect();
+            let usenet_providers: Vec<crate::models::user_data::StreamingProvider> = user_data
+                .streaming_providers
+                .iter()
+                .filter(|p| {
+                    p.enabled
+                        && USENET_CAPABLE.contains(&p.service.as_str())
+                        && (!TORRENT_CAPABLE.contains(&p.service.as_str()) || p.enable_usenet)
+                        && !disabled.contains(&p.service)
+                })
+                .cloned()
+                .collect();
+            let show_p2p = compute_show_p2p(&user_data, &torrent_providers, disabled);
+            return Ok(StreamPipeline {
+                all_torrents: vec![],
+                torrent_providers,
+                usenet_providers,
+                per_provider_cached: vec![],
+                usenet_rows: vec![],
+                http_rows: vec![],
+                youtube_rows: vec![],
+                telegram_rows: vec![],
+                acestream_rows: vec![],
+                live_usenet_raw: vec![],
+                user_data,
+                media_id: db::MediaId(0),
+                show_p2p,
+                media_meta: None,
+            });
+        }
+    }
+
     if media_id == db::MediaId(0) && related_ids.is_empty() {
         let torrent_providers: Vec<crate::models::user_data::StreamingProvider> = user_data
             .streaming_providers
@@ -1304,6 +1362,7 @@ async fn build_pipeline(
             user_data,
             media_id: db::MediaId(0),
             show_p2p,
+            media_meta: None,
         });
     }
 
@@ -1519,6 +1578,14 @@ async fn build_pipeline(
 
     let show_p2p = compute_show_p2p(&user_data, &torrent_providers, disabled);
 
+    let media_meta: Option<Value> = if let Some(mt) = db::MediaType::from_wire(media_type) {
+        crate::db::meta::fetch_media_meta_by_id(&state.pool, media_id, mt)
+            .await
+            .and_then(|row| serde_json::to_value(row).ok())
+    } else {
+        None
+    };
+
     Ok(StreamPipeline {
         all_torrents,
         torrent_providers,
@@ -1533,6 +1600,7 @@ async fn build_pipeline(
         user_data,
         media_id,
         show_p2p,
+        media_meta,
     })
 }
 
@@ -1592,6 +1660,7 @@ pub async fn resolve_rich(
                 episode,
                 p.user_data.stream_template.as_ref(),
                 &HashMap::new(),
+                p.media_meta.as_ref(),
             );
             if let Some(stream_val) = formatted {
                 let meta = build_torrent_metadata(t, None, false);
@@ -1667,6 +1736,7 @@ pub async fn resolve_rich(
                 episode,
                 p.user_data.stream_template.as_ref(),
                 &p.per_provider_cached[*pi],
+                p.media_meta.as_ref(),
             ) {
                 let meta = build_torrent_metadata(t, Some(provider_name), is_cached);
                 rich_streams.push(json!({ "stream": stream_val, "metadata": meta }));
@@ -1692,6 +1762,7 @@ pub async fn resolve_rich(
                 season,
                 episode,
                 tpl,
+                p.media_meta.as_ref(),
             ) {
                 let meta = json!({
                     "stream_type": "usenet",
@@ -1722,6 +1793,7 @@ pub async fn resolve_rich(
                 season,
                 episode,
                 tpl,
+                p.media_meta.as_ref(),
             ) {
                 let meta = json!({
                     "stream_type": "usenet",
@@ -1738,7 +1810,7 @@ pub async fn resolve_rich(
 
     // HTTP streams
     for row in &p.http_rows {
-        if let Some(stream_val) = format_http_stream(row, addon_name, tpl, false) {
+        if let Some(stream_val) = format_http_stream(row, addon_name, tpl, false, p.media_meta.as_ref(), season, episode) {
             let meta = json!({
                 "stream_type": "http",
                 "name": row.get("name").and_then(|v| v.as_str()).unwrap_or(""),
@@ -1753,7 +1825,7 @@ pub async fn resolve_rich(
 
     // YouTube streams
     for row in &p.youtube_rows {
-        if let Some(stream_val) = format_youtube_stream(row, addon_name, tpl) {
+        if let Some(stream_val) = format_youtube_stream(row, addon_name, tpl, p.media_meta.as_ref(), season, episode) {
             let meta = json!({
                 "stream_type": "youtube",
                 "name": row.get("name").and_then(|v| v.as_str()).unwrap_or(""),
@@ -1768,7 +1840,7 @@ pub async fn resolve_rich(
 
     // Telegram streams
     for row in &p.telegram_rows {
-        if let Some(stream_val) = format_telegram_stream(row, addon_name, host_url, secret_str, tpl)
+        if let Some(stream_val) = format_telegram_stream(row, addon_name, host_url, secret_str, tpl, p.media_meta.as_ref(), season, episode)
         {
             let meta = json!({
                 "stream_type": "telegram",
@@ -2109,6 +2181,7 @@ fn format_unified_pool(
                     episode,
                     tpl,
                     cached_map,
+                    p.media_meta.as_ref(),
                 )
             }
             1 => {
@@ -2126,11 +2199,12 @@ fn format_unified_pool(
                     season,
                     episode,
                     tpl,
+                    p.media_meta.as_ref(),
                 )
             }
-            2 => format_http_stream(&item.value, addon_name, tpl, false),
-            3 => format_youtube_stream(&item.value, addon_name, tpl),
-            4 => format_telegram_stream(&item.value, addon_name, host_url, secret_str, tpl),
+            2 => format_http_stream(&item.value, addon_name, tpl, false, p.media_meta.as_ref(), season, episode),
+            3 => format_youtube_stream(&item.value, addon_name, tpl, p.media_meta.as_ref(), season, episode),
+            4 => format_telegram_stream(&item.value, addon_name, host_url, secret_str, tpl, p.media_meta.as_ref(), season, episode),
             5 => format_acestream_stream(&item.value, addon_name, mediaflow, tpl),
             _ => None,
         };
@@ -2366,6 +2440,51 @@ fn has_user_stream_template(stream_template: Option<&Value>) -> bool {
     })
 }
 
+/// Build the `meta` context object from a serialized `MediaMetaRow` value.
+/// Includes season/episode numbers when available (for series).
+fn build_media_context(
+    meta: Option<&Value>,
+    season: Option<i32>,
+    episode: Option<i32>,
+) -> Value {
+    let mut obj = serde_json::Map::new();
+    if let Some(m) = meta {
+        for key in &[
+            "title",
+            "imdb_id",
+            "tmdb_id",
+            "language",
+            "country",
+            "website",
+            "poster_url",
+            "background_url",
+            "description",
+        ] {
+            if let Some(v) = m.get(*key).filter(|v| !v.is_null()) {
+                obj.insert(key.to_string(), v.clone());
+            }
+        }
+        for key in &["year", "end_year", "runtime_minutes"] {
+            if let Some(v) = m.get(*key).filter(|v| !v.is_null()) {
+                obj.insert(key.to_string(), v.clone());
+            }
+        }
+        if let Some(v) = m.get("imdb_rating").filter(|v| !v.is_null()) {
+            obj.insert("imdb_rating".to_string(), v.clone());
+        }
+        if let Some(v) = m.get("media_type").and_then(|v| v.as_str()) {
+            obj.insert("type".to_string(), json!(v));
+        }
+    }
+    if let Some(s) = season {
+        obj.insert("season".to_string(), json!(s));
+    }
+    if let Some(e) = episode {
+        obj.insert("episode".to_string(), json!(e));
+    }
+    Value::Object(obj)
+}
+
 /// Build a template context for a torrent stream row.
 fn build_stream_context(
     t: &Value,
@@ -2373,6 +2492,9 @@ fn build_stream_context(
     addon_name: &str,
     provider: Option<&str>,
     is_cached: bool,
+    media_meta: Option<&Value>,
+    season: Option<i32>,
+    episode: Option<i32>,
 ) -> Value {
     let mut stream_obj = serde_json::Map::new();
     macro_rules! copy_str {
@@ -2389,6 +2511,13 @@ fn build_stream_context(
             }
         };
     }
+    macro_rules! copy_bool {
+        ($key:expr) => {
+            if let Some(v) = t.get($key).and_then(|v| v.as_bool()) {
+                stream_obj.insert($key.to_string(), Value::Bool(v));
+            }
+        };
+    }
     stream_obj.insert("type".to_string(), Value::String(stream_type.to_string()));
     copy_str!("name");
     copy_str!("filename");
@@ -2402,8 +2531,16 @@ fn build_stream_context(
     copy_num!("seeders");
     copy_num!("size");
     copy_num!("folderSize");
-    // boolean: cached
+    // boolean: cached + quality flags
     stream_obj.insert("cached".to_string(), Value::Bool(is_cached));
+    copy_bool!("is_proper");
+    copy_bool!("is_repack");
+    copy_bool!("is_extended");
+    copy_bool!("is_complete");
+    copy_bool!("is_dubbed");
+    copy_bool!("is_subbed");
+    copy_bool!("is_remastered");
+    copy_bool!("is_upscaled");
     // arrays: audio_formats, channels, hdr_formats, languages, language_flags
     for arr_key in &[
         "audio_formats",
@@ -2427,7 +2564,8 @@ fn build_stream_context(
     json!({
         "stream": Value::Object(stream_obj),
         "service": service_obj,
-        "addon": { "name": addon_name }
+        "addon": { "name": addon_name },
+        "meta": build_media_context(media_meta, season, episode),
     })
 }
 
@@ -2442,6 +2580,7 @@ fn format_streams(
     episode: Option<i32>,
     stream_template: Option<&Value>,
     cached_hashes: &HashMap<String, bool>,
+    media_meta: Option<&Value>,
 ) -> Vec<Value> {
     let (title_tpl, desc_tpl) = resolve_templates(stream_template);
 
@@ -2456,7 +2595,16 @@ fn format_streams(
             // Build template context and render title + description
             let is_cached =
                 primary_provider.is_some() && cached_hashes.get(hash).copied().unwrap_or(false);
-            let ctx = build_stream_context(t, "torrent", addon_name, primary_provider, is_cached);
+            let ctx = build_stream_context(
+                t,
+                "torrent",
+                addon_name,
+                primary_provider,
+                is_cached,
+                media_meta,
+                season,
+                episode,
+            );
             let title_str = template::render(&title_tpl, &ctx);
             let desc_str = template::render(&desc_tpl, &ctx);
             // Use original "name" as fallback if title template produces nothing
@@ -2529,6 +2677,7 @@ fn format_single_stream(
     episode: Option<i32>,
     stream_template: Option<&Value>,
     cached_hashes: &HashMap<String, bool>,
+    media_meta: Option<&Value>,
 ) -> Option<Value> {
     let (title_tpl, desc_tpl) = resolve_templates(stream_template);
 
@@ -2538,7 +2687,16 @@ fn format_single_stream(
     let filename = t.get("filename").and_then(|v| v.as_str()).unwrap_or("");
 
     let is_cached = primary_provider.is_some() && cached_hashes.get(hash).copied().unwrap_or(false);
-    let ctx = build_stream_context(t, "torrent", addon_name, primary_provider, is_cached);
+    let ctx = build_stream_context(
+        t,
+        "torrent",
+        addon_name,
+        primary_provider,
+        is_cached,
+        media_meta,
+        season,
+        episode,
+    );
     let title_str = template::render(&title_tpl, &ctx);
     let desc_str = template::render(&desc_tpl, &ctx);
     let title_str = if title_str.is_empty() {
@@ -2598,6 +2756,9 @@ fn format_http_stream(
     addon_name: &str,
     stream_template: Option<&Value>,
     is_tv: bool,
+    media_meta: Option<&Value>,
+    season: Option<i32>,
+    episode: Option<i32>,
 ) -> Option<Value> {
     let url = row
         .get("url")
@@ -2644,7 +2805,12 @@ fn format_http_stream(
         if let Some(arr) = row.get("languages").and_then(|v| v.as_array()) {
             stream_obj.insert("languages".into(), json!(arr));
         }
-        let ctx = json!({ "stream": Value::Object(stream_obj), "service": {}, "addon": { "name": addon_name } });
+        let ctx = json!({
+            "stream": Value::Object(stream_obj),
+            "service": {},
+            "addon": { "name": addon_name },
+            "meta": build_media_context(media_meta, season, episode),
+        });
 
         let title_str = template::render(&title_tpl, &ctx);
         let desc_str = template::render(&desc_tpl, &ctx);
@@ -2664,6 +2830,9 @@ fn format_youtube_stream(
     row: &Value,
     addon_name: &str,
     stream_template: Option<&Value>,
+    media_meta: Option<&Value>,
+    season: Option<i32>,
+    episode: Option<i32>,
 ) -> Option<Value> {
     let video_id = row
         .get("video_id")
@@ -2695,7 +2864,12 @@ fn format_youtube_stream(
     if let Some(arr) = row.get("languages").and_then(|v| v.as_array()) {
         stream_obj.insert("languages".into(), json!(arr));
     }
-    let ctx = json!({ "stream": Value::Object(stream_obj), "service": {}, "addon": { "name": addon_name } });
+    let ctx = json!({
+        "stream": Value::Object(stream_obj),
+        "service": {},
+        "addon": { "name": addon_name },
+        "meta": build_media_context(media_meta, season, episode),
+    });
 
     let title_str = template::render(&title_tpl, &ctx);
     let desc_str = template::render(&desc_tpl, &ctx);
@@ -2732,6 +2906,9 @@ fn format_telegram_stream(
     host_url: &str,
     secret_str: &str,
     stream_template: Option<&Value>,
+    media_meta: Option<&Value>,
+    season: Option<i32>,
+    episode: Option<i32>,
 ) -> Option<Value> {
     let chat_id = row
         .get("chat_id")
@@ -2768,7 +2945,12 @@ fn format_telegram_stream(
     if let Some(arr) = row.get("languages").and_then(|v| v.as_array()) {
         stream_obj.insert("languages".into(), json!(arr));
     }
-    let ctx = json!({ "stream": Value::Object(stream_obj), "service": {}, "addon": { "name": addon_name } });
+    let ctx = json!({
+        "stream": Value::Object(stream_obj),
+        "service": {},
+        "addon": { "name": addon_name },
+        "meta": build_media_context(media_meta, season, episode),
+    });
 
     let title_str = template::render(&title_tpl, &ctx);
     let desc_str = template::render(&desc_tpl, &ctx);
@@ -2904,6 +3086,7 @@ fn format_single_usenet_stream(
     season: Option<i32>,
     episode: Option<i32>,
     stream_template: Option<&Value>,
+    media_meta: Option<&Value>,
 ) -> Option<Value> {
     let nzb_guid = row.get("nzb_guid")?.as_str()?;
     let nzb_name = row.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -2978,7 +3161,8 @@ fn format_single_usenet_stream(
     let ctx = json!({
         "stream": Value::Object(stream_obj),
         "service": service_obj,
-        "addon": { "name": addon_name }
+        "addon": { "name": addon_name },
+        "meta": build_media_context(media_meta, season, episode),
     });
 
     let title_str = template::render(&title_tpl, &ctx);
