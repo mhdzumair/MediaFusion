@@ -218,11 +218,7 @@ async fn rd_post(
             form.push(("ip", &owned_ip));
         }
         retry::with_transport_retry("rd_post", || async {
-            http.post(url)
-                .bearer_auth(bearer)
-                .form(&form)
-                .send()
-                .await
+            http.post(url).bearer_auth(bearer).form(&form).send().await
         })
         .await?
     };

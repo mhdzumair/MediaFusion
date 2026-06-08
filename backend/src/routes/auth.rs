@@ -1391,7 +1391,8 @@ async fn send_email(
         // STARTTLS: connect plaintext then upgrade. relay() would build an
         // implicit-TLS (Tls::Wrapper) transport and fail on port 587 with
         // "received corrupt message of type InvalidContentType".
-        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(smtp_host)?.port(state.config.smtp_port)
+        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(smtp_host)?
+            .port(state.config.smtp_port)
     } else {
         AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(smtp_host)
             .port(state.config.smtp_port)

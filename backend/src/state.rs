@@ -212,16 +212,17 @@ pub async fn maybe_recompute_keyword_blocked(pool: &PgPool, kf: &KeywordFilterCa
     let ver = kf.version_tag();
     let ver_str = format!("{:016x}", ver);
 
-    let stored: Option<String> = sqlx::query_scalar(
-        "SELECT file_hash FROM keyword_sync_state WHERE id = $1",
-    )
-    .bind(KW_BLOCKED_RECOMPUTE_ID)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT file_hash FROM keyword_sync_state WHERE id = $1")
+            .bind(KW_BLOCKED_RECOMPUTE_ID)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
 
     if stored.as_deref() == Some(ver_str.as_str()) {
-        tracing::debug!("keyword blocked: column up to date (version {ver_str}), skipping recompute");
+        tracing::debug!(
+            "keyword blocked: column up to date (version {ver_str}), skipping recompute"
+        );
         return;
     }
 

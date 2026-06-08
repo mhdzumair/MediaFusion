@@ -10,7 +10,10 @@ use std::sync::Arc;
 use mediafusion_api::{
     config::AppConfig,
     exception_tracker, routes,
-    state::{load_keyword_filter_cache, maybe_recompute_keyword_blocked, sync_keywords_from_file, AppState},
+    state::{
+        load_keyword_filter_cache, maybe_recompute_keyword_blocked, sync_keywords_from_file,
+        AppState,
+    },
 };
 use tracing::info;
 

@@ -84,10 +84,7 @@ pub async fn response_json(
                 &text
             };
             tracing::debug!("{context}: non-JSON client error (HTTP {status}) — body: {preview}");
-            return ProviderError::api(
-                format!("HTTP {status}"),
-                "debrid_service_down_error.mp4",
-            );
+            return ProviderError::api(format!("HTTP {status}"), "debrid_service_down_error.mp4");
         }
         // Log up to 500 chars so HTML error pages are visible without flooding logs.
         let preview = if text.len() > 500 {

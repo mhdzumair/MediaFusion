@@ -195,15 +195,13 @@ async fn get_library_items(
         .bind(&nudity_exclude_enums) // $3
         .bind(skip) // $4
         .bind(cert_excludes); // $5
-    q.fetch_all(pool)
-        .await
-        .unwrap_or_else(|e| {
-            warn!(
-                "library query [uid={uid} type={}]: {e}",
-                media_type.as_wire()
-            );
-            vec![]
-        })
+    q.fetch_all(pool).await.unwrap_or_else(|e| {
+        warn!(
+            "library query [uid={uid} type={}]: {e}",
+            media_type.as_wire()
+        );
+        vec![]
+    })
 }
 
 /// Watchlist catalog rows: media linked to any of the given torrent info_hashes.
@@ -356,12 +354,10 @@ pub async fn search_metadata(
         .bind(&nudity_exclude_enums) // $3
         .bind(skip) // $4
         .bind(cert_excludes); // $5
-    q.fetch_all(pool)
-        .await
-        .unwrap_or_else(|e| {
-            warn!("search query [type={media_type} q={query}]: {e}");
-            vec![]
-        })
+    q.fetch_all(pool).await.unwrap_or_else(|e| {
+        warn!("search query [type={media_type} q={query}]: {e}");
+        vec![]
+    })
 }
 
 /// Filter MDBList IMDb ids through PostgreSQL with parental-guide filters and stream availability.
@@ -428,13 +424,11 @@ pub async fn get_mdblist_filtered_items(
         .bind(cert_excludes) // $4
         .bind(limit) // $5
         .bind(skip); // $6
-    q.fetch_all(pool)
-        .await
-        .unwrap_or_else(|e| {
-            warn!(
-                "mdblist filtered query [type={}]: {e}",
-                media_type.as_wire()
-            );
-            vec![]
-        })
+    q.fetch_all(pool).await.unwrap_or_else(|e| {
+        warn!(
+            "mdblist filtered query [type={}]: {e}",
+            media_type.as_wire()
+        );
+        vec![]
+    })
 }

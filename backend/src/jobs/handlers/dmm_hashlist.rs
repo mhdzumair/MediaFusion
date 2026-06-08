@@ -75,7 +75,7 @@ async fn wait_for_rate_limit_reset(resp: &reqwest::Response) {
 
     if let Some(reset) = reset_epoch {
         let now = chrono::Utc::now().timestamp();
-        let wait_secs = (reset - now + 1).max(1).min(120) as u64;
+        let wait_secs = (reset - now + 1).clamp(1, 120) as u64;
         warn!(
             "dmm_hashlist: GitHub rate limit hit (remaining={remaining}, reset in {wait_secs}s) — sleeping"
         );

@@ -788,7 +788,9 @@ pub async fn search_metadata(
             );
             let mt_val =
                 MediaType::from_wire(&media_type.to_ascii_lowercase()).unwrap_or(MediaType::Movie);
-            let count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(q).bind(mt_val);
+            let count_q = sqlx::query_scalar::<_, i64>(&count_sql)
+                .bind(q)
+                .bind(mt_val);
             let count: i64 = match count_q.fetch_one(&state.pool_ro).await {
                 Ok(v) => v,
                 Err(e) => {
@@ -814,13 +816,11 @@ pub async fn search_metadata(
                    m.id DESC \
                  LIMIT $3 OFFSET $4"
             );
-            let rows_q = sqlx::query_as::<_, (i32, String, String, Option<i32>, bool)>(
-                &rows_sql,
-            )
-            .bind(q)
-            .bind(mt_val)
-            .bind(page_size)
-            .bind(offset);
+            let rows_q = sqlx::query_as::<_, (i32, String, String, Option<i32>, bool)>(&rows_sql)
+                .bind(q)
+                .bind(mt_val)
+                .bind(page_size)
+                .bind(offset);
             let rows: Vec<(i32, String, String, Option<i32>, bool)> =
                 match rows_q.fetch_all(&state.pool_ro).await {
                     Ok(v) => v,
@@ -867,12 +867,10 @@ pub async fn search_metadata(
                    m.id DESC \
                  LIMIT $2 OFFSET $3"
             );
-            let rows_q = sqlx::query_as::<_, (i32, String, String, Option<i32>, bool)>(
-                &rows_sql,
-            )
-            .bind(q)
-            .bind(page_size)
-            .bind(offset);
+            let rows_q = sqlx::query_as::<_, (i32, String, String, Option<i32>, bool)>(&rows_sql)
+                .bind(q)
+                .bind(page_size)
+                .bind(offset);
             let rows: Vec<(i32, String, String, Option<i32>, bool)> =
                 match rows_q.fetch_all(&state.pool_ro).await {
                     Ok(v) => v,

@@ -25,7 +25,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
-use crate::{db::MediaId, state::{AppState, KeywordFilterCache}};
+use crate::{
+    db::MediaId,
+    state::{AppState, KeywordFilterCache},
+};
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 

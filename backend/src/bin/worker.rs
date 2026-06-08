@@ -44,7 +44,10 @@ use mediafusion_api::{
         metrics::JobMetrics,
         JobRegistry,
     },
-    state::{load_keyword_filter_cache, maybe_recompute_keyword_blocked, sync_keywords_from_file, AppState},
+    state::{
+        load_keyword_filter_cache, maybe_recompute_keyword_blocked, sync_keywords_from_file,
+        AppState,
+    },
 };
 use tokio_util::sync::CancellationToken;
 use tracing::info;

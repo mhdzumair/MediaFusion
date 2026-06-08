@@ -1144,14 +1144,13 @@ pub async fn get_media_streams(
 
     // Guard: don't serve streams for keyword-blocked media.
     {
-        let blocked: bool = sqlx::query_scalar::<_, bool>(
-            "SELECT is_keyword_blocked FROM media WHERE id = $1",
-        )
-        .bind(media_id)
-        .fetch_optional(&state.pool_ro)
-        .await
-        .unwrap_or(None)
-        .unwrap_or(false);
+        let blocked: bool =
+            sqlx::query_scalar::<_, bool>("SELECT is_keyword_blocked FROM media WHERE id = $1")
+                .bind(media_id)
+                .fetch_optional(&state.pool_ro)
+                .await
+                .unwrap_or(None)
+                .unwrap_or(false);
 
         if blocked {
             return Json(json!({ "streams": [] })).into_response();

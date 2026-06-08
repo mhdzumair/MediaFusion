@@ -928,7 +928,17 @@ pub async fn resolve(
     );
     let http_streams: Vec<Value> = http_sorted
         .iter()
-        .filter_map(|row| format_http_stream(row, addon_name, tpl, false, p.media_meta.as_ref(), season, episode))
+        .filter_map(|row| {
+            format_http_stream(
+                row,
+                addon_name,
+                tpl,
+                false,
+                p.media_meta.as_ref(),
+                season,
+                episode,
+            )
+        })
         .collect();
 
     let youtube_sorted = sort_stream_rows(
@@ -945,7 +955,9 @@ pub async fn resolve(
     );
     let youtube_streams: Vec<Value> = youtube_sorted
         .iter()
-        .filter_map(|row| format_youtube_stream(row, addon_name, tpl, p.media_meta.as_ref(), season, episode))
+        .filter_map(|row| {
+            format_youtube_stream(row, addon_name, tpl, p.media_meta.as_ref(), season, episode)
+        })
         .collect();
 
     let mediaflow = p.user_data.mediaflow_config.as_ref();
@@ -963,7 +975,18 @@ pub async fn resolve(
     );
     let telegram_streams: Vec<Value> = telegram_sorted
         .iter()
-        .filter_map(|row| format_telegram_stream(row, addon_name, host_url, secret_str, tpl, p.media_meta.as_ref(), season, episode))
+        .filter_map(|row| {
+            format_telegram_stream(
+                row,
+                addon_name,
+                host_url,
+                secret_str,
+                tpl,
+                p.media_meta.as_ref(),
+                season,
+                episode,
+            )
+        })
         .collect();
 
     let acestream_sorted = sort_stream_rows(
@@ -1273,14 +1296,13 @@ async fn build_pipeline(
 
     // Guard: don't serve streams for keyword-blocked media.
     if media_id != db::MediaId(0) {
-        let blocked: bool = sqlx::query_scalar::<_, bool>(
-            "SELECT is_keyword_blocked FROM media WHERE id = $1",
-        )
-        .bind(media_id.0)
-        .fetch_optional(&state.pool)
-        .await
-        .unwrap_or(None)
-        .unwrap_or(false);
+        let blocked: bool =
+            sqlx::query_scalar::<_, bool>("SELECT is_keyword_blocked FROM media WHERE id = $1")
+                .bind(media_id.0)
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None)
+                .unwrap_or(false);
 
         if blocked {
             let torrent_providers: Vec<crate::models::user_data::StreamingProvider> = user_data
@@ -1810,7 +1832,15 @@ pub async fn resolve_rich(
 
     // HTTP streams
     for row in &p.http_rows {
-        if let Some(stream_val) = format_http_stream(row, addon_name, tpl, false, p.media_meta.as_ref(), season, episode) {
+        if let Some(stream_val) = format_http_stream(
+            row,
+            addon_name,
+            tpl,
+            false,
+            p.media_meta.as_ref(),
+            season,
+            episode,
+        ) {
             let meta = json!({
                 "stream_type": "http",
                 "name": row.get("name").and_then(|v| v.as_str()).unwrap_or(""),
@@ -1825,7 +1855,9 @@ pub async fn resolve_rich(
 
     // YouTube streams
     for row in &p.youtube_rows {
-        if let Some(stream_val) = format_youtube_stream(row, addon_name, tpl, p.media_meta.as_ref(), season, episode) {
+        if let Some(stream_val) =
+            format_youtube_stream(row, addon_name, tpl, p.media_meta.as_ref(), season, episode)
+        {
             let meta = json!({
                 "stream_type": "youtube",
                 "name": row.get("name").and_then(|v| v.as_str()).unwrap_or(""),
@@ -1840,8 +1872,16 @@ pub async fn resolve_rich(
 
     // Telegram streams
     for row in &p.telegram_rows {
-        if let Some(stream_val) = format_telegram_stream(row, addon_name, host_url, secret_str, tpl, p.media_meta.as_ref(), season, episode)
-        {
+        if let Some(stream_val) = format_telegram_stream(
+            row,
+            addon_name,
+            host_url,
+            secret_str,
+            tpl,
+            p.media_meta.as_ref(),
+            season,
+            episode,
+        ) {
             let meta = json!({
                 "stream_type": "telegram",
                 "name": row.get("name").and_then(|v| v.as_str()).unwrap_or(""),
@@ -2202,9 +2242,33 @@ fn format_unified_pool(
                     p.media_meta.as_ref(),
                 )
             }
-            2 => format_http_stream(&item.value, addon_name, tpl, false, p.media_meta.as_ref(), season, episode),
-            3 => format_youtube_stream(&item.value, addon_name, tpl, p.media_meta.as_ref(), season, episode),
-            4 => format_telegram_stream(&item.value, addon_name, host_url, secret_str, tpl, p.media_meta.as_ref(), season, episode),
+            2 => format_http_stream(
+                &item.value,
+                addon_name,
+                tpl,
+                false,
+                p.media_meta.as_ref(),
+                season,
+                episode,
+            ),
+            3 => format_youtube_stream(
+                &item.value,
+                addon_name,
+                tpl,
+                p.media_meta.as_ref(),
+                season,
+                episode,
+            ),
+            4 => format_telegram_stream(
+                &item.value,
+                addon_name,
+                host_url,
+                secret_str,
+                tpl,
+                p.media_meta.as_ref(),
+                season,
+                episode,
+            ),
             5 => format_acestream_stream(&item.value, addon_name, mediaflow, tpl),
             _ => None,
         };
@@ -2442,11 +2506,7 @@ fn has_user_stream_template(stream_template: Option<&Value>) -> bool {
 
 /// Build the `meta` context object from a serialized `MediaMetaRow` value.
 /// Includes season/episode numbers when available (for series).
-fn build_media_context(
-    meta: Option<&Value>,
-    season: Option<i32>,
-    episode: Option<i32>,
-) -> Value {
+fn build_media_context(meta: Option<&Value>, season: Option<i32>, episode: Option<i32>) -> Value {
     let mut obj = serde_json::Map::new();
     if let Some(m) = meta {
         for key in &[
