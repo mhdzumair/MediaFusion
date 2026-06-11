@@ -132,7 +132,7 @@ pub async fn fetch_media_meta_by_id(
             ORDER BY CASE lower(rp.name) WHEN 'imdb' THEN 0 ELSE 1 END
             LIMIT 1
         ) mr ON true
-        WHERE m.id = $1 AND m.type = $2
+        WHERE m.id = $1 AND m.type = $2 AND m.adult = false
         LIMIT 1
         "#,
     )

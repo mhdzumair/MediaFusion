@@ -141,7 +141,7 @@ pub async fn resolve_media_ids(
     if let Some(raw) = video_id.strip_prefix("mf") {
         if let Ok(id) = raw.parse::<i32>() {
             let exists: Option<(MediaId,)> =
-                sqlx::query_as("SELECT id FROM media WHERE id = $1 AND type = $2 LIMIT 1")
+                sqlx::query_as("SELECT id FROM media WHERE id = $1 AND type = $2 AND adult = false LIMIT 1")
                     .bind(MediaId(id))
                     .bind(mt)
                     .fetch_optional(pool)
@@ -175,6 +175,7 @@ pub async fn resolve_media_ids(
         WHERE meid.provider = $1
           AND meid.external_id = $2
           AND m.type = $3
+          AND m.adult = false
         LIMIT 1
         "#,
     )
@@ -196,6 +197,7 @@ pub async fn resolve_media_ids(
         WHERE meid.provider = $1
           AND meid.external_id = $2
           AND m.type = $3
+          AND m.adult = false
           AND m.id != $4
         "#,
     )
@@ -239,13 +241,13 @@ pub async fn get_media_id_by_external_id(
         };
         let mid = MediaId(internal_id);
         if let Some(mt) = mt {
-            return sqlx::query_scalar("SELECT id FROM media WHERE id = $1 AND type = $2 LIMIT 1")
+            return sqlx::query_scalar("SELECT id FROM media WHERE id = $1 AND type = $2 AND adult = false LIMIT 1")
                 .bind(mid)
                 .bind(mt)
                 .fetch_optional(pool)
                 .await;
         }
-        return sqlx::query_scalar("SELECT id FROM media WHERE id = $1 LIMIT 1")
+        return sqlx::query_scalar("SELECT id FROM media WHERE id = $1 AND adult = false LIMIT 1")
             .bind(mid)
             .fetch_optional(pool)
             .await;
@@ -269,6 +271,7 @@ pub async fn get_media_id_by_external_id(
             WHERE meid.provider = $1
               AND meid.external_id = $2
               AND m.type = $3
+              AND m.adult = false
             LIMIT 1
             "#,
         )
@@ -280,8 +283,11 @@ pub async fn get_media_id_by_external_id(
     } else {
         sqlx::query_scalar(
             r#"
-            SELECT meid.media_id FROM media_external_id meid
-            WHERE meid.provider = $1 AND meid.external_id = $2
+            SELECT m.id FROM media m
+            JOIN media_external_id meid ON m.id = meid.media_id
+            WHERE meid.provider = $1
+              AND meid.external_id = $2
+              AND m.adult = false
             LIMIT 1
             "#,
         )

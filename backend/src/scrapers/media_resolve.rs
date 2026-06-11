@@ -192,6 +192,14 @@ pub async fn find_or_create_media_with_anime(
             ..Default::default()
         });
 
+        if normalized.adult {
+            debug!(
+                "media_resolve: skipping adult title '{}' ({}) for '{title}'",
+                normalized.title, match_meta.provider
+            );
+            return None;
+        }
+
         if match_meta.provider == "tmdb" {
             if let Some(key) = tmdb_api_key {
                 if normalized.external_id("imdb").is_none() {
@@ -612,6 +620,14 @@ pub async fn ensure_media_for_import(
         if let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(meta_id) {
             meta.external_ids.push((provider.to_string(), ext_id));
         }
+    }
+
+    if meta.adult {
+        debug!(
+            "ensure_media_for_import: rejecting adult title '{}' for meta_id={meta_id}",
+            meta.title
+        );
+        return None;
     }
 
     let media_id = crate::db::store_media(pool, &meta, crate::db::StoreMediaOpts::default())
