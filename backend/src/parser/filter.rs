@@ -14,8 +14,8 @@ use super::constants::{
     normalized_hdr_filter_and_display, supported_languages, supported_qualities,
     supported_resolutions,
 };
-use super::contains_adult_keywords;
 use super::sort::sort_and_cap_stream_rows;
+use crate::state::KeywordFilterCache;
 
 pub const MAX_STREAM_NAME_FILTER_PATTERNS: usize = 10;
 pub const MAX_STREAM_NAME_FILTER_PATTERN_LENGTH: usize = 120;
@@ -32,17 +32,7 @@ pub struct FilterContext<'a> {
     pub primary_provider: Option<&'a StreamingProvider>,
     pub is_usenet: bool,
     pub allow_public_usenet: bool,
-}
-
-/// Apply user nudity and certification filters to a stream list (scrape-time adult keywords only).
-pub fn apply_filters(
-    streams: Vec<crate::scrapers::ScrapedStream>,
-    _user_data: &UserData,
-) -> Vec<crate::scrapers::ScrapedStream> {
-    streams
-        .into_iter()
-        .filter(|s| !contains_adult_keywords(&s.name))
-        .collect()
+    pub keyword_filters: &'a KeywordFilterCache,
 }
 
 /// Port of Python `filter_streams_by_user_preferences` — returns rows with `filtered_*` sidecars set.
@@ -197,7 +187,7 @@ pub fn filter_streams_by_preferences(streams: Vec<Value>, ctx: &FilterContext<'_
 
         // Step 10: 18+
         let name = row.get("name").and_then(|v| v.as_str()).unwrap_or("");
-        if contains_adult_keywords(name) {
+        if ctx.keyword_filters.matches_blocked_keyword(name) {
             continue;
         }
 

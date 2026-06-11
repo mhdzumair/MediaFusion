@@ -156,6 +156,12 @@ async fn scrape_and_persist_channel(
         year: None,
     };
 
+    let kf = ctx
+        .state
+        .keyword_filters
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default();
     let streams = crate::scrapers::telegram::scrape(
         client,
         &[channel.to_string()],
@@ -166,6 +172,7 @@ async fn scrape_and_persist_channel(
         None,
         message_limit,
         min_size,
+        &kf,
     )
     .await;
 

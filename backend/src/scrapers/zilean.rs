@@ -7,6 +7,7 @@ use tokio::sync::Semaphore;
 use crate::{
     parser,
     scrapers::{ScrapedStream, SearchMeta, StreamFile},
+    state::KeywordFilterCache,
 };
 
 /// POST /dmm/search — broad title lookup.
@@ -17,6 +18,7 @@ pub async fn scrape_search(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     let resp = client
         .post(format!("{base_url}/dmm/search"))
@@ -36,7 +38,7 @@ pub async fn scrape_search(
         }
     };
 
-    process_items(raw_items, media_type, season, episode).await
+    process_items(raw_items, media_type, season, episode, keyword_filters).await
 }
 
 /// GET /dmm/filtered — structured movie/series lookup.
@@ -47,6 +49,7 @@ pub async fn scrape_filtered(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     let mut filter_params: Vec<(&str, String)> = vec![("Query", meta.title.clone())];
     if media_type == "movie" {
@@ -80,7 +83,7 @@ pub async fn scrape_filtered(
         }
     };
 
-    process_items(raw_items, media_type, season, episode).await
+    process_items(raw_items, media_type, season, episode, keyword_filters).await
 }
 
 pub async fn scrape(
@@ -90,10 +93,11 @@ pub async fn scrape(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     let (search, filtered) = tokio::join!(
-        scrape_search(client, base_url, meta, media_type, season, episode),
-        scrape_filtered(client, base_url, meta, media_type, season, episode),
+        scrape_search(client, base_url, meta, media_type, season, episode, keyword_filters),
+        scrape_filtered(client, base_url, meta, media_type, season, episode, keyword_filters),
     );
     let mut seen = std::collections::HashSet::new();
     search
@@ -127,6 +131,7 @@ async fn process_items(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     if raw_items.is_empty() {
         return vec![];
@@ -139,9 +144,10 @@ async fn process_items(
     for item in raw_items {
         let sem = sem.clone();
         let media_type = media_type.clone();
+        let kf = keyword_filters.clone();
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.ok()?;
-            process_item(&item, &media_type, season, episode)
+            process_item(&item, &media_type, season, episode, &kf)
         }));
     }
 
@@ -159,10 +165,11 @@ fn process_item(
     media_type: &str,
     _season: Option<i32>,
     _episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Option<ScrapedStream> {
     let raw_title = item.get("raw_title").and_then(|v| v.as_str())?;
 
-    if parser::contains_adult_keywords(raw_title) {
+    if keyword_filters.matches_blocked_keyword(raw_title) {
         return None;
     }
 

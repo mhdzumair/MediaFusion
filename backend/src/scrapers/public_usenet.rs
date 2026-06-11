@@ -16,6 +16,7 @@ use crate::{
         source_health::{self, HealthGateConfig},
         ScrapedUsenetStream, SearchMeta,
     },
+    state::KeywordFilterCache,
 };
 
 /// Outcome of a single indexer fetch attempt, distinguishing rate-limits from
@@ -38,6 +39,7 @@ pub async fn scrape(
     season: Option<i32>,
     episode: Option<i32>,
     health_gate: Option<&HealthGateConfig>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedUsenetStream> {
     let queries = build_queries(meta, media_type, season, episode);
     let mut results: Vec<ScrapedUsenetStream> = Vec::new();
@@ -57,7 +59,7 @@ pub async fn scrape(
                         for item in items {
                             if seen.insert(item.nzb_guid.clone()) {
                                 if let Some(s) =
-                                    validate_and_build(item, meta, media_type, season, episode)
+                                    validate_and_build(item, meta, media_type, season, episode, keyword_filters)
                                 {
                                     results.push(s);
                                 }
@@ -87,7 +89,7 @@ pub async fn scrape(
                         for item in items {
                             if seen.insert(item.nzb_guid.clone()) {
                                 if let Some(s) =
-                                    validate_and_build(item, meta, media_type, season, episode)
+                                    validate_and_build(item, meta, media_type, season, episode, keyword_filters)
                                 {
                                     results.push(s);
                                 }
@@ -185,11 +187,12 @@ fn validate_and_build(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Option<ScrapedUsenetStream> {
     if item.name.is_empty() {
         return None;
     }
-    if parser::contains_adult_keywords(&item.name) {
+    if keyword_filters.matches_blocked_keyword(&item.name) {
         return None;
     }
     let parsed = parser::parse_title(&item.name);

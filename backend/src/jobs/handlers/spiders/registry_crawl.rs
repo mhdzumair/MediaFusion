@@ -56,6 +56,12 @@ impl JobHandler for RegistryCrawl {
         let client = &ctx.state.http;
         let pool = &ctx.state.pool;
         let byparr_url = ctx.state.config.byparr_url.as_deref();
+        let kf = ctx
+            .state
+            .keyword_filters
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default();
 
         let mut seen = std::collections::HashSet::new();
 
@@ -111,7 +117,7 @@ impl JobHandler for RegistryCrawl {
                     continue;
                 }
 
-                if parser::contains_adult_keywords(&title) {
+                if kf.matches_blocked_keyword(&title) {
                     continue;
                 }
 

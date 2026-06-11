@@ -10,6 +10,7 @@ use crate::{
     models::user_data::UserData,
     parser,
     scrapers::{prowlarr::build_series_files, ScrapedStream, ScrapedUsenetStream, SearchMeta},
+    state::KeywordFilterCache,
 };
 
 const BASE_URL: &str = "https://search-api.torbox.app";
@@ -21,6 +22,7 @@ pub async fn scrape(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     let token = match torbox_token(user_data) {
         Some(t) => t,
@@ -40,7 +42,7 @@ pub async fn scrape(
 
     // 1. IMDb ID search (most accurate)
     if let Some(ref imdb_id) = meta.imdb_id {
-        let by_id = search_by_imdb(client, &headers, imdb_id, media_type, season, episode).await;
+        let by_id = search_by_imdb(client, &headers, imdb_id, media_type, season, episode, keyword_filters).await;
         for s in by_id {
             if seen.insert(s.info_hash.clone()) {
                 results.push(s);
@@ -51,7 +53,7 @@ pub async fn scrape(
     // 2. Title query search (additional results)
     let query = build_query(&meta.title, media_type, season, episode);
     let by_title =
-        search_by_query(client, &headers, &query, media_type, season, episode, meta).await;
+        search_by_query(client, &headers, &query, media_type, season, episode, meta, keyword_filters).await;
     for s in by_title {
         if seen.insert(s.info_hash.clone()) {
             results.push(s);
@@ -94,6 +96,7 @@ async fn search_by_imdb(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     let url = format!("{BASE_URL}/torrents/{imdb_id}");
     let mut params = vec![
@@ -126,7 +129,7 @@ async fn search_by_imdb(
         Ok(r) if r.status().as_u16() == 404 || r.status().as_u16() == 418 => vec![],
         Ok(r) if r.status().is_success() => {
             let json: serde_json::Value = r.json().await.unwrap_or_default();
-            parse_torrents_json(&json, media_type, season, episode, None)
+            parse_torrents_json(&json, media_type, season, episode, None, keyword_filters)
         }
         Ok(r) => {
             tracing::debug!("torbox_search imdb {imdb_id}: HTTP {}", r.status());
@@ -147,6 +150,7 @@ async fn search_by_query(
     season: Option<i32>,
     episode: Option<i32>,
     meta: &SearchMeta,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     let encoded = urlencoding::encode(query);
     let url = format!("{BASE_URL}/torrents/search/{encoded}");
@@ -168,7 +172,7 @@ async fn search_by_query(
         Ok(r) if r.status().as_u16() == 404 => vec![],
         Ok(r) if r.status().is_success() => {
             let json: serde_json::Value = r.json().await.unwrap_or_default();
-            parse_torrents_json(&json, media_type, season, episode, Some(meta))
+            parse_torrents_json(&json, media_type, season, episode, Some(meta), keyword_filters)
         }
         Ok(r) => {
             tracing::debug!("torbox_search query {query}: HTTP {}", r.status());
@@ -187,6 +191,7 @@ fn parse_torrents_json(
     season: Option<i32>,
     episode: Option<i32>,
     meta: Option<&SearchMeta>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     let torrents = match json
         .get("data")
@@ -213,7 +218,7 @@ fn parse_torrents_json(
         if raw_title.is_empty() || info_hash.len() != 40 {
             continue;
         }
-        if parser::contains_adult_keywords(raw_title) {
+        if keyword_filters.matches_blocked_keyword(raw_title) {
             continue;
         }
 
@@ -274,6 +279,7 @@ pub async fn scrape_usenet(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedUsenetStream> {
     let token = match torbox_token(user_data) {
         Some(t) => t,
@@ -290,7 +296,7 @@ pub async fn scrape_usenet(
 
     // 1. IMDb ID search — returns None on 429 (rate-limited); skip title query in that case
     if let Some(ref imdb_id) = meta.imdb_id {
-        match search_usenet_by_imdb(client, &headers, imdb_id, media_type, season, episode).await {
+        match search_usenet_by_imdb(client, &headers, imdb_id, media_type, season, episode, keyword_filters).await {
             None => return results, // rate-limited; skip title query to avoid another 429
             Some(by_id) => {
                 for s in by_id {
@@ -322,7 +328,7 @@ pub async fn scrape_usenet(
         Ok(r) if r.status().as_u16() == 404 => {}
         Ok(r) if r.status().is_success() => {
             let json: serde_json::Value = r.json().await.unwrap_or_default();
-            for s in parse_usenet_json(&json, media_type, season, episode, Some(meta)) {
+            for s in parse_usenet_json(&json, media_type, season, episode, Some(meta), keyword_filters) {
                 if seen.insert(s.nzb_guid.clone()) {
                     results.push(s);
                 }
@@ -347,6 +353,7 @@ async fn search_usenet_by_imdb(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Option<Vec<ScrapedUsenetStream>> {
     let url = format!("{BASE_URL}/usenet/{imdb_id}");
     let mut params: Vec<(&str, String)> = vec![
@@ -375,7 +382,7 @@ async fn search_usenet_by_imdb(
         Ok(r) if r.status().as_u16() == 404 || r.status().as_u16() == 418 => Some(vec![]),
         Ok(r) if r.status().is_success() => {
             let json: serde_json::Value = r.json().await.unwrap_or_default();
-            Some(parse_usenet_json(&json, media_type, season, episode, None))
+            Some(parse_usenet_json(&json, media_type, season, episode, None, keyword_filters))
         }
         Ok(r) if r.status().as_u16() == 429 => {
             tracing::debug!(
@@ -400,6 +407,7 @@ fn parse_usenet_json(
     season: Option<i32>,
     episode: Option<i32>,
     meta: Option<&SearchMeta>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedUsenetStream> {
     let nzbs = match json
         .get("data")
@@ -436,7 +444,7 @@ fn parse_usenet_json(
         if raw_title.is_empty() || nzb_guid.is_empty() {
             continue;
         }
-        if parser::contains_adult_keywords(raw_title) {
+        if keyword_filters.matches_blocked_keyword(raw_title) {
             continue;
         }
 

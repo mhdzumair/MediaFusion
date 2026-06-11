@@ -74,6 +74,12 @@ impl JobHandler for RssFeedScraper {
 
             let feed_torrent_type =
                 crate::scrapers::torrent_metadata::parse_torrent_type_str(&feed.torrent_type);
+            let kf = ctx
+                .state
+                .keyword_filters
+                .read()
+                .map(|g| g.clone())
+                .unwrap_or_default();
             let result = scrape_feed(
                 &ctx.state.pool,
                 &ctx.state.http,
@@ -87,6 +93,7 @@ impl JobHandler for RssFeedScraper {
                 feed_torrent_type,
                 ctx.state.config.tmdb_api_key.as_deref(),
                 ctx.state.config.imdb_cinemeta_fallback_enabled,
+                &kf,
             )
             .await;
 

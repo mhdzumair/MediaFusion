@@ -168,6 +168,11 @@ async fn run_torrent_scrape(
         } else {
             vec![]
         };
+        let kf_tg = state
+            .keyword_filters
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default();
         let tg_results = telegram::scrape(
             tg_client,
             &state.config.telegram_scraping_channels,
@@ -178,6 +183,7 @@ async fn run_torrent_scrape(
             episode,
             state.config.telegram_scrape_message_limit,
             state.config.min_scraping_video_size,
+            &kf_tg,
         )
         .await;
 
@@ -255,6 +261,11 @@ pub async fn run_forced(
         } else {
             vec![]
         };
+        let kf_tg2 = state
+            .keyword_filters
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default();
         let tg_results = telegram::scrape(
             tg_client,
             &state.config.telegram_scraping_channels,
@@ -265,6 +276,7 @@ pub async fn run_forced(
             episode,
             state.config.telegram_scrape_message_limit,
             state.config.min_scraping_video_size,
+            &kf_tg2,
         )
         .await;
         let tg_opts =
@@ -298,6 +310,11 @@ pub async fn run_usenet(
 ) -> Vec<ScrapedUsenetStream> {
     let _ = scope;
     let cfg = &state.config;
+    let kf = state
+        .keyword_filters
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default();
     let cache_key = media_cache_key(meta, season, episode);
     let now = scrape_timestamp_now();
     let last_scraped = fetch_last_scraped(
@@ -354,6 +371,7 @@ pub async fn run_usenet(
                     media_type,
                     season,
                     episode,
+                    &kf,
                 )
                 .await;
                 results.extend(en);
@@ -365,7 +383,7 @@ pub async fn run_usenet(
     // ── TorBox Usenet ─────────────────────────────────────────────────────────
     if is_stale("torbox_search", cfg.torbox_search_ttl) && torbox_search::has_token(user_data) {
         let tb =
-            torbox_search::scrape_usenet(&state.http, user_data, meta, media_type, season, episode)
+            torbox_search::scrape_usenet(&state.http, user_data, meta, media_type, season, episode, &kf)
                 .await;
         results.extend(tb);
         scraped_ids.push("torbox_search");
@@ -395,6 +413,7 @@ pub async fn run_usenet(
             season,
             episode,
             Some(&usenet_hg),
+            &kf,
         )
         .await;
         results.extend(pu);
@@ -584,6 +603,11 @@ async fn fan_out_with_opts(
     let cfg = state.config.clone();
     let meta = Arc::new(meta.clone());
     let ic = user_data.indexer_config.clone().unwrap_or_default();
+    let kf = state
+        .keyword_filters
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default();
 
     // Build cache key for TTL checking
     let cache_key = media_cache_key(&meta, season, episode);
@@ -787,10 +811,11 @@ async fn fan_out_with_opts(
             let meta = meta.clone();
             let mt = media_type.to_string();
             let url = url.clone();
+            let kf = kf.clone();
             set.spawn(async move {
                 let start = Utc::now();
                 let t = std::time::Instant::now();
-                let streams = zilean::scrape_search(&http, &url, &meta, &mt, season, episode).await;
+                let streams = zilean::scrape_search(&http, &url, &meta, &mt, season, episode, &kf).await;
                 tracing::debug!("zilean search: {} streams", streams.len());
                 ("zilean", streams, start, t.elapsed().as_secs_f64())
             });
@@ -800,11 +825,12 @@ async fn fan_out_with_opts(
             let meta = meta.clone();
             let mt = media_type.to_string();
             let url = url.clone();
+            let kf = kf.clone();
             set.spawn(async move {
                 let start = Utc::now();
                 let t = std::time::Instant::now();
                 let streams =
-                    zilean::scrape_filtered(&http, &url, &meta, &mt, season, episode).await;
+                    zilean::scrape_filtered(&http, &url, &meta, &mt, season, episode, &kf).await;
                 tracing::debug!("zilean filtered: {} streams", streams.len());
                 ("zilean", streams, start, t.elapsed().as_secs_f64())
             });
@@ -823,11 +849,12 @@ async fn fan_out_with_opts(
             let http = http.clone();
             let meta = meta.clone();
             let mt = media_type.to_string();
+            let kf = kf.clone();
             set.spawn(async move {
                 let start = Utc::now();
                 let t = std::time::Instant::now();
                 let streams =
-                    torznab::scrape(&http, &torznab_eps, &meta, &mt, season, episode).await;
+                    torznab::scrape(&http, &torznab_eps, &meta, &mt, season, episode, &kf).await;
                 ("torznab", streams, start, t.elapsed().as_secs_f64())
             });
             spawned_scrapers.push("torznab");
@@ -846,11 +873,12 @@ async fn fan_out_with_opts(
             let http = http.clone();
             let meta = meta.clone();
             let mt = media_type.to_string();
+            let kf = kf.clone();
             set.spawn(async move {
                 let start = Utc::now();
                 let t = std::time::Instant::now();
                 let streams =
-                    newznab::scrape(&http, &newznab_idxs, &meta, &mt, season, episode).await;
+                    newznab::scrape(&http, &newznab_idxs, &meta, &mt, season, episode, &kf).await;
                 ("newznab", streams, start, t.elapsed().as_secs_f64())
             });
             spawned_scrapers.push("newznab");
@@ -888,10 +916,11 @@ async fn fan_out_with_opts(
         let meta = meta.clone();
         let mt = media_type.to_string();
         let ud = user_data.clone();
+        let kf = kf.clone();
         set.spawn(async move {
             let start = Utc::now();
             let t = std::time::Instant::now();
-            let streams = torbox_search::scrape(&http, &ud, &meta, &mt, season, episode).await;
+            let streams = torbox_search::scrape(&http, &ud, &meta, &mt, season, episode, &kf).await;
             ("torbox_search", streams, start, t.elapsed().as_secs_f64())
         });
         spawned_scrapers.push("torbox_search");
@@ -910,6 +939,7 @@ async fn fan_out_with_opts(
         let byparr = opts.byparr_url.clone();
         let sites = cfg.public_indexers_live_search_sites.clone();
         let hg = health_gate.clone();
+        let kf = kf.clone();
         set.spawn(async move {
             let start = Utc::now();
             let t = std::time::Instant::now();
@@ -922,6 +952,7 @@ async fn fan_out_with_opts(
                 byparr.as_deref(),
                 sites.as_deref(),
                 Some(&hg),
+                &kf,
             )
             .await;
             ("public_indexers", streams, start, t.elapsed().as_secs_f64())

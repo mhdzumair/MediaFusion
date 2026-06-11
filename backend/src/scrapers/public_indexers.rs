@@ -20,6 +20,7 @@ use crate::{
         source_health::{self, HealthGateConfig},
         ScrapedStream, SearchMeta,
     },
+    state::KeywordFilterCache,
 };
 
 const MOVIE_SIMILARITY_MIN: u32 = 85;
@@ -55,6 +56,7 @@ pub async fn scrape(
     byparr_url: Option<&str>,
     enabled_sites: Option<&str>,
     health_gate: Option<&HealthGateConfig>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     let byparr_available = byparr_url.is_some();
     let indexers = get_indexers_for_media(media_type, enabled_sites, byparr_available);
@@ -113,7 +115,7 @@ pub async fn scrape(
         }
 
         let (streams, request_ok) = scrape_indexer(
-            client, indexer, meta, media_type, season, episode, byparr_url,
+            client, indexer, meta, media_type, season, episode, byparr_url, keyword_filters,
         )
         .await;
 
@@ -155,15 +157,16 @@ async fn scrape_indexer(
     season: Option<i32>,
     episode: Option<i32>,
     byparr_url: Option<&str>,
+    keyword_filters: &KeywordFilterCache,
 ) -> (Vec<ScrapedStream>, bool) {
     match indexer.handler {
-        HandlerType::Rss => scrape_rss(client, indexer, meta, media_type, season, episode).await,
+        HandlerType::Rss => scrape_rss(client, indexer, meta, media_type, season, episode, keyword_filters).await,
         HandlerType::SubsPleaseJson => {
             scrape_subsplease(client, indexer, meta, season, episode).await
         }
         HandlerType::Html => {
             scrape_html(
-                client, indexer, meta, media_type, season, episode, byparr_url,
+                client, indexer, meta, media_type, season, episode, byparr_url, keyword_filters,
             )
             .await
         }
@@ -208,6 +211,7 @@ async fn scrape_rss(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> (Vec<ScrapedStream>, bool) {
     let queries = build_queries(meta, media_type, season, episode);
     let sim_min = if media_type == "movie" {
@@ -256,7 +260,7 @@ async fn scrape_rss(
                 Some(t) => t.to_string(),
                 None => continue,
             };
-            if parser::contains_adult_keywords(&title) {
+            if keyword_filters.matches_blocked_keyword(&title) {
                 continue;
             }
             let link = match item.link.as_deref() {
@@ -458,6 +462,7 @@ async fn scrape_html(
     season: Option<i32>,
     episode: Option<i32>,
     byparr_url: Option<&str>,
+    keyword_filters: &KeywordFilterCache,
 ) -> (Vec<ScrapedStream>, bool) {
     let queries = build_queries(meta, media_type, season, episode);
     let sim_min = if media_type == "movie" {
@@ -516,7 +521,7 @@ async fn scrape_html(
                     }
                     if let Some(stream) = process_row_data(
                         client, indexer, meta, media_type, season, episode, data, &base_url,
-                        sim_min, byparr_url,
+                        sim_min, byparr_url, keyword_filters,
                     )
                     .await
                     {
@@ -546,8 +551,9 @@ async fn process_row_data(
     base_url: &str,
     sim_min: u32,
     byparr_url: Option<&str>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Option<ScrapedStream> {
-    if parser::contains_adult_keywords(&data.title) {
+    if keyword_filters.matches_blocked_keyword(&data.title) {
         return None;
     }
     let parsed = parser::parse_title(&data.title);

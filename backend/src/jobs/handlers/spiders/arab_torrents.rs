@@ -81,6 +81,12 @@ impl JobHandler for ArabTorrentsCrawl {
         let client = &ctx.state.http;
         let pool = &ctx.state.pool;
         let domain = rate_limit::domain_key(&homepage);
+        let kf = ctx
+            .state
+            .keyword_filters
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default();
 
         let row_sel = Selector::parse("table#torrents tr").expect("table#torrents tr");
         let magnet_sel = Selector::parse("a[href^='magnet:?']").expect("magnet a");
@@ -122,7 +128,7 @@ impl JobHandler for ArabTorrentsCrawl {
                         .map(|a| a.text().collect::<String>())
                         .unwrap_or_default();
                     title = title.replace("تحميل", "").trim().to_string();
-                    if title.is_empty() || parser::contains_adult_keywords(&title) {
+                    if title.is_empty() || kf.matches_blocked_keyword(&title) {
                         continue;
                     }
 

@@ -15,6 +15,7 @@ use crate::parser::{self, ParsedTitle};
 use crate::scrapers::torrent_metadata::{
     self, parse_torrent_bytes, should_persist_torrent_file, torrent_file_for_storage,
 };
+use crate::state::KeywordFilterCache;
 
 // ─── RSS XML parsing ──────────────────────────────────────────────────────────
 
@@ -516,6 +517,7 @@ pub async fn scrape_feed(
     feed_torrent_type: TorrentType,
     tmdb_api_key: Option<&str>,
     cinemeta_fallback_enabled: bool,
+    keyword_filters: &KeywordFilterCache,
 ) -> ScrapeResult {
     let start = std::time::Instant::now();
     let empty_patterns = Value::Object(serde_json::Map::new());
@@ -597,8 +599,9 @@ pub async fn scrape_feed(
             }
         };
 
-        // Skip adult content
-        if parser::contains_adult_keywords(&title) {
+        // Skip content blocked by the admin keyword filter (includes adult keywords)
+        if keyword_filters.matches_blocked_keyword(&title) {
+            debug!("rss_scraper: skipping blocked title '{title}'");
             skipped += 1;
             continue;
         }

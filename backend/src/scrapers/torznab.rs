@@ -4,6 +4,7 @@ use crate::{
     models::user_data::TorznabEndpoint,
     parser,
     scrapers::{prowlarr::build_series_files, ScrapedStream, SearchMeta},
+    state::KeywordFilterCache,
 };
 
 const MOVIE_CATS: &[i64] = &[2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060, 2070];
@@ -17,6 +18,7 @@ pub async fn scrape(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     let mut handles = Vec::with_capacity(endpoints.len());
 
@@ -27,6 +29,7 @@ pub async fn scrape(
         let meta_year = meta.year;
         let imdb_id = meta.imdb_id.clone();
         let mt = media_type.to_string();
+        let kf = keyword_filters.clone();
 
         handles.push(tokio::spawn(async move {
             query_endpoint(
@@ -38,6 +41,7 @@ pub async fn scrape(
                 &mt,
                 season,
                 episode,
+                &kf,
             )
             .await
         }));
@@ -63,6 +67,7 @@ async fn query_endpoint(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     let is_series = media_type == "series";
 
@@ -142,7 +147,7 @@ async fn query_endpoint(
         }
     };
 
-    parse_xml(&text, &ep.name, media_type, season, episode)
+    parse_xml(&text, &ep.name, media_type, season, episode, keyword_filters)
 }
 
 // ─── XML parser ───────────────────────────────────────────────────────────────
@@ -177,6 +182,7 @@ fn parse_xml(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     use quick_xml::events::Event;
     use quick_xml::Reader;
@@ -262,7 +268,7 @@ fn parse_xml(
             Ok(Event::End(e)) if e.local_name().as_ref() == b"item" && in_item => {
                 in_item = false;
                 current_text_field = None;
-                if let Some(s) = finalize_item(current, source, media_type, season, episode) {
+                if let Some(s) = finalize_item(current, source, media_type, season, episode, keyword_filters) {
                     results.push(s);
                 }
                 current = XmlItem::new();
@@ -286,9 +292,10 @@ fn finalize_item(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Option<ScrapedStream> {
     let title = item.title?.trim().to_string();
-    if title.is_empty() || parser::contains_adult_keywords(&title) {
+    if title.is_empty() || keyword_filters.matches_blocked_keyword(&title) {
         return None;
     }
 

@@ -12,6 +12,7 @@ use reqwest::Client;
 use crate::{
     models::user_data::NewznabIndexer,
     scrapers::{torznab, ScrapedStream, SearchMeta},
+    state::KeywordFilterCache,
 };
 
 const MOVIE_CATS: &[i64] = &[2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060, 2070];
@@ -24,6 +25,7 @@ pub async fn scrape(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     use crate::models::user_data::TorznabEndpoint;
 
@@ -65,5 +67,5 @@ pub async fn scrape(
         })
         .collect();
 
-    torznab::scrape(client, &endpoints, meta, media_type, season, episode).await
+    torznab::scrape(client, &endpoints, meta, media_type, season, episode, keyword_filters).await
 }

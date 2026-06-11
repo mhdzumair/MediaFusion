@@ -25,6 +25,7 @@ use tracing::{debug, info, warn};
 
 use crate::config::AppConfig;
 use crate::db::{MediaId, TorrentType};
+use crate::state::KeywordFilterCache;
 use crate::{
     jobs::{
         error::JobError,
@@ -383,6 +384,7 @@ async fn store_torrent_stream(
     tmdb_api_key: Option<&str>,
     tvdb_api_key: Option<&str>,
     cinemeta_fallback: bool,
+    keyword_filters: &KeywordFilterCache,
 ) -> Result<bool, sqlx::Error> {
     let existing: Option<(i32,)> =
         sqlx::query_as("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
@@ -394,7 +396,7 @@ async fn store_torrent_stream(
         return Ok(false);
     }
 
-    if parser::contains_adult_keywords(&entry.filename) {
+    if keyword_filters.matches_blocked_keyword(&entry.filename) {
         return Ok(false);
     }
 
@@ -524,6 +526,7 @@ async fn process_commit(
     tvdb_api_key: Option<&str>,
     cinemeta_fallback: bool,
     github_token: Option<&str>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Result<CommitStats, JobError> {
     let commit_url = format!(
         "https://api.github.com/repos/{}/{}/commits/{}",
@@ -620,6 +623,7 @@ async fn process_commit(
                 tmdb_api_key,
                 tvdb_api_key,
                 cinemeta_fallback,
+                keyword_filters,
             )
             .await
             {
@@ -741,6 +745,7 @@ async fn run_ingestion(
     tmdb_api_key: Option<&str>,
     tvdb_api_key: Option<&str>,
     cinemeta_fallback: bool,
+    keyword_filters: &KeywordFilterCache,
 ) -> Result<RunStats, JobError> {
     let github_token = app_cfg.dmm_hashlist_github_token.as_deref();
     let mut stats = RunStats::default();
@@ -814,6 +819,7 @@ async fn run_ingestion(
                     tvdb_api_key,
                     cinemeta_fallback,
                     github_token,
+                    keyword_filters,
                 )
                 .await
                 {
@@ -920,6 +926,7 @@ async fn run_ingestion(
                 tvdb_api_key,
                 cinemeta_fallback,
                 github_token,
+                keyword_filters,
             )
             .await
             {
@@ -993,6 +1000,12 @@ impl JobHandler for DmmHashlistScraper {
         let tmdb_api_key = app_cfg.tmdb_api_key.as_deref();
         let tvdb_api_key = app_cfg.tvdb_api_key.as_deref();
         let cinemeta_fallback = app_cfg.imdb_cinemeta_fallback_enabled;
+        let kf = ctx
+            .state
+            .keyword_filters
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default();
 
         let mut totals = RunStats::default();
 
@@ -1011,6 +1024,7 @@ impl JobHandler for DmmHashlistScraper {
                     tmdb_api_key,
                     tvdb_api_key,
                     cinemeta_fallback,
+                    &kf,
                 )
                 .await?;
                 totals.absorb(&iteration_stats);
@@ -1035,6 +1049,7 @@ impl JobHandler for DmmHashlistScraper {
                 tmdb_api_key,
                 tvdb_api_key,
                 cinemeta_fallback,
+                &kf,
             )
             .await?;
             totals.absorb(&iteration_stats);
@@ -1165,8 +1180,10 @@ mod tests {
 
     #[test]
     fn adult_keywords_filter_matches() {
-        assert!(parser::contains_adult_keywords(
-            "Some.Adult.Title.Brazzers.1080p"
-        ));
+        let kf = KeywordFilterCache {
+            keywords: vec!["brazzers".to_string()],
+            whitelist: vec![],
+        };
+        assert!(kf.matches_blocked_keyword("Some.Adult.Title.Brazzers.1080p"));
     }
 }

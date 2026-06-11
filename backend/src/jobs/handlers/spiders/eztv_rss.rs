@@ -171,6 +171,13 @@ impl JobHandler for EztvRssCrawl {
             return Ok(());
         }
 
+        let kf = ctx
+            .state
+            .keyword_filters
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+
         for item in &rss_items {
             if ctx.cancel.is_cancelled() {
                 debug!("eztv_rss: cancelled during item processing");
@@ -217,7 +224,7 @@ impl JobHandler for EztvRssCrawl {
                 continue;
             }
 
-            if parser::contains_adult_keywords(&title) {
+            if kf.matches_blocked_keyword(&title) {
                 continue;
             }
 

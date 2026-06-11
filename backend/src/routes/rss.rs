@@ -801,6 +801,11 @@ pub async fn run_rss_feed_scraper(
     let tmdb_key = state.config.tmdb_api_key.clone();
     let cinemeta_fallback = state.config.imdb_cinemeta_fallback_enabled;
     let feed_type = crate::scrapers::torrent_metadata::parse_torrent_type_str(&feed_torrent_type);
+    let kf = state
+        .keyword_filters
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default();
     tokio::spawn(async move {
         crate::scrapers::rss::scrape_feed(
             &pool,
@@ -815,6 +820,7 @@ pub async fn run_rss_feed_scraper(
             feed_type,
             tmdb_key.as_deref(),
             cinemeta_fallback,
+            &kf,
         )
         .await;
     });
@@ -1578,6 +1584,11 @@ pub async fn user_scrape_single_feed(
     let tmdb_key = state.config.tmdb_api_key.clone();
     let cinemeta_fallback = state.config.imdb_cinemeta_fallback_enabled;
     let feed_type = crate::scrapers::torrent_metadata::parse_torrent_type_str(&feed_torrent_type);
+    let kf = state
+        .keyword_filters
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default();
     tokio::spawn(async move {
         crate::scrapers::rss::scrape_feed(
             &pool,
@@ -1592,6 +1603,7 @@ pub async fn user_scrape_single_feed(
             feed_type,
             tmdb_key.as_deref(),
             cinemeta_fallback,
+            &kf,
         )
         .await;
     });
@@ -1647,6 +1659,11 @@ pub async fn user_run_all_scrapers(
     let http = state.http.clone();
     let tmdb_key = state.config.tmdb_api_key.clone();
     let cinemeta_fallback = state.config.imdb_cinemeta_fallback_enabled;
+    let kf = state
+        .keyword_filters
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default();
     tokio::spawn(async move {
         for (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type) in feeds {
             let feed_type =
@@ -1664,6 +1681,7 @@ pub async fn user_run_all_scrapers(
                 feed_type,
                 tmdb_key.as_deref(),
                 cinemeta_fallback,
+                &kf,
             )
             .await;
         }

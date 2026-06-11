@@ -1528,6 +1528,7 @@ pub async fn get_media_streams(
             .collect();
 
     let allow_public_usenet = state.config.is_scrap_from_public_usenet_indexers;
+    let kf = { state.keyword_filters.read().map(|g| g.clone()).unwrap_or_default() };
     let filter_ctx = FilterContext {
         user_data: &ud,
         season,
@@ -1535,6 +1536,7 @@ pub async fn get_media_streams(
         primary_provider: ud.get_primary_provider(),
         is_usenet: false,
         allow_public_usenet,
+        keyword_filters: &kf,
     };
 
     let sort_rows: Vec<serde_json::Value> = stream_pairs.iter().map(|(a, _)| a.clone()).collect();

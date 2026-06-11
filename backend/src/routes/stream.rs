@@ -20,7 +20,7 @@ use crate::{
         sort_and_cap_stream_rows, torrent_sort_key, FilterContext,
     },
     scrapers::{orchestrator, torrent_metadata},
-    state::AppState,
+    state::{AppState, KeywordFilterCache},
     template,
     usenet_compat::is_usenet_stream_compatible,
     util::{live_stream, mediaflow, trackers},
@@ -599,6 +599,7 @@ pub async fn resolve(
     let host_url = &state.config.host_url;
 
     let allow_public_usenet = state.config.is_scrap_from_public_usenet_indexers;
+    let kf = state.keyword_filters.read().map(|g| g.clone()).unwrap_or_default();
     let sorting_priority = p.user_data.sorting_priority();
     let selected_resolutions = p.user_data.effective_selected_resolutions();
     let quality_filter = if p.user_data.quality_filter.is_empty() {
@@ -608,7 +609,7 @@ pub async fn resolve(
     };
     let language_sorting = p.user_data.language_sorting_list();
 
-    apply_content_filters_to_pipeline(&mut p, season, episode, allow_public_usenet);
+    apply_content_filters_to_pipeline(&mut p, season, episode, allow_public_usenet, &kf);
 
     // Build refs for formatting (borrowing from pipeline)
     let torrent_providers_refs: Vec<&crate::models::user_data::StreamingProvider> =
@@ -858,6 +859,7 @@ pub async fn resolve(
             true,
             allow_public_usenet,
             usenet_providers_refs.first().copied(),
+            &kf,
         );
         for row in filtered {
             if let Some(pi) = usenet_providers_refs.iter().position(|up| {
@@ -1070,6 +1072,7 @@ fn filter_pipeline_rows(
     is_usenet: bool,
     allow_public_usenet: bool,
     primary_provider: Option<&crate::models::user_data::StreamingProvider>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<Value> {
     let ctx = FilterContext {
         user_data,
@@ -1078,6 +1081,7 @@ fn filter_pipeline_rows(
         primary_provider,
         is_usenet,
         allow_public_usenet,
+        keyword_filters,
     };
     filter_streams_by_preferences(rows, &ctx)
 }
@@ -1087,6 +1091,7 @@ fn apply_content_filters_to_pipeline(
     season: Option<i32>,
     episode: Option<i32>,
     allow_public_usenet: bool,
+    keyword_filters: &KeywordFilterCache,
 ) {
     p.all_torrents = filter_pipeline_rows(
         std::mem::take(&mut p.all_torrents),
@@ -1096,6 +1101,7 @@ fn apply_content_filters_to_pipeline(
         false,
         allow_public_usenet,
         None,
+        keyword_filters,
     );
     p.usenet_rows = filter_pipeline_rows(
         std::mem::take(&mut p.usenet_rows),
@@ -1105,6 +1111,7 @@ fn apply_content_filters_to_pipeline(
         true,
         allow_public_usenet,
         p.usenet_providers.first(),
+        keyword_filters,
     );
     p.http_rows = filter_pipeline_rows(
         std::mem::take(&mut p.http_rows),
@@ -1114,6 +1121,7 @@ fn apply_content_filters_to_pipeline(
         false,
         allow_public_usenet,
         None,
+        keyword_filters,
     );
     p.youtube_rows = filter_pipeline_rows(
         std::mem::take(&mut p.youtube_rows),
@@ -1123,6 +1131,7 @@ fn apply_content_filters_to_pipeline(
         false,
         allow_public_usenet,
         None,
+        keyword_filters,
     );
     p.telegram_rows = filter_pipeline_rows(
         std::mem::take(&mut p.telegram_rows),
@@ -1132,6 +1141,7 @@ fn apply_content_filters_to_pipeline(
         false,
         allow_public_usenet,
         None,
+        keyword_filters,
     );
     p.acestream_rows = filter_pipeline_rows(
         std::mem::take(&mut p.acestream_rows),
@@ -1141,6 +1151,7 @@ fn apply_content_filters_to_pipeline(
         false,
         allow_public_usenet,
         None,
+        keyword_filters,
     );
 }
 
@@ -1641,7 +1652,8 @@ pub async fn resolve_rich(
     .await?;
 
     let allow_public_usenet = state.config.is_scrap_from_public_usenet_indexers;
-    apply_content_filters_to_pipeline(&mut p, season, episode, allow_public_usenet);
+    let kf2 = state.keyword_filters.read().map(|g| g.clone()).unwrap_or_default();
+    apply_content_filters_to_pipeline(&mut p, season, episode, allow_public_usenet, &kf2);
 
     let addon_name = &state.config.addon_name;
     let host_url = &state.config.host_url;

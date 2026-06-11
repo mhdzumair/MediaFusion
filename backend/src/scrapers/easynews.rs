@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 use crate::{
     parser,
     scrapers::{prowlarr::build_series_files, ScrapedUsenetStream, SearchMeta},
+    state::KeywordFilterCache,
 };
 
 const SEARCH_URL: &str = "https://members.easynews.com/2.0/search/solr-search/advanced";
@@ -32,6 +33,7 @@ pub async fn scrape(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedUsenetStream> {
     let mut results: Vec<ScrapedUsenetStream> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -76,7 +78,7 @@ pub async fn scrape(
                 for item in items {
                     let guid = &item.nzb_guid;
                     if seen.insert(guid.clone()) {
-                        if let Some(stream) = parse_item(item, meta, media_type, season, episode) {
+                        if let Some(stream) = parse_item(item, meta, media_type, season, episode, keyword_filters) {
                             results.push(stream);
                         }
                     }
@@ -275,11 +277,12 @@ fn parse_item(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Option<ScrapedUsenetStream> {
     if item.filename.is_empty() {
         return None;
     }
-    if parser::contains_adult_keywords(&item.filename) {
+    if keyword_filters.matches_blocked_keyword(&item.filename) {
         return None;
     }
 
@@ -378,6 +381,7 @@ pub async fn scrape_with_credentials(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedUsenetStream> {
     let queries: Vec<(String, usize)> = if media_type == "series" {
         match (season, episode) {
@@ -434,7 +438,7 @@ pub async fn scrape_with_credentials(
                 item.file_extension.as_deref(),
             );
             item.down_url = None; // avoid leaking in later stages
-            if let Some(mut stream) = parse_item(item, meta, media_type, season, episode) {
+            if let Some(mut stream) = parse_item(item, meta, media_type, season, episode, keyword_filters) {
                 stream.nzb_url = nzb_url;
                 results.push(stream);
             }

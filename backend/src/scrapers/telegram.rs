@@ -15,6 +15,7 @@ use crate::{
     config::AppConfig,
     parser,
     scrapers::{ScrapedTelegramStream, SearchMeta},
+    state::KeywordFilterCache,
 };
 
 const VIDEO_EXTENSIONS: &[&str] = &[
@@ -114,6 +115,7 @@ pub async fn scrape(
     episode: Option<i32>,
     message_limit: i32,
     min_size: u64,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedTelegramStream> {
     let mut all_channels: Vec<String> = channels.to_vec();
     all_channels.extend_from_slice(user_channels);
@@ -130,6 +132,7 @@ pub async fn scrape(
             episode,
             message_limit,
             min_size,
+            keyword_filters,
         )
         .await;
         results.extend(channel_results);
@@ -149,6 +152,7 @@ async fn scrape_channel(
     episode: Option<i32>,
     message_limit: i32,
     min_size: u64,
+    keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedTelegramStream> {
     let username = channel.trim_start_matches('@');
 
@@ -198,6 +202,7 @@ async fn scrape_channel(
                     season,
                     episode,
                     min_size,
+                    keyword_filters,
                 ) {
                     results.push(stream);
                 }
@@ -225,6 +230,7 @@ fn process_message(
     season: Option<i32>,
     episode: Option<i32>,
     min_size: u64,
+    keyword_filters: &KeywordFilterCache,
 ) -> Option<ScrapedTelegramStream> {
     use grammers_client::media::Media;
 
@@ -259,7 +265,7 @@ fn process_message(
     }
 
     // Adult content filter
-    if parser::contains_adult_keywords(&file_name) {
+    if keyword_filters.matches_blocked_keyword(&file_name) {
         return None;
     }
 
