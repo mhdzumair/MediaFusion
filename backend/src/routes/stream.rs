@@ -599,7 +599,11 @@ pub async fn resolve(
     let host_url = &state.config.host_url;
 
     let allow_public_usenet = state.config.is_scrap_from_public_usenet_indexers;
-    let kf = state.keyword_filters.read().map(|g| g.clone()).unwrap_or_default();
+    let kf = state
+        .keyword_filters
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default();
     let sorting_priority = p.user_data.sorting_priority();
     let selected_resolutions = p.user_data.effective_selected_resolutions();
     let quality_filter = if p.user_data.quality_filter.is_empty() {
@@ -1652,7 +1656,11 @@ pub async fn resolve_rich(
     .await?;
 
     let allow_public_usenet = state.config.is_scrap_from_public_usenet_indexers;
-    let kf2 = state.keyword_filters.read().map(|g| g.clone()).unwrap_or_default();
+    let kf2 = state
+        .keyword_filters
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default();
     apply_content_filters_to_pipeline(&mut p, season, episode, allow_public_usenet, &kf2);
 
     let addon_name = &state.config.addon_name;

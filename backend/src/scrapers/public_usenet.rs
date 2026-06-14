@@ -58,9 +58,14 @@ pub async fn scrape(
                     IndexerOutcome::Success(items) => {
                         for item in items {
                             if seen.insert(item.nzb_guid.clone()) {
-                                if let Some(s) =
-                                    validate_and_build(item, meta, media_type, season, episode, keyword_filters)
-                                {
+                                if let Some(s) = validate_and_build(
+                                    item,
+                                    meta,
+                                    media_type,
+                                    season,
+                                    episode,
+                                    keyword_filters,
+                                ) {
                                     results.push(s);
                                 }
                             }
@@ -88,9 +93,14 @@ pub async fn scrape(
                     IndexerOutcome::Success(items) => {
                         for item in items {
                             if seen.insert(item.nzb_guid.clone()) {
-                                if let Some(s) =
-                                    validate_and_build(item, meta, media_type, season, episode, keyword_filters)
-                                {
+                                if let Some(s) = validate_and_build(
+                                    item,
+                                    meta,
+                                    media_type,
+                                    season,
+                                    episode,
+                                    keyword_filters,
+                                ) {
                                     results.push(s);
                                 }
                             }

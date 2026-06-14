@@ -382,9 +382,16 @@ pub async fn run_usenet(
 
     // ── TorBox Usenet ─────────────────────────────────────────────────────────
     if is_stale("torbox_search", cfg.torbox_search_ttl) && torbox_search::has_token(user_data) {
-        let tb =
-            torbox_search::scrape_usenet(&state.http, user_data, meta, media_type, season, episode, &kf)
-                .await;
+        let tb = torbox_search::scrape_usenet(
+            &state.http,
+            user_data,
+            meta,
+            media_type,
+            season,
+            episode,
+            &kf,
+        )
+        .await;
         results.extend(tb);
         scraped_ids.push("torbox_search");
     }
@@ -815,7 +822,8 @@ async fn fan_out_with_opts(
             set.spawn(async move {
                 let start = Utc::now();
                 let t = std::time::Instant::now();
-                let streams = zilean::scrape_search(&http, &url, &meta, &mt, season, episode, &kf).await;
+                let streams =
+                    zilean::scrape_search(&http, &url, &meta, &mt, season, episode, &kf).await;
                 tracing::debug!("zilean search: {} streams", streams.len());
                 ("zilean", streams, start, t.elapsed().as_secs_f64())
             });

@@ -115,7 +115,14 @@ pub async fn scrape(
         }
 
         let (streams, request_ok) = scrape_indexer(
-            client, indexer, meta, media_type, season, episode, byparr_url, keyword_filters,
+            client,
+            indexer,
+            meta,
+            media_type,
+            season,
+            episode,
+            byparr_url,
+            keyword_filters,
         )
         .await;
 
@@ -160,13 +167,31 @@ async fn scrape_indexer(
     keyword_filters: &KeywordFilterCache,
 ) -> (Vec<ScrapedStream>, bool) {
     match indexer.handler {
-        HandlerType::Rss => scrape_rss(client, indexer, meta, media_type, season, episode, keyword_filters).await,
+        HandlerType::Rss => {
+            scrape_rss(
+                client,
+                indexer,
+                meta,
+                media_type,
+                season,
+                episode,
+                keyword_filters,
+            )
+            .await
+        }
         HandlerType::SubsPleaseJson => {
             scrape_subsplease(client, indexer, meta, season, episode).await
         }
         HandlerType::Html => {
             scrape_html(
-                client, indexer, meta, media_type, season, episode, byparr_url, keyword_filters,
+                client,
+                indexer,
+                meta,
+                media_type,
+                season,
+                episode,
+                byparr_url,
+                keyword_filters,
             )
             .await
         }
@@ -520,8 +545,17 @@ async fn scrape_html(
                         break 'outer;
                     }
                     if let Some(stream) = process_row_data(
-                        client, indexer, meta, media_type, season, episode, data, &base_url,
-                        sim_min, byparr_url, keyword_filters,
+                        client,
+                        indexer,
+                        meta,
+                        media_type,
+                        season,
+                        episode,
+                        data,
+                        &base_url,
+                        sim_min,
+                        byparr_url,
+                        keyword_filters,
                     )
                     .await
                     {

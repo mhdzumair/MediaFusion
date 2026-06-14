@@ -42,7 +42,16 @@ pub async fn scrape(
 
     // 1. IMDb ID search (most accurate)
     if let Some(ref imdb_id) = meta.imdb_id {
-        let by_id = search_by_imdb(client, &headers, imdb_id, media_type, season, episode, keyword_filters).await;
+        let by_id = search_by_imdb(
+            client,
+            &headers,
+            imdb_id,
+            media_type,
+            season,
+            episode,
+            keyword_filters,
+        )
+        .await;
         for s in by_id {
             if seen.insert(s.info_hash.clone()) {
                 results.push(s);
@@ -52,8 +61,17 @@ pub async fn scrape(
 
     // 2. Title query search (additional results)
     let query = build_query(&meta.title, media_type, season, episode);
-    let by_title =
-        search_by_query(client, &headers, &query, media_type, season, episode, meta, keyword_filters).await;
+    let by_title = search_by_query(
+        client,
+        &headers,
+        &query,
+        media_type,
+        season,
+        episode,
+        meta,
+        keyword_filters,
+    )
+    .await;
     for s in by_title {
         if seen.insert(s.info_hash.clone()) {
             results.push(s);
@@ -172,7 +190,14 @@ async fn search_by_query(
         Ok(r) if r.status().as_u16() == 404 => vec![],
         Ok(r) if r.status().is_success() => {
             let json: serde_json::Value = r.json().await.unwrap_or_default();
-            parse_torrents_json(&json, media_type, season, episode, Some(meta), keyword_filters)
+            parse_torrents_json(
+                &json,
+                media_type,
+                season,
+                episode,
+                Some(meta),
+                keyword_filters,
+            )
         }
         Ok(r) => {
             tracing::debug!("torbox_search query {query}: HTTP {}", r.status());
@@ -296,7 +321,17 @@ pub async fn scrape_usenet(
 
     // 1. IMDb ID search — returns None on 429 (rate-limited); skip title query in that case
     if let Some(ref imdb_id) = meta.imdb_id {
-        match search_usenet_by_imdb(client, &headers, imdb_id, media_type, season, episode, keyword_filters).await {
+        match search_usenet_by_imdb(
+            client,
+            &headers,
+            imdb_id,
+            media_type,
+            season,
+            episode,
+            keyword_filters,
+        )
+        .await
+        {
             None => return results, // rate-limited; skip title query to avoid another 429
             Some(by_id) => {
                 for s in by_id {
@@ -328,7 +363,14 @@ pub async fn scrape_usenet(
         Ok(r) if r.status().as_u16() == 404 => {}
         Ok(r) if r.status().is_success() => {
             let json: serde_json::Value = r.json().await.unwrap_or_default();
-            for s in parse_usenet_json(&json, media_type, season, episode, Some(meta), keyword_filters) {
+            for s in parse_usenet_json(
+                &json,
+                media_type,
+                season,
+                episode,
+                Some(meta),
+                keyword_filters,
+            ) {
                 if seen.insert(s.nzb_guid.clone()) {
                     results.push(s);
                 }
@@ -382,7 +424,14 @@ async fn search_usenet_by_imdb(
         Ok(r) if r.status().as_u16() == 404 || r.status().as_u16() == 418 => Some(vec![]),
         Ok(r) if r.status().is_success() => {
             let json: serde_json::Value = r.json().await.unwrap_or_default();
-            Some(parse_usenet_json(&json, media_type, season, episode, None, keyword_filters))
+            Some(parse_usenet_json(
+                &json,
+                media_type,
+                season,
+                episode,
+                None,
+                keyword_filters,
+            ))
         }
         Ok(r) if r.status().as_u16() == 429 => {
             tracing::debug!(

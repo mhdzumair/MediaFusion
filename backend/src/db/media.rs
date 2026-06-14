@@ -140,13 +140,14 @@ pub async fn resolve_media_ids(
     // mf{internal_id} — direct media.id lookup, no external ID join needed.
     if let Some(raw) = video_id.strip_prefix("mf") {
         if let Ok(id) = raw.parse::<i32>() {
-            let exists: Option<(MediaId,)> =
-                sqlx::query_as("SELECT id FROM media WHERE id = $1 AND type = $2 AND adult = false LIMIT 1")
-                    .bind(MediaId(id))
-                    .bind(mt)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(|e| format!("mf lookup: {e}"))?;
+            let exists: Option<(MediaId,)> = sqlx::query_as(
+                "SELECT id FROM media WHERE id = $1 AND type = $2 AND adult = false LIMIT 1",
+            )
+            .bind(MediaId(id))
+            .bind(mt)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| format!("mf lookup: {e}"))?;
             return Ok(match exists {
                 Some((media_id,)) => (media_id, vec![]),
                 None => (MediaId(0), vec![]),
@@ -241,11 +242,13 @@ pub async fn get_media_id_by_external_id(
         };
         let mid = MediaId(internal_id);
         if let Some(mt) = mt {
-            return sqlx::query_scalar("SELECT id FROM media WHERE id = $1 AND type = $2 AND adult = false LIMIT 1")
-                .bind(mid)
-                .bind(mt)
-                .fetch_optional(pool)
-                .await;
+            return sqlx::query_scalar(
+                "SELECT id FROM media WHERE id = $1 AND type = $2 AND adult = false LIMIT 1",
+            )
+            .bind(mid)
+            .bind(mt)
+            .fetch_optional(pool)
+            .await;
         }
         return sqlx::query_scalar("SELECT id FROM media WHERE id = $1 AND adult = false LIMIT 1")
             .bind(mid)

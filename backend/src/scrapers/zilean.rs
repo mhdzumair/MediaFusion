@@ -96,8 +96,24 @@ pub async fn scrape(
     keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
     let (search, filtered) = tokio::join!(
-        scrape_search(client, base_url, meta, media_type, season, episode, keyword_filters),
-        scrape_filtered(client, base_url, meta, media_type, season, episode, keyword_filters),
+        scrape_search(
+            client,
+            base_url,
+            meta,
+            media_type,
+            season,
+            episode,
+            keyword_filters
+        ),
+        scrape_filtered(
+            client,
+            base_url,
+            meta,
+            media_type,
+            season,
+            episode,
+            keyword_filters
+        ),
     );
     let mut seen = std::collections::HashSet::new();
     search

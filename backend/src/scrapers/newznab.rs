@@ -67,5 +67,14 @@ pub async fn scrape(
         })
         .collect();
 
-    torznab::scrape(client, &endpoints, meta, media_type, season, episode, keyword_filters).await
+    torznab::scrape(
+        client,
+        &endpoints,
+        meta,
+        media_type,
+        season,
+        episode,
+        keyword_filters,
+    )
+    .await
 }

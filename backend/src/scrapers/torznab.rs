@@ -147,7 +147,14 @@ async fn query_endpoint(
         }
     };
 
-    parse_xml(&text, &ep.name, media_type, season, episode, keyword_filters)
+    parse_xml(
+        &text,
+        &ep.name,
+        media_type,
+        season,
+        episode,
+        keyword_filters,
+    )
 }
 
 // ─── XML parser ───────────────────────────────────────────────────────────────
@@ -268,7 +275,14 @@ fn parse_xml(
             Ok(Event::End(e)) if e.local_name().as_ref() == b"item" && in_item => {
                 in_item = false;
                 current_text_field = None;
-                if let Some(s) = finalize_item(current, source, media_type, season, episode, keyword_filters) {
+                if let Some(s) = finalize_item(
+                    current,
+                    source,
+                    media_type,
+                    season,
+                    episode,
+                    keyword_filters,
+                ) {
                     results.push(s);
                 }
                 current = XmlItem::new();

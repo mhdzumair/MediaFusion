@@ -140,4 +140,3 @@ fn jaccard(a: &str, b: &str) -> u32 {
     let union = ta.union(&tb).count();
     ((intersection * 100) / union) as u32
 }
-

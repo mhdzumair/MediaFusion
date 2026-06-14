@@ -78,7 +78,9 @@ pub async fn scrape(
                 for item in items {
                     let guid = &item.nzb_guid;
                     if seen.insert(guid.clone()) {
-                        if let Some(stream) = parse_item(item, meta, media_type, season, episode, keyword_filters) {
+                        if let Some(stream) =
+                            parse_item(item, meta, media_type, season, episode, keyword_filters)
+                        {
                             results.push(stream);
                         }
                     }
@@ -438,7 +440,9 @@ pub async fn scrape_with_credentials(
                 item.file_extension.as_deref(),
             );
             item.down_url = None; // avoid leaking in later stages
-            if let Some(mut stream) = parse_item(item, meta, media_type, season, episode, keyword_filters) {
+            if let Some(mut stream) =
+                parse_item(item, meta, media_type, season, episode, keyword_filters)
+            {
                 stream.nzb_url = nzb_url;
                 results.push(stream);
             }
