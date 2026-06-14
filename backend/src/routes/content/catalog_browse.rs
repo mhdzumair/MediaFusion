@@ -701,10 +701,13 @@ pub async fn get_media_detail(
         Option<String>,
         Option<String>,
         Option<String>,
+        bool,
+        Option<String>,
     )> = sqlx::query_as(
         r#"SELECT m.id, m.title, m.type, m.year, m.description, m.status,
                       m.runtime_minutes::text, m.original_language, m.adult,
-                      m.release_date::text, m.end_date::text, m.tagline
+                      m.release_date::text, m.end_date::text, m.tagline,
+                      m.is_blocked, m.block_reason
                FROM media m WHERE m.id = $1"#,
     )
     .bind(media_id)
@@ -736,6 +739,8 @@ pub async fn get_media_detail(
         release_date,
         end_date,
         tagline,
+        is_blocked,
+        block_reason,
     ) = row;
 
     // Hard-block media whose title matches the global keyword filter.
@@ -913,6 +918,8 @@ pub async fn get_media_detail(
         "external_ids": external_ids_map,
         "imdb_rating": imdb_rating,
         "seasons": seasons_value,
+        "is_blocked": is_blocked,
+        "block_reason": block_reason,
     }))
     .into_response()
 }
@@ -1142,15 +1149,16 @@ pub async fn get_media_streams(
     let season = effective_season;
     let episode = effective_episode;
 
-    // Guard: don't serve streams for keyword-blocked media.
+    // Guard: don't serve streams for blocked or keyword-blocked media.
     {
-        let blocked: bool =
-            sqlx::query_scalar::<_, bool>("SELECT is_keyword_blocked FROM media WHERE id = $1")
-                .bind(media_id)
-                .fetch_optional(&state.pool_ro)
-                .await
-                .unwrap_or(None)
-                .unwrap_or(false);
+        let blocked: bool = sqlx::query_scalar::<_, bool>(
+            "SELECT (is_blocked OR is_keyword_blocked) FROM media WHERE id = $1",
+        )
+        .bind(media_id)
+        .fetch_optional(&state.pool_ro)
+        .await
+        .unwrap_or(None)
+        .unwrap_or(false);
 
         if blocked {
             return Json(json!({ "streams": [] })).into_response();

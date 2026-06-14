@@ -145,8 +145,7 @@ pub struct PendingQuery {
 }
 
 #[derive(Deserialize)]
-pub struct BulkReviewBody {
-    pub suggestion_ids: Vec<String>,
+pub struct BulkReviewQuery {
     pub action: String,
     pub review_notes: Option<String>,
 }
@@ -1304,7 +1303,8 @@ pub async fn list_pending_stream_suggestions(
 pub async fn bulk_review_stream_suggestions(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    Json(body): Json<BulkReviewBody>,
+    Query(params): Query<BulkReviewQuery>,
+    Json(suggestion_ids): Json<Vec<String>>,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -1326,7 +1326,7 @@ pub async fn bulk_review_stream_suggestions(
             .into_response();
     }
 
-    let new_status = match body.action.as_str() {
+    let new_status = match params.action.as_str() {
         "approve" => "approved",
         "reject" => "rejected",
         _ => {
@@ -1351,7 +1351,7 @@ pub async fn bulk_review_stream_suggestions(
     let mut rejected = 0i64;
     let mut skipped = 0i64;
 
-    for id in &body.suggestion_ids {
+    for id in &suggestion_ids {
         let row = match fetch_suggestion(&state.pool, id).await {
             None => {
                 skipped += 1;
@@ -1370,7 +1370,7 @@ pub async fn bulk_review_stream_suggestions(
         )
         .bind(new_status)
         .bind(user_id.to_string())
-        .bind(&body.review_notes)
+        .bind(&params.review_notes)
         .bind(id)
         .execute(&state.pool)
         .await

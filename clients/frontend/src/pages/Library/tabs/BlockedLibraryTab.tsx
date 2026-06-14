@@ -32,6 +32,7 @@ import {
   ShieldAlert,
   Calendar,
   User,
+  Tag,
 } from 'lucide-react'
 import { adminApi, type BlockedMediaItem } from '@/lib/api/admin'
 import { useToast } from '@/hooks/use-toast'
@@ -53,6 +54,7 @@ const TYPE_LABELS = {
 function BlockedItemCard({ item, onUnblocked }: { item: BlockedMediaItem; onUnblocked: () => void }) {
   const { toast } = useToast()
   const TypeIcon = TYPE_ICONS[item.type]
+  const isKeywordOnly = item.is_keyword_blocked && !item.is_blocked
 
   const unblockMutation = useMutation({
     mutationFn: () => adminApi.unblockMedia(item.id),
@@ -86,11 +88,19 @@ function BlockedItemCard({ item, onUnblocked }: { item: BlockedMediaItem; onUnbl
           )}
 
           {/* Blocked overlay badge */}
-          <div className="absolute top-2 left-2">
-            <Badge variant="destructive" className="text-xs gap-1">
-              <Ban className="h-3 w-3" />
-              Blocked
-            </Badge>
+          <div className="absolute top-2 left-2 flex flex-col gap-1">
+            {item.is_blocked && (
+              <Badge variant="destructive" className="text-xs gap-1">
+                <Ban className="h-3 w-3" />
+                Blocked
+              </Badge>
+            )}
+            {item.is_keyword_blocked && (
+              <Badge className="text-xs gap-1 bg-orange-500/20 text-orange-400 border-orange-500/30">
+                <Tag className="h-3 w-3" />
+                Keyword
+              </Badge>
+            )}
           </div>
 
           {/* Type badge */}
@@ -143,33 +153,58 @@ function BlockedItemCard({ item, onUnblocked }: { item: BlockedMediaItem; onUnbl
           </div>
 
           {/* Unblock button */}
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-full h-7 text-xs gap-1 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-400"
-                disabled={unblockMutation.isPending}
-              >
-                {unblockMutation.isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <CheckCircle className="h-3 w-3" />
-                )}
-                Unblock
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Unblock "{item.title}"?</AlertDialogTitle>
-                <AlertDialogDescription>This will make the content visible to all users again.</AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={() => unblockMutation.mutate()}>Unblock</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          {isKeywordOnly ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="w-full">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full h-7 text-xs gap-1 opacity-50 cursor-not-allowed"
+                      disabled
+                    >
+                      <ShieldAlert className="h-3 w-3" />
+                      Keyword blocked
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs">
+                  <p className="text-xs">Blocked by keyword filter. Edit the keyword list to unblock.</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full h-7 text-xs gap-1 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-400"
+                  disabled={unblockMutation.isPending}
+                >
+                  {unblockMutation.isPending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-3 w-3" />
+                  )}
+                  Unblock
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Unblock "{item.title}"?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will make the content visible to all users again.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => unblockMutation.mutate()}>Unblock</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </CardContent>
       </Card>
     </div>

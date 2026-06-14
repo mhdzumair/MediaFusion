@@ -95,6 +95,8 @@ export interface BlockedMediaItem {
   year?: number
   poster?: string
   external_ids: Record<string, string | number>
+  is_blocked?: boolean
+  is_keyword_blocked?: boolean
   blocked_at?: string
   blocked_by?: string
   block_reason?: string

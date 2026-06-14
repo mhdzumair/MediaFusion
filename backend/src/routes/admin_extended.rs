@@ -277,7 +277,8 @@ pub async fn list_blocked_media(
     let offset = (page - 1) * page_size;
 
     // Build optional filter conditions
-    let mut conditions: Vec<String> = vec!["is_blocked = true".to_string()];
+    let mut conditions: Vec<String> =
+        vec!["(is_blocked = true OR is_keyword_blocked = true)".to_string()];
     let media_type_filter = params
         .media_type
         .as_ref()
@@ -306,13 +307,14 @@ pub async fn list_blocked_media(
         String,
         Option<i32>,
         bool,
+        bool,
         Option<chrono::DateTime<chrono::Utc>>,
         Option<i32>,
         Option<String>,
     );
 
     let list_sql = format!(
-        "SELECT id, title, type, year, is_blocked, blocked_at, \
+        "SELECT id, title, type::text, year, is_blocked, is_keyword_blocked, blocked_at, \
                 blocked_by_user_id, block_reason \
          FROM media {where_clause} \
          ORDER BY blocked_at DESC NULLS LAST \
@@ -328,13 +330,14 @@ pub async fn list_blocked_media(
             let items: Vec<Value> = rows
                 .into_iter()
                 .map(
-                    |(id, title, media_type, year, is_blocked, blocked_at, blocked_by, reason)| {
+                    |(id, title, media_type, year, is_blocked, is_keyword_blocked, blocked_at, blocked_by, reason)| {
                         json!({
                             "id": id,
                             "title": title,
                             "type": media_type.to_lowercase(),
                             "year": year,
                             "is_blocked": is_blocked,
+                            "is_keyword_blocked": is_keyword_blocked,
                             "blocked_at": blocked_at,
                             "blocked_by_user_id": blocked_by,
                             "block_reason": reason,
