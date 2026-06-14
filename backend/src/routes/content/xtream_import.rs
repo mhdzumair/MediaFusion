@@ -231,8 +231,8 @@ pub async fn analyze_xtream(
         .map(|c| {
             let cat_id = c.get("category_id").and_then(|v| v.as_str()).unwrap_or("");
             json!({
-                "category_id": cat_id,
-                "category_name": c.get("category_name").and_then(|v| v.as_str()).unwrap_or(""),
+                "id": cat_id,
+                "name": c.get("category_name").and_then(|v| v.as_str()).unwrap_or(""),
                 "count": live_counts.get(cat_id).copied().unwrap_or(0),
             })
         })
@@ -243,8 +243,8 @@ pub async fn analyze_xtream(
         .map(|c| {
             let cat_id = c.get("category_id").and_then(|v| v.as_str()).unwrap_or("");
             json!({
-                "category_id": cat_id,
-                "category_name": c.get("category_name").and_then(|v| v.as_str()).unwrap_or(""),
+                "id": cat_id,
+                "name": c.get("category_name").and_then(|v| v.as_str()).unwrap_or(""),
                 "count": vod_counts.get(cat_id).copied().unwrap_or(0),
             })
         })
@@ -255,8 +255,8 @@ pub async fn analyze_xtream(
         .map(|c| {
             let cat_id = c.get("category_id").and_then(|v| v.as_str()).unwrap_or("");
             json!({
-                "category_id": cat_id,
-                "category_name": c.get("category_name").and_then(|v| v.as_str()).unwrap_or(""),
+                "id": cat_id,
+                "name": c.get("category_name").and_then(|v| v.as_str()).unwrap_or(""),
                 "count": series_counts.get(cat_id).copied().unwrap_or(0),
             })
         })
@@ -290,14 +290,17 @@ pub async fn analyze_xtream(
     }
 
     Json(json!({
+        "status": "success",
         "redis_key": redis_key,
         "server_url": server,
         "live_categories": live_summary,
         "vod_categories": vod_summary,
         "series_categories": series_summary,
-        "total_live": cached.live_streams.len(),
-        "total_vod": cached.vod_streams.len(),
-        "total_series": cached.series.len(),
+        "summary": {
+            "live": cached.live_streams.len(),
+            "vod": cached.vod_streams.len(),
+            "series": cached.series.len(),
+        },
     }))
     .into_response()
 }

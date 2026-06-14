@@ -919,6 +919,23 @@ pub async fn discover_search(
         .into_response()
 }
 
+/// Exchange a TVDB API key for a short-lived JWT via POST /v4/login.
+/// The caller is responsible for caching the result.
+async fn tvdb_login(http: &reqwest::Client, api_key: &str) -> Option<String> {
+    let resp = http
+        .post("https://api4.thetvdb.com/v4/login")
+        .json(&serde_json::json!({ "apikey": api_key }))
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        tracing::warn!("tvdb_login: login request failed with status {}", resp.status());
+        return None;
+    }
+    let body: serde_json::Value = resp.json().await.ok()?;
+    body["data"]["token"].as_str().map(str::to_string)
+}
+
 /// GET /api/v1/discover/tvdb-filter
 pub async fn discover_tvdb_filter(
     headers: HeaderMap,
@@ -965,6 +982,26 @@ pub async fn discover_tvdb_filter(
         }
     };
 
+    // Exchange raw API key for a JWT (TVDB v4 requires a JWT, not the raw key).
+    // Use the in-memory cache to avoid a login round-trip on every request.
+    let tvdb_jwt = if let Some(cached) = state.tvdb_jwt_cache.get(&tvdb_key).await {
+        cached
+    } else {
+        match tvdb_login(&state.http, &tvdb_key).await {
+            Some(jwt) => {
+                state.tvdb_jwt_cache.insert(tvdb_key.clone(), jwt.clone()).await;
+                jwt
+            }
+            None => {
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(json!({"detail": "Failed to authenticate with TVDB — check your API key."})),
+                )
+                    .into_response();
+            }
+        }
+    };
+
     let media_segment = if params.media_type == "movie" {
         "movies"
     } else {
@@ -984,7 +1021,7 @@ pub async fn discover_tvdb_filter(
     let resp = match state
         .http
         .get(&url)
-        .header("Authorization", format!("Bearer {tvdb_key}"))
+        .header("Authorization", format!("Bearer {tvdb_jwt}"))
         .send()
         .await
     {
@@ -1000,10 +1037,15 @@ pub async fn discover_tvdb_filter(
     };
 
     if !resp.status().is_success() {
-        let status = resp.status().as_u16();
+        // Evict the cached JWT on 401 so it is refreshed on the next request.
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            state.tvdb_jwt_cache.invalidate(&tvdb_key).await;
+        }
+        // Always return 502 — never proxy an upstream 4xx directly, as the
+        // frontend treats a 401 from MediaFusion as a session expiry and logs the user out.
         return (
-            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
-            Json(json!({"detail": "TVDB API returned error"})),
+            StatusCode::BAD_GATEWAY,
+            Json(json!({"detail": "TVDB API returned an error — your API key may be invalid."})),
         )
             .into_response();
     }

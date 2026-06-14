@@ -81,6 +81,9 @@ pub struct AppState {
     pub redis: RedisClient,
     /// L1 in-process cache: "{imdb_id}:{media_type}" → (primary_id, related_ids)
     pub id_cache: Cache<String, (MediaId, Vec<MediaId>)>,
+    /// TVDB API-key → JWT cache. TVDB v4 requires exchanging the raw key for a
+    /// short-lived JWT via POST /v4/login before each authenticated request.
+    pub tvdb_jwt_cache: Cache<String, String>,
     /// HTTP client shared across all scrapers.
     pub http: reqwest::Client,
     /// Longer-timeout client for debrid playback resolution.
@@ -137,6 +140,12 @@ impl AppState {
             .time_to_live(Duration::from_secs(300))
             .build();
 
+        // TVDB JWTs are valid for ~30 days; cache for 23 h to refresh well before expiry.
+        let tvdb_jwt_cache: Cache<String, String> = Cache::builder()
+            .max_capacity(1_000)
+            .time_to_live(Duration::from_secs(23 * 3600))
+            .build();
+
         let http = crate::util::http::build(config.requests_proxy_url.as_deref());
         let debrid_http = crate::util::http::build_debrid(config.requests_proxy_url.as_deref());
 
@@ -153,6 +162,7 @@ impl AppState {
             pool_ro,
             redis,
             id_cache,
+            tvdb_jwt_cache,
             http,
             debrid_http,
             metrics: Metrics::new(),
