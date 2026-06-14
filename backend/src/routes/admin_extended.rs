@@ -330,7 +330,17 @@ pub async fn list_blocked_media(
             let items: Vec<Value> = rows
                 .into_iter()
                 .map(
-                    |(id, title, media_type, year, is_blocked, is_keyword_blocked, blocked_at, blocked_by, reason)| {
+                    |(
+                        id,
+                        title,
+                        media_type,
+                        year,
+                        is_blocked,
+                        is_keyword_blocked,
+                        blocked_at,
+                        blocked_by,
+                        reason,
+                    )| {
                         json!({
                             "id": id,
                             "title": title,

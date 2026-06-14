@@ -6,6 +6,7 @@ use mediafusion_api::models::user_data::{SortingOption, UserData};
 use mediafusion_api::parser::{
     filter_sort_and_cap_streams, sort_size_bytes_for_row, FilterContext,
 };
+use mediafusion_api::state::KeywordFilterCache;
 use serde_json::{json, Value};
 
 const GB: i64 = 1024 * 1024 * 1024;
@@ -81,6 +82,7 @@ fn run_pipeline(
     season: Option<i32>,
     episode: Option<i32>,
 ) -> Vec<Value> {
+    let kf = KeywordFilterCache::default();
     let ctx = FilterContext {
         user_data,
         season,
@@ -88,6 +90,7 @@ fn run_pipeline(
         primary_provider: None,
         is_usenet: false,
         allow_public_usenet: false,
+        keyword_filters: &kf,
     };
     let priority = user_data.sorting_priority();
     let selected_resolutions = user_data.effective_selected_resolutions();

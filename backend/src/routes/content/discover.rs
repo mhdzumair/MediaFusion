@@ -929,7 +929,10 @@ async fn tvdb_login(http: &reqwest::Client, api_key: &str) -> Option<String> {
         .await
         .ok()?;
     if !resp.status().is_success() {
-        tracing::warn!("tvdb_login: login request failed with status {}", resp.status());
+        tracing::warn!(
+            "tvdb_login: login request failed with status {}",
+            resp.status()
+        );
         return None;
     }
     let body: serde_json::Value = resp.json().await.ok()?;
@@ -989,13 +992,18 @@ pub async fn discover_tvdb_filter(
     } else {
         match tvdb_login(&state.http, &tvdb_key).await {
             Some(jwt) => {
-                state.tvdb_jwt_cache.insert(tvdb_key.clone(), jwt.clone()).await;
+                state
+                    .tvdb_jwt_cache
+                    .insert(tvdb_key.clone(), jwt.clone())
+                    .await;
                 jwt
             }
             None => {
                 return (
                     StatusCode::BAD_GATEWAY,
-                    Json(json!({"detail": "Failed to authenticate with TVDB — check your API key."})),
+                    Json(
+                        json!({"detail": "Failed to authenticate with TVDB — check your API key."}),
+                    ),
                 )
                     .into_response();
             }
