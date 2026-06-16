@@ -161,7 +161,11 @@ fn decode_token(token: &str, secret_key: &str) -> Option<serde_json::Value> {
         return None;
     }
 
-    let decoded = URL_SAFE_NO_PAD.decode(payload_str).ok()?;
+    // Strip base64 padding that Python's urlsafe_b64encode adds so tokens
+    // created by the Python server are accepted here too.
+    let decoded = URL_SAFE_NO_PAD
+        .decode(payload_str.trim_end_matches('='))
+        .ok()?;
     let data: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
 
     // Check expiry
