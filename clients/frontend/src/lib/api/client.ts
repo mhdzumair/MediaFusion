@@ -205,10 +205,14 @@ class ApiClient {
         if (refreshed) {
           return this.request<T>(endpoint, options, false)
         }
+        // Refresh failed — the session is genuinely gone.
+        this.clearTokens()
+        throw new Error('Session expired. Please log in again.')
       }
 
-      this.clearTokens()
-      throw new Error('Session expired. Please log in again.')
+      // Already retried with a freshly refreshed token and still 401: this is an
+      // endpoint-level authorization failure, not session expiry. Don't log out.
+      throw new ApiRequestError(error.detail || 'An error occurred', response.status, error)
     }
 
     // Handle other non-2xx from proxy or non-API paths
@@ -248,10 +252,15 @@ class ApiClient {
           if (refreshed) {
             return this.request<T>(endpoint, options, false)
           }
+          // Refresh failed — the session is genuinely gone.
+          this.clearTokens()
+          throw new Error('Session expired. Please log in again.')
         }
 
-        this.clearTokens()
-        throw new Error('Session expired. Please log in again.')
+        // Already retried with a freshly refreshed token and the endpoint still
+        // returns a wrapped 401 (e.g. discover/tvdb-filter rejecting a provider
+        // key): this is a feature/provider error, not session expiry. Don't log out.
+        throw new ApiRequestError(data.detail || 'An error occurred', statusCode, data)
       }
 
       throw new ApiRequestError(data.detail || 'An error occurred', statusCode, data)
