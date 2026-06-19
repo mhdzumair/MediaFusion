@@ -177,6 +177,12 @@ pub struct AppConfig {
     pub smtp_from: String,
     pub convertkit_api_key: Option<String>,
     pub convertkit_form_id: Option<String>,
+    pub convertkit_newsletter_label: String,
+    pub convertkit_newsletter_default_checked: bool,
+    /// Optional partner/host SVG logo URL shown alongside the main logo.
+    pub branding_svg: Option<String>,
+    /// Default UI color scheme (e.g. "mediafusion", "cinematic", "ocean").
+    pub default_color_scheme: String,
 
     // ── Debrid cache sync ───────────────────────────────────────────────────
     /// Whether to sync debrid cache to a central MediaFusion instance.
@@ -591,6 +597,13 @@ impl AppConfig {
                 .unwrap_or_else(|_| "noreply@mediafusion.example.com".into()),
             convertkit_api_key: env("CONVERTKIT_API_KEY").ok().filter(|s| !s.is_empty()),
             convertkit_form_id: env("CONVERTKIT_FORM_ID").ok().filter(|s| !s.is_empty()),
+            convertkit_newsletter_label: env("CONVERTKIT_NEWSLETTER_LABEL")
+                .unwrap_or_else(|_| "Subscribe to our newsletter".into()),
+            convertkit_newsletter_default_checked: env("CONVERTKIT_NEWSLETTER_DEFAULT_CHECKED")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
+            branding_svg: env("BRANDING_SVG").ok().filter(|s| !s.is_empty()),
+            default_color_scheme: env("DEFAULT_COLOR_SCHEME")
+                .unwrap_or_else(|_| "mediafusion".into()),
             sync_debrid_cache_streams: env("SYNC_DEBRID_CACHE_STREAMS")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
             store_stremthru_magnet_cache: env("STORE_STREMTHRU_MAGNET_CACHE")

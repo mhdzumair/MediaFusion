@@ -167,13 +167,44 @@ fn apply_regex(text: &str, pattern: &str) -> Option<String> {
 }
 
 /// Download a .torrent file and extract metadata.
+/// If `credential_params` is provided (a JSON object), its key/value pairs are appended
+/// as query parameters to `url` — used for feeds that embed auth in their URL
+/// (e.g. `?username=xxx&passkey=xxx`) but whose item download links lack those creds.
 async fn torrent_from_url(
     http: &reqwest::Client,
     url: &str,
+    credential_params: Option<&Value>,
 ) -> Option<torrent_metadata::ParsedTorrent> {
-    let bytes =
-        torrent_metadata::download_torrent_bytes(http, url, std::time::Duration::from_secs(15))
-            .await?;
+    let effective_url: std::borrow::Cow<str> = if let Some(creds) = credential_params {
+        if let Some(obj) = creds.as_object().filter(|o| !o.is_empty()) {
+            let sep = if url.contains('?') { '&' } else { '?' };
+            let qs: String = obj
+                .iter()
+                .filter_map(|(k, v)| {
+                    v.as_str().map(|val| {
+                        format!(
+                            "{}={}",
+                            urlencoding::encode(k),
+                            urlencoding::encode(val)
+                        )
+                    })
+                })
+                .collect::<Vec<_>>()
+                .join("&");
+            std::borrow::Cow::Owned(format!("{url}{sep}{qs}"))
+        } else {
+            std::borrow::Cow::Borrowed(url)
+        }
+    } else {
+        std::borrow::Cow::Borrowed(url)
+    };
+
+    let bytes = torrent_metadata::download_torrent_bytes(
+        http,
+        &effective_url,
+        std::time::Duration::from_secs(15),
+    )
+    .await?;
     parse_torrent_bytes(&bytes)
 }
 
@@ -189,6 +220,7 @@ async fn extract_torrent_metadata(
     item: &RssItem,
     patterns: &Value,
     feed_torrent_type: TorrentType,
+    credential_params: Option<&Value>,
 ) -> Option<ExtractedTorrent> {
     if let Some(hash) = extract_info_hash(item, patterns) {
         let magnet_candidates = [
@@ -209,16 +241,26 @@ async fn extract_torrent_metadata(
         });
     }
 
+    let has_credential_params = credential_params
+        .and_then(|v| v.as_object())
+        .map(|o| !o.is_empty())
+        .unwrap_or(false);
+
     let torrent_url = item
         .link
         .as_deref()
         .or(item.enclosure_url.as_deref())
         .filter(|u| {
             let l = u.to_lowercase();
-            l.ends_with(".torrent") || l.contains("/torrent") || l.contains("torrent?")
+            // Standard torrent URL patterns, plus any link when credentials are configured
+            // (the feed owner set credentials because the link requires auth to serve a torrent).
+            l.ends_with(".torrent")
+                || l.contains("/torrent")
+                || l.contains("torrent?")
+                || has_credential_params
         })?;
 
-    let parsed = torrent_from_url(http, torrent_url).await?;
+    let parsed = torrent_from_url(http, torrent_url, credential_params).await?;
     let torrent_file = if should_persist_torrent_file(feed_torrent_type) {
         torrent_file_for_storage(feed_torrent_type, Some(parsed.raw_bytes.clone()))
     } else {
@@ -518,6 +560,7 @@ pub async fn scrape_feed(
     tmdb_api_key: Option<&str>,
     cinemeta_fallback_enabled: bool,
     keyword_filters: &KeywordFilterCache,
+    credential_params: Option<&Value>,
 ) -> ScrapeResult {
     let start = std::time::Instant::now();
     let empty_patterns = Value::Object(serde_json::Map::new());
@@ -608,7 +651,7 @@ pub async fn scrape_feed(
 
         // Extract torrent metadata — fall back to downloading .torrent file if needed
         let extracted =
-            match extract_torrent_metadata(http, item, patterns, feed_torrent_type).await {
+            match extract_torrent_metadata(http, item, patterns, feed_torrent_type, credential_params).await {
                 Some(e) => e,
                 None => {
                     debug!("rss_scraper: no info_hash or torrent URL for '{title}'");

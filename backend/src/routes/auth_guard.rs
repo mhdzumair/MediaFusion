@@ -55,7 +55,7 @@ pub fn decode_access_token(
     }
 
     let decoded = URL_SAFE_NO_PAD
-        .decode(payload_str)
+        .decode(payload_str.trim_end_matches('='))
         .map_err(|_| AuthFailure::Unauthorized)?;
     let data: serde_json::Value =
         serde_json::from_slice(&decoded).map_err(|_| AuthFailure::Unauthorized)?;

@@ -21,12 +21,13 @@ struct RssFeedRow {
     filters: Option<serde_json::Value>,
     auto_detect_catalog: bool,
     torrent_type: String,
+    credential_params: Option<serde_json::Value>,
 }
 
 async fn fetch_active_feeds(pool: &sqlx::PgPool) -> Result<Vec<RssFeedRow>, JobError> {
     let rows = sqlx::query(
         r#"
-        SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type
+        SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params
         FROM rss_feed WHERE is_active = true
         "#,
     )
@@ -45,6 +46,7 @@ async fn fetch_active_feeds(pool: &sqlx::PgPool) -> Result<Vec<RssFeedRow>, JobE
             filters: row.try_get("filters")?,
             auto_detect_catalog: row.try_get("auto_detect_catalog")?,
             torrent_type: row.try_get("torrent_type")?,
+            credential_params: row.try_get("credential_params")?,
         });
     }
     Ok(feeds)
@@ -94,6 +96,7 @@ impl JobHandler for RssFeedScraper {
                 ctx.state.config.tmdb_api_key.as_deref(),
                 ctx.state.config.imdb_cinemeta_fallback_enabled,
                 &kf,
+                feed.credential_params.as_ref(),
             )
             .await;
 

@@ -691,6 +691,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         // ── RSS feeds (user) — Python hyphenated path aliases ─────────────────
         .route("/api/v1/user-rss/feeds", get(rss::user_list_rss_feeds).post(rss::user_create_rss_feed))
         .route("/api/v1/user-rss/feeds/{id}", get(rss::user_get_rss_feed).put(rss::user_update_rss_feed).delete(rss::user_delete_rss_feed))
+        .route("/api/v1/user-rss/feeds/test-url", post(rss::user_test_rss_feed_url))
         .route("/api/v1/user-rss/feeds/{id}/test", post(rss::user_test_rss_feed))
         .route("/api/v1/user-rss/feeds/{id}/scrape", post(rss::user_scrape_single_feed))
         .route("/api/v1/user-rss/feeds/run-all", post(rss::user_run_all_scrapers))

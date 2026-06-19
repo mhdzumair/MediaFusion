@@ -30,6 +30,10 @@ pub struct InstanceInfo {
     pub addon_name: String,
     pub version: String,
     pub logo_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branding_svg: Option<String>,
+    pub default_color_scheme: String,
+    pub newsletter: NewsletterConfig,
 }
 
 #[derive(Serialize)]
@@ -85,6 +89,9 @@ pub async fn get_instance_info(State(state): State<Arc<AppState>>) -> impl IntoR
 
     let is_public = state.config.is_public_instance || state.config.api_password.is_none();
 
+    let newsletter_enabled = state.config.convertkit_api_key.is_some()
+        && state.config.convertkit_form_id.is_some();
+
     Json(InstanceInfo {
         is_public,
         requires_api_key: !is_public,
@@ -92,6 +99,13 @@ pub async fn get_instance_info(State(state): State<Arc<AppState>>) -> impl IntoR
         addon_name: state.config.addon_name.clone(),
         version: state.config.addon_version.clone(),
         logo_url: state.config.logo_url.clone(),
+        branding_svg: state.config.branding_svg.clone(),
+        default_color_scheme: state.config.default_color_scheme.clone(),
+        newsletter: NewsletterConfig {
+            enabled: newsletter_enabled,
+            label: state.config.convertkit_newsletter_label.clone(),
+            default_checked: state.config.convertkit_newsletter_default_checked,
+        },
     })
     .into_response()
 }

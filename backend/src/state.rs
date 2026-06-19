@@ -182,29 +182,75 @@ const KW_BLOCKED_RECOMPUTE_ID: &str = "keyword-blocked-recompute";
 /// scoped to that transaction and never leaks to other pool connections.
 pub async fn recompute_keyword_blocked(pool: &PgPool, version_tag: u64) {
     let ver_str = format!("{:016x}", version_tag);
-    let result: Result<_, sqlx::Error> = async {
-        let mut tx = pool.begin().await?;
-        sqlx::query("SET LOCAL statement_timeout = 0")
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query("SELECT recompute_all_keyword_blocked()")
-            .execute(&mut *tx)
-            .await?;
-        // Record which keyword version was just recomputed so we skip on next startup.
-        sqlx::query(
-            "INSERT INTO keyword_sync_state (id, file_hash, synced_at) VALUES ($1, $2, NOW())
-             ON CONFLICT (id) DO UPDATE SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
-        )
-        .bind(KW_BLOCKED_RECOMPUTE_ID)
-        .bind(&ver_str)
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await
-    }
-    .await;
 
-    if let Err(e) = result {
-        tracing::error!("recompute_all_keyword_blocked failed: {e}");
+    // Get the current max ID so we know when to stop.
+    let max_id: i32 = match sqlx::query_scalar::<_, Option<i32>>("SELECT MAX(id) FROM media")
+        .fetch_one(pool)
+        .await
+    {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            tracing::debug!("keyword blocked: media table is empty, skipping recompute");
+            return;
+        }
+        Err(e) => {
+            tracing::error!("recompute_all_keyword_blocked failed to get max id: {e}");
+            return;
+        }
+    };
+
+    // Batch the UPDATE to avoid holding a full-table lock for minutes, which deadlocks
+    // concurrent scraper INSERTs/UPDATEs. Each small batch acquires and releases row locks
+    // quickly, giving scrapers a chance to proceed between batches.
+    const BATCH_SIZE: i32 = 500;
+    let mut from_id: i32 = 0;
+
+    loop {
+        let to_id = from_id + BATCH_SIZE;
+        let result = sqlx::query(
+            "UPDATE media
+             SET is_keyword_blocked = (
+                 EXISTS (
+                     SELECT 1 FROM keyword_filters kf
+                     WHERE kf.is_active = true
+                       AND position(LOWER(kf.keyword) IN LOWER(media.title)) > 0
+                 )
+                 AND NOT EXISTS (
+                     SELECT 1 FROM keyword_whitelist kw
+                     WHERE position(LOWER(kw.phrase) IN LOWER(media.title)) > 0
+                 )
+             )
+             WHERE id > $1 AND id <= $2",
+        )
+        .bind(from_id)
+        .bind(to_id)
+        .execute(pool)
+        .await;
+
+        if let Err(e) = result {
+            tracing::error!(
+                "recompute_all_keyword_blocked batch [{from_id}..{to_id}] failed: {e}"
+            );
+            return;
+        }
+
+        from_id = to_id;
+        if from_id >= max_id {
+            break;
+        }
+    }
+
+    // Record which keyword version was just recomputed so we skip on next startup.
+    if let Err(e) = sqlx::query(
+        "INSERT INTO keyword_sync_state (id, file_hash, synced_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (id) DO UPDATE SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
+    )
+    .bind(KW_BLOCKED_RECOMPUTE_ID)
+    .bind(&ver_str)
+    .execute(pool)
+    .await
+    {
+        tracing::error!("recompute_all_keyword_blocked: failed to record version: {e}");
     } else {
         tracing::info!("keyword filter: is_keyword_blocked recomputed for all media");
     }

@@ -33,90 +33,25 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use chrono::Utc;
-use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sha2::Sha256;
 
 use crate::state::AppState;
 
 // ─── Auth helpers ──────────────────────────────────────────────────────────────
 
 fn validate_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string)?;
-    let dot = token.rfind('.')?;
-    let (payload_str, sig) = token.split_at(dot);
-    let sig = &sig[1..];
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).ok()?;
-    mac.update(payload_str.as_bytes());
-    let expected: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if expected != sig {
-        return None;
-    }
-    let decoded = URL_SAFE_NO_PAD.decode(payload_str).ok()?;
-    let data: Value = serde_json::from_slice(&decoded).ok()?;
-    let exp = data["exp"].as_f64()?;
-    if exp < Utc::now().timestamp() as f64 {
-        return None;
-    }
-    if data["type"].as_str() != Some("access") {
-        return None;
-    }
-    data["sub"].as_str()?.parse().ok()
+    crate::routes::auth_guard::decode_access_token(headers, secret_key)
+        .ok()
+        .map(|(id, _)| id)
 }
 
 fn validate_token_and_role(headers: &HeaderMap, secret_key: &str) -> Option<(i32, String)> {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string)?;
-    let dot = token.rfind('.')?;
-    let (payload_str, sig) = token.split_at(dot);
-    let sig = &sig[1..];
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).ok()?;
-    mac.update(payload_str.as_bytes());
-    let expected: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if expected != sig {
-        return None;
-    }
-    let decoded = URL_SAFE_NO_PAD.decode(payload_str).ok()?;
-    let data: Value = serde_json::from_slice(&decoded).ok()?;
-    let exp = data["exp"].as_f64()?;
-    if exp < Utc::now().timestamp() as f64 {
-        return None;
-    }
-    if data["type"].as_str() != Some("access") {
-        return None;
-    }
-    let user_id: i32 = data["sub"].as_str()?.parse().ok()?;
-    let role = data["role"].as_str().unwrap_or("user").to_string();
-    Some((user_id, role))
+    crate::routes::auth_guard::decode_access_token(headers, secret_key).ok()
 }
 
 fn validate_admin_token(headers: &HeaderMap, secret_key: &str) -> Option<i32> {
-    let (user_id, role) = validate_token_and_role(headers, secret_key)?;
-    if role == "admin" {
-        Some(user_id)
-    } else {
-        None
-    }
+    crate::routes::auth_guard::require_role(headers, secret_key, &["admin"]).ok()
 }
 
 // ─── Request / Response types ─────────────────────────────────────────────────
@@ -132,6 +67,7 @@ pub struct RSSFeedCreate {
     pub parsing_patterns: Option<Value>,
     pub filters: Option<Value>,
     pub catalog_patterns: Option<Value>,
+    pub credential_params: Option<Value>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -145,6 +81,7 @@ pub struct RSSFeedUpdate {
     pub parsing_patterns: Option<Value>,
     pub filters: Option<Value>,
     pub catalog_patterns: Option<Value>,
+    pub credential_params: Option<Value>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -176,6 +113,7 @@ pub struct UserRSSFeedCreate {
     pub parsing_patterns: Option<Value>,
     pub filters: Option<Value>,
     pub catalog_patterns: Option<Value>,
+    pub credential_params: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -189,6 +127,7 @@ pub struct UserRSSFeedUpdate {
     pub parsing_patterns: Option<Value>,
     pub filters: Option<Value>,
     pub catalog_patterns: Option<Value>,
+    pub credential_params: Option<Value>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -444,10 +383,15 @@ pub async fn create_rss_feed(
         Option<chrono::DateTime<chrono::Utc>>,
     );
 
+    let credential_params_str = body
+        .credential_params
+        .as_ref()
+        .and_then(|v| serde_json::to_string(v).ok());
+
     let row: Option<FeedRow> = sqlx::query_as(
         "INSERT INTO rss_feed (uuid, user_id, name, url, is_active, is_public, source, torrent_type, \
-                               auto_detect_catalog, parsing_patterns, filters, created_at, updated_at) \
-         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, $6, $7, $8::json, $9::json, NOW(), NOW()) \
+                               auto_detect_catalog, parsing_patterns, filters, credential_params, created_at, updated_at) \
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, $6, $7, $8::json, $9::json, $10::jsonb, NOW(), NOW()) \
          RETURNING id, uuid, name, url, is_active, is_public, source, torrent_type, auto_detect_catalog, \
                    parsing_patterns, filters, metrics, last_scraped_at, created_at, updated_at",
     )
@@ -460,6 +404,7 @@ pub async fn create_rss_feed(
     .bind(body.auto_detect_catalog.unwrap_or(false))
     .bind(parsing_patterns_str)
     .bind(filters_str)
+    .bind(credential_params_str)
     .fetch_optional(&state.pool)
     .await
     .unwrap_or(None);
@@ -576,6 +521,17 @@ pub async fn update_rss_feed(
         if let Ok(s) = serde_json::to_string(f) {
             let _ = sqlx::query(
                 "UPDATE rss_feed SET filters = $1::json, updated_at = NOW() WHERE id = $2",
+            )
+            .bind(s)
+            .bind(feed_id)
+            .execute(&state.pool)
+            .await;
+        }
+    }
+    if let Some(cp) = &body.credential_params {
+        if let Ok(s) = serde_json::to_string(cp) {
+            let _ = sqlx::query(
+                "UPDATE rss_feed SET credential_params = $1::jsonb, updated_at = NOW() WHERE id = $2",
             )
             .bind(s)
             .bind(feed_id)
@@ -776,16 +732,17 @@ pub async fn run_rss_feed_scraper(
         Option<Value>,
         bool,
         String,
+        Option<Value>,
     );
     let row: Option<FeedRow> = sqlx::query_as(
-        "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type FROM rss_feed WHERE id = $1",
+        "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params FROM rss_feed WHERE id = $1",
     )
     .bind(feed_id)
     .fetch_optional(&state.pool_ro)
     .await
     .unwrap_or(None);
 
-    let (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type) = match row {
+    let (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type, credential_params) = match row {
         Some(r) => r,
         None => {
             return (
@@ -821,6 +778,7 @@ pub async fn run_rss_feed_scraper(
             tmdb_key.as_deref(),
             cinemeta_fallback,
             &kf,
+            credential_params.as_ref(),
         )
         .await;
     });
@@ -1025,8 +983,8 @@ pub async fn user_list_rss_feeds(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
-        Some(id) => id,
+    let (user_id, role) = match validate_token_and_role(&headers, &state.config.secret_key_raw) {
+        Some(r) => r,
         None => {
             return (
                 StatusCode::UNAUTHORIZED,
@@ -1036,19 +994,34 @@ pub async fn user_list_rss_feeds(
         }
     };
 
-    let rows = sqlx::query_as::<_, UserFeedRow>(
-        r#"SELECT f.id, f.user_id, f.name, f.url, f.is_active, f.source, f.torrent_type,
-                  f.auto_detect_catalog, f.parsing_patterns, f.filters, f.metrics,
-                  f.last_scraped_at, f.created_at, f.updated_at,
-                  u.email AS user_email, u.username AS user_username
-           FROM rss_feed f
-           JOIN users u ON u.id = f.user_id
-           WHERE f.user_id = $1
-           ORDER BY f.created_at DESC"#,
-    )
-    .bind(user_id)
-    .fetch_all(&state.pool_ro)
-    .await;
+    // Admins see all feeds (with user info); regular users see only their own
+    let rows = if role == "admin" {
+        sqlx::query_as::<_, UserFeedRow>(
+            r#"SELECT f.id, f.user_id, f.name, f.url, f.is_active, f.source, f.torrent_type,
+                      f.auto_detect_catalog, f.parsing_patterns, f.filters, f.metrics,
+                      f.last_scraped_at, f.created_at, f.updated_at,
+                      u.email AS user_email, u.username AS user_username
+               FROM rss_feed f
+               JOIN users u ON u.id = f.user_id
+               ORDER BY f.created_at DESC"#,
+        )
+        .fetch_all(&state.pool_ro)
+        .await
+    } else {
+        sqlx::query_as::<_, UserFeedRow>(
+            r#"SELECT f.id, f.user_id, f.name, f.url, f.is_active, f.source, f.torrent_type,
+                      f.auto_detect_catalog, f.parsing_patterns, f.filters, f.metrics,
+                      f.last_scraped_at, f.created_at, f.updated_at,
+                      u.email AS user_email, u.username AS user_username
+               FROM rss_feed f
+               JOIN users u ON u.id = f.user_id
+               WHERE f.user_id = $1
+               ORDER BY f.created_at DESC"#,
+        )
+        .bind(user_id)
+        .fetch_all(&state.pool_ro)
+        .await
+    };
 
     match rows {
         Ok(feeds) => {
@@ -1181,8 +1154,8 @@ pub async fn user_create_rss_feed(
     let torrent_type = body.torrent_type.as_deref().unwrap_or("public");
 
     let id: i32 = match sqlx::query_scalar(
-        r#"INSERT INTO rss_feed (uuid, user_id, name, url, is_active, is_public, source, torrent_type, auto_detect_catalog, parsing_patterns, filters, created_at, updated_at)
-           VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, $6, $7, $8::json, $9::json, NOW(), NOW())
+        r#"INSERT INTO rss_feed (uuid, user_id, name, url, is_active, is_public, source, torrent_type, auto_detect_catalog, parsing_patterns, filters, credential_params, created_at, updated_at)
+           VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, $6, $7, $8::json, $9::json, $10::jsonb, NOW(), NOW())
            RETURNING id"#,
     )
     .bind(user_id)
@@ -1194,6 +1167,7 @@ pub async fn user_create_rss_feed(
     .bind(body.auto_detect_catalog.unwrap_or(false))
     .bind(body.parsing_patterns.as_ref().map(|v| v.to_string()))
     .bind(body.filters.as_ref().map(|v| v.to_string()))
+    .bind(body.credential_params.as_ref().map(|v| v.to_string()))
     .fetch_one(&state.pool)
     .await
     {
@@ -1288,6 +1262,17 @@ pub async fn user_update_rss_feed(
             .bind(db_id)
             .execute(&state.pool)
             .await;
+    }
+    if let Some(cp) = &body.credential_params {
+        if let Ok(s) = serde_json::to_string(cp) {
+            let _ = sqlx::query(
+                "UPDATE rss_feed SET credential_params = $1::jsonb, updated_at = NOW() WHERE id = $2",
+            )
+            .bind(s)
+            .bind(db_id)
+            .execute(&state.pool)
+            .await;
+        }
     }
 
     Json(json!({"id": db_id, "detail": "Updated successfully"})).into_response()
@@ -1552,22 +1537,23 @@ pub async fn user_scrape_single_feed(
         Option<serde_json::Value>,
         bool,
         String,
+        Option<serde_json::Value>,
     );
     let row: Option<FeedRow> = if let Some(uid) = user_id_filter {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type FROM rss_feed WHERE id::text = $1 AND user_id = $2",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params FROM rss_feed WHERE id::text = $1 AND user_id = $2",
         )
         .bind(&feed_id).bind(uid)
         .fetch_optional(&state.pool_ro).await.ok().flatten()
     } else {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type FROM rss_feed WHERE id::text = $1",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params FROM rss_feed WHERE id::text = $1",
         )
         .bind(&feed_id)
         .fetch_optional(&state.pool_ro).await.ok().flatten()
     };
 
-    let (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type) = match row {
+    let (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type, credential_params) = match row {
         Some(r) => r,
         None => {
             return (
@@ -1604,6 +1590,7 @@ pub async fn user_scrape_single_feed(
             tmdb_key.as_deref(),
             cinemeta_fallback,
             &kf,
+            credential_params.as_ref(),
         )
         .await;
     });
@@ -1640,15 +1627,16 @@ pub async fn user_run_all_scrapers(
         Option<serde_json::Value>,
         bool,
         String,
+        Option<serde_json::Value>,
     );
     let feeds: Vec<FeedRow> = if role == "admin" {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type FROM rss_feed WHERE is_active = true",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params FROM rss_feed WHERE is_active = true",
         )
         .fetch_all(&state.pool_ro).await.unwrap_or_default()
     } else {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type FROM rss_feed WHERE is_active = true AND user_id = $1",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params FROM rss_feed WHERE is_active = true AND user_id = $1",
         )
         .bind(user_id)
         .fetch_all(&state.pool_ro).await.unwrap_or_default()
@@ -1665,7 +1653,7 @@ pub async fn user_run_all_scrapers(
         .map(|g| g.clone())
         .unwrap_or_default();
     tokio::spawn(async move {
-        for (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type) in feeds {
+        for (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type, credential_params) in feeds {
             let feed_type =
                 crate::scrapers::torrent_metadata::parse_torrent_type_str(&feed_torrent_type);
             crate::scrapers::rss::scrape_feed(
@@ -1682,6 +1670,7 @@ pub async fn user_run_all_scrapers(
                 tmdb_key.as_deref(),
                 cinemeta_fallback,
                 &kf,
+                credential_params.as_ref(),
             )
             .await;
         }
