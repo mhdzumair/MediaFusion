@@ -536,20 +536,27 @@ pub async fn analyze_m3u(
             .cmp(&a["count"].as_u64().unwrap_or(0))
     });
 
-    // Preview: first 50 entries (with metadata matches for movie/series, Python parity)
-    let mut preview: Vec<serde_json::Value> = Vec::new();
-    for e in entries.iter().take(50) {
+    // Preview channels: first 50 entries (with metadata matches for movie/series).
+    // Field shape matches the M3UAnalyzeResponse contract the web client consumes
+    // (index, detected_type, genres, country, season, episode) — Python parity.
+    let mut channels: Vec<serde_json::Value> = Vec::new();
+    for (idx, e) in entries.iter().take(50).enumerate() {
         let parsed = crate::parser::parse_title(&e.name);
         let search_title = parsed.title.as_deref().unwrap_or(&e.name);
         let parsed_year = parsed.year;
 
         let mut item = json!({
+            "index": idx,
             "name": e.name,
             "url": e.url,
             "logo": e.logo,
             "group": e.group,
+            "genres": [],
+            "country": serde_json::Value::Null,
             "tvg_id": e.tvg_id,
-            "type": e.entry_type,
+            "detected_type": e.entry_type,
+            "season": e.season,
+            "episode": e.episode,
             "parsed_title": search_title,
             "parsed_year": parsed_year,
         });
@@ -579,7 +586,7 @@ pub async fn analyze_m3u(
             }
         }
 
-        preview.push(item);
+        channels.push(item);
     }
 
     // Cache full entries in Redis
@@ -598,14 +605,17 @@ pub async fn analyze_m3u(
     }
 
     Json(json!({
+        "status": "success",
         "redis_key": redis_key,
-        "total": total,
-        "tv_count": tv_count,
-        "movie_count": movie_count,
-        "series_count": series_count,
+        "total_count": total,
+        "channels": channels,
+        "summary": {
+            "tv": tv_count,
+            "movie": movie_count,
+            "series": series_count,
+            "unknown": total.saturating_sub(tv_count + movie_count + series_count),
+        },
         "groups": groups_list,
-        "preview": preview,
-        "m3u_url": m3u_url,
     }))
     .into_response()
 }
@@ -877,6 +887,8 @@ pub async fn import_m3u(
             StatusCode::ACCEPTED,
             Json(json!({
                 "status": "processing",
+                // web client reads the job id under `details` (M3UTab handleImport)
+                "details": {"job_id": job_id},
                 "job_id": job_id,
                 "total": total,
                 "message": format!("Import of {total} items started in background."),
