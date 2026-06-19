@@ -205,10 +205,14 @@ class ApiClient {
         if (refreshed) {
           return this.request<T>(endpoint, options, false)
         }
+        // Refresh failed — the session is genuinely gone.
+        this.clearTokens()
+        throw new Error('Session expired. Please log in again.')
       }
 
-      this.clearTokens()
-      throw new Error('Session expired. Please log in again.')
+      // Already retried with a freshly refreshed token and still 401: this is an
+      // endpoint-level authorization failure, not session expiry. Don't log out.
+      throw new ApiRequestError(error.detail || 'An error occurred', response.status, error)
     }
 
     // Handle other non-2xx from proxy or non-API paths
@@ -248,10 +252,15 @@ class ApiClient {
           if (refreshed) {
             return this.request<T>(endpoint, options, false)
           }
+          // Refresh failed — the session is genuinely gone.
+          this.clearTokens()
+          throw new Error('Session expired. Please log in again.')
         }
 
-        this.clearTokens()
-        throw new Error('Session expired. Please log in again.')
+        // Already retried with a freshly refreshed token and the endpoint still
+        // returns a wrapped 401 (e.g. discover/tvdb-filter rejecting a provider
+        // key): this is a feature/provider error, not session expiry. Don't log out.
+        throw new ApiRequestError(data.detail || 'An error occurred', statusCode, data)
       }
 
       throw new ApiRequestError(data.detail || 'An error occurred', statusCode, data)
@@ -321,13 +330,26 @@ class ApiClient {
     }
 
     // Handle real HTTP 401 - try to refresh token
-    if (response.status === 401 && retry) {
-      const refreshed = await this.refreshAccessToken()
-      if (refreshed) {
-        return this.upload<T>(endpoint, formData, false)
+    if (response.status === 401) {
+      if (retry) {
+        const refreshed = await this.refreshAccessToken()
+        if (refreshed) {
+          return this.upload<T>(endpoint, formData, false)
+        }
+        // Refresh failed — the session is genuinely gone.
+        this.clearTokens()
+        throw new Error('Session expired. Please log in again.')
       }
-      this.clearTokens()
-      throw new Error('Session expired. Please log in again.')
+
+      // Already retried with a freshly refreshed token and still 401: this is an
+      // endpoint-level authorization failure, not session expiry. Don't log out.
+      let error: ApiError
+      try {
+        error = await response.json()
+      } catch {
+        error = { detail: `HTTP error ${response.status}` }
+      }
+      throw new ApiRequestError(error.detail || 'An error occurred', response.status, error)
     }
 
     if (!response.ok) {
@@ -346,13 +368,18 @@ class ApiClient {
     if (data?.error === true) {
       const statusCode = data.status_code || 500
 
-      if (statusCode === 401 && retry) {
-        const refreshed = await this.refreshAccessToken()
-        if (refreshed) {
-          return this.upload<T>(endpoint, formData, false)
+      if (statusCode === 401) {
+        if (retry) {
+          const refreshed = await this.refreshAccessToken()
+          if (refreshed) {
+            return this.upload<T>(endpoint, formData, false)
+          }
+          // Refresh failed — the session is genuinely gone.
+          this.clearTokens()
+          throw new Error('Session expired. Please log in again.')
         }
-        this.clearTokens()
-        throw new Error('Session expired. Please log in again.')
+        // Persisted after a successful refresh: feature/provider error, not session
+        // expiry. Fall through to the ApiRequestError below (no logout).
       }
 
       throw new ApiRequestError(data.detail || 'An error occurred', statusCode, data)

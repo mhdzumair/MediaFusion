@@ -432,7 +432,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
                       </Button>
                     )}
                   </div>
-                  <ScrollArea className="max-h-[200px] rounded-xl border border-border/50">
+                  <div className="rounded-xl border border-border/50">
                     <div className="divide-y divide-border/50">
                       {filteredChannels.length === 0 ? (
                         <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
@@ -511,7 +511,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
                         })
                       )}
                     </div>
-                  </ScrollArea>
+                  </div>
                 </div>
               </div>
             </ScrollArea>

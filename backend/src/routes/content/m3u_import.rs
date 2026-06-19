@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, Request, State},
+    extract::{Multipart, Path, Request, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -430,7 +430,7 @@ pub async fn import_tv_channel(
 pub async fn analyze_m3u(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    req: Request,
+    mut multipart: Multipart,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -451,73 +451,27 @@ pub async fn analyze_m3u(
             .into_response();
     }
 
-    // Determine content-type; accept form or raw text
-    let content_type = headers
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_lowercase();
-
-    let (m3u_url, m3u_content) = if content_type.contains("application/x-www-form-urlencoded") {
-        // Read body as form-encoded
-        let body_bytes = match axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024).await {
-            Ok(b) => b,
-            Err(_) => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({"detail": "Failed to read body"})),
-                )
-                    .into_response();
+    // Accept the playlist via multipart/form-data fields, matching the web client
+    // (which always sends FormData): `m3u_url` (text) and/or `m3u_file` (an uploaded
+    // .m3u). Previously this endpoint rejected multipart outright.
+    let mut m3u_url: Option<String> = None;
+    let mut m3u_content: Option<String> = None;
+    while let Ok(Some(field)) = multipart.next_field().await {
+        match field.name() {
+            Some("m3u_url") => {
+                m3u_url = field.text().await.ok().filter(|s| !s.trim().is_empty());
             }
-        };
-        let body_str = String::from_utf8_lossy(&body_bytes).to_string();
-        // Parse form manually
-        let mut url_val: Option<String> = None;
-        let mut content_val: Option<String> = None;
-        for pair in body_str.split('&') {
-            if let Some((k, v)) = pair.split_once('=') {
-                let key = urlencoding::decode(k).unwrap_or_default().to_string();
-                let val = urlencoding::decode(v).unwrap_or_default().to_string();
-                match key.as_str() {
-                    "m3u_url" => url_val = Some(val),
-                    "content" | "m3u_content" => content_val = Some(val),
-                    _ => {}
-                }
+            Some("m3u_file") | Some("content") | Some("m3u_content") => {
+                m3u_content = field
+                    .bytes()
+                    .await
+                    .ok()
+                    .map(|b| String::from_utf8_lossy(&b).to_string())
+                    .filter(|s| !s.trim().is_empty());
             }
+            _ => {}
         }
-        (url_val, content_val)
-    } else if content_type.contains("multipart/form-data") {
-        // For multipart we'd need full multipart parsing; return error for now
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"detail": "Use application/x-www-form-urlencoded or raw text body"})),
-        )
-            .into_response();
-    } else {
-        // Treat body as raw M3U text
-        let body_bytes = match axum::body::to_bytes(req.into_body(), 50 * 1024 * 1024).await {
-            Ok(b) => b,
-            Err(_) => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({"detail": "Failed to read body"})),
-                )
-                    .into_response();
-            }
-        };
-        let text = String::from_utf8_lossy(&body_bytes).to_string();
-        if text.trim_start().starts_with("#EXTM3U") || text.trim_start().starts_with("#EXTINF") {
-            (None, Some(text))
-        } else {
-            // Try JSON body with m3u_url field
-            let json_val: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-            let url = json_val
-                .get("m3u_url")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            (url, None)
-        }
-    };
+    }
 
     // Fetch content from URL if provided
     let content = if let Some(content) = m3u_content {
@@ -582,20 +536,27 @@ pub async fn analyze_m3u(
             .cmp(&a["count"].as_u64().unwrap_or(0))
     });
 
-    // Preview: first 50 entries (with metadata matches for movie/series, Python parity)
-    let mut preview: Vec<serde_json::Value> = Vec::new();
-    for e in entries.iter().take(50) {
+    // Preview channels: first 50 entries (with metadata matches for movie/series).
+    // Field shape matches the M3UAnalyzeResponse contract the web client consumes
+    // (index, detected_type, genres, country, season, episode) — Python parity.
+    let mut channels: Vec<serde_json::Value> = Vec::new();
+    for (idx, e) in entries.iter().take(50).enumerate() {
         let parsed = crate::parser::parse_title(&e.name);
         let search_title = parsed.title.as_deref().unwrap_or(&e.name);
         let parsed_year = parsed.year;
 
         let mut item = json!({
+            "index": idx,
             "name": e.name,
             "url": e.url,
             "logo": e.logo,
             "group": e.group,
+            "genres": [],
+            "country": serde_json::Value::Null,
             "tvg_id": e.tvg_id,
-            "type": e.entry_type,
+            "detected_type": e.entry_type,
+            "season": e.season,
+            "episode": e.episode,
             "parsed_title": search_title,
             "parsed_year": parsed_year,
         });
@@ -625,7 +586,7 @@ pub async fn analyze_m3u(
             }
         }
 
-        preview.push(item);
+        channels.push(item);
     }
 
     // Cache full entries in Redis
@@ -644,14 +605,17 @@ pub async fn analyze_m3u(
     }
 
     Json(json!({
+        "status": "success",
         "redis_key": redis_key,
-        "total": total,
-        "tv_count": tv_count,
-        "movie_count": movie_count,
-        "series_count": series_count,
+        "total_count": total,
+        "channels": channels,
+        "summary": {
+            "tv": tv_count,
+            "movie": movie_count,
+            "series": series_count,
+            "unknown": total.saturating_sub(tv_count + movie_count + series_count),
+        },
         "groups": groups_list,
-        "preview": preview,
-        "m3u_url": m3u_url,
     }))
     .into_response()
 }
@@ -660,7 +624,7 @@ pub async fn analyze_m3u(
 pub async fn import_m3u(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
-    req: Request,
+    mut multipart: Multipart,
 ) -> Response {
     let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
         Some(id) => id,
@@ -673,39 +637,32 @@ pub async fn import_m3u(
         }
     };
 
-    // Parse body as JSON or form
-    let content_type = headers
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_lowercase();
-
-    let body_bytes = match axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024).await {
-        Ok(b) => b,
-        Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"detail": "Failed to read body"})),
-            )
-                .into_response();
+    // Read params from multipart/form-data fields (the web client always sends
+    // FormData). `m3u_file` is ignored here: import re-uses the parsed entries via
+    // the `redis_key` from the analyze step, or re-fetches `m3u_url`.
+    let mut map = serde_json::Map::new();
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let name = match field.name() {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+        if name == "m3u_file" {
+            continue;
         }
-    };
-
-    let params: serde_json::Value = if content_type.contains("application/json") {
-        serde_json::from_slice(&body_bytes).unwrap_or_default()
-    } else {
-        // Form-encoded
-        let body_str = String::from_utf8_lossy(&body_bytes).to_string();
-        let mut map = serde_json::Map::new();
-        for pair in body_str.split('&') {
-            if let Some((k, v)) = pair.split_once('=') {
-                let key = urlencoding::decode(k).unwrap_or_default().to_string();
-                let val = urlencoding::decode(v).unwrap_or_default().to_string();
-                map.insert(key, serde_json::Value::String(val));
+        let val = match field.text().await {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        match name.as_str() {
+            "is_public" | "save_source" => {
+                map.insert(name, serde_json::Value::Bool(val == "true" || val == "1"));
+            }
+            _ => {
+                map.insert(name, serde_json::Value::String(val));
             }
         }
-        serde_json::Value::Object(map)
-    };
+    }
+    let params = serde_json::Value::Object(map);
 
     let redis_key = params
         .get("redis_key")
@@ -930,6 +887,8 @@ pub async fn import_m3u(
             StatusCode::ACCEPTED,
             Json(json!({
                 "status": "processing",
+                // web client reads the job id under `details` (M3UTab handleImport)
+                "details": {"job_id": job_id},
                 "job_id": job_id,
                 "total": total,
                 "message": format!("Import of {total} items started in background."),
