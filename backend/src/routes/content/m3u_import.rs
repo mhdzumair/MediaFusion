@@ -121,6 +121,10 @@ const SERIES_KEYWORDS: &[&str] = &[
 ];
 const LIVE_STREAM_EXTENSIONS: &[&str] = &[".m3u8", ".ts", ".mpd"];
 const VOD_EXTENSIONS: &[&str] = &[".mp4", ".mkv", ".avi", ".webm", ".mov", ".wmv", ".flv"];
+// Audio-only streams (radio): classified as live "tv" channels — Stremio/MediaFusion
+// have no dedicated radio type, so radio is modelled as a live channel.
+const AUDIO_STREAM_EXTENSIONS: &[&str] =
+    &[".mp3", ".aac", ".m4a", ".ogg", ".opus", ".flac", ".wav", ".audio"];
 
 fn group_contains_keyword(group_lower: &str, keywords: &[&str]) -> bool {
     keywords.iter().any(|kw| group_lower.contains(kw))
@@ -158,6 +162,12 @@ fn detect_content_type_from_url(url: &str) -> Option<&'static str> {
     {
         return Some("tv");
     }
+    if AUDIO_STREAM_EXTENSIONS
+        .iter()
+        .any(|ext| path_lower.ends_with(ext))
+    {
+        return Some("tv");
+    }
     if VOD_EXTENSIONS.iter().any(|ext| path_lower.ends_with(ext)) {
         return None;
     }
@@ -190,28 +200,45 @@ fn detect_content_type(
 ) -> (String, String, Option<i32>, Option<i32>, Option<i32>) {
     let (parsed_title, parsed_year, season, episode) =
         super::iptv_import::parse_iptv_title_info(name);
-    let is_series = season.is_some() || episode.is_some();
 
-    let entry_type = if is_series {
-        "series".to_string()
+    let detected: &str = if let Some(t) = detect_content_type_from_url(url) {
+        // 1. The URL is the strongest signal. A live-stream URL (HLS/DASH/TS,
+        //    audio, or a /live//tv//channel/ path) wins over name parsing because
+        //    live channel names routinely embed numbers ("[5] Canale 5", "Rai 4",
+        //    "Sky Sport 24") that the title parser misreads as an episode number.
+        t
     } else if let Some(t) = detect_content_type_from_group(group_title) {
-        t.to_string()
-    } else if let Some(t) = detect_content_type_from_url(url) {
-        t.to_string()
+        // 2. An explicit group-title keyword from the playlist author.
+        t
+    } else if season.is_some() {
+        // 3. Name-based series detection requires a SEASON marker. A lone episode
+        //    number with no season is almost always a channel number ("[20] 20"),
+        //    not a series episode, so it must NOT force a series classification.
+        "series"
     } else {
+        // 4. No live/series/movie signal: a VOD file extension means a movie;
+        //    otherwise default to a live "tv" channel (relinker / extension-less
+        //    live URLs like RAI's land here) instead of skipping the entry.
         let path_lower = url::Url::parse(url)
             .ok()
             .map(|u| u.path().to_lowercase())
             .unwrap_or_default();
-        let is_vod = VOD_EXTENSIONS.iter().any(|ext| path_lower.ends_with(ext));
-        if is_vod {
-            "movie".to_string()
+        if VOD_EXTENSIONS.iter().any(|ext| path_lower.ends_with(ext)) {
+            "movie"
         } else {
-            "unknown".to_string()
+            "tv"
         }
     };
 
-    (entry_type, parsed_title, parsed_year, season, episode)
+    // Carry season/episode only for a series; otherwise drop the channel-number
+    // artefacts so a live channel isn't tagged with a phantom episode.
+    let (season, episode) = if detected == "series" {
+        (season, episode)
+    } else {
+        (None, None)
+    };
+
+    (detected.to_string(), parsed_title, parsed_year, season, episode)
 }
 
 /// Parse M3U playlist content into a list of entries.
@@ -311,6 +338,38 @@ fn extract_m3u_attr(line: &str, attr: &str) -> Option<String> {
 
 /// Find or create a TV media entry, then insert/link HTTP stream.
 /// Returns true if a new stream was inserted.
+/// True when the stream URL points at an audio-only stream (radio).
+fn url_is_audio_stream(url: &str) -> bool {
+    let path_lower = url::Url::parse(url)
+        .ok()
+        .map(|u| u.path().to_lowercase())
+        .unwrap_or_else(|| url.to_lowercase());
+    AUDIO_STREAM_EXTENSIONS
+        .iter()
+        .any(|ext| path_lower.ends_with(ext))
+}
+
+/// Derive a human-friendly source name from an M3U URL when the user supplies
+/// none. Prefer the playlist filename stem (".../iptvita.m3u" → "M3U - iptvita")
+/// so several playlists from the same host stay distinguishable in IPTV Sources;
+/// fall back to the host, then to a generic label.
+fn derive_source_name_from_url(url: &str) -> String {
+    if let Ok(parsed) = url::Url::parse(url) {
+        let stem = parsed
+            .path_segments()
+            .and_then(|mut segs| segs.rfind(|s| !s.is_empty()))
+            .map(|seg| seg.rsplit_once('.').map(|(s, _)| s).unwrap_or(seg))
+            .filter(|s| !s.is_empty());
+        if let Some(stem) = stem {
+            return format!("M3U - {stem}");
+        }
+        if let Some(host) = parsed.host_str() {
+            return format!("M3U - {host}");
+        }
+    }
+    "M3U Import".to_string()
+}
+
 pub async fn import_tv_channel(
     pool: &sqlx::PgPool,
     name: &str,
@@ -319,8 +378,10 @@ pub async fn import_tv_channel(
     source_name: &str,
     behavior_hints: Option<&serde_json::Value>,
 ) -> bool {
-    // Find existing media by title+type
-    let media_id: Option<i64> = sqlx::query_scalar(
+    // Find existing media by title+type. media.id is INT4 (i32) — reading it as i64
+    // makes the sqlx decode fail (→ None), so the lookup/insert silently never
+    // resolves an id and the whole import is skipped. Must be i32.
+    let media_id: Option<i32> = sqlx::query_scalar(
         "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
     )
     .bind(name)
@@ -334,7 +395,7 @@ pub async fn import_tv_channel(
         Some(id) => id,
         None => {
             // Insert new media
-            let res: Option<(i64,)> = sqlx::query_as(
+            let res: Option<(i32,)> = sqlx::query_as(
                 "INSERT INTO media (title, type, created_at, adult, is_blocked, is_public, is_user_created, nudity_status, total_streams, popularity) \
                  VALUES ($1, $2, NOW(), false, false, true, false, 'UNKNOWN', 0, 0.0) \
                  ON CONFLICT DO NOTHING RETURNING id",
@@ -350,7 +411,7 @@ pub async fn import_tv_channel(
                 Some((id,)) => id,
                 None => {
                     // Conflict: fetch existing
-                    match sqlx::query_scalar::<_, i64>(
+                    match sqlx::query_scalar::<_, i32>(
                         "SELECT id FROM media WHERE LOWER(title) = LOWER($1) AND type = $2 LIMIT 1",
                     )
                     .bind(name)
@@ -368,15 +429,70 @@ pub async fn import_tv_channel(
         }
     };
 
-    // Update poster if logo is provided and media has no poster
-    if let Some(poster) = logo {
-        let _ = sqlx::query(
-            "UPDATE media SET poster = $1 WHERE id = $2 AND (poster IS NULL OR poster = '')",
+    // Link the channel to its catalog so it isn't orphaned (no catalog → invisible
+    // in Library Browse and the Stremio catalog). Audio-only streams (radio) go to a
+    // dedicated "Radio" catalog; everything else to "Live TV". Both idempotent.
+    let is_radio = url_is_audio_stream(url) || name.to_lowercase().contains("radio");
+    let (catalog_name, catalog_display) = if is_radio {
+        ("radio", "Radio")
+    } else {
+        ("live_tv", "Live TV")
+    };
+    let _ = sqlx::query(
+        "INSERT INTO catalog (name, display_name, is_system, display_order) \
+         VALUES ($1, $2, true, 0) ON CONFLICT (name) DO NOTHING",
+    )
+    .bind(catalog_name)
+    .bind(catalog_display)
+    .execute(pool)
+    .await;
+    let _ = sqlx::query(
+        "INSERT INTO media_catalog_link (media_id, catalog_id) \
+         SELECT $1, c.id FROM catalog c WHERE c.name = $2 ON CONFLICT DO NOTHING",
+    )
+    .bind(media_id)
+    .bind(catalog_name)
+    .execute(pool)
+    .await;
+
+    // Persist the channel logo (tvg-logo) as a poster image. Posters live in
+    // `media_image` (the only table the /poster handler reads) — there is NO
+    // `media.poster` column, so the previous UPDATE silently errored and every
+    // channel fell back to a generated placeholder. Attribute the artwork to a
+    // dedicated "m3u" metadata provider (get-or-create), and de-dup on the
+    // table's unique key so re-imports are idempotent.
+    if let Some(logo_url) = logo.filter(|l| !l.is_empty()) {
+        let provider_id: Option<i32> = sqlx::query_scalar(
+            r#"WITH ins AS (
+                   INSERT INTO metadata_provider
+                       (name, display_name, is_external, is_active, priority, default_priority, created_at)
+                   VALUES ('m3u', 'M3U', false, true, 0, 0, NOW())
+                   ON CONFLICT (name) DO NOTHING
+                   RETURNING id
+               )
+               SELECT id FROM ins
+               UNION ALL
+               SELECT id FROM metadata_provider WHERE name = 'm3u'
+               LIMIT 1"#,
         )
-        .bind(poster)
-        .bind(media_id)
-        .execute(pool)
-        .await;
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+        if let Some(pid) = provider_id {
+            let _ = sqlx::query(
+                "INSERT INTO media_image \
+                    (media_id, provider_id, image_type, url, is_primary, display_order) \
+                 VALUES ($1, $2, 'poster', $3, true, 0) \
+                 ON CONFLICT (media_id, provider_id, image_type, url) DO NOTHING",
+            )
+            .bind(media_id)
+            .bind(pid)
+            .bind(logo_url)
+            .execute(pool)
+            .await;
+        }
     }
 
     // Check for existing stream with this URL linked to this media
@@ -387,7 +503,7 @@ pub async fn import_tv_channel(
          LIMIT 1",
     )
     .bind(url)
-    .bind(media_id as i32)
+    .bind(media_id)
     .fetch_optional(pool)
     .await
     .ok()
@@ -413,7 +529,7 @@ pub async fn import_tv_channel(
     };
 
     let opts = crate::db::StoreStreamOpts::user_import(
-        crate::db::MediaId(media_id as i32),
+        crate::db::MediaId(media_id),
         crate::db::MediaType::Movie,
     );
 
@@ -841,10 +957,7 @@ pub async fn import_m3u(
             if save_source_bg {
                 if let Some(ref url) = m3u_url_bg {
                     let save_name = if source_name_bg.is_empty() {
-                        url::Url::parse(url)
-                            .ok()
-                            .and_then(|u| u.host_str().map(|h| format!("M3U - {h}")))
-                            .unwrap_or_else(|| "M3U Import".to_string())
+                        derive_source_name_from_url(url)
                     } else {
                         source_name_bg.clone()
                     };
@@ -920,12 +1033,7 @@ pub async fn import_m3u(
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
                 .map(str::to_string)
-                .unwrap_or_else(|| {
-                    url::Url::parse(url)
-                        .ok()
-                        .and_then(|u| u.host_str().map(|h| format!("M3U - {h}")))
-                        .unwrap_or_else(|| "M3U Import".to_string())
-                });
+                .unwrap_or_else(|| derive_source_name_from_url(url));
             source_id = super::iptv_import::save_m3u_iptv_source(
                 &state.pool,
                 user_id,
@@ -1005,4 +1113,61 @@ pub async fn get_iptv_settings_handler(State(state): State<Arc<AppState>>) -> Re
         "allow_public_sharing": state.config.allow_public_iptv_sharing,
     }))
     .into_response()
+}
+
+#[cfg(test)]
+mod detection_tests {
+    use super::detect_content_type;
+
+    fn type_of(name: &str, url: &str, group: Option<&str>) -> String {
+        detect_content_type(name, url, group).0
+    }
+
+    #[test]
+    fn live_channels_with_number_prefix_are_tv_not_series() {
+        // Regression: the "[N]" channel-number prefix was parsed as an episode
+        // number, flagging every live channel as a series (Tundrak/IPTV-Italia).
+        let mpd = "https://cdn.example.net/live/ch-c5/c5-clr.isml/manifest.mpd";
+        let hls = "https://cdn.example.net/v1/master/abc/Live.m3u8";
+        assert_eq!(type_of("[5] Canale 5", mpd, None), "tv");
+        assert_eq!(type_of("[7] LA7", hls, None), "tv");
+        assert_eq!(type_of("[20] 20", mpd, None), "tv");
+    }
+
+    #[test]
+    fn extensionless_relinker_live_url_defaults_to_tv() {
+        // RAI relinker URLs have no file extension and no /live/ path; with a bare
+        // channel number in the name they must still resolve to a live tv channel.
+        let relinker =
+            "http://mediapolis.rai.it/relinker/relinkerServlet.htm?cont=2606803&output=7";
+        assert_eq!(type_of("[1] Rai 1", relinker, None), "tv");
+        assert_eq!(type_of("[24] Rai Movie", relinker, None), "tv");
+    }
+
+    #[test]
+    fn real_series_with_season_marker_is_series() {
+        // A genuine SxxExx VOD entry keeps its series classification.
+        let mp4 = "https://vod.example.net/series/show/s01e02.mp4";
+        assert_eq!(type_of("Breaking Bad S01E02", mp4, None), "series");
+    }
+
+    #[test]
+    fn vod_movie_extension_is_movie() {
+        let mp4 = "https://vod.example.net/movies/inception.mp4";
+        assert_eq!(type_of("Inception 2010", mp4, None), "movie");
+    }
+
+    #[test]
+    fn audio_stream_is_tv() {
+        // Radio: audio-extension URLs classify as tv (routed to the Radio catalog
+        // downstream by import_tv_channel).
+        let mp3 = "https://radio.example.net/stream/radio1.mp3";
+        assert_eq!(type_of("[1] Radio Uno", mp3, None), "tv");
+    }
+
+    #[test]
+    fn group_title_movie_keyword_wins_when_url_is_ambiguous() {
+        let ambiguous = "http://host.example.net/path/12345";
+        assert_eq!(type_of("Some Title", ambiguous, Some("VOD Movies")), "movie");
+    }
 }
