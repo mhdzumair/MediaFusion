@@ -111,6 +111,7 @@ export const CATALOGS = {
   ],
   'Live & Sports': [
     { id: 'live_tv', name: 'Live TV' },
+    { id: 'radio', name: 'Radio' },
     { id: 'live_sport_events', name: 'Live Sport Events' },
     { id: 'football', name: 'Football' },
     { id: 'basketball', name: 'Basketball' },
