@@ -81,6 +81,52 @@ pub fn annotate(
     Ok(buf.into_inner())
 }
 
+/// Generate a placeholder poster (300×450 JPEG) from a title, for media without any
+/// artwork — e.g. M3U/IPTV channels and radios that have no `tvg-logo`. Deterministic:
+/// the same title always yields the same background colour. CPU-bound; wrap in
+/// `tokio::task::spawn_blocking` at the call site.
+pub fn generate_placeholder(
+    title: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    const W: u32 = 300;
+    const H: u32 = 450;
+
+    // Deterministic dark background colour from the title (FNV-1a hash → 40..103 per channel).
+    let mut hash: u32 = 2_166_136_261;
+    for byte in title.bytes() {
+        hash = (hash ^ byte as u32).wrapping_mul(16_777_619);
+    }
+    let bg = Rgba([
+        40 + (hash & 0x3F) as u8,
+        40 + ((hash >> 8) & 0x3F) as u8,
+        40 + ((hash >> 16) & 0x3F) as u8,
+        255,
+    ]);
+    let mut canvas: RgbaImage = RgbaImage::from_pixel(W, H, bg);
+
+    // Centred, auto-fitted title.
+    let font = bold_font();
+    let display = if title.trim().is_empty() { "Channel" } else { title };
+    let (lines, scale) = fit_title(display, font, W as i32 - 40, 5, 34, 18);
+    let line_h = {
+        let sf = font.as_scaled(scale);
+        (sf.ascent() - sf.descent()) as i32
+    };
+    let mut y = (H as i32 - line_h * lines.len() as i32) / 2;
+    let fill = Rgba([255u8, 255, 255, 255]);
+    let outline = Rgba([0u8, 0, 0, 160]);
+    for line in &lines {
+        let x = (W as i32 - text_width(font, scale, line) as i32) / 2;
+        draw_outlined_text(&mut canvas, x, y, scale, font, line, fill, outline);
+        y += line_h;
+    }
+
+    let rgb = DynamicImage::ImageRgba8(canvas).to_rgb8();
+    let mut buf = Cursor::new(Vec::new());
+    DynamicImage::ImageRgb8(rgb).write_to(&mut buf, image::ImageFormat::Jpeg)?;
+    Ok(buf.into_inner())
+}
+
 // ─── IMDb badge ───────────────────────────────────────────────────────────────
 
 fn add_imdb_badge(canvas: &mut RgbaImage, rating: f32) {

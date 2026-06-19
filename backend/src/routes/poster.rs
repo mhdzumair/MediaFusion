@@ -42,6 +42,18 @@ pub async fn handler(
         if let Some(url) = poster_url {
             return fetch_annotate_cache(&state, &cache_key, &url, meta).await;
         }
+
+        // No artwork (M3U/IPTV channels & radios without a tvg-logo): generate a
+        // name-based placeholder poster instead of returning 404.
+        if let Some(title) = meta.title.as_deref().filter(|t| !t.is_empty()) {
+            let title = title.to_string();
+            if let Ok(Ok(bytes)) =
+                tokio::task::spawn_blocking(move || crate::poster::generate_placeholder(&title)).await
+            {
+                cache::set_bytes(&state.redis, &cache_key, &bytes, 86400).await;
+                return jpeg_response(bytes);
+            }
+        }
     }
 
     StatusCode::NOT_FOUND.into_response()
