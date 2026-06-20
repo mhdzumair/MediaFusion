@@ -81,49 +81,100 @@ pub fn annotate(
     Ok(buf.into_inner())
 }
 
-/// Generate a placeholder poster (300×450 JPEG) from a title, for media without any
-/// artwork — e.g. M3U/IPTV channels and radios that have no `tvg-logo`. Deterministic:
-/// the same title always yields the same background colour. CPU-bound; wrap in
-/// `tokio::task::spawn_blocking` at the call site.
+/// Generate a placeholder poster (300x450 JPEG) for channels without artwork.
+/// Design: vertical gradient background, channel initials in a circle,
+/// title text below, and the MediaFusion watermark at top-right.
+/// Deterministic: the same title always yields the same colour.
+/// CPU-bound; wrap in `tokio::task::spawn_blocking` at the call site.
 pub fn generate_placeholder(
     title: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     const W: u32 = 300;
     const H: u32 = 450;
 
-    // Deterministic dark background colour from the title (FNV-1a hash → 40..103 per channel).
+    // Deterministic accent colour from the title (FNV-1a hash).
     let mut hash: u32 = 2_166_136_261;
     for byte in title.bytes() {
         hash = (hash ^ byte as u32).wrapping_mul(16_777_619);
     }
-    let bg = Rgba([
-        40 + (hash & 0x3F) as u8,
-        40 + ((hash >> 8) & 0x3F) as u8,
-        40 + ((hash >> 16) & 0x3F) as u8,
-        255,
-    ]);
-    let mut canvas: RgbaImage = RgbaImage::from_pixel(W, H, bg);
+    let r_accent = 60 + (hash & 0x59) as u8; // 60-149
+    let g_accent = 60 + ((hash >> 8) & 0x59) as u8;
+    let b_accent = 80 + ((hash >> 16) & 0x59) as u8; // slightly bluer base
 
-    // Centred, auto-fitted title.
-    let font = bold_font();
-    let display = if title.trim().is_empty() {
-        "Channel"
-    } else {
-        title
-    };
-    let (lines, scale) = fit_title(display, font, W as i32 - 40, 5, 34, 18);
-    let line_h = {
-        let sf = font.as_scaled(scale);
-        (sf.ascent() - sf.descent()) as i32
-    };
-    let mut y = (H as i32 - line_h * lines.len() as i32) / 2;
-    let fill = Rgba([255u8, 255, 255, 255]);
-    let outline = Rgba([0u8, 0, 0, 160]);
-    for line in &lines {
-        let x = (W as i32 - text_width(font, scale, line) as i32) / 2;
-        draw_outlined_text(&mut canvas, x, y, scale, font, line, fill, outline);
-        y += line_h;
+    // Vertical gradient: accent colour at top fading to near-black at bottom.
+    let mut canvas: RgbaImage = RgbaImage::new(W, H);
+    for y in 0..H {
+        let t = y as f32 / H as f32;
+        let blend = 1.0 - t * 0.78;
+        let r = (r_accent as f32 * blend + 15.0 * (1.0 - blend)) as u8;
+        let g = (g_accent as f32 * blend + 15.0 * (1.0 - blend)) as u8;
+        let b = (b_accent as f32 * blend + 20.0 * (1.0 - blend)) as u8;
+        for x in 0..W {
+            canvas.put_pixel(x, y, Rgba([r, g, b, 255]));
+        }
     }
+
+    // Channel initials (up to 2 characters) centred in a translucent circle.
+    let display = if title.trim().is_empty() { "CH" } else { title };
+    let initials: String = display
+        .split_whitespace()
+        .take(2)
+        .filter_map(|w| w.chars().next())
+        .flat_map(|c| c.to_uppercase())
+        .collect();
+
+    let cx = (W / 2) as i32;
+    let cy = (H / 3) as i32;
+    let radius = 52i32;
+
+    // Lighten pixels inside the circle to create a soft "badge".
+    for py in (cy - radius).max(0)..=(cy + radius).min(H as i32 - 1) {
+        for px in (cx - radius).max(0)..=(cx + radius).min(W as i32 - 1) {
+            let dx = px - cx;
+            let dy = py - cy;
+            if dx * dx + dy * dy <= radius * radius {
+                let p = canvas.get_pixel_mut(px as u32, py as u32);
+                p[0] = ((p[0] as u16 * 2 + 255) / 3) as u8;
+                p[1] = ((p[1] as u16 * 2 + 255) / 3) as u8;
+                p[2] = ((p[2] as u16 * 2 + 255) / 3) as u8;
+            }
+        }
+    }
+
+    let font = bold_font();
+    let white = Rgba([255u8, 255, 255, 255]);
+    let shadow = Rgba([0u8, 0, 0, 120]);
+
+    // Initials text centred in the circle.
+    let init_scale = PxScale::from(46.0);
+    let sf_init = font.as_scaled(init_scale);
+    let init_w = text_width(font, init_scale, &initials) as i32;
+    let init_h = (sf_init.ascent() - sf_init.descent()) as i32;
+    draw_outlined_text(
+        &mut canvas,
+        cx - init_w / 2,
+        cy - init_h / 2,
+        init_scale,
+        font,
+        &initials,
+        white,
+        shadow,
+    );
+
+    // Title text below the circle.
+    let title_y = cy + radius + 18;
+    let (lines, title_scale) = fit_title(display, font, W as i32 - 44, 4, 26, 13);
+    let sf_title = font.as_scaled(title_scale);
+    let line_h = (sf_title.ascent() - sf_title.descent()) as i32;
+    let mut y = title_y;
+    for line in &lines {
+        let x = (W as i32 - text_width(font, title_scale, line) as i32) / 2;
+        draw_outlined_text(&mut canvas, x, y, title_scale, font, line, white, shadow);
+        y += line_h + 5;
+    }
+
+    // MediaFusion watermark at top-right (same as the annotate pipeline).
+    add_watermark(&mut canvas);
 
     let rgb = DynamicImage::ImageRgba8(canvas).to_rgb8();
     let mut buf = Cursor::new(Vec::new());
