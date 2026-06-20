@@ -540,9 +540,14 @@ pub async fn import_xtream(
             StatusCode::ACCEPTED,
             Json(json!({
                 "status": "processing",
+                // Keep top-level job_id for external consumers; frontend reads details.job_id
                 "job_id": job_id,
-                "total": total_estimate,
                 "message": format!("Import started for {total_estimate} items"),
+                "details": {
+                    "job_id": job_id,
+                    "total_items": total_estimate,
+                    "background": true,
+                },
             })),
         )
             .into_response();
@@ -595,12 +600,16 @@ pub async fn import_xtream(
 
     let _: Result<(), _> = state.redis.del(&req_body.redis_key).await;
 
+    let total_imported = stats.tv + stats.movie + stats.series;
     Json(json!({
         "status": "success",
-        "stats": stats,
-        "total": total_estimate,
-        "source_saved": source_id.is_some(),
-        "source_id": source_id,
+        "message": format!("Successfully imported {total_imported} items"),
+        "details": {
+            "stats": stats,
+            "total_items": total_estimate,
+            "source_saved": source_id.is_some(),
+            "source_id": source_id,
+        },
     }))
     .into_response()
 }
