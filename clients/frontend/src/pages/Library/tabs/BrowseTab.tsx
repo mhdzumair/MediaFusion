@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -305,59 +305,62 @@ export function BrowseTab() {
   // Using the functional form of setSearchParams guarantees we always build
   // on top of the latest URL state, never clobbering params we didn't intend.
   // ---------------------------------------------------------------------------
-  function updateUrl(
-    updates: Partial<{
-      type: CatalogType
-      genre: string
-      search: string
-      searchMode: SearchMode
-      page: number
-    }>,
-    opts: { resetPage?: boolean } = {},
-  ) {
-    setSearchParams(
-      (prev) => {
-        const params = new URLSearchParams(prev)
+  const updateUrl = useCallback(
+    (
+      updates: Partial<{
+        type: CatalogType
+        genre: string
+        search: string
+        searchMode: SearchMode
+        page: number
+      }>,
+      opts: { resetPage?: boolean } = {},
+    ) => {
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev)
 
-        if (updates.type !== undefined) params.set('type', updates.type)
+          if (updates.type !== undefined) params.set('type', updates.type)
 
-        if (updates.genre !== undefined) {
-          if (updates.genre) {
-            params.set('genre', updates.genre)
-          } else {
-            params.delete('genre')
+          if (updates.genre !== undefined) {
+            if (updates.genre) {
+              params.set('genre', updates.genre)
+            } else {
+              params.delete('genre')
+            }
           }
-        }
 
-        if (updates.searchMode !== undefined || updates.search !== undefined) {
-          const nextMode = updates.searchMode ?? searchMode
-          const nextSearch = updates.search ?? search
-          params.delete('search')
-          params.delete('external_id')
-          params.delete('search_mode')
-          if (nextMode === 'external_id') {
-            params.set('search_mode', 'external_id')
-            if (nextSearch) params.set('external_id', nextSearch)
-          } else if (nextSearch) {
-            params.set('search', nextSearch)
+          if (updates.searchMode !== undefined || updates.search !== undefined) {
+            const nextMode = updates.searchMode ?? searchMode
+            const nextSearch = updates.search ?? search
+            params.delete('search')
+            params.delete('external_id')
+            params.delete('search_mode')
+            if (nextMode === 'external_id') {
+              params.set('search_mode', 'external_id')
+              if (nextSearch) params.set('external_id', nextSearch)
+            } else if (nextSearch) {
+              params.set('search', nextSearch)
+            }
           }
-        }
 
-        if (updates.page !== undefined) {
-          if (updates.page > 1) {
-            params.set('page', String(updates.page))
-          } else {
+          if (updates.page !== undefined) {
+            if (updates.page > 1) {
+              params.set('page', String(updates.page))
+            } else {
+              params.delete('page')
+            }
+          } else if (opts.resetPage) {
             params.delete('page')
           }
-        } else if (opts.resetPage) {
-          params.delete('page')
-        }
 
-        return params
-      },
-      { replace: true },
-    )
-  }
+          return params
+        },
+        { replace: true },
+      )
+    },
+    [searchMode, search, setSearchParams],
+  )
 
   // One-shot URL hydration so a stored catalogType materialises in URL on bare /library visit
   useEffect(() => {
@@ -466,7 +469,7 @@ export function BrowseTab() {
       updateUrl({ page: storedPage })
       setRestoredScroll(true)
     }
-  }, [selectedItemId, browsePage, storedState.page])
+  }, [selectedItemId, browsePage, storedState.page, updateUrl])
 
   // Restore scroll position after data loads (skip when highlighting a returned item)
   useEffect(() => {
