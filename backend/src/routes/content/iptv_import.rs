@@ -257,6 +257,7 @@ pub async fn import_tv_entry(
         &entry.name,
         &entry.url,
         entry.logo.as_deref(),
+        entry.group.as_deref(),
         source,
         entry.behavior_hints.as_ref(),
     )
@@ -568,7 +569,7 @@ pub async fn run_xtream_import_batch(
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty());
             let url = format!("{server}/live/{username}/{password}/{stream_id}.m3u8");
-            if import_tv_channel(ctx.pool, name, &url, logo, source_name, None).await {
+            if import_tv_channel(ctx.pool, name, &url, logo, None, source_name, None).await {
                 stats.tv += 1;
             } else {
                 stats.skipped += 1;

@@ -343,9 +343,6 @@ fn extract_m3u_attr(line: &str, attr: &str) -> Option<String> {
 
 // ─── DB helpers for TV channel insertion ──────────────────────────────────────
 
-/// Find or create a TV media entry, then insert/link HTTP stream.
-/// Returns true if a new stream was inserted.
-/// True when the stream URL points at an audio-only stream (radio).
 fn url_is_audio_stream(url: &str) -> bool {
     let path_lower = url::Url::parse(url)
         .ok()
@@ -382,6 +379,7 @@ pub async fn import_tv_channel(
     name: &str,
     url: &str,
     logo: Option<&str>,
+    group: Option<&str>,
     source_name: &str,
     behavior_hints: Option<&serde_json::Value>,
 ) -> bool {
@@ -436,56 +434,25 @@ pub async fn import_tv_channel(
         }
     };
 
-    // Link the channel to its catalog so it isn't orphaned (no catalog → invisible
-    // in Library Browse and the Stremio catalog). Audio-only streams (radio) go to a
-    // dedicated "Radio" catalog; everything else to "Live TV". Both idempotent.
-    let is_radio = url_is_audio_stream(url) || name.to_lowercase().contains("radio");
-    let (catalog_name, catalog_display) = if is_radio {
-        ("radio", "Radio")
-    } else {
-        ("live_tv", "Live TV")
-    };
-    let _ = sqlx::query(
-        "INSERT INTO catalog (name, display_name, is_system, display_order) \
-         VALUES ($1, $2, true, 0) ON CONFLICT (name) DO NOTHING",
-    )
-    .bind(catalog_name)
-    .bind(catalog_display)
-    .execute(pool)
-    .await;
-    let _ = sqlx::query(
-        "INSERT INTO media_catalog_link (media_id, catalog_id) \
-         SELECT $1, c.id FROM catalog c WHERE c.name = $2 ON CONFLICT DO NOTHING",
-    )
-    .bind(media_id)
-    .bind(catalog_name)
-    .execute(pool)
-    .await;
+    // Link the channel to its catalog. Audio-only streams (radio) go to the
+    // "radio" catalog; everything else to "live_tv". Both are seeded by migration.
+    // Use the group title as the primary radio signal; fall back to URL extension.
+    let group_lower = group.map(|g| g.to_lowercase()).unwrap_or_default();
+    let is_radio =
+        group_lower.contains("radio") || group_lower.contains("audio") || url_is_audio_stream(url);
+    let catalog_name = if is_radio { "radio" } else { "live_tv" };
+    crate::db::link_to_catalogs(pool, media_id, &[catalog_name]).await;
 
     // Persist the channel logo (tvg-logo) as a poster image. Posters live in
     // `media_image` (the only table the /poster handler reads) — there is NO
-    // `media.poster` column, so the previous UPDATE silently errored and every
-    // channel fell back to a generated placeholder. Attribute the artwork to a
-    // dedicated "m3u" metadata provider (get-or-create), and de-dup on the
-    // table's unique key so re-imports are idempotent.
+    // `media.poster` column. The 'm3u' provider is seeded by migration 0021.
     if let Some(logo_url) = logo.filter(|l| !l.is_empty()) {
-        let provider_id: Option<i32> = sqlx::query_scalar(
-            r#"WITH ins AS (
-                   INSERT INTO metadata_provider
-                       (name, display_name, is_external, is_active, priority, default_priority, created_at)
-                   VALUES ('m3u', 'M3U', false, true, 0, 0, NOW())
-                   ON CONFLICT (name) DO NOTHING
-                   RETURNING id
-               )
-               SELECT id FROM ins
-               UNION ALL
-               SELECT id FROM metadata_provider WHERE name = 'm3u'
-               LIMIT 1"#,
-        )
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+        let provider_id: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM metadata_provider WHERE name = 'm3u' LIMIT 1")
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten();
 
         if let Some(pid) = provider_id {
             let _ = sqlx::query(
