@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { getContentDetailReturnUrl } from '@/pages/Library/browseNavigation'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -93,6 +93,9 @@ import { RatingsDisplay, ContentGuidance, SeriesEpisodePicker, TrailerButton } f
 import { PlayerDialog, ExternalPlayerMenu } from '@/components/player'
 import { Poster, Backdrop } from '@/components/ui/poster'
 import type { CatalogStreamInfo } from '@/lib/api'
+import type { ScrapeResponse } from '@/lib/api/scrapers'
+import { scrapersApi } from '@/lib/api/scrapers'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 // Stream Action Dialog Component
 interface StreamActionDialogProps {
@@ -964,14 +967,44 @@ export function ContentDetailPage() {
   const initialSeason = searchParams.get('season') ? parseInt(searchParams.get('season')!, 10) : undefined
   const initialEpisode = searchParams.get('episode') ? parseInt(searchParams.get('episode')!, 10) : undefined
 
-  // When navigated from Discover, scraping was just triggered — show a banner until streams arrive
+  // When navigated from Discover, scraping will be auto-triggered — show a banner with progress/result
   const [scrapingBanner, setScrapingBanner] = useState(() => searchParams.get('scraping') === '1')
+  const [scrapeResult, setScrapeResult] = useState<ScrapeResponse | null>(null)
+  const queryClient = useQueryClient()
 
   // For series: season and episode selection
   const [selectedSeason, setSelectedSeason] = useState<number | undefined>(initialSeason)
   const [selectedEpisode, setSelectedEpisode] = useState<number | undefined>(initialEpisode)
   const [streamDialogOpen, setStreamDialogOpen] = useState(false)
   const [selectedStream, setSelectedStream] = useState<CatalogStreamInfo | null>(null)
+
+  // Auto-scrape mutation: triggered on mount when navigated from Discover (?scraping=1)
+  const autoScrapeMutation = useMutation({
+    mutationFn: () =>
+      scrapersApi.triggerScrape(mediaId, {
+        media_type: catalogType === 'series' ? 'series' : 'movie',
+        ...(catalogType === 'series' && initialSeason !== undefined && initialEpisode !== undefined
+          ? { season: initialSeason, episode: initialEpisode }
+          : catalogType === 'series'
+            ? { season: 1, episode: 1 }
+            : {}),
+      }),
+    onSuccess: (data) => {
+      setScrapeResult(data)
+      if (data.streams_found > 0) {
+        queryClient.invalidateQueries({ queryKey: ['catalog', 'streams', catalogType, mediaId.toString()] })
+      }
+    },
+  })
+
+  const scrapeTriggered = useRef(false)
+  useEffect(() => {
+    if (scrapingBanner && !scrapeTriggered.current) {
+      scrapeTriggered.current = true
+      autoScrapeMutation.mutate()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Stream filtering and view mode (stream_id query param deep-links to a single stream)
   const [streamFilters, setStreamFilters] = useState<StreamFilterState>(() => ({
@@ -2059,15 +2092,49 @@ export function ContentDetailPage() {
               </div>
             </CardHeader>
             <CardContent className="px-3 sm:px-6">
-              {/* Banner shown when navigated from Discover (scraping just triggered) */}
-              {scrapingBanner && !streamsLoading && !streamsData?.streams.length && (
-                <div className="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 mb-4 text-sm">
-                  <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
-                  <div className="flex-1">
-                    <p className="font-medium">Searching for streams…</p>
-                    <p className="text-muted-foreground text-xs">
-                      This was just added. Streams are being fetched in the background — check back in a moment.
-                    </p>
+              {/* Banner shown when navigated from Discover */}
+              {scrapingBanner && (
+                <div
+                  className={`flex items-start gap-3 rounded-xl border px-4 py-3 mb-4 text-sm ${scrapeResult ? 'border-border bg-muted/40' : 'border-primary/30 bg-primary/5'}`}
+                >
+                  {autoScrapeMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0 mt-0.5" />
+                  ) : (
+                    <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    {autoScrapeMutation.isPending ? (
+                      <>
+                        <p className="font-medium">Searching for streams…</p>
+                        <p className="text-muted-foreground text-xs">
+                          Scanning indexers, this may take up to a minute.
+                        </p>
+                      </>
+                    ) : scrapeResult ? (
+                      <>
+                        <p className="font-medium">
+                          Scraping complete — {scrapeResult.streams_found} stream
+                          {scrapeResult.streams_found !== 1 ? 's' : ''} found
+                        </p>
+                        {scrapeResult.scrapers_used.length > 0 && (
+                          <p className="text-muted-foreground text-xs mt-0.5">
+                            Used: {scrapeResult.scrapers_used.join(', ')}
+                          </p>
+                        )}
+                        {scrapeResult.streams_found === 0 && (
+                          <p className="text-muted-foreground text-xs mt-0.5">
+                            No streams were found. Try again later or check your indexer configuration.
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-medium">Searching for streams…</p>
+                        <p className="text-muted-foreground text-xs">
+                          Scanning indexers, this may take up to a minute.
+                        </p>
+                      </>
+                    )}
                   </div>
                   <Button
                     variant="ghost"

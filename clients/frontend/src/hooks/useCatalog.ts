@@ -69,7 +69,7 @@ export function useCatalogStreams(
   episode?: number,
   profileId?: number,
   provider?: string,
-  options?: { enabled?: boolean; streamId?: string },
+  options?: { enabled?: boolean; streamId?: string; refetchInterval?: number | false },
   profileUuid?: string,
 ) {
   const streamId = options?.streamId
@@ -90,6 +90,7 @@ export function useCatalogStreams(
         !!streamId),
     staleTime: 2 * 60 * 1000, // 2 minutes (streams can change)
     refetchOnMount: 'always', // Always refetch when navigating to the detail page
+    refetchInterval: options?.refetchInterval,
   })
 }
 

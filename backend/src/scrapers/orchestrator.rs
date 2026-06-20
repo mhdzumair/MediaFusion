@@ -7,6 +7,7 @@ use tokio::task::JoinSet;
 
 use crate::{
     models::user_data::UserData,
+    parser,
     scrapers::{
         easynews, jackett, mediafusion, newznab, prowlarr, public_indexers, public_usenet,
         source_health::{self, HealthGateConfig},
@@ -15,6 +16,91 @@ use crate::{
     },
     state::AppState,
 };
+
+const MOVIE_SIMILARITY_MIN: u32 = 85;
+const SERIES_SIMILARITY_MIN: u32 = 80;
+
+/// Core validation shared by all stream types (torrent, usenet, telegram).
+/// Checks title similarity, year match for movies, and S/E presence for series.
+fn validate_stream_core(
+    parsed: &crate::parser::ParsedTitle,
+    files: &[crate::scrapers::StreamFile],
+    raw_name: &str,
+    meta: &SearchMeta,
+    media_type: &str,
+) -> bool {
+    let sim_min = if media_type == "movie" {
+        MOVIE_SIMILARITY_MIN
+    } else {
+        SERIES_SIMILARITY_MIN
+    };
+    let parsed_title = parsed.title.as_deref().unwrap_or(raw_name);
+    if parser::similarity_ratio(parsed_title, &meta.title) < sim_min {
+        return false;
+    }
+    if media_type == "movie" {
+        if let (Some(py), Some(my)) = (parsed.year, meta.year) {
+            if py != my {
+                return false;
+            }
+        }
+    }
+    if media_type == "series" && files.is_empty() {
+        return false;
+    }
+    true
+}
+
+fn validate_scraped_stream(stream: &ScrapedStream, meta: &SearchMeta, media_type: &str) -> bool {
+    validate_stream_core(
+        &stream.parsed,
+        &stream.files,
+        &stream.name,
+        meta,
+        media_type,
+    )
+}
+
+fn validate_usenet_stream(
+    stream: &ScrapedUsenetStream,
+    meta: &SearchMeta,
+    media_type: &str,
+) -> bool {
+    validate_stream_core(
+        &stream.parsed,
+        &stream.files,
+        &stream.name,
+        meta,
+        media_type,
+    )
+}
+
+fn validate_telegram_stream(
+    stream: &crate::scrapers::ScrapedTelegramStream,
+    meta: &SearchMeta,
+    media_type: &str,
+) -> bool {
+    let sim_min = if media_type == "movie" {
+        MOVIE_SIMILARITY_MIN
+    } else {
+        SERIES_SIMILARITY_MIN
+    };
+    let parsed_title = stream.parsed.title.as_deref().unwrap_or(&stream.name);
+    if parser::similarity_ratio(parsed_title, &meta.title) < sim_min {
+        return false;
+    }
+    if media_type == "movie" {
+        if let (Some(py), Some(my)) = (stream.parsed.year, meta.year) {
+            if py != my {
+                return false;
+            }
+        }
+    }
+    if media_type == "series" && stream.season.is_none() {
+        return false;
+    }
+    true
+}
 
 pub(crate) struct FanOutOpts {
     pub byparr_url: Option<String>,
@@ -146,6 +232,7 @@ async fn run_torrent_scrape(
     let mut seen = std::collections::HashSet::new();
     let deduped: Vec<ScrapedStream> = results
         .into_iter()
+        .filter(|s| validate_scraped_stream(s, meta, media_type))
         .filter(|s| seen.insert(s.info_hash.clone()))
         .collect();
 
@@ -189,7 +276,11 @@ async fn run_torrent_scrape(
 
         let tg_opts =
             stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
-        let tg_normalized: Vec<_> = tg_results
+        let tg_validated: Vec<_> = tg_results
+            .into_iter()
+            .filter(|s| validate_telegram_stream(s, meta, media_type))
+            .collect();
+        let tg_normalized: Vec<_> = tg_validated
             .iter()
             .map(crate::db::TelegramStoreInput::from)
             .collect();
@@ -243,6 +334,7 @@ pub async fn run_forced(
     let mut seen = std::collections::HashSet::new();
     let deduped: Vec<ScrapedStream> = results
         .into_iter()
+        .filter(|s| validate_scraped_stream(s, meta, media_type))
         .filter(|s| seen.insert(s.info_hash.clone()))
         .collect();
 
@@ -281,7 +373,11 @@ pub async fn run_forced(
         .await;
         let tg_opts =
             stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
-        let tg_normalized: Vec<_> = tg_results
+        let tg_validated: Vec<_> = tg_results
+            .into_iter()
+            .filter(|s| validate_telegram_stream(s, meta, media_type))
+            .collect();
+        let tg_normalized: Vec<_> = tg_validated
             .iter()
             .map(crate::db::TelegramStoreInput::from)
             .collect();
@@ -429,14 +525,21 @@ pub async fn run_usenet(
 
     record_scrape_timestamps(&state.redis, &scraped_ids, &cache_key, now).await;
 
+    let mut seen = std::collections::HashSet::new();
+    let validated: Vec<ScrapedUsenetStream> = results
+        .into_iter()
+        .filter(|s| validate_usenet_stream(s, meta, media_type))
+        .filter(|s| seen.insert(s.nzb_guid.clone()))
+        .collect();
+
     let opts = stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
-    let normalized: Vec<_> = results
+    let normalized: Vec<_> = validated
         .iter()
         .map(crate::db::UsenetStoreInput::from)
         .collect();
     crate::db::store_usenet_streams(&state.pool, &normalized, &opts).await;
 
-    results
+    validated
 }
 
 /// Full torrent + usenet fan-out for background worker re-scrapes.
@@ -468,6 +571,7 @@ pub async fn run_background(
     let mut seen = std::collections::HashSet::new();
     let deduped: Vec<ScrapedStream> = results
         .into_iter()
+        .filter(|s| validate_scraped_stream(s, meta, media_type))
         .filter(|s| seen.insert(s.info_hash.clone()))
         .collect();
 

@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Sparkles, ChevronLeft, ChevronRight, Settings2, Loader2, Search, X } from 'lucide-react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -12,7 +12,6 @@ import { useProfiles } from '@/hooks/useProfiles'
 import { useRpdb } from '@/contexts/RpdbContext'
 import { useWatchProviders, useDiscoverSource, type DiscoverSource } from '@/hooks/useDiscover'
 import { userMetadataApi } from '@/lib/api/user-metadata'
-import { scrapersApi } from '@/lib/api/scrapers'
 import { metadataApi } from '@/lib/api/metadata'
 import type { DiscoverItem } from '@/lib/api/discover'
 import { discoverDbKey } from '@/lib/api/discover'
@@ -530,7 +529,6 @@ function SearchResultsInner({
 
 export function DiscoverTab() {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const { rpdbApiKey } = useRpdb()
 
   const { data: profiles } = useProfiles()
@@ -582,18 +580,11 @@ export function DiscoverTab() {
       } catch {
         /* non-blocking */
       }
-      scrapersApi
-        .triggerScrape(imported.id, {
-          media_type: item.media_type === 'series' ? 'series' : 'movie',
-          ...(item.media_type === 'series' ? { season: 1, episode: 1 } : {}),
-        })
-        .catch(() => {})
       return { id: imported.id, mediaType: item.media_type }
     },
     onMutate: (item) => setLoadingKey(discoverDbKey(item)),
     onSettled: () => setLoadingKey(null),
     onSuccess: ({ id, mediaType }) => {
-      queryClient.invalidateQueries({ queryKey: ['discover'] })
       navigate(`/dashboard/content/${mediaType}/${id}?scraping=1`)
     },
   })

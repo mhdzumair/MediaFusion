@@ -408,7 +408,15 @@ pub async fn create_suggestion(
             .into_response();
     }
 
-    if body.suggested_value.is_empty() {
+    const ARRAY_FIELDS: &[&str] = &[
+        "genres",
+        "cast",
+        "directors",
+        "writers",
+        "catalogs",
+        "aka_titles",
+    ];
+    if body.suggested_value.is_empty() && !ARRAY_FIELDS.contains(&body.field_name.as_str()) {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"detail": "suggested_value must not be empty"})),
