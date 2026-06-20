@@ -134,9 +134,20 @@ async fn tick_once(pool: &PgPool, disable_all: bool) -> Result<(), sqlx::Error> 
             }
         };
 
-        // Treat NULL as "now": fire at the *next* scheduled time rather than
-        // immediately (avoids surprise runs on first startup or after DB reset).
-        let last = job.last_enqueued_at.unwrap_or_else(Utc::now);
+        // On first encounter (NULL), stamp now and skip — the job will fire on
+        // the next properly-scheduled interval instead of immediately at startup.
+        let last = match job.last_enqueued_at {
+            Some(t) => t,
+            None => {
+                let _ = sqlx::query!(
+                    "UPDATE cron_jobs SET last_enqueued_at = now() WHERE name = $1",
+                    job.name
+                )
+                .execute(pool)
+                .await;
+                continue;
+            }
+        };
         let Some(next) = schedule.after(&last).next() else {
             continue;
         };
