@@ -583,6 +583,10 @@ pub async fn resolve(
         state, secret_str, imdb_id, media_type, season, episode, headers,
     )
     .await?;
+    // Use the pipeline's effective_secret_str (may differ from secret_str when
+    // the request came in on the public route with an encoded_user_data header).
+    let effective_secret = p.effective_secret_str.clone();
+    let secret_str = effective_secret.as_str();
 
     if p.media_id == db::MediaId(0)
         && p.all_torrents.is_empty()
@@ -1204,6 +1208,10 @@ struct StreamPipeline {
     show_p2p: bool,
     /// Media-level metadata for template rendering (title, year, rating, etc.).
     media_meta: Option<Value>,
+    /// The secret_str to use when building playback URLs. When the request arrives
+    /// via the public route with an `encoded_user_data` header (no config hash in the
+    /// URL), this is re-encrypted to a D- prefix so debrid playback URLs are valid.
+    effective_secret_str: String,
 }
 
 async fn build_pipeline(
@@ -1217,20 +1225,33 @@ async fn build_pipeline(
 ) -> Result<StreamPipeline, Box<dyn std::error::Error + Send + Sync>> {
     // 1. Decrypt user config → parse into UserData → derive scope
     // If the `encoded_user_data` header is present, decode it directly (no encryption).
-    let raw_user_data = if let Some(hv) = headers
+    // When the header is used the caller passes an empty secret_str (public route), so
+    // we re-encrypt the decoded config to a D- prefix for use in playback URLs.
+    let (raw_user_data, effective_secret_str) = if let Some(hv) = headers
         .get("encoded_user_data")
         .and_then(|v| v.to_str().ok())
     {
-        crypto::decode_encoded_user_data(hv).unwrap_or_else(|| Value::Object(Default::default()))
+        let raw =
+            crypto::decode_encoded_user_data(hv).unwrap_or_else(|| Value::Object(Default::default()));
+        // Re-encrypt to a D- prefix so downstream playback URLs are valid even though
+        // the original request arrived on the config-less public stream route.
+        let d_prefix = serde_json::to_string(&raw)
+            .ok()
+            .and_then(|json_str| {
+                crypto::encrypt_user_data(&json_str, &state.config.secret_key).ok()
+            })
+            .unwrap_or_else(|| secret_str.to_string());
+        (raw, d_prefix)
     } else {
-        crypto::resolve_user_data(
+        let raw = crypto::resolve_user_data(
             secret_str,
             &state.config.secret_key,
             &state.pool,
             &state.redis,
         )
         .await
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        (raw, secret_str.to_string())
     };
     let user_data: crate::models::user_data::UserData =
         serde_json::from_value(raw_user_data).unwrap_or_default();
@@ -1358,6 +1379,7 @@ async fn build_pipeline(
                 media_id: db::MediaId(0),
                 show_p2p,
                 media_meta: None,
+                effective_secret_str,
             });
         }
     }
@@ -1401,6 +1423,7 @@ async fn build_pipeline(
             media_id: db::MediaId(0),
             show_p2p,
             media_meta: None,
+            effective_secret_str,
         });
     }
 
@@ -1639,6 +1662,7 @@ async fn build_pipeline(
         media_id,
         show_p2p,
         media_meta,
+        effective_secret_str,
     })
 }
 
@@ -1655,6 +1679,8 @@ pub async fn resolve_rich(
         state, secret_str, imdb_id, media_type, season, episode, headers,
     )
     .await?;
+    let effective_secret = p.effective_secret_str.clone();
+    let secret_str = effective_secret.as_str();
 
     let allow_public_usenet = state.config.is_scrap_from_public_usenet_indexers;
     let kf2 = state
