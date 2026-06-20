@@ -224,6 +224,7 @@ jobs:
       - name: Upload binaries to GitHub release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
+          tag_name: ${{ env.RELEASE_VERSION }}
           files: dist/*
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -336,6 +337,7 @@ jobs:
       - name: Upload Release Assets
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
+          tag_name: ${{ env.RELEASE_VERSION }}
           files: |
             clients/kodi/dist/plugin.video.mediafusion/plugin.video.mediafusion-*.zip
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -372,5 +374,6 @@ jobs:
       - name: Update Release Notes
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
+          tag_name: ${{ env.RELEASE_VERSION }}
           body_path: release_notes.md
           token: ${{ secrets.GITHUB_TOKEN }}
