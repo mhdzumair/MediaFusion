@@ -406,7 +406,9 @@ impl JobHandler for XtreamImport {
                     let stream_url =
                         format!("{}/live/{}/{}/{}.m3u8", server, user, pass, stream_id);
 
-                    if import_tv_channel(pool, name, &stream_url, logo, &source_label, None).await {
+                    if import_tv_channel(pool, name, &stream_url, logo, None, &source_label, None)
+                        .await
+                    {
                         total_imported += 1;
                     } else {
                         total_skipped += 1;

@@ -128,6 +128,9 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
     try {
       const result = await importM3U.mutateAsync({
         redis_key: analysis.redis_key,
+        // Resend the URL so the backend can persist the IPTV source on import
+        // (save_source only saves when m3u_url is present).
+        m3u_url: m3uUrl || undefined,
         is_public: isPublic,
         overrides: overrideList.length > 0 ? overrideList : undefined,
         save_source: saveSource,
@@ -387,7 +390,10 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
                     <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border/50">
                       <div className="flex items-center gap-2">
                         <FileInput className="h-4 w-4 text-primary" />
-                        <span className="text-sm font-medium">Save for Re-sync</span>
+                        <div>
+                          <span className="text-sm font-medium">Save for Re-sync</span>
+                          <p className="text-xs text-muted-foreground">Find it later in IPTV Sources</p>
+                        </div>
                       </div>
                       <Switch checked={saveSource} onCheckedChange={setSaveSource} />
                     </div>
