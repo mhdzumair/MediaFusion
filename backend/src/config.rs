@@ -348,6 +348,22 @@ pub struct AppConfig {
     pub premiumize_oauth_client_secret: Option<String>,
     /// Branding description shown on the home page (may contain HTML).
     pub branding_description: String,
+
+    // ── HTTP client / egress ──────────────────────────────────────
+    /// TCP keepalive probe interval for all outbound HTTP clients (seconds). Default: 15.
+    /// Keeps NAT/conntrack mappings alive through the gost tunnel during idle periods.
+    pub tcp_keepalive_secs: u64,
+    /// Enable the egress watchdog that exits the process when all probes fail for
+    /// `egress_watchdog_fail_threshold` consecutive cycles (default: true).
+    pub egress_watchdog_enabled: bool,
+    /// Interval between watchdog probe cycles (seconds). Default: 30.
+    pub egress_watchdog_interval_secs: u64,
+    /// Consecutive failed cycles required before the watchdog triggers a restart.
+    /// Default: 5 (~2.5 min of total egress loss at the default interval).
+    pub egress_watchdog_fail_threshold: u32,
+    /// Comma-separated list of URLs to probe each cycle.
+    /// If unset, a built-in set of debrid + neutral endpoints is used.
+    pub egress_watchdog_probe_urls: Option<String>,
 }
 
 impl AppConfig {
@@ -805,6 +821,16 @@ impl AppConfig {
             premiumize_oauth_client_id: env("PREMIUMIZE_OAUTH_CLIENT_ID").ok().filter(|s| !s.is_empty()),
             premiumize_oauth_client_secret: env("PREMIUMIZE_OAUTH_CLIENT_SECRET").ok().filter(|s| !s.is_empty()),
             branding_description: env("BRANDING_DESCRIPTION").unwrap_or_default(),
+            tcp_keepalive_secs: env("TCP_KEEPALIVE_SECS")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(15),
+            egress_watchdog_enabled: env("EGRESS_WATCHDOG_ENABLED")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            egress_watchdog_interval_secs: env("EGRESS_WATCHDOG_INTERVAL_SECS")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(30),
+            egress_watchdog_fail_threshold: env("EGRESS_WATCHDOG_FAIL_THRESHOLD")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(5),
+            egress_watchdog_probe_urls: env("EGRESS_WATCHDOG_PROBE_URLS")
+                .ok().filter(|s| !s.is_empty()),
         }
     }
 

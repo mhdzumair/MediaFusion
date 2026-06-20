@@ -1,3 +1,4 @@
+pub mod egress_watchdog;
 pub mod http;
 pub mod image_storage;
 pub mod live_stream;

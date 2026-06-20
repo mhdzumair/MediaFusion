@@ -167,6 +167,20 @@ async fn main() {
 
     let cancel = CancellationToken::new();
 
+    if state.config.egress_watchdog_enabled {
+        let watchdog_http = state.http.clone();
+        let watchdog_cfg = mediafusion_api::util::egress_watchdog::WatchdogConfig {
+            interval_secs: state.config.egress_watchdog_interval_secs,
+            fail_threshold: state.config.egress_watchdog_fail_threshold,
+            probe_urls_override: state.config.egress_watchdog_probe_urls.clone(),
+        };
+        tokio::spawn(mediafusion_api::util::egress_watchdog::run(
+            watchdog_http,
+            watchdog_cfg,
+            Some(cancel.clone()),
+        ));
+    }
+
     // Graceful shutdown on SIGTERM / SIGINT
     {
         let cancel = cancel.clone();

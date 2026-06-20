@@ -55,14 +55,21 @@ pub fn transport_error_kind(e: &reqwest::Error) -> &'static str {
 /// HTTP/1.1 only: the deployment runs behind a Cloudflare WARP tunnel which silently
 /// resets HTTP/2 multiplexed connections mid-flight (GOAWAY/RST_STREAM). Python used
 /// requests/aiohttp which never negotiated HTTP/2, so this restores that behaviour.
-pub fn build(proxy_url: Option<&str>) -> reqwest::Client {
+///
+/// `keepalive_secs`: TCP keepalive probe interval. Keeps NAT/conntrack mappings alive
+/// through the gost tunnel and lets the OS detect dead sockets before reqwest reuses them.
+pub fn build(proxy_url: Option<&str>, keepalive_secs: u64) -> reqwest::Client {
+    let ka = Duration::from_secs(keepalive_secs);
     let mut builder = reqwest::Client::builder()
         .user_agent("MediaFusion/1.0 (+https://github.com/mhdzumair/MediaFusion)")
         .http1_only()
         .timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(10))
         .pool_idle_timeout(Duration::from_secs(20))
-        .pool_max_idle_per_host(4);
+        .pool_max_idle_per_host(4)
+        .tcp_keepalive(ka)
+        .tcp_keepalive_interval(ka)
+        .tcp_keepalive_retries(3);
     if let Some(proxy) = proxy_url.filter(|s| !s.is_empty()) {
         if let Ok(p) = reqwest::Proxy::all(proxy) {
             builder = builder.proxy(p);
@@ -75,7 +82,8 @@ pub fn build(proxy_url: Option<&str>) -> reqwest::Client {
 /// Sync adds can exceed the 30s scraper timeout; Python used a 15s client but blocked
 /// on a Redis lock so only one resolve ran — Rust must match that dedup behavior.
 /// HTTP/1.1 only for the same WARP tunnel reason as the general client.
-pub fn build_debrid(proxy_url: Option<&str>) -> reqwest::Client {
+pub fn build_debrid(proxy_url: Option<&str>, keepalive_secs: u64) -> reqwest::Client {
+    let ka = Duration::from_secs(keepalive_secs);
     let mut builder = reqwest::Client::builder()
         .user_agent("MediaFusion/1.0 (+https://github.com/mhdzumair/MediaFusion)")
         .http1_only()
@@ -85,7 +93,10 @@ pub fn build_debrid(proxy_url: Option<&str>) -> reqwest::Client {
         // 30–60 s on debrid APIs) so we never reuse a connection the server has already closed.
         // 8 s gives a ~22 s safety margin and still benefits from short-burst connection reuse.
         .pool_idle_timeout(Duration::from_secs(8))
-        .pool_max_idle_per_host(4);
+        .pool_max_idle_per_host(4)
+        .tcp_keepalive(ka)
+        .tcp_keepalive_interval(ka)
+        .tcp_keepalive_retries(3);
     if let Some(proxy) = proxy_url.filter(|s| !s.is_empty()) {
         if let Ok(p) = reqwest::Proxy::all(proxy) {
             builder = builder.proxy(p);
