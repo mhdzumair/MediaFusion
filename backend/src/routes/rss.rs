@@ -930,6 +930,16 @@ pub async fn activate_deactivate_feeds(
     }
 }
 
+type PendingFeedRow = (
+    i32,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    chrono::DateTime<chrono::Utc>,
+);
+
 /// GET /api/v1/admin/rss/pending — list feeds awaiting approval
 pub async fn list_pending_rss_feeds(
     headers: HeaderMap,
@@ -939,15 +949,7 @@ pub async fn list_pending_rss_feeds(
         return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
     }
 
-    let rows: Vec<(
-        i32,
-        String,
-        String,
-        String,
-        String,
-        Option<String>,
-        chrono::DateTime<chrono::Utc>,
-    )> = sqlx::query_as(
+    let rows: Vec<PendingFeedRow> = sqlx::query_as(
         "SELECT f.id, f.name, f.url, f.torrent_type, u.email, u.username, f.created_at \
              FROM rss_feed f \
              JOIN users u ON u.id = f.user_id \

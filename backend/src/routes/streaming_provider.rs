@@ -165,8 +165,10 @@ pub async fn realdebrid_get_device_code(State(state): State<Arc<AppState>>) -> R
         "https://api.real-debrid.com/oauth/v2/device/code?client_id={}&new_credentials=yes",
         REALDEBRID_CLIENT_ID
     );
-    match retry::with_transport_retry("realdebrid_get_device_code", || state.http_for_provider("realdebrid").get(&url).send())
-        .await
+    match retry::with_transport_retry("realdebrid_get_device_code", || {
+        state.http_for_provider("realdebrid").get(&url).send()
+    })
+    .await
     {
         Ok(resp) => {
             let status = resp.status();
@@ -258,7 +260,13 @@ pub async fn debridlink_get_device_code(State(state): State<Arc<AppState>>) -> R
         "client_id": DEBRIDLINK_CLIENT_ID,
         "scope": "get.post.downloader get.post.seedbox get.account get.files get.post.stream",
     });
-    match state.http_for_provider("debridlink").post(url).json(&payload).send().await {
+    match state
+        .http_for_provider("debridlink")
+        .post(url)
+        .json(&payload)
+        .send()
+        .await
+    {
         Ok(resp) => {
             let status = resp.status();
             match resp.json::<Value>().await {
@@ -310,7 +318,13 @@ pub async fn debridlink_authorize(
         "code": device_code,
         "grant_type": "http://oauth.net/grant_type/device/1.0",
     });
-    match state.http_for_provider("debridlink").post(url).json(&payload).send().await {
+    match state
+        .http_for_provider("debridlink")
+        .post(url)
+        .json(&payload)
+        .send()
+        .await
+    {
         Ok(resp) => {
             let status = resp.status();
             match resp.json::<Value>().await {

@@ -151,8 +151,14 @@ impl AppState {
             .time_to_live(Duration::from_secs(23 * 3600))
             .build();
 
-        let http = crate::util::http::build(config.requests_proxy_url.as_deref(), config.tcp_keepalive_secs);
-        let debrid_http = crate::util::http::build_debrid(config.requests_proxy_url.as_deref(), config.tcp_keepalive_secs);
+        let http = crate::util::http::build(
+            config.requests_proxy_url.as_deref(),
+            config.tcp_keepalive_secs,
+        );
+        let debrid_http = crate::util::http::build_debrid(
+            config.requests_proxy_url.as_deref(),
+            config.tcp_keepalive_secs,
+        );
 
         // Build no-proxy variants only when a proxy is configured AND there are
         // excluded providers — otherwise None (no allocation, no memory waste).
@@ -161,7 +167,10 @@ impl AppState {
         {
             (
                 Some(crate::util::http::build(None, config.tcp_keepalive_secs)),
-                Some(crate::util::http::build_debrid(None, config.tcp_keepalive_secs)),
+                Some(crate::util::http::build_debrid(
+                    None,
+                    config.tcp_keepalive_secs,
+                )),
             )
         } else {
             (None, None)
@@ -196,7 +205,9 @@ impl AppState {
     /// no-proxy client so their traffic bypasses the gost/WARP tunnel directly.
     pub fn http_for_provider(&self, provider_id: &str) -> &reqwest::Client {
         if let Some(ref c) = self.http_no_proxy {
-            if self.config.requests_proxy_exclude_debrid_providers
+            if self
+                .config
+                .requests_proxy_exclude_debrid_providers
                 .iter()
                 .any(|id| id == provider_id)
             {
@@ -209,7 +220,9 @@ impl AppState {
     /// Returns the appropriate long-timeout debrid HTTP client for a provider.
     pub fn debrid_http_for_provider(&self, provider_id: &str) -> &reqwest::Client {
         if let Some(ref c) = self.debrid_http_no_proxy {
-            if self.config.requests_proxy_exclude_debrid_providers
+            if self
+                .config
+                .requests_proxy_exclude_debrid_providers
                 .iter()
                 .any(|id| id == provider_id)
             {

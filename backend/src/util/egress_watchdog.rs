@@ -10,7 +10,7 @@
 use std::time::Duration;
 
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 use crate::util::http::is_transport_error;
 
@@ -29,11 +29,7 @@ pub struct WatchdogConfig {
     pub probe_urls_override: Option<String>,
 }
 
-pub async fn run(
-    http: reqwest::Client,
-    cfg: WatchdogConfig,
-    cancel: Option<CancellationToken>,
-) {
+pub async fn run(http: reqwest::Client, cfg: WatchdogConfig, cancel: Option<CancellationToken>) {
     let probe_urls: Vec<String> = cfg
         .probe_urls_override
         .as_deref()
@@ -68,7 +64,10 @@ pub async fn run(
 
         if probe_cycle(&http, &probe_urls).await {
             if consecutive_failures > 0 {
-                info!(consecutive_failures, "egress watchdog: connectivity restored");
+                info!(
+                    consecutive_failures,
+                    "egress watchdog: connectivity restored"
+                );
             }
             consecutive_failures = 0;
             debug!("egress watchdog: probe cycle ok");

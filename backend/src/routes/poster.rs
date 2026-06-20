@@ -61,9 +61,12 @@ pub async fn handler(
         // so the user always sees something instead of a broken image.
         if let Some(title) = meta.title.as_deref().filter(|t| !t.is_empty()) {
             let title = title.to_string();
-            if let Ok(Ok(bytes)) =
-                tokio::task::spawn_blocking(move || crate::poster::generate_placeholder(&title))
-                    .await
+            let mt = media_type.clone();
+            let year = meta.year;
+            if let Ok(Ok(bytes)) = tokio::task::spawn_blocking(move || {
+                crate::poster::generate_placeholder(&title, &mt, year)
+            })
+            .await
             {
                 cache::set_bytes(&state.redis, &cache_key, &bytes, 86400).await;
                 return jpeg_response(bytes);
@@ -125,10 +128,17 @@ struct PosterMeta {
     imdb_rating: Option<f32>,
     title: Option<String>,
     is_add_title: bool,
+    year: Option<i32>,
 }
 
 async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Option<PosterMeta> {
-    type Row = (Option<String>, Option<f64>, Option<String>, Option<bool>);
+    type Row = (
+        Option<String>,
+        Option<f64>,
+        Option<String>,
+        Option<bool>,
+        Option<i32>,
+    );
 
     // Frontend uses "mf:{id}", Stremio catalog uses "mf{id}" — accept both.
     let row: Option<Row> = if let Some(num_str) =
@@ -141,7 +151,8 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
                 mi.url,
                 mr.rating,
                 m.title,
-                m.is_add_title_to_poster
+                m.is_add_title_to_poster,
+                m.year
             FROM media m
             LEFT JOIN LATERAL (
                 SELECT url FROM media_image
@@ -177,7 +188,8 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
                 mi.url,
                 mr.rating,
                 m.title,
-                m.is_add_title_to_poster
+                m.is_add_title_to_poster,
+                m.year
             FROM media m
             JOIN media_external_id meid ON meid.media_id = m.id
             LEFT JOIN LATERAL (
@@ -210,11 +222,12 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
         })
     };
 
-    row.map(|(url, rating, title, add_title)| PosterMeta {
+    row.map(|(url, rating, title, add_title, year)| PosterMeta {
         poster_url: url,
         imdb_rating: rating.map(|r| r as f32),
         title,
         is_add_title: add_title.unwrap_or(false),
+        year,
     })
 }
 
