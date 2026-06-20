@@ -2,134 +2,134 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/contributing/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/features/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/configuration/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/configuration/content-sources/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/configuration/core/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/configuration/database/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/configuration/mediaflow/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/configuration/security/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/configuration/stream-formatting/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/configuration/streaming-providers/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/deployment/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/deployment/binary/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/deployment/docker-compose/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/deployment/elfhosted/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/deployment/kubernetes/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/deployment/local-dev/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/deployment/migrations/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/deployment/worker-cli/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/getting-started/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/getting-started/choosing-deployment/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/getting-started/quick-start/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/integrations/acestream/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/integrations/browser-extension/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/integrations/kodi/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/integrations/prowlarr/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/integrations/qbittorrent/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/integrations/stremio/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/integrations/telegram/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/reference/architecture/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/reference/database-erd/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/reference/env-reference/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
     <url>
          <loc>https://mhdzumair.github.io/MediaFusion/docs/reference/performance/</loc>
-         <lastmod>2026-06-08</lastmod>
+         <lastmod>2026-06-20</lastmod>
     </url>
 </urlset>

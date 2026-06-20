@@ -2164,17 +2164,27 @@
 <tr>
 <td><code>REQUESTS_PROXY_URL</code></td>
 <td><code>None</code></td>
-<td>Route all outbound HTTP requests through this proxy</td>
+<td>Route all outbound HTTP (scrapers + debrid API calls) through this proxy</td>
 </tr>
 <tr>
 <td><code>REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS</code></td>
 <td><code>[]</code></td>
-<td>List of provider names to bypass the proxy (direct egress)</td>
+<td>Comma-separated (or JSON array) debrid provider IDs that bypass the proxy and connect directly. E.g. <code>realdebrid,torbox</code>. Valid IDs: <code>realdebrid</code>, <code>seedr</code>, <code>debridlink</code>, <code>alldebrid</code>, <code>offcloud</code>, <code>pikpak</code>, <code>torbox</code>, <code>premiumize</code>, <code>stremthru</code>, <code>easydebrid</code>, <code>debrider</code>.</td>
 </tr>
 <tr>
 <td><code>SCRAPLING_PROXY_URL</code></td>
 <td><code>None</code></td>
 <td>Separate proxy for browser-based scraping</td>
+</tr>
+<tr>
+<td><code>TCP_KEEPALIVE_SECS</code></td>
+<td><code>15</code></td>
+<td>TCP keepalive interval for all outbound HTTP clients (seconds). Keeps the proxy tunnel's NAT/conntrack mappings alive during idle periods.</td>
+</tr>
+<tr>
+<td><code>EGRESS_WATCHDOG_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Restart the pod when sustained egress loss is detected (see <a href="../../reference/env-reference/#http-client--egress">env reference</a>).</td>
 </tr>
 </tbody>
 </table>

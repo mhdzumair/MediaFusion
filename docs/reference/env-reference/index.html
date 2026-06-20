@@ -1638,6 +1638,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#http-client-egress" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Client &amp; Egress
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#scraper-enable-flags" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2065,6 +2076,17 @@
     <span class="md-ellipsis">
       
         Scraper Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#http-client-egress" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Client &amp; Egress
       
     </span>
   </a>
@@ -2672,7 +2694,50 @@
 <tr>
 <td><code>REQUESTS_PROXY_URL</code></td>
 <td>—</td>
-<td>HTTP proxy for all outbound scraper requests.</td>
+<td>HTTP proxy for all outbound scraper requests (and debrid API calls). Set to your gost/WARP tunnel URL.</td>
+</tr>
+<tr>
+<td><code>REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS</code></td>
+<td><code>[]</code></td>
+<td>Comma-separated (or JSON array) list of debrid provider IDs that bypass <code>REQUESTS_PROXY_URL</code> and connect directly. Valid IDs: <code>realdebrid</code>, <code>seedr</code>, <code>debridlink</code>, <code>alldebrid</code>, <code>offcloud</code>, <code>pikpak</code>, <code>torbox</code>, <code>premiumize</code>, <code>stremthru</code>, <code>easydebrid</code>, <code>debrider</code>.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="http-client-egress">HTTP Client &amp; Egress<a class="headerlink" href="#http-client-egress" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TCP_KEEPALIVE_SECS</code></td>
+<td><code>15</code></td>
+<td>TCP keepalive probe interval (seconds) for all outbound HTTP clients. Keeps NAT/conntrack mappings alive through tunnel proxies (gost, WARP) and enables the OS to detect stale sockets before they are reused.</td>
+</tr>
+<tr>
+<td><code>EGRESS_WATCHDOG_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Enable the egress self-heal watchdog. When all probe targets fail for <code>EGRESS_WATCHDOG_FAIL_THRESHOLD</code> consecutive cycles the process exits so k8s can restart the pod and re-establish the tunnel.</td>
+</tr>
+<tr>
+<td><code>EGRESS_WATCHDOG_INTERVAL_SECS</code></td>
+<td><code>30</code></td>
+<td>Seconds between watchdog probe cycles.</td>
+</tr>
+<tr>
+<td><code>EGRESS_WATCHDOG_FAIL_THRESHOLD</code></td>
+<td><code>5</code></td>
+<td>Consecutive fully-failed cycles before the watchdog triggers a restart (~2.5 min at the default interval).</td>
+</tr>
+<tr>
+<td><code>EGRESS_WATCHDOG_PROBE_URLS</code></td>
+<td><em>(built-in)</em></td>
+<td>Comma-separated list of URLs probed each cycle. Defaults to <code>api.real-debrid.com</code>, <code>api.alldebrid.com</code>, and <code>1.1.1.1</code>. A cycle counts as failed only when <strong>all</strong> targets return a transport error — a single-provider outage or HTTP 4xx/5xx never trips the watchdog.</td>
 </tr>
 </tbody>
 </table>
