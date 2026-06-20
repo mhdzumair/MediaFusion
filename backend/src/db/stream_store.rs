@@ -47,19 +47,18 @@ pub async fn store_torrent_streams(
     }
 
     let mut inserted = 0usize;
+    let mut skipped = 0usize;
     for stream in streams {
         match store_torrent_stream(pool, stream, opts).await {
             Ok(r) if r.was_inserted() => inserted += 1,
-            Ok(_) => {}
+            Ok(_) => skipped += 1,
             Err(e) => tracing::warn!("store_torrent_stream: failed {} — {e}", stream.info_hash),
         }
     }
 
     debug!(
-        "store_torrent_streams: {} inserted, {} in batch for media {}",
-        inserted,
-        streams.len(),
-        opts.media_id.0
+        "store_torrent_streams: {} inserted, {} already exist for media {}",
+        inserted, skipped, opts.media_id.0
     );
 }
 
