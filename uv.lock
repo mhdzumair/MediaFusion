@@ -1808,7 +1808,7 @@ wheels = [
 
 [[package]]
 name = "mediafusion"
-version = "6.0.0b22"
+version = "6.0.0b23"
 source = { virtual = "." }
 dependencies = [
     { name = "aioboto3" },
