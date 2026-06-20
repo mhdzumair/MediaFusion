@@ -139,7 +139,7 @@ export function TaskManagementPage() {
     return ['all', ...keys]
   }, [overviewQuery.data?.global_status_counts])
 
-  const scraperItems = scraperQuery.data?.scrapers || []
+  const scraperItems = useMemo(() => scraperQuery.data?.scrapers || [], [scraperQuery.data?.scrapers])
   const selectedScraper = useMemo(
     () => scraperItems.find((scraper) => scraper.scraper_name === selectedScraperName) || null,
     [scraperItems, selectedScraperName],

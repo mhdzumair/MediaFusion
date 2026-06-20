@@ -551,6 +551,7 @@ export function ContentImportPage() {
       queuePrefillByIndex,
       currentTorrentQueueIndex,
       torrentQueue.length,
+      torrentAnalysis,
       batchSummary,
       batchIssueDetails,
       batchIssueLinks,
