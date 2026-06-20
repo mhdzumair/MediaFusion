@@ -39,12 +39,26 @@ pub async fn handler(
             _ => None,
         };
 
+        // Try to fetch and annotate the poster URL if one exists. Returns None
+        // on any upstream error (404, unreachable, bad image format) so we can
+        // fall through to the placeholder below.
         if let Some(url) = poster_url {
-            return fetch_annotate_cache(&state, &cache_key, &url, meta).await;
+            if let Some(bytes) = fetch_annotate_cache(
+                &state,
+                &cache_key,
+                &url,
+                meta.imdb_rating,
+                meta.is_add_title,
+                meta.title.as_deref(),
+            )
+            .await
+            {
+                return jpeg_response(bytes);
+            }
         }
 
-        // No artwork: generate a name-based placeholder so the user always sees
-        // something instead of a broken image, regardless of media type.
+        // No artwork, or upstream fetch failed: generate a name-based placeholder
+        // so the user always sees something instead of a broken image.
         if let Some(title) = meta.title.as_deref().filter(|t| !t.is_empty()) {
             let title = title.to_string();
             if let Ok(Ok(bytes)) =
@@ -89,13 +103,19 @@ async fn serve_event_poster(state: &AppState, event_id: &str, cache_key: &str) -
         return StatusCode::NOT_FOUND.into_response();
     };
 
-    let meta = PosterMeta {
-        poster_url: Some(url.clone()),
+    if let Some(bytes) = fetch_annotate_cache(
+        state,
+        cache_key,
+        &url,
         imdb_rating,
-        title,
         is_add_title,
-    };
-    fetch_annotate_cache(state, cache_key, &url, meta).await
+        title.as_deref(),
+    )
+    .await
+    {
+        return jpeg_response(bytes);
+    }
+    StatusCode::NOT_FOUND.into_response()
 }
 
 // ─── DB resolution ────────────────────────────────────────────────────────────
@@ -242,12 +262,16 @@ async fn resolve_sports_poster_strict(state: &AppState, id: &str) -> Option<Stri
 
 // ─── Fetch + annotate + cache ─────────────────────────────────────────────────
 
+/// Fetch a poster URL, annotate it, cache the result, and return the bytes.
+/// Returns `None` on any upstream failure so callers can fall back to a placeholder.
 async fn fetch_annotate_cache(
     state: &AppState,
     cache_key: &str,
     url: &str,
-    meta: PosterMeta,
-) -> Response {
+    imdb_rating: Option<f32>,
+    is_add_title: bool,
+    title: Option<&str>,
+) -> Option<Vec<u8>> {
     let resp = state
         .http
         .get(url)
@@ -260,30 +284,26 @@ async fn fetch_annotate_cache(
             Ok(b) => b,
             Err(e) => {
                 warn!("poster fetch bytes {url}: {e}");
-                return StatusCode::BAD_GATEWAY.into_response();
+                return None;
             }
         },
         Ok(r) => {
-            // Downgrade to debug: upstream 404/non-2xx for external image hosts is common
-            // and expected (missing posters). Not a backend bug.
             debug!("poster upstream {url}: HTTP {}", r.status());
-            return StatusCode::NOT_FOUND.into_response();
+            return None;
         }
         Err(e) => {
-            // Downgrade to debug: third-party image hosts being unreachable is expected
-            // noise and not actionable from the backend. Response is still 502 to the client.
             debug!(
                 error_kind = http::transport_error_kind(&e),
                 "poster fetch {url}: {e}"
             );
-            return StatusCode::BAD_GATEWAY.into_response();
+            return None;
         }
     };
 
     let params = AnnotateParams {
-        imdb_rating: meta.imdb_rating,
-        title: meta.title,
-        is_add_title: meta.is_add_title,
+        imdb_rating,
+        title: title.map(str::to_string),
+        is_add_title,
     };
     let raw_bytes_clone = raw_bytes.to_vec();
     let annotated =
@@ -293,8 +313,6 @@ async fn fetch_annotate_cache(
     let final_bytes: Vec<u8> = match annotated {
         Ok(Ok(b)) => b,
         Ok(Err(e)) => {
-            // Downgrade to debug: image-format failures from external hosts are expected
-            // (WebP/AVIF/truncated), the code already falls back to the raw image gracefully.
             debug!("poster annotate failed ({e}), serving unannotated");
             raw_bytes.to_vec()
         }
@@ -305,7 +323,7 @@ async fn fetch_annotate_cache(
     };
 
     cache::set_bytes(&state.redis, cache_key, &final_bytes, 86400).await;
-    jpeg_response(final_bytes)
+    Some(final_bytes)
 }
 
 fn jpeg_response(bytes: Vec<u8>) -> Response {
