@@ -166,7 +166,7 @@ pub async fn delete_metadata(
                 SELECT 1 FROM stream_media_link sml2
                 WHERE sml2.stream_id = sml.stream_id AND sml2.media_id <> $1
             )
-        )"
+        )",
     )
     .bind(media_id.0)
     .execute(&state.pool)
@@ -295,7 +295,11 @@ pub async fn bulk_block_media(
         None => return forbidden(),
     };
     if body.ids.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({"detail": "ids must not be empty"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "ids must not be empty"})),
+        )
+            .into_response();
     }
     match sqlx::query(
         "UPDATE media SET is_blocked = true, blocked_at = NOW(), blocked_by_user_id = $1, block_reason = $2 WHERE id = ANY($3)"
@@ -324,7 +328,11 @@ pub async fn bulk_delete_media(
         return forbidden();
     }
     if body.ids.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({"detail": "ids must not be empty"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"detail": "ids must not be empty"})),
+        )
+            .into_response();
     }
     // Delete orphaned streams first
     let _ = sqlx::query(
@@ -335,7 +343,7 @@ pub async fn bulk_delete_media(
                 SELECT 1 FROM stream_media_link sml2
                 WHERE sml2.stream_id = sml.stream_id AND sml2.media_id <> ALL($1)
             )
-        )"
+        )",
     )
     .bind(&body.ids)
     .execute(&state.pool)

@@ -748,7 +748,19 @@ pub async fn run_rss_feed_scraper(
     .await
     .unwrap_or(None);
 
-    let (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type, credential_params, content_type, catalog_id) = match row {
+    let (
+        db_id,
+        url,
+        name,
+        source,
+        patterns,
+        filters,
+        auto_detect,
+        feed_torrent_type,
+        credential_params,
+        content_type,
+        catalog_id,
+    ) = match row {
         Some(r) => r,
         None => {
             return (
@@ -927,30 +939,39 @@ pub async fn list_pending_rss_feeds(
         return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
     }
 
-    let rows: Vec<(i32, String, String, String, String, Option<String>, chrono::DateTime<chrono::Utc>)> =
-        sqlx::query_as(
-            "SELECT f.id, f.name, f.url, f.torrent_type, u.email, u.username, f.created_at \
+    let rows: Vec<(
+        i32,
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+    )> = sqlx::query_as(
+        "SELECT f.id, f.name, f.url, f.torrent_type, u.email, u.username, f.created_at \
              FROM rss_feed f \
              JOIN users u ON u.id = f.user_id \
              WHERE f.is_approved = false \
              ORDER BY f.created_at ASC",
-        )
-        .fetch_all(&state.pool_ro)
-        .await
-        .unwrap_or_default();
+    )
+    .fetch_all(&state.pool_ro)
+    .await
+    .unwrap_or_default();
 
     let items: Vec<Value> = rows
         .into_iter()
-        .map(|(id, name, url, torrent_type, email, username, created_at)| {
-            json!({
-                "id": id,
-                "name": name,
-                "url": url,
-                "torrent_type": torrent_type,
-                "submitted_by": { "email": email, "username": username },
-                "created_at": created_at,
-            })
-        })
+        .map(
+            |(id, name, url, torrent_type, email, username, created_at)| {
+                json!({
+                    "id": id,
+                    "name": name,
+                    "url": url,
+                    "torrent_type": torrent_type,
+                    "submitted_by": { "email": email, "username": username },
+                    "created_at": created_at,
+                })
+            },
+        )
         .collect();
 
     Json(items).into_response()
@@ -978,8 +999,10 @@ pub async fn approve_rss_feed(
             Json(json!({"detail": format!("RSS feed {feed_id} not found")})),
         )
             .into_response(),
-        Ok(_) => Json(json!({"detail": format!("RSS feed {feed_id} approved"), "is_approved": true}))
-            .into_response(),
+        Ok(_) => {
+            Json(json!({"detail": format!("RSS feed {feed_id} approved"), "is_approved": true}))
+                .into_response()
+        }
         Err(e) => {
             tracing::error!("approve_rss_feed: {e}");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -1041,10 +1064,10 @@ pub async fn revoke_rss_feed_approval(
             Json(json!({"detail": format!("RSS feed {feed_id} not found")})),
         )
             .into_response(),
-        Ok(_) => {
-            Json(json!({"detail": format!("RSS feed {feed_id} approval revoked"), "is_approved": false}))
-                .into_response()
-        }
+        Ok(_) => Json(
+            json!({"detail": format!("RSS feed {feed_id} approval revoked"), "is_approved": false}),
+        )
+        .into_response(),
         Err(e) => {
             tracing::error!("revoke_rss_feed_approval: {e}");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -1458,11 +1481,12 @@ pub async fn user_update_rss_feed(
         }
     }
     if let Some(ct) = &body.content_type {
-        let _ = sqlx::query("UPDATE rss_feed SET content_type = $1, updated_at = NOW() WHERE id = $2")
-            .bind(ct)
-            .bind(db_id)
-            .execute(&state.pool)
-            .await;
+        let _ =
+            sqlx::query("UPDATE rss_feed SET content_type = $1, updated_at = NOW() WHERE id = $2")
+                .bind(ct)
+                .bind(db_id)
+                .execute(&state.pool)
+                .await;
     }
     if body.catalog_id.is_some() || body.content_type.is_some() {
         // Always update catalog_id when content_type changes (may be clearing it)
@@ -1470,11 +1494,13 @@ pub async fn user_update_rss_feed(
             let _ = ct; // already updated above
         }
         if body.catalog_id.is_some() {
-            let _ = sqlx::query("UPDATE rss_feed SET catalog_id = $1, updated_at = NOW() WHERE id = $2")
-                .bind(&body.catalog_id)
-                .bind(db_id)
-                .execute(&state.pool)
-                .await;
+            let _ = sqlx::query(
+                "UPDATE rss_feed SET catalog_id = $1, updated_at = NOW() WHERE id = $2",
+            )
+            .bind(&body.catalog_id)
+            .bind(db_id)
+            .execute(&state.pool)
+            .await;
         }
     }
 
@@ -1591,18 +1617,38 @@ pub async fn user_test_rss_feed(
 
     // Build the full sample item from all available fields
     let mut sample_obj = serde_json::Map::new();
-    if let Some(t) = &first.title { sample_obj.insert("title".into(), Value::String(t.clone())); }
-    if let Some(l) = &first.link { sample_obj.insert("link".into(), Value::String(l.clone())); }
-    if let Some(d) = &first.description { sample_obj.insert("description".into(), Value::String(d.clone())); }
-    if let Some(u) = &first.enclosure_url { sample_obj.insert("enclosure_url".into(), Value::String(u.clone())); }
-    if let Some(n) = first.enclosure_length { sample_obj.insert("enclosure_length".into(), Value::Number(n.into())); }
-    if let Some(g) = &first.guid { sample_obj.insert("guid".into(), Value::String(g.clone())); }
+    if let Some(t) = &first.title {
+        sample_obj.insert("title".into(), Value::String(t.clone()));
+    }
+    if let Some(l) = &first.link {
+        sample_obj.insert("link".into(), Value::String(l.clone()));
+    }
+    if let Some(d) = &first.description {
+        sample_obj.insert("description".into(), Value::String(d.clone()));
+    }
+    if let Some(u) = &first.enclosure_url {
+        sample_obj.insert("enclosure_url".into(), Value::String(u.clone()));
+    }
+    if let Some(n) = first.enclosure_length {
+        sample_obj.insert("enclosure_length".into(), Value::Number(n.into()));
+    }
+    if let Some(g) = &first.guid {
+        sample_obj.insert("guid".into(), Value::String(g.clone()));
+    }
     // Merge all extras fields
     for (k, v) in &first.extras {
-        sample_obj.entry(k.clone()).or_insert_with(|| Value::String(v.clone()));
+        sample_obj
+            .entry(k.clone())
+            .or_insert_with(|| Value::String(v.clone()));
     }
     // Always include the computed info_hash
-    sample_obj.insert("info_hash".into(), match sample_hash { Some(h) => Value::String(h), None => Value::Null });
+    sample_obj.insert(
+        "info_hash".into(),
+        match sample_hash {
+            Some(h) => Value::String(h),
+            None => Value::Null,
+        },
+    );
 
     Json(json!({
         "status": "success",
@@ -1670,18 +1716,38 @@ pub async fn user_test_rss_feed_url(
 
     // Build the full sample item from all available fields
     let mut sample_obj = serde_json::Map::new();
-    if let Some(t) = &first.title { sample_obj.insert("title".into(), Value::String(t.clone())); }
-    if let Some(l) = &first.link { sample_obj.insert("link".into(), Value::String(l.clone())); }
-    if let Some(d) = &first.description { sample_obj.insert("description".into(), Value::String(d.clone())); }
-    if let Some(u) = &first.enclosure_url { sample_obj.insert("enclosure_url".into(), Value::String(u.clone())); }
-    if let Some(n) = first.enclosure_length { sample_obj.insert("enclosure_length".into(), Value::Number(n.into())); }
-    if let Some(g) = &first.guid { sample_obj.insert("guid".into(), Value::String(g.clone())); }
+    if let Some(t) = &first.title {
+        sample_obj.insert("title".into(), Value::String(t.clone()));
+    }
+    if let Some(l) = &first.link {
+        sample_obj.insert("link".into(), Value::String(l.clone()));
+    }
+    if let Some(d) = &first.description {
+        sample_obj.insert("description".into(), Value::String(d.clone()));
+    }
+    if let Some(u) = &first.enclosure_url {
+        sample_obj.insert("enclosure_url".into(), Value::String(u.clone()));
+    }
+    if let Some(n) = first.enclosure_length {
+        sample_obj.insert("enclosure_length".into(), Value::Number(n.into()));
+    }
+    if let Some(g) = &first.guid {
+        sample_obj.insert("guid".into(), Value::String(g.clone()));
+    }
     // Merge all extras fields
     for (k, v) in &first.extras {
-        sample_obj.entry(k.clone()).or_insert_with(|| Value::String(v.clone()));
+        sample_obj
+            .entry(k.clone())
+            .or_insert_with(|| Value::String(v.clone()));
     }
     // Always include the computed info_hash
-    sample_obj.insert("info_hash".into(), match sample_hash { Some(h) => Value::String(h), None => Value::Null });
+    sample_obj.insert(
+        "info_hash".into(),
+        match sample_hash {
+            Some(h) => Value::String(h),
+            None => Value::Null,
+        },
+    );
 
     Json(json!({
         "status": "success",
@@ -1768,7 +1834,19 @@ pub async fn user_scrape_single_feed(
         .fetch_optional(&state.pool_ro).await.ok().flatten()
     };
 
-    let (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type, credential_params, content_type, catalog_id) = match row {
+    let (
+        db_id,
+        url,
+        name,
+        source,
+        patterns,
+        filters,
+        auto_detect,
+        feed_torrent_type,
+        credential_params,
+        content_type,
+        catalog_id,
+    ) = match row {
         Some(r) => r,
         None => {
             return (
@@ -1872,7 +1950,20 @@ pub async fn user_run_all_scrapers(
         .map(|g| g.clone())
         .unwrap_or_default();
     tokio::spawn(async move {
-        for (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type, credential_params, content_type, catalog_id) in feeds {
+        for (
+            db_id,
+            url,
+            name,
+            source,
+            patterns,
+            filters,
+            auto_detect,
+            feed_torrent_type,
+            credential_params,
+            content_type,
+            catalog_id,
+        ) in feeds
+        {
             let feed_type =
                 crate::scrapers::torrent_metadata::parse_torrent_type_str(&feed_torrent_type);
             crate::scrapers::rss::scrape_feed(

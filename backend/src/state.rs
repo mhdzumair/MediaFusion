@@ -228,9 +228,7 @@ pub async fn recompute_keyword_blocked(pool: &PgPool, version_tag: u64) {
         .await;
 
         if let Err(e) = result {
-            tracing::error!(
-                "recompute_all_keyword_blocked batch [{from_id}..{to_id}] failed: {e}"
-            );
+            tracing::error!("recompute_all_keyword_blocked batch [{from_id}..{to_id}] failed: {e}");
             return;
         }
 

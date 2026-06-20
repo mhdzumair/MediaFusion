@@ -300,7 +300,10 @@ async fn apply_metadata_field_change(
             }
         }
         "is_add_title_to_poster" => {
-            let val = matches!(suggested_value.to_ascii_lowercase().as_str(), "true" | "1" | "yes");
+            let val = matches!(
+                suggested_value.to_ascii_lowercase().as_str(),
+                "true" | "1" | "yes"
+            );
             if let Err(e) = sqlx::query(
                 "UPDATE media SET is_add_title_to_poster = $1, updated_at = NOW() WHERE id = $2",
             )
@@ -309,7 +312,9 @@ async fn apply_metadata_field_change(
             .execute(pool)
             .await
             {
-                tracing::warn!("apply_metadata_field_change: is_add_title_to_poster update failed: {e}");
+                tracing::warn!(
+                    "apply_metadata_field_change: is_add_title_to_poster update failed: {e}"
+                );
             }
         }
         "imdb_id" | "tmdb_id" | "tvdb_id" | "mal_id" | "kitsu_id" => {

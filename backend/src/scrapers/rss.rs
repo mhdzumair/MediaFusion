@@ -182,11 +182,7 @@ async fn torrent_from_url(
                 .iter()
                 .filter_map(|(k, v)| {
                     v.as_str().map(|val| {
-                        format!(
-                            "{}={}",
-                            urlencoding::encode(k),
-                            urlencoding::encode(val)
-                        )
+                        format!("{}={}", urlencoding::encode(k), urlencoding::encode(val))
                     })
                 })
                 .collect::<Vec<_>>()
@@ -652,15 +648,22 @@ pub async fn scrape_feed(
         }
 
         // Extract torrent metadata — fall back to downloading .torrent file if needed
-        let extracted =
-            match extract_torrent_metadata(http, item, patterns, feed_torrent_type, credential_params).await {
-                Some(e) => e,
-                None => {
-                    debug!("rss_scraper: no info_hash or torrent URL for '{title}'");
-                    skipped += 1;
-                    continue;
-                }
-            };
+        let extracted = match extract_torrent_metadata(
+            http,
+            item,
+            patterns,
+            feed_torrent_type,
+            credential_params,
+        )
+        .await
+        {
+            Some(e) => e,
+            None => {
+                debug!("rss_scraper: no info_hash or torrent URL for '{title}'");
+                skipped += 1;
+                continue;
+            }
+        };
         let info_hash = extracted.info_hash;
 
         if seen_hashes.contains(&info_hash) {
@@ -675,9 +678,7 @@ pub async fn scrape_feed(
             // Sports path: use sports stub creator (sets is_add_title_to_poster=true) + catalog link
             let clean_title = parser::sports_parser::clean_sports_title(&title);
             let detected_cat = parser::sports_parser::detect_sports_category(&title);
-            let sports_catalog = catalog_id
-                .or(detected_cat)
-                .unwrap_or("sports");
+            let sports_catalog = catalog_id.or(detected_cat).unwrap_or("sports");
             let catalogs: Vec<&str> = vec![sports_catalog];
 
             // Extract year from sports title parser
@@ -685,11 +686,21 @@ pub async fn scrape_feed(
             let year = sports_parsed.year;
 
             match crate::scrapers::media_resolve::find_or_create_sports_stub(
-                pool, &clean_title, year, None, "movie",
-            ).await {
+                pool,
+                &clean_title,
+                year,
+                None,
+                "movie",
+            )
+            .await
+            {
                 Some(id) => {
                     crate::scrapers::media_resolve::link_to_catalogs(pool, id, &catalogs).await;
-                    crate::scrapers::media_resolve::MediaEntry { id, title: clean_title, year }
+                    crate::scrapers::media_resolve::MediaEntry {
+                        id,
+                        title: clean_title,
+                        year,
+                    }
                 }
                 None => {
                     warn!("rss_scraper: could not find/create sports media for '{title}'");

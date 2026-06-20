@@ -89,8 +89,8 @@ pub async fn get_instance_info(State(state): State<Arc<AppState>>) -> impl IntoR
 
     let is_public = state.config.is_public_instance || state.config.api_password.is_none();
 
-    let newsletter_enabled = state.config.convertkit_api_key.is_some()
-        && state.config.convertkit_form_id.is_some();
+    let newsletter_enabled =
+        state.config.convertkit_api_key.is_some() && state.config.convertkit_form_id.is_some();
 
     Json(InstanceInfo {
         is_public,
