@@ -106,7 +106,11 @@ pub fn generate_placeholder(
 
     // Centred, auto-fitted title.
     let font = bold_font();
-    let display = if title.trim().is_empty() { "Channel" } else { title };
+    let display = if title.trim().is_empty() {
+        "Channel"
+    } else {
+        title
+    };
     let (lines, scale) = fit_title(display, font, W as i32 - 40, 5, 34, 18);
     let line_h = {
         let sf = font.as_scaled(scale);

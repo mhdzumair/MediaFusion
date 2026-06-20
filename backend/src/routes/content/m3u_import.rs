@@ -123,8 +123,9 @@ const LIVE_STREAM_EXTENSIONS: &[&str] = &[".m3u8", ".ts", ".mpd"];
 const VOD_EXTENSIONS: &[&str] = &[".mp4", ".mkv", ".avi", ".webm", ".mov", ".wmv", ".flv"];
 // Audio-only streams (radio): classified as live "tv" channels — Stremio/MediaFusion
 // have no dedicated radio type, so radio is modelled as a live channel.
-const AUDIO_STREAM_EXTENSIONS: &[&str] =
-    &[".mp3", ".aac", ".m4a", ".ogg", ".opus", ".flac", ".wav", ".audio"];
+const AUDIO_STREAM_EXTENSIONS: &[&str] = &[
+    ".mp3", ".aac", ".m4a", ".ogg", ".opus", ".flac", ".wav", ".audio",
+];
 
 fn group_contains_keyword(group_lower: &str, keywords: &[&str]) -> bool {
     keywords.iter().any(|kw| group_lower.contains(kw))
@@ -238,7 +239,13 @@ fn detect_content_type(
         (None, None)
     };
 
-    (detected.to_string(), parsed_title, parsed_year, season, episode)
+    (
+        detected.to_string(),
+        parsed_title,
+        parsed_year,
+        season,
+        episode,
+    )
 }
 
 /// Parse M3U playlist content into a list of entries.
@@ -1168,6 +1175,9 @@ mod detection_tests {
     #[test]
     fn group_title_movie_keyword_wins_when_url_is_ambiguous() {
         let ambiguous = "http://host.example.net/path/12345";
-        assert_eq!(type_of("Some Title", ambiguous, Some("VOD Movies")), "movie");
+        assert_eq!(
+            type_of("Some Title", ambiguous, Some("VOD Movies")),
+            "movie"
+        );
     }
 }

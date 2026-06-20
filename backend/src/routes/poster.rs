@@ -48,7 +48,8 @@ pub async fn handler(
         if let Some(title) = meta.title.as_deref().filter(|t| !t.is_empty()) {
             let title = title.to_string();
             if let Ok(Ok(bytes)) =
-                tokio::task::spawn_blocking(move || crate::poster::generate_placeholder(&title)).await
+                tokio::task::spawn_blocking(move || crate::poster::generate_placeholder(&title))
+                    .await
             {
                 cache::set_bytes(&state.redis, &cache_key, &bytes, 86400).await;
                 return jpeg_response(bytes);
