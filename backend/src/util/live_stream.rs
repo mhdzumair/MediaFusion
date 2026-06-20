@@ -3,7 +3,7 @@ use fred::interfaces::KeysInterface;
 use fred::types::Expiration;
 use reqwest::Client;
 use serde_json::Value;
-use tracing::warn;
+use tracing::debug;
 
 const IPTV_VALID_CONTENT_TYPES: &[&str] = &[
     "application/vnd.apple.mpegurl",
@@ -72,13 +72,13 @@ pub async fn validate_live_stream_url(
     {
         Ok(r) => r,
         Err(e) => {
-            warn!("live stream HEAD failed [{url}]: {e}");
+            debug!("live stream HEAD failed [{url}]: {e}");
             return false;
         }
     };
 
     if !resp.status().is_success() {
-        tracing::debug!("live stream HEAD status [{url}]: {}", resp.status());
+        debug!("live stream HEAD status [{url}]: {}", resp.status());
         return false;
     }
 

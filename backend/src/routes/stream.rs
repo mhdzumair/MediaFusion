@@ -1231,8 +1231,8 @@ async fn build_pipeline(
         .get("encoded_user_data")
         .and_then(|v| v.to_str().ok())
     {
-        let raw =
-            crypto::decode_encoded_user_data(hv).unwrap_or_else(|| Value::Object(Default::default()));
+        let raw = crypto::decode_encoded_user_data(hv)
+            .unwrap_or_else(|| Value::Object(Default::default()));
         // Re-encrypt to a D- prefix so downstream playback URLs are valid even though
         // the original request arrived on the config-less public stream route.
         let d_prefix = serde_json::to_string(&raw)
