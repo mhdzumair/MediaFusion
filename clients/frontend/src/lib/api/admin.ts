@@ -585,6 +585,14 @@ export const adminApi = {
   blockTorrentStream: async (streamId: number): Promise<{ message: string }> => {
     return adminPost<{ message: string }>(`/torrent-streams/${streamId}/block`)
   },
+
+  bulkBlockMedia: async (ids: number[], reason?: string): Promise<{ message: string; count: number }> => {
+    return adminPost<{ message: string; count: number }>('/metadata/bulk-block', { ids, reason })
+  },
+
+  bulkDeleteMedia: async (ids: number[]): Promise<{ message: string; count: number }> => {
+    return adminPost<{ message: string; count: number }>('/metadata/bulk-delete', { ids })
+  },
 }
 
 // ============================================

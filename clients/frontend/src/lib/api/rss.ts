@@ -73,9 +73,12 @@ export interface UserRSSFeed {
   name: string
   url: string
   is_active: boolean
+  is_approved?: boolean
   source?: string
   torrent_type: string
   auto_detect_catalog: boolean
+  content_type?: string
+  catalog_id?: string
   parsing_patterns?: RSSFeedParsingPatterns
   filters?: RSSFeedFilters
   metrics?: RSSFeedMetrics
@@ -87,6 +90,15 @@ export interface UserRSSFeed {
   user?: RSSFeedOwner
 }
 
+export interface PendingRSSFeed {
+  id: number
+  name: string
+  url: string
+  torrent_type: string
+  submitted_by: { email: string; username?: string }
+  created_at: string
+}
+
 export interface UserRSSFeedCreate {
   name: string
   url: string
@@ -94,6 +106,8 @@ export interface UserRSSFeedCreate {
   source?: string
   torrent_type?: string
   auto_detect_catalog?: boolean
+  content_type?: string
+  catalog_id?: string
   parsing_patterns?: RSSFeedParsingPatterns
   filters?: RSSFeedFilters
   catalog_patterns?: CatalogPattern[]
@@ -106,6 +120,8 @@ export interface UserRSSFeedUpdate {
   source?: string
   torrent_type?: string
   auto_detect_catalog?: boolean
+  content_type?: string
+  catalog_id?: string
   parsing_patterns?: RSSFeedParsingPatterns
   filters?: RSSFeedFilters
   catalog_patterns?: CatalogPattern[]
@@ -268,6 +284,30 @@ export const userRssApi = {
    */
   getSchedulerStatus: async (): Promise<RSSSchedulerStatus> => {
     return apiClient.get<RSSSchedulerStatus>(`${USER_RSS_BASE}/scheduler-status`)
+  },
+}
+
+// ============================================
+// Admin approval API
+// ============================================
+
+const ADMIN_RSS_BASE = '/admin/rss'
+
+export const adminRssApi = {
+  listPending: async (): Promise<PendingRSSFeed[]> => {
+    return apiClient.get<PendingRSSFeed[]>(`${ADMIN_RSS_BASE}/pending`)
+  },
+
+  approve: async (feedId: number): Promise<{ detail: string; is_approved: boolean }> => {
+    return apiClient.post(`${ADMIN_RSS_BASE}/${feedId}/approve`)
+  },
+
+  reject: async (feedId: number): Promise<{ detail: string }> => {
+    return apiClient.post(`${ADMIN_RSS_BASE}/${feedId}/reject`)
+  },
+
+  revokeApproval: async (feedId: number): Promise<{ detail: string; is_approved: boolean }> => {
+    return apiClient.post(`${ADMIN_RSS_BASE}/${feedId}/revoke-approval`)
   },
 }
 

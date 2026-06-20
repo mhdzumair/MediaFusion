@@ -1309,15 +1309,16 @@ async fn build_pipeline(
 
     let disabled = &state.config.disabled_providers;
 
-    // Guard: don't serve streams for keyword-blocked media.
+    // Guard: don't serve streams for blocked media (manual or keyword block).
     if media_id != db::MediaId(0) {
-        let blocked: bool =
-            sqlx::query_scalar::<_, bool>("SELECT is_keyword_blocked FROM media WHERE id = $1")
-                .bind(media_id.0)
-                .fetch_optional(&state.pool)
-                .await
-                .unwrap_or(None)
-                .unwrap_or(false);
+        let blocked: bool = sqlx::query_scalar::<_, bool>(
+            "SELECT (is_keyword_blocked OR is_blocked) FROM media WHERE id = $1",
+        )
+        .bind(media_id.0)
+        .fetch_optional(&state.pool)
+        .await
+        .unwrap_or(None)
+        .unwrap_or(false);
 
         if blocked {
             let torrent_providers: Vec<crate::models::user_data::StreamingProvider> = user_data

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { userRssApi, type UserRSSFeedCreate, type UserRSSFeedUpdate } from '@/lib/api'
+import { userRssApi, adminRssApi, type UserRSSFeedCreate, type UserRSSFeedUpdate } from '@/lib/api'
 
 const RSS_FEEDS_QUERY_KEY = ['user-rss-feeds']
 
@@ -103,5 +103,47 @@ export function useRssSchedulerStatus() {
   return useQuery({
     queryKey: ['rss-scheduler-status'],
     queryFn: userRssApi.getSchedulerStatus,
+  })
+}
+
+const PENDING_RSS_QUERY_KEY = ['pending-rss-feeds']
+
+export function usePendingRssFeeds() {
+  return useQuery({
+    queryKey: PENDING_RSS_QUERY_KEY,
+    queryFn: adminRssApi.listPending,
+  })
+}
+
+export function useApproveRssFeed() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (feedId: number) => adminRssApi.approve(feedId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: PENDING_RSS_QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: RSS_FEEDS_QUERY_KEY })
+    },
+  })
+}
+
+export function useRejectRssFeed() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (feedId: number) => adminRssApi.reject(feedId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: PENDING_RSS_QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: RSS_FEEDS_QUERY_KEY })
+    },
+  })
+}
+
+export function useRevokeRssFeedApproval() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (feedId: number) => adminRssApi.revokeApproval(feedId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: PENDING_RSS_QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: RSS_FEEDS_QUERY_KEY })
+    },
   })
 }

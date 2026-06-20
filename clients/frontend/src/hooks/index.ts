@@ -62,6 +62,10 @@ export {
   useRunRssScraper,
   useBulkUpdateRssFeedStatus,
   useRssSchedulerStatus,
+  usePendingRssFeeds,
+  useApproveRssFeed,
+  useRejectRssFeed,
+  useRevokeRssFeedApproval,
 } from './useRssFeeds'
 
 // Metrics hooks

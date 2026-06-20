@@ -86,6 +86,7 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
       setParsingPatterns(feed.parsing_patterns || defaultParsingPatterns)
       setFilters(feed.filters || defaultFilters)
       setCatalogPatterns(feed.catalog_patterns || [])
+      setTestResult(null)
     } else {
       setName('')
       setUrl('')

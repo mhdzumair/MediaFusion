@@ -299,6 +299,19 @@ async fn apply_metadata_field_change(
                 tracing::warn!("apply_metadata_field_change: nudity_status update failed: {e}");
             }
         }
+        "is_add_title_to_poster" => {
+            let val = matches!(suggested_value.to_ascii_lowercase().as_str(), "true" | "1" | "yes");
+            if let Err(e) = sqlx::query(
+                "UPDATE media SET is_add_title_to_poster = $1, updated_at = NOW() WHERE id = $2",
+            )
+            .bind(val)
+            .bind(media_id)
+            .execute(pool)
+            .await
+            {
+                tracing::warn!("apply_metadata_field_change: is_add_title_to_poster update failed: {e}");
+            }
+        }
         "imdb_id" | "tmdb_id" | "tvdb_id" | "mal_id" | "kitsu_id" => {
             let provider = field_name.trim_end_matches("_id");
             let updated = sqlx::query(
@@ -380,6 +393,7 @@ pub async fn create_suggestion(
         "catalogs",
         "parental_certificate",
         "nudity_status",
+        "is_add_title_to_poster",
     ];
     if !EDITABLE_FIELDS.contains(&body.field_name.as_str()) {
         return (

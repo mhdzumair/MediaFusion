@@ -36,15 +36,25 @@ import {
   ExternalLink,
   Loader2,
   Copy,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldX,
 } from 'lucide-react'
 import type { UserRSSFeed } from '@/lib/api'
 import { formatDistanceToNow } from 'date-fns'
-import { useUpdateRssFeed, useDeleteRssFeed, useScrapeRssFeed } from '@/hooks'
+import {
+  useUpdateRssFeed,
+  useDeleteRssFeed,
+  useScrapeRssFeed,
+  useApproveRssFeed,
+  useRevokeRssFeedApproval,
+} from '@/hooks'
 
 interface RSSFeedCardProps {
   feed: UserRSSFeed
   onEdit: () => void
   showOwner?: boolean
+  isAdmin?: boolean
 }
 
 function formatDuration(seconds: number): string {
@@ -54,12 +64,14 @@ function formatDuration(seconds: number): string {
   return `${mins}m ${secs}s`
 }
 
-export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
+export function RSSFeedCard({ feed, onEdit, showOwner, isAdmin }: RSSFeedCardProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   const updateFeed = useUpdateRssFeed()
   const deleteFeed = useDeleteRssFeed()
   const scrapeFeed = useScrapeRssFeed()
+  const approveFeed = useApproveRssFeed()
+  const revokeApproval = useRevokeRssFeedApproval()
 
   const handleToggleActive = async () => {
     await updateFeed.mutateAsync({
@@ -82,11 +94,21 @@ export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
   }
 
   const metrics = feed.metrics
-  const isPending = updateFeed.isPending || deleteFeed.isPending || scrapeFeed.isPending
+  const isPending =
+    updateFeed.isPending ||
+    deleteFeed.isPending ||
+    scrapeFeed.isPending ||
+    approveFeed.isPending ||
+    revokeApproval.isPending
+
+  const isPendingApproval = feed.is_approved === false
+  const isApproved = feed.is_approved === true
 
   return (
     <TooltipProvider>
-      <Card className={`group transition-all hover:shadow-lg ${!feed.is_active ? 'opacity-60' : ''}`}>
+      <Card
+        className={`group transition-all hover:shadow-lg ${!feed.is_active ? 'opacity-60' : ''} ${isPendingApproval ? 'border-amber-500/40' : ''}`}
+      >
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
@@ -100,7 +122,19 @@ export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
 
               <div>
                 <h3 className="font-semibold text-lg leading-tight">{feed.name}</h3>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {isPendingApproval && (
+                    <Badge variant="outline" className="text-xs border-amber-500/50 text-amber-500">
+                      <ShieldAlert className="h-3 w-3 mr-1" />
+                      Pending Approval
+                    </Badge>
+                  )}
+                  {isApproved && (
+                    <Badge variant="outline" className="text-xs border-emerald-500/50 text-emerald-500">
+                      <ShieldCheck className="h-3 w-3 mr-1" />
+                      Approved
+                    </Badge>
+                  )}
                   {showOwner && feed.user && (
                     <Badge variant="outline" className="text-xs">
                       <User className="h-3 w-3 mr-1" />
@@ -110,6 +144,14 @@ export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
                   <Badge variant="secondary" className="text-xs">
                     {feed.torrent_type}
                   </Badge>
+                  {feed.content_type && feed.content_type !== 'auto' && (
+                    <Badge
+                      variant="outline"
+                      className={`text-xs ${feed.content_type === 'sports' ? 'border-blue-500/50 text-blue-500' : ''}`}
+                    >
+                      {feed.content_type}
+                    </Badge>
+                  )}
                   {feed.source && (
                     <Badge variant="outline" className="text-xs">
                       {feed.source}
@@ -147,6 +189,30 @@ export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
                       Open in Browser
                     </a>
                   </DropdownMenuItem>
+                  {isAdmin && (
+                    <>
+                      <DropdownMenuSeparator />
+                      {isPendingApproval ? (
+                        <DropdownMenuItem
+                          onClick={() => approveFeed.mutate(Number(feed.id))}
+                          disabled={approveFeed.isPending}
+                          className="text-emerald-500 focus:text-emerald-500"
+                        >
+                          <ShieldCheck className="mr-2 h-4 w-4" />
+                          Approve Feed
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          onClick={() => revokeApproval.mutate(Number(feed.id))}
+                          disabled={revokeApproval.isPending}
+                          className="text-amber-500 focus:text-amber-500"
+                        >
+                          <ShieldX className="mr-2 h-4 w-4" />
+                          Revoke Approval
+                        </DropdownMenuItem>
+                      )}
+                    </>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={() => setDeleteDialogOpen(true)}

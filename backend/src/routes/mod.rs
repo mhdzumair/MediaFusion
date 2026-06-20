@@ -523,6 +523,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/db/import/preview", post(admin_db::import_export::import_preview))
         .route("/api/v1/admin/db/import/execute", post(admin_db::import_export::import_execute))
         // ── Admin extended (metadata CRUD, exceptions, request metrics, source health) ─
+        .route("/api/v1/admin/metadata/bulk-block", post(admin_extended::bulk_block_media))
+        .route("/api/v1/admin/metadata/bulk-delete", post(admin_extended::bulk_delete_media))
         .route("/api/v1/admin/metadata/{media_id}", delete(admin_extended::delete_metadata))
         .route("/api/v1/admin/metadata/{media_id}/block", post(admin_extended::block_media))
         .route("/api/v1/admin/metadata/{media_id}/unblock", post(admin_extended::unblock_media))
@@ -679,6 +681,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/rss/{id}/scrape", post(rss::run_rss_feed_scraper))
         .route("/api/v1/admin/rss/bulk-activate", post(rss::activate_deactivate_feeds))
         .route("/api/v1/admin/rss/bulk-import", post(rss::bulk_import_rss_feeds))
+        .route("/api/v1/admin/rss/pending", get(rss::list_pending_rss_feeds))
+        .route("/api/v1/admin/rss/{id}/approve", post(rss::approve_rss_feed))
+        .route("/api/v1/admin/rss/{id}/reject", post(rss::reject_rss_feed))
+        .route("/api/v1/admin/rss/{id}/revoke-approval", post(rss::revoke_rss_feed_approval))
         // ── RSS feeds (user) ──────────────────────────────────────────────────
         .route("/api/v1/user/rss", get(rss::user_list_rss_feeds).post(rss::user_create_rss_feed))
         .route("/api/v1/user/rss/{id}", get(rss::user_get_rss_feed).put(rss::user_update_rss_feed).delete(rss::user_delete_rss_feed))

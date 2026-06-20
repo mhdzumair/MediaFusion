@@ -561,6 +561,8 @@ pub async fn scrape_feed(
     cinemeta_fallback_enabled: bool,
     keyword_filters: &KeywordFilterCache,
     credential_params: Option<&Value>,
+    content_type: &str,
+    catalog_id: Option<&str>,
 ) -> ScrapeResult {
     let start = std::time::Instant::now();
     let empty_patterns = Value::Object(serde_json::Map::new());
@@ -666,41 +668,84 @@ pub async fn scrape_feed(
             continue;
         }
 
-        // Parse title with PTT
-        let parsed = parser::parse_title(&title);
-        let is_series = !parsed.seasons.is_empty() || !parsed.episodes.is_empty();
-
         let size = extract_size(item, patterns);
         let seeders = extract_seeders(item, patterns);
 
-        // Determine catalogs
-        let rss_catalog = if is_series {
-            "rss_feed_series"
-        } else {
-            "rss_feed_movies"
-        };
-        let catalogs: Vec<&str> = vec![rss_catalog];
+        let media = if content_type == "sports" {
+            // Sports path: use sports stub creator (sets is_add_title_to_poster=true) + catalog link
+            let clean_title = parser::sports_parser::clean_sports_title(&title);
+            let detected_cat = parser::sports_parser::detect_sports_category(&title);
+            let sports_catalog = catalog_id
+                .or(detected_cat)
+                .unwrap_or("sports");
+            let catalogs: Vec<&str> = vec![sports_catalog];
 
-        // Find or create media
-        let parsed_title = parsed.title.as_deref().unwrap_or(&title);
-        let media = match find_or_create_media(
-            pool,
-            http,
-            parsed_title,
-            parsed.year,
-            is_series,
-            &catalogs,
-            tmdb_api_key,
-            cinemeta_fallback_enabled,
-        )
-        .await
-        {
-            Some(m) => m,
-            None => {
-                warn!("rss_scraper: could not find/create media for '{title}'");
-                errors += 1;
-                continue;
+            // Extract year from sports title parser
+            let sports_parsed = parser::sports_parser::parse_sports_title(&title);
+            let year = sports_parsed.year;
+
+            match crate::scrapers::media_resolve::find_or_create_sports_stub(
+                pool, &clean_title, year, None, "movie",
+            ).await {
+                Some(id) => {
+                    crate::scrapers::media_resolve::link_to_catalogs(pool, id, &catalogs).await;
+                    crate::scrapers::media_resolve::MediaEntry { id, title: clean_title, year }
+                }
+                None => {
+                    warn!("rss_scraper: could not find/create sports media for '{title}'");
+                    errors += 1;
+                    continue;
+                }
             }
+        } else {
+            // Standard PTT path
+            let parsed = parser::parse_title(&title);
+            let is_series = match content_type {
+                "series" => true,
+                "movies" => false,
+                _ => !parsed.seasons.is_empty() || !parsed.episodes.is_empty(),
+            };
+
+            let rss_catalog = if is_series {
+                "rss_feed_series"
+            } else {
+                "rss_feed_movies"
+            };
+            let catalogs: Vec<&str> = vec![rss_catalog];
+            let parsed_title = parsed.title.as_deref().unwrap_or(&title);
+
+            match find_or_create_media(
+                pool,
+                http,
+                parsed_title,
+                parsed.year,
+                is_series,
+                &catalogs,
+                tmdb_api_key,
+                cinemeta_fallback_enabled,
+            )
+            .await
+            {
+                Some(m) => m,
+                None => {
+                    warn!("rss_scraper: could not find/create media for '{title}'");
+                    errors += 1;
+                    continue;
+                }
+            }
+        };
+
+        // For stream upsert we need is_series and parsed; re-derive for non-sports
+        let (is_series_for_stream, parsed_for_stream) = if content_type == "sports" {
+            (false, parser::parse_title(&title))
+        } else {
+            let parsed = parser::parse_title(&title);
+            let is_series = match content_type {
+                "series" => true,
+                "movies" => false,
+                _ => !parsed.seasons.is_empty() || !parsed.episodes.is_empty(),
+            };
+            (is_series, parsed)
         };
 
         // Upsert stream
@@ -712,8 +757,8 @@ pub async fn scrape_feed(
             seeders,
             size,
             media.id,
-            is_series,
-            &parsed,
+            is_series_for_stream,
+            &parsed_for_stream,
             feed_torrent_type,
             extracted.torrent_file,
             &extracted.announce_list,

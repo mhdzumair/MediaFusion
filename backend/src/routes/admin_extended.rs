@@ -157,6 +157,22 @@ pub async fn delete_metadata(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
+    // Delete streams that are ONLY linked to this media (no other media links)
+    let _ = sqlx::query(
+        "DELETE FROM stream WHERE id IN (
+            SELECT sml.stream_id FROM stream_media_link sml
+            WHERE sml.media_id = $1
+            AND NOT EXISTS (
+                SELECT 1 FROM stream_media_link sml2
+                WHERE sml2.stream_id = sml.stream_id AND sml2.media_id <> $1
+            )
+        )"
+    )
+    .bind(media_id.0)
+    .execute(&state.pool)
+    .await;
+
+    // Now delete the media (cascades to stream_media_link and media_catalog_link)
     match sqlx::query("DELETE FROM media WHERE id = $1")
         .bind(media_id.0)
         .execute(&state.pool)
@@ -257,6 +273,82 @@ pub async fn unblock_media(
         .into_response(),
         Err(e) => {
             tracing::error!("unblock_media: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct BulkMediaIdsRequest {
+    pub ids: Vec<i32>,
+    pub reason: Option<String>,
+}
+
+/// POST /api/v1/admin/metadata/bulk-block
+pub async fn bulk_block_media(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<BulkMediaIdsRequest>,
+) -> impl IntoResponse {
+    let user_id = match validate_moderator_or_admin(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => return forbidden(),
+    };
+    if body.ids.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(json!({"detail": "ids must not be empty"}))).into_response();
+    }
+    match sqlx::query(
+        "UPDATE media SET is_blocked = true, blocked_at = NOW(), blocked_by_user_id = $1, block_reason = $2 WHERE id = ANY($3)"
+    )
+    .bind(user_id as i32)
+    .bind(&body.reason)
+    .bind(&body.ids)
+    .execute(&state.pool)
+    .await
+    {
+        Ok(r) => Json(json!({"message": format!("{} item(s) blocked", r.rows_affected()), "count": r.rows_affected()})).into_response(),
+        Err(e) => {
+            tracing::error!("bulk_block_media: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+/// POST /api/v1/admin/metadata/bulk-delete
+pub async fn bulk_delete_media(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<BulkMediaIdsRequest>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return forbidden();
+    }
+    if body.ids.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(json!({"detail": "ids must not be empty"}))).into_response();
+    }
+    // Delete orphaned streams first
+    let _ = sqlx::query(
+        "DELETE FROM stream WHERE id IN (
+            SELECT sml.stream_id FROM stream_media_link sml
+            WHERE sml.media_id = ANY($1)
+            AND NOT EXISTS (
+                SELECT 1 FROM stream_media_link sml2
+                WHERE sml2.stream_id = sml.stream_id AND sml2.media_id <> ALL($1)
+            )
+        )"
+    )
+    .bind(&body.ids)
+    .execute(&state.pool)
+    .await;
+
+    match sqlx::query("DELETE FROM media WHERE id = ANY($1)")
+        .bind(&body.ids)
+        .execute(&state.pool)
+        .await
+    {
+        Ok(r) => Json(json!({"message": format!("{} item(s) deleted", r.rows_affected()), "count": r.rows_affected()})).into_response(),
+        Err(e) => {
+            tracing::error!("bulk_delete_media: {e}");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }

@@ -191,6 +191,25 @@ const defaultParsingPatterns: RSSFeedParsingPatterns = {
 
 const defaultFilters: RSSFeedFilters = {}
 
+const SPORTS_CATALOGS = [
+  { value: 'auto', label: 'Auto-detect from title' },
+  { value: 'football', label: 'Football / Soccer' },
+  { value: 'american_football', label: 'American Football' },
+  { value: 'basketball', label: 'Basketball' },
+  { value: 'baseball', label: 'Baseball' },
+  { value: 'hockey', label: 'Hockey' },
+  { value: 'rugby', label: 'Rugby' },
+  { value: 'formula_racing', label: 'Formula Racing' },
+  { value: 'motogp_racing', label: 'MotoGP Racing' },
+  { value: 'fighting', label: 'Fighting / WWE / UFC' },
+  { value: 'tennis', label: 'Tennis' },
+  { value: 'golf', label: 'Golf' },
+  { value: 'cycling', label: 'Cycling' },
+  { value: 'athletics', label: 'Athletics / Track & Field' },
+  { value: 'olympics', label: 'Olympics' },
+  { value: 'sports', label: 'Sports (General)' },
+]
+
 export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardProps) {
   const isEdit = !!feed
   const [currentStep, setCurrentStep] = useState<WizardStep>('url')
@@ -202,6 +221,8 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
   const [source, setSource] = useState('')
   const [torrentType, setTorrentType] = useState('public')
   const [autoDetectCatalog, setAutoDetectCatalog] = useState(false)
+  const [contentType, setContentType] = useState('auto')
+  const [catalogId, setCatalogId] = useState('auto')
   const [parsingPatterns, setParsingPatterns] = useState<RSSFeedParsingPatterns>(defaultParsingPatterns)
   const [filters, setFilters] = useState<RSSFeedFilters>(defaultFilters)
   const [catalogPatterns, setCatalogPatterns] = useState<CatalogPattern[]>([])
@@ -243,9 +264,12 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
       setSource(feed.source || '')
       setTorrentType(feed.torrent_type || 'public')
       setAutoDetectCatalog(feed.auto_detect_catalog)
+      setContentType(feed.content_type || 'auto')
+      setCatalogId(feed.catalog_id || 'auto')
       setParsingPatterns(feed.parsing_patterns || defaultParsingPatterns)
       setFilters(feed.filters || defaultFilters)
       setCatalogPatterns(feed.catalog_patterns || [])
+      setTestResult(null)
       setHasTestedUrl(true)
       setCurrentStep('patterns')
     } else {
@@ -255,6 +279,8 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
       setSource('')
       setTorrentType('public')
       setAutoDetectCatalog(false)
+      setContentType('auto')
+      setCatalogId('auto')
       setParsingPatterns(defaultParsingPatterns)
       setFilters(defaultFilters)
       setCatalogPatterns([])
@@ -312,6 +338,8 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
       source: source || undefined,
       torrent_type: torrentType,
       auto_detect_catalog: autoDetectCatalog,
+      content_type: contentType,
+      catalog_id: contentType === 'sports' && catalogId !== 'auto' ? catalogId : undefined,
       parsing_patterns: parsingPatterns,
       filters,
       catalog_patterns: catalogPatterns,
@@ -899,6 +927,61 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
                     </CardContent>
                   </Card>
 
+                  {/* Content Type */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Content Type</CardTitle>
+                      <CardDescription>
+                        Select how titles should be parsed. Use "Sports" for live events — each match gets its own entry
+                        instead of collapsing to a league name.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Content Type</Label>
+                        <Select value={contentType} onValueChange={setContentType}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="auto">Auto-detect (Movies & Series)</SelectItem>
+                            <SelectItem value="movies">Movies only</SelectItem>
+                            <SelectItem value="series">Series / TV only</SelectItem>
+                            <SelectItem value="sports">Sports Events</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {contentType === 'sports' && (
+                          <p className="text-xs text-muted-foreground">
+                            Each torrent title is parsed as a unique sports event. TMDB lookup is skipped and each match
+                            creates its own media entry.
+                          </p>
+                        )}
+                      </div>
+
+                      {contentType === 'sports' && (
+                        <div className="space-y-2">
+                          <Label>Sports Catalog</Label>
+                          <Select value={catalogId} onValueChange={setCatalogId}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {SPORTS_CATALOGS.map((cat) => (
+                                <SelectItem key={cat.value} value={cat.value}>
+                                  {cat.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            "Auto-detect" reads the title to choose the catalog (e.g. Premier League → Football). Choose
+                            a specific catalog to force all items into one category.
+                          </p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
                   {/* Catalog Settings */}
                   <Card>
                     <CardHeader>
@@ -953,6 +1036,16 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
                           <Label className="text-xs text-muted-foreground">Torrent Type</Label>
                           <Badge variant="outline">{torrentType}</Badge>
                         </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Content Type</Label>
+                          <Badge variant="outline">{contentType}</Badge>
+                        </div>
+                        {contentType === 'sports' && (
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Sports Catalog</Label>
+                            <Badge variant="outline">{catalogId === 'auto' ? 'Auto-detect' : catalogId}</Badge>
+                          </div>
+                        )}
                       </div>
 
                       <div className="border-t pt-4">

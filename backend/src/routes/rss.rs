@@ -114,6 +114,8 @@ pub struct UserRSSFeedCreate {
     pub filters: Option<Value>,
     pub catalog_patterns: Option<Value>,
     pub credential_params: Option<Value>,
+    pub content_type: Option<String>,
+    pub catalog_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -128,6 +130,8 @@ pub struct UserRSSFeedUpdate {
     pub filters: Option<Value>,
     pub catalog_patterns: Option<Value>,
     pub credential_params: Option<Value>,
+    pub content_type: Option<String>,
+    pub catalog_id: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -389,9 +393,9 @@ pub async fn create_rss_feed(
         .and_then(|v| serde_json::to_string(v).ok());
 
     let row: Option<FeedRow> = sqlx::query_as(
-        "INSERT INTO rss_feed (uuid, user_id, name, url, is_active, is_public, source, torrent_type, \
+        "INSERT INTO rss_feed (uuid, user_id, name, url, is_active, is_public, is_approved, source, torrent_type, \
                                auto_detect_catalog, parsing_patterns, filters, credential_params, created_at, updated_at) \
-         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, $6, $7, $8::json, $9::json, $10::jsonb, NOW(), NOW()) \
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, true, $5, $6, $7, $8::json, $9::json, $10::jsonb, NOW(), NOW()) \
          RETURNING id, uuid, name, url, is_active, is_public, source, torrent_type, auto_detect_catalog, \
                    parsing_patterns, filters, metrics, last_scraped_at, created_at, updated_at",
     )
@@ -733,16 +737,18 @@ pub async fn run_rss_feed_scraper(
         bool,
         String,
         Option<Value>,
+        String,
+        Option<String>,
     );
     let row: Option<FeedRow> = sqlx::query_as(
-        "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params FROM rss_feed WHERE id = $1",
+        "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id FROM rss_feed WHERE id = $1",
     )
     .bind(feed_id)
     .fetch_optional(&state.pool_ro)
     .await
     .unwrap_or(None);
 
-    let (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type, credential_params) = match row {
+    let (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type, credential_params, content_type, catalog_id) = match row {
         Some(r) => r,
         None => {
             return (
@@ -779,6 +785,8 @@ pub async fn run_rss_feed_scraper(
             cinemeta_fallback,
             &kf,
             credential_params.as_ref(),
+            &content_type,
+            catalog_id.as_deref(),
         )
         .await;
     });
@@ -910,6 +918,140 @@ pub async fn activate_deactivate_feeds(
     }
 }
 
+/// GET /api/v1/admin/rss/pending — list feeds awaiting approval
+pub async fn list_pending_rss_feeds(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    if validate_admin_token(&headers, &state.config.secret_key_raw).is_none() {
+        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
+    }
+
+    let rows: Vec<(i32, String, String, String, String, Option<String>, chrono::DateTime<chrono::Utc>)> =
+        sqlx::query_as(
+            "SELECT f.id, f.name, f.url, f.torrent_type, u.email, u.username, f.created_at \
+             FROM rss_feed f \
+             JOIN users u ON u.id = f.user_id \
+             WHERE f.is_approved = false \
+             ORDER BY f.created_at ASC",
+        )
+        .fetch_all(&state.pool_ro)
+        .await
+        .unwrap_or_default();
+
+    let items: Vec<Value> = rows
+        .into_iter()
+        .map(|(id, name, url, torrent_type, email, username, created_at)| {
+            json!({
+                "id": id,
+                "name": name,
+                "url": url,
+                "torrent_type": torrent_type,
+                "submitted_by": { "email": email, "username": username },
+                "created_at": created_at,
+            })
+        })
+        .collect();
+
+    Json(items).into_response()
+}
+
+/// POST /api/v1/admin/rss/{id}/approve — approve a pending feed
+pub async fn approve_rss_feed(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(feed_id): Path<i32>,
+) -> impl IntoResponse {
+    if validate_admin_token(&headers, &state.config.secret_key_raw).is_none() {
+        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
+    }
+
+    let result =
+        sqlx::query("UPDATE rss_feed SET is_approved = true, updated_at = NOW() WHERE id = $1")
+            .bind(feed_id)
+            .execute(&state.pool)
+            .await;
+
+    match result {
+        Ok(r) if r.rows_affected() == 0 => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": format!("RSS feed {feed_id} not found")})),
+        )
+            .into_response(),
+        Ok(_) => Json(json!({"detail": format!("RSS feed {feed_id} approved"), "is_approved": true}))
+            .into_response(),
+        Err(e) => {
+            tracing::error!("approve_rss_feed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+/// POST /api/v1/admin/rss/{id}/reject — reject (delete) a pending feed
+pub async fn reject_rss_feed(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(feed_id): Path<i32>,
+) -> impl IntoResponse {
+    if validate_admin_token(&headers, &state.config.secret_key_raw).is_none() {
+        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
+    }
+
+    let result = sqlx::query("DELETE FROM rss_feed WHERE id = $1 AND is_approved = false")
+        .bind(feed_id)
+        .execute(&state.pool)
+        .await;
+
+    match result {
+        Ok(r) if r.rows_affected() == 0 => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": format!("Pending RSS feed {feed_id} not found (may already be approved)")})),
+        )
+            .into_response(),
+        Ok(_) => {
+            Json(json!({"detail": format!("RSS feed {feed_id} rejected and deleted")}))
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!("reject_rss_feed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+/// POST /api/v1/admin/rss/{id}/revoke-approval — revoke approval without deleting
+pub async fn revoke_rss_feed_approval(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(feed_id): Path<i32>,
+) -> impl IntoResponse {
+    if validate_admin_token(&headers, &state.config.secret_key_raw).is_none() {
+        return (StatusCode::FORBIDDEN, Json(json!({"detail": "Forbidden"}))).into_response();
+    }
+
+    let result =
+        sqlx::query("UPDATE rss_feed SET is_approved = false, updated_at = NOW() WHERE id = $1")
+            .bind(feed_id)
+            .execute(&state.pool)
+            .await;
+
+    match result {
+        Ok(r) if r.rows_affected() == 0 => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": format!("RSS feed {feed_id} not found")})),
+        )
+            .into_response(),
+        Ok(_) => {
+            Json(json!({"detail": format!("RSS feed {feed_id} approval revoked"), "is_approved": false}))
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!("revoke_rss_feed_approval: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
 // ─── User RSS endpoints ───────────────────────────────────────────────────────
 
 // ─── Helper: full user RSS feed JSON (includes user sub-object) ──────────────
@@ -921,6 +1063,7 @@ fn user_feed_json(
     name: &str,
     url: &str,
     is_active: bool,
+    is_approved: bool,
     source: Option<&str>,
     torrent_type: &str,
     auto_detect_catalog: bool,
@@ -933,6 +1076,8 @@ fn user_feed_json(
     updated_at: Option<chrono::DateTime<chrono::Utc>>,
     user_email: &str,
     user_username: Option<&str>,
+    content_type: &str,
+    catalog_id: Option<&str>,
 ) -> Value {
     json!({
         "id": id,
@@ -940,6 +1085,7 @@ fn user_feed_json(
         "name": name,
         "url": url,
         "is_active": is_active,
+        "is_approved": is_approved,
         "source": source,
         "torrent_type": torrent_type,
         "auto_detect_catalog": auto_detect_catalog,
@@ -950,6 +1096,8 @@ fn user_feed_json(
         "last_scraped_at": last_scraped_at,
         "created_at": created_at,
         "updated_at": updated_at,
+        "content_type": content_type,
+        "catalog_id": catalog_id,
         "user": {
             "id": user_id,
             "email": user_email,
@@ -965,6 +1113,7 @@ struct UserFeedRow {
     name: String,
     url: String,
     is_active: bool,
+    is_approved: bool,
     source: Option<String>,
     torrent_type: String,
     auto_detect_catalog: bool,
@@ -976,6 +1125,8 @@ struct UserFeedRow {
     updated_at: Option<chrono::DateTime<chrono::Utc>>,
     user_email: String,
     user_username: Option<String>,
+    content_type: String,
+    catalog_id: Option<String>,
 }
 
 /// GET /api/v1/user-rss/feeds
@@ -997,10 +1148,11 @@ pub async fn user_list_rss_feeds(
     // Admins see all feeds (with user info); regular users see only their own
     let rows = if role == "admin" {
         sqlx::query_as::<_, UserFeedRow>(
-            r#"SELECT f.id, f.user_id, f.name, f.url, f.is_active, f.source, f.torrent_type,
+            r#"SELECT f.id, f.user_id, f.name, f.url, f.is_active, f.is_approved, f.source, f.torrent_type,
                       f.auto_detect_catalog, f.parsing_patterns, f.filters, f.metrics,
                       f.last_scraped_at, f.created_at, f.updated_at,
-                      u.email AS user_email, u.username AS user_username
+                      u.email AS user_email, u.username AS user_username,
+                      f.content_type, f.catalog_id
                FROM rss_feed f
                JOIN users u ON u.id = f.user_id
                ORDER BY f.created_at DESC"#,
@@ -1009,10 +1161,11 @@ pub async fn user_list_rss_feeds(
         .await
     } else {
         sqlx::query_as::<_, UserFeedRow>(
-            r#"SELECT f.id, f.user_id, f.name, f.url, f.is_active, f.source, f.torrent_type,
+            r#"SELECT f.id, f.user_id, f.name, f.url, f.is_active, f.is_approved, f.source, f.torrent_type,
                       f.auto_detect_catalog, f.parsing_patterns, f.filters, f.metrics,
                       f.last_scraped_at, f.created_at, f.updated_at,
-                      u.email AS user_email, u.username AS user_username
+                      u.email AS user_email, u.username AS user_username,
+                      f.content_type, f.catalog_id
                FROM rss_feed f
                JOIN users u ON u.id = f.user_id
                WHERE f.user_id = $1
@@ -1034,6 +1187,7 @@ pub async fn user_list_rss_feeds(
                         &r.name,
                         &r.url,
                         r.is_active,
+                        r.is_approved,
                         r.source.as_deref(),
                         &r.torrent_type,
                         r.auto_detect_catalog,
@@ -1046,6 +1200,8 @@ pub async fn user_list_rss_feeds(
                         r.updated_at,
                         &r.user_email,
                         r.user_username.as_deref(),
+                        &r.content_type,
+                        r.catalog_id.as_deref(),
                     )
                 })
                 .collect();
@@ -1153,21 +1309,35 @@ pub async fn user_create_rss_feed(
     let is_active = body.is_active.unwrap_or(true);
     let torrent_type = body.torrent_type.as_deref().unwrap_or("public");
 
+    // Check if this user is an admin (admin-created feeds are auto-approved).
+    let user_role: Option<String> =
+        sqlx::query_scalar("SELECT role::text FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool_ro)
+            .await
+            .unwrap_or(None);
+    let is_admin = matches!(user_role.as_deref(), Some("ADMIN") | Some("admin"));
+
+    let content_type = body.content_type.as_deref().unwrap_or("auto");
+
     let id: i32 = match sqlx::query_scalar(
-        r#"INSERT INTO rss_feed (uuid, user_id, name, url, is_active, is_public, source, torrent_type, auto_detect_catalog, parsing_patterns, filters, credential_params, created_at, updated_at)
-           VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, $6, $7, $8::json, $9::json, $10::jsonb, NOW(), NOW())
+        r#"INSERT INTO rss_feed (uuid, user_id, name, url, is_active, is_public, is_approved, source, torrent_type, auto_detect_catalog, parsing_patterns, filters, credential_params, content_type, catalog_id, created_at, updated_at)
+           VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, $6, $7, $8, $9::json, $10::json, $11::jsonb, $12, $13, NOW(), NOW())
            RETURNING id"#,
     )
     .bind(user_id)
     .bind(&body.name)
     .bind(&body.url)
     .bind(is_active)
+    .bind(is_admin)
     .bind(&body.source)
     .bind(torrent_type)
     .bind(body.auto_detect_catalog.unwrap_or(false))
     .bind(body.parsing_patterns.as_ref().map(|v| v.to_string()))
     .bind(body.filters.as_ref().map(|v| v.to_string()))
     .bind(body.credential_params.as_ref().map(|v| v.to_string()))
+    .bind(content_type)
+    .bind(&body.catalog_id)
     .fetch_one(&state.pool)
     .await
     {
@@ -1178,15 +1348,28 @@ pub async fn user_create_rss_feed(
         }
     };
 
+    let status_code = if is_admin {
+        StatusCode::CREATED
+    } else {
+        StatusCode::ACCEPTED
+    };
+    let message = if is_admin {
+        "RSS feed created and approved"
+    } else {
+        "RSS feed submitted for admin approval. It will not be scraped until approved."
+    };
+
     (
-        StatusCode::CREATED,
+        status_code,
         Json(json!({
             "id": id,
             "name": body.name,
             "url": body.url,
             "is_active": is_active,
+            "is_approved": is_admin,
             "source": body.source,
             "torrent_type": torrent_type,
+            "message": message,
         })),
     )
         .into_response()
@@ -1272,6 +1455,26 @@ pub async fn user_update_rss_feed(
             .bind(db_id)
             .execute(&state.pool)
             .await;
+        }
+    }
+    if let Some(ct) = &body.content_type {
+        let _ = sqlx::query("UPDATE rss_feed SET content_type = $1, updated_at = NOW() WHERE id = $2")
+            .bind(ct)
+            .bind(db_id)
+            .execute(&state.pool)
+            .await;
+    }
+    if body.catalog_id.is_some() || body.content_type.is_some() {
+        // Always update catalog_id when content_type changes (may be clearing it)
+        if let Some(ct) = &body.content_type {
+            let _ = ct; // already updated above
+        }
+        if body.catalog_id.is_some() {
+            let _ = sqlx::query("UPDATE rss_feed SET catalog_id = $1, updated_at = NOW() WHERE id = $2")
+                .bind(&body.catalog_id)
+                .bind(db_id)
+                .execute(&state.pool)
+                .await;
         }
     }
 
@@ -1384,29 +1587,29 @@ pub async fn user_test_rss_feed(
     let first = &items[0];
 
     // Extract fields from sample item
-    let sample_title = first.title.as_deref().unwrap_or("");
     let sample_hash = crate::scrapers::rss::extract_info_hash_pub(first, pat);
-    let sample_size = crate::scrapers::rss::extract_size_pub(first, pat);
-    let parsed = crate::parser::parse_title(sample_title);
 
-    let sample = json!({
-        "title": sample_title,
-        "info_hash": sample_hash,
-        "size_bytes": sample_size,
-        "link": first.link,
-        "description": first.description.as_deref().map(|d| &d[..d.len().min(200)]),
-        "parsed_title": parsed.title,
-        "parsed_year": parsed.year,
-        "seasons": parsed.seasons,
-        "episodes": parsed.episodes,
-    });
+    // Build the full sample item from all available fields
+    let mut sample_obj = serde_json::Map::new();
+    if let Some(t) = &first.title { sample_obj.insert("title".into(), Value::String(t.clone())); }
+    if let Some(l) = &first.link { sample_obj.insert("link".into(), Value::String(l.clone())); }
+    if let Some(d) = &first.description { sample_obj.insert("description".into(), Value::String(d.clone())); }
+    if let Some(u) = &first.enclosure_url { sample_obj.insert("enclosure_url".into(), Value::String(u.clone())); }
+    if let Some(n) = first.enclosure_length { sample_obj.insert("enclosure_length".into(), Value::Number(n.into())); }
+    if let Some(g) = &first.guid { sample_obj.insert("guid".into(), Value::String(g.clone())); }
+    // Merge all extras fields
+    for (k, v) in &first.extras {
+        sample_obj.entry(k.clone()).or_insert_with(|| Value::String(v.clone()));
+    }
+    // Always include the computed info_hash
+    sample_obj.insert("info_hash".into(), match sample_hash { Some(h) => Value::String(h), None => Value::Null });
 
     Json(json!({
         "status": "success",
         "message": format!("Successfully fetched feed with {count} items"),
         "items_count": count,
         "feed_name": name,
-        "sample_item": sample,
+        "sample_item": Value::Object(sample_obj),
     }))
     .into_response()
 }
@@ -1463,18 +1666,28 @@ pub async fn user_test_rss_feed_url(
     let first = &items[0];
     let empty = serde_json::Value::Object(Default::default());
     let pat = body.get("patterns").unwrap_or(&empty);
-    let sample_title = first.title.as_deref().unwrap_or("");
     let sample_hash = crate::scrapers::rss::extract_info_hash_pub(first, pat);
+
+    // Build the full sample item from all available fields
+    let mut sample_obj = serde_json::Map::new();
+    if let Some(t) = &first.title { sample_obj.insert("title".into(), Value::String(t.clone())); }
+    if let Some(l) = &first.link { sample_obj.insert("link".into(), Value::String(l.clone())); }
+    if let Some(d) = &first.description { sample_obj.insert("description".into(), Value::String(d.clone())); }
+    if let Some(u) = &first.enclosure_url { sample_obj.insert("enclosure_url".into(), Value::String(u.clone())); }
+    if let Some(n) = first.enclosure_length { sample_obj.insert("enclosure_length".into(), Value::Number(n.into())); }
+    if let Some(g) = &first.guid { sample_obj.insert("guid".into(), Value::String(g.clone())); }
+    // Merge all extras fields
+    for (k, v) in &first.extras {
+        sample_obj.entry(k.clone()).or_insert_with(|| Value::String(v.clone()));
+    }
+    // Always include the computed info_hash
+    sample_obj.insert("info_hash".into(), match sample_hash { Some(h) => Value::String(h), None => Value::Null });
 
     Json(json!({
         "status": "success",
         "message": format!("Successfully fetched feed with {count} items"),
         "items_count": count,
-        "sample_item": {
-            "title": sample_title,
-            "info_hash": sample_hash,
-            "link": first.link,
-        },
+        "sample_item": Value::Object(sample_obj),
     }))
     .into_response()
 }
@@ -1538,27 +1751,29 @@ pub async fn user_scrape_single_feed(
         bool,
         String,
         Option<serde_json::Value>,
+        String,
+        Option<String>,
     );
     let row: Option<FeedRow> = if let Some(uid) = user_id_filter {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params FROM rss_feed WHERE id::text = $1 AND user_id = $2",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id FROM rss_feed WHERE id::text = $1 AND user_id = $2 AND is_approved = true",
         )
         .bind(&feed_id).bind(uid)
         .fetch_optional(&state.pool_ro).await.ok().flatten()
     } else {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params FROM rss_feed WHERE id::text = $1",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id FROM rss_feed WHERE id::text = $1 AND is_approved = true",
         )
         .bind(&feed_id)
         .fetch_optional(&state.pool_ro).await.ok().flatten()
     };
 
-    let (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type, credential_params) = match row {
+    let (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type, credential_params, content_type, catalog_id) = match row {
         Some(r) => r,
         None => {
             return (
                 StatusCode::NOT_FOUND,
-                Json(json!({"detail": "Feed not found"})),
+                Json(json!({"detail": "Feed not found or not yet approved by admin"})),
             )
                 .into_response()
         }
@@ -1591,6 +1806,8 @@ pub async fn user_scrape_single_feed(
             cinemeta_fallback,
             &kf,
             credential_params.as_ref(),
+            &content_type,
+            catalog_id.as_deref(),
         )
         .await;
     });
@@ -1628,15 +1845,17 @@ pub async fn user_run_all_scrapers(
         bool,
         String,
         Option<serde_json::Value>,
+        String,
+        Option<String>,
     );
     let feeds: Vec<FeedRow> = if role == "admin" {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params FROM rss_feed WHERE is_active = true",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id FROM rss_feed WHERE is_active = true AND is_approved = true",
         )
         .fetch_all(&state.pool_ro).await.unwrap_or_default()
     } else {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params FROM rss_feed WHERE is_active = true AND user_id = $1",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id FROM rss_feed WHERE is_active = true AND is_approved = true AND user_id = $1",
         )
         .bind(user_id)
         .fetch_all(&state.pool_ro).await.unwrap_or_default()
@@ -1653,7 +1872,7 @@ pub async fn user_run_all_scrapers(
         .map(|g| g.clone())
         .unwrap_or_default();
     tokio::spawn(async move {
-        for (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type, credential_params) in feeds {
+        for (db_id, url, name, source, patterns, filters, auto_detect, feed_torrent_type, credential_params, content_type, catalog_id) in feeds {
             let feed_type =
                 crate::scrapers::torrent_metadata::parse_torrent_type_str(&feed_torrent_type);
             crate::scrapers::rss::scrape_feed(
@@ -1671,6 +1890,8 @@ pub async fn user_run_all_scrapers(
                 cinemeta_fallback,
                 &kf,
                 credential_params.as_ref(),
+                &content_type,
+                catalog_id.as_deref(),
             )
             .await;
         }

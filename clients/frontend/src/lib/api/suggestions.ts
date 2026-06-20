@@ -24,6 +24,7 @@ export type EditableField =
   | 'catalogs'
   | 'parental_certificate'
   | 'nudity_status'
+  | 'is_add_title_to_poster'
 
 export interface SuggestionCreateRequest {
   field_name: EditableField

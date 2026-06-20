@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -21,10 +21,20 @@ import {
   AlertTriangle,
   Calendar,
   SlidersHorizontal,
+  ShieldCheck,
+  ShieldX,
+  ExternalLink,
 } from 'lucide-react'
-import { useRssFeeds, useRunRssScraper, useRssSchedulerStatus } from '@/hooks'
+import {
+  useRssFeeds,
+  useRunRssScraper,
+  useRssSchedulerStatus,
+  usePendingRssFeeds,
+  useApproveRssFeed,
+  useRejectRssFeed,
+} from '@/hooks'
 import { useAuth } from '@/contexts/AuthContext'
-import type { UserRSSFeed } from '@/lib/api'
+import type { UserRSSFeed, PendingRSSFeed } from '@/lib/api'
 import { RSSFeedWizard, RSSFeedCard } from './components'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -40,7 +50,10 @@ export function RSSManagerPage() {
 
   const { data: feeds, isLoading, refetch } = useRssFeeds()
   const { data: schedulerStatus } = useRssSchedulerStatus()
+  const { data: pendingFeeds, refetch: refetchPending } = usePendingRssFeeds()
   const runScraper = useRunRssScraper()
+  const approveRssFeed = useApproveRssFeed()
+  const rejectRssFeed = useRejectRssFeed()
 
   const handleOpenWizard = (feed?: UserRSSFeed) => {
     setEditingFeed(feed || null)
@@ -97,6 +110,16 @@ export function RSSManagerPage() {
       return true
     })
   }, [feeds, searchQuery, filterStatus, filterUser, isAdmin])
+
+  const handleApprove = async (feedId: number) => {
+    await approveRssFeed.mutateAsync(feedId)
+    refetchPending()
+  }
+
+  const handleReject = async (feedId: number) => {
+    await rejectRssFeed.mutateAsync(feedId)
+    refetchPending()
+  }
 
   // Aggregated stats
   const stats = useMemo(() => {
@@ -155,10 +178,18 @@ export function RSSManagerPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className={`grid gap-4 sm:grid-cols-2 ${isAdmin ? 'lg:grid-cols-6' : 'lg:grid-cols-5'}`}>
           <StatsCard label="Total Feeds" value={stats.total} icon={<Rss className="h-4 w-4" />} color="violet" />
           <StatsCard label="Active" value={stats.active} icon={<CheckCircle className="h-4 w-4" />} color="emerald" />
           <StatsCard label="Paused" value={stats.inactive} icon={<Pause className="h-4 w-4" />} color="amber" />
+          {isAdmin && (
+            <StatsCard
+              label="Pending Approval"
+              value={pendingFeeds?.length ?? 0}
+              icon={<AlertTriangle className="h-4 w-4" />}
+              color="amber"
+            />
+          )}
           <StatsCard
             label="Items Processed"
             value={stats.totalProcessed}
@@ -197,6 +228,30 @@ export function RSSManagerPage() {
                   </Tooltip>
                 )}
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Pending Approval — admin only */}
+        {isAdmin && pendingFeeds && pendingFeeds.length > 0 && (
+          <Card className="border-amber-500/40 bg-amber-500/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2 text-amber-500">
+                <AlertTriangle className="h-4 w-4" />
+                Pending Approval ({pendingFeeds.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {pendingFeeds.map((feed) => (
+                <PendingFeedRow
+                  key={feed.id}
+                  feed={feed}
+                  onApprove={() => handleApprove(feed.id)}
+                  onReject={() => handleReject(feed.id)}
+                  isApproving={approveRssFeed.isPending}
+                  isRejecting={rejectRssFeed.isPending}
+                />
+              ))}
             </CardContent>
           </Card>
         )}
@@ -317,7 +372,13 @@ export function RSSManagerPage() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filteredFeeds.map((feed) => (
-              <RSSFeedCard key={feed.id} feed={feed} onEdit={() => handleOpenWizard(feed)} showOwner={isAdmin} />
+              <RSSFeedCard
+                key={feed.id}
+                feed={feed}
+                onEdit={() => handleOpenWizard(feed)}
+                showOwner={isAdmin}
+                isAdmin={isAdmin}
+              />
             ))}
           </div>
         )}
@@ -333,6 +394,69 @@ export function RSSManagerPage() {
         <RSSFeedWizard open={wizardOpen} onClose={handleCloseWizard} feed={editingFeed} onSuccess={handleSuccess} />
       </div>
     </TooltipProvider>
+  )
+}
+
+function PendingFeedRow({
+  feed,
+  onApprove,
+  onReject,
+  isApproving,
+  isRejecting,
+}: {
+  feed: PendingRSSFeed
+  onApprove: () => void
+  onReject: () => void
+  isApproving: boolean
+  isRejecting: boolean
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 p-3 rounded-lg border border-border/50 bg-background">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-sm">{feed.name}</span>
+          <Badge variant="secondary" className="text-xs">
+            {feed.torrent_type}
+          </Badge>
+        </div>
+        <a
+          href={feed.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-muted-foreground font-mono truncate block hover:underline flex items-center gap-1 mt-0.5"
+        >
+          {feed.url}
+          <ExternalLink className="h-3 w-3 shrink-0" />
+        </a>
+        <p className="text-xs text-muted-foreground mt-1">
+          Submitted by <span className="font-medium">{feed.submitted_by.username || feed.submitted_by.email}</span>
+          {' · '}
+          {formatDistanceToNow(new Date(feed.created_at), { addSuffix: true })}
+        </p>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Button
+          size="sm"
+          variant="outline"
+          className="border-emerald-500/50 text-emerald-500 hover:bg-emerald-500/10"
+          onClick={onApprove}
+          disabled={isApproving || isRejecting}
+        >
+          <ShieldCheck className="mr-1.5 h-4 w-4" />
+          Approve
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="border-red-500/50 text-red-500 hover:bg-red-500/10"
+          onClick={onReject}
+          disabled={isApproving || isRejecting}
+        >
+          <ShieldX className="mr-1.5 h-4 w-4" />
+          Reject
+        </Button>
+      </div>
+    </div>
   )
 }
 

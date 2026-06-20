@@ -82,6 +82,7 @@ export interface CatalogItemBase {
   // Content moderation (visible to admins/moderators)
   is_blocked?: boolean
   block_reason?: string
+  is_add_title_to_poster?: boolean
 }
 
 export interface SeasonInfo {

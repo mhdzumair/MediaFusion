@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -13,7 +14,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Film, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Film, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ShieldAlert, Trash2 } from 'lucide-react'
 import {
   ContentCard,
   ContentGrid,
@@ -27,6 +38,7 @@ import {
   useCatalogList,
   useAvailableCatalogs,
   useGenres,
+  catalogKeys,
   type CatalogType,
   type SortOption,
   type SortDirection,
@@ -72,13 +84,135 @@ const saveState = (state: BrowseState) => {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Pagination component
+// ---------------------------------------------------------------------------
+
+interface BrowsePaginationProps {
+  currentPage: number
+  totalPages: number
+  totalItems: number
+  pageSize: number
+  onPageChange: (page: number) => void
+}
+
+function BrowsePagination({ currentPage, totalPages, totalItems, pageSize, onPageChange }: BrowsePaginationProps) {
+  if (totalPages <= 1) return null
+
+  const startItem = (currentPage - 1) * pageSize + 1
+  const endItem = Math.min(currentPage * pageSize, totalItems)
+
+  // Build page numbers array with ellipsis markers
+  const pages: (number | '...')[] = []
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i)
+  } else if (currentPage <= 4) {
+    for (let i = 1; i <= 5; i++) pages.push(i)
+    pages.push('...')
+    pages.push(totalPages)
+  } else if (currentPage >= totalPages - 3) {
+    pages.push(1)
+    pages.push('...')
+    for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i)
+  } else {
+    pages.push(1)
+    pages.push('...')
+    for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i)
+    pages.push('...')
+    pages.push(totalPages)
+  }
+
+  const btnBase =
+    'inline-flex items-center justify-center h-8 min-w-[2rem] px-2 text-sm rounded border transition-colors select-none'
+  const btnActive = 'bg-primary text-primary-foreground border-primary font-medium'
+  const btnInactive = 'bg-transparent text-foreground border-border hover:bg-accent cursor-pointer'
+  const btnDisabled = 'opacity-40 cursor-not-allowed bg-transparent border-border text-muted-foreground'
+
+  return (
+    <div className="flex items-center justify-between text-sm text-muted-foreground py-1">
+      <span className="hidden sm:block">
+        Showing {startItem.toLocaleString()}–{endItem.toLocaleString()} of {totalItems.toLocaleString()}
+      </span>
+      <div className="flex items-center gap-1 mx-auto sm:mx-0">
+        {/* First */}
+        <button
+          className={`${btnBase} ${currentPage === 1 ? btnDisabled : btnInactive}`}
+          disabled={currentPage === 1}
+          onClick={() => onPageChange(1)}
+          title="First page"
+        >
+          <ChevronsLeft className="h-3.5 w-3.5" />
+        </button>
+        {/* Prev */}
+        <button
+          className={`${btnBase} ${currentPage === 1 ? btnDisabled : btnInactive}`}
+          disabled={currentPage === 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          title="Previous page"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+
+        {pages.map((p, i) =>
+          p === '...' ? (
+            <span key={`ellipsis-${i}`} className="px-1 text-muted-foreground">
+              …
+            </span>
+          ) : (
+            <button
+              key={p}
+              className={`${btnBase} ${p === currentPage ? btnActive : btnInactive}`}
+              onClick={() => onPageChange(p as number)}
+            >
+              {p}
+            </button>
+          ),
+        )}
+
+        {/* Next */}
+        <button
+          className={`${btnBase} ${currentPage === totalPages ? btnDisabled : btnInactive}`}
+          disabled={currentPage === totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+          title="Next page"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+        {/* Last */}
+        <button
+          className={`${btnBase} ${currentPage === totalPages ? btnDisabled : btnInactive}`}
+          disabled={currentPage === totalPages}
+          onClick={() => onPageChange(totalPages)}
+          title="Last page"
+        >
+          <ChevronsRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <span className="hidden sm:block text-right opacity-0 pointer-events-none">
+        Showing {startItem}–{endItem} of {totalItems}
+      </span>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// BrowseTab
+// ---------------------------------------------------------------------------
+
 export function BrowseTab() {
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
-  const { isAdmin } = useRole()
+  const { isAdmin, isModerator } = useRole()
   const { toast } = useToast()
+  const queryClient = useQueryClient()
   const [blockTarget, setBlockTarget] = useState<ContentCardData | null>(null)
   const [blockReason, setBlockReason] = useState('')
+
+  // Bulk state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkMode, setBulkMode] = useState(false)
+  const [bulkBlockReason, setBulkBlockReason] = useState('')
+  const [bulkActionDialog, setBulkActionDialog] = useState<'block' | 'delete' | null>(null)
 
   const blockMutation = useMutation({
     mutationFn: ({ id, reason }: { id: number; reason: string }) =>
@@ -87,10 +221,37 @@ export function BrowseTab() {
       toast({ title: 'Content blocked', description: data.message })
       setBlockTarget(null)
       setBlockReason('')
+      queryClient.invalidateQueries({ queryKey: catalogKeys.all })
     },
     onError: (error: Error) => {
       toast({ variant: 'destructive', title: 'Block failed', description: error.message })
     },
+  })
+
+  const bulkBlockMutation = useMutation({
+    mutationFn: ({ ids, reason }: { ids: number[]; reason: string }) =>
+      adminApi.bulkBlockMedia(ids, reason || undefined),
+    onSuccess: (data) => {
+      toast({ title: 'Bulk block complete', description: data.message })
+      setBulkActionDialog(null)
+      setSelectedIds(new Set())
+      setBulkMode(false)
+      setBulkBlockReason('')
+      queryClient.invalidateQueries({ queryKey: catalogKeys.all })
+    },
+    onError: (e: Error) => toast({ variant: 'destructive', title: 'Bulk block failed', description: e.message }),
+  })
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: number[]) => adminApi.bulkDeleteMedia(ids),
+    onSuccess: (data) => {
+      toast({ title: 'Bulk delete complete', description: data.message })
+      setBulkActionDialog(null)
+      setSelectedIds(new Set())
+      setBulkMode(false)
+      queryClient.invalidateQueries({ queryKey: catalogKeys.all })
+    },
+    onError: (e: Error) => toast({ variant: 'destructive', title: 'Bulk delete failed', description: e.message }),
   })
 
   // ---------------------------------------------------------------------------
@@ -383,6 +544,11 @@ export function BrowseTab() {
     hasRestoredBrowsePage.current = false
   }, [catalogType, selectedCatalog, selectedGenre, search, searchMode, sort, sortDir])
 
+  // Clear bulk selection when page changes
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [browsePage, catalogType, selectedCatalog, selectedGenre, search, searchMode, sort, sortDir, pageSize])
+
   const handleCardClick = (item: ContentCardData) => {
     saveContentDetailReturnUrl(location.pathname, location.search)
     saveState({
@@ -400,6 +566,37 @@ export function BrowseTab() {
     sessionStorage.setItem(BROWSE_SELECTED_ITEM_KEY, item.id.toString())
     setSelectedItemId(item.id)
   }
+
+  const toggleItemSelection = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const allPageSelected = contentItems.length > 0 && contentItems.every((item) => selectedIds.has(item.id))
+
+  const toggleSelectAll = () => {
+    if (allPageSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(contentItems.map((item) => item.id)))
+    }
+  }
+
+  const totalPages = pagedData ? Math.ceil(pagedData.total / pageSize) : 1
+
+  const handlePageChange = (page: number) => {
+    updateUrl({ page })
+    window.scrollTo(0, 0)
+  }
+
+  const canUseBulk = isAdmin || isModerator
 
   return (
     <div ref={containerRef} className="space-y-6">
@@ -458,6 +655,83 @@ export function BrowseTab() {
         }}
       />
 
+      {/* Bulk toolbar */}
+      {canUseBulk && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant={bulkMode ? 'secondary' : 'outline'}
+            size="sm"
+            onClick={() => {
+              setBulkMode((prev) => !prev)
+              setSelectedIds(new Set())
+            }}
+          >
+            {bulkMode ? 'Exit Select' : 'Select'}
+          </Button>
+
+          {bulkMode && (
+            <>
+              <div className="flex items-center gap-2">
+                <Checkbox id="select-all-page" checked={allPageSelected} onCheckedChange={toggleSelectAll} />
+                <label htmlFor="select-all-page" className="text-sm cursor-pointer select-none">
+                  Select all on page
+                </label>
+              </div>
+
+              {selectedIds.size > 0 && (
+                <span className="text-sm text-muted-foreground">{selectedIds.size} selected</span>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={selectedIds.size === 0}
+                onClick={() => setBulkActionDialog('block')}
+                className="gap-1"
+              >
+                <ShieldAlert className="h-4 w-4" />
+                Block
+              </Button>
+
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={selectedIds.size === 0}
+                  onClick={() => setBulkActionDialog('delete')}
+                  className="gap-1 text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </Button>
+              )}
+
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setBulkMode(false)
+                  setSelectedIds(new Set())
+                }}
+              >
+                Cancel
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Top pagination */}
+      {pagedData && pagedData.total > pageSize && (
+        <BrowsePagination
+          currentPage={browsePage}
+          totalPages={totalPages}
+          totalItems={pagedData.total}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
+        />
+      )}
+
       {/* Results */}
       {isLoading ? (
         viewMode === 'grid' ? (
@@ -488,7 +762,33 @@ export function BrowseTab() {
             <ContentGrid>
               {contentItems.map((item) => {
                 const isSelected = selectedItemId === item.id
-                return (
+                const isBulkSelected = selectedIds.has(item.id)
+                return bulkMode ? (
+                  <div
+                    key={item.id}
+                    className={`relative rounded-xl transition-all ${isBulkSelected ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''}`}
+                  >
+                    {/* Full-area click capture — sits above card, below checkbox */}
+                    <div
+                      className="absolute inset-0 z-10 cursor-pointer"
+                      onClick={() => toggleItemSelection(item.id)}
+                    />
+                    <div className="absolute top-2 left-2 z-20">
+                      <Checkbox
+                        checked={isBulkSelected}
+                        onCheckedChange={() => toggleItemSelection(item.id)}
+                        className="bg-background/80 backdrop-blur-sm border-white/60"
+                      />
+                    </div>
+                    <ContentCard
+                      item={item}
+                      variant="grid"
+                      showEdit={false}
+                      onNavigate={undefined}
+                      isSelected={false}
+                    />
+                  </div>
+                ) : (
                   <ContentCard
                     key={item.id}
                     item={item}
@@ -506,7 +806,35 @@ export function BrowseTab() {
             <ContentList>
               {contentItems.map((item) => {
                 const isSelected = selectedItemId === item.id
-                return (
+                const isBulkSelected = selectedIds.has(item.id)
+                return bulkMode ? (
+                  <div
+                    key={item.id}
+                    className={`relative rounded-xl transition-all ${isBulkSelected ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''}`}
+                  >
+                    {/* Full-area click capture — sits above card, below checkbox */}
+                    <div
+                      className="absolute inset-0 z-10 cursor-pointer"
+                      onClick={() => toggleItemSelection(item.id)}
+                    />
+                    <div className="absolute top-1/2 left-3 z-20 -translate-y-1/2">
+                      <Checkbox
+                        checked={isBulkSelected}
+                        onCheckedChange={() => toggleItemSelection(item.id)}
+                        className="bg-background/80 backdrop-blur-sm border-white/60"
+                      />
+                    </div>
+                    <div className="pl-10">
+                      <ContentCard
+                        item={item}
+                        variant="list"
+                        showEdit={false}
+                        onNavigate={undefined}
+                        isSelected={false}
+                      />
+                    </div>
+                  </div>
+                ) : (
                   <ContentCard
                     key={item.id}
                     item={item}
@@ -522,41 +850,20 @@ export function BrowseTab() {
             </ContentList>
           )}
 
+          {/* Bottom pagination */}
           {pagedData && pagedData.total > pageSize && (
-            <div className="flex justify-center items-center gap-2 pt-4">
-              <Button
-                variant="outline"
-                size="icon"
-                disabled={browsePage === 1}
-                onClick={() => {
-                  updateUrl({ page: browsePage - 1 })
-                  window.scrollTo(0, 0)
-                }}
-                className="rounded-xl"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="px-4 text-sm text-muted-foreground">
-                Page {browsePage} of {Math.ceil(pagedData.total / pageSize)}
-              </span>
-              <Button
-                variant="outline"
-                size="icon"
-                disabled={!pagedData.has_more}
-                onClick={() => {
-                  updateUrl({ page: browsePage + 1 })
-                  window.scrollTo(0, 0)
-                }}
-                className="rounded-xl"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+            <BrowsePagination
+              currentPage={browsePage}
+              totalPages={totalPages}
+              totalItems={pagedData.total}
+              pageSize={pageSize}
+              onPageChange={handlePageChange}
+            />
           )}
         </>
       )}
 
-      {/* Admin block dialog */}
+      {/* Admin single-block dialog */}
       <Dialog
         open={!!blockTarget}
         onOpenChange={(open) => {
@@ -608,6 +915,63 @@ export function BrowseTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk block dialog */}
+      <AlertDialog open={bulkActionDialog === 'block'} onOpenChange={(open) => !open && setBulkActionDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Block {selectedIds.size} item{selectedIds.size !== 1 ? 's' : ''}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              These items will be hidden from all regular users. You can unblock them later from the Blocked Content
+              view.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="bulk-block-reason">Reason (optional)</Label>
+            <Input
+              id="bulk-block-reason"
+              placeholder="e.g. Copyright violation, inappropriate content..."
+              value={bulkBlockReason}
+              onChange={(e) => setBulkBlockReason(e.target.value)}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setBulkBlockReason('')}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={bulkBlockMutation.isPending}
+              onClick={() => bulkBlockMutation.mutate({ ids: Array.from(selectedIds), reason: bulkBlockReason })}
+            >
+              {bulkBlockMutation.isPending ? 'Blocking...' : 'Confirm Block'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk delete dialog */}
+      <AlertDialog open={bulkActionDialog === 'delete'} onOpenChange={(open) => !open && setBulkActionDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedIds.size} item{selectedIds.size !== 1 ? 's' : ''}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. These items and all their associated data will be permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={bulkDeleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => bulkDeleteMutation.mutate(Array.from(selectedIds))}
+            >
+              {bulkDeleteMutation.isPending ? 'Deleting...' : 'Confirm Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

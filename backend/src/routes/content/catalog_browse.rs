@@ -703,11 +703,12 @@ pub async fn get_media_detail(
         Option<String>,
         bool,
         Option<String>,
+        bool,
     )> = sqlx::query_as(
         r#"SELECT m.id, m.title, m.type, m.year, m.description, m.status,
                       m.runtime_minutes::text, m.original_language, m.adult,
                       m.release_date::text, m.end_date::text, m.tagline,
-                      m.is_blocked, m.block_reason
+                      m.is_blocked, m.block_reason, m.is_add_title_to_poster
                FROM media m WHERE m.id = $1"#,
     )
     .bind(media_id)
@@ -741,6 +742,7 @@ pub async fn get_media_detail(
         tagline,
         is_blocked,
         block_reason,
+        is_add_title_to_poster,
     ) = row;
 
     // Hard-block media whose title matches the global keyword filter.
@@ -920,6 +922,7 @@ pub async fn get_media_detail(
         "seasons": seasons_value,
         "is_blocked": is_blocked,
         "block_reason": block_reason,
+        "is_add_title_to_poster": is_add_title_to_poster,
     }))
     .into_response()
 }

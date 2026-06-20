@@ -132,6 +132,7 @@ export { imageUploadApi, type ImageUploadResponse } from './image-upload'
 export {
   rssApi,
   userRssApi,
+  adminRssApi,
   type RSSFeed,
   type RSSFeedCreate,
   type RSSFeedUpdate,
@@ -147,6 +148,7 @@ export {
   type RSSSchedulerStatus,
   type ScrapeResult,
   type BulkStatusResult,
+  type PendingRSSFeed,
 } from './rss'
 export {
   metricsApi,

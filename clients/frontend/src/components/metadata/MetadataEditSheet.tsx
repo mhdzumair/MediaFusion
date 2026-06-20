@@ -33,6 +33,7 @@ import {
   FileText,
   Shield,
 } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useCreateSuggestion, useCatalogItem, type CatalogType } from '@/hooks'
 import type { EditableField } from '@/lib/api/suggestions'
@@ -87,6 +88,7 @@ type FieldName =
   | 'parental_certificate'
   | 'catalogs'
   | 'nudity_status'
+  | 'is_add_title_to_poster'
 
 interface FieldState {
   value: string
@@ -305,6 +307,11 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
       nudity_status: {
         value: metadata?.nudity || 'Unknown',
         original: metadata?.nudity || 'Unknown',
+        isModified: false,
+      },
+      is_add_title_to_poster: {
+        value: metadata?.is_add_title_to_poster ? 'true' : 'false',
+        original: metadata?.is_add_title_to_poster ? 'true' : 'false',
         isModified: false,
       },
     }
@@ -616,6 +623,26 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
                 </div>
 
                 <div className="space-y-3">
+                  <div className="flex items-center justify-between rounded-xl border px-3 py-2">
+                    <div>
+                      <Label className="text-xs">Sport Poster Style</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Overlay title text on a sports-themed poster image
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {fields.is_add_title_to_poster.isModified && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-primary/20 text-primary">
+                          Modified
+                        </Badge>
+                      )}
+                      <Switch
+                        checked={fields.is_add_title_to_poster.value === 'true'}
+                        onCheckedChange={(checked) => updateField('is_add_title_to_poster', checked ? 'true' : 'false')}
+                      />
+                    </div>
+                  </div>
+
                   <ImageUrlInput
                     label="Poster URL"
                     value={fields.poster.value}
