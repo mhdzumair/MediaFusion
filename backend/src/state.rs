@@ -271,14 +271,23 @@ pub async fn recompute_keyword_blocked(pool: &PgPool, version_tag: u64) {
         let result = sqlx::query(
             "UPDATE media
              SET is_keyword_blocked = (
-                 EXISTS (
-                     SELECT 1 FROM keyword_filters kf
-                     WHERE kf.is_active = true
-                       AND position(LOWER(kf.keyword) IN LOWER(media.title)) > 0
-                 )
-                 AND NOT EXISTS (
-                     SELECT 1 FROM keyword_whitelist kw
-                     WHERE position(LOWER(kw.phrase) IN LOWER(media.title)) > 0
+                 media.adult = true
+                 OR (
+                     EXISTS (
+                         SELECT 1 FROM keyword_filters kf
+                         WHERE kf.is_active = true
+                           AND (
+                               position(LOWER(kf.keyword) IN LOWER(media.title)) > 0
+                               OR (media.description IS NOT NULL
+                                   AND position(LOWER(kf.keyword) IN LOWER(media.description)) > 0)
+                           )
+                     )
+                     AND NOT EXISTS (
+                         SELECT 1 FROM keyword_whitelist kw
+                         WHERE position(LOWER(kw.phrase) IN LOWER(media.title)) > 0
+                            OR (media.description IS NOT NULL
+                                AND position(LOWER(kw.phrase) IN LOWER(media.description)) > 0)
+                     )
                  )
              )
              WHERE id > $1 AND id <= $2",
@@ -321,9 +330,6 @@ pub async fn recompute_keyword_blocked(pool: &PgPool, version_tag: u64) {
 /// stored in `keyword_sync_state`.  On a normal restart with unchanged keywords
 /// this is a single cheap SELECT and the heavy UPDATE is skipped entirely.
 pub async fn maybe_recompute_keyword_blocked(pool: &PgPool, kf: &KeywordFilterCache) {
-    if kf.keywords.is_empty() {
-        return;
-    }
     let ver = kf.version_tag();
     let ver_str = format!("{:016x}", ver);
 
