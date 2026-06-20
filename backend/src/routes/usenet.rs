@@ -363,7 +363,7 @@ async fn handle_provider(
         let result = match tokio::time::timeout(
             playback_dedup::holder_resolve_timeout(),
             dispatch(
-                &state.debrid_http,
+                state.debrid_http_for_provider(provider_name),
                 &state.config,
                 &state.pool_ro,
                 provider_name,

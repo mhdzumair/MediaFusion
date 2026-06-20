@@ -88,6 +88,11 @@ pub struct AppState {
     pub http: reqwest::Client,
     /// Longer-timeout client for debrid playback resolution.
     pub debrid_http: reqwest::Client,
+    /// No-proxy variants of the above; `Some` only when a proxy is configured and
+    /// `REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS` is non-empty. Used by helper
+    /// methods so excluded providers always connect directly.
+    http_no_proxy: Option<reqwest::Client>,
+    debrid_http_no_proxy: Option<reqwest::Client>,
     /// HTTP request metrics collector.
     pub metrics: Arc<Metrics>,
     /// Optional Telegram MTProto client for live scraping (Phase 2c).
@@ -149,6 +154,19 @@ impl AppState {
         let http = crate::util::http::build(config.requests_proxy_url.as_deref(), config.tcp_keepalive_secs);
         let debrid_http = crate::util::http::build_debrid(config.requests_proxy_url.as_deref(), config.tcp_keepalive_secs);
 
+        // Build no-proxy variants only when a proxy is configured AND there are
+        // excluded providers — otherwise None (no allocation, no memory waste).
+        let (http_no_proxy, debrid_http_no_proxy) = if config.requests_proxy_url.is_some()
+            && !config.requests_proxy_exclude_debrid_providers.is_empty()
+        {
+            (
+                Some(crate::util::http::build(None, config.tcp_keepalive_secs)),
+                Some(crate::util::http::build_debrid(None, config.tcp_keepalive_secs)),
+            )
+        } else {
+            (None, None)
+        };
+
         let telegram = crate::scrapers::telegram::init_client(&config).await;
 
         // Load keyword cache — sync_keywords_from_file is called after
@@ -165,10 +183,40 @@ impl AppState {
             tvdb_jwt_cache,
             http,
             debrid_http,
+            http_no_proxy,
+            debrid_http_no_proxy,
             metrics: Metrics::new(),
             telegram,
             keyword_filters,
         }))
+    }
+
+    /// Returns the appropriate general HTTP client for a debrid provider.
+    /// Excluded providers (via `REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS`) use the
+    /// no-proxy client so their traffic bypasses the gost/WARP tunnel directly.
+    pub fn http_for_provider(&self, provider_id: &str) -> &reqwest::Client {
+        if let Some(ref c) = self.http_no_proxy {
+            if self.config.requests_proxy_exclude_debrid_providers
+                .iter()
+                .any(|id| id == provider_id)
+            {
+                return c;
+            }
+        }
+        &self.http
+    }
+
+    /// Returns the appropriate long-timeout debrid HTTP client for a provider.
+    pub fn debrid_http_for_provider(&self, provider_id: &str) -> &reqwest::Client {
+        if let Some(ref c) = self.debrid_http_no_proxy {
+            if self.config.requests_proxy_exclude_debrid_providers
+                .iter()
+                .any(|id| id == provider_id)
+            {
+                return c;
+            }
+        }
+        &self.debrid_http
     }
 }
 

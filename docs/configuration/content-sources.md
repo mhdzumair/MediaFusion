@@ -83,9 +83,11 @@ Used for public indexers that require JavaScript or Cloudflare bypass:
 
 | Variable | Default | Description |
 |---|---|---|
-| `REQUESTS_PROXY_URL` | `None` | Route all outbound HTTP requests through this proxy |
-| `REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS` | `[]` | List of provider names to bypass the proxy (direct egress) |
+| `REQUESTS_PROXY_URL` | `None` | Route all outbound HTTP (scrapers + debrid API calls) through this proxy |
+| `REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS` | `[]` | Comma-separated (or JSON array) debrid provider IDs that bypass the proxy and connect directly. E.g. `realdebrid,torbox`. Valid IDs: `realdebrid`, `seedr`, `debridlink`, `alldebrid`, `offcloud`, `pikpak`, `torbox`, `premiumize`, `stremthru`, `easydebrid`, `debrider`. |
 | `SCRAPLING_PROXY_URL` | `None` | Separate proxy for browser-based scraping |
+| `TCP_KEEPALIVE_SECS` | `15` | TCP keepalive interval for all outbound HTTP clients (seconds). Keeps the proxy tunnel's NAT/conntrack mappings alive during idle periods. |
+| `EGRESS_WATCHDOG_ENABLED` | `true` | Restart the pod when sustained egress loss is detected (see [env reference](../reference/env-reference.md#http-client--egress)). |
 
 ## Scheduler control
 

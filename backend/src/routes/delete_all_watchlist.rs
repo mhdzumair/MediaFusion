@@ -110,27 +110,27 @@ pub async fn delete_all_for_service(
 
     match service {
         "realdebrid" => {
-            providers::torrents::realdebrid::delete_all_torrents(&state.http, token).await
+            providers::torrents::realdebrid::delete_all_torrents(state.http_for_provider("realdebrid"), token).await
         }
         "alldebrid" => {
-            providers::torrents::alldebrid::delete_all_torrents(&state.http, token).await
+            providers::torrents::alldebrid::delete_all_torrents(state.http_for_provider("alldebrid"), token).await
         }
         "premiumize" => {
-            providers::torrents::premiumize::delete_all_torrents(&state.http, token).await
+            providers::torrents::premiumize::delete_all_torrents(state.http_for_provider("premiumize"), token).await
         }
         "debridlink" => {
-            providers::torrents::debridlink::delete_all_torrents(&state.http, token).await
+            providers::torrents::debridlink::delete_all_torrents(state.http_for_provider("debridlink"), token).await
         }
-        "torbox" => providers::torrents::torbox::delete_all_torrents(&state.http, token).await,
+        "torbox" => providers::torrents::torbox::delete_all_torrents(state.http_for_provider("torbox"), token).await,
         "stremthru" => {
-            providers::torrents::stremthru::delete_all_torrents(&state.http, token).await
+            providers::torrents::stremthru::delete_all_torrents(state.http_for_provider("stremthru"), token).await
         }
-        "offcloud" => providers::torrents::offcloud::delete_all_torrents(&state.http, token).await,
+        "offcloud" => providers::torrents::offcloud::delete_all_torrents(state.http_for_provider("offcloud"), token).await,
         "easydebrid" => {
-            providers::torrents::easydebrid::delete_all_torrents(&state.http, token).await
+            providers::torrents::easydebrid::delete_all_torrents(state.http_for_provider("easydebrid"), token).await
         }
-        "seedr" => providers::torrents::seedr::delete_all_torrents(&state.http, token).await,
-        "pikpak" => providers::torrents::pikpak::delete_all_torrents(&state.http, token).await,
+        "seedr" => providers::torrents::seedr::delete_all_torrents(state.http_for_provider("seedr"), token).await,
+        "pikpak" => providers::torrents::pikpak::delete_all_torrents(state.http_for_provider("pikpak"), token).await,
         "qbittorrent" => {
             let cfg = provider.qbittorrent_config.as_ref().ok_or_else(|| {
                 providers::ProviderError::api(

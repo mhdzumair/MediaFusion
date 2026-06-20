@@ -105,7 +105,20 @@ These 4 variables must be set before MediaFusion will start:
 | `MEDIAFUSION_SECRET_STR` | — | Optional secret string for authenticated scraping from the peer instance. |
 | `BYPARR_URL` | — | [Byparr](https://github.com/ThePhaseless/Byparr) (FlareSolverr-compatible) base URL. When set, Cloudflare-protected indexers are fetched via Byparr. |
 | `BROWSERLESS_URL` | — | Browserless v2 base URL (e.g. `http://browserless:3000`) for JS-heavy scrapers. |
-| `REQUESTS_PROXY_URL` | — | HTTP proxy for all outbound scraper requests. |
+| `REQUESTS_PROXY_URL` | — | HTTP proxy for all outbound scraper requests (and debrid API calls). Set to your gost/WARP tunnel URL. |
+| `REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS` | `[]` | Comma-separated (or JSON array) list of debrid provider IDs that bypass `REQUESTS_PROXY_URL` and connect directly. Valid IDs: `realdebrid`, `seedr`, `debridlink`, `alldebrid`, `offcloud`, `pikpak`, `torbox`, `premiumize`, `stremthru`, `easydebrid`, `debrider`. |
+
+---
+
+## HTTP Client & Egress
+
+| Variable | Default | Description |
+|---|---|---|
+| `TCP_KEEPALIVE_SECS` | `15` | TCP keepalive probe interval (seconds) for all outbound HTTP clients. Keeps NAT/conntrack mappings alive through tunnel proxies (gost, WARP) and enables the OS to detect stale sockets before they are reused. |
+| `EGRESS_WATCHDOG_ENABLED` | `true` | Enable the egress self-heal watchdog. When all probe targets fail for `EGRESS_WATCHDOG_FAIL_THRESHOLD` consecutive cycles the process exits so k8s can restart the pod and re-establish the tunnel. |
+| `EGRESS_WATCHDOG_INTERVAL_SECS` | `30` | Seconds between watchdog probe cycles. |
+| `EGRESS_WATCHDOG_FAIL_THRESHOLD` | `5` | Consecutive fully-failed cycles before the watchdog triggers a restart (~2.5 min at the default interval). |
+| `EGRESS_WATCHDOG_PROBE_URLS` | *(built-in)* | Comma-separated list of URLs probed each cycle. Defaults to `api.real-debrid.com`, `api.alldebrid.com`, and `1.1.1.1`. A cycle counts as failed only when **all** targets return a transport error — a single-provider outage or HTTP 4xx/5xx never trips the watchdog. |
 
 ---
 

@@ -415,7 +415,7 @@ async fn resolve_playback_url(
     });
     let fwd = forward.as_ref();
 
-    let http = &state.debrid_http;
+    let http = state.debrid_http_for_provider(&provider.service);
 
     // Dispatch to provider — realdebrid returns (url, files); others just url.
     //

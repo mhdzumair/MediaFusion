@@ -350,6 +350,10 @@ pub struct AppConfig {
     pub branding_description: String,
 
     // ── HTTP client / egress ──────────────────────────────────────
+    /// Provider service IDs that bypass `REQUESTS_PROXY_URL` and connect directly.
+    /// Comma-separated or JSON array. Valid IDs: realdebrid, seedr, debridlink, alldebrid,
+    /// offcloud, pikpak, torbox, premiumize, stremthru, easydebrid, debrider.
+    pub requests_proxy_exclude_debrid_providers: Vec<String>,
     /// TCP keepalive probe interval for all outbound HTTP clients (seconds). Default: 15.
     /// Keeps NAT/conntrack mappings alive through the gost tunnel during idle periods.
     pub tcp_keepalive_secs: u64,
@@ -821,6 +825,20 @@ impl AppConfig {
             premiumize_oauth_client_id: env("PREMIUMIZE_OAUTH_CLIENT_ID").ok().filter(|s| !s.is_empty()),
             premiumize_oauth_client_secret: env("PREMIUMIZE_OAUTH_CLIENT_SECRET").ok().filter(|s| !s.is_empty()),
             branding_description: env("BRANDING_DESCRIPTION").unwrap_or_default(),
+            requests_proxy_exclude_debrid_providers: env("REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS")
+                .ok()
+                .map(|s| {
+                    // Accept either a JSON array or a comma-separated string.
+                    if let Ok(v) = serde_json::from_str::<Vec<String>>(&s) {
+                        v.into_iter().map(|x| x.to_lowercase()).collect()
+                    } else {
+                        s.split(',')
+                            .map(|x| x.trim().to_lowercase())
+                            .filter(|x| !x.is_empty())
+                            .collect()
+                    }
+                })
+                .unwrap_or_default(),
             tcp_keepalive_secs: env("TCP_KEEPALIVE_SECS")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(15),
             egress_watchdog_enabled: env("EGRESS_WATCHDOG_ENABLED")
