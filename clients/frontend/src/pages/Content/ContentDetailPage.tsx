@@ -107,7 +107,11 @@ interface StreamActionDialogProps {
   selectedProvider?: string | null // Currently selected provider service name
   hasMediaflowProxy: boolean // Whether MediaFlow proxy is configured for in-browser playback
   onStreamDeleted?: () => void
-  onWatch?: (stream: CatalogStreamInfo, streamUrl: string, options?: { useTranscode?: boolean }) => void // Callback to open player at page level
+  onWatch?: (
+    stream: CatalogStreamInfo,
+    streamUrl: string,
+    options?: { useTranscode?: boolean; rawUrl?: string },
+  ) => void // Callback to open player at page level
 }
 
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
@@ -238,8 +242,11 @@ function StreamActionDialog({
   const youtubeVideoId = stream?.yt_id || stream?.ytId || null
 
   // Stream URL is pre-resolved from the API; YouTube streams may only provide yt_id/ytId
-  const streamUrl =
+  // browser_url is the MediaFlow-wrapped URL for in-browser playback (when web playback is enabled).
+  // url is the raw playback URL used for external players and downloads.
+  const rawStreamUrl =
     stream?.url || (isYoutubeStream && youtubeVideoId ? buildYouTubeWatchUrl(youtubeVideoId) : undefined)
+  const streamUrl = stream?.browser_url || rawStreamUrl
 
   // Check if this is a Telegram stream (doesn't require debrid)
   const isTelegramStream = stream?.stream_type === 'telegram'
@@ -280,12 +287,12 @@ function StreamActionDialog({
       })
     }
 
-    if (action === 'copy' && streamUrl) {
-      await navigator.clipboard.writeText(streamUrl)
+    if (action === 'copy' && rawStreamUrl) {
+      await navigator.clipboard.writeText(rawStreamUrl)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
-    } else if (action === 'download' && streamUrl) {
-      window.open(streamUrl, '_blank')
+    } else if (action === 'download' && rawStreamUrl) {
+      window.open(rawStreamUrl, '_blank')
       onOpenChange(false)
     }
   }
@@ -293,13 +300,13 @@ function StreamActionDialog({
   const handleWatch = (useTranscode = false) => {
     if (stream && streamUrl && onWatch) {
       onOpenChange(false) // Close stream action dialog
-      onWatch(stream, streamUrl, { useTranscode }) // Open player at page level
+      onWatch(stream, streamUrl, { useTranscode, rawUrl: rawStreamUrl }) // Open player at page level
     }
   }
 
   const handleDownload = () => {
-    if (streamUrl) {
-      window.open(streamUrl, '_blank')
+    if (rawStreamUrl) {
+      window.open(rawStreamUrl, '_blank')
       handleAction('download')
     }
   }
@@ -641,7 +648,13 @@ function StreamActionDialog({
                         </div>
 
                         {/* External Players */}
-                        <ExternalPlayerMenu streamUrl={streamUrl} className="rounded-xl justify-center w-full" />
+                        <ExternalPlayerMenu
+                          streamUrl={rawStreamUrl || streamUrl}
+                          mediaflowUrl={
+                            stream?.browser_url && stream.browser_url !== stream.url ? stream.browser_url : undefined
+                          }
+                          className="rounded-xl justify-center w-full"
+                        />
                       </>
                     ) : (
                       <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-sm">
@@ -674,8 +687,9 @@ function StreamActionDialog({
                       <Button
                         variant="outline"
                         onClick={async () => {
-                          // For torrent streams, copy info hash; for HTTP streams, copy URL
-                          const textToCopy = isTorrentStream && stream.info_hash ? stream.info_hash : streamUrl
+                          // For torrent streams, copy info hash; for HTTP streams, copy raw URL
+                          const textToCopy =
+                            isTorrentStream && stream.info_hash ? stream.info_hash : rawStreamUrl || streamUrl
                           await navigator.clipboard.writeText(textToCopy)
                           setCopied(true)
                           setTimeout(() => setCopied(false), 2000)
@@ -699,7 +713,13 @@ function StreamActionDialog({
 
                     {/* External Players - show prominently when no MediaFlow */}
                     {!hasMediaflowProxy && (
-                      <ExternalPlayerMenu streamUrl={streamUrl} className="rounded-xl justify-center w-full" />
+                      <ExternalPlayerMenu
+                        streamUrl={rawStreamUrl || streamUrl}
+                        mediaflowUrl={
+                          stream?.browser_url && stream.browser_url !== stream.url ? stream.browser_url : undefined
+                        }
+                        className="rounded-xl justify-center w-full"
+                      />
                     )}
                   </>
                 ) : (
@@ -732,7 +752,13 @@ function StreamActionDialog({
                         </div>
 
                         {/* External Players */}
-                        <ExternalPlayerMenu streamUrl={streamUrl} className="rounded-xl justify-center w-full" />
+                        <ExternalPlayerMenu
+                          streamUrl={rawStreamUrl || streamUrl}
+                          mediaflowUrl={
+                            stream?.browser_url && stream.browser_url !== stream.url ? stream.browser_url : undefined
+                          }
+                          className="rounded-xl justify-center w-full"
+                        />
 
                         <div className="grid grid-cols-2 gap-2">
                           <Button
@@ -748,7 +774,7 @@ function StreamActionDialog({
                           <Button
                             variant="outline"
                             onClick={async () => {
-                              await navigator.clipboard.writeText(streamUrl)
+                              await navigator.clipboard.writeText(rawStreamUrl || streamUrl)
                               setCopied(true)
                               setTimeout(() => setCopied(false), 2000)
                             }}
@@ -798,12 +824,12 @@ function StreamActionDialog({
                             : 'Configure a debrid provider to enable direct streaming and downloads.'}
                         </p>
                       </>
-                    ) : streamUrl ? (
+                    ) : rawStreamUrl ? (
                       <>
                         {/* HTTP stream without debrid - show URL copy option */}
                         <Button
                           onClick={async () => {
-                            await navigator.clipboard.writeText(streamUrl)
+                            await navigator.clipboard.writeText(rawStreamUrl)
                             setCopied(true)
                             setTimeout(() => setCopied(false), 2000)
                           }}
@@ -1452,14 +1478,16 @@ export function ContentDetailPage() {
 
   // Handle watch action - opens player at page level (outside of StreamActionDialog)
   const handleWatchStream = useCallback(
-    async (stream: CatalogStreamInfo, streamUrl: string, options?: { useTranscode?: boolean }) => {
+    async (stream: CatalogStreamInfo, streamUrl: string, options?: { useTranscode?: boolean; rawUrl?: string }) => {
       const transcodeUrl = canOfferTranscodeForStream(stream, streamUrl) ? buildTranscodeStreamUrl(streamUrl) : null
       const shouldUseTranscode = Boolean(options?.useTranscode && transcodeUrl)
       const finalStreamUrl = shouldUseTranscode && transcodeUrl ? transcodeUrl : streamUrl
+      // Use the raw (non-MediaFlow) URL for external players, copy, and download
+      const externalUrl = options?.rawUrl || streamUrl
 
       setPlayerStream(stream)
       setPlayerStreamUrl(finalStreamUrl)
-      setPlayerExternalStreamUrl(streamUrl)
+      setPlayerExternalStreamUrl(externalUrl)
       setPlayerTranscodeStreamUrl(transcodeUrl)
       setIsPlayingTranscodedStream(shouldUseTranscode)
       setWatchHistoryId(null) // Reset history ID

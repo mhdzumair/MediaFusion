@@ -218,6 +218,11 @@ export function PlayerDialog({
   const proxyHeaders = stream.behaviorHints?.proxyHeaders as { request?: Record<string, string> } | undefined
   const headers = proxyHeaders?.request
 
+  // mediaflowUrl for external player: when stream.url differs from externalStreamUrl,
+  // stream.url is the MediaFlow-wrapped URL and externalStreamUrl is the raw URL.
+  const externalPlayerMediaflowUrl =
+    externalStreamUrl && stream.url && externalStreamUrl !== stream.url ? stream.url : undefined
+
   // Prepare video sources
   const sources: VideoSource[] = [
     ...(stream.url
@@ -290,7 +295,11 @@ export function PlayerDialog({
                     Play via MediaFlow Transcode
                   </Button>
                 )}
-                <ExternalPlayerMenu streamUrl={actionableExternalStreamUrl} variant="prominent" />
+                <ExternalPlayerMenu
+                  streamUrl={actionableExternalStreamUrl}
+                  mediaflowUrl={externalPlayerMediaflowUrl}
+                  variant="prominent"
+                />
                 <Button
                   variant="ghost"
                   size="sm"
@@ -390,7 +399,7 @@ export function PlayerDialog({
                 )}
               </Button>
 
-              <ExternalPlayerMenu streamUrl={actionableExternalStreamUrl} />
+              <ExternalPlayerMenu streamUrl={actionableExternalStreamUrl} mediaflowUrl={externalPlayerMediaflowUrl} />
 
               <Button
                 variant="ghost"

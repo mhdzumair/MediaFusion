@@ -13,6 +13,7 @@ import { useToast } from '@/hooks'
 
 interface ExternalPlayerMenuProps {
   streamUrl: string
+  mediaflowUrl?: string // MediaFlow-wrapped URL; when provided, shows "via MediaFlow" options
   className?: string
   variant?: 'default' | 'prominent' // 'prominent' shows a bigger CTA style button
 }
@@ -94,9 +95,17 @@ function buildPlayerUrl(player: ExternalPlayer, streamUrl: string): string {
   }
 }
 
-export function ExternalPlayerMenu({ streamUrl, className, variant = 'default' }: ExternalPlayerMenuProps) {
+export function ExternalPlayerMenu({
+  streamUrl,
+  mediaflowUrl,
+  className,
+  variant = 'default',
+}: ExternalPlayerMenuProps) {
   const [copied, setCopied] = useState(false)
+  const [copiedMediaflow, setCopiedMediaflow] = useState(false)
   const { toast } = useToast()
+
+  const showMediaflowOptions = Boolean(mediaflowUrl && mediaflowUrl !== streamUrl)
 
   const handleCopyUrl = useCallback(async () => {
     try {
@@ -116,9 +125,29 @@ export function ExternalPlayerMenu({ streamUrl, className, variant = 'default' }
     }
   }, [streamUrl, toast])
 
+  const handleCopyMediaflowUrl = useCallback(async () => {
+    if (!mediaflowUrl) return
+    try {
+      await navigator.clipboard.writeText(mediaflowUrl)
+      setCopiedMediaflow(true)
+      toast({
+        title: 'MediaFlow URL Copied',
+        description: 'MediaFlow stream URL copied. Paste it into your preferred player.',
+      })
+      setTimeout(() => setCopiedMediaflow(false), 2000)
+    } catch {
+      toast({
+        title: 'Copy Failed',
+        description: 'Unable to copy URL. Please try again.',
+        variant: 'destructive',
+      })
+    }
+  }, [mediaflowUrl, toast])
+
   const handlePlayerClick = useCallback(
-    (player: ExternalPlayer) => {
-      const url = buildPlayerUrl(player, streamUrl)
+    (player: ExternalPlayer, useMediaflow = false) => {
+      const targetUrl = useMediaflow && mediaflowUrl ? mediaflowUrl : streamUrl
+      const url = buildPlayerUrl(player, targetUrl)
 
       // Use iframe-based approach for more reliable protocol handling
       // This is less likely to be blocked than link.click() or window.open()
@@ -172,7 +201,7 @@ export function ExternalPlayerMenu({ streamUrl, className, variant = 'default' }
         }
       }, 500)
     },
-    [streamUrl, toast, handleCopyUrl],
+    [streamUrl, mediaflowUrl, toast, handleCopyUrl],
   )
 
   const buttonClass =
@@ -188,28 +217,41 @@ export function ExternalPlayerMenu({ streamUrl, className, variant = 'default' }
           External Player
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
+      <DropdownMenuContent align="end" className="w-72 max-h-[min(480px,80vh)] overflow-y-auto">
         <DropdownMenuLabel>Open in External Player</DropdownMenuLabel>
         <DropdownMenuSeparator />
 
-        {/* Copy URL - Primary/most reliable option */}
+        {/* Copy URLs */}
         <DropdownMenuItem onClick={handleCopyUrl} className="flex items-center gap-2 cursor-pointer bg-muted/50">
           {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
           <div className="flex-1">
-            <p className="text-sm font-medium">Copy URL</p>
+            <p className="text-sm font-medium">Copy URL (Direct)</p>
             <p className="text-xs text-muted-foreground">Paste into any player (most reliable)</p>
           </div>
         </DropdownMenuItem>
 
+        {showMediaflowOptions && (
+          <DropdownMenuItem
+            onClick={handleCopyMediaflowUrl}
+            className="flex items-center gap-2 cursor-pointer bg-muted/50"
+          >
+            {copiedMediaflow ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+            <div className="flex-1">
+              <p className="text-sm font-medium">Copy URL (via MediaFlow)</p>
+              <p className="text-xs text-muted-foreground">Proxied through MediaFlow</p>
+            </div>
+          </DropdownMenuItem>
+        )}
+
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
-          Quick Launch (requires app installed)
+          Quick Launch — Direct (requires app installed)
         </DropdownMenuLabel>
 
         {EXTERNAL_PLAYERS.map((player) => (
           <DropdownMenuItem
             key={player.name}
-            onClick={() => handlePlayerClick(player)}
+            onClick={() => handlePlayerClick(player, false)}
             className="flex items-center gap-2 cursor-pointer"
           >
             {player.icon}
@@ -224,6 +266,35 @@ export function ExternalPlayerMenu({ streamUrl, className, variant = 'default' }
             )}
           </DropdownMenuItem>
         ))}
+
+        {showMediaflowOptions && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
+              Quick Launch — via MediaFlow
+            </DropdownMenuLabel>
+            {EXTERNAL_PLAYERS.map((player) => (
+              <DropdownMenuItem
+                key={`mf-${player.name}`}
+                onClick={() => handlePlayerClick(player, true)}
+                className="flex items-center gap-2 cursor-pointer"
+              >
+                {player.icon}
+                <div className="flex-1">
+                  <p className="text-sm">
+                    {player.name} <span className="text-xs text-primary">(MediaFlow)</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">{player.description}</p>
+                </div>
+                {player.requiresHandler && (
+                  <span title="Requires protocol handler">
+                    <AlertCircle className="h-3 w-3 text-muted-foreground" />
+                  </span>
+                )}
+              </DropdownMenuItem>
+            ))}
+          </>
+        )}
 
         <DropdownMenuSeparator />
         <div className="px-2 py-1.5">

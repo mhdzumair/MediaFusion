@@ -58,6 +58,7 @@ pub struct BrowseStreamRow {
     pub filename: Option<String>,
     pub file_size: Option<i64>,
     pub info_hash: Option<String>,
+    pub nzb_guid: Option<String>,
     pub yt_id: Option<String>,
     pub audio_formats: Option<String>,
     pub channels: Option<String>,

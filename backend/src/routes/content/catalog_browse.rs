@@ -35,9 +35,11 @@ use crate::{
         content::stream_rows::{
             format_size, BrowseStreamRow, STREAM_BASE_COLS, STREAM_LINK_AGG_COLS,
         },
+        stream::USENET_CAPABLE,
         user_library::extract_streaming_providers,
     },
     state::AppState,
+    util::mediaflow,
 };
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -1149,6 +1151,19 @@ pub async fn get_media_streams(
     } else {
         ud.quality_filter.clone()
     };
+
+    // MediaFlow configuration for web browser playback.
+    // web_playback_enabled is true only when MediaFlow is configured with enable_web_playback.
+    let mediaflow_web_config = ud.mediaflow_config.as_ref().and_then(|m| {
+        if m.enable_web_playback
+            && m.proxy_url.as_deref().filter(|s| !s.is_empty()).is_some()
+        {
+            Some(m)
+        } else {
+            None
+        }
+    });
+    let web_playback_enabled = mediaflow_web_config.is_some();
     let season = effective_season;
     let episode = effective_episode;
 
@@ -1182,6 +1197,7 @@ pub async fn get_media_streams(
             sf.filename,
             COALESCE(ts.total_size, sf.size) AS file_size,
             ts.info_hash,
+            us.nzb_guid,
             ys.video_id AS yt_id,
             {STREAM_LINK_AGG_COLS},
             ts.created_at
@@ -1192,6 +1208,7 @@ pub async fn get_media_streams(
               AND fml.season_number = $2
               AND fml.episode_number = $3
            LEFT JOIN torrent_stream ts ON ts.stream_id = s.id
+           LEFT JOIN usenet_stream us ON us.stream_id = s.id
            LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
            WHERE s.is_active = true
              AND s.is_blocked = false
@@ -1215,12 +1232,14 @@ pub async fn get_media_streams(
             (SELECT sf.filename FROM stream_file sf WHERE sf.stream_id = s.id LIMIT 1) AS filename,
             COALESCE(ts.total_size, sml.file_size) AS file_size,
             ts.info_hash,
+            us.nzb_guid,
             ys.video_id AS yt_id,
             {STREAM_LINK_AGG_COLS},
             ts.created_at
            FROM stream s
            JOIN stream_media_link sml ON sml.stream_id = s.id
            LEFT JOIN torrent_stream ts ON ts.stream_id = s.id
+           LEFT JOIN usenet_stream us ON us.stream_id = s.id
            LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
            WHERE sml.media_id = $1
              AND s.is_active = true
@@ -1428,27 +1447,50 @@ pub async fn get_media_streams(
                     )
                 };
 
-            // Build playback URL for torrent streams when a provider is configured
-            let playback_url = if rd_blocked {
+            // Build playback URL for torrent/usenet streams when a provider is configured
+            let raw_playback_url: Option<String> = if rd_blocked {
                 None
             } else if !secret_str.is_empty() {
-                if let (Some(ref svc), Some(ref hash)) = (&selected_provider, &r.info_hash) {
+                if let Some(ref svc) = selected_provider {
                     if r.stream_type == StreamType::Torrent {
-                        let filename = r.filename.as_deref().unwrap_or("");
-                        let base = match (params.season, params.episode) {
-                            (Some(s), Some(e)) => format!(
-                                "{}/streaming_provider/{}/playback/{}/{}/{}/{}",
-                                state.config.host_url, secret_str, svc, hash, s, e
-                            ),
-                            _ => format!(
-                                "{}/streaming_provider/{}/playback/{}/{}",
-                                state.config.host_url, secret_str, svc, hash
-                            ),
-                        };
-                        if filename.is_empty() {
-                            Some(base)
+                        if let Some(ref hash) = r.info_hash {
+                            let filename = r.filename.as_deref().unwrap_or("");
+                            let base = match (params.season, params.episode) {
+                                (Some(s), Some(e)) => format!(
+                                    "{}/streaming_provider/{}/playback/{}/{}/{}/{}",
+                                    state.config.host_url, secret_str, svc, hash, s, e
+                                ),
+                                _ => format!(
+                                    "{}/streaming_provider/{}/playback/{}/{}",
+                                    state.config.host_url, secret_str, svc, hash
+                                ),
+                            };
+                            if filename.is_empty() {
+                                Some(base)
+                            } else {
+                                Some(format!("{}/{}", base, urlencoding::encode(filename)))
+                            }
                         } else {
-                            Some(format!("{}/{}", base, urlencoding::encode(filename)))
+                            None
+                        }
+                    } else if r.stream_type == StreamType::Usenet {
+                        if let Some(ref guid) = r.nzb_guid {
+                            if USENET_CAPABLE.contains(&svc.as_str()) {
+                                match (params.season, params.episode) {
+                                    (Some(s), Some(e)) => Some(format!(
+                                        "{}/streaming_provider/{}/usenet/{}/{}/{}/{}",
+                                        state.config.host_url, secret_str, svc, guid, s, e
+                                    )),
+                                    _ => Some(format!(
+                                        "{}/streaming_provider/{}/usenet/{}/{}",
+                                        state.config.host_url, secret_str, svc, guid
+                                    )),
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
                         }
                     } else {
                         None
@@ -1460,12 +1502,31 @@ pub async fn get_media_streams(
                 None
             };
 
+            // Build browser_url by wrapping raw_playback_url through MediaFlow when configured.
+            // raw_playback_url is kept for external players; browser_url is for in-browser playback.
+            let browser_url: Option<String> = raw_playback_url.as_deref().and_then(|raw| {
+                mediaflow_web_config.and_then(|mf| {
+                    let proxy_url = mf.proxy_url.as_deref()?;
+                    mediaflow::encode_mediaflow_proxy_url(
+                        proxy_url,
+                        "/proxy/stream",
+                        Some(raw),
+                        std::collections::BTreeMap::new(),
+                        None,
+                        None,
+                        mf.api_password.as_deref(),
+                    )
+                    .ok()
+                })
+            });
+
             let output = json!({
                 "id": r.id,
                 "info_hash": r.info_hash,
                 "yt_id": r.yt_id,
                 "ytId": r.yt_id,
-                "url": playback_url,
+                "url": raw_playback_url,
+                "browser_url": browser_url,
                 "name": display_name,
                 "description": description,
                 "stream_name": r.name,
@@ -1619,7 +1680,7 @@ pub async fn get_media_streams(
         "episode": episode,
         "resolved_season": if catalog_type == "series" { season } else { None },
         "resolved_episode": if catalog_type == "series" { episode } else { None },
-        "web_playback_enabled": true,
+        "web_playback_enabled": web_playback_enabled,
         "streaming_providers": streaming_providers,
         "selected_provider": selected_provider,
         "profile_id": profile_id_val,

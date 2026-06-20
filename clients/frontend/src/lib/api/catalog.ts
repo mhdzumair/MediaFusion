@@ -162,7 +162,8 @@ export interface StreamInfo {
   // Stremio-compatible fields
   name: string // Formatted name with provider, resolution, status
   description?: string // Formatted description
-  url?: string // Playback URL (for debrid users)
+  url?: string // Raw playback URL (for external players and download)
+  browser_url?: string // MediaFlow-wrapped URL for in-browser playback (set when MediaFlow web playback is enabled)
   behavior_hints?: Record<string, unknown>
 
   // Rich metadata for frontend UI (v5 schema)
