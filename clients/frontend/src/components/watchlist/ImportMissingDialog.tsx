@@ -449,29 +449,33 @@ export function ImportMissingDialog({
       }
     })
 
-    const result = await importMutation.mutateAsync({
-      provider,
-      infoHashes: Array.from(selectedHashes),
-      profileId,
-      overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
-      isAnonymous,
-      anonymousDisplayName: normalizedAnonymousDisplayName,
-    })
+    try {
+      const result = await importMutation.mutateAsync({
+        provider,
+        infoHashes: Array.from(selectedHashes),
+        profileId,
+        overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
+        isAnonymous,
+        anonymousDisplayName: normalizedAnonymousDisplayName,
+      })
 
-    setImportResults(result.details)
+      setImportResults(result.details)
 
-    // Remove successfully imported hashes from selection and edits
-    const successHashes = new Set(result.details.filter((r) => r.status === 'success').map((r) => r.info_hash))
-    setSelectedHashes((prev) => {
-      const newSet = new Set(prev)
-      successHashes.forEach((h) => newSet.delete(h))
-      return newSet
-    })
-    setEdits((prev) => {
-      const newMap = new Map(prev)
-      successHashes.forEach((h) => newMap.delete(h))
-      return newMap
-    })
+      // Remove successfully imported hashes from selection and edits
+      const successHashes = new Set(result.details.filter((r) => r.status === 'success').map((r) => r.info_hash))
+      setSelectedHashes((prev) => {
+        const newSet = new Set(prev)
+        successHashes.forEach((h) => newSet.delete(h))
+        return newSet
+      })
+      setEdits((prev) => {
+        const newMap = new Map(prev)
+        successHashes.forEach((h) => newMap.delete(h))
+        return newMap
+      })
+    } catch {
+      // importMutation.error is set by TanStack Query; no additional state needed
+    }
   }
 
   const handleClose = () => {

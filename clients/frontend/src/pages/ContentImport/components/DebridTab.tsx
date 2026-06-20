@@ -551,28 +551,32 @@ export function DebridTab() {
       }
     })
 
-    const result = await importMutation.mutateAsync({
-      provider: selectedProvider,
-      infoHashes: Array.from(selectedHashes),
-      profileId: selectedProfileId,
-      overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
-      isAnonymous,
-      anonymousDisplayName: normalizedAnonymousDisplayName,
-    })
+    try {
+      const result = await importMutation.mutateAsync({
+        provider: selectedProvider,
+        infoHashes: Array.from(selectedHashes),
+        profileId: selectedProfileId,
+        overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
+        isAnonymous,
+        anonymousDisplayName: normalizedAnonymousDisplayName,
+      })
 
-    setImportResults(result.details)
+      setImportResults(result.details)
 
-    const successHashes = new Set(result.details.filter((r) => r.status === 'success').map((r) => r.info_hash))
-    setSelectedHashes((prev) => {
-      const newSet = new Set(prev)
-      successHashes.forEach((h) => newSet.delete(h))
-      return newSet
-    })
-    setEdits((prev) => {
-      const newMap = new Map(prev)
-      successHashes.forEach((h) => newMap.delete(h))
-      return newMap
-    })
+      const successHashes = new Set(result.details.filter((r) => r.status === 'success').map((r) => r.info_hash))
+      setSelectedHashes((prev) => {
+        const newSet = new Set(prev)
+        successHashes.forEach((h) => newSet.delete(h))
+        return newSet
+      })
+      setEdits((prev) => {
+        const newMap = new Map(prev)
+        successHashes.forEach((h) => newMap.delete(h))
+        return newMap
+      })
+    } catch {
+      // importMutation.error is set by TanStack Query; no additional state needed
+    }
   }
 
   // Reset selection when provider changes
@@ -592,6 +596,13 @@ export function DebridTab() {
         <span>Importing {selectedHashes.size} torrent(s)...</span>
       </div>
       <Progress value={undefined} className="h-1" />
+    </div>
+  ) : importMutation.isError ? (
+    <div className="flex items-center gap-2 text-sm text-destructive p-3 rounded-md bg-destructive/10">
+      <XCircle className="h-4 w-4 shrink-0" />
+      <span>
+        Import failed: {importMutation.error instanceof Error ? importMutation.error.message : 'Unknown error'}
+      </span>
     </div>
   ) : null
 

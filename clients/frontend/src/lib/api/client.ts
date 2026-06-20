@@ -150,7 +150,7 @@ class ApiClient {
     options: RequestInit & { useRawUrl?: boolean } = {},
     retry = true,
   ): Promise<T> {
-    const { useRawUrl, ...fetchOptions } = options
+    const { useRawUrl, signal: callerSignal, ...fetchOptions } = options
 
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -170,9 +170,13 @@ class ApiClient {
     // Use raw URL if specified (for admin routes, etc.), otherwise prepend API_BASE_URL
     const url = useRawUrl ? endpoint : `${API_BASE_URL}${endpoint}`
 
+    // Use caller-provided signal or default 120s timeout to prevent indefinite hangs
+    const signal = callerSignal ?? AbortSignal.timeout(120_000)
+
     const response = await fetch(url, {
       ...fetchOptions,
       headers,
+      signal,
     })
 
     // Handle Traefik-level 429 (proxy's own rate limiting, before our API)
@@ -273,10 +277,11 @@ class ApiClient {
     return this.request<T>(endpoint, { method: 'GET' })
   }
 
-  async post<T>(endpoint: string, data?: unknown): Promise<T> {
+  async post<T>(endpoint: string, data?: unknown, options?: Pick<RequestInit, 'signal'>): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
+      ...options,
     })
   }
 
@@ -302,7 +307,7 @@ class ApiClient {
   }
 
   // Multipart form data for file uploads
-  async upload<T>(endpoint: string, formData: FormData, retry = true): Promise<T> {
+  async upload<T>(endpoint: string, formData: FormData, retry = true, signal?: AbortSignal): Promise<T> {
     const headers: HeadersInit = {}
 
     if (this.accessToken) {
@@ -318,6 +323,7 @@ class ApiClient {
       method: 'POST',
       headers,
       body: formData,
+      signal: signal ?? AbortSignal.timeout(120_000),
     })
 
     // Handle Traefik-level 429

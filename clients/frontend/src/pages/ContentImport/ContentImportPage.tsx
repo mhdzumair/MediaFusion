@@ -184,9 +184,11 @@ export function ContentImportPage() {
   /** First enabled tab, used as the default active tab. */
   const defaultTab = useMemo(() => ALL_TABS.find(isTabEnabled) ?? 'magnet', [isTabEnabled])
 
-  const [activeTab, setActiveTab] = useState(
-    urlTab && ALL_TABS.includes(urlTab as (typeof ALL_TABS)[number]) ? urlTab : 'debrid',
-  )
+  const [activeTab, setActiveTab] = useState(() => {
+    if (urlTab && ALL_TABS.includes(urlTab as (typeof ALL_TABS)[number])) return urlTab
+    if (locationState?.prefillMagnet) return 'magnet'
+    return 'debrid'
+  })
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
 
   // Sync tab changes back to URL params

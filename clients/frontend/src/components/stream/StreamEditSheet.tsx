@@ -142,6 +142,7 @@ export function StreamEditSheet({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitResults, setSubmitResults] = useState<{ field: string; success: boolean }[]>([])
   const [languages, setLanguages] = useState<string[]>([])
+  const [hdrFormats, setHdrFormats] = useState<string[]>([])
   const { toast } = useToast()
 
   const createSuggestion = useCreateStreamSuggestion()
@@ -189,6 +190,7 @@ export function StreamEditSheet({
     setPrevCurrentValues(currentValues)
     setFields(getInitialFields())
     setLanguages(currentValues?.languages || [])
+    setHdrFormats(currentValues?.hdr_formats?.split('|').filter(Boolean) || [])
     setReason('')
     setSubmitResults([])
   }
@@ -210,12 +212,18 @@ export function StreamEditSheet({
     return JSON.stringify([...languages].sort()) !== JSON.stringify([...original].sort())
   }, [languages, currentValues?.languages])
 
+  // Track HDR format modifications
+  const hdrFormatsModified = useMemo(() => {
+    const original = currentValues?.hdr_formats?.split('|').filter(Boolean) || []
+    return JSON.stringify([...hdrFormats].sort()) !== JSON.stringify([...original].sort())
+  }, [hdrFormats, currentValues?.hdr_formats])
+
   // Calculate all modifications
   const modifiedFields = useMemo(() => {
     const result: { field: StreamFieldName; currentValue: string; newValue: string }[] = []
 
     Object.entries(fields).forEach(([key, state]) => {
-      if (state.isModified && key !== 'languages') {
+      if (state.isModified && key !== 'languages' && key !== 'hdr_formats') {
         result.push({ field: key as StreamFieldName, currentValue: state.original, newValue: state.value })
       }
     })
@@ -228,8 +236,16 @@ export function StreamEditSheet({
       })
     }
 
+    if (hdrFormatsModified) {
+      result.push({
+        field: 'hdr_formats',
+        currentValue: currentValues?.hdr_formats || '',
+        newValue: hdrFormats.join('|'),
+      })
+    }
+
     return result
-  }, [fields, languagesModified, currentValues, languages])
+  }, [fields, languagesModified, hdrFormatsModified, currentValues, languages, hdrFormats])
 
   const modifiedCount = modifiedFields.length
 
@@ -465,7 +481,25 @@ export function StreamEditSheet({
 
               <div className="grid grid-cols-2 gap-4">
                 {renderSelectField('codec', 'Codec', CODEC_OPTIONS, null)}
-                {renderSelectField('hdr_formats', 'HDR', HDR_OPTIONS, null)}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">HDR</Label>
+                    {hdrFormatsModified && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-emerald-500/20 text-emerald-400">
+                        Modified
+                      </Badge>
+                    )}
+                  </div>
+                  <MultiSelect
+                    options={HDR_OPTIONS.map((h) => ({ value: h, label: h }))}
+                    selected={hdrFormats}
+                    onChange={setHdrFormats}
+                    placeholder="Select HDR..."
+                    searchPlaceholder="Search HDR..."
+                    maxDisplayed={3}
+                    className={cn('rounded-xl', hdrFormatsModified && 'border-emerald-500/50 bg-emerald-500/5')}
+                  />
+                </div>
               </div>
             </div>
 

@@ -569,7 +569,10 @@ export const contentImportApi = {
    * Analyze a magnet link
    */
   analyzeMagnet: async (data: MagnetAnalyzeRequest): Promise<TorrentAnalyzeResponse> => {
-    const response = await apiClient.post<TorrentAnalyzeResponse>('/import/magnet/analyze', data)
+    // DHT resolution can take up to 30s; allow 90s total for network + processing overhead
+    const response = await apiClient.post<TorrentAnalyzeResponse>('/import/magnet/analyze', data, {
+      signal: AbortSignal.timeout(90_000),
+    })
     return normalizeTorrentAnalyzeResponse(response)
   },
 
@@ -590,7 +593,12 @@ export const contentImportApi = {
     if (options?.resolve_timeout_secs != null) {
       formData.append('resolve_timeout_secs', String(options.resolve_timeout_secs))
     }
-    const response = await apiClient.upload<TorrentAnalyzeResponse>('/import/torrent/analyze', formData)
+    const response = await apiClient.upload<TorrentAnalyzeResponse>(
+      '/import/torrent/analyze',
+      formData,
+      true,
+      AbortSignal.timeout(90_000),
+    )
     return normalizeTorrentAnalyzeResponse(response)
   },
 
