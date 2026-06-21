@@ -255,7 +255,19 @@ fn build_regex_pattern(terms: &[String]) -> Option<String> {
             for c in t.chars() {
                 if matches!(
                     c,
-                    '\\' | '.' | '^' | '$' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|'
+                    '\\' | '.'
+                        | '^'
+                        | '$'
+                        | '*'
+                        | '+'
+                        | '?'
+                        | '('
+                        | ')'
+                        | '['
+                        | ']'
+                        | '{'
+                        | '}'
+                        | '|'
                 ) {
                     out.push('\\');
                 }
@@ -400,9 +412,7 @@ pub async fn maybe_recompute_keyword_blocked(pool: &PgPool, kf: &KeywordFilterCa
     let pool = pool.clone();
     let keywords = kf.keywords.clone();
     let whitelist = kf.whitelist.clone();
-    tokio::spawn(
-        async move { recompute_keyword_blocked(&pool, ver, &keywords, &whitelist).await },
-    );
+    tokio::spawn(async move { recompute_keyword_blocked(&pool, ver, &keywords, &whitelist).await });
 }
 
 pub async fn load_keyword_filter_cache(pool: &PgPool) -> KeywordFilterCache {

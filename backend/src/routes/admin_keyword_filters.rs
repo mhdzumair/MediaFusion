@@ -140,9 +140,7 @@ async fn reload_cache(state: &AppState) {
         *w = new_cache;
     }
     let pool = state.pool.clone();
-    tokio::spawn(
-        async move { recompute_keyword_blocked(&pool, ver, &keywords, &whitelist).await },
-    );
+    tokio::spawn(async move { recompute_keyword_blocked(&pool, ver, &keywords, &whitelist).await });
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
