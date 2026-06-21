@@ -241,8 +241,47 @@ const KW_BLOCKED_RECOMPUTE_ID: &str = "keyword-blocked-recompute";
 ///
 /// Uses `SET LOCAL statement_timeout = 0` inside a transaction — the override is
 /// scoped to that transaction and never leaks to other pool connections.
-pub async fn recompute_keyword_blocked(pool: &PgPool, version_tag: u64) {
+/// Joins `terms` into a single POSIX regex alternation `(t1|t2|...)` with
+/// metacharacters escaped.  Returns `None` when the list is empty so callers
+/// can pass `NULL` to PostgreSQL and skip the pattern match entirely.
+fn build_regex_pattern(terms: &[String]) -> Option<String> {
+    if terms.is_empty() {
+        return None;
+    }
+    let escaped = terms
+        .iter()
+        .map(|t| {
+            let mut out = String::with_capacity(t.len() + 4);
+            for c in t.chars() {
+                if matches!(
+                    c,
+                    '\\' | '.' | '^' | '$' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|'
+                ) {
+                    out.push('\\');
+                }
+                out.push(c);
+            }
+            out
+        })
+        .collect::<Vec<_>>()
+        .join("|");
+    Some(format!("({escaped})"))
+}
+
+pub async fn recompute_keyword_blocked(
+    pool: &PgPool,
+    version_tag: u64,
+    keywords: &[String],
+    whitelist: &[String],
+) {
     let ver_str = format!("{:016x}", version_tag);
+
+    // Compile the full keyword/whitelist lists into single regex alternations once.
+    // PostgreSQL's NFA evaluates one pattern per row in O(len(text)) regardless of
+    // how many alternations are present — vastly cheaper than 1 position() call per
+    // keyword per row (1069 keywords × 500 rows = 534 500 substring scans/batch).
+    let kw_pattern: Option<String> = build_regex_pattern(keywords);
+    let wl_pattern: Option<String> = build_regex_pattern(whitelist);
 
     // Get the current max ID so we know when to stop.
     let max_id: i32 = match sqlx::query_scalar::<_, Option<i32>>("SELECT MAX(id) FROM media")
@@ -263,37 +302,47 @@ pub async fn recompute_keyword_blocked(pool: &PgPool, version_tag: u64) {
     // Batch the UPDATE to avoid holding a full-table lock for minutes, which deadlocks
     // concurrent scraper INSERTs/UPDATEs. Each small batch acquires and releases row locks
     // quickly, giving scrapers a chance to proceed between batches.
+    //
+    // Perf notes:
+    // - kw_pattern / wl_pattern are pre-compiled regex alternations passed as $3/$4.
+    //   One NFA evaluation per field per row instead of N_keywords position() calls.
+    // - LOWER() computed once per row in the `batch` CTE.
+    // - IS DISTINCT FROM skips unchanged rows, reducing write and WAL overhead.
+    // - NULL pattern ($3/$4) short-circuits the match entirely via IS NOT NULL guard.
     const BATCH_SIZE: i32 = 500;
     let mut from_id: i32 = 0;
 
     loop {
         let to_id = from_id + BATCH_SIZE;
         let result = sqlx::query(
-            "UPDATE media
-             SET is_keyword_blocked = (
-                 media.adult = true
-                 OR (
-                     EXISTS (
-                         SELECT 1 FROM keyword_filters kf
-                         WHERE kf.is_active = true
-                           AND (
-                               position(LOWER(kf.keyword) IN LOWER(media.title)) > 0
-                               OR (media.description IS NOT NULL
-                                   AND position(LOWER(kf.keyword) IN LOWER(media.description)) > 0)
-                           )
-                     )
-                     AND NOT EXISTS (
-                         SELECT 1 FROM keyword_whitelist kw
-                         WHERE position(LOWER(kw.phrase) IN LOWER(media.title)) > 0
-                            OR (media.description IS NOT NULL
-                                AND position(LOWER(kw.phrase) IN LOWER(media.description)) > 0)
-                     )
-                 )
+            "WITH batch AS (
+                 SELECT id,
+                        LOWER(title)                     AS ltitle,
+                        LOWER(COALESCE(description, '')) AS ldesc,
+                        adult
+                 FROM media
+                 WHERE id > $1 AND id <= $2
+             ),
+             computed AS (
+                 SELECT b.id,
+                        b.adult
+                        OR (
+                            $3::text IS NOT NULL
+                            AND (b.ltitle ~ $3 OR b.ldesc ~ $3)
+                            AND ($4::text IS NULL OR NOT (b.ltitle ~ $4 OR b.ldesc ~ $4))
+                        ) AS new_blocked
+                 FROM batch b
              )
-             WHERE id > $1 AND id <= $2",
+             UPDATE media m
+             SET is_keyword_blocked = c.new_blocked
+             FROM computed c
+             WHERE m.id = c.id
+               AND m.is_keyword_blocked IS DISTINCT FROM c.new_blocked",
         )
         .bind(from_id)
         .bind(to_id)
+        .bind(&kw_pattern)
+        .bind(&wl_pattern)
         .execute(pool)
         .await;
 
@@ -349,7 +398,11 @@ pub async fn maybe_recompute_keyword_blocked(pool: &PgPool, kf: &KeywordFilterCa
 
     tracing::info!("keyword blocked: version changed ({ver_str}), recomputing in background");
     let pool = pool.clone();
-    tokio::spawn(async move { recompute_keyword_blocked(&pool, ver).await });
+    let keywords = kf.keywords.clone();
+    let whitelist = kf.whitelist.clone();
+    tokio::spawn(
+        async move { recompute_keyword_blocked(&pool, ver, &keywords, &whitelist).await },
+    );
 }
 
 pub async fn load_keyword_filter_cache(pool: &PgPool) -> KeywordFilterCache {
@@ -506,7 +559,7 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
         whitelist: whitelist.clone(),
     }
     .version_tag();
-    recompute_keyword_blocked(pool, ver).await;
+    recompute_keyword_blocked(pool, ver, &keywords, &whitelist).await;
 
     tracing::info!(
         "keyword sync: done — {} keywords, {} whitelist phrases (hash {hash})",

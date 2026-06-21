@@ -134,11 +134,15 @@ pub struct WhitelistRow {
 async fn reload_cache(state: &AppState) {
     let new_cache = load_keyword_filter_cache(&state.pool).await;
     let ver = new_cache.version_tag();
+    let keywords = new_cache.keywords.clone();
+    let whitelist = new_cache.whitelist.clone();
     if let Ok(mut w) = state.keyword_filters.write() {
         *w = new_cache;
     }
     let pool = state.pool.clone();
-    tokio::spawn(async move { recompute_keyword_blocked(&pool, ver).await });
+    tokio::spawn(
+        async move { recompute_keyword_blocked(&pool, ver, &keywords, &whitelist).await },
+    );
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
