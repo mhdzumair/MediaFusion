@@ -83,14 +83,14 @@ jobs:
             platform: linux
             arch: amd64
             rust_target: x86_64-unknown-linux-gnu
-            zig_target: x86_64-unknown-linux-gnu.2.39
+            zig_target: x86_64-unknown-linux-gnu
             exe_suffix: ""
-            use_zigbuild: true
+            use_zigbuild: false  # native x86_64 runner on Ubuntu 24.04 (glibc 2.39) — ort requires 2.39 anyway, zigbuild adds no benefit
             jemalloc: true
-            tls_features: "tls-native,vendored-openssl"
+            tls_features: "tls-native"
             nsfw: true
-            openssl_include_dir: /usr/include
-            openssl_lib_dir: /usr/lib/x86_64-linux-gnu
+            openssl_include_dir: ""
+            openssl_lib_dir: ""
 
           - runner: ubuntu-24.04-arm
             label: linux-arm64
