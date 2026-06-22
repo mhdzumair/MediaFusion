@@ -495,6 +495,15 @@ export function StreamCard({
               RD block
             </Badge>
           )}
+          {stream.is_keyword_blocked && (
+            <Badge
+              variant="outline"
+              className="shrink-0 text-[10px] px-1.5 py-0 h-5 border-orange-500/40 text-orange-600 dark:text-orange-400 bg-orange-500/10"
+              title="This stream is blocked by a keyword filter and is not visible to regular users."
+            >
+              Keyword Blocked
+            </Badge>
+          )}
         </div>
 
         {/* Pre-formatted description from API */}

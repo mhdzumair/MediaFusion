@@ -9,6 +9,7 @@ pub mod integration_syncs;
 pub mod jackett_feed;
 pub mod m3u_import;
 pub mod pending_moderation_reminder;
+pub mod poster_nsfw_scan;
 pub mod prowlarr_feed;
 pub mod rss_feed;
 pub mod spiders;

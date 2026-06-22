@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { Sparkles, ChevronLeft, ChevronRight, Settings2, Loader2, Search, X } from 'lucide-react'
 import { useMutation } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
@@ -18,6 +18,7 @@ import { discoverDbKey } from '@/lib/api/discover'
 import type { MDBListItem } from '@/pages/Configure/components/types'
 import type { ImportProvider } from '@/lib/api/user-metadata'
 import { useDebounce } from '@/hooks/useDebounce'
+import { saveContentDetailReturnUrl } from '../browseNavigation'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -529,6 +530,7 @@ function SearchResultsInner({
 
 export function DiscoverTab() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { rpdbApiKey } = useRpdb()
 
   const { data: profiles } = useProfiles()
@@ -589,7 +591,10 @@ export function DiscoverTab() {
     },
   })
 
-  const handleNavigate = (mediaId: number, mediaType: string) => navigate(`/dashboard/content/${mediaType}/${mediaId}`)
+  const handleNavigate = (mediaId: number, mediaType: string) => {
+    saveContentDetailReturnUrl(location.pathname, location.search, 'Discover')
+    navigate(`/dashboard/content/${mediaType}/${mediaId}`)
+  }
 
   const rowProps = {
     onImport: (item: DiscoverItem) => importMutation.mutate(item),

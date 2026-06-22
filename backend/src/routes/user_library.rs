@@ -1243,16 +1243,19 @@ pub async fn get_missing_torrents(
     // Fetch all torrents for the provider. Providers that embed files in their list
     // (TorBox, AllDebrid, Debrid-Link) populate `raw`; RD leaves it Null and we
     // fetch file details separately.
-    let all_torrents =
-        match crate::providers::torrents::list_downloaded_torrents(&state.http, &provider, &token)
-            .await
-        {
-            Ok(t) => t,
-            Err(e) => {
-                e.log(&format!("get_missing_torrents {provider} list"));
-                return (e.http_status(), Json(json!({"detail": e.to_string()}))).into_response();
-            }
-        };
+    let all_torrents = match crate::providers::torrents::list_downloaded_torrents(
+        state.http_for_provider(&provider),
+        &provider,
+        &token,
+    )
+    .await
+    {
+        Ok(t) => t,
+        Err(e) => {
+            e.log(&format!("get_missing_torrents {provider} list"));
+            return (e.http_status(), Json(json!({"detail": e.to_string()}))).into_response();
+        }
+    };
 
     let all_hashes: Vec<String> = all_torrents.iter().map(|t| t.info_hash.clone()).collect();
     let existing: std::collections::HashSet<String> =
@@ -1269,18 +1272,20 @@ pub async fn get_missing_torrents(
     // For RD, fetch file details per-torrent (requires separate API calls).
     // For other providers, files are already in `t.raw`.
     let file_infos: Vec<serde_json::Value> = if provider == "realdebrid" {
-        let bearer =
-            match crate::providers::torrents::realdebrid::resolve_bearer(&state.http, &token).await
-            {
-                Ok(b) => b,
-                Err(e) => {
-                    e.log("get_missing_torrents rd bearer");
-                    return (e.http_status(), Json(json!({"detail": e.to_string()})))
-                        .into_response();
-                }
-            };
+        let bearer = match crate::providers::torrents::realdebrid::resolve_bearer(
+            state.http_for_provider("realdebrid"),
+            &token,
+        )
+        .await
+        {
+            Ok(b) => b,
+            Err(e) => {
+                e.log("get_missing_torrents rd bearer");
+                return (e.http_status(), Json(json!({"detail": e.to_string()}))).into_response();
+            }
+        };
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(6));
-        let http = state.http.clone();
+        let http = state.http_for_provider("realdebrid").clone();
         let bearer = std::sync::Arc::new(bearer);
         let futs: Vec<_> = missing_torrents
             .iter()
@@ -1379,7 +1384,7 @@ async fn resolve_import_file_data(
     use std::collections::HashMap;
     if provider == "realdebrid" {
         let bearer = match crate::providers::torrents::realdebrid::resolve_bearer(
-            &state.http,
+            state.http_for_provider("realdebrid"),
             token,
         )
         .await
@@ -1396,7 +1401,7 @@ async fn resolve_import_file_data(
                 continue;
             }
             if let Ok(info) = crate::providers::torrents::realdebrid::get_torrent_info(
-                &state.http,
+                state.http_for_provider("realdebrid"),
                 &bearer,
                 &t.id,
             )
@@ -1733,7 +1738,12 @@ async fn fetch_downloaded_torrents(
             "api_error.mp4",
         ));
     }
-    crate::providers::torrents::list_downloaded_torrents(&state.http, provider, token).await
+    crate::providers::torrents::list_downloaded_torrents(
+        state.http_for_provider(provider),
+        provider,
+        token,
+    )
+    .await
 }
 
 // ─── Remove / clear-all body shapes ─────────────────────────────────────────
@@ -2107,25 +2117,22 @@ pub async fn remove_torrent_from_debrid(
 
     use crate::providers::torrents;
 
+    let http = state.http_for_provider(provider.as_str());
     let result = match provider.as_str() {
         "realdebrid" => {
-            torrents::realdebrid::delete_torrent_by_hash(&state.http, &token, &info_hash).await
+            torrents::realdebrid::delete_torrent_by_hash(http, &token, &info_hash).await
         }
-        "alldebrid" => {
-            torrents::alldebrid::delete_torrent_by_hash(&state.http, &token, &info_hash).await
-        }
+        "alldebrid" => torrents::alldebrid::delete_torrent_by_hash(http, &token, &info_hash).await,
         "debridlink" => {
-            torrents::debridlink::delete_torrent_by_hash(&state.http, &token, &info_hash).await
+            torrents::debridlink::delete_torrent_by_hash(http, &token, &info_hash).await
         }
-        "torbox" => torrents::torbox::delete_torrent_by_hash(&state.http, &token, &info_hash).await,
-        "offcloud" => {
-            torrents::offcloud::delete_torrent_by_hash(&state.http, &token, &info_hash).await
-        }
+        "torbox" => torrents::torbox::delete_torrent_by_hash(http, &token, &info_hash).await,
+        "offcloud" => torrents::offcloud::delete_torrent_by_hash(http, &token, &info_hash).await,
         "premiumize" => {
-            torrents::premiumize::delete_torrent_by_hash(&state.http, &token, &info_hash).await
+            torrents::premiumize::delete_torrent_by_hash(http, &token, &info_hash).await
         }
-        "seedr" => torrents::seedr::delete_torrent_by_hash(&state.http, &token, &info_hash).await,
-        "pikpak" => torrents::pikpak::delete_torrent_by_hash(&state.http, &token, &info_hash).await,
+        "seedr" => torrents::seedr::delete_torrent_by_hash(http, &token, &info_hash).await,
+        "pikpak" => torrents::pikpak::delete_torrent_by_hash(http, &token, &info_hash).await,
         other => {
             return (
                 StatusCode::NOT_IMPLEMENTED,
@@ -2204,17 +2211,18 @@ pub async fn clear_all_torrents_from_debrid(
 
     use crate::providers::torrents;
 
+    let http = state.http_for_provider(provider.as_str());
     let result = match provider.as_str() {
-        "realdebrid" => torrents::realdebrid::delete_all_torrents(&state.http, &token).await,
-        "alldebrid" => torrents::alldebrid::delete_all_torrents(&state.http, &token).await,
-        "premiumize" => torrents::premiumize::delete_all_torrents(&state.http, &token).await,
-        "debridlink" => torrents::debridlink::delete_all_torrents(&state.http, &token).await,
-        "torbox" => torrents::torbox::delete_all_torrents(&state.http, &token).await,
-        "stremthru" => torrents::stremthru::delete_all_torrents(&state.http, &token).await,
-        "offcloud" => torrents::offcloud::delete_all_torrents(&state.http, &token).await,
-        "easydebrid" => torrents::easydebrid::delete_all_torrents(&state.http, &token).await,
-        "seedr" => torrents::seedr::delete_all_torrents(&state.http, &token).await,
-        "pikpak" => torrents::pikpak::delete_all_torrents(&state.http, &token).await,
+        "realdebrid" => torrents::realdebrid::delete_all_torrents(http, &token).await,
+        "alldebrid" => torrents::alldebrid::delete_all_torrents(http, &token).await,
+        "premiumize" => torrents::premiumize::delete_all_torrents(http, &token).await,
+        "debridlink" => torrents::debridlink::delete_all_torrents(http, &token).await,
+        "torbox" => torrents::torbox::delete_all_torrents(http, &token).await,
+        "stremthru" => torrents::stremthru::delete_all_torrents(http, &token).await,
+        "offcloud" => torrents::offcloud::delete_all_torrents(http, &token).await,
+        "easydebrid" => torrents::easydebrid::delete_all_torrents(http, &token).await,
+        "seedr" => torrents::seedr::delete_all_torrents(http, &token).await,
+        "pikpak" => torrents::pikpak::delete_all_torrents(http, &token).await,
         other => {
             return (
                 StatusCode::NOT_IMPLEMENTED,

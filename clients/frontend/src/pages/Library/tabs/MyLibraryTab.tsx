@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,11 +9,13 @@ import { Film, Tv, Radio, Search, SortAsc, Plus, Heart, Bookmark, ChevronLeft, C
 import { ContentCard, ContentGrid, type ContentCardData } from '@/components/content'
 import { useLibrary, useLibraryStats, useRemoveFromLibrary } from '@/hooks'
 import type { CatalogType } from '@/hooks'
+import { saveContentDetailReturnUrl } from '../browseNavigation'
 
 // Storage key for persisting selected item
 const LIBRARY_SELECTED_ITEM_KEY = 'my_library_selected_item'
 
 export function MyLibraryTab() {
+  const location = useLocation()
   const [catalogType, setCatalogType] = useState<CatalogType | ''>('')
   const [search, setSearch] = useState('')
   const [searchMode, setSearchMode] = useState<'title' | 'external_id'>('title')
@@ -70,6 +72,7 @@ export function MyLibraryTab() {
 
   // Store selected item when clicking on a card
   const handleCardClick = (item: ContentCardData) => {
+    saveContentDetailReturnUrl(location.pathname, location.search, 'My Library')
     sessionStorage.setItem(LIBRARY_SELECTED_ITEM_KEY, item.id.toString())
     setSelectedItemId(item.id)
   }

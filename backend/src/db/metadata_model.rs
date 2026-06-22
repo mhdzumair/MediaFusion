@@ -161,6 +161,11 @@ pub struct StoreMediaOpts {
     pub is_public: bool,
     /// When set, upsert this row instead of resolving by external id / title match.
     pub existing_media_id: Option<crate::db::MediaId>,
+    /// Enqueue a single-row NSFW poster scan after storing. Set to
+    /// `config.poster_nsfw_enabled` at the call site so `store_media` itself
+    /// remains config-agnostic. The periodic backfill will classify rows that
+    /// were added with this flag `false`.
+    pub nsfw_scan_on_import: bool,
 }
 
 impl Default for StoreMediaOpts {
@@ -171,6 +176,7 @@ impl Default for StoreMediaOpts {
             is_add_title_to_poster: false,
             is_public: true,
             existing_media_id: None,
+            nsfw_scan_on_import: false,
         }
     }
 }

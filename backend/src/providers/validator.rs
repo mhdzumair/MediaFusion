@@ -328,12 +328,23 @@ async fn validate_one(
 
 pub async fn validate_provider_credentials(
     http: &Client,
+    http_no_proxy: Option<&Client>,
+    excluded_services: &[String],
     user_data: &UserData,
     user_ip: Option<&str>,
     default_nzbdav: Option<&Value>,
 ) -> ValidationResult {
     for provider in user_data.get_active_providers(default_nzbdav) {
-        let result = validate_one(http, &provider, user_ip, default_nzbdav).await;
+        let client = if let Some(c) = http_no_proxy {
+            if excluded_services.iter().any(|e| e == &provider.service) {
+                c
+            } else {
+                http
+            }
+        } else {
+            http
+        };
+        let result = validate_one(client, &provider, user_ip, default_nzbdav).await;
         if !result.ok {
             return result;
         }

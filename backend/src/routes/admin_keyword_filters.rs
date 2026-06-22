@@ -24,7 +24,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;
 
-use crate::state::{load_keyword_filter_cache, recompute_keyword_blocked, AppState};
+use crate::state::{
+    load_keyword_filter_cache, recompute_keyword_blocked, recompute_stream_keyword_blocked,
+    AppState,
+};
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -78,6 +81,7 @@ pub struct KeywordListQuery {
     #[serde(default = "default_page_size")]
     pub page_size: i64,
     pub search: Option<String>,
+    pub scope: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -100,6 +104,12 @@ fn default_page_size() -> i64 {
 #[derive(Deserialize)]
 pub struct AddKeywordRequest {
     pub keyword: String,
+    #[serde(default = "default_scope")]
+    pub scope: String,
+}
+
+fn default_scope() -> String {
+    "all".to_string()
 }
 
 #[derive(Deserialize)]
@@ -110,7 +120,8 @@ pub struct AddPhraseRequest {
 
 #[derive(Deserialize)]
 pub struct ToggleRequest {
-    pub is_active: bool,
+    pub is_active: Option<bool>,
+    pub scope: Option<String>,
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -118,6 +129,7 @@ pub struct KeywordFilterRow {
     pub id: i32,
     pub keyword: String,
     pub is_active: bool,
+    pub scope: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -132,15 +144,25 @@ pub struct WhitelistRow {
 // ─── Reload cache helper ──────────────────────────────────────────────────────
 
 async fn reload_cache(state: &AppState) {
-    let new_cache = load_keyword_filter_cache(&state.pool).await;
-    let ver = new_cache.version_tag();
+    let mut new_cache = load_keyword_filter_cache(&state.pool).await;
+    new_cache.nsfw_filter_enabled = state.config.poster_nsfw_enabled;
+    let media_ver = new_cache.media_version_tag();
+    let stream_ver = new_cache.version_tag();
     let keywords = new_cache.keywords.clone();
+    let stream_kws = new_cache.stream_keywords.clone();
     let whitelist = new_cache.whitelist.clone();
+    let whitelist2 = whitelist.clone();
     if let Ok(mut w) = state.keyword_filters.write() {
         *w = new_cache;
     }
     let pool = state.pool.clone();
-    tokio::spawn(async move { recompute_keyword_blocked(&pool, ver, &keywords, &whitelist).await });
+    let pool2 = pool.clone();
+    tokio::spawn(async move {
+        recompute_keyword_blocked(&pool, media_ver, &keywords, &whitelist).await
+    });
+    tokio::spawn(async move {
+        recompute_stream_keyword_blocked(&pool2, stream_ver, &stream_kws, &whitelist2).await
+    });
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -173,38 +195,82 @@ pub async fn list_keyword_filters(
     let page_size = q.page_size.clamp(1, 500);
     let offset = (page - 1) * page_size;
 
-    let (items, total) = if let Some(ref search) = q.search {
-        let pattern = format!("%{}%", search.to_lowercase());
-        let total: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM keyword_filters WHERE LOWER(keyword) LIKE $1")
-                .bind(&pattern)
-                .fetch_one(&state.pool)
-                .await
-                .unwrap_or(0);
-        let items: Vec<KeywordFilterRow> = sqlx::query_as(
-            "SELECT id, keyword, is_active, created_at FROM keyword_filters WHERE LOWER(keyword) LIKE $1 ORDER BY keyword LIMIT $2 OFFSET $3",
-        )
-        .bind(&pattern)
-        .bind(page_size)
-        .bind(offset)
-        .fetch_all(&state.pool)
-        .await
-        .unwrap_or_default();
-        (items, total)
-    } else {
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM keyword_filters")
+    let (items, total) = match (&q.search, &q.scope) {
+        (Some(search), Some(scope)) => {
+            let pattern = format!("%{}%", search.to_lowercase());
+            let total: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM keyword_filters WHERE LOWER(keyword) LIKE $1 AND scope = $2",
+            )
+            .bind(&pattern)
+            .bind(scope)
             .fetch_one(&state.pool)
             .await
             .unwrap_or(0);
-        let items: Vec<KeywordFilterRow> = sqlx::query_as(
-            "SELECT id, keyword, is_active, created_at FROM keyword_filters ORDER BY keyword LIMIT $1 OFFSET $2",
-        )
-        .bind(page_size)
-        .bind(offset)
-        .fetch_all(&state.pool)
-        .await
-        .unwrap_or_default();
-        (items, total)
+            let items: Vec<KeywordFilterRow> = sqlx::query_as(
+                "SELECT id, keyword, is_active, scope, created_at FROM keyword_filters WHERE LOWER(keyword) LIKE $1 AND scope = $2 ORDER BY keyword LIMIT $3 OFFSET $4",
+            )
+            .bind(&pattern)
+            .bind(scope)
+            .bind(page_size)
+            .bind(offset)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
+            (items, total)
+        }
+        (Some(search), None) => {
+            let pattern = format!("%{}%", search.to_lowercase());
+            let total: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM keyword_filters WHERE LOWER(keyword) LIKE $1",
+            )
+            .bind(&pattern)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(0);
+            let items: Vec<KeywordFilterRow> = sqlx::query_as(
+                "SELECT id, keyword, is_active, scope, created_at FROM keyword_filters WHERE LOWER(keyword) LIKE $1 ORDER BY keyword LIMIT $2 OFFSET $3",
+            )
+            .bind(&pattern)
+            .bind(page_size)
+            .bind(offset)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
+            (items, total)
+        }
+        (None, Some(scope)) => {
+            let total: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM keyword_filters WHERE scope = $1")
+                    .bind(scope)
+                    .fetch_one(&state.pool)
+                    .await
+                    .unwrap_or(0);
+            let items: Vec<KeywordFilterRow> = sqlx::query_as(
+                "SELECT id, keyword, is_active, scope, created_at FROM keyword_filters WHERE scope = $1 ORDER BY keyword LIMIT $2 OFFSET $3",
+            )
+            .bind(scope)
+            .bind(page_size)
+            .bind(offset)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
+            (items, total)
+        }
+        (None, None) => {
+            let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM keyword_filters")
+                .fetch_one(&state.pool)
+                .await
+                .unwrap_or(0);
+            let items: Vec<KeywordFilterRow> = sqlx::query_as(
+                "SELECT id, keyword, is_active, scope, created_at FROM keyword_filters ORDER BY keyword LIMIT $1 OFFSET $2",
+            )
+            .bind(page_size)
+            .bind(offset)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
+            (items, total)
+        }
     };
 
     Json(json!({
@@ -249,10 +315,20 @@ pub async fn add_keyword_filter(
             .into_response();
     }
 
+    let scope = body.scope.trim().to_lowercase();
+    let scope = if matches!(scope.as_str(), "all" | "stream" | "media") {
+        scope
+    } else {
+        "all".to_string()
+    };
+
     let result: Result<KeywordFilterRow, sqlx::Error> = sqlx::query_as(
-        "INSERT INTO keyword_filters (keyword) VALUES ($1) RETURNING id, keyword, is_active, created_at",
+        "INSERT INTO keyword_filters (keyword, source, scope) VALUES ($1, 'admin', $2)
+         ON CONFLICT (LOWER(keyword)) DO UPDATE SET is_active = true, scope = EXCLUDED.scope
+         RETURNING id, keyword, is_active, scope, created_at",
     )
     .bind(&keyword)
+    .bind(&scope)
     .fetch_one(&state.pool)
     .await;
 
@@ -306,9 +382,14 @@ pub async fn toggle_keyword_filter(
     }
 
     let result: Option<KeywordFilterRow> = sqlx::query_as(
-        "UPDATE keyword_filters SET is_active = $1 WHERE id = $2 RETURNING id, keyword, is_active, created_at",
+        "UPDATE keyword_filters \
+         SET is_active = COALESCE($1, is_active), \
+             scope = COALESCE($2, scope) \
+         WHERE id = $3 \
+         RETURNING id, keyword, is_active, scope, created_at",
     )
     .bind(body.is_active)
+    .bind(&body.scope)
     .bind(id)
     .fetch_optional(&state.pool)
     .await
@@ -560,8 +641,10 @@ pub async fn reload_keyword_cache(
             .into_response();
     }
 
-    let new_cache = load_keyword_filter_cache(&state.pool).await;
+    let mut new_cache = load_keyword_filter_cache(&state.pool).await;
+    new_cache.nsfw_filter_enabled = state.config.poster_nsfw_enabled;
     let keywords_count = new_cache.keywords.len();
+    let stream_keywords_count = new_cache.stream_keywords.len();
     let whitelist_count = new_cache.whitelist.len();
     if let Ok(mut w) = state.keyword_filters.write() {
         *w = new_cache;
@@ -569,6 +652,7 @@ pub async fn reload_keyword_cache(
 
     Json(json!({
         "keywords_count": keywords_count,
+        "stream_keywords_count": stream_keywords_count,
         "whitelist_count": whitelist_count,
     }))
     .into_response()

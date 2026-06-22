@@ -3,7 +3,6 @@ use tracing::warn;
 
 use super::retry;
 use super::types::{nudity_statuses_from_filter, MediaId, MediaType, UserId};
-use crate::state::KeywordFilterCache;
 
 const LIMIT: i64 = 100;
 const WATCHLIST_LIMIT: i64 = 25;
@@ -57,11 +56,7 @@ pub struct CatalogQuery<'a> {
     pub user_id: Option<UserId>,
 }
 
-pub async fn get_catalog_items(
-    pool: &PgPool,
-    q: CatalogQuery<'_>,
-    kw: &KeywordFilterCache,
-) -> Vec<CatalogRow> {
+pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<CatalogRow> {
     let CatalogQuery {
         catalog_id,
         media_type,
@@ -80,13 +75,12 @@ pub async fn get_catalog_items(
 
     // my_library_* catalogs join through user_library_item instead of catalog/media_catalog_link.
     if catalog_id.starts_with("my_library_") {
-        return get_library_items(pool, mt, skip, nudity_excludes, cert_excludes, user_id, kw)
-            .await;
+        return get_library_items(pool, mt, skip, nudity_excludes, cert_excludes, user_id).await;
     }
 
     let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
     let ord = order_clause(sort, sort_dir);
-    let frag = kw.keyword_title_block_fragment();
+    let restriction = crate::state::restriction_fragment();
     let sql = format!(
         r#"
         SELECT
@@ -109,7 +103,6 @@ pub async fn get_catalog_items(
         ) mi ON true
         WHERE m.type = $2
           AND m.total_streams > 0
-          AND NOT m.is_blocked
           AND ($4::text IS NULL OR EXISTS (
               SELECT 1 FROM media_genre_link mgl
               JOIN genre g ON g.id = mgl.genre_id
@@ -123,7 +116,7 @@ pub async fn get_catalog_items(
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
               WHERE mpcl.media_id = m.id AND pc.name = ANY($6)
           ))
-        {frag}
+        {restriction}
         ORDER BY {ord}
         LIMIT {LIMIT} OFFSET $3
         "#
@@ -149,13 +142,12 @@ async fn get_library_items(
     nudity_excludes: &[String],
     cert_excludes: &[String],
     user_id: Option<UserId>,
-    kw: &KeywordFilterCache,
 ) -> Vec<CatalogRow> {
     let Some(uid) = user_id else {
         return vec![];
     };
     let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
-    let frag = kw.keyword_title_block_fragment();
+    let restriction = crate::state::restriction_fragment();
     let sql = format!(
         r#"
         SELECT
@@ -177,14 +169,13 @@ async fn get_library_items(
         ) mi ON true
         WHERE uli.user_id = $1
           AND m.type = $2
-          AND NOT m.is_blocked
           AND (cardinality($3::nuditystatus[]) = 0 OR m.nudity_status <> ALL($3))
           AND (cardinality($5::text[]) IS NULL OR NOT EXISTS (
               SELECT 1 FROM media_parental_certificate_link mpcl
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
               WHERE mpcl.media_id = m.id AND pc.name = ANY($5)
           ))
-        {frag}
+        {restriction}
         ORDER BY uli.added_at DESC
         LIMIT 100 OFFSET $4
         "#
@@ -214,7 +205,6 @@ pub async fn get_watchlist_items(
     cert_excludes: &[String],
     sort: &str,
     sort_dir: &str,
-    kw: &KeywordFilterCache,
 ) -> Vec<CatalogRow> {
     if info_hashes.is_empty() {
         return vec![];
@@ -229,7 +219,7 @@ pub async fn get_watchlist_items(
     let info_hashes_lower: Vec<String> = info_hashes.iter().map(|h| h.to_lowercase()).collect();
     let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
     let ord = order_clause(sort, sort_dir);
-    let frag = kw.keyword_title_block_fragment();
+    let restriction = crate::state::restriction_fragment();
     let sql = format!(
         r#"
         SELECT
@@ -253,7 +243,6 @@ pub async fn get_watchlist_items(
         ) mi ON true
         WHERE m.type = $1
           AND m.total_streams > 0
-          AND NOT m.is_blocked
           AND ts.info_hash = ANY($2)
           AND (cardinality($3::nuditystatus[]) = 0 OR m.nudity_status <> ALL($3))
           AND (cardinality($4::text[]) IS NULL OR NOT EXISTS (
@@ -261,7 +250,7 @@ pub async fn get_watchlist_items(
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
               WHERE mpcl.media_id = m.id AND pc.name = ANY($4)
           ))
-        {frag}
+        {restriction}
         GROUP BY m.id, m.type, m.title, m.year, m.end_date, m.description, mei.external_id, mi.url
         ORDER BY {ord}
         LIMIT {WATCHLIST_LIMIT} OFFSET $5
@@ -291,14 +280,13 @@ pub async fn search_metadata(
     skip: i64,
     nudity_excludes: &[String],
     cert_excludes: &[String],
-    kw: &KeywordFilterCache,
 ) -> Vec<CatalogRow> {
     let Some(mt) = MediaType::from_wire(media_type) else {
         return vec![];
     };
 
     let nudity_exclude_enums = nudity_statuses_from_filter(nudity_excludes);
-    let frag = kw.keyword_title_block_fragment();
+    let restriction = crate::state::restriction_fragment();
     let sql = format!(
         r#"
         SELECT
@@ -319,7 +307,6 @@ pub async fn search_metadata(
         ) mi ON true
         WHERE m.type = $1
           AND m.total_streams > 0
-          AND NOT m.is_blocked
           AND (cardinality($3::nuditystatus[]) = 0 OR m.nudity_status <> ALL($3))
           AND (cardinality($5::text[]) IS NULL OR NOT EXISTS (
               SELECT 1 FROM media_parental_certificate_link mpcl
@@ -341,7 +328,7 @@ pub async fn search_metadata(
               WHERE m3.title % $2
                 AND m3.type = $1
           )
-        {frag}
+        {restriction}
         ORDER BY
             ts_rank_cd(m.title_tsv, plainto_tsquery('simple', $2)) DESC,
             m.total_streams DESC
@@ -369,7 +356,6 @@ pub async fn get_mdblist_filtered_items(
     limit: i64,
     nudity_excludes: &[String],
     cert_excludes: &[String],
-    kw: &KeywordFilterCache,
 ) -> Vec<CatalogRow> {
     if imdb_ids.is_empty() {
         return vec![];
@@ -382,7 +368,7 @@ pub async fn get_mdblist_filtered_items(
         _ => return vec![],
     };
 
-    let frag = kw.keyword_title_block_fragment();
+    let restriction = crate::state::restriction_fragment();
     let sql = format!(
         r#"
         SELECT
@@ -411,7 +397,7 @@ pub async fn get_mdblist_filtered_items(
               JOIN parental_certificate pc ON pc.id = mpcl.certificate_id
               WHERE mpcl.media_id = m.id AND pc.name = ANY($4)
           ))
-        {frag}
+        {restriction}
         ORDER BY m.last_stream_added DESC NULLS LAST, m.id ASC
         LIMIT $5 OFFSET $6
         "#

@@ -1,0 +1,7 @@
+# Workaround: Android NDK's clang appears before Xcode's in PATH, so ring/aws-lc-sys
+# emit an NDK clang_rt search path that doesn't exist on Apple Silicon (darwin-x86_64
+# vs darwin-arm64). Point the linker at the correct Xcode clang_rt directory.
+[target.aarch64-apple-darwin]
+rustflags = [
+    "-L", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/17/lib/darwin",
+]

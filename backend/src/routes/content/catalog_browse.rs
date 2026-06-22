@@ -248,11 +248,10 @@ pub async fn search_catalog(
     let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    let kf = { state.keyword_filters.read().unwrap().clone() };
-    let kf_frag = kf.keyword_title_block_fragment();
+    let restriction = crate::state::restriction_fragment();
 
     let count_sql = format!(
-        "SELECT COUNT(*) FROM media m WHERE (m.title ILIKE $1) AND m.adult = false{kf_frag}"
+        "SELECT COUNT(*) FROM media m WHERE (m.title ILIKE $1) AND m.adult = false{restriction}"
     );
     let total: i64 = sqlx::query_scalar::<_, i64>(&count_sql)
         .bind(&q)
@@ -263,7 +262,7 @@ pub async fn search_catalog(
     let list_sql = format!(
         r#"SELECT m.id, m.title, m.type, m.year
            FROM media m
-           WHERE (m.title ILIKE $1) AND m.adult = false{kf_frag}
+           WHERE (m.title ILIKE $1) AND m.adult = false{restriction}
            ORDER BY m.title
            LIMIT $2 OFFSET $3"#
     );
@@ -349,9 +348,9 @@ pub async fn browse_catalog(
         .into_response();
     }
 
-    // Read keyword filter once (before any await, clone out to drop the lock).
-    let kf = { state.keyword_filters.read().unwrap().clone() };
-    let kf_ver = kf.version_tag();
+    // Keyword-filter version embeds into cache keys so adding/removing keywords
+    // automatically invalidates cached browse pages.
+    let kf_ver = state.keyword_filters.read().unwrap().version_tag();
 
     // Full-response cache (2 min TTL) — browse pages rarely change within a session.
     // Embed keyword-filter version so keyword changes invalidate cached pages.
@@ -416,7 +415,7 @@ pub async fn browse_catalog(
     let mut where_parts: Vec<String> = vec![
         "m.type = $1".to_string(),
         "m.adult = false".to_string(),
-        "m.is_blocked = false".to_string(),
+        "NOT (m.is_blocked OR (m.is_keyword_blocked AND NOT m.keyword_block_override) OR m.poster_nsfw_flagged)".to_string(),
     ];
 
     // Default: only released content (matches Python's include_upcoming=false default)
@@ -473,11 +472,6 @@ pub async fn browse_catalog(
         bind_idx += 1;
         where_parts.push(format!("m.id = ${bind_idx}"));
         external_id_media_bind = Some(mid);
-    }
-
-    let kw_frag = kf.keyword_title_block_fragment();
-    if !kw_frag.is_empty() {
-        where_parts.push("m.is_keyword_blocked = false".to_string());
     }
 
     let where_clause = where_parts.join(" AND ");
@@ -690,27 +684,23 @@ pub async fn get_media_detail(
     }
 
     // Fetch main media row
-    let media_row: Option<(
-        i32,
-        String,
-        MediaType,
-        Option<i32>,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        bool,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        bool,
-        Option<String>,
-        bool,
-    )> = sqlx::query_as(
-        r#"SELECT m.id, m.title, m.type, m.year, m.description, m.status,
-                      m.runtime_minutes::text, m.original_language, m.adult,
+    let media_row = sqlx::query(
+        r#"SELECT m.id, m.title, m.type::text AS media_type, m.year, m.description, m.status,
+                      m.runtime_minutes::text, m.original_language,
                       m.release_date::text, m.end_date::text, m.tagline,
-                      m.is_blocked, m.block_reason, m.is_add_title_to_poster
+                      m.is_blocked, m.block_reason, m.is_add_title_to_poster,
+                      m.is_keyword_blocked, m.keyword_block_override,
+                      m.poster_nsfw_score, m.poster_nsfw_flagged, m.poster_nsfw_reviewed,
+                      CASE WHEN m.is_keyword_blocked THEN (
+                          SELECT ARRAY_AGG(kf.keyword ORDER BY kf.keyword)
+                          FROM keyword_filters kf
+                          WHERE kf.is_active = true
+                            AND (
+                                position(LOWER(kf.keyword) IN LOWER(m.title)) > 0
+                                OR (m.description IS NOT NULL
+                                    AND position(LOWER(kf.keyword) IN LOWER(m.description)) > 0)
+                            )
+                      ) ELSE NULL END AS matched_keywords
                FROM media m WHERE m.id = $1"#,
     )
     .bind(media_id)
@@ -729,34 +719,48 @@ pub async fn get_media_detail(
         }
     };
 
-    let (
-        id,
-        title,
-        mtype,
-        year,
-        description,
-        status,
-        runtime_minutes,
-        original_language,
-        _adult,
-        release_date,
-        end_date,
-        tagline,
-        is_blocked,
-        block_reason,
-        is_add_title_to_poster,
-    ) = row;
+    use sqlx::Row as _;
+    let id: i32 = row.try_get("id").unwrap_or(0);
+    let title: String = row.try_get("title").unwrap_or_default();
+    let mtype: MediaType = row
+        .try_get::<String, _>("media_type")
+        .ok()
+        .and_then(|s| MediaType::from_wire(&s))
+        .unwrap_or(MediaType::Movie);
+    let year: Option<i32> = row.try_get("year").unwrap_or(None);
+    let description: Option<String> = row.try_get("description").unwrap_or(None);
+    let status: Option<String> = row.try_get("status").unwrap_or(None);
+    let runtime_minutes: Option<String> = row.try_get("runtime_minutes").unwrap_or(None);
+    let original_language: Option<String> = row.try_get("original_language").unwrap_or(None);
+    let release_date: Option<String> = row.try_get("release_date").unwrap_or(None);
+    let end_date: Option<String> = row.try_get("end_date").unwrap_or(None);
+    let tagline: Option<String> = row.try_get("tagline").unwrap_or(None);
+    let is_blocked: bool = row.try_get("is_blocked").unwrap_or(false);
+    let block_reason: Option<String> = row.try_get("block_reason").unwrap_or(None);
+    let is_add_title_to_poster: bool = row.try_get("is_add_title_to_poster").unwrap_or(false);
+    let is_keyword_blocked: bool = row.try_get("is_keyword_blocked").unwrap_or(false);
+    let keyword_block_override: bool = row.try_get("keyword_block_override").unwrap_or(false);
+    let poster_nsfw_score: Option<f32> = row.try_get("poster_nsfw_score").unwrap_or(None);
+    let poster_nsfw_flagged: bool = row.try_get("poster_nsfw_flagged").unwrap_or(false);
+    let poster_nsfw_reviewed: bool = row.try_get("poster_nsfw_reviewed").unwrap_or(false);
+    let matched_keywords: Vec<String> = row
+        .try_get::<Option<Vec<String>>, _>("matched_keywords")
+        .unwrap_or(None)
+        .unwrap_or_default();
 
-    // Hard-block media whose title matches the global keyword filter.
+    // Restriction gate: blocked/keyword-blocked/NSFW media is only visible to admins.
+    let is_admin =
+        crate::routes::auth_guard::decode_access_token(&headers, &state.config.secret_key_raw)
+            .map(|(_, role)| role == "admin")
+            .unwrap_or(false);
+    if (is_blocked || (is_keyword_blocked && !keyword_block_override) || poster_nsfw_flagged)
+        && !is_admin
     {
-        let kf = state.keyword_filters.read().unwrap();
-        if kf.matches_blocked_keyword(&title) {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({"detail": "Media not found"})),
-            )
-                .into_response();
-        }
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "Media not found"})),
+        )
+            .into_response();
     }
 
     // Parallel queries
@@ -923,8 +927,14 @@ pub async fn get_media_detail(
         "imdb_rating": imdb_rating,
         "seasons": seasons_value,
         "is_blocked": is_blocked,
+        "is_keyword_blocked": is_keyword_blocked,
+        "keyword_block_override": keyword_block_override,
+        "matched_keywords": matched_keywords,
         "block_reason": block_reason,
         "is_add_title_to_poster": is_add_title_to_poster,
+        "poster_nsfw_score": poster_nsfw_score,
+        "poster_nsfw_flagged": poster_nsfw_flagged,
+        "poster_nsfw_reviewed": poster_nsfw_reviewed,
     }))
     .into_response()
 }
@@ -1165,21 +1175,28 @@ pub async fn get_media_streams(
     let season = effective_season;
     let episode = effective_episode;
 
-    // Guard: don't serve streams for blocked or keyword-blocked media.
-    {
-        let blocked: bool = sqlx::query_scalar::<_, bool>(
-            "SELECT (is_blocked OR is_keyword_blocked) FROM media WHERE id = $1",
-        )
-        .bind(media_id)
-        .fetch_optional(&state.pool_ro)
-        .await
-        .unwrap_or(None)
-        .unwrap_or(false);
+    // Determine if the caller is a privileged user (admin or moderator) — used for both
+    // restricted-media gating and keyword-blocked stream visibility.
+    let is_privileged =
+        crate::routes::auth_guard::decode_access_token(&headers, &state.config.secret_key_raw)
+            .map(|(_, role)| matches!(role.as_str(), "admin" | "moderator"))
+            .unwrap_or(false);
 
-        if blocked {
+    // Guard: don't serve streams for restricted media (manual / keyword / NSFW).
+    // Admins can still retrieve streams for review on the detail page.
+    {
+        let restricted = crate::state::media_is_restricted(&state.pool_ro, media_id).await;
+        if restricted && !is_privileged {
             return Json(json!({ "streams": [] })).into_response();
         }
     }
+
+    // Privileged users see keyword-blocked streams; regular users do not.
+    let kw_filter = if is_privileged {
+        ""
+    } else {
+        "AND s.is_keyword_blocked = false"
+    };
 
     tracing::debug!(
         "get_media_streams: fetching streams for {catalog_type}/{media_id} season={season:?} episode={episode:?} stream_id={:?}",
@@ -1210,6 +1227,7 @@ pub async fn get_media_streams(
            LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
            WHERE s.is_active = true
              AND s.is_blocked = false
+             {kw_filter}
            ORDER BY s.id"#
         ))
         .bind(media_id)
@@ -1241,7 +1259,8 @@ pub async fn get_media_streams(
            LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
            WHERE sml.media_id = $1
              AND s.is_active = true
-             AND s.is_blocked = false"#
+             AND s.is_blocked = false
+             {kw_filter}"#
         ))
         .bind(media_id)
         .fetch_all(&state.pool_ro)
@@ -1295,7 +1314,7 @@ pub async fn get_media_streams(
             .collect();
         if !uncached.is_empty() {
             let live = crate::providers::torrents::cache::live_check(
-                &state.http,
+                state.http_for_provider(svc),
                 &state.redis,
                 svc,
                 &cache_service,
@@ -1545,6 +1564,7 @@ pub async fn get_media_streams(
                 "release_group": r.release_group,
                 "cached": is_cached,
                 "rd_blocked": rd_blocked,
+                "is_keyword_blocked": r.is_keyword_blocked,
                 "is_remastered": r.is_remastered,
                 "is_upscaled": r.is_upscaled,
                 "is_proper": r.is_proper,

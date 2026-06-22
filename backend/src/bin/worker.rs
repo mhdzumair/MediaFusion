@@ -22,6 +22,7 @@ use mediafusion_api::{
             jackett_feed::JackettFeedScraper,
             m3u_import::M3uImport,
             pending_moderation_reminder::PendingModerationReminder,
+            poster_nsfw_scan::PosterNsfwScan,
             prowlarr_feed::ProwlarrFeedScraper,
             rss_feed::RssFeedScraper,
             spiders::{
@@ -215,6 +216,7 @@ async fn main() {
     reg.register(Arc::new(ValidateTvStreams));
     reg.register(Arc::new(UpdateSeeders));
     reg.register(Arc::new(UpdateTvPosters));
+    reg.register(Arc::new(PosterNsfwScan));
     reg.register(Arc::new(DiscoverPrewarm));
     reg.register(Arc::new(ImdbDatasetImport));
     reg.register(Arc::new(Cleanup));

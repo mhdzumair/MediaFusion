@@ -94,12 +94,18 @@ export interface BlockedMediaItem {
   type: 'movie' | 'series' | 'tv'
   year?: number
   poster?: string
-  external_ids: Record<string, string | number>
+  imdb_id?: string
+  external_ids?: Record<string, string | number>
   is_blocked?: boolean
   is_keyword_blocked?: boolean
+  keyword_block_override?: boolean
   blocked_at?: string
   blocked_by?: string
   block_reason?: string
+  // NSFW fields (populated when filter=nsfw_flagged|nsfw_reviewed)
+  nsfw_score?: number
+  nsfw_flagged?: boolean
+  nsfw_reviewed?: boolean
 }
 
 export interface BlockedMediaListResponse {
@@ -108,6 +114,7 @@ export interface BlockedMediaListResponse {
   page: number
   page_size: number
   has_more: boolean
+  viewer_is_admin?: boolean
 }
 
 export interface BlockedMediaParams {
@@ -115,6 +122,8 @@ export interface BlockedMediaParams {
   search?: string
   page?: number
   page_size?: number
+  /** "blocked" (default) | "nsfw_flagged" | "nsfw_reviewed" */
+  filter?: string
 }
 
 export interface MetadataListParams {
@@ -489,6 +498,33 @@ async function adminDelete<T>(endpoint: string): Promise<T> {
   return response.json()
 }
 
+async function adminPatch<T>(endpoint: string, data?: unknown): Promise<T> {
+  const token = apiClient.getAccessToken()
+  const apiKey = apiClient.getApiKey()
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  if (apiKey) {
+    headers['X-API-Key'] = apiKey
+  }
+
+  const response = await fetch(`${ADMIN_BASE}${endpoint}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: `HTTP error ${response.status}` }))
+    throw new Error(error.detail || 'An error occurred')
+  }
+
+  return response.json()
+}
+
 // ============================================
 // Types - External Metadata
 // ============================================
@@ -559,6 +595,7 @@ export const adminApi = {
       search: params.search,
       page: params.page,
       page_size: params.page_size,
+      filter: params.filter,
     })
   },
 
@@ -576,6 +613,25 @@ export const adminApi = {
    */
   unblockMedia: async (mediaId: number): Promise<BlockMediaResponse> => {
     return adminPost<BlockMediaResponse>(`/metadata/${mediaId}/unblock`, {})
+  },
+
+  toggleKeywordOverride: async (
+    mediaId: number,
+  ): Promise<{ id: number; keyword_block_override: boolean; message: string }> => {
+    return adminPost<{ id: number; keyword_block_override: boolean; message: string }>(
+      `/media/${mediaId}/keyword-override`,
+    )
+  },
+
+  // ============================================
+  // NSFW Review
+  // ============================================
+
+  reviewNsfwItem: async (
+    mediaId: number,
+    flagged: boolean,
+  ): Promise<{ id: number; nsfw_flagged: boolean; nsfw_reviewed: boolean }> => {
+    return adminPatch(`/nsfw-flagged/${mediaId}`, { flagged })
   },
 
   // ============================================

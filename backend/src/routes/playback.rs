@@ -272,7 +272,15 @@ async fn resolve(
         })?
     };
 
-    // 3. Check Redis cache, then deduplicate concurrent resolution.
+    // 3. Restriction check: block playback if all media linked to this torrent is restricted.
+    if crate::state::info_hash_is_restricted(&state.pool_ro, info_hash).await {
+        return Err(providers::ProviderError::api(
+            "Content is restricted",
+            "restricted.mp4",
+        ));
+    }
+
+    // 4. Check Redis cache, then deduplicate concurrent resolution.
     let cache_key = playback_cache_key(secret_str, info_hash, season, episode);
     if let Some(cached) = get_playback_cache(&state.redis, &cache_key).await {
         return Ok(cached);

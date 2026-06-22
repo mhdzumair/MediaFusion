@@ -222,6 +222,7 @@ export {
   useKeywordWhitelist,
   useAddKeyword,
   useToggleKeyword,
+  useUpdateKeywordScope,
   useDeleteKeyword,
   useAddWhitelistPhrase,
   useDeleteWhitelistPhrase,

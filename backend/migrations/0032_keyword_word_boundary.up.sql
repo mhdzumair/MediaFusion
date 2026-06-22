@@ -1,0 +1,126 @@
+-- Switch keyword matching from substring to whole-word (word-boundary) matching.
+-- \y in PostgreSQL POSIX regex is a word boundary; dots and hyphens count as
+-- non-word characters, so "cock" in "cocktail" no longer matches, but
+-- "cock" in "cock.fight.2024" or "some-cock-ring" still does.
+
+-- ── Media trigger ─────────────────────────────────────────────────────────────
+-- Rebuild the check using a compiled regex pattern with \y boundaries instead
+-- of the per-keyword position() loop.
+CREATE OR REPLACE FUNCTION check_media_keyword_blocked()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    ltitle text := LOWER(NEW.title);
+    ldesc  text := LOWER(COALESCE(NEW.description, ''));
+    kw_pattern text;
+    wl_pattern text;
+BEGIN
+    SELECT '\y(' || string_agg(
+               regexp_replace(LOWER(keyword), '([.^$*+?()[\]{}|\\])', '\\\1', 'g'),
+               '|' ORDER BY keyword
+           ) || ')\y'
+    INTO kw_pattern
+    FROM keyword_filters WHERE is_active = true AND scope IN ('all', 'media');
+
+    SELECT '(' || string_agg(
+               regexp_replace(LOWER(phrase), '([.^$*+?()[\]{}|\\])', '\\\1', 'g'),
+               '|' ORDER BY phrase
+           ) || ')'
+    INTO wl_pattern
+    FROM keyword_whitelist;
+
+    NEW.is_keyword_blocked := (
+        NEW.adult = true
+        OR (
+            kw_pattern IS NOT NULL
+            AND (ltitle ~ kw_pattern OR ldesc ~ kw_pattern)
+            AND (wl_pattern IS NULL OR NOT (ltitle ~ wl_pattern OR ldesc ~ wl_pattern))
+        )
+    );
+    RETURN NEW;
+END;
+$$;
+
+-- ── Stream trigger ─────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION check_stream_keyword_blocked()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    lname text := LOWER(NEW.name);
+    kw_pattern text;
+    wl_pattern text;
+BEGIN
+    SELECT '\y(' || string_agg(
+               regexp_replace(LOWER(keyword), '([.^$*+?()[\]{}|\\])', '\\\1', 'g'),
+               '|' ORDER BY keyword
+           ) || ')\y'
+    INTO kw_pattern
+    FROM keyword_filters WHERE is_active = true AND scope IN ('all', 'stream');
+
+    SELECT '(' || string_agg(
+               regexp_replace(LOWER(phrase), '([.^$*+?()[\]{}|\\])', '\\\1', 'g'),
+               '|' ORDER BY phrase
+           ) || ')'
+    INTO wl_pattern
+    FROM keyword_whitelist;
+
+    NEW.is_keyword_blocked := (
+        kw_pattern IS NOT NULL
+        AND (lname ~ kw_pattern)
+        AND (wl_pattern IS NULL OR NOT (lname ~ wl_pattern))
+    );
+    RETURN NEW;
+END;
+$$;
+
+-- ── PL/pgSQL batch recompute ──────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION recompute_all_keyword_blocked()
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+    kw_pattern text;
+    wl_pattern text;
+BEGIN
+    SELECT '\y(' || string_agg(
+               regexp_replace(LOWER(keyword), '([.^$*+?()[\]{}|\\])', '\\\1', 'g'),
+               '|' ORDER BY keyword
+           ) || ')\y'
+    INTO kw_pattern
+    FROM keyword_filters WHERE is_active = true AND scope IN ('all', 'media');
+
+    SELECT '(' || string_agg(
+               regexp_replace(LOWER(phrase), '([.^$*+?()[\]{}|\\])', '\\\1', 'g'),
+               '|' ORDER BY phrase
+           ) || ')'
+    INTO wl_pattern
+    FROM keyword_whitelist;
+
+    WITH computed AS (
+        SELECT id,
+               adult = true
+               OR (
+                   kw_pattern IS NOT NULL
+                   AND (
+                       LOWER(title) ~ kw_pattern
+                       OR LOWER(COALESCE(description, '')) ~ kw_pattern
+                   )
+                   AND (
+                       wl_pattern IS NULL
+                       OR NOT (
+                           LOWER(title) ~ wl_pattern
+                           OR LOWER(COALESCE(description, '')) ~ wl_pattern
+                       )
+                   )
+               ) AS new_blocked
+        FROM media
+    )
+    UPDATE media m
+    SET is_keyword_blocked = computed.new_blocked
+    FROM computed
+    WHERE m.id = computed.id
+      AND m.is_keyword_blocked IS DISTINCT FROM computed.new_blocked;
+END;
+$$;
+
+-- Force Rust batch recompute on next startup for both media and streams.
+DELETE FROM keyword_sync_state WHERE id IN (
+    'keyword-blocked-recompute',
+    'stream-keyword-blocked-recompute'
+);

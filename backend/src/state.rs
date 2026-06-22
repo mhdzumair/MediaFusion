@@ -10,30 +10,82 @@ use sqlx::PgPool;
 use crate::config::AppConfig;
 use crate::db::MediaId;
 use crate::metrics::Metrics;
+use crate::nsfw::NsfwClassifier;
 
 #[derive(Debug, Default, Clone)]
 pub struct KeywordFilterCache {
-    pub keywords: Vec<String>,  // active keywords, lowercased
+    /// Media-scoped keywords (scope 'media' or 'all'): drive is_keyword_blocked DB column
+    /// and in-memory media title checks (e.g. MDBList API path).
+    pub keywords: Vec<String>,
+    /// Stream-scoped keywords (scope 'stream' or 'all'): for torrent/stream title filtering.
+    pub stream_keywords: Vec<String>,
     pub whitelist: Vec<String>, // whitelist phrases, lowercased
+    /// Mirrors `AppConfig::poster_nsfw_enabled`; set after loading from DB.
+    pub nsfw_filter_enabled: bool,
 }
 
 impl KeywordFilterCache {
-    /// Returns true when `text` matches an active blacklist keyword and is not whitelisted.
+    /// Returns true when `text` (a stream/torrent title) matches an active stream-scoped
+    /// keyword (scope 'stream' or 'all') and is not whitelisted.
+    /// Used at scrape/import time to skip blocked torrent titles before they enter the DB.
     pub fn matches_blocked_keyword(&self, text: &str) -> bool {
-        if text.is_empty() {
+        Self::matches_list(&self.stream_keywords, &self.whitelist, text)
+    }
+
+    /// Returns true when `text` (a media title or description) matches an active media-scoped
+    /// keyword (scope 'media' or 'all') and is not whitelisted.
+    /// Used for in-memory media title checks (e.g. MDBList API path, meta, discover).
+    pub fn matches_blocked_media_keyword(&self, text: &str) -> bool {
+        Self::matches_list(&self.keywords, &self.whitelist, text)
+    }
+
+    /// True if `keyword` appears in `text` as a whole word (not inside a longer word).
+    /// Both `text` and `keyword` must already be lowercased.
+    fn whole_word_match(text: &str, keyword: &str) -> bool {
+        if keyword.is_empty() {
+            return false;
+        }
+        let klen = keyword.len();
+        let mut search = text;
+        let mut offset = 0usize;
+        while let Some(pos) = search.find(keyword) {
+            let abs = offset + pos;
+            let before_ok = abs == 0 || {
+                let ch = text[..abs].chars().next_back().unwrap();
+                !ch.is_alphanumeric() && ch != '_'
+            };
+            let end = abs + klen;
+            let after_ok = end >= text.len() || {
+                let ch = text[end..].chars().next().unwrap();
+                !ch.is_alphanumeric() && ch != '_'
+            };
+            if before_ok && after_ok {
+                return true;
+            }
+            // Advance past this occurrence to find the next one.
+            offset += pos + 1;
+            search = &text[offset..];
+            if search.len() < klen {
+                break;
+            }
+        }
+        false
+    }
+
+    fn matches_list(keywords: &[String], whitelist: &[String], text: &str) -> bool {
+        if text.is_empty() || keywords.is_empty() {
             return false;
         }
         let lower = text.to_lowercase();
-        if self
-            .whitelist
+        // Whitelist uses substring match (permissive — any overlap clears the block).
+        if whitelist
             .iter()
             .any(|phrase| lower.contains(phrase.as_str()))
         {
             return false;
         }
-        self.keywords
-            .iter()
-            .any(|keyword| lower.contains(keyword.as_str()))
+        // Keywords use whole-word match: "cock" must not match inside "cocktail".
+        keywords.iter().any(|kw| Self::whole_word_match(&lower, kw))
     }
 
     /// Returns a SQL WHERE fragment that excludes media whose `m.title` is keyword-blocked.
@@ -47,10 +99,34 @@ impl KeywordFilterCache {
         " AND m.is_keyword_blocked = false"
     }
 
+    /// SQL WHERE fragment that excludes NSFW-flagged posters.
+    /// Returns an empty string when `nsfw_filter_enabled` is false so callers
+    /// are a no-op with zero overhead when the feature is disabled.
+    pub fn nsfw_block_fragment(&self) -> &'static str {
+        if self.nsfw_filter_enabled {
+            " AND m.poster_nsfw_flagged = false"
+        } else {
+            ""
+        }
+    }
+
     /// A deterministic tag derived from the current keyword/whitelist content.
     /// Embed this in Redis cache keys so that adding or removing keywords
     /// automatically invalidates previously-cached responses.
     pub fn version_tag(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut h = DefaultHasher::new();
+        self.keywords.hash(&mut h);
+        self.stream_keywords.hash(&mut h);
+        self.whitelist.hash(&mut h);
+        h.finish()
+    }
+
+    /// A deterministic tag derived only from media-scoped keywords and whitelist.
+    /// Used for the `is_keyword_blocked` recompute check — only media keywords
+    /// drive the DB column, so stream-only keyword changes should not trigger a recompute.
+    pub fn media_version_tag(&self) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         let mut h = DefaultHasher::new();
@@ -65,10 +141,67 @@ impl KeywordFilterCache {
         mut genres: std::collections::HashMap<String, Vec<String>>,
     ) -> std::collections::HashMap<String, Vec<String>> {
         for list in genres.values_mut() {
-            list.retain(|name| !self.matches_blocked_keyword(name));
+            list.retain(|name| !self.matches_blocked_media_keyword(name));
         }
         genres
     }
+}
+
+// ─── Unified restriction helpers ─────────────────────────────────────────────
+
+/// SQL WHERE fragment (alias `m`) that excludes **all** restricted media:
+/// manually blocked, keyword-blocked, or NSFW-flagged.
+///
+/// Always active — does not depend on any runtime config.  Use this on every
+/// catalog / search / meta query that should hide restricted content from
+/// regular users.  The three exempt admin endpoints check `media_is_restricted`
+/// separately and bypass this fragment for admin-role callers.
+pub fn restriction_fragment() -> &'static str {
+    " AND NOT (m.is_blocked OR (m.is_keyword_blocked AND NOT m.keyword_block_override) OR m.poster_nsfw_flagged)"
+}
+
+/// Returns `true` when the given media row is restricted (manually blocked,
+/// keyword-blocked, or NSFW-flagged with no "safe" review).
+///
+/// Used by single-row guard points (`get_media_detail`, `get_media_streams`,
+/// `get_media_metadata`, `stream.rs` build_pipeline).
+pub async fn media_is_restricted(pool: &PgPool, media_id: i32) -> bool {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT (is_blocked OR (is_keyword_blocked AND NOT keyword_block_override) OR poster_nsfw_flagged) FROM media WHERE id = $1",
+    )
+    .bind(media_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None)
+    .unwrap_or(false)
+}
+
+/// Returns `true` when **all** media linked to the given torrent `info_hash` are
+/// restricted.  A torrent shared with at least one unrestricted title is allowed
+/// through.  Returns `false` when no media is linked (non-media stream).
+///
+/// Used by `playback.rs` `resolve()` as a final defence-in-depth check.
+pub async fn info_hash_is_restricted(pool: &PgPool, info_hash: &str) -> bool {
+    // CTE yields one bool-row per linked media record.  COUNT(*) > 0 ensures
+    // we don't block info_hashes with no linked media at all.
+    sqlx::query_scalar::<_, bool>(
+        r#"
+        WITH linked AS (
+            SELECT (m.is_blocked OR (m.is_keyword_blocked AND NOT m.keyword_block_override) OR m.poster_nsfw_flagged) AS restricted
+            FROM torrent_stream ts
+            JOIN stream s ON s.id = ts.stream_id
+            JOIN stream_media_link sml ON sml.stream_id = s.id
+            JOIN media m ON m.id = sml.media_id
+            WHERE ts.info_hash = $1
+        )
+        SELECT COUNT(*) > 0 AND bool_and(restricted) FROM linked
+        "#,
+    )
+    .bind(info_hash)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None)
+    .unwrap_or(false)
 }
 
 #[derive(Clone)]
@@ -100,6 +233,9 @@ pub struct AppState {
     pub telegram: Option<Arc<grammers_client::Client>>,
     /// In-memory cache of keyword filters and whitelist phrases.
     pub keyword_filters: Arc<RwLock<KeywordFilterCache>>,
+    /// ONNX-based NSFW poster classifier. `None` when the model file is absent
+    /// or `POSTER_NSFW_ENABLED=false`.
+    pub nsfw_classifier: Option<Arc<NsfwClassifier>>,
 }
 
 impl AppState {
@@ -180,8 +316,16 @@ impl AppState {
 
         // Load keyword cache — sync_keywords_from_file is called after
         // migrate::run in main/worker so the schema is guaranteed to exist.
-        let kf_cache = load_keyword_filter_cache(&pool).await;
+        let mut kf_cache = load_keyword_filter_cache(&pool).await;
+        kf_cache.nsfw_filter_enabled = config.poster_nsfw_enabled;
         let keyword_filters = Arc::new(RwLock::new(kf_cache));
+
+        // Load NSFW classifier when enabled and model file is present.
+        let nsfw_classifier = if config.poster_nsfw_enabled {
+            NsfwClassifier::load(&config.poster_nsfw_model_path).map(Arc::new)
+        } else {
+            None
+        };
 
         Ok(Arc::new(Self {
             config,
@@ -197,6 +341,7 @@ impl AppState {
             metrics: Metrics::new(),
             telegram,
             keyword_filters,
+            nsfw_classifier,
         }))
     }
 
@@ -230,6 +375,16 @@ impl AppState {
             }
         }
         &self.debrid_http
+    }
+
+    /// Returns the no-proxy HTTP client if configured, and the list of
+    /// provider IDs that should bypass the proxy. Used by validation paths
+    /// that need to select the right client per-provider.
+    pub fn proxy_bypass_clients(&self) -> (Option<&reqwest::Client>, &[String]) {
+        (
+            self.http_no_proxy.as_ref(),
+            &self.config.requests_proxy_exclude_debrid_providers,
+        )
     }
 }
 
@@ -277,7 +432,8 @@ fn build_regex_pattern(terms: &[String]) -> Option<String> {
         })
         .collect::<Vec<_>>()
         .join("|");
-    Some(format!("({escaped})"))
+    // Wrap with word-boundary assertions so "cock" doesn't match inside "cocktail".
+    Some(format!("\\y({escaped})\\y"))
 }
 
 pub async fn recompute_keyword_blocked(
@@ -323,6 +479,8 @@ pub async fn recompute_keyword_blocked(
     // - NULL pattern ($3/$4) short-circuits the match entirely via IS NOT NULL guard.
     const BATCH_SIZE: i32 = 500;
     let mut from_id: i32 = 0;
+    let mut total_updated: u64 = 0;
+    let started = std::time::Instant::now();
 
     loop {
         let to_id = from_id + BATCH_SIZE;
@@ -358,9 +516,14 @@ pub async fn recompute_keyword_blocked(
         .execute(pool)
         .await;
 
-        if let Err(e) = result {
-            tracing::error!("recompute_all_keyword_blocked batch [{from_id}..{to_id}] failed: {e}");
-            return;
+        match result {
+            Ok(r) => total_updated += r.rows_affected(),
+            Err(e) => {
+                tracing::error!(
+                    "recompute_all_keyword_blocked batch [{from_id}..{to_id}] failed: {e}"
+                );
+                return;
+            }
         }
 
         from_id = to_id;
@@ -381,8 +544,145 @@ pub async fn recompute_keyword_blocked(
     {
         tracing::error!("recompute_all_keyword_blocked: failed to record version: {e}");
     } else {
-        tracing::info!("keyword filter: is_keyword_blocked recomputed for all media");
+        let elapsed = started.elapsed();
+        tracing::info!(
+            keywords = keywords.len(),
+            updated = total_updated,
+            elapsed_ms = elapsed.as_millis(),
+            "keyword filter: media is_keyword_blocked recompute complete"
+        );
     }
+}
+
+const STREAM_KW_BLOCKED_RECOMPUTE_ID: &str = "stream-keyword-blocked-recompute";
+
+/// Batch-recompute `stream.is_keyword_blocked` for all rows.
+///
+/// Mirrors `recompute_keyword_blocked` but targets the `stream` table using
+/// stream-scoped keywords (scope 'stream' or 'all').
+pub async fn recompute_stream_keyword_blocked(
+    pool: &PgPool,
+    version_tag: u64,
+    stream_keywords: &[String],
+    whitelist: &[String],
+) {
+    let ver_str = format!("{:016x}", version_tag);
+
+    let kw_pattern: Option<String> = build_regex_pattern(stream_keywords);
+    let wl_pattern: Option<String> = build_regex_pattern(whitelist);
+
+    // Get the current max ID so we know when to stop.
+    let max_id: i32 = match sqlx::query_scalar::<_, Option<i32>>("SELECT MAX(id) FROM stream")
+        .fetch_one(pool)
+        .await
+    {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            tracing::debug!("stream keyword blocked: stream table is empty, skipping recompute");
+            return;
+        }
+        Err(e) => {
+            tracing::error!("recompute_stream_keyword_blocked failed to get max id: {e}");
+            return;
+        }
+    };
+
+    const BATCH_SIZE: i32 = 500;
+    let mut from_id: i32 = 0;
+    let mut total_updated: u64 = 0;
+    let started = std::time::Instant::now();
+
+    loop {
+        let to_id = from_id + BATCH_SIZE;
+        let result = sqlx::query(
+            "UPDATE stream s
+             SET is_keyword_blocked = (
+                 $3::text IS NOT NULL
+                 AND s.name ~* $3
+                 AND ($4::text IS NULL OR s.name !~* $4)
+             )
+             WHERE s.id > $1 AND s.id <= $2
+               AND s.is_keyword_blocked IS DISTINCT FROM (
+                   $3::text IS NOT NULL
+                   AND s.name ~* $3
+                   AND ($4::text IS NULL OR s.name !~* $4)
+               )",
+        )
+        .bind(from_id)
+        .bind(to_id)
+        .bind(&kw_pattern)
+        .bind(&wl_pattern)
+        .execute(pool)
+        .await;
+
+        match result {
+            Ok(r) => total_updated += r.rows_affected(),
+            Err(e) => {
+                tracing::error!(
+                    "recompute_stream_keyword_blocked batch [{from_id}..{to_id}] failed: {e}"
+                );
+                return;
+            }
+        }
+
+        from_id = to_id;
+        if from_id >= max_id {
+            break;
+        }
+    }
+
+    // Record which keyword version was just recomputed so we skip on next startup.
+    if let Err(e) = sqlx::query(
+        "INSERT INTO keyword_sync_state (id, file_hash, synced_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (id) DO UPDATE SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
+    )
+    .bind(STREAM_KW_BLOCKED_RECOMPUTE_ID)
+    .bind(&ver_str)
+    .execute(pool)
+    .await
+    {
+        tracing::error!("recompute_stream_keyword_blocked: failed to record version: {e}");
+    } else {
+        let elapsed = started.elapsed();
+        tracing::info!(
+            keywords = stream_keywords.len(),
+            updated = total_updated,
+            elapsed_ms = elapsed.as_millis(),
+            "keyword filter: stream is_keyword_blocked recompute complete"
+        );
+    }
+}
+
+/// Check whether stream `is_keyword_blocked` needs a recompute and, if so, spawn one.
+pub async fn maybe_recompute_stream_keyword_blocked(pool: &PgPool, kf: &KeywordFilterCache) {
+    // Use the full version_tag so any keyword/whitelist change (including media-scope changes
+    // that may have crossover with stream scope) triggers a stream recompute too.
+    let ver = kf.version_tag();
+    let ver_str = format!("{:016x}", ver);
+
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT file_hash FROM keyword_sync_state WHERE id = $1")
+            .bind(STREAM_KW_BLOCKED_RECOMPUTE_ID)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+
+    if stored.as_deref() == Some(ver_str.as_str()) {
+        tracing::debug!(
+            "stream keyword blocked: column up to date (version {ver_str}), skipping recompute"
+        );
+        return;
+    }
+
+    tracing::info!(
+        "stream keyword blocked: version changed ({ver_str}), recomputing in background"
+    );
+    let pool = pool.clone();
+    let stream_keywords = kf.stream_keywords.clone();
+    let whitelist = kf.whitelist.clone();
+    tokio::spawn(async move {
+        recompute_stream_keyword_blocked(&pool, ver, &stream_keywords, &whitelist).await
+    });
 }
 
 /// Check whether `is_keyword_blocked` needs a recompute and, if so, spawn one.
@@ -391,7 +691,7 @@ pub async fn recompute_keyword_blocked(
 /// stored in `keyword_sync_state`.  On a normal restart with unchanged keywords
 /// this is a single cheap SELECT and the heavy UPDATE is skipped entirely.
 pub async fn maybe_recompute_keyword_blocked(pool: &PgPool, kf: &KeywordFilterCache) {
-    let ver = kf.version_tag();
+    let ver = kf.media_version_tag();
     let ver_str = format!("{:016x}", ver);
 
     let stored: Option<String> =
@@ -417,11 +717,19 @@ pub async fn maybe_recompute_keyword_blocked(pool: &PgPool, kf: &KeywordFilterCa
 
 pub async fn load_keyword_filter_cache(pool: &PgPool) -> KeywordFilterCache {
     let keywords: Vec<String> = sqlx::query_scalar(
-        "SELECT LOWER(keyword) FROM keyword_filters WHERE is_active = true ORDER BY keyword",
+        "SELECT LOWER(keyword) FROM keyword_filters WHERE is_active = true AND scope IN ('all', 'media') ORDER BY keyword",
     )
     .fetch_all(pool)
     .await
     .unwrap_or_default();
+
+    let stream_keywords: Vec<String> = sqlx::query_scalar(
+        "SELECT LOWER(keyword) FROM keyword_filters WHERE is_active = true AND scope IN ('all', 'stream') ORDER BY keyword",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
     let whitelist: Vec<String> =
         sqlx::query_scalar("SELECT LOWER(phrase) FROM keyword_whitelist ORDER BY phrase")
             .fetch_all(pool)
@@ -429,11 +737,13 @@ pub async fn load_keyword_filter_cache(pool: &PgPool) -> KeywordFilterCache {
             .unwrap_or_default();
     KeywordFilterCache {
         keywords,
+        stream_keywords,
         whitelist,
+        nsfw_filter_enabled: false, // caller sets this from config after loading
     }
 }
 
-/// Sync `keywords/adult-keywords.txt` into the DB.
+/// Sync `keywords/media-keywords.txt` into the DB.
 ///
 /// Lines starting with `!` are whitelist entries; all other non-empty lines
 /// are blocked keywords.  Only rows with `source = 'file'` are touched —
@@ -444,9 +754,9 @@ pub async fn load_keyword_filter_cache(pool: &PgPool) -> KeywordFilterCache {
 pub async fn sync_keywords_from_file(pool: &PgPool) {
     const FILE_CONTENT: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/resources/adult-keywords.txt"
+        "/resources/media-keywords-filters.txt"
     ));
-    const SYNC_ID: &str = "adult-keywords";
+    const SYNC_ID: &str = "media-keywords";
 
     // ── Compute hash ──────────────────────────────────────────────────────────
     use sha2::{Digest, Sha256};
@@ -496,10 +806,11 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
         }
     };
 
-    // Remove old file-sourced entries
-    if let Err(e) = sqlx::query("DELETE FROM keyword_filters WHERE source = 'file'")
-        .execute(&mut *tx)
-        .await
+    // Remove old file-sourced media-scope entries (leaves stream-scope file rows intact)
+    if let Err(e) =
+        sqlx::query("DELETE FROM keyword_filters WHERE source = 'file' AND scope = 'media'")
+            .execute(&mut *tx)
+            .await
     {
         tracing::error!("keyword sync: delete keyword_filters failed: {e}");
         return;
@@ -515,9 +826,9 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
     // Insert new keywords
     if !keywords.is_empty() {
         if let Err(e) = sqlx::query(
-            "INSERT INTO keyword_filters (keyword, source)
-             SELECT UNNEST($1::text[]), 'file'
-             ON CONFLICT (LOWER(keyword)) DO UPDATE SET source = 'file', is_active = true",
+            "INSERT INTO keyword_filters (keyword, source, scope)
+             SELECT UNNEST($1::text[]), 'file', 'media'
+             ON CONFLICT (LOWER(keyword)) DO UPDATE SET source = 'file', is_active = true, scope = 'media'",
         )
         .bind(&keywords[..])
         .execute(&mut *tx)
@@ -566,14 +877,142 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
 
     let ver = KeywordFilterCache {
         keywords: keywords.clone(),
+        stream_keywords: vec![],
         whitelist: whitelist.clone(),
+        nsfw_filter_enabled: false,
     }
-    .version_tag();
+    .media_version_tag();
     recompute_keyword_blocked(pool, ver, &keywords, &whitelist).await;
 
     tracing::info!(
         "keyword sync: done — {} keywords, {} whitelist phrases (hash {hash})",
         keywords.len(),
         whitelist.len()
+    );
+
+    // Sync stream-scoped keywords from the companion file.
+    sync_stream_keywords_from_file(pool).await;
+}
+
+/// Sync `keywords/stream-keywords.txt` into the DB with `scope='stream'`.
+///
+/// Lines starting with `#` are comment lines and are skipped.  Only rows with
+/// `source = 'file' AND scope = 'stream'` are touched — admin-managed entries
+/// are left untouched.
+///
+/// A SHA-256 of the raw file bytes is stored in `keyword_sync_state`.  If the
+/// hash matches the stored value the sync is skipped entirely.
+pub async fn sync_stream_keywords_from_file(pool: &PgPool) {
+    const FILE_CONTENT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/resources/stream-keywords-filters.txt"
+    ));
+    const SYNC_ID: &str = "stream-keywords";
+
+    // ── Compute hash ──────────────────────────────────────────────────────────
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(FILE_CONTENT.as_bytes());
+    let hash: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+
+    // ── Compare with stored hash ──────────────────────────────────────────────
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT file_hash FROM keyword_sync_state WHERE id = $1")
+            .bind(SYNC_ID)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+
+    if stored.as_deref() == Some(hash.as_str()) {
+        tracing::debug!("stream keyword sync: file unchanged (hash {hash}), skipping");
+        return;
+    }
+
+    tracing::info!("stream keyword sync: file changed, syncing to DB…");
+
+    // ── Parse file ────────────────────────────────────────────────────────────
+    let mut stream_keywords: Vec<String> = Vec::new();
+
+    for line in FILE_CONTENT.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        stream_keywords.push(trimmed.to_lowercase());
+    }
+
+    // ── Replace file-sourced stream-scope rows atomically ─────────────────────
+    let mut tx = match pool.begin().await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("stream keyword sync: failed to begin transaction: {e}");
+            return;
+        }
+    };
+
+    // Remove old file-sourced stream-scope entries
+    if let Err(e) =
+        sqlx::query("DELETE FROM keyword_filters WHERE source = 'file' AND scope = 'stream'")
+            .execute(&mut *tx)
+            .await
+    {
+        tracing::error!("stream keyword sync: delete keyword_filters failed: {e}");
+        return;
+    }
+
+    // Insert new stream keywords (skip if empty)
+    if !stream_keywords.is_empty() {
+        if let Err(e) = sqlx::query(
+            "INSERT INTO keyword_filters (keyword, source, scope)
+             SELECT UNNEST($1::text[]), 'file', 'stream'
+             ON CONFLICT (LOWER(keyword)) DO UPDATE SET source = 'file', is_active = true, scope = 'stream'",
+        )
+        .bind(&stream_keywords[..])
+        .execute(&mut *tx)
+        .await
+        {
+            tracing::error!("stream keyword sync: insert keyword_filters failed: {e}");
+            return;
+        }
+    }
+
+    // Update stored hash
+    if let Err(e) = sqlx::query(
+        "INSERT INTO keyword_sync_state (id, file_hash, synced_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (id) DO UPDATE SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
+    )
+    .bind(SYNC_ID)
+    .bind(&hash)
+    .execute(&mut *tx)
+    .await
+    {
+        tracing::error!("stream keyword sync: update keyword_sync_state failed: {e}");
+        return;
+    }
+
+    if let Err(e) = tx.commit().await {
+        tracing::error!("stream keyword sync: commit failed: {e}");
+        return;
+    }
+
+    // Load the current whitelist for the recompute
+    let whitelist: Vec<String> =
+        sqlx::query_scalar("SELECT LOWER(phrase) FROM keyword_whitelist ORDER BY phrase")
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+    let ver = KeywordFilterCache {
+        keywords: vec![],
+        stream_keywords: stream_keywords.clone(),
+        whitelist: whitelist.clone(),
+        nsfw_filter_enabled: false,
+    }
+    .version_tag();
+    recompute_stream_keyword_blocked(pool, ver, &stream_keywords, &whitelist).await;
+
+    tracing::info!(
+        "stream keyword sync: done — {} keywords (hash {hash})",
+        stream_keywords.len()
     );
 }

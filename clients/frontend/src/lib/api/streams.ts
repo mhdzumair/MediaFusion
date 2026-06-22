@@ -17,7 +17,7 @@ export interface MyStreamItem extends StreamInfo {
 export interface MyStreamsListParams {
   page?: number
   page_size?: number
-  status?: 'active' | 'blocked' | 'inactive'
+  status?: 'active' | 'blocked' | 'inactive' | 'keyword_blocked'
   search?: string
   stream_type?: string
 }

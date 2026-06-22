@@ -81,8 +81,15 @@ export interface CatalogItemBase {
   nudity?: string // None, Mild, Moderate, Severe
   // Content moderation (visible to admins/moderators)
   is_blocked?: boolean
+  is_keyword_blocked?: boolean
+  keyword_block_override?: boolean
+  matched_keywords?: string[]
   block_reason?: string
   is_add_title_to_poster?: boolean
+  // NSFW poster detection (visible to all authenticated users)
+  poster_nsfw_score?: number
+  poster_nsfw_flagged?: boolean
+  poster_nsfw_reviewed?: boolean
 }
 
 export interface SeasonInfo {
@@ -197,6 +204,7 @@ export interface StreamInfo {
   is_blocked?: boolean
   is_active?: boolean
   is_public?: boolean
+  is_keyword_blocked?: boolean
   file_count?: number
 
   // Release flags

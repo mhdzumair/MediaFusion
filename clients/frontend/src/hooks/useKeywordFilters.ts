@@ -4,13 +4,13 @@ import { keywordFiltersApi } from '@/lib/api'
 
 export const keywordFilterKeys = {
   all: ['keyword-filters'] as const,
-  keywords: (params?: { page?: number; page_size?: number; search?: string }) =>
+  keywords: (params?: { page?: number; page_size?: number; search?: string; scope?: string }) =>
     [...keywordFilterKeys.all, 'keywords', params] as const,
   whitelist: (params?: { page?: number; page_size?: number }) =>
     [...keywordFilterKeys.all, 'whitelist', params] as const,
 }
 
-export function useKeywordFilters(params?: { page?: number; page_size?: number; search?: string }) {
+export function useKeywordFilters(params?: { page?: number; page_size?: number; search?: string; scope?: string }) {
   return useQuery({
     queryKey: keywordFilterKeys.keywords(params),
     queryFn: () => keywordFiltersApi.listKeywords(params),
@@ -27,7 +27,8 @@ export function useKeywordWhitelist(params?: { page?: number; page_size?: number
 export function useAddKeyword() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (keyword: string) => keywordFiltersApi.addKeyword(keyword),
+    mutationFn: ({ keyword, scope }: { keyword: string; scope?: string }) =>
+      keywordFiltersApi.addKeyword(keyword, scope),
     onSuccess: () => qc.invalidateQueries({ queryKey: keywordFilterKeys.all }),
   })
 }
@@ -37,6 +38,14 @@ export function useToggleKeyword() {
   return useMutation({
     mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) =>
       keywordFiltersApi.toggleKeyword(id, is_active),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keywordFilterKeys.all }),
+  })
+}
+
+export function useUpdateKeywordScope() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, scope }: { id: number; scope: string }) => keywordFiltersApi.updateKeywordScope(id, scope),
     onSuccess: () => qc.invalidateQueries({ queryKey: keywordFilterKeys.all }),
   })
 }

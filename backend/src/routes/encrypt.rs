@@ -42,8 +42,11 @@ pub async fn handler(
         });
 
     let user_ip = validator::client_ip_from_headers(&headers);
+    let (no_proxy, excluded) = state.proxy_bypass_clients();
     let validation = validator::validate_provider_credentials(
         &state.http,
+        no_proxy,
+        excluded,
         &user_data,
         user_ip.as_deref(),
         default_nzbdav.as_ref(),

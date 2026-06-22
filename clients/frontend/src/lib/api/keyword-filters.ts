@@ -4,6 +4,7 @@ export interface KeywordFilter {
   id: number
   keyword: string
   is_active: boolean
+  scope: string
   created_at: string
 }
 
@@ -38,21 +39,27 @@ export const keywordFiltersApi = {
     page?: number
     page_size?: number
     search?: string
+    scope?: string
   }): Promise<KeywordFilterListResponse> => {
     const sp = new URLSearchParams()
     if (params?.page) sp.set('page', String(params.page))
     if (params?.page_size) sp.set('page_size', String(params.page_size))
     if (params?.search) sp.set('search', params.search)
+    if (params?.scope) sp.set('scope', params.scope)
     const q = sp.toString()
     return apiClient.get<KeywordFilterListResponse>(`/admin/keyword-filters${q ? `?${q}` : ''}`)
   },
 
-  addKeyword: async (keyword: string): Promise<KeywordFilter> => {
-    return apiClient.post<KeywordFilter>('/admin/keyword-filters', { keyword })
+  addKeyword: async (keyword: string, scope = 'all'): Promise<KeywordFilter> => {
+    return apiClient.post<KeywordFilter>('/admin/keyword-filters', { keyword, scope })
   },
 
   toggleKeyword: async (id: number, is_active: boolean): Promise<KeywordFilter> => {
     return apiClient.patch<KeywordFilter>(`/admin/keyword-filters/${id}`, { is_active })
+  },
+
+  updateKeywordScope: async (id: number, scope: string): Promise<KeywordFilter> => {
+    return apiClient.patch<KeywordFilter>(`/admin/keyword-filters/${id}`, { scope })
   },
 
   deleteKeyword: async (id: number): Promise<void> => {

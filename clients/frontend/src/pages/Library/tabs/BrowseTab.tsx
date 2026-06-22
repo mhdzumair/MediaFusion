@@ -553,7 +553,7 @@ export function BrowseTab() {
   }, [browsePage, catalogType, selectedCatalog, selectedGenre, search, searchMode, sort, sortDir, pageSize])
 
   const handleCardClick = (item: ContentCardData) => {
-    saveContentDetailReturnUrl(location.pathname, location.search)
+    saveContentDetailReturnUrl(location.pathname, location.search, 'Browse')
     saveState({
       catalogType,
       selectedCatalog,

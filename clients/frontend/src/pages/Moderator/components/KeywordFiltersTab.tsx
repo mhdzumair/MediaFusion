@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDebounce } from '@/hooks'
 import {
@@ -17,9 +18,40 @@ import {
   useKeywordWhitelist,
   useReloadKeywordCache,
   useToggleKeyword,
+  useUpdateKeywordScope,
 } from '@/hooks'
 
 const PAGE_SIZE = 50
+
+type Scope = 'all' | 'stream' | 'media'
+
+const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'stream', label: 'Stream' },
+  { value: 'media', label: 'Media' },
+]
+
+function ScopeBadge({ scope }: { scope: string }) {
+  if (scope === 'stream') {
+    return (
+      <Badge className="text-xs px-1.5 py-0 bg-cyan-500/15 text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/20">
+        stream
+      </Badge>
+    )
+  }
+  if (scope === 'media') {
+    return (
+      <Badge className="text-xs px-1.5 py-0 bg-orange-500/15 text-orange-400 border-orange-500/30 hover:bg-orange-500/20">
+        media
+      </Badge>
+    )
+  }
+  return (
+    <Badge className="text-xs px-1.5 py-0 bg-blue-500/15 text-blue-400 border-blue-500/30 hover:bg-blue-500/20">
+      all
+    </Badge>
+  )
+}
 
 export function KeywordFiltersTab() {
   // ── Blocked keywords state ────────────────────────────────────────────────
@@ -27,14 +59,18 @@ export function KeywordFiltersTab() {
   const [keywordSearch, setKeywordSearch] = useState('')
   const debouncedSearch = useDebounce(keywordSearch, 300)
   const [newKeyword, setNewKeyword] = useState('')
+  const [newScope, setNewScope] = useState<Scope>('all')
+  const [scopeFilter, setScopeFilter] = useState<string>('')
 
   const { data: keywordsData, isLoading: keywordsLoading } = useKeywordFilters({
     page: keywordPage,
     page_size: PAGE_SIZE,
     search: debouncedSearch || undefined,
+    scope: scopeFilter || undefined,
   })
   const addKeyword = useAddKeyword()
   const toggleKeyword = useToggleKeyword()
+  const updateScope = useUpdateKeywordScope()
   const deleteKeyword = useDeleteKeyword()
   const reloadCache = useReloadKeywordCache()
 
@@ -54,7 +90,7 @@ export function KeywordFiltersTab() {
   const handleAddKeyword = () => {
     const kw = newKeyword.trim()
     if (!kw) return
-    addKeyword.mutate(kw, { onSuccess: () => setNewKeyword('') })
+    addKeyword.mutate({ keyword: kw, scope: newScope }, { onSuccess: () => setNewKeyword('') })
   }
 
   const handleAddPhrase = () => {
@@ -111,36 +147,78 @@ export function KeywordFiltersTab() {
           </CardHeader>
           <CardContent className="space-y-3">
             {/* Add keyword */}
-            <div className="flex gap-2">
-              <Input
-                placeholder="e.g. brazzers"
-                value={newKeyword}
-                onChange={(e) => setNewKeyword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddKeyword()}
-                className="h-8 text-sm"
-              />
-              <Button
-                size="sm"
-                onClick={handleAddKeyword}
-                disabled={addKeyword.isPending || !newKeyword.trim()}
-                className="h-8 shrink-0"
-              >
-                {addKeyword.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-              </Button>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="e.g. brazzers"
+                  value={newKeyword}
+                  onChange={(e) => setNewKeyword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddKeyword()}
+                  className="h-8 text-sm"
+                />
+                <Select value={newScope} onValueChange={(v) => setNewScope(v as Scope)}>
+                  <SelectTrigger className="h-8 w-28 text-xs shrink-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SCOPE_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  onClick={handleAddKeyword}
+                  disabled={addKeyword.isPending || !newKeyword.trim()}
+                  className="h-8 shrink-0"
+                >
+                  {addKeyword.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium text-blue-400">all</span> — blocks streams &amp; media.{' '}
+                <span className="font-medium text-cyan-400">stream</span> — torrent/stream titles only.{' '}
+                <span className="font-medium text-orange-400">media</span> — media title/description only.
+              </p>
             </div>
 
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Search keywords…"
-                value={keywordSearch}
-                onChange={(e) => {
-                  setKeywordSearch(e.target.value)
+            {/* Search + scope filter */}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search keywords…"
+                  value={keywordSearch}
+                  onChange={(e) => {
+                    setKeywordSearch(e.target.value)
+                    setKeywordPage(1)
+                  }}
+                  className="h-8 pl-8 text-sm"
+                />
+              </div>
+              <Select
+                value={scopeFilter || 'all-scopes'}
+                onValueChange={(v) => {
+                  setScopeFilter(v === 'all-scopes' ? '' : v)
                   setKeywordPage(1)
                 }}
-                className="h-8 pl-8 text-sm"
-              />
+              >
+                <SelectTrigger className="h-8 w-28 text-xs shrink-0">
+                  <SelectValue placeholder="Scope" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all-scopes" className="text-xs">
+                    All scopes
+                  </SelectItem>
+                  {SCOPE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* List */}
@@ -157,6 +235,19 @@ export function KeywordFiltersTab() {
                     >
                       {kw.keyword}
                     </span>
+                    <ScopeBadge scope={kw.scope} />
+                    <Select value={kw.scope} onValueChange={(v) => updateScope.mutate({ id: kw.id, scope: v })}>
+                      <SelectTrigger className="h-6 w-20 text-xs shrink-0 opacity-0 group-hover:opacity-100 border-0 bg-transparent px-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SCOPE_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Button
                       variant="ghost"
                       size="icon"

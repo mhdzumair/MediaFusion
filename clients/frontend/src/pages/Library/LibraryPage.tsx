@@ -3,8 +3,27 @@ import { useSearchParams, Link } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Compass, Bookmark, History, Library, Cloud, Settings2, Loader2, ShieldAlert, Sparkles } from 'lucide-react'
-import { BrowseTab, DiscoverTab, MyLibraryTab, HistoryTab, WatchlistTab, BlockedLibraryTab } from './tabs'
+import {
+  Compass,
+  Bookmark,
+  History,
+  Library,
+  Cloud,
+  Settings2,
+  Loader2,
+  ShieldAlert,
+  Sparkles,
+  EyeOff,
+} from 'lucide-react'
+import {
+  BrowseTab,
+  DiscoverTab,
+  MyLibraryTab,
+  HistoryTab,
+  WatchlistTab,
+  BlockedLibraryTab,
+  NsfwReviewTab,
+} from './tabs'
 import { useProfiles } from '@/hooks/useProfiles'
 import { useRole } from '@/hooks/useRole'
 
@@ -19,6 +38,8 @@ export function LibraryPage() {
 
   // Blocked-content view: ?blocked=true (admin only)
   const isBlockedView = searchParams.get('blocked') === 'true' && isAdmin
+  // NSFW review view: ?nsfw=true (any authenticated user)
+  const isNsfwView = searchParams.get('nsfw') === 'true'
 
   // Get initial tab from URL or session storage
   const urlTab = searchParams.get('tab')
@@ -99,6 +120,45 @@ export function LibraryPage() {
     )
   }
 
+  // NSFW review view — visible to any authenticated user
+  if (isNsfwView) {
+    return (
+      <div className="space-y-6 p-6 max-w-screen-xl mx-auto">
+        <div className="space-y-2 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-md bg-destructive/10 border border-destructive/20">
+                <EyeOff className="h-5 w-5 text-destructive" />
+              </div>
+              <div>
+                <h1 className="font-display text-3xl font-semibold tracking-tight">NSFW Review</h1>
+                <p className="text-muted-foreground text-sm">Posters flagged by the AI classifier</p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-xl"
+              onClick={() =>
+                setSearchParams(
+                  (prev) => {
+                    const params = new URLSearchParams(prev)
+                    params.delete('nsfw')
+                    return params
+                  },
+                  { replace: true },
+                )
+              }
+            >
+              ← Back to Library
+            </Button>
+          </div>
+        </div>
+        <NsfwReviewTab />
+      </div>
+    )
+  }
+
   if (!hasDebridProfile) {
     return (
       <div className="space-y-6 p-6 max-w-screen-xl mx-auto">
@@ -141,27 +201,49 @@ export function LibraryPage() {
             </div>
           </div>
 
-          {/* Admin shortcut to blocked content */}
-          {isAdmin && (
+          <div className="flex items-center gap-2">
+            {/* NSFW review — all authenticated users */}
             <Button
               variant="outline"
               size="sm"
-              className="rounded-xl gap-2 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              className="rounded-xl gap-2 border-destructive/20 text-destructive/80 hover:bg-destructive/10 hover:text-destructive"
               onClick={() =>
                 setSearchParams(
                   (prev) => {
                     const params = new URLSearchParams(prev)
-                    params.set('blocked', 'true')
+                    params.set('nsfw', 'true')
                     return params
                   },
                   { replace: true },
                 )
               }
             >
-              <ShieldAlert className="h-4 w-4" />
-              Blocked
+              <EyeOff className="h-4 w-4" />
+              NSFW Review
             </Button>
-          )}
+
+            {/* Admin shortcut to blocked content */}
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl gap-2 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() =>
+                  setSearchParams(
+                    (prev) => {
+                      const params = new URLSearchParams(prev)
+                      params.set('blocked', 'true')
+                      return params
+                    },
+                    { replace: true },
+                  )
+                }
+              >
+                <ShieldAlert className="h-4 w-4" />
+                Blocked
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 

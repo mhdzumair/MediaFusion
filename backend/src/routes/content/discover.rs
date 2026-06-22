@@ -236,7 +236,7 @@ fn filter_items_by_keyword(kf: &KeywordFilterCache, items: Vec<Value>) -> Vec<Va
                 .as_str()
                 .or_else(|| item["name"].as_str())
                 .unwrap_or("");
-            !kf.matches_blocked_keyword(title)
+            !kf.matches_blocked_media_keyword(title)
         })
         .collect()
 }

@@ -162,9 +162,14 @@ pub async fn list_my_streams(
     let mut next_idx = 2i32;
 
     match status_filter.as_deref() {
-        Some("active") => filters.push_str(" AND s.is_blocked = false AND s.is_active = true"),
+        Some("active") => filters.push_str(
+            " AND s.is_blocked = false AND s.is_keyword_blocked = false AND s.is_active = true",
+        ),
         Some("blocked") => filters.push_str(" AND s.is_blocked = true"),
         Some("inactive") => filters.push_str(" AND s.is_active = false AND s.is_blocked = false"),
+        Some("keyword_blocked") => {
+            filters.push_str(" AND s.is_keyword_blocked = true AND s.is_blocked = false")
+        }
         _ => {}
     }
 
@@ -229,6 +234,7 @@ pub async fn list_my_streams(
             s.is_blocked,
             s.is_active,
             s.is_public,
+            s.is_keyword_blocked,
             sml.media_id,
             m.title AS media_title,
             m.type::text AS media_type,

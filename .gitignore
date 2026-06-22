@@ -155,3 +155,4 @@ python-deprecated/reference
 python-deprecated/resources
 # .sqlx/ tracked for offline sqlx query verification in CI
 !backend/migrations/*.sql
+.DS_Store

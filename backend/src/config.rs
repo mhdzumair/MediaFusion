@@ -349,6 +349,24 @@ pub struct AppConfig {
     /// Branding description shown on the home page (may contain HTML).
     pub branding_description: String,
 
+    // ── NSFW poster classifier ────────────────────────────────────
+    /// Enable NSFW poster classification filter in catalog queries (`POSTER_NSFW_ENABLED`, default true).
+    pub poster_nsfw_enabled: bool,
+    /// POSIX path to the ONNX model file (`POSTER_NSFW_MODEL_PATH`).
+    /// Defaults to `resources/nsfw_model.onnx`. The classifier is disabled when the file is absent.
+    pub poster_nsfw_model_path: String,
+    /// Combined score threshold above which a poster is flagged (`POSTER_NSFW_THRESHOLD`, default 0.7).
+    pub poster_nsfw_threshold: f32,
+    /// Model version string — change this to force re-classification of all existing posters
+    /// (`POSTER_NSFW_MODEL_VERSION`, default "v1").
+    pub poster_nsfw_model_version: String,
+    /// Batch size for the background NSFW scan job (`POSTER_NSFW_SCAN_BATCH`, default 100).
+    pub poster_nsfw_scan_batch: usize,
+    /// RPDB API key for fetching high-quality posters (`RPDB_API_KEY`).
+    /// When set, the scan job fetches `https://api.ratingposterdb.com/{key}/imdb/poster-default/{imdb_id}.jpg?fallback=true`
+    /// first and falls back to the stored `media_image` URL on failure.
+    pub rpdb_api_key: Option<String>,
+
     // ── HTTP client / egress ──────────────────────────────────────
     /// Provider service IDs that bypass `REQUESTS_PROXY_URL` and connect directly.
     /// Comma-separated or JSON array. Valid IDs: realdebrid, seedr, debridlink, alldebrid,
@@ -849,6 +867,23 @@ impl AppConfig {
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(5),
             egress_watchdog_probe_urls: env("EGRESS_WATCHDOG_PROBE_URLS")
                 .ok().filter(|s| !s.is_empty()),
+            poster_nsfw_enabled: env("POSTER_NSFW_ENABLED")
+                .ok()
+                .map(|v| matches!(v.to_lowercase().as_str(), "true" | "1" | "yes"))
+                .unwrap_or(true),
+            poster_nsfw_model_path: env("POSTER_NSFW_MODEL_PATH")
+                .unwrap_or_else(|_| default_resources_dir() + "/nsfw_model.onnx"),
+            poster_nsfw_threshold: env("POSTER_NSFW_THRESHOLD")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.7),
+            poster_nsfw_model_version: env("POSTER_NSFW_MODEL_VERSION")
+                .unwrap_or_else(|_| "v1".to_string()),
+            poster_nsfw_scan_batch: env("POSTER_NSFW_SCAN_BATCH")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(100),
+            rpdb_api_key: env("RPDB_API_KEY").ok().filter(|s| !s.is_empty()),
         }
     }
 

@@ -11,8 +11,8 @@ use mediafusion_api::{
     config::AppConfig,
     exception_tracker, routes,
     state::{
-        load_keyword_filter_cache, maybe_recompute_keyword_blocked, sync_keywords_from_file,
-        AppState,
+        load_keyword_filter_cache, maybe_recompute_keyword_blocked,
+        maybe_recompute_stream_keyword_blocked, sync_keywords_from_file, AppState,
     },
 };
 use tracing::info;
@@ -80,16 +80,18 @@ async fn main() {
         .await
         .expect("database migration failed");
 
-    // Sync keyword file → DB now that migrations (including 0007) are applied,
-    // then refresh the in-memory cache that was loaded before migrations ran.
-    sync_keywords_from_file(&state.pool).await;
-    *state.keyword_filters.write().unwrap() = load_keyword_filter_cache(&state.pool).await;
-
-    // Recompute is_keyword_blocked only if the keyword version has changed since
-    // the last recompute (one cheap SELECT; skips the heavy UPDATE on normal restarts).
+    // Sync keyword file → DB and recompute blocked flags in the background so the
+    // server starts accepting requests immediately.
     {
-        let kf = state.keyword_filters.read().unwrap().clone();
-        maybe_recompute_keyword_blocked(&state.pool, &kf).await;
+        let pool = state.pool.clone();
+        let kf_lock = Arc::clone(&state.keyword_filters);
+        tokio::spawn(async move {
+            sync_keywords_from_file(&pool).await;
+            let kf = load_keyword_filter_cache(&pool).await;
+            maybe_recompute_keyword_blocked(&pool, &kf).await;
+            maybe_recompute_stream_keyword_blocked(&pool, &kf).await;
+            *kf_lock.write().unwrap() = kf;
+        });
     }
 
     // Start the exception tracker background worker now that Redis is ready

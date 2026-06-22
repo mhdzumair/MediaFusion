@@ -514,10 +514,14 @@ pub async fn get_media_metadata(
             }
         };
 
-    // Hard-block media whose title matches the global keyword filter.
-    {
-        let kf = state.keyword_filters.read().unwrap();
-        if kf.matches_blocked_keyword(&title) {
+    // Restriction gate: blocked/keyword-blocked/NSFW media is only visible to admins.
+    let is_restricted = crate::state::media_is_restricted(&state.pool_ro, media_id).await;
+    if is_restricted {
+        let is_admin =
+            crate::routes::auth_guard::decode_access_token(&headers, &state.config.secret_key_raw)
+                .map(|(_, role)| role == "admin")
+                .unwrap_or(false);
+        if !is_admin {
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Media not found"})),

@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -46,6 +46,7 @@ import {
   type WatchlistProviderInfo,
   type WatchlistItem,
 } from '@/lib/api'
+import { saveContentDetailReturnUrl } from '../browseNavigation'
 
 // Providers that support import functionality (all providers with fetch_torrent_details)
 const IMPORT_SUPPORTED_PROVIDERS = new Set([
@@ -60,6 +61,7 @@ const IMPORT_SUPPORTED_PROVIDERS = new Set([
 ])
 
 export function WatchlistTab() {
+  const location = useLocation()
   const { toast } = useToast()
 
   // Profile selection
@@ -129,6 +131,13 @@ export function WatchlistTab() {
     })
     return { contentItems: items, itemHashesMap: hashesMap }
   }, [watchlistData?.items])
+
+  const handleNavigate = useCallback(
+    (_item: ContentCardData) => {
+      saveContentDetailReturnUrl(location.pathname, location.search, 'Watchlist')
+    },
+    [location],
+  )
 
   // Remove torrent mutation
   const removeTorrent = useRemoveTorrent()
@@ -457,7 +466,14 @@ export function WatchlistTab() {
             <>
               <ContentGrid>
                 {contentItems.map((item) => (
-                  <ContentCard key={item.id} item={item} variant="grid" showType={true} onRemove={handleRemove} />
+                  <ContentCard
+                    key={item.id}
+                    item={item}
+                    variant="grid"
+                    showType={true}
+                    onRemove={handleRemove}
+                    onNavigate={handleNavigate}
+                  />
                 ))}
               </ContentGrid>
 

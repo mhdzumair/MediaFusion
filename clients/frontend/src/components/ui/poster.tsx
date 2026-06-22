@@ -54,7 +54,7 @@ export function Poster({
 
     // 1. RPDB poster (for IMDB IDs with API key) - skip if override is set
     if (!overridePoster && metaId.startsWith('tt') && rpdbApiKey) {
-      urls.push(`https://api.ratingposterdb.com/${rpdbApiKey}/imdb/poster-default/${metaId}.jpg?fallback=true`)
+      urls.push(`https://api.ratingposterdb.com/${rpdbApiKey}/imdb/poster-default/${metaId}.jpg`)
     }
 
     // 2. Actual poster from database
@@ -212,7 +212,7 @@ export function isRpdbTier1Plus(rpdbApiKey: string | null | undefined): boolean 
  * Generate RPDB backdrop URL
  */
 export function getRpdbBackdropUrl(metaId: string, rpdbApiKey: string): string {
-  return `https://api.ratingposterdb.com/${rpdbApiKey}/imdb/backdrop-default/${metaId}.jpg?fallback=true`
+  return `https://api.ratingposterdb.com/${rpdbApiKey}/imdb/backdrop-default/${metaId}.jpg`
 }
 
 interface BackdropProps {

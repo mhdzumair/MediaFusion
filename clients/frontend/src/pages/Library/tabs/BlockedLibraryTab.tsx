@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -22,9 +22,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import {
   Ban,
   Search,
-  Film,
-  Tv,
-  Radio,
   ChevronLeft,
   ChevronRight,
   CheckCircle,
@@ -33,17 +30,15 @@ import {
   Calendar,
   User,
   Tag,
+  EyeOff,
 } from 'lucide-react'
 import { adminApi, type BlockedMediaItem } from '@/lib/api/admin'
 import { useToast } from '@/hooks/use-toast'
+import { Poster } from '@/components/ui/poster'
+import { useRpdb } from '@/contexts/RpdbContext'
+import { saveContentDetailReturnUrl } from '../browseNavigation'
 
 const PAGE_SIZE = 24
-
-const TYPE_ICONS = {
-  movie: Film,
-  series: Tv,
-  tv: Radio,
-}
 
 const TYPE_LABELS = {
   movie: 'Movie',
@@ -51,9 +46,25 @@ const TYPE_LABELS = {
   tv: 'TV',
 }
 
-function BlockedItemCard({ item, onUnblocked }: { item: BlockedMediaItem; onUnblocked: () => void }) {
+const FILTER_LABELS: Record<string, string> = {
+  all_restricted: 'All Restricted',
+  manual: 'Manually Blocked',
+  keyword_blocked: 'Keyword Blocked',
+  nsfw_flagged: 'NSFW Flagged',
+}
+
+function BlockedItemCard({
+  item,
+  onUnblocked,
+  returnLabel,
+}: {
+  item: BlockedMediaItem
+  onUnblocked: () => void
+  returnLabel: string
+}) {
   const { toast } = useToast()
-  const TypeIcon = TYPE_ICONS[item.type]
+  const { rpdbApiKey } = useRpdb()
+  const location = useLocation()
   const isKeywordOnly = item.is_keyword_blocked && !item.is_blocked
 
   const unblockMutation = useMutation({
@@ -69,25 +80,25 @@ function BlockedItemCard({ item, onUnblocked }: { item: BlockedMediaItem; onUnbl
 
   const contentPath = `/dashboard/content/${item.type}/${item.id}`
 
+  const handleContentClick = () => {
+    saveContentDetailReturnUrl(location.pathname, location.search, returnLabel)
+  }
+
   return (
     <div className="group relative">
       <Card className="overflow-hidden border-border/50 bg-card/50 hover:border-destructive/50 transition-colors">
         {/* Poster */}
-        <div className="relative aspect-[2/3] bg-muted overflow-hidden">
-          {item.poster ? (
-            <img
-              src={item.poster}
-              alt={item.title}
-              className="w-full h-full object-cover opacity-60 group-hover:opacity-70 transition-opacity"
-              loading="lazy"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <TypeIcon className="h-12 w-12 text-muted-foreground/30" />
-            </div>
-          )}
+        <div className="relative aspect-[2/3] overflow-hidden">
+          <Poster
+            metaId={item.imdb_id ?? `mf:${item.id}`}
+            catalogType={item.type}
+            poster={item.poster}
+            rpdbApiKey={item.type !== 'tv' ? rpdbApiKey : null}
+            title={item.title}
+            className="opacity-60 group-hover:opacity-70 transition-opacity w-full h-full rounded-none"
+          />
 
-          {/* Blocked overlay badge */}
+          {/* Restriction badges */}
           <div className="absolute top-2 left-2 flex flex-col gap-1">
             {item.is_blocked && (
               <Badge variant="destructive" className="text-xs gap-1">
@@ -96,9 +107,15 @@ function BlockedItemCard({ item, onUnblocked }: { item: BlockedMediaItem; onUnbl
               </Badge>
             )}
             {item.is_keyword_blocked && (
-              <Badge className="text-xs gap-1 bg-orange-500/20 text-orange-400 border-orange-500/30">
+              <Badge className="text-xs gap-1 bg-orange-600 text-white border-orange-600">
                 <Tag className="h-3 w-3" />
                 Keyword
+              </Badge>
+            )}
+            {item.nsfw_flagged && (
+              <Badge className="text-xs gap-1 bg-purple-600 text-white border-purple-600">
+                <EyeOff className="h-3 w-3" />
+                NSFW
               </Badge>
             )}
           </div>
@@ -115,6 +132,7 @@ function BlockedItemCard({ item, onUnblocked }: { item: BlockedMediaItem; onUnbl
           {/* Title */}
           <Link
             to={contentPath}
+            onClick={handleContentClick}
             className="block text-sm font-medium leading-tight hover:text-primary transition-colors line-clamp-2"
             title={item.title}
           >
@@ -153,7 +171,7 @@ function BlockedItemCard({ item, onUnblocked }: { item: BlockedMediaItem; onUnbl
           </div>
 
           {/* Unblock button */}
-          {isKeywordOnly ? (
+          {isKeywordOnly || item.nsfw_flagged ? (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -165,12 +183,16 @@ function BlockedItemCard({ item, onUnblocked }: { item: BlockedMediaItem; onUnbl
                       disabled
                     >
                       <ShieldAlert className="h-3 w-3" />
-                      Keyword blocked
+                      {item.nsfw_flagged ? 'NSFW flagged' : 'Keyword blocked'}
                     </Button>
                   </span>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="max-w-xs">
-                  <p className="text-xs">Blocked by keyword filter. Edit the keyword list to unblock.</p>
+                  <p className="text-xs">
+                    {item.nsfw_flagged
+                      ? 'Flagged by NSFW classifier. Review in the NSFW tab.'
+                      : 'Blocked by keyword filter. Edit the keyword list to unblock.'}
+                  </p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -216,8 +238,9 @@ export function BlockedLibraryTab() {
   const queryClient = useQueryClient()
 
   const catalogType = (searchParams.get('type') as 'movie' | 'series' | 'tv') || ''
+  const filter = searchParams.get('b_filter') || 'all_restricted'
+  const page = parseInt(searchParams.get('b_page') || '1', 10)
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
 
   const setType = (value: string) => {
     const next = new URLSearchParams(searchParams)
@@ -226,11 +249,24 @@ export function BlockedLibraryTab() {
     } else {
       next.delete('type')
     }
+    next.set('b_page', '1')
     setSearchParams(next, { replace: true })
-    setPage(1)
   }
 
-  const queryKey = ['admin', 'blocked-media', { type: catalogType || undefined, search, page }]
+  const setFilter = (value: string) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('b_filter', value)
+    next.set('b_page', '1')
+    setSearchParams(next, { replace: true })
+  }
+
+  const setPage = (value: number) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('b_page', String(value))
+    setSearchParams(next, { replace: true })
+  }
+
+  const queryKey = ['admin', 'blocked-media', { type: catalogType || undefined, search, page, filter }]
 
   const { data, isLoading } = useQuery({
     queryKey,
@@ -240,6 +276,7 @@ export function BlockedLibraryTab() {
         search: search || undefined,
         page,
         page_size: PAGE_SIZE,
+        filter,
       }),
   })
 
@@ -247,17 +284,19 @@ export function BlockedLibraryTab() {
     queryClient.invalidateQueries({ queryKey: ['admin', 'blocked-media'] })
   }
 
+  const returnLabel = FILTER_LABELS[filter] ?? 'Blocked Content'
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3 p-4 rounded-xl bg-destructive/5 border border-destructive/20">
         <ShieldAlert className="h-5 w-5 text-destructive shrink-0" />
         <div>
-          <p className="text-sm font-medium text-destructive">Blocked Content</p>
+          <p className="text-sm font-medium text-destructive">Restricted Content</p>
           <p className="text-xs text-muted-foreground">
             {data
-              ? `${data.total} item${data.total !== 1 ? 's' : ''} blocked`
-              : 'Admin view — blocked items are hidden from regular users'}
+              ? `${data.total} item${data.total !== 1 ? 's' : ''} restricted`
+              : 'Admin view — restricted items are hidden from regular users'}
           </p>
         </div>
       </div>
@@ -267,7 +306,7 @@ export function BlockedLibraryTab() {
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search blocked items..."
+            placeholder="Search restricted items..."
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -276,6 +315,18 @@ export function BlockedLibraryTab() {
             className="pl-9 rounded-xl"
           />
         </div>
+
+        <Select value={filter} onValueChange={setFilter}>
+          <SelectTrigger className="w-[175px] rounded-xl">
+            <SelectValue placeholder="All Restricted" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all_restricted">All Restricted</SelectItem>
+            <SelectItem value="manual">Manually Blocked</SelectItem>
+            <SelectItem value="keyword_blocked">Keyword Blocked</SelectItem>
+            <SelectItem value="nsfw_flagged">NSFW Flagged</SelectItem>
+          </SelectContent>
+        </Select>
 
         <Select value={catalogType || 'all'} onValueChange={setType}>
           <SelectTrigger className="w-[140px] rounded-xl">
@@ -303,16 +354,16 @@ export function BlockedLibraryTab() {
       ) : !data?.items.length ? (
         <div className="text-center py-16">
           <CheckCircle className="h-16 w-16 mx-auto text-emerald-500/40" />
-          <p className="mt-4 text-muted-foreground font-medium">No blocked content</p>
+          <p className="mt-4 text-muted-foreground font-medium">No restricted content</p>
           <p className="text-sm text-muted-foreground mt-1">
-            {search || catalogType ? 'No results match your filters.' : 'All clear — nothing is currently blocked.'}
+            {search || catalogType ? 'No results match your filters.' : 'All clear — nothing is currently restricted.'}
           </p>
         </div>
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {data.items.map((item) => (
-              <BlockedItemCard key={item.id} item={item} onUnblocked={handleUnblocked} />
+              <BlockedItemCard key={item.id} item={item} onUnblocked={handleUnblocked} returnLabel={returnLabel} />
             ))}
           </div>
 
@@ -322,7 +373,7 @@ export function BlockedLibraryTab() {
                 variant="outline"
                 size="icon"
                 disabled={page === 1}
-                onClick={() => setPage((p) => p - 1)}
+                onClick={() => setPage(page - 1)}
                 className="rounded-xl"
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -334,7 +385,7 @@ export function BlockedLibraryTab() {
                 variant="outline"
                 size="icon"
                 disabled={!data.has_more}
-                onClick={() => setPage((p) => p + 1)}
+                onClick={() => setPage(page + 1)}
                 className="rounded-xl"
               >
                 <ChevronRight className="h-4 w-4" />

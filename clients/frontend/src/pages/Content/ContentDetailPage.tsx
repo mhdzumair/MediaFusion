@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
-import { getContentDetailReturnUrl } from '@/pages/Library/browseNavigation'
+import { getContentDetailReturnUrl, getContentDetailReturnLabel } from '@/pages/Library/browseNavigation'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -41,6 +41,11 @@ import {
   Hash,
   Layers,
   X,
+  EyeOff,
+  ShieldCheck,
+  ShieldOff,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react'
 import {
   useCatalogItem,
@@ -62,6 +67,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useRpdb } from '@/contexts/RpdbContext'
 import { useToast } from '@/hooks/use-toast'
 import type { StreamingProviderInfo } from '@/lib/api'
+import { adminApi } from '@/lib/api/admin'
 import {
   StreamVoteButtons,
   StreamReport,
@@ -190,6 +196,268 @@ function canOfferTranscodeForStream(stream: CatalogStreamInfo, streamUrl: string
 
 function buildYouTubeWatchUrl(videoId: string): string {
   return `https://www.youtube.com/watch?v=${videoId}`
+}
+
+function highlightKeywords(text: string, keywords: string[]): React.ReactNode {
+  if (!keywords.length) return text
+  // Build a case-insensitive alternation regex from all keywords, longest first
+  // so "too big" matches before "big" if both were present.
+  const sorted = [...keywords].sort((a, b) => b.length - a.length)
+  const pattern = new RegExp(`(${sorted.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi')
+  const parts = text.split(pattern)
+  return parts.map((part, i) =>
+    pattern.test(part) ? (
+      <mark key={i} className="bg-orange-400/30 text-orange-300 rounded px-0.5 font-semibold not-italic">
+        {part}
+      </mark>
+    ) : (
+      part
+    ),
+  )
+}
+
+function NsfwStatusSection({
+  mediaId,
+  score,
+  flagged,
+  reviewed,
+  isAdmin,
+}: {
+  mediaId: number
+  score: number
+  flagged: boolean
+  reviewed: boolean
+  isAdmin: boolean
+}) {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+
+  const reviewMutation = useMutation({
+    mutationFn: (newFlagged: boolean) => adminApi.reviewNsfwItem(mediaId, newFlagged),
+    onSuccess: (_, newFlagged) => {
+      toast({
+        title: newFlagged ? 'Confirmed NSFW' : 'Cleared — marked as safe',
+        description: newFlagged ? 'Item will remain hidden from the catalog.' : 'Item is now visible in the catalog.',
+      })
+      queryClient.invalidateQueries({ queryKey: ['catalog'] })
+    },
+    onError: (e: Error) => {
+      toast({ variant: 'destructive', title: 'Review failed', description: e.message })
+    },
+  })
+
+  const pct = Math.round(score * 100)
+
+  return (
+    <div className="pt-4 border-t border-border/30">
+      <p className="text-xs text-muted-foreground mb-2 font-medium">NSFW Poster Detection</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Score badge */}
+        <span
+          className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium ${
+            pct >= 80
+              ? 'bg-red-500/15 text-red-400 border-red-500/30'
+              : pct >= 50
+                ? 'bg-orange-500/15 text-orange-400 border-orange-500/30'
+                : 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30'
+          }`}
+        >
+          <EyeOff className="h-3 w-3" />
+          {pct}% NSFW
+        </span>
+
+        {/* Review status */}
+        {reviewed ? (
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-emerald-500/15 text-emerald-400 border-emerald-500/30 font-medium">
+            <ShieldCheck className="h-3 w-3" />
+            {flagged ? 'Confirmed NSFW' : 'Reviewed — Safe'}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-destructive/15 text-destructive border-destructive/30 font-medium">
+            <EyeOff className="h-3 w-3" />
+            Pending review
+          </span>
+        )}
+
+        {/* Admin review actions */}
+        {isAdmin && !reviewed && (
+          <>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 px-2 text-xs gap-1 border-destructive/30 text-destructive hover:bg-destructive/10"
+                  disabled={reviewMutation.isPending}
+                >
+                  {reviewMutation.isPending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <XCircle className="h-3 w-3" />
+                  )}
+                  Confirm NSFW
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Confirm NSFW?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Keeps this item hidden from the catalog. The scan job will not re-score it.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive hover:bg-destructive/90"
+                    onClick={() => reviewMutation.mutate(true)}
+                  >
+                    Confirm NSFW
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 px-2 text-xs gap-1 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10"
+                  disabled={reviewMutation.isPending}
+                >
+                  {reviewMutation.isPending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-3 w-3" />
+                  )}
+                  Mark Safe
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear flag?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Marks the poster as safe. The item becomes visible in the catalog again.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => reviewMutation.mutate(false)}>Mark as Safe</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        )}
+
+        {isAdmin && reviewed && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => reviewMutation.mutate(!flagged)}
+            disabled={reviewMutation.isPending}
+          >
+            {reviewMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            {flagged ? 'Undo — Mark safe' : 'Undo — Mark NSFW'}
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function KeywordOverrideSection({
+  mediaId,
+  isOverridden,
+  isAdmin,
+  onSuccess,
+}: {
+  mediaId: number
+  isOverridden: boolean
+  isAdmin: boolean
+  onSuccess: () => void
+}) {
+  const { toast } = useToast()
+
+  const overrideMutation = useMutation({
+    mutationFn: () => adminApi.toggleKeywordOverride(mediaId),
+    onSuccess: (data) => {
+      toast({
+        title: data.keyword_block_override ? 'Keyword block overridden' : 'Override removed',
+        description: data.message,
+      })
+      onSuccess()
+    },
+    onError: (e: Error) => {
+      toast({ variant: 'destructive', title: 'Action failed', description: e.message })
+    },
+  })
+
+  if (!isAdmin) return null
+
+  return (
+    <div className="pt-4 border-t border-border/30">
+      <p className="text-xs text-muted-foreground mb-2 font-medium">Keyword Block Override</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {isOverridden ? (
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-emerald-500/15 text-emerald-400 border-emerald-500/30 font-medium">
+            <ShieldCheck className="h-3 w-3" />
+            Override Active — Visible to users
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-orange-500/15 text-orange-400 border-orange-500/30 font-medium">
+            <ShieldOff className="h-3 w-3" />
+            Keyword blocked
+          </span>
+        )}
+
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              size="sm"
+              variant="outline"
+              className={`h-6 px-2 text-xs gap-1 ${
+                isOverridden
+                  ? 'border-orange-500/30 text-orange-400 hover:bg-orange-500/10'
+                  : 'border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10'
+              }`}
+              disabled={overrideMutation.isPending}
+            >
+              {overrideMutation.isPending ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : isOverridden ? (
+                <ShieldOff className="h-3 w-3" />
+              ) : (
+                <ShieldCheck className="h-3 w-3" />
+              )}
+              {isOverridden ? 'Remove Override' : 'Override Keyword Block'}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {isOverridden ? 'Remove keyword block override?' : 'Override keyword block?'}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {isOverridden
+                  ? 'This will re-apply the keyword block. The item will be hidden from the catalog again.'
+                  : 'This will suppress the keyword block for this item only. The item will become visible in the catalog despite matching a keyword filter. Use this for false positives.'}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className={isOverridden ? 'bg-destructive hover:bg-destructive/90' : ''}
+                onClick={() => overrideMutation.mutate()}
+              >
+                {isOverridden ? 'Remove Override' : 'Override Keyword Block'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </div>
+  )
 }
 
 function StreamActionDialog({
@@ -1636,6 +1904,7 @@ export function ContentDetailPage() {
   }
 
   const libraryReturnTo = getContentDetailReturnUrl()
+  const returnLabel = getContentDetailReturnLabel()
 
   if (!item) {
     return (
@@ -1645,7 +1914,7 @@ export function ContentDetailPage() {
         <Button asChild className="mt-4 rounded-xl">
           <Link to={libraryReturnTo}>
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Library
+            Back to {returnLabel}
           </Link>
         </Button>
       </div>
@@ -1658,7 +1927,7 @@ export function ContentDetailPage() {
       <Button variant="ghost" asChild className="rounded-xl">
         <Link to={libraryReturnTo}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Library
+          Back to {returnLabel}
         </Link>
       </Button>
 
@@ -1691,13 +1960,35 @@ export function ContentDetailPage() {
           {/* Info */}
           <div className="space-y-4">
             <div className="space-y-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="outline" className="text-xs">
                   {catalogType === 'movie' ? 'Movie' : catalogType === 'series' ? 'Series' : 'TV'}
                 </Badge>
                 {item.year && <span className="text-sm text-muted-foreground">{item.year}</span>}
+                {item.is_blocked && (
+                  <Badge variant="destructive" className="text-xs gap-1">
+                    <Ban className="h-3 w-3" />
+                    Blocked
+                  </Badge>
+                )}
+                {item.is_keyword_blocked && !item.keyword_block_override && (
+                  <Badge className="text-xs gap-1 bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                    <Ban className="h-3 w-3" />
+                    Keyword Blocked
+                  </Badge>
+                )}
+                {item.is_keyword_blocked && item.keyword_block_override && (
+                  <Badge className="text-xs gap-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <ShieldCheck className="h-3 w-3" />
+                    Keyword Overridden
+                  </Badge>
+                )}
               </div>
-              <h1 className="text-3xl lg:text-4xl font-bold">{item.title}</h1>
+              <h1 className="text-3xl lg:text-4xl font-bold">
+                {item.is_keyword_blocked && item.matched_keywords?.length
+                  ? highlightKeywords(item.title, item.matched_keywords)
+                  : item.title}
+              </h1>
             </div>
 
             {/* Meta Info */}
@@ -1752,7 +2043,13 @@ export function ContentDetailPage() {
             )}
 
             {/* Description */}
-            {item.description && <p className="text-muted-foreground leading-relaxed max-w-2xl">{item.description}</p>}
+            {item.description && (
+              <p className="text-muted-foreground leading-relaxed max-w-2xl">
+                {item.is_keyword_blocked && item.matched_keywords?.length
+                  ? highlightKeywords(item.description, item.matched_keywords)
+                  : item.description}
+              </p>
+            )}
 
             {/* Credits (Directors, Writers, Cast) */}
             {(item.directors?.length || item.writers?.length || item.cast?.length) && (
@@ -1909,6 +2206,29 @@ export function ContentDetailPage() {
                   </div>
                 )}
               </div>
+            )}
+
+            {/* NSFW poster flag — visible to all users; review controls for admins */}
+            {item.poster_nsfw_flagged != null && item.poster_nsfw_score != null && (
+              <NsfwStatusSection
+                mediaId={mediaId}
+                score={item.poster_nsfw_score}
+                flagged={item.poster_nsfw_flagged}
+                reviewed={item.poster_nsfw_reviewed ?? false}
+                isAdmin={isAdmin}
+              />
+            )}
+
+            {/* Keyword block override — admin only, shown when keyword-blocked */}
+            {item.is_keyword_blocked && isAdmin && (
+              <KeywordOverrideSection
+                mediaId={mediaId}
+                isOverridden={item.keyword_block_override ?? false}
+                isAdmin={isAdmin}
+                onSuccess={() =>
+                  queryClient.invalidateQueries({ queryKey: ['catalog', catalogType, mediaId.toString()] })
+                }
+              />
             )}
 
             {/* External IDs */}

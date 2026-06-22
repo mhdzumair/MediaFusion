@@ -26,7 +26,7 @@ async fn build_meta(state: &AppState, media_type: &str, meta_id: &str) -> Option
     // Hard-block media whose title matches the global keyword filter.
     {
         let kf = state.keyword_filters.read().unwrap();
-        if kf.matches_blocked_keyword(&row.title) {
+        if kf.matches_blocked_media_keyword(&row.title) {
             return None;
         }
     }

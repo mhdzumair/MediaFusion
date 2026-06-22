@@ -5,6 +5,7 @@ pub mod admin_extended;
 pub mod admin_genres;
 pub mod admin_keyword_filters;
 pub mod admin_metrics;
+pub mod admin_nsfw;
 pub mod admin_scrapers;
 pub mod auth;
 pub mod auth_guard;
@@ -529,6 +530,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/metadata/{media_id}/block", post(admin_extended::block_media))
         .route("/api/v1/admin/metadata/{media_id}/unblock", post(admin_extended::unblock_media))
         .route("/api/v1/admin/media/blocked", get(admin_extended::list_blocked_media))
+        .route("/api/v1/admin/media/{id}/keyword-override", post(admin_extended::toggle_keyword_block_override))
         .route("/api/v1/admin/torrent-streams/{stream_id}/block", post(admin_extended::block_torrent_stream))
         .route("/api/v1/admin/contribution-settings", get(admin_extended::get_contribution_settings).put(admin_extended::update_contribution_settings))
         .route("/api/v1/admin/contribution-levels", get(admin_extended::get_contribution_levels))
@@ -539,6 +541,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/genres/{id}", patch(admin_genres::update_genre).delete(admin_genres::delete_genre))
         .route("/api/v1/admin/genres/{id}/types/{media_type}", delete(admin_genres::delete_genre_type))
         // ── Admin keyword filters ─────────────────────────────────────────────
+        .route("/api/v1/admin/nsfw-flagged/{id}", patch(admin_nsfw::review_nsfw_item))
         .route("/api/v1/admin/keyword-filters", get(admin_keyword_filters::list_keyword_filters).post(admin_keyword_filters::add_keyword_filter))
         .route("/api/v1/admin/keyword-filters/reload", post(admin_keyword_filters::reload_keyword_cache))
         .route("/api/v1/admin/keyword-filters/{id}", patch(admin_keyword_filters::toggle_keyword_filter).delete(admin_keyword_filters::delete_keyword_filter))

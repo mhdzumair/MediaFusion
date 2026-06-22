@@ -45,6 +45,7 @@ async fn fetch_page(
         JOIN media m ON m.id = sml.media_id
         WHERE m.type = 'TV'
           AND NOT s.is_blocked
+          AND NOT s.is_keyword_blocked
         ORDER BY s.updated_at ASC
         LIMIT $1 OFFSET $2
         "#,

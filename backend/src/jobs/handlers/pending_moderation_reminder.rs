@@ -99,6 +99,7 @@ async fn collect_pending_counts(pool: &sqlx::PgPool) -> Result<Vec<QueueCount>, 
             LEFT JOIN file_media_link fml_any ON fml_any.file_id = sf.id
             WHERE s.is_active = true
               AND s.is_blocked = false
+              AND s.is_keyword_blocked = false
               AND fml_any.id IS NULL
         ),
         null_episode_pairs AS (
@@ -112,6 +113,7 @@ async fn collect_pending_counts(pool: &sqlx::PgPool) -> Result<Vec<QueueCount>, 
             INNER JOIN media m ON m.id = fml_series.media_id
             WHERE s.is_active = true
               AND s.is_blocked = false
+              AND s.is_keyword_blocked = false
               AND m.type = 'SERIES'
               AND fml_series.episode_number IS NULL
         ),

@@ -56,6 +56,19 @@ pub async fn store_media(
         upsert_movie_metadata(pool, media_id, meta.budget, meta.revenue).await?;
     }
 
+    if opts.nsfw_scan_on_import {
+        let _ = crate::jobs::enqueue::enqueue_simple(
+            pool,
+            "poster_nsfw_scan",
+            &serde_json::json!({"media_id": media_id.0}),
+            crate::jobs::enqueue::EnqueueOpts {
+                dedupe_key: Some(format!("poster_nsfw:{}", media_id.0)),
+                ..Default::default()
+            },
+        )
+        .await;
+    }
+
     Ok(media_id)
 }
 

@@ -163,7 +163,6 @@ async fn handle_watchlist_catalog(
         .cloned()
         .collect();
 
-    let kf = { state.keyword_filters.read().unwrap().clone() };
     let rows = db_catalog::get_watchlist_items(
         &state.pool_ro,
         media_type,
@@ -173,7 +172,6 @@ async fn handle_watchlist_catalog(
         &cert_excludes,
         &sort,
         &sort_dir,
-        &kf,
     )
     .await;
 
@@ -217,8 +215,6 @@ async fn fetch_mdblist_catalog(
         .cloned()
         .collect();
 
-    let kf = { state.keyword_filters.read().unwrap().clone() };
-
     if list.use_filters {
         let Some(mt) = MediaType::from_wire(media_type) else {
             return Metas { metas: vec![] };
@@ -245,7 +241,6 @@ async fn fetch_mdblist_catalog(
             MDBLIST_PAGE_LIMIT as i64,
             &nudity_excludes,
             &cert_excludes,
-            &kf,
         )
         .await;
 
@@ -316,6 +311,10 @@ async fn fetch_mdblist_catalog(
 
     let poster_host = &state.config.poster_host_url;
     let start_idx = (extra.skip % MDBLIST_BATCH_SIZE) as usize;
+    // The MDBList non-filtered path returns API data that hasn't been stored in
+    // the DB yet, so we can't rely on the precomputed `is_keyword_blocked` flag.
+    // Apply the in-memory keyword guard as a best-effort filter.
+    let kf = state.keyword_filters.read().unwrap().clone();
     let metas: Vec<MetaPreview> = items
         .iter()
         .filter_map(|item| {
@@ -324,8 +323,7 @@ async fn fetch_mdblist_catalog(
                 return None;
             }
             let title = item["title"].as_str()?.to_string();
-            // Block titles that match the global keyword filter.
-            if kf.matches_blocked_keyword(&title) {
+            if kf.matches_blocked_media_keyword(&title) {
                 return None;
             }
             let year = item["release_year"].as_i64().map(|y| y as i32);
@@ -411,9 +409,9 @@ async fn handle_catalog(
         .cloned()
         .collect();
 
-    // Read the keyword filter once (clone out so the lock isn't held across awaits).
-    let kf = { state.keyword_filters.read().unwrap().clone() };
-    let kf_ver = kf.version_tag();
+    // Version tag from keyword filter — embeds into cache keys so any keyword
+    // change automatically invalidates cached catalog pages.
+    let kf_ver = state.keyword_filters.read().unwrap().version_tag();
 
     // Build cache key: user-scoped for personal catalogs, shared for public ones.
     // Embed the keyword-filter version so any keyword change invalidates cached pages.
@@ -457,7 +455,6 @@ async fn handle_catalog(
             extra.skip,
             &nudity_excludes,
             &cert_excludes,
-            &kf,
         )
         .await
     } else {
@@ -474,7 +471,6 @@ async fn handle_catalog(
                 sort_dir: &sort_dir,
                 user_id: user_data.user_id,
             },
-            &kf,
         )
         .await
     };

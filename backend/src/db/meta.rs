@@ -133,6 +133,7 @@ pub async fn fetch_media_meta_by_id(
             LIMIT 1
         ) mr ON true
         WHERE m.id = $1 AND m.type = $2 AND m.adult = false
+          AND NOT (m.is_blocked OR (m.is_keyword_blocked AND NOT m.keyword_block_override) OR m.poster_nsfw_flagged)
         LIMIT 1
         "#,
     )

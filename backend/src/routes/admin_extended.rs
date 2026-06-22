@@ -146,6 +146,8 @@ pub struct BlockedMediaQuery {
     #[serde(rename = "type")]
     pub media_type: Option<String>,
     pub search: Option<String>,
+    /// "blocked" (default) | "nsfw_flagged" | "nsfw_reviewed"
+    pub filter: Option<String>,
 }
 
 /// DELETE /api/v1/admin/metadata/{media_id}
@@ -368,106 +370,184 @@ pub async fn list_blocked_media(
     State(state): State<Arc<AppState>>,
     Query(params): Query<BlockedMediaQuery>,
 ) -> impl IntoResponse {
-    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
-        return forbidden();
+    // nsfw_flagged filter is accessible to any authenticated user;
+    // the blocked filter requires admin/moderator.
+    let filter = params.filter.as_deref().unwrap_or("blocked");
+    let viewer_is_admin;
+
+    if filter == "nsfw_flagged" || filter == "nsfw_reviewed" {
+        // Any valid token can view NSFW flagged/reviewed items.
+        let data = match crate::routes::admin_nsfw::extract_token_data(
+            &headers,
+            &state.config.secret_key_raw,
+        ) {
+            Some(d) => d,
+            None => return forbidden(),
+        };
+        viewer_is_admin = data["role"].as_str() == Some("admin");
+    } else {
+        // Blocked media requires at least moderator.
+        match validate_moderator_or_admin(&headers, &state.config.secret_key_raw) {
+            Some(_) => {
+                viewer_is_admin = validate_admin(&headers, &state.config.secret_key_raw).is_some();
+            }
+            None => return forbidden(),
+        }
     }
 
     let page = params.page.unwrap_or(1).max(1);
     let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    // Build optional filter conditions
-    let mut conditions: Vec<String> =
-        vec!["(is_blocked = true OR is_keyword_blocked = true)".to_string()];
+    let base_condition = match filter {
+        "nsfw_flagged" => "m.poster_nsfw_flagged = true AND m.poster_nsfw_reviewed = false".to_string(),
+        "nsfw_reviewed" => "m.poster_nsfw_reviewed = true".to_string(),
+        "all_restricted" => "(m.is_blocked OR (m.is_keyword_blocked AND NOT m.keyword_block_override) OR m.poster_nsfw_flagged)".to_string(),
+        "manual" => "m.is_blocked = true".to_string(),
+        "keyword_blocked" => "m.is_keyword_blocked = true AND m.keyword_block_override = false".to_string(),
+        _ => "(m.is_blocked = true OR (m.is_keyword_blocked = true AND m.keyword_block_override = false))".to_string(),
+    };
+
+    let is_nsfw_filter = matches!(filter, "nsfw_flagged" | "nsfw_reviewed");
+
     let media_type_filter = params
         .media_type
         .as_ref()
         .and_then(|t| crate::db::MediaType::from_wire(&t.to_ascii_lowercase()));
-    if media_type_filter.is_some() {
-        conditions.push("type = $1".to_string());
-    }
-    if let Some(ref s) = params.search {
-        let escaped = s.replace('\'', "''");
-        conditions.push(format!("title ILIKE '%{escaped}%'"));
-    }
-    let where_clause = format!("WHERE {}", conditions.join(" AND "));
+
+    let type_clause = if media_type_filter.is_some() {
+        " AND m.type = $1".to_string()
+    } else {
+        String::new()
+    };
+
+    let search_clause = params
+        .search
+        .as_ref()
+        .map(|s| {
+            let escaped = s.replace('\'', "''");
+            format!(" AND m.title ILIKE '%{escaped}%'")
+        })
+        .unwrap_or_default();
+
+    let where_clause = format!("WHERE {base_condition}{type_clause}{search_clause}");
 
     // Total count
-    let count_sql = format!("SELECT COUNT(*) FROM media {where_clause}");
+    let count_sql = if is_nsfw_filter {
+        format!("SELECT COUNT(*) FROM media m {where_clause}")
+    } else {
+        format!("SELECT COUNT(*) FROM media m {where_clause}")
+    };
     let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
     if let Some(mt) = media_type_filter {
         count_q = count_q.bind(mt);
     }
     let total: i64 = count_q.fetch_one(&state.pool_ro).await.unwrap_or(0);
 
-    // Paged results
-    type BlockedRow = (
-        i32,
-        String,
-        String,
-        Option<i32>,
-        bool,
-        bool,
-        Option<chrono::DateTime<chrono::Utc>>,
-        Option<i32>,
-        Option<String>,
-    );
+    // Paged results — include nsfw columns + poster via RPDB/media_image
+    let order = if is_nsfw_filter {
+        "m.poster_nsfw_score DESC NULLS LAST"
+    } else {
+        "m.blocked_at DESC NULLS LAST"
+    };
 
     let list_sql = format!(
-        "SELECT id, title, type::text, year, is_blocked, is_keyword_blocked, blocked_at, \
-                blocked_by_user_id, block_reason \
-         FROM media {where_clause} \
-         ORDER BY blocked_at DESC NULLS LAST \
-         LIMIT {page_size} OFFSET {offset}"
+        r#"
+        SELECT m.id, m.title, m.type::text AS media_type, m.year,
+               m.is_blocked, m.is_keyword_blocked, m.keyword_block_override,
+               m.blocked_at, m.blocked_by_user_id, m.block_reason,
+               m.poster_nsfw_score, m.poster_nsfw_flagged, m.poster_nsfw_reviewed,
+               MAX(CASE WHEN mei.provider = 'imdb' THEN mei.external_id END) AS imdb_id,
+               mi.url AS poster_url
+        FROM media m
+        LEFT JOIN media_external_id mei ON mei.media_id = m.id AND mei.provider = 'imdb'
+        LEFT JOIN LATERAL (
+            SELECT url FROM media_image
+            WHERE media_id = m.id AND image_type = 'poster' AND is_primary = true
+            LIMIT 1
+        ) mi ON true
+        {where_clause}
+        GROUP BY m.id, mi.url
+        ORDER BY {order}
+        LIMIT {page_size} OFFSET {offset}
+        "#
     );
 
-    let mut list_q = sqlx::query_as::<_, BlockedRow>(&list_sql);
+    let mut list_q = sqlx::query(&list_sql);
     if let Some(mt) = media_type_filter {
         list_q = list_q.bind(mt);
     }
+
     match list_q.fetch_all(&state.pool_ro).await {
         Ok(rows) => {
+            use sqlx::Row;
             let items: Vec<Value> = rows
                 .into_iter()
-                .map(
-                    |(
-                        id,
-                        title,
-                        media_type,
-                        year,
-                        is_blocked,
-                        is_keyword_blocked,
-                        blocked_at,
-                        blocked_by,
-                        reason,
-                    )| {
-                        json!({
-                            "id": id,
-                            "title": title,
-                            "type": media_type.to_lowercase(),
-                            "year": year,
-                            "is_blocked": is_blocked,
-                            "is_keyword_blocked": is_keyword_blocked,
-                            "blocked_at": blocked_at,
-                            "blocked_by_user_id": blocked_by,
-                            "block_reason": reason,
-                        })
-                    },
-                )
+                .map(|r| {
+                    let imdb_id: Option<String> = r.try_get("imdb_id").unwrap_or(None);
+                    let stored_url: Option<String> = r.try_get("poster_url").unwrap_or(None);
+                    json!({
+                        "id": r.try_get::<i32, _>("id").unwrap_or(0),
+                        "title": r.try_get::<String, _>("title").unwrap_or_default(),
+                        "type": r.try_get::<String, _>("media_type").unwrap_or_default().to_lowercase(),
+                        "year": r.try_get::<Option<i32>, _>("year").unwrap_or(None),
+                        "poster": stored_url,
+                        "imdb_id": imdb_id,
+                        "is_blocked": r.try_get::<bool, _>("is_blocked").unwrap_or(false),
+                        "is_keyword_blocked": r.try_get::<bool, _>("is_keyword_blocked").unwrap_or(false),
+                        "keyword_block_override": r.try_get::<bool, _>("keyword_block_override").unwrap_or(false),
+                        "blocked_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("blocked_at").unwrap_or(None),
+                        "blocked_by_user_id": r.try_get::<Option<i32>, _>("blocked_by_user_id").unwrap_or(None),
+                        "block_reason": r.try_get::<Option<String>, _>("block_reason").unwrap_or(None),
+                        "nsfw_score": r.try_get::<Option<f32>, _>("poster_nsfw_score").unwrap_or(None),
+                        "nsfw_flagged": r.try_get::<bool, _>("poster_nsfw_flagged").unwrap_or(false),
+                        "nsfw_reviewed": r.try_get::<bool, _>("poster_nsfw_reviewed").unwrap_or(false),
+                    })
+                })
                 .collect();
 
-            let has_more = offset + page_size < total;
             Json(json!({
                 "items": items,
                 "total": total,
                 "page": page,
                 "page_size": page_size,
-                "has_more": has_more,
+                "has_more": offset + page_size < total,
+                "viewer_is_admin": viewer_is_admin,
             }))
             .into_response()
         }
         Err(e) => {
-            tracing::error!("list_blocked_media: {e}");
+            tracing::error!("list_blocked_media filter={filter}: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+/// POST /api/v1/admin/media/{id}/keyword-override
+/// Toggle keyword_block_override for a media row.
+pub async fn toggle_keyword_block_override(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Path(media_id): Path<i32>,
+) -> impl IntoResponse {
+    if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+        return forbidden();
+    }
+    match sqlx::query_scalar::<_, bool>(
+        "UPDATE media SET keyword_block_override = NOT keyword_block_override WHERE id = $1 RETURNING keyword_block_override",
+    )
+    .bind(media_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(new_val)) => Json(json!({
+            "id": media_id,
+            "keyword_block_override": new_val,
+            "message": if new_val { "Keyword block overridden — media is now visible" } else { "Keyword block override removed" },
+        })).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({"detail": "Media not found"}))).into_response(),
+        Err(e) => {
+            tracing::error!("toggle_keyword_block_override id={media_id}: {e}");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }

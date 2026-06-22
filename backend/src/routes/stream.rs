@@ -1330,16 +1330,9 @@ async fn build_pipeline(
 
     let disabled = &state.config.disabled_providers;
 
-    // Guard: don't serve streams for blocked media (manual or keyword block).
+    // Guard: don't serve streams for restricted media (manual / keyword / NSFW).
     if media_id != db::MediaId(0) {
-        let blocked: bool = sqlx::query_scalar::<_, bool>(
-            "SELECT (is_keyword_blocked OR is_blocked) FROM media WHERE id = $1",
-        )
-        .bind(media_id.0)
-        .fetch_optional(&state.pool)
-        .await
-        .unwrap_or(None)
-        .unwrap_or(false);
+        let blocked = crate::state::media_is_restricted(&state.pool, media_id.0).await;
 
         if blocked {
             let torrent_providers: Vec<crate::models::user_data::StreamingProvider> = user_data
@@ -1595,6 +1588,8 @@ async fn build_pipeline(
             let tok = provider.token.clone().unwrap_or_default();
             let hashes = all_hashes.clone();
             let store_stremthru = state.config.store_stremthru_magnet_cache;
+            // Resolve the correct HTTP client before moving into the async block.
+            let provider_http = state.http_for_provider(&provider_service).clone();
             async move {
                 let mut cached = cache::get_debrid_cache_status_federated(
                     &state.redis,
@@ -1614,7 +1609,7 @@ async fn build_pipeline(
                         .collect();
                     if !uncached.is_empty() {
                         let live = crate::providers::torrents::cache::live_check(
-                            &state.http,
+                            &provider_http,
                             &state.redis,
                             &provider_service,
                             &cache_service,

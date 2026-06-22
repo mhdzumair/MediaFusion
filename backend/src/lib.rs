@@ -13,6 +13,7 @@ pub mod metrics;
 pub mod metrics_middleware;
 pub mod migrate;
 pub mod models;
+pub mod nsfw;
 pub mod parser;
 pub mod poster;
 pub mod providers;

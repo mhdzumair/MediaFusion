@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -40,6 +40,7 @@ import { useRpdb } from '@/contexts/RpdbContext'
 import { PosterCompact } from '@/components/ui/poster'
 import { cn } from '@/lib/utils'
 import type { WatchAction, WatchHistoryItem, HistorySource } from '@/lib/api'
+import { saveContentDetailReturnUrl } from '../browseNavigation'
 
 // Helper functions
 function formatTimeAgo(date: string): string {
@@ -177,6 +178,7 @@ function HistoryCard({
   onDelete: () => void
   rpdbApiKey: string | null
 }) {
+  const location = useLocation()
   const action = item.action || 'WATCHED'
   const actionConfig = getActionConfig(action)
   const ActionIcon = actionConfig.icon
@@ -194,6 +196,7 @@ function HistoryCard({
     <div className="group relative">
       <Link
         to={contentUrl}
+        onClick={() => saveContentDetailReturnUrl(location.pathname, location.search, 'History')}
         className={cn(
           'block rounded-2xl overflow-hidden transition-all duration-300',
           'bg-gradient-to-br from-card/80 to-card/40 backdrop-blur-sm',

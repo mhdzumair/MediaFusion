@@ -155,6 +155,7 @@ pub async fn fetch_streams_for_backfill(
         FROM stream s
         WHERE s.stream_type = ANY($1::streamtype[])
           AND NOT s.is_blocked
+          AND NOT s.is_keyword_blocked
           AND s.name IS NOT NULL
           AND TRIM(s.name) <> ''
           AND s.id > $2

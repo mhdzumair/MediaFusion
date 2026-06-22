@@ -961,6 +961,7 @@ pub async fn get_streams_needing_annotation(
             INNER JOIN stream s ON s.id = sml.stream_id
                 AND s.is_active = true
                 AND s.is_blocked = false
+                AND s.is_keyword_blocked = false
             INNER JOIN media m ON m.id = sml.media_id
                 AND m.type = 'SERIES'
             LEFT JOIN torrent_stream ts ON ts.stream_id = s.id
