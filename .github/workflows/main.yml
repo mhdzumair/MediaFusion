@@ -105,8 +105,8 @@ jobs:
             jemalloc: true
             tls_features: "tls-native"
             nsfw: true
-            openssl_include_dir: ""
-            openssl_lib_dir: ""
+            openssl_include_dir: /usr/include/aarch64-linux-gnu
+            openssl_lib_dir: /usr/lib/aarch64-linux-gnu
 
           # macOS builds disabled — low usage (~32 downloads total across all releases).
           # ort has no prebuilt for Intel Mac (x86-64); arm64 usage too low to justify CI cost.
@@ -181,10 +181,10 @@ jobs:
           # jitterentropy (needs CoreServices.h). Fall back to other entropy sources.
           AWS_LC_SYS_NO_JITTER_ENTROPY: "1"
           SQLX_OFFLINE: "true"
-          OPENSSL_INCLUDE_DIR: ${{ matrix.openssl_include_dir }}
-          OPENSSL_LIB_DIR: ${{ matrix.openssl_lib_dir }}
         run: |
           cd backend
+          [ -n "${{ matrix.openssl_include_dir }}" ] && export OPENSSL_INCLUDE_DIR="${{ matrix.openssl_include_dir }}"
+          [ -n "${{ matrix.openssl_lib_dir }}" ] && export OPENSSL_LIB_DIR="${{ matrix.openssl_lib_dir }}"
           FEATURES="${{ matrix.tls_features }}"
           if [ "${{ matrix.nsfw }}" = "true" ]; then
             FEATURES="$FEATURES,nsfw-classifier"
@@ -203,10 +203,10 @@ jobs:
         if: ${{ !matrix.use_zigbuild }}
         env:
           SQLX_OFFLINE: "true"
-          OPENSSL_INCLUDE_DIR: ${{ matrix.openssl_include_dir }}
-          OPENSSL_LIB_DIR: ${{ matrix.openssl_lib_dir }}
         run: |
           cd backend
+          [ -n "${{ matrix.openssl_include_dir }}" ] && export OPENSSL_INCLUDE_DIR="${{ matrix.openssl_include_dir }}"
+          [ -n "${{ matrix.openssl_lib_dir }}" ] && export OPENSSL_LIB_DIR="${{ matrix.openssl_lib_dir }}"
           FEATURES="${{ matrix.tls_features }}"
           if [ "${{ matrix.nsfw }}" = "true" ]; then
             FEATURES="$FEATURES,nsfw-classifier"
