@@ -194,19 +194,28 @@ fn main() {
     );
 }
 
-/// Returns process CPU time in milliseconds (user + sys) on Linux via
-/// `clock_gettime(CLOCK_PROCESS_CPUTIME_ID)`. Returns 0 elsewhere.
+/// Returns process CPU time in milliseconds on Linux via `clock_gettime(CLOCK_PROCESS_CPUTIME_ID)`.
+/// Returns 0 on other platforms.
 fn cpu_time_ms() -> f64 {
     #[cfg(target_os = "linux")]
     {
-        let mut ts = libc::timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        };
-        unsafe {
-            libc::clock_gettime(libc::CLOCK_PROCESS_CPUTIME_ID, &mut ts);
+        use std::mem::MaybeUninit;
+        extern "C" {
+            fn clock_gettime(clk_id: libc_clockid_t, tp: *mut libc_timespec) -> i32;
         }
-        ts.tv_sec as f64 * 1000.0 + ts.tv_nsec as f64 / 1e6
+        type libc_clockid_t = i32;
+        #[repr(C)]
+        struct libc_timespec {
+            tv_sec: i64,
+            tv_nsec: i64,
+        }
+        const CLOCK_PROCESS_CPUTIME_ID: libc_clockid_t = 2;
+        let mut ts = MaybeUninit::<libc_timespec>::zeroed();
+        unsafe {
+            clock_gettime(CLOCK_PROCESS_CPUTIME_ID, ts.as_mut_ptr());
+            let ts = ts.assume_init();
+            ts.tv_sec as f64 * 1000.0 + ts.tv_nsec as f64 / 1e6
+        }
     }
     #[cfg(not(target_os = "linux"))]
     {

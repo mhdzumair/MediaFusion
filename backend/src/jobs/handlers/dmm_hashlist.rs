@@ -1182,7 +1182,9 @@ mod tests {
     fn adult_keywords_filter_matches() {
         let kf = KeywordFilterCache {
             keywords: vec!["brazzers".to_string()],
+            stream_keywords: vec![],
             whitelist: vec![],
+            nsfw_filter_enabled: false,
         };
         assert!(kf.matches_blocked_keyword("Some.Adult.Title.Brazzers.1080p"));
     }

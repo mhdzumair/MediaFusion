@@ -433,11 +433,7 @@ pub async fn list_blocked_media(
     let where_clause = format!("WHERE {base_condition}{type_clause}{search_clause}");
 
     // Total count
-    let count_sql = if is_nsfw_filter {
-        format!("SELECT COUNT(*) FROM media m {where_clause}")
-    } else {
-        format!("SELECT COUNT(*) FROM media m {where_clause}")
-    };
+    let count_sql = format!("SELECT COUNT(*) FROM media m {where_clause}");
     let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
     if let Some(mt) = media_type_filter {
         count_q = count_q.bind(mt);
