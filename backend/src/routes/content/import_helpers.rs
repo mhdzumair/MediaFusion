@@ -470,6 +470,7 @@ pub async fn resolve_media_for_import(
     meta_type: &str,
     overrides: crate::scrapers::media_resolve::ImportMediaOverrides<'_>,
     prefetch: Option<&crate::scrapers::media_resolve::ImportMetadataCache>,
+    nsfw_scan_on_import: bool,
 ) -> Option<i32> {
     crate::scrapers::media_resolve::ensure_media_for_import(
         pool,
@@ -480,6 +481,7 @@ pub async fn resolve_media_for_import(
         tvdb_api_key,
         overrides,
         prefetch,
+        nsfw_scan_on_import,
     )
     .await
 }
@@ -704,6 +706,7 @@ pub async fn try_link_orphan_torrent_stream(
                 year: overrides.year,
             },
             prefetch,
+            false,
         )
         .await
         {
@@ -823,7 +826,10 @@ pub async fn apply_fetched_metadata_to_media(
     let _ = crate::db::store_media(
         pool,
         meta,
-        crate::db::StoreMediaOpts::refresh(crate::db::MediaId(media_id)),
+        crate::db::StoreMediaOpts {
+            nsfw_scan_on_import: false,
+            ..crate::db::StoreMediaOpts::refresh(crate::db::MediaId(media_id))
+        },
     )
     .await;
 }
@@ -918,6 +924,7 @@ pub async fn insert_torrent_import_files(
                         .map(|y| y as i32),
                 },
                 Some(prefetch),
+                false,
             )
             .await
         } else {

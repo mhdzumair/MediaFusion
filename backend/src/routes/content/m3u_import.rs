@@ -886,6 +886,7 @@ pub async fn import_m3u(
         let tmdb = state.config.tmdb_api_key.clone();
         let tvdb = state.config.tvdb_api_key.clone();
         let cinemeta = state.config.imdb_cinemeta_fallback_enabled;
+        let poster_nsfw_enabled = state.config.poster_nsfw_enabled;
         let source_bg = source_label.clone();
         let entries_owned = entries;
         let override_map_bg = override_map;
@@ -916,6 +917,7 @@ pub async fn import_m3u(
                 tmdb_api_key: tmdb.as_deref(),
                 tvdb_api_key: tvdb.as_deref(),
                 cinemeta_enabled: cinemeta,
+                poster_nsfw_enabled,
             };
             let stats = super::iptv_import::run_m3u_import_batch(
                 &ctx_bg,

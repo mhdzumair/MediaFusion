@@ -829,6 +829,7 @@ async fn do_nzb_import(
             year: parsed.year,
         },
         None,
+        state.config.poster_nsfw_enabled,
     )
     .await
     .map(i64::from);

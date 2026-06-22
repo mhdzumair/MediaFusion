@@ -546,6 +546,7 @@ pub async fn ensure_media_for_import(
     tvdb_api_key: Option<&str>,
     overrides: ImportMediaOverrides<'_>,
     prefetch: Option<&ImportMetadataCache>,
+    nsfw_scan_on_import: bool,
 ) -> Option<i32> {
     let meta_id = meta_id.trim();
     if meta_id.is_empty() {
@@ -630,9 +631,16 @@ pub async fn ensure_media_for_import(
         return None;
     }
 
-    let media_id = crate::db::store_media(pool, &meta, crate::db::StoreMediaOpts::default())
-        .await
-        .ok()?;
+    let media_id = crate::db::store_media(
+        pool,
+        &meta,
+        crate::db::StoreMediaOpts {
+            nsfw_scan_on_import,
+            ..crate::db::StoreMediaOpts::default()
+        },
+    )
+    .await
+    .ok()?;
 
     info!(
         "ensure_media_for_import: stored media {} for meta_id={meta_id}",
@@ -932,6 +940,7 @@ pub async fn search_meta_for_dmm_hashlist(
                 year: candidate_year.or(effective_year),
             },
             None,
+            false,
         )
         .await?;
 
@@ -1061,6 +1070,7 @@ pub async fn search_meta_for_telegram_feed(
             tvdb_api_key,
             overrides,
             None,
+            false,
         )
         .await
         {

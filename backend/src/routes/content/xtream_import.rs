@@ -433,6 +433,7 @@ pub async fn import_xtream(
         let tmdb = state.config.tmdb_api_key.clone();
         let tvdb = state.config.tvdb_api_key.clone();
         let cinemeta = state.config.imdb_cinemeta_fallback_enabled;
+        let poster_nsfw_enabled = state.config.poster_nsfw_enabled;
         let secret_key = state.config.secret_key;
         let server = cached.server_url.clone();
         let user_c = cached.username.clone();
@@ -466,6 +467,7 @@ pub async fn import_xtream(
                 tmdb_api_key: tmdb.as_deref(),
                 tvdb_api_key: tvdb.as_deref(),
                 cinemeta_enabled: cinemeta,
+                poster_nsfw_enabled,
             };
             let stats = iptv_import::run_xtream_import_batch(
                 &ctx_bg,

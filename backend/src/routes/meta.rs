@@ -166,7 +166,10 @@ async fn serve_meta(
                 if crate::db::store_media(
                     &state.pool,
                     &normalized,
-                    crate::db::StoreMediaOpts::default(),
+                    crate::db::StoreMediaOpts {
+                        nsfw_scan_on_import: state.config.poster_nsfw_enabled,
+                        ..crate::db::StoreMediaOpts::default()
+                    },
                 )
                 .await
                 .is_ok()

@@ -334,6 +334,7 @@ pub async fn import_http_stream(
             year: None,
         },
         None,
+        state.config.poster_nsfw_enabled,
     )
     .await
     .map(i64::from);

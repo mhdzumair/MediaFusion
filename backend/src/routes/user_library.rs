@@ -1971,6 +1971,7 @@ async fn process_advanced_import(
                 year: parsed.year,
             },
             None,
+            state.config.poster_nsfw_enabled,
         )
         .await
         .ok_or_else(|| format!("Could not resolve media for {meta_id}"))? as i64

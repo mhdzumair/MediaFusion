@@ -1296,6 +1296,7 @@ async fn build_pipeline(
                 year: None,
             },
             None,
+            state.config.poster_nsfw_enabled,
         )
         .await
         {

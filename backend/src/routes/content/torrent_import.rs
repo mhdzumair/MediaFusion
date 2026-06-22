@@ -1322,6 +1322,7 @@ pub async fn import_magnet(
                 year: parsed.year,
             },
             Some(&prefetch),
+            state.config.poster_nsfw_enabled,
         )
         .await
         .map(i64::from)
@@ -1769,6 +1770,7 @@ pub async fn import_torrent(
                 year: parsed.year,
             },
             Some(&prefetch),
+            state.config.poster_nsfw_enabled,
         )
         .await
         .map(i64::from)

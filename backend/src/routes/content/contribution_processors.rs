@@ -935,6 +935,7 @@ async fn resolve_media(
             year: data.get("year").and_then(|v| v.as_i64()).map(|y| y as i32),
         },
         prefetch,
+        state.config.poster_nsfw_enabled,
     )
     .await
 }

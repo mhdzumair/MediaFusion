@@ -43,6 +43,7 @@ pub struct IptvImportCtx<'a> {
     pub tmdb_api_key: Option<&'a str>,
     pub tvdb_api_key: Option<&'a str>,
     pub cinemeta_enabled: bool,
+    pub poster_nsfw_enabled: bool,
 }
 
 impl<'a> IptvImportCtx<'a> {
@@ -53,6 +54,7 @@ impl<'a> IptvImportCtx<'a> {
             tmdb_api_key: state.config.tmdb_api_key.as_deref(),
             tvdb_api_key: state.config.tvdb_api_key.as_deref(),
             cinemeta_enabled: state.config.imdb_cinemeta_fallback_enabled,
+            poster_nsfw_enabled: state.config.poster_nsfw_enabled,
         }
     }
 }
@@ -167,6 +169,7 @@ async fn resolve_media_for_entry(
             year: entry.parsed_year,
         },
         None,
+        ctx.poster_nsfw_enabled,
     )
     .await?;
 
