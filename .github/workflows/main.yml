@@ -89,6 +89,10 @@ jobs:
             jemalloc: true
             tls_features: "tls-native,vendored-openssl"
             nsfw: true
+            # Ubuntu 24.04 puts OpenSSL headers in multiarch paths; zig wrapper
+            # only searches /usr/include so we point openssl-sys there explicitly.
+            openssl_include_dir: /usr/include/x86_64-linux-gnu
+            openssl_lib_dir: /usr/lib/x86_64-linux-gnu
 
           - runner: ubuntu-24.04-arm
             label: linux-arm64
@@ -101,6 +105,8 @@ jobs:
             jemalloc: true
             tls_features: "tls-native"
             nsfw: true
+            openssl_include_dir: ""
+            openssl_lib_dir: ""
 
           # macOS builds disabled — low usage (~32 downloads total across all releases).
           # ort has no prebuilt for Intel Mac (x86-64); arm64 usage too low to justify CI cost.
@@ -138,6 +144,8 @@ jobs:
             jemalloc: false
             tls_features: "tls-rustls"
             nsfw: false
+            openssl_include_dir: ""
+            openssl_lib_dir: ""
 
     runs-on: ${{ matrix.runner }}
     steps:
@@ -173,6 +181,8 @@ jobs:
           # jitterentropy (needs CoreServices.h). Fall back to other entropy sources.
           AWS_LC_SYS_NO_JITTER_ENTROPY: "1"
           SQLX_OFFLINE: "true"
+          OPENSSL_INCLUDE_DIR: ${{ matrix.openssl_include_dir }}
+          OPENSSL_LIB_DIR: ${{ matrix.openssl_lib_dir }}
         run: |
           cd backend
           FEATURES="${{ matrix.tls_features }}"
@@ -193,6 +203,8 @@ jobs:
         if: ${{ !matrix.use_zigbuild }}
         env:
           SQLX_OFFLINE: "true"
+          OPENSSL_INCLUDE_DIR: ${{ matrix.openssl_include_dir }}
+          OPENSSL_LIB_DIR: ${{ matrix.openssl_lib_dir }}
         run: |
           cd backend
           FEATURES="${{ matrix.tls_features }}"
