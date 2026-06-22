@@ -1181,8 +1181,8 @@ mod tests {
     #[test]
     fn adult_keywords_filter_matches() {
         let kf = KeywordFilterCache {
-            keywords: vec!["brazzers".to_string()],
-            stream_keywords: vec![],
+            keywords: vec![],
+            stream_keywords: vec!["brazzers".to_string()],
             whitelist: vec![],
             nsfw_filter_enabled: false,
         };
