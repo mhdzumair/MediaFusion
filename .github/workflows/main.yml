@@ -87,7 +87,7 @@ jobs:
             exe_suffix: ""
             use_zigbuild: true
             jemalloc: true
-            tls_features: "tls-rustls"
+            tls_features: "tls-native,vendored-openssl"
             nsfw: true
 
           - runner: ubuntu-24.04-arm
@@ -97,9 +97,9 @@ jobs:
             rust_target: aarch64-unknown-linux-gnu
             zig_target: aarch64-unknown-linux-gnu
             exe_suffix: ""
-            use_zigbuild: false  # native ARM64 runner — no cross-compilation needed; Ubuntu 24.04 = glibc 2.39
+            use_zigbuild: false  # native ARM64 runner — Ubuntu 24.04 = glibc 2.39, system OpenSSL headers available
             jemalloc: true
-            tls_features: "tls-rustls"
+            tls_features: "tls-native"
             nsfw: true
 
           # macOS builds disabled — low usage (~32 downloads total across all releases).
