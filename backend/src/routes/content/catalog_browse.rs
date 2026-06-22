@@ -1344,6 +1344,7 @@ pub async fn get_media_streams(
         ("offcloud", "OC"),
         ("seedr", "SR"),
         ("stremthru", "ST"),
+        ("torrin", "TRN"),
         ("pikpak", "PP"),
         ("easydebrid", "ED"),
     ]

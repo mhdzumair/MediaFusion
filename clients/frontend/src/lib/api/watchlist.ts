@@ -272,6 +272,7 @@ export const DEBRID_SERVICE_DISPLAY_NAMES: Record<string, string> = {
   premiumize: 'Premiumize',
   qbittorrent: 'qBittorrent',
   stremthru: 'StremThru',
+  torrin: 'Torrin',
 }
 
 /**

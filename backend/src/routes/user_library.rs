@@ -2220,6 +2220,7 @@ pub async fn clear_all_torrents_from_debrid(
         "debridlink" => torrents::debridlink::delete_all_torrents(http, &token).await,
         "torbox" => torrents::torbox::delete_all_torrents(http, &token).await,
         "stremthru" => torrents::stremthru::delete_all_torrents(http, &token).await,
+        "torrin" => torrents::torrin::delete_all_torrents(http, &token).await,
         "offcloud" => torrents::offcloud::delete_all_torrents(http, &token).await,
         "easydebrid" => torrents::easydebrid::delete_all_torrents(http, &token).await,
         "seedr" => torrents::seedr::delete_all_torrents(http, &token).await,

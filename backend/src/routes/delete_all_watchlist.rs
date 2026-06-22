@@ -151,6 +151,13 @@ pub async fn delete_all_for_service(
             )
             .await
         }
+        "torrin" => {
+            providers::torrents::torrin::delete_all_torrents(
+                state.http_for_provider("torrin"),
+                token,
+            )
+            .await
+        }
         "offcloud" => {
             providers::torrents::offcloud::delete_all_torrents(
                 state.http_for_provider("offcloud"),

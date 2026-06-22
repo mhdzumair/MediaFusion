@@ -211,6 +211,18 @@ async fn validate_one(
                 )),
             }
         }
+        "torrin" => {
+            let token = match provider_token(provider) {
+                Some(t) => t,
+                None => return ValidationResult::error("Torrin token is missing"),
+            };
+            match super::torrents::torrin::validate_credentials(http, token).await {
+                Ok(()) => ValidationResult::success(),
+                Err(e) => {
+                    ValidationResult::error(format!("Failed to validate Torrin credentials: {e}"))
+                }
+            }
+        }
         "easydebrid" => {
             let token = match provider_token(provider) {
                 Some(t) => t,

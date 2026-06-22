@@ -17,6 +17,7 @@ Configure which streaming providers are available to users on your instance.
 | Seedr.cc | — | Cloud | Free quota / Premium |
 | qBittorrent WebDAV | — | Self-hosted | Free |
 | StremThru | — | Interface | — |
+| Torrin | — | Debrid | Premium |
 | EasyDebrid | — | Debrid | — |
 
 ## Disabling providers
@@ -27,7 +28,7 @@ Remove specific providers from the Configure UI entirely:
 DISABLED_PROVIDERS='["realdebrid","alldebrid"]'
 ```
 
-Valid values: `p2p`, `realdebrid`, `seedr`, `debridlink`, `alldebrid`, `offcloud`, `pikpak`, `torbox`, `premiumize`, `qbittorrent`, `stremthru`, `easydebrid`, `debrider`
+Valid values: `p2p`, `realdebrid`, `seedr`, `debridlink`, `alldebrid`, `offcloud`, `pikpak`, `torbox`, `premiumize`, `qbittorrent`, `stremthru`, `torrin`, `easydebrid`, `debrider`
 
 ## Provider limits
 

@@ -20,6 +20,7 @@ pub mod realdebrid;
 pub mod seedr;
 pub mod stremthru;
 pub mod torbox;
+pub mod torrin;
 pub mod transport;
 
 pub use realdebrid::DownloadedTorrent;
@@ -39,6 +40,7 @@ pub fn supports_download_list(service: &str) -> bool {
             | "pikpak"
             | "seedr"
             | "stremthru"
+            | "torrin"
     )
 }
 
@@ -58,6 +60,7 @@ pub async fn list_downloaded_torrents(
         "pikpak" => pikpak::list_downloaded_torrents(http, token).await,
         "seedr" => seedr::list_downloaded_torrents(http, token).await,
         "stremthru" => stremthru::list_downloaded_torrents(http, token).await,
+        "torrin" => torrin::list_downloaded_torrents(http, token).await,
         // EasyDebrid is cache-only — no account-level torrent list endpoint exists.
         "easydebrid" => Ok(vec![]),
         other => {
