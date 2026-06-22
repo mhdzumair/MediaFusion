@@ -42,6 +42,7 @@ export const STREAMING_PROVIDERS: StreamingProviderOption[] = [
     needsUrl: true,
     hasStoreSelect: true,
   },
+  { value: 'torrin', label: 'Torrin', icon: '🌀', type: 'Premium', needsToken: true },
   // Usenet-only providers
   { value: 'sabnzbd', label: 'SABnzbd + WebDAV', icon: '📰', type: 'Usenet', needsSABnzbdConfig: true },
   { value: 'nzbget', label: 'NZBGet + WebDAV', icon: '📰', type: 'Usenet', needsNZBGetConfig: true },

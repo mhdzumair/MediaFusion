@@ -543,6 +543,7 @@ const PROVIDER_SHORT_NAMES: &[(&str, &str)] = &[
     ("torbox", "TRB"),
     ("seedr", "SDR"),
     ("stremthru", "ST"),
+    ("torrin", "TRN"),
     ("qbittorrent", "QB"),
     ("easydebrid", "ED"),
     ("debrider", "DBR"),

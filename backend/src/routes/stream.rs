@@ -43,6 +43,7 @@ pub(crate) const TORRENT_CAPABLE: &[&str] = &[
     "seedr",
     "torbox",
     "stremthru",
+    "torrin",
     "easydebrid",
     "debrider",
 ];

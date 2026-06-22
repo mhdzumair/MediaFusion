@@ -136,6 +136,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   debrider: 'Debrider',
   qbittorrent: 'qBittorrent',
   stremthru: 'StremThru',
+  torrin: 'Torrin',
   sabnzbd: 'SABnzbd',
   nzbget: 'NZBGet',
   p2p: 'P2P',
@@ -1203,6 +1204,7 @@ const SERVICE_DISPLAY_NAMES: Record<string, string> = {
   debrider: 'Debrider',
   qbittorrent: 'qBittorrent',
   stremthru: 'StremThru',
+  torrin: 'Torrin',
   p2p: 'P2P',
 }
 

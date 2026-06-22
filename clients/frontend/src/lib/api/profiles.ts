@@ -80,6 +80,7 @@ export type StreamingService =
   | 'premiumize'
   | 'qbittorrent'
   | 'stremthru'
+  | 'torrin'
   | 'easydebrid'
   | 'debrider'
 

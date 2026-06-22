@@ -310,6 +310,7 @@ pub async fn get_scrape_status_by_media(
             "seedr",
             "torbox",
             "stremthru",
+            "torrin",
             "easydebrid",
             "debrider",
         ];
