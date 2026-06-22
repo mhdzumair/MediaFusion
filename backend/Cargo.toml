@@ -4,7 +4,7 @@ version = "6.0.0-beta.23"
 edition = "2021"
 
 [features]
-default = ["jemalloc", "tls-rustls"]
+default = ["jemalloc", "tls-rustls", "nsfw-classifier"]
 jemalloc = ["dep:tikv-jemallocator"]
 # TLS backends — pick exactly one. Default is tls-rustls (pure-Rust, musl-safe).
 # tls-native uses the OS TLS stack (SecureTransport on macOS, OpenSSL on Linux).
@@ -13,6 +13,10 @@ jemalloc = ["dep:tikv-jemallocator"]
 tls-rustls        = ["reqwest/rustls", "lettre/tokio1-rustls-tls"]
 tls-native        = ["reqwest/native-tls", "lettre/tokio1-native-tls"]
 vendored-openssl  = ["openssl/vendored"]
+# NSFW poster classifier — requires ONNX Runtime prebuilt binaries.
+# Supported targets: aarch64-apple-darwin, x86_64/aarch64-unknown-linux-gnu.
+# Disabled automatically for musl, Windows GNU, and x86_64-apple-darwin.
+nsfw-classifier   = ["dep:ort", "dep:ndarray"]
 
 [lib]
 name = "mediafusion_api"
@@ -33,10 +37,12 @@ path = "src/bin/telegram_session.rs"
 [[bin]]
 name = "mediafusion-nsfw-setup"
 path = "src/bin/nsfw_setup.rs"
+required-features = ["nsfw-classifier"]
 
 [[bin]]
 name = "nsfw-bench"
 path = "src/bin/nsfw_bench.rs"
+required-features = ["nsfw-classifier"]
 
 [dependencies]
 # Async trait support
@@ -117,9 +123,9 @@ lz-str = "0.2"
 # Fuzzy string matching (DLHD / TV poster matching)
 strsim = "0.11"
 
-# NSFW poster classification: ONNX Runtime + tensor arrays
-ort = { version = "2.0.0-rc.12", features = ["download-binaries", "ndarray"] }
-ndarray = "0.17"
+# NSFW poster classification: ONNX Runtime + tensor arrays (optional — see nsfw-classifier feature)
+ort = { version = "2.0.0-rc.12", features = ["download-binaries", "ndarray"], optional = true }
+ndarray = { version = "0.17", optional = true }
 
 # Config from env
 dotenvy = "0.15"

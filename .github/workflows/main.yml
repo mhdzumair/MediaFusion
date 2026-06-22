@@ -82,47 +82,57 @@ jobs:
             label: linux-amd64
             platform: linux
             arch: amd64
-            rust_target: x86_64-unknown-linux-musl
+            rust_target: x86_64-unknown-linux-gnu
+            zig_target: x86_64-unknown-linux-gnu.2.17
             exe_suffix: ""
             use_zigbuild: true
             jemalloc: true
             tls_features: "tls-native,vendored-openssl"
+            nsfw: true
           - runner: ubuntu-24.04-arm
             label: linux-arm64
             platform: linux
             arch: arm64
-            rust_target: aarch64-unknown-linux-musl
+            rust_target: aarch64-unknown-linux-gnu
+            zig_target: aarch64-unknown-linux-gnu.2.17
             exe_suffix: ""
             use_zigbuild: true
             jemalloc: true
             tls_features: "tls-native,vendored-openssl"
+            nsfw: true
           - runner: macos-14
             label: macos-amd64
             platform: macos
             arch: amd64
             rust_target: x86_64-apple-darwin
+            zig_target: x86_64-apple-darwin
             exe_suffix: ""
             use_zigbuild: false
             jemalloc: true
             tls_features: "tls-native"
+            nsfw: false
           - runner: macos-14
             label: macos-arm64
             platform: macos
             arch: arm64
             rust_target: aarch64-apple-darwin
+            zig_target: aarch64-apple-darwin
             exe_suffix: ""
             use_zigbuild: false
             jemalloc: true
             tls_features: "tls-native"
+            nsfw: true
           - runner: ubuntu-24.04
             label: windows-amd64
             platform: windows
             arch: amd64
             rust_target: x86_64-pc-windows-gnu
+            zig_target: x86_64-pc-windows-gnu
             exe_suffix: ".exe"
             use_zigbuild: true
             jemalloc: false
             tls_features: "tls-rustls"
+            nsfw: false
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
@@ -159,13 +169,17 @@ jobs:
           SQLX_OFFLINE: "true"
         run: |
           cd backend
+          FEATURES="${{ matrix.tls_features }}"
+          if [ "${{ matrix.nsfw }}" = "true" ]; then
+            FEATURES="$FEATURES,nsfw-classifier"
+          fi
           if [ "${{ matrix.jemalloc }}" != "true" ]; then
-            FEATURE_FLAGS="--no-default-features --features ${{ matrix.tls_features }}"
+            FEATURE_FLAGS="--no-default-features --features $FEATURES"
           else
-            FEATURE_FLAGS="--features ${{ matrix.tls_features }}"
+            FEATURE_FLAGS="--features $FEATURES"
           fi
           cargo zigbuild --release $FEATURE_FLAGS \
-            --target ${{ matrix.rust_target }} \
+            --target ${{ matrix.zig_target }} \
             --bin mediafusion-api \
             --bin mediafusion-worker
 
@@ -175,10 +189,14 @@ jobs:
           SQLX_OFFLINE: "true"
         run: |
           cd backend
+          FEATURES="${{ matrix.tls_features }}"
+          if [ "${{ matrix.nsfw }}" = "true" ]; then
+            FEATURES="$FEATURES,nsfw-classifier"
+          fi
           if [ "${{ matrix.jemalloc }}" != "true" ]; then
-            FEATURE_FLAGS="--no-default-features --features ${{ matrix.tls_features }}"
+            FEATURE_FLAGS="--no-default-features --features $FEATURES"
           else
-            FEATURE_FLAGS="--features ${{ matrix.tls_features }}"
+            FEATURE_FLAGS="--features $FEATURES"
           fi
           cargo build --release $FEATURE_FLAGS \
             --target ${{ matrix.rust_target }} \
