@@ -89,9 +89,7 @@ jobs:
             jemalloc: true
             tls_features: "tls-native,vendored-openssl"
             nsfw: true
-            # Ubuntu 24.04 puts OpenSSL headers in multiarch paths; zig wrapper
-            # only searches /usr/include so we point openssl-sys there explicitly.
-            openssl_include_dir: /usr/include/x86_64-linux-gnu
+            openssl_include_dir: /usr/include
             openssl_lib_dir: /usr/lib/x86_64-linux-gnu
 
           - runner: ubuntu-24.04-arm
@@ -168,6 +166,14 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-zigbuild
+
+      - name: Fix OpenSSL multiarch headers for zig cross-compiler
+        if: matrix.use_zigbuild && matrix.platform == 'linux'
+        run: |
+          # Ubuntu 24.04 puts opensslconf.h in a multiarch dir; zig's C compiler
+          # only searches /usr/include, so symlink the missing file there.
+          sudo ln -sf /usr/include/x86_64-linux-gnu/openssl/opensslconf.h \
+                      /usr/include/openssl/opensslconf.h
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
