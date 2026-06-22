@@ -169,7 +169,10 @@ impl NsfwClassifier {
         None
     }
 
-    pub fn classify(&self, _image_bytes: &[u8]) -> Result<NsfwScores, crate::jobs::error::JobError> {
+    pub fn classify(
+        &self,
+        _image_bytes: &[u8],
+    ) -> Result<NsfwScores, crate::jobs::error::JobError> {
         unreachable!("classify called on stub NsfwClassifier — load() always returns None")
     }
 }
