@@ -14,8 +14,10 @@ tls-rustls        = ["reqwest/rustls", "lettre/tokio1-rustls-tls"]
 tls-native        = ["reqwest/native-tls", "lettre/tokio1-native-tls"]
 vendored-openssl  = ["openssl/vendored"]
 # NSFW poster classifier — requires ONNX Runtime prebuilt binaries.
-# Supported targets: aarch64-apple-darwin, x86_64/aarch64-unknown-linux-gnu.
-# Disabled automatically for musl, Windows GNU, and x86_64-apple-darwin.
+# Prebuilts: aarch64-apple-darwin, x86_64/aarch64-unknown-linux-gnu (glibc ≥ 2.39),
+#            x86_64/aarch64-pc-windows-msvc (Windows 11 + VS 2022 ≥ 17.14).
+# No prebuilt: musl, x86_64-apple-darwin (must compile ORT from source),
+#              windows-gnu (MinGW ABI incompatible with MSVC-linked ORT).
 nsfw-classifier   = ["dep:ort", "dep:ndarray"]
 
 [lib]

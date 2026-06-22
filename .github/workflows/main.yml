@@ -83,7 +83,7 @@ jobs:
             platform: linux
             arch: amd64
             rust_target: x86_64-unknown-linux-gnu
-            zig_target: x86_64-unknown-linux-gnu.2.17
+            zig_target: x86_64-unknown-linux-gnu.2.39
             exe_suffix: ""
             use_zigbuild: true
             jemalloc: true
@@ -94,7 +94,7 @@ jobs:
             platform: linux
             arch: arm64
             rust_target: aarch64-unknown-linux-gnu
-            zig_target: aarch64-unknown-linux-gnu.2.17
+            zig_target: aarch64-unknown-linux-gnu.2.39
             exe_suffix: ""
             use_zigbuild: true
             jemalloc: true
