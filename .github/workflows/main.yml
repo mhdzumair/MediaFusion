@@ -89,6 +89,7 @@ jobs:
             jemalloc: true
             tls_features: "tls-native,vendored-openssl"
             nsfw: true
+            enabled: true
           - runner: ubuntu-24.04-arm
             label: linux-arm64
             platform: linux
@@ -100,6 +101,7 @@ jobs:
             jemalloc: true
             tls_features: "tls-native,vendored-openssl"
             nsfw: true
+            enabled: true
           - runner: macos-14
             label: macos-amd64
             platform: macos
@@ -111,6 +113,7 @@ jobs:
             jemalloc: true
             tls_features: "tls-native"
             nsfw: false
+            enabled: false  # ort has no prebuilt for Intel Mac; low usage (~17 downloads)
           - runner: macos-14
             label: macos-arm64
             platform: macos
@@ -122,6 +125,7 @@ jobs:
             jemalloc: true
             tls_features: "tls-native"
             nsfw: true
+            enabled: false  # low usage (~15 downloads); re-enable if demand grows
           - runner: ubuntu-24.04
             label: windows-amd64
             platform: windows
@@ -133,7 +137,9 @@ jobs:
             jemalloc: false
             tls_features: "tls-rustls"
             nsfw: false
+            enabled: true
     runs-on: ${{ matrix.runner }}
+    if: ${{ matrix.enabled }}
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
