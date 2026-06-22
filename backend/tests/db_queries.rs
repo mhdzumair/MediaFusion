@@ -26,8 +26,6 @@ use mediafusion_api::db::{
     meta::{get_episodes, get_media_meta as get_full_meta},
     types::{MediaId, MediaType},
 };
-use mediafusion_api::state::KeywordFilterCache;
-
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 struct Cleanup {
@@ -348,7 +346,6 @@ async fn get_watchlist_items_resolves_info_hash_to_media() {
         &[],
         "latest",
         "desc",
-        &KeywordFilterCache::default(),
     )
     .await;
 

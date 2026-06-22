@@ -119,8 +119,8 @@ fn main() {
     }
 
     println!(
-        "{:<30}  {:>8}  {:>8}  {:>8}  {:>12}  {}",
-        "file", "sfw", "nsfw", "wall_ms", "rss_delta_kB", "flag"
+        "{:<30}  {:>8}  {:>8}  {:>8}  {:>12}  flag",
+        "file", "sfw", "nsfw", "wall_ms", "rss_delta_kB"
     );
     println!("{}", "─".repeat(90));
 
@@ -201,15 +201,15 @@ fn cpu_time_ms() -> f64 {
     {
         use std::mem::MaybeUninit;
         extern "C" {
-            fn clock_gettime(clk_id: libc_clockid_t, tp: *mut libc_timespec) -> i32;
+            fn clock_gettime(clk_id: ClockId, tp: *mut libc_timespec) -> i32;
         }
-        type libc_clockid_t = i32;
+        type ClockId = i32;
         #[repr(C)]
         struct libc_timespec {
             tv_sec: i64,
             tv_nsec: i64,
         }
-        const CLOCK_PROCESS_CPUTIME_ID: libc_clockid_t = 2;
+        const CLOCK_PROCESS_CPUTIME_ID: ClockId = 2;
         let mut ts = MaybeUninit::<libc_timespec>::zeroed();
         unsafe {
             clock_gettime(CLOCK_PROCESS_CPUTIME_ID, ts.as_mut_ptr());

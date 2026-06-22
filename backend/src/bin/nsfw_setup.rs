@@ -7,7 +7,7 @@
 ///   cargo run --bin mediafusion-nsfw-setup
 ///   cargo run --bin mediafusion-nsfw-setup -- --out /custom/path/nsfw_model.onnx
 ///   cargo run --bin mediafusion-nsfw-setup -- --url https://example.com/model.onnx
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use mediafusion_api::nsfw::{NsfwClassifier, NsfwScores, MODEL_HF_URL};
 
@@ -167,7 +167,7 @@ async fn download(url: &str, dest: &PathBuf) {
 
 // ─── Verify ──────────────────────────────────────────────────────────────────
 
-fn verify(path: &PathBuf) {
+fn verify(path: &Path) {
     println!("\n━━ Verifying ONNX model …");
 
     let path_str = path.to_string_lossy();
