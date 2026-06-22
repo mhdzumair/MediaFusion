@@ -51,15 +51,12 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
-use tower_http::{
-    catch_panic::CatchPanicLayer,
-    compression::CompressionLayer,
-    cors::CorsLayer,
-    services::ServeDir,
-    timeout::TimeoutLayer,
-};
 #[cfg(not(feature = "embed-frontend"))]
 use tower_http::services::ServeFile;
+use tower_http::{
+    catch_panic::CatchPanicLayer, compression::CompressionLayer, cors::CorsLayer,
+    services::ServeDir, timeout::TimeoutLayer,
+};
 
 #[cfg(feature = "embed-frontend")]
 mod embedded_frontend {
@@ -869,8 +866,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             .into_owned();
         // ServeDir serves real files (assets, etc.) directly; unmatched paths fall
         // back to index.html so React Router handles client-side navigation.
-        let spa_service =
-            ServeDir::new(&frontend_dist_dir).fallback(ServeFile::new(&index_html));
+        let spa_service = ServeDir::new(&frontend_dist_dir).fallback(ServeFile::new(&index_html));
         axum::Router::<()>::new().nest_service("/", spa_service)
     };
 
