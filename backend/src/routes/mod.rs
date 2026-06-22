@@ -55,9 +55,44 @@ use tower_http::{
     catch_panic::CatchPanicLayer,
     compression::CompressionLayer,
     cors::CorsLayer,
-    services::{ServeDir, ServeFile},
+    services::ServeDir,
     timeout::TimeoutLayer,
 };
+#[cfg(not(feature = "embed-frontend"))]
+use tower_http::services::ServeFile;
+
+#[cfg(feature = "embed-frontend")]
+mod embedded_frontend {
+    use axum::{body::Body, http::Uri, response::Response};
+    use rust_embed::RustEmbed;
+
+    #[derive(RustEmbed)]
+    #[folder = "../clients/frontend/dist/"]
+    struct FrontendAssets;
+
+    /// Serve the embedded React SPA. Exact file matches are served as-is;
+    /// everything else falls back to index.html so React Router handles navigation.
+    pub async fn spa_handler(uri: Uri) -> Response<Body> {
+        let path = uri.path().trim_start_matches('/');
+        let (data, content_type) = match FrontendAssets::get(path) {
+            Some(file) => {
+                let mime = mime_guess::from_path(path)
+                    .first_or_octet_stream()
+                    .to_string();
+                (file.data, mime)
+            }
+            None => {
+                let index = FrontendAssets::get("index.html")
+                    .expect("index.html must be present in clients/frontend/dist/");
+                (index.data, "text/html; charset=utf-8".to_string())
+            }
+        };
+        Response::builder()
+            .header(axum::http::header::CONTENT_TYPE, content_type)
+            .body(Body::from(data.into_owned()))
+            .unwrap()
+    }
+}
 
 use crate::api_error_middleware::{api_error_middleware, handle_panic};
 use crate::api_key_middleware::api_key_middleware;
@@ -817,20 +852,32 @@ pub fn router(state: Arc<AppState>) -> Router {
         .layer(CorsLayer::permissive())
         .with_state(state.clone());
 
-    let frontend_dist_dir = state.config.frontend_dist_dir.clone();
-    let index_html = std::path::Path::new(&frontend_dist_dir)
-        .join("index.html")
-        .to_string_lossy()
-        .into_owned();
+    #[cfg(feature = "embed-frontend")]
+    let spa_router = {
+        use axum::routing::get;
+        Router::new()
+            .route("/", get(embedded_frontend::spa_handler))
+            .route("/{*path}", get(embedded_frontend::spa_handler))
+    };
 
-    // ServeDir serves real files (assets, etc.) directly; unmatched paths fall
-    // back to index.html so React Router handles client-side navigation.
-    let spa_service = ServeDir::new(&frontend_dist_dir).fallback(ServeFile::new(&index_html));
+    #[cfg(not(feature = "embed-frontend"))]
+    let spa_router = {
+        let frontend_dist_dir = state.config.frontend_dist_dir.clone();
+        let index_html = std::path::Path::new(&frontend_dist_dir)
+            .join("index.html")
+            .to_string_lossy()
+            .into_owned();
+        // ServeDir serves real files (assets, etc.) directly; unmatched paths fall
+        // back to index.html so React Router handles client-side navigation.
+        let spa_service =
+            ServeDir::new(&frontend_dist_dir).fallback(ServeFile::new(&index_html));
+        axum::Router::<()>::new().nest_service("/", spa_service)
+    };
 
     Router::new()
         .route("/", get(root_redirect))
         .merge(api_router)
-        .nest_service("/app", spa_service)
+        .nest("/app", spa_router)
         .nest_service("/static", ServeDir::new(resources_dir))
         .layer(axum::middleware::map_response(spa_cache_headers))
         .layer(CorsLayer::permissive())

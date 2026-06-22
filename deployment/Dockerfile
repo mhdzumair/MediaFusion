@@ -1,20 +1,13 @@
-# Frontend build stage
-FROM node:22-alpine AS frontend-builder
-RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
-WORKDIR /app/frontend
-COPY clients/frontend/package.json clients/frontend/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
-COPY clients/frontend/ ./
-RUN pnpm run build
-
-# Pre-built Rust binaries (built natively in CI, passed via rust-dist/<arch>/)
+# Pre-built Rust binaries (built natively in CI, passed via rust-dist/<arch>/).
+# The API server binary has the React SPA embedded via the embed-frontend feature;
+# no separate frontend build stage is needed.
 FROM scratch AS rust-builder
 ARG TARGETARCH
 COPY --chmod=755 rust-dist/${TARGETARCH}/mediafusion-api /mediafusion-api
 COPY --chmod=755 rust-dist/${TARGETARCH}/mediafusion-worker /mediafusion-worker
 
 # ── Single runtime image (API default, worker via CMD override) ───────────────
-# ubuntu:24.04 = glibc 2.39, matching the ubuntu-24.04 / ubuntu-24.04-arm CI runners.
+# debian:trixie-slim = glibc 2.41, matching the ubuntu-24.04 / ubuntu-24.04-arm CI runners.
 FROM debian:trixie-slim AS runtime
 
 WORKDIR /mediafusion
@@ -33,9 +26,6 @@ COPY --from=rust-builder --chown=mediafusion:mediafusion /mediafusion-api    /us
 COPY --from=rust-builder --chown=mediafusion:mediafusion /mediafusion-worker /usr/local/bin/mediafusion-worker
 
 COPY --chown=mediafusion:mediafusion . /mediafusion
-
-COPY --from=frontend-builder --chown=mediafusion:mediafusion \
-    /app/frontend/dist /mediafusion/clients/frontend/dist
 
 ARG VERSION
 ENV VERSION=${VERSION}

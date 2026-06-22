@@ -4,7 +4,7 @@ version = "6.0.0-beta.24"
 edition = "2021"
 
 [features]
-default = ["jemalloc", "tls-rustls", "nsfw-classifier"]
+default = ["jemalloc", "tls-rustls"]
 jemalloc = ["dep:tikv-jemallocator"]
 # TLS backends — pick exactly one. Default is tls-rustls (pure-Rust, musl-safe).
 # tls-native uses the OS TLS stack (SecureTransport on macOS, OpenSSL on Linux).
@@ -13,12 +13,16 @@ jemalloc = ["dep:tikv-jemallocator"]
 tls-rustls        = ["reqwest/rustls", "lettre/tokio1-rustls-tls"]
 tls-native        = ["reqwest/native-tls", "lettre/tokio1-native-tls"]
 vendored-openssl  = ["openssl/vendored"]
-# NSFW poster classifier — requires ONNX Runtime prebuilt binaries.
+# NSFW poster classifier — worker-only feature (the API server only enqueues the job).
+# Requires ONNX Runtime prebuilt binaries.
 # Prebuilts: aarch64-apple-darwin, x86_64/aarch64-unknown-linux-gnu (glibc ≥ 2.39),
 #            x86_64/aarch64-pc-windows-msvc (Windows 11 + VS 2022 ≥ 17.14).
-# No prebuilt: musl, x86_64-apple-darwin (must compile ORT from source),
-#              windows-gnu (MinGW ABI incompatible with MSVC-linked ORT).
+# No prebuilt: musl, x86_64-apple-darwin, windows-gnu.
 nsfw-classifier   = ["dep:ort", "dep:ndarray"]
+# Embed the compiled React SPA into the server binary at build time.
+# Requires clients/frontend/dist/ to exist (run `pnpm build` first).
+# When disabled, falls back to serving from the filesystem (FRONTEND_DIST_DIR).
+embed-frontend    = ["dep:rust-embed", "dep:mime_guess"]
 
 [lib]
 name = "mediafusion_api"
@@ -128,6 +132,10 @@ strsim = "0.11"
 # NSFW poster classification: ONNX Runtime + tensor arrays (optional — see nsfw-classifier feature)
 ort = { version = "2.0.0-rc.12", features = ["download-binaries", "ndarray"], optional = true }
 ndarray = { version = "0.17", optional = true }
+
+# Frontend embedding: compile React SPA dist/ into the server binary (optional — see embed-frontend feature)
+rust-embed = { version = "8", optional = true }
+mime_guess = { version = "2", default-features = false, optional = true }
 
 # Config from env
 dotenvy = "0.15"

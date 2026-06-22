@@ -85,12 +85,10 @@ jobs:
             rust_target: x86_64-unknown-linux-gnu
             zig_target: x86_64-unknown-linux-gnu
             exe_suffix: ""
-            use_zigbuild: false  # native x86_64 runner on Ubuntu 24.04 (glibc 2.39) — ort requires 2.39 anyway, zigbuild adds no benefit
+            use_zigbuild: false  # native x86_64 runner on Ubuntu 24.04 (glibc 2.39)
             jemalloc: true
             tls_features: "tls-native"
-            nsfw: true
-            openssl_include_dir: ""
-            openssl_lib_dir: ""
+            worker_nsfw: true   # worker gets nsfw-classifier; server does not
 
           - runner: ubuntu-24.04-arm
             label: linux-arm64
@@ -99,38 +97,21 @@ jobs:
             rust_target: aarch64-unknown-linux-gnu
             zig_target: aarch64-unknown-linux-gnu
             exe_suffix: ""
-            use_zigbuild: false  # native ARM64 runner — Ubuntu 24.04 = glibc 2.39, system OpenSSL headers available
+            use_zigbuild: false  # native ARM64 runner — Ubuntu 24.04 = glibc 2.39
             jemalloc: true
             tls_features: "tls-native"
-            nsfw: true
-            openssl_include_dir: /usr/include/aarch64-linux-gnu
-            openssl_lib_dir: /usr/lib/aarch64-linux-gnu
+            worker_nsfw: true
 
           # macOS builds disabled — low usage (~32 downloads total across all releases).
           # ort has no prebuilt for Intel Mac (x86-64); arm64 usage too low to justify CI cost.
           # To re-enable: uncomment the entries below.
           # - runner: macos-14
           #   label: macos-amd64
-          #   platform: macos
-          #   arch: amd64
-          #   rust_target: x86_64-apple-darwin
-          #   zig_target: x86_64-apple-darwin
-          #   exe_suffix: ""
-          #   use_zigbuild: false
-          #   jemalloc: true
-          #   tls_features: "tls-native"
-          #   nsfw: false
+          #   ...
           # - runner: macos-14
           #   label: macos-arm64
-          #   platform: macos
-          #   arch: arm64
-          #   rust_target: aarch64-apple-darwin
-          #   zig_target: aarch64-apple-darwin
-          #   exe_suffix: ""
-          #   use_zigbuild: false
-          #   jemalloc: true
-          #   tls_features: "tls-native"
-          #   nsfw: true
+          #   ...
+
           - runner: ubuntu-24.04
             label: windows-amd64
             platform: windows
@@ -141,9 +122,7 @@ jobs:
             use_zigbuild: true
             jemalloc: false
             tls_features: "tls-rustls"
-            nsfw: false
-            openssl_include_dir: ""
-            openssl_lib_dir: ""
+            worker_nsfw: false  # ort has no prebuilt for windows-gnu
 
     runs-on: ${{ matrix.runner }}
     steps:
@@ -167,64 +146,95 @@ jobs:
         with:
           tool: cargo-zigbuild
 
-      - name: Fix OpenSSL multiarch headers for zig cross-compiler
-        if: matrix.use_zigbuild && matrix.platform == 'linux'
-        run: |
-          # Ubuntu 24.04 puts opensslconf.h in a multiarch dir; zig's C compiler
-          # only searches /usr/include, so symlink the missing file there.
-          sudo ln -sf /usr/include/x86_64-linux-gnu/openssl/opensslconf.h \
-                      /usr/include/openssl/opensslconf.h
-
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: backend
 
-      - name: Build release binaries (cross-compile)
-        if: matrix.use_zigbuild
-        env:
-          # Cross-compiling for apple-darwin via zig cannot compile aws-lc-sys
-          # jitterentropy (needs CoreServices.h). Fall back to other entropy sources.
-          AWS_LC_SYS_NO_JITTER_ENTROPY: "1"
-          SQLX_OFFLINE: "true"
-        run: |
-          cd backend
-          [ -n "${{ matrix.openssl_include_dir }}" ] && export OPENSSL_INCLUDE_DIR="${{ matrix.openssl_include_dir }}"
-          [ -n "${{ matrix.openssl_lib_dir }}" ] && export OPENSSL_LIB_DIR="${{ matrix.openssl_lib_dir }}"
-          FEATURES="${{ matrix.tls_features }}"
-          if [ "${{ matrix.nsfw }}" = "true" ]; then
-            FEATURES="$FEATURES,nsfw-classifier"
-          fi
-          if [ "${{ matrix.jemalloc }}" != "true" ]; then
-            FEATURE_FLAGS="--no-default-features --features $FEATURES"
-          else
-            FEATURE_FLAGS="--features $FEATURES"
-          fi
-          cargo zigbuild --release $FEATURE_FLAGS \
-            --target ${{ matrix.zig_target }} \
-            --bin mediafusion-api \
-            --bin mediafusion-worker
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
 
-      - name: Build release binaries (native)
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898e2328096e1 # v4
+        with:
+          version: '10'
+
+      - name: Build frontend
+        run: |
+          cd clients/frontend
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+      - name: Build API server (embed-frontend, no nsfw-classifier)
         if: ${{ !matrix.use_zigbuild }}
         env:
           SQLX_OFFLINE: "true"
         run: |
           cd backend
-          [ -n "${{ matrix.openssl_include_dir }}" ] && export OPENSSL_INCLUDE_DIR="${{ matrix.openssl_include_dir }}"
-          [ -n "${{ matrix.openssl_lib_dir }}" ] && export OPENSSL_LIB_DIR="${{ matrix.openssl_lib_dir }}"
-          FEATURES="${{ matrix.tls_features }}"
-          if [ "${{ matrix.nsfw }}" = "true" ]; then
-            FEATURES="$FEATURES,nsfw-classifier"
+          if [ "${{ matrix.jemalloc }}" != "true" ]; then
+            FLAGS="--no-default-features --features ${{ matrix.tls_features }},embed-frontend"
+          else
+            FLAGS="--features ${{ matrix.tls_features }},embed-frontend"
+          fi
+          cargo build --release $FLAGS \
+            --target ${{ matrix.rust_target }} \
+            --bin mediafusion-api
+
+      - name: Build API server (cross-compile, embed-frontend, no nsfw-classifier)
+        if: matrix.use_zigbuild
+        env:
+          AWS_LC_SYS_NO_JITTER_ENTROPY: "1"
+          SQLX_OFFLINE: "true"
+        run: |
+          cd backend
+          if [ "${{ matrix.jemalloc }}" != "true" ]; then
+            FLAGS="--no-default-features --features ${{ matrix.tls_features }},embed-frontend"
+          else
+            FLAGS="--features ${{ matrix.tls_features }},embed-frontend"
+          fi
+          cargo zigbuild --release $FLAGS \
+            --target ${{ matrix.zig_target }} \
+            --bin mediafusion-api
+
+      - name: Build worker (no embed-frontend, nsfw-classifier on supported targets)
+        if: ${{ !matrix.use_zigbuild }}
+        env:
+          SQLX_OFFLINE: "true"
+        run: |
+          cd backend
+          WORKER_FEATURES="${{ matrix.tls_features }}"
+          if [ "${{ matrix.worker_nsfw }}" = "true" ]; then
+            WORKER_FEATURES="$WORKER_FEATURES,nsfw-classifier"
           fi
           if [ "${{ matrix.jemalloc }}" != "true" ]; then
-            FEATURE_FLAGS="--no-default-features --features $FEATURES"
+            FLAGS="--no-default-features --features $WORKER_FEATURES"
           else
-            FEATURE_FLAGS="--features $FEATURES"
+            FLAGS="--features $WORKER_FEATURES"
           fi
-          cargo build --release $FEATURE_FLAGS \
+          cargo build --release $FLAGS \
             --target ${{ matrix.rust_target }} \
-            --bin mediafusion-api \
+            --bin mediafusion-worker
+
+      - name: Build worker (cross-compile, no embed-frontend, nsfw on supported targets)
+        if: matrix.use_zigbuild
+        env:
+          AWS_LC_SYS_NO_JITTER_ENTROPY: "1"
+          SQLX_OFFLINE: "true"
+        run: |
+          cd backend
+          WORKER_FEATURES="${{ matrix.tls_features }}"
+          if [ "${{ matrix.worker_nsfw }}" = "true" ]; then
+            WORKER_FEATURES="$WORKER_FEATURES,nsfw-classifier"
+          fi
+          if [ "${{ matrix.jemalloc }}" != "true" ]; then
+            FLAGS="--no-default-features --features $WORKER_FEATURES"
+          else
+            FLAGS="--features $WORKER_FEATURES"
+          fi
+          cargo zigbuild --release $FLAGS \
+            --target ${{ matrix.zig_target }} \
             --bin mediafusion-worker
 
       - name: Stage artifacts
