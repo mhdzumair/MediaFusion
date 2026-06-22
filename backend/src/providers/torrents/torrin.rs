@@ -63,10 +63,7 @@ pub async fn get_video_url(
     .await
 }
 
-pub async fn delete_all_torrents(
-    http: &reqwest::Client,
-    token: &str,
-) -> Result<(), ProviderError> {
+pub async fn delete_all_torrents(http: &reqwest::Client, token: &str) -> Result<(), ProviderError> {
     stremthru::delete_all_torrents(http, &stremthru_token(token)).await
 }
 
