@@ -4,13 +4,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::{
+    Json,
     extract::State,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::state::AppState;
 
@@ -98,7 +98,11 @@ pub async fn bulk_delete(
         quote_ident(id_col)
     );
 
-    match sqlx::query(&sql).bind(&ids_json).execute(&state.pool).await {
+    match sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(&ids_json)
+        .execute(&state.pool)
+        .await
+    {
         Ok(r) => {
             let elapsed_ms = started.elapsed().as_millis() as i64;
             Json(json!({
@@ -197,7 +201,7 @@ pub async fn bulk_update(
         // Bind the value as the appropriate type
         let result = match val {
             Value::Bool(b) => {
-                sqlx::query(&sql)
+                sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                     .bind(b)
                     .bind(&ids_json)
                     .execute(&state.pool)
@@ -205,19 +209,19 @@ pub async fn bulk_update(
             }
             Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
-                    sqlx::query(&sql)
+                    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                         .bind(i)
                         .bind(&ids_json)
                         .execute(&state.pool)
                         .await
                 } else if let Some(f) = n.as_f64() {
-                    sqlx::query(&sql)
+                    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                         .bind(f)
                         .bind(&ids_json)
                         .execute(&state.pool)
                         .await
                 } else {
-                    sqlx::query(&sql)
+                    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                         .bind(n.to_string())
                         .bind(&ids_json)
                         .execute(&state.pool)
@@ -225,7 +229,7 @@ pub async fn bulk_update(
                 }
             }
             Value::String(s) => {
-                sqlx::query(&sql)
+                sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                     .bind(s)
                     .bind(&ids_json)
                     .execute(&state.pool)
@@ -238,7 +242,7 @@ pub async fn bulk_update(
                     quote_ident(col),
                     quote_ident(id_col)
                 );
-                sqlx::query(&null_sql)
+                sqlx::query(sqlx::AssertSqlSafe(null_sql.as_str()))
                     .bind(&ids_json)
                     .execute(&state.pool)
                     .await
@@ -246,7 +250,7 @@ pub async fn bulk_update(
             _ => {
                 // JSON value — store as text
                 let json_str = val.to_string();
-                sqlx::query(&sql)
+                sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                     .bind(json_str)
                     .bind(&ids_json)
                     .execute(&state.pool)
@@ -317,7 +321,7 @@ async fn cascade_delete(
             quote_ident(child_table),
             quote_ident(child_col)
         );
-        sqlx::query(&del_sql)
+        sqlx::query(sqlx::AssertSqlSafe(del_sql.as_str()))
             .bind(&ids_json)
             .execute(&state.pool)
             .await

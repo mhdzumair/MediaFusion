@@ -16,7 +16,7 @@ use std::sync::Arc;
 use axum::{
     body::Body,
     extract::{Path, Query, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use fred::prelude::{Expiration, KeysInterface};
@@ -24,7 +24,7 @@ use serde::Deserialize;
 
 use crate::{
     crypto,
-    db::{telegram as tg_db, UserId},
+    db::{UserId, telegram as tg_db},
     models::user_data::UserData,
     state::AppState,
 };

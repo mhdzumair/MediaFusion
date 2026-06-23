@@ -3,7 +3,7 @@
 /// Mirrors `python-deprecated/api/services/sync/manager.py`.
 use std::sync::Arc;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 use tracing::{debug, warn};
 

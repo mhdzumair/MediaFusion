@@ -34,8 +34,8 @@ pub struct RssItem {
 
 /// Parse an RSS/Atom XML string into a list of flat items.
 pub fn parse_rss_xml(xml: &str) -> Vec<RssItem> {
-    use quick_xml::events::Event;
     use quick_xml::Reader;
+    use quick_xml::events::Event;
 
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);

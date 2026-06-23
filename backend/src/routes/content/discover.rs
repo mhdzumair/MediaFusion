@@ -13,16 +13,16 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::Sha256;
 
 use crate::{
@@ -370,7 +370,7 @@ pub async fn discover_trending(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -452,7 +452,7 @@ pub async fn discover_list(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -549,7 +549,7 @@ pub async fn discover_watch_providers(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -622,7 +622,7 @@ pub async fn discover_provider_feed(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -822,7 +822,7 @@ pub async fn discover_search(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -838,7 +838,7 @@ pub async fn discover_search(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "query parameter required"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -955,7 +955,7 @@ pub async fn discover_tvdb_filter(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1104,7 +1104,7 @@ pub async fn discover_mdblist(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1140,7 +1140,7 @@ pub async fn discover_mdblist(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "list_id parameter required"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1215,7 +1215,7 @@ pub async fn verify_tmdb_key(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "api_key query param required"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 

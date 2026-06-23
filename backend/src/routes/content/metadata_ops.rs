@@ -9,12 +9,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, Request, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
@@ -171,7 +171,7 @@ pub async fn refresh_metadata(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Media not found"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     let db_media_type = media_row.0.as_wire();
@@ -510,7 +510,7 @@ pub async fn get_media_metadata(
                     StatusCode::NOT_FOUND,
                     Json(json!({"detail": "Media not found"})),
                 )
-                    .into_response()
+                    .into_response();
             }
         };
 
@@ -666,7 +666,7 @@ pub async fn migrate_media_id(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "new_external_id is required"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -792,7 +792,7 @@ pub async fn search_metadata(
             );
             let mt_val =
                 MediaType::from_wire(&media_type.to_ascii_lowercase()).unwrap_or(MediaType::Movie);
-            let count_q = sqlx::query_scalar::<_, i64>(&count_sql)
+            let count_q = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()))
                 .bind(q)
                 .bind(mt_val);
             let count: i64 = match count_q.fetch_one(&state.pool_ro).await {
@@ -820,11 +820,13 @@ pub async fn search_metadata(
                    m.id DESC \
                  LIMIT $3 OFFSET $4"
             );
-            let rows_q = sqlx::query_as::<_, (i32, String, String, Option<i32>, bool)>(&rows_sql)
-                .bind(q)
-                .bind(mt_val)
-                .bind(page_size)
-                .bind(offset);
+            let rows_q = sqlx::query_as::<_, (i32, String, String, Option<i32>, bool)>(
+                sqlx::AssertSqlSafe(rows_sql.as_str()),
+            )
+            .bind(q)
+            .bind(mt_val)
+            .bind(page_size)
+            .bind(offset);
             let rows: Vec<(i32, String, String, Option<i32>, bool)> =
                 match rows_q.fetch_all(&state.pool_ro).await {
                     Ok(v) => v,
@@ -846,7 +848,8 @@ pub async fn search_metadata(
                  WHERE m.title ILIKE '%' || $1 || '%'\
                  {kf_frag}"
             );
-            let count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(q);
+            let count_q =
+                sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str())).bind(q);
             let count: i64 = match count_q.fetch_one(&state.pool_ro).await {
                 Ok(v) => v,
                 Err(e) => {
@@ -871,10 +874,12 @@ pub async fn search_metadata(
                    m.id DESC \
                  LIMIT $2 OFFSET $3"
             );
-            let rows_q = sqlx::query_as::<_, (i32, String, String, Option<i32>, bool)>(&rows_sql)
-                .bind(q)
-                .bind(page_size)
-                .bind(offset);
+            let rows_q = sqlx::query_as::<_, (i32, String, String, Option<i32>, bool)>(
+                sqlx::AssertSqlSafe(rows_sql.as_str()),
+            )
+            .bind(q)
+            .bind(page_size)
+            .bind(offset);
             let rows: Vec<(i32, String, String, Option<i32>, bool)> =
                 match rows_q.fetch_all(&state.pool_ro).await {
                     Ok(v) => v,

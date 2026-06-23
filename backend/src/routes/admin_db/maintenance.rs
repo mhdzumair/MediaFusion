@@ -3,13 +3,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::{
+    Json,
     extract::State,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::state::AppState;
 
@@ -76,7 +76,10 @@ pub async fn run_vacuum(
             _ => format!("VACUUM ANALYZE \"{}\"", table_name),
         };
 
-        match sqlx::query(&sql).execute(&state.pool).await {
+        match sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .execute(&state.pool)
+            .await
+        {
             Ok(_) => processed.push(table_name.clone()),
             Err(e) => {
                 tracing::warn!("maintenance vacuum {table_name}: {e}");
@@ -147,7 +150,10 @@ pub async fn run_analyze(
         }
 
         let sql = format!("ANALYZE \"{}\"", table_name);
-        match sqlx::query(&sql).execute(&state.pool).await {
+        match sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .execute(&state.pool)
+            .await
+        {
             Ok(_) => processed.push(table_name.clone()),
             Err(e) => {
                 tracing::warn!("maintenance analyze {table_name}: {e}");
@@ -216,7 +222,10 @@ pub async fn run_reindex(
         }
 
         let sql = format!("REINDEX TABLE \"{}\"", table_name);
-        match sqlx::query(&sql).execute(&state.pool).await {
+        match sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .execute(&state.pool)
+            .await
+        {
             Ok(_) => processed.push(table_name.clone()),
             Err(e) => {
                 tracing::warn!("maintenance reindex {table_name}: {e}");
@@ -339,10 +348,13 @@ pub async fn rebuild_indexes(
                 .into_response();
         }
         let query = format!("REINDEX INDEX \"{}\"", idx);
-        match sqlx::query(&query).execute(&state.pool).await {
+        match sqlx::query(sqlx::AssertSqlSafe(query.as_str()))
+            .execute(&state.pool)
+            .await
+        {
             Ok(_) => {
                 return Json(json!({"status": "success", "message": format!("Reindexed {idx}")}))
-                    .into_response()
+                    .into_response();
             }
             Err(e) => {
                 return (
@@ -363,12 +375,15 @@ pub async fn rebuild_indexes(
                 .into_response();
         }
         let query = format!("REINDEX TABLE \"{}\"", table);
-        match sqlx::query(&query).execute(&state.pool).await {
+        match sqlx::query(sqlx::AssertSqlSafe(query.as_str()))
+            .execute(&state.pool)
+            .await
+        {
             Ok(_) => {
                 return Json(
                     json!({"status": "success", "message": format!("Reindexed table {table}")}),
                 )
-                .into_response()
+                .into_response();
             }
             Err(e) => {
                 return (

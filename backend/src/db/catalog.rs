@@ -2,7 +2,7 @@ use sqlx::PgPool;
 use tracing::warn;
 
 use super::retry;
-use super::types::{nudity_statuses_from_filter, MediaId, MediaType, UserId};
+use super::types::{MediaId, MediaType, UserId, nudity_statuses_from_filter};
 
 const LIMIT: i64 = 100;
 const WATCHLIST_LIMIT: i64 = 25;
@@ -122,7 +122,7 @@ pub async fn get_catalog_items(pool: &PgPool, q: CatalogQuery<'_>) -> Vec<Catalo
         "#
     );
 
-    let q = sqlx::query_as::<_, CatalogRow>(&sql)
+    let q = sqlx::query_as::<_, CatalogRow>(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(catalog_id) // $1
         .bind(mt) // $2
         .bind(skip) // $3
@@ -180,7 +180,7 @@ async fn get_library_items(
         LIMIT 100 OFFSET $4
         "#
     );
-    let q = sqlx::query_as::<_, CatalogRow>(&sql)
+    let q = sqlx::query_as::<_, CatalogRow>(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(uid) // $1
         .bind(media_type) // $2
         .bind(&nudity_exclude_enums) // $3
@@ -258,7 +258,7 @@ pub async fn get_watchlist_items(
     );
 
     retry::with_retry("watchlist catalog query", || async {
-        let q = sqlx::query_as::<_, CatalogRow>(&sql)
+        let q = sqlx::query_as::<_, CatalogRow>(sqlx::AssertSqlSafe(sql.as_str()))
             .bind(mt) // $1
             .bind(&info_hashes_lower) // $2
             .bind(&nudity_exclude_enums) // $3
@@ -335,7 +335,7 @@ pub async fn search_metadata(
         LIMIT 100 OFFSET $4
         "#
     );
-    let q = sqlx::query_as::<_, CatalogRow>(&sql)
+    let q = sqlx::query_as::<_, CatalogRow>(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(mt) // $1
         .bind(query) // $2
         .bind(&nudity_exclude_enums) // $3
@@ -403,7 +403,7 @@ pub async fn get_mdblist_filtered_items(
         "#
     );
 
-    let q = sqlx::query_as::<_, CatalogRow>(&sql)
+    let q = sqlx::query_as::<_, CatalogRow>(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(imdb_ids) // $1
         .bind(media_type) // $2
         .bind(&nudity_exclude_enums) // $3

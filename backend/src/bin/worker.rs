@@ -10,6 +10,7 @@ use std::sync::Arc;
 use mediafusion_api::{
     config::AppConfig,
     jobs::{
+        JobRegistry,
         handlers::{
             acestream_bg::AcestreamBgScraper,
             backfill_stream_metadata::BackfillStreamMetadata,
@@ -43,11 +44,10 @@ use mediafusion_api::{
             youtube_bg::YoutubeBgScraper,
         },
         metrics::JobMetrics,
-        JobRegistry,
     },
     state::{
-        load_keyword_filter_cache, maybe_recompute_keyword_blocked, sync_keywords_from_file,
-        AppState,
+        AppState, load_keyword_filter_cache, maybe_recompute_keyword_blocked,
+        sync_keywords_from_file,
     },
 };
 use tokio_util::sync::CancellationToken;

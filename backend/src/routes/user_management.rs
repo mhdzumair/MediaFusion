@@ -12,10 +12,10 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -203,7 +203,7 @@ pub async fn list_users(
     };
 
     let count_sql = format!("SELECT COUNT(*) FROM users {where_clause}");
-    let total: i64 = match sqlx::query_scalar::<_, i64>(&count_sql)
+    let total: i64 = match sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()))
         .fetch_one(&state.pool_ro)
         .await
     {
@@ -235,7 +235,7 @@ pub async fn list_users(
            LIMIT {page_size} OFFSET {offset}"#
     );
 
-    let rows = match sqlx::query_as::<_, UserRow>(&data_sql)
+    let rows = match sqlx::query_as::<_, UserRow>(sqlx::AssertSqlSafe(data_sql.as_str()))
         .fetch_all(&state.pool_ro)
         .await
     {
@@ -398,7 +398,7 @@ pub async fn update_user(
         sets.join(", ")
     );
 
-    let mut q = sqlx::query(&sql);
+    let mut q = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
     if let Some(ref v) = body.username {
         q = q.bind(v);
     }
@@ -660,13 +660,13 @@ async fn send_email(
     body: String,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use lettre::{
+        AsyncTransport, Message, Tokio1Executor,
         message::header::ContentType,
         transport::smtp::{
+            AsyncSmtpTransport,
             authentication::Credentials,
             client::{Tls, TlsParameters},
-            AsyncSmtpTransport,
         },
-        AsyncTransport, Message, Tokio1Executor,
     };
 
     let smtp_host = state

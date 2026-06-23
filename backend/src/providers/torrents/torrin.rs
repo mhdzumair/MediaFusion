@@ -6,11 +6,11 @@
 //! (`tr_...`) as store-level auth. All request/response handling, retries and
 //! file selection are reused from the StremThru implementation.
 
-use crate::providers::torrents::transport::MediaFlowForward;
 use crate::providers::ProviderError;
+use crate::providers::torrents::transport::MediaFlowForward;
 
-use super::stremthru;
 use super::DownloadedTorrent;
+use super::stremthru;
 
 const BASE_URL: &str = "https://api.torrin.app";
 

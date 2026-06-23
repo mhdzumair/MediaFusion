@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use once_cell::sync::Lazy;
-use reqwest::header::{IF_MODIFIED_SINCE, IF_NONE_MATCH};
 use reqwest::Client;
+use reqwest::header::{IF_MODIFIED_SINCE, IF_NONE_MATCH};
 use sqlx::PgPool;
 use tokio::io::AsyncWriteExt;
 use tracing::info;

@@ -20,12 +20,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
@@ -272,7 +272,8 @@ pub async fn get_library(
     let _ = idx;
 
     let total: i64 = {
-        let mut q = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id as i32);
+        let mut q = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()))
+            .bind(user_id as i32);
         if let Some(ref ct) = params.catalog_type {
             q = q.bind(ct.clone());
         }
@@ -317,9 +318,10 @@ pub async fn get_library(
     sql.push_str(&format!(" LIMIT ${idx} OFFSET ${}", idx + 1));
 
     let rows: Vec<(i32, i32, String, String, Option<String>, DateTime<Utc>)> = {
-        let mut q =
-            sqlx::query_as::<_, (i32, i32, String, String, Option<String>, DateTime<Utc>)>(&sql)
-                .bind(user_id as i32);
+        let mut q = sqlx::query_as::<_, (i32, i32, String, String, Option<String>, DateTime<Utc>)>(
+            sqlx::AssertSqlSafe(sql.as_str()),
+        )
+        .bind(user_id as i32);
         if let Some(ref ct) = params.catalog_type {
             q = q.bind(ct.clone());
         }
@@ -1037,11 +1039,7 @@ fn strip_date_tokens(title: &str) -> String {
     static DATE_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = DATE_RE.get_or_init(|| regex::Regex::new(r"\s+\d{1,2}\s+\d{1,2}\s+\d{4}\b").unwrap());
     let s = re.replace_all(title, "").trim().to_string();
-    if s.is_empty() {
-        title.to_string()
-    } else {
-        s
-    }
+    if s.is_empty() { title.to_string() } else { s }
 }
 
 /// Find the best-matching media in the DB for `title`/`year`/`media_type`.
@@ -2264,7 +2262,7 @@ pub async fn bulk_library_operation(
                 StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     let operation = match body.get("operation").and_then(|v| v.as_str()) {
@@ -2274,7 +2272,7 @@ pub async fn bulk_library_operation(
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"detail": "Missing 'operation' field"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -2285,7 +2283,7 @@ pub async fn bulk_library_operation(
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"detail": "Missing or invalid 'items' field"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 

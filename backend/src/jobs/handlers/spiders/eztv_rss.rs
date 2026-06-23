@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use quick_xml::{events::Event, Reader};
+use quick_xml::{Reader, events::Event};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
         handler::{JobCtx, JobHandler},
     },
     parser,
-    scrapers::{media_resolve, prowlarr::build_series_files, stream_convert, ScrapedStream},
+    scrapers::{ScrapedStream, media_resolve, prowlarr::build_series_files, stream_convert},
     util::rate_limit,
 };
 

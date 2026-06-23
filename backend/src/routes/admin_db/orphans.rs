@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Query, State},
     http::HeaderMap,
     response::IntoResponse,
-    Json,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 
 use crate::state::AppState;

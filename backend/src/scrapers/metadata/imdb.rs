@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::db::{MediaType, NormalizedEpisode, NormalizedMetadata, NormalizedSeason};
 
-use super::{year_matches, FetchCtx, MetadataMatch, MIN_TITLE_SIMILARITY};
+use super::{FetchCtx, MIN_TITLE_SIMILARITY, MetadataMatch, year_matches};
 
 pub async fn fetch_by_id(
     http: &reqwest::Client,

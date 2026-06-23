@@ -32,7 +32,7 @@ use crate::{
         handler::{JobCtx, JobHandler},
     },
     parser,
-    scrapers::{media_resolve, stream_convert, ScrapedStream, SearchMeta, StreamFile},
+    scrapers::{ScrapedStream, SearchMeta, StreamFile, media_resolve, stream_convert},
 };
 
 // ─── Redis key constants (must match Python side) ─────────────────────────────
@@ -126,7 +126,9 @@ async fn github_get_json(
         .and_then(|s| s.parse::<i64>().ok())
     {
         if remaining < 10 {
-            warn!("dmm_hashlist: GitHub rate limit almost exhausted (remaining={remaining}). Set DMM_HASHLIST_GITHUB_TOKEN to raise the limit.");
+            warn!(
+                "dmm_hashlist: GitHub rate limit almost exhausted (remaining={remaining}). Set DMM_HASHLIST_GITHUB_TOKEN to raise the limit."
+            );
         }
     }
 

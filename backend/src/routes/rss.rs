@@ -28,13 +28,13 @@ use std::sync::Arc;
 #[allow(unused_imports)]
 use axum::extract::Query;
 use axum::{
+    Json,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::state::AppState;
 
@@ -1567,7 +1567,7 @@ pub async fn user_test_rss_feed(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     let user_id_filter: Option<i32> = if role == "admin" { None } else { Some(user_id) };
@@ -1581,7 +1581,7 @@ pub async fn user_test_rss_feed(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Feed not found"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1599,7 +1599,7 @@ pub async fn user_test_rss_feed(
                 StatusCode::BAD_GATEWAY,
                 Json(json!({"status": "error", "message": "Could not fetch feed URL"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1683,7 +1683,7 @@ pub async fn user_test_rss_feed_url(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "url required"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1700,7 +1700,7 @@ pub async fn user_test_rss_feed_url(
                 StatusCode::BAD_GATEWAY,
                 Json(json!({"status": "error", "message": "Could not fetch feed URL"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1803,7 +1803,7 @@ pub async fn user_scrape_single_feed(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     let user_id_filter: Option<i32> = if role == "admin" { None } else { Some(user_id) };
@@ -1855,7 +1855,7 @@ pub async fn user_scrape_single_feed(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Feed not found or not yet approved by admin"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1911,7 +1911,7 @@ pub async fn user_run_all_scrapers(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 

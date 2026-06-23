@@ -8,12 +8,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Multipart, Path, Request, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use fred::prelude::*;
 use hmac::{Hmac, KeyInit, Mac};
@@ -334,11 +334,7 @@ fn extract_m3u_attr(line: &str, attr: &str) -> Option<String> {
     let rest = &line[start + search.len()..];
     let end = rest.find('"')?;
     let val = rest[..end].trim().to_string();
-    if val.is_empty() {
-        None
-    } else {
-        Some(val)
-    }
+    if val.is_empty() { None } else { Some(val) }
 }
 
 // ─── DB helpers for TV channel insertion ──────────────────────────────────────

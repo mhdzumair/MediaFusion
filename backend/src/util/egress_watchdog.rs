@@ -103,12 +103,12 @@ pub async fn run(http: reqwest::Client, cfg: WatchdogConfig, cancel: Option<Canc
 async fn probe_cycle(http: &reqwest::Client, urls: &[String]) -> bool {
     let mut any_ok = false;
     for url in urls {
-        match http
+        let probe = http
             .head(url.as_str())
             .timeout(Duration::from_secs(10))
             .send()
-            .await
-        {
+            .await;
+        match probe {
             Ok(_) => {
                 // Any HTTP response (even 4xx/5xx) means egress is working.
                 any_ok = true;

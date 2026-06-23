@@ -20,12 +20,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::State,
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use fred::interfaces::KeysInterface;
 use fred::types::Expiration;
@@ -567,7 +567,7 @@ pub async fn register(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"detail": "User not found after insert"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -597,7 +597,7 @@ pub async fn login(
                 StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({"detail": "Invalid email or password"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -662,7 +662,7 @@ pub async fn refresh(
                 StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({"detail": "Invalid refresh token"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -673,7 +673,7 @@ pub async fn refresh(
                 StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({"detail": "Invalid token"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -684,7 +684,7 @@ pub async fn refresh(
                 StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({"detail": "User not found or inactive"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -714,7 +714,7 @@ pub async fn verify_email(
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"detail": "Invalid or expired verification token"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -725,7 +725,7 @@ pub async fn verify_email(
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"detail": "Invalid token"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -736,7 +736,7 @@ pub async fn verify_email(
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"detail": "User not found."})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -862,7 +862,7 @@ pub async fn reset_password(
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"detail": "Invalid or expired reset token"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -873,7 +873,7 @@ pub async fn reset_password(
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"detail": "Invalid token"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -884,7 +884,7 @@ pub async fn reset_password(
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({"detail": "User not found"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -942,7 +942,7 @@ pub async fn change_password(
                     StatusCode::UNAUTHORIZED,
                     Json(serde_json::json!({"detail": "Authentication required"})),
                 )
-                    .into_response()
+                    .into_response();
             }
         };
 
@@ -953,7 +953,7 @@ pub async fn change_password(
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({"detail": "User not found"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -997,7 +997,7 @@ pub async fn delete_account(
                     StatusCode::UNAUTHORIZED,
                     Json(serde_json::json!({"detail": "Authentication required"})),
                 )
-                    .into_response()
+                    .into_response();
             }
         };
 
@@ -1008,7 +1008,7 @@ pub async fn delete_account(
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({"detail": "User not found"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1063,7 +1063,7 @@ pub async fn get_me(State(state): State<Arc<AppState>>, headers: HeaderMap) -> i
                     StatusCode::UNAUTHORIZED,
                     Json(serde_json::json!({"detail": "Authentication required"})),
                 )
-                    .into_response()
+                    .into_response();
             }
         };
 
@@ -1092,7 +1092,7 @@ pub async fn update_me(
                     StatusCode::UNAUTHORIZED,
                     Json(serde_json::json!({"detail": "Authentication required"})),
                 )
-                    .into_response()
+                    .into_response();
             }
         };
 
@@ -1360,13 +1360,13 @@ async fn send_email(
     text: String,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use lettre::{
+        AsyncTransport, Message, Tokio1Executor,
         message::MultiPart,
         transport::smtp::{
+            AsyncSmtpTransport,
             authentication::Credentials,
             client::{Tls, TlsParameters},
-            AsyncSmtpTransport,
         },
-        AsyncTransport, Message, Tokio1Executor,
     };
 
     let smtp_host = state

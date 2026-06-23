@@ -14,7 +14,7 @@
 //!   3. POST the token back as FormData with field `___ack`
 //!   4. Retry GET → 200 + actual binary content
 
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use reqwest::Client;
 use tracing::{debug, warn};
 

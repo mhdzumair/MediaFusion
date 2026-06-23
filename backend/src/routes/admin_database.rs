@@ -25,16 +25,16 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::Sha256;
 
 use crate::state::AppState;
@@ -589,7 +589,7 @@ pub async fn get_table_data(
                  (SELECT * FROM {table_name} ORDER BY {sort_col} {sort_order} \
                  LIMIT {per_page} OFFSET {offset}) t"
             );
-            sqlx::query_scalar::<_, Value>(&q)
+            sqlx::query_scalar::<_, Value>(sqlx::AssertSqlSafe(q.as_str()))
                 .fetch_all(&state.pool_ro)
                 .await
                 .unwrap_or_default()
@@ -653,7 +653,7 @@ pub async fn delete_table_rows(
         "DELETE FROM {table_name} WHERE {id_col}::text = ANY(SELECT jsonb_array_elements_text($1::jsonb))"
     );
 
-    match sqlx::query(&query)
+    match sqlx::query(sqlx::AssertSqlSafe(query.as_str()))
         .bind(&ids_json)
         .execute(&state.pool)
         .await
@@ -752,7 +752,10 @@ pub async fn run_reindex(
     let mut processed = Vec::new();
     for table_name in tables {
         let query = format!("REINDEX TABLE {table_name}");
-        match sqlx::query(&query).execute(&state.pool).await {
+        match sqlx::query(sqlx::AssertSqlSafe(query.as_str()))
+            .execute(&state.pool)
+            .await
+        {
             Ok(_) => processed.push(table_name),
             Err(e) => {
                 tracing::error!("reindex {table_name}: {e}");
@@ -893,7 +896,7 @@ pub async fn get_slow_queries(
            LIMIT $2"#
     );
 
-    let rows = match sqlx::query(&sql)
+    let rows = match sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(min_calls)
         .bind(limit)
         .bind(min_mean_time_ms)
@@ -1047,7 +1050,7 @@ pub async fn export_table(
     }
 
     let query = format!("SELECT row_to_json(t) FROM {table_name} t LIMIT 10000");
-    let rows: Vec<Value> = sqlx::query_scalar::<_, Value>(&query)
+    let rows: Vec<Value> = sqlx::query_scalar::<_, Value>(sqlx::AssertSqlSafe(query.as_str()))
         .fetch_all(&state.pool_ro)
         .await
         .unwrap_or_default();
@@ -1114,7 +1117,7 @@ pub async fn import_table(
         "INSERT INTO {table} SELECT * FROM json_populate_recordset(null::{table}, $1::json)"
     );
 
-    match sqlx::query(&sql)
+    match sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(&rows_json)
         .execute(&state.pool)
         .await
@@ -1198,10 +1201,13 @@ pub async fn rebuild_indexes(
                 .into_response();
         }
         let query = format!("REINDEX INDEX {idx}");
-        match sqlx::query(&query).execute(&state.pool).await {
+        match sqlx::query(sqlx::AssertSqlSafe(query.as_str()))
+            .execute(&state.pool)
+            .await
+        {
             Ok(_) => {
                 return Json(json!({"status": "success", "message": format!("Reindexed {idx}")}))
-                    .into_response()
+                    .into_response();
             }
             Err(e) => {
                 return (
@@ -1222,12 +1228,15 @@ pub async fn rebuild_indexes(
                 .into_response();
         }
         let query = format!("REINDEX TABLE {table}");
-        match sqlx::query(&query).execute(&state.pool).await {
+        match sqlx::query(sqlx::AssertSqlSafe(query.as_str()))
+            .execute(&state.pool)
+            .await
+        {
             Ok(_) => {
                 return Json(
                     json!({"status": "success", "message": format!("Reindexed table {table}")}),
                 )
-                .into_response()
+                .into_response();
             }
             Err(e) => {
                 return (
@@ -1268,7 +1277,7 @@ pub async fn export_table_by_path(
     }
 
     let query = format!("SELECT row_to_json(t) FROM {table} t LIMIT 10000");
-    let rows: Vec<Value> = sqlx::query_scalar::<_, Value>(&query)
+    let rows: Vec<Value> = sqlx::query_scalar::<_, Value>(sqlx::AssertSqlSafe(query.as_str()))
         .fetch_all(&state.pool_ro)
         .await
         .unwrap_or_default();
@@ -1296,7 +1305,10 @@ pub async fn detect_orphans_combined(
     let (orphan_sml_by_media, orphan_sml_by_stream, orphan_http_streams) = tokio::join!(
         async {
             let mut tx = state.pool_ro.begin().await.ok()?;
-            sqlx::query(timeout).execute(&mut *tx).await.ok()?;
+            sqlx::query(sqlx::AssertSqlSafe(timeout))
+                .execute(&mut *tx)
+                .await
+                .ok()?;
             let n: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM stream_media_link sml \
                  WHERE NOT EXISTS (SELECT 1 FROM media m WHERE m.id = sml.media_id)",
@@ -1308,7 +1320,10 @@ pub async fn detect_orphans_combined(
         },
         async {
             let mut tx = state.pool_ro.begin().await.ok()?;
-            sqlx::query(timeout).execute(&mut *tx).await.ok()?;
+            sqlx::query(sqlx::AssertSqlSafe(timeout))
+                .execute(&mut *tx)
+                .await
+                .ok()?;
             let n: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM stream_media_link sml \
                  WHERE NOT EXISTS (SELECT 1 FROM stream s WHERE s.id = sml.stream_id)",
@@ -1320,7 +1335,10 @@ pub async fn detect_orphans_combined(
         },
         async {
             let mut tx = state.pool_ro.begin().await.ok()?;
-            sqlx::query(timeout).execute(&mut *tx).await.ok()?;
+            sqlx::query(sqlx::AssertSqlSafe(timeout))
+                .execute(&mut *tx)
+                .await
+                .ok()?;
             let n: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM http_stream hs \
                  WHERE NOT EXISTS (SELECT 1 FROM stream s WHERE s.id = hs.stream_id)",
@@ -1411,7 +1429,7 @@ pub async fn bulk_delete(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "Missing 'table' field"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1430,7 +1448,7 @@ pub async fn bulk_delete(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "Missing or invalid 'ids' field"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1443,7 +1461,11 @@ pub async fn bulk_delete(
     }
 
     let sql = format!("DELETE FROM {} WHERE id = ANY($1)", table);
-    match sqlx::query(&sql).bind(&ids).execute(&state.pool).await {
+    match sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(&ids)
+        .execute(&state.pool)
+        .await
+    {
         Ok(r) => Json(json!({
             "status": "success",
             "deleted_count": r.rows_affected(),
@@ -1487,7 +1509,7 @@ pub async fn bulk_update(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "Missing 'table' field"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1498,7 +1520,7 @@ pub async fn bulk_update(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "Table not allowed for bulk update"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1509,7 +1531,7 @@ pub async fn bulk_update(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "Missing or invalid 'ids' field"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1520,7 +1542,7 @@ pub async fn bulk_update(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "Missing or invalid 'updates' field"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1549,12 +1571,12 @@ pub async fn bulk_update(
                     StatusCode::BAD_REQUEST,
                     Json(json!({"detail": format!("Value for '{}' must be a boolean", col)})),
                 )
-                    .into_response()
+                    .into_response();
             }
         };
 
         let sql = format!("UPDATE {} SET {} = $1 WHERE id = ANY($2)", table, col);
-        match sqlx::query(&sql)
+        match sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
             .bind(bool_val)
             .bind(&ids)
             .execute(&state.pool)
@@ -1678,7 +1700,7 @@ pub async fn import_execute(
         "INSERT INTO {table} SELECT * FROM json_populate_recordset(null::{table}, $1::json)"
     );
 
-    match sqlx::query(&sql)
+    match sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(&rows_json)
         .execute(&state.pool)
         .await

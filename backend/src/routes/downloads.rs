@@ -11,10 +11,10 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -210,7 +210,7 @@ pub async fn list_downloads(
     let _ = idx;
 
     let total: i64 = {
-        let mut q = sqlx::query_scalar::<_, i64>(&count_sql)
+        let mut q = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()))
             .bind(user_id)
             .bind(DOWNLOADED_ACTION);
         if let Some(pid) = params.profile_id {
@@ -262,7 +262,7 @@ pub async fn list_downloads(
     ));
 
     let rows: Vec<DownloadRow> = {
-        let mut q = sqlx::query_as::<_, DownloadRow>(&sql)
+        let mut q = sqlx::query_as::<_, DownloadRow>(sqlx::AssertSqlSafe(sql.as_str()))
             .bind(user_id)
             .bind(DOWNLOADED_ACTION);
         if let Some(pid) = params.profile_id {
@@ -358,37 +358,37 @@ pub async fn get_download_stats(
         String::new()
     };
 
-    let total: i64 = sqlx::query_scalar(&format!(
+    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2{profile_filter}"
-    ))
+    )))
     .bind(user_id)
     .bind(DOWNLOADED_ACTION)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
 
-    let movies: i64 = sqlx::query_scalar(&format!(
+    let movies: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2 AND media_type = 'MOVIE'{profile_filter}"
-    ))
+    )))
     .bind(user_id)
     .bind(DOWNLOADED_ACTION)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
 
-    let series: i64 = sqlx::query_scalar(&format!(
+    let series: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2 AND media_type = 'SERIES'{profile_filter}"
-    ))
+    )))
     .bind(user_id)
     .bind(DOWNLOADED_ACTION)
     .fetch_one(&state.pool_ro)
     .await
     .unwrap_or(0);
 
-    let this_month: i64 = sqlx::query_scalar(&format!(
+    let this_month: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT COUNT(*) FROM watch_history WHERE user_id = $1 AND action = $2 \
          AND watched_at >= date_trunc('month', NOW()){profile_filter}"
-    ))
+    )))
     .bind(user_id)
     .bind(DOWNLOADED_ACTION)
     .fetch_one(&state.pool_ro)
@@ -639,7 +639,7 @@ pub async fn retry_download(
                 StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     let exists: Option<(i32,)> = sqlx::query_as(

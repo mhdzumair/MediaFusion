@@ -3,16 +3,16 @@
 /// Token format:
 ///   - OAuth token (base64 "client_id:client_secret:refresh_code") — exchange for bearer
 ///   - Private token (raw, not valid base64) — used directly as Bearer
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
     providers::{
+        ProviderError,
         file_selection::select_debrid_file_index,
         response_json,
-        torrents::transport::{append_query, encode_form_body, MediaFlowForward},
-        ProviderError,
+        torrents::transport::{MediaFlowForward, append_query, encode_form_body},
     },
     util::retry,
 };

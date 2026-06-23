@@ -10,7 +10,7 @@ use crate::db::{
     NormalizedMetadata, NormalizedRating, NormalizedSeason, NormalizedTrailer, NudityStatus,
 };
 
-use super::{year_matches, FetchCtx, MetadataMatch, MIN_TITLE_SIMILARITY};
+use super::{FetchCtx, MIN_TITLE_SIMILARITY, MetadataMatch, year_matches};
 
 const TMDB_IMG: &str = "https://image.tmdb.org/t/p";
 

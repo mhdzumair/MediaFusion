@@ -16,12 +16,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Deserializer};
@@ -41,7 +41,7 @@ use crate::state::AppState;
 
 use super::{
     contribution_processors::{
-        self, append_review_note, ImportProcessError, PROCESSABLE_IMPORT_TYPES,
+        self, ImportProcessError, PROCESSABLE_IMPORT_TYPES, append_review_note,
     },
     import_helpers::award_contribution_points,
 };
@@ -308,7 +308,7 @@ pub async fn list_contributions(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -410,7 +410,7 @@ pub async fn list_contributions(
         idx + 1
     ));
 
-    let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
+    let mut cq = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()));
     let mut fq;
     for b in &filter_binds {
         match b {
@@ -438,7 +438,7 @@ pub async fn list_contributions(
         DateTime<Utc>,
         Option<DateTime<Utc>>,
     );
-    fq = sqlx::query_as::<_, ContribTuple>(&fetch_sql);
+    fq = sqlx::query_as::<_, ContribTuple>(sqlx::AssertSqlSafe(fetch_sql.as_str()));
     for b in &filter_binds {
         match b {
             ListContribBind::Int(v) => fq = fq.bind(*v),
@@ -498,7 +498,7 @@ pub async fn get_contribution_stats(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -611,7 +611,7 @@ pub async fn list_contribution_contributors(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -666,13 +666,13 @@ pub async fn list_contribution_contributors(
 
     let rows: Vec<(Option<i32>, Option<String>, i64, i64, i64, i64)> =
         if let Some(status) = status_bind {
-            sqlx::query_as(&sql)
+            sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
                 .bind(status)
                 .fetch_all(&state.pool_ro)
                 .await
                 .unwrap_or_default()
         } else {
-            sqlx::query_as(&sql)
+            sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
                 .fetch_all(&state.pool_ro)
                 .await
                 .unwrap_or_default()
@@ -713,7 +713,7 @@ pub async fn list_pending_contributions(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -748,7 +748,7 @@ pub async fn list_pending_contributions(
 
     fetch_sql.push_str(" ORDER BY created_at ASC LIMIT $1 OFFSET $2");
 
-    let total: i64 = sqlx::query_scalar(&count_sql)
+    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql.as_str()))
         .fetch_one(&state.pool_ro)
         .await
         .unwrap_or(0);
@@ -770,12 +770,13 @@ pub async fn list_pending_contributions(
         DateTime<Utc>,
         Option<DateTime<Utc>>,
     );
-    let rows: Vec<ContribTuple> = sqlx::query_as::<_, ContribTuple>(&fetch_sql)
-        .bind(page_size)
-        .bind(offset)
-        .fetch_all(&state.pool_ro)
-        .await
-        .unwrap_or_default();
+    let rows: Vec<ContribTuple> =
+        sqlx::query_as::<_, ContribTuple>(sqlx::AssertSqlSafe(fetch_sql.as_str()))
+            .bind(page_size)
+            .bind(offset)
+            .fetch_all(&state.pool_ro)
+            .await
+            .unwrap_or_default();
 
     let mut items = Vec::new();
     for r in &rows {
@@ -822,7 +823,7 @@ pub async fn get_all_contribution_stats(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -921,7 +922,7 @@ pub async fn get_contribution(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -931,7 +932,7 @@ pub async fn get_contribution(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Contribution not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -961,7 +962,7 @@ pub async fn create_contribution(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1056,7 +1057,7 @@ pub async fn delete_contribution(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1066,7 +1067,7 @@ pub async fn delete_contribution(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Contribution not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -1109,7 +1110,7 @@ pub async fn review_contribution(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1128,7 +1129,7 @@ pub async fn review_contribution(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Contribution not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -1148,7 +1149,7 @@ pub async fn review_contribution(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "status must be approved or rejected"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1258,7 +1259,7 @@ pub async fn flag_contribution_for_admin_review(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1277,7 +1278,7 @@ pub async fn flag_contribution_for_admin_review(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Contribution not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -1497,7 +1498,7 @@ pub async fn reject_approved_contribution(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1516,7 +1517,7 @@ pub async fn reject_approved_contribution(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Contribution not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -1630,7 +1631,7 @@ pub async fn bulk_review_contributions(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1650,7 +1651,7 @@ pub async fn bulk_review_contributions(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "action must be approve or reject"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1679,9 +1680,10 @@ pub async fn bulk_review_contributions(
     }
     fetch_sql.push_str(" ORDER BY created_at ASC");
 
-    let mut fetch_query =
-        sqlx::query_as::<_, (String, String, Option<i32>, serde_json::Value)>(&fetch_sql)
-            .bind(pending);
+    let mut fetch_query = sqlx::query_as::<_, (String, String, Option<i32>, serde_json::Value)>(
+        sqlx::AssertSqlSafe(fetch_sql.as_str()),
+    )
+    .bind(pending);
     for bind in &fetch_binds {
         match bind {
             BulkFetchBind::Type(ct) => {

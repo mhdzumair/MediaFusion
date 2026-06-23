@@ -45,11 +45,11 @@ pub mod watchlist;
 use std::sync::Arc;
 
 use axum::{
+    Router,
     body::Body,
-    http::{header, HeaderValue, StatusCode},
+    http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post, put},
-    Router,
 };
 #[cfg(not(feature = "embed-frontend"))]
 use tower_http::services::ServeFile;
@@ -881,7 +881,7 @@ pub fn router(state: Arc<AppState>) -> Router {
 
 #[cfg(test)]
 mod route_tests {
-    use axum::{routing::delete, routing::get, Router};
+    use axum::{Router, routing::delete, routing::get};
 
     #[test]
     fn admin_cache_key_routes_do_not_conflict() {

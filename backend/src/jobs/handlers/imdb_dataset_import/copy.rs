@@ -17,9 +17,12 @@ pub async fn copy_into_staging(
     dataset: &DatasetDef,
     gz_path: &Path,
 ) -> Result<i64, JobError> {
-    sqlx::query(&format!("TRUNCATE {}", dataset.staging_table))
-        .execute(pool)
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "TRUNCATE {}",
+        dataset.staging_table
+    )))
+    .execute(pool)
+    .await?;
 
     let table = dataset.staging_table.to_string();
     let columns = dataset.copy_columns.to_string();
@@ -77,9 +80,12 @@ pub async fn copy_into_staging(
 
     copy_in.finish().await?;
 
-    sqlx::query(&format!("ANALYZE {}", dataset.staging_table))
-        .execute(pool)
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "ANALYZE {}",
+        dataset.staging_table
+    )))
+    .execute(pool)
+    .await?;
 
     info!(
         dataset = dataset.key,

@@ -443,7 +443,10 @@ pub async fn merge_crew(pool: &PgPool) -> Result<u64, JobError> {
               )
             "#
         );
-        affected += sqlx::query(&sql).execute(pool).await?.rows_affected();
+        affected += sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .execute(pool)
+            .await?
+            .rows_affected();
     }
 
     Ok(affected)

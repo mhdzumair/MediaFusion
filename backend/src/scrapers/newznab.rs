@@ -11,7 +11,7 @@ use reqwest::Client;
 
 use crate::{
     models::user_data::NewznabIndexer,
-    scrapers::{torznab, ScrapedStream, SearchMeta},
+    scrapers::{ScrapedStream, SearchMeta, torznab},
     state::KeywordFilterCache,
 };
 

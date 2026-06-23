@@ -11,8 +11,8 @@ use mediafusion_api::{
     config::AppConfig,
     exception_tracker, routes,
     state::{
-        load_keyword_filter_cache, maybe_recompute_keyword_blocked,
-        maybe_recompute_stream_keyword_blocked, sync_keywords_from_file, AppState,
+        AppState, load_keyword_filter_cache, maybe_recompute_keyword_blocked,
+        maybe_recompute_stream_keyword_blocked, sync_keywords_from_file,
     },
 };
 use tracing::info;

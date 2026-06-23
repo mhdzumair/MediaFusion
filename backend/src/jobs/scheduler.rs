@@ -10,7 +10,7 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use super::enqueue::{enqueue_simple, EnqueueOpts};
+use super::enqueue::{EnqueueOpts, enqueue_simple};
 
 const ADVISORY_LOCK_KEY: i64 = 0x6D666A6F62; // "mfjob"
 const SCHEDULER_TICK_SECS: u64 = 1;
@@ -54,11 +54,7 @@ async fn try_acquire_lock(pool: &PgPool) -> Option<PoolConnection<Postgres>> {
         .fetch_one(&mut *conn)
         .await
         .unwrap_or(false);
-    if acquired {
-        Some(conn)
-    } else {
-        None
-    }
+    if acquired { Some(conn) } else { None }
 }
 
 async fn tick_loop(

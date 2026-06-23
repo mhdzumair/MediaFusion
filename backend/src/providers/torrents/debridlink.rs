@@ -3,14 +3,14 @@
 /// Token format:
 ///   - Base64-encoded refresh_token (URL_SAFE_NO_PAD) → exchange for access_token via OAuth
 ///   - Plain private token → used directly as Bearer
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
-use serde_json::{json, Value};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
+use serde_json::{Value, json};
 
 use crate::providers::{
+    ProviderError,
     file_selection::select_debrid_file_index,
     response_json,
-    torrents::transport::{append_query, MediaFlowForward},
-    ProviderError,
+    torrents::transport::{MediaFlowForward, append_query},
 };
 
 const BASE_URL: &str = "https://debrid-link.com/api/v2";

@@ -5,10 +5,10 @@
 use serde_json::Value;
 
 use crate::providers::{
+    ProviderError,
     file_selection::select_debrid_file_index,
     response_json,
-    torrents::transport::{append_query, encode_form_body, MediaFlowForward},
-    ProviderError,
+    torrents::transport::{MediaFlowForward, append_query, encode_form_body},
 };
 
 const BASE_URL: &str = "https://api.alldebrid.com/v4.1";
@@ -318,7 +318,7 @@ async fn upload_magnet(
             return Err(ProviderError::api(
                 "Unexpected magnets shape in upload response",
                 "transfer_error.mp4",
-            ))
+            ));
         }
     };
 
@@ -379,7 +379,7 @@ async fn upload_torrent_file(
             return Err(ProviderError::api(
                 "Unexpected magnets shape in file upload response",
                 "transfer_error.mp4",
-            ))
+            ));
         }
     };
 

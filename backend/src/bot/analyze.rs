@@ -1,6 +1,6 @@
 //! Per-content-type analysis (reuses import route internals).
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::{
     parser,

@@ -1,7 +1,7 @@
 [package]
 name = "mediafusion-api"
 version = "6.0.0-beta.25"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = ["jemalloc", "tls-rustls"]
@@ -61,21 +61,21 @@ lava_torrent = "0.11"
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "compression-full", "timeout", "cors", "fs", "catch-panic"] }
+tower-http = { version = "0.7", features = ["trace", "compression-full", "timeout", "cors", "fs", "catch-panic"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # XML parsing (Torznab / Newznab scrapers)
-quick-xml = { version = "0.39", features = ["serde"] }
+quick-xml = { version = "0.40", features = ["serde"] }
 
 # HTTP client (live scrapers)
 reqwest = { version = "0.13", default-features = false, features = ["gzip", "brotli", "http2", "json", "multipart", "form", "query", "stream"] }
 openssl = { version = "0.10", optional = true }
 
 # Database
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "json", "chrono", "migrate", "macros"] }
+sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls", "postgres", "json", "chrono", "migrate", "macros"] }
 
 # Date/time
 chrono = { version = "0.4", features = ["serde"] }
@@ -102,7 +102,7 @@ rand = { version = "0.10", features = ["std", "thread_rng"] }
 
 # Poster annotation
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
-imageproc = "0.26"
+imageproc = "0.27"
 # cosmic-text: full Unicode text shaping (HarfBuzz via rustybuzz), BiDi, font fallback
 cosmic-text = "0.19"
 
@@ -119,7 +119,7 @@ governor = "0.10"
 backon = "1"
 
 # Cron expression parsing for the Rust scheduler
-cron = "0.12"
+cron = "0.17"
 
 # Background job cancellation tokens
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -147,7 +147,7 @@ url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # Prometheus metrics
-prometheus-client = "0.24"
+prometheus-client = "0.25"
 
 # Email (SMTP) for auth flows
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder"] }
@@ -157,13 +157,13 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Magnet → torrent metadata resolution (BEP-9 / BEP-10)
-mainline = "6"
+mainline = "7"
 sha1 = "0.11"
-md5 = "0.7"
+md5 = "0.8"
 regex = "1.12.3"
 fancy-regex = "0.18"
 csv = "1"
-scraper = "0.26"
+scraper = "0.27"
 once_cell = "1"
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-credential-types = "1"
@@ -176,7 +176,7 @@ grammers-session = { version = "0.9", default-features = false }
 # See tikv-jemallocator docs: cfg(not(target_env = "msvc")). Optional so CI can
 # disable it for Windows GNU cross-compiles where jemalloc does not link.
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = { version = "0.6", optional = true }
+tikv-jemallocator = { version = "0.7", optional = true }
 
 [dev-dependencies]
 wiremock = "0.6"
@@ -192,3 +192,8 @@ harness = false
 opt-level = 3
 lto = "thin"
 codegen-units = 1
+
+# glass_pumpkin 1.10.0 was yanked; grammers-crypto 0.9.0 requires ^1.10.0.
+# Pin grammers-crypto to git until a fixed crates.io release is published.
+[patch.crates-io]
+grammers-crypto = { git = "https://codeberg.org/Lonami/grammers" }

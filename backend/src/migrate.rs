@@ -13,7 +13,7 @@
 
 use std::time::Duration;
 
-use sqlx::{postgres::PgConnection, ConnectOptions, Connection, PgPool};
+use sqlx::{ConnectOptions, Connection, PgPool, postgres::PgConnection};
 use tracing::{info, warn};
 use url::Url;
 
@@ -297,7 +297,7 @@ async fn ensure_database(system_uri: &str, db_name: &str) {
             info!(db_name, "creating database");
             // Identifiers cannot be parameterized — sanitize the name.
             let safe = db_name.replace('"', "\"\"");
-            sqlx::query(&format!("CREATE DATABASE \"{safe}\""))
+            sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE \"{safe}\"")))
                 .execute(&mut conn)
                 .await?;
         }

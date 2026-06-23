@@ -9,8 +9,8 @@ use crate::{
     },
     parser,
     scrapers::{
-        fetcher::fetch_plain, media_resolve, prowlarr::build_series_files, stream_convert,
-        ScrapedStream,
+        ScrapedStream, fetcher::fetch_plain, media_resolve, prowlarr::build_series_files,
+        stream_convert,
     },
     util::rate_limit,
 };

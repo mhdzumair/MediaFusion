@@ -5,7 +5,7 @@ use fancy_regex::Regex;
 /// the "first match wins" / skipIfAlreadyFound semantics are preserved.
 use once_cell::sync::OnceCell;
 
-use super::engine::{compile, compile_i, Ctx, FieldValue, HandlerReturn, MatchInfo, Opts, Parser};
+use super::engine::{Ctx, FieldValue, HandlerReturn, MatchInfo, Opts, Parser, compile, compile_i};
 use super::transformers::{
     arc, array, tr_boolean, tr_first_integer, tr_integer, tr_lowercase, tr_none, tr_range_func,
     tr_range_x_of_y, tr_transform_resolution, tr_uppercase, uniq_concat, value,

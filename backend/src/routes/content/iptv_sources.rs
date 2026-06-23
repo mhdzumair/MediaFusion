@@ -9,12 +9,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ use sha2::Sha256;
 
 use crate::{
     db::IptvSourceType,
-    jobs::enqueue::{enqueue_simple, EnqueueOpts},
+    jobs::enqueue::{EnqueueOpts, enqueue_simple},
     state::AppState,
 };
 
@@ -136,7 +136,7 @@ pub async fn list_iptv_sources(headers: HeaderMap, State(state): State<Arc<AppSt
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -175,7 +175,7 @@ pub async fn get_iptv_source(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -215,7 +215,7 @@ pub async fn update_iptv_source(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -308,7 +308,7 @@ pub async fn delete_iptv_source(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -345,7 +345,7 @@ pub async fn sync_iptv_source(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 

@@ -12,12 +12,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
@@ -307,7 +307,7 @@ pub async fn create_episode_suggestion(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -458,7 +458,7 @@ pub async fn list_my_episode_suggestions(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -477,19 +477,20 @@ pub async fn list_my_episode_suggestions(
 
     fetch_sql.push_str(" ORDER BY created_at DESC LIMIT $2 OFFSET $3");
 
-    let total: i64 = sqlx::query_scalar(&count_sql)
+    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql.as_str()))
         .bind(user_id)
         .fetch_one(&state.pool_ro)
         .await
         .unwrap_or(0);
 
-    let ids: Vec<(String,)> = sqlx::query_as::<_, (String,)>(&fetch_sql)
-        .bind(user_id)
-        .bind(page_size)
-        .bind(offset)
-        .fetch_all(&state.pool_ro)
-        .await
-        .unwrap_or_default();
+    let ids: Vec<(String,)> =
+        sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(fetch_sql.as_str()))
+            .bind(user_id)
+            .bind(page_size)
+            .bind(offset)
+            .fetch_all(&state.pool_ro)
+            .await
+            .unwrap_or_default();
 
     let mut suggestions = Vec::new();
     for (id,) in &ids {
@@ -520,7 +521,7 @@ pub async fn get_episode_suggestion_stats(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -657,7 +658,7 @@ pub async fn list_pending_episode_suggestions(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -686,17 +687,18 @@ pub async fn list_pending_episode_suggestions(
 
     fetch_sql.push_str(" ORDER BY created_at ASC LIMIT $1 OFFSET $2");
 
-    let total: i64 = sqlx::query_scalar(&count_sql)
+    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql.as_str()))
         .fetch_one(&state.pool_ro)
         .await
         .unwrap_or(0);
 
-    let ids: Vec<(String,)> = sqlx::query_as::<_, (String,)>(&fetch_sql)
-        .bind(page_size)
-        .bind(offset)
-        .fetch_all(&state.pool_ro)
-        .await
-        .unwrap_or_default();
+    let ids: Vec<(String,)> =
+        sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(fetch_sql.as_str()))
+            .bind(page_size)
+            .bind(offset)
+            .fetch_all(&state.pool_ro)
+            .await
+            .unwrap_or_default();
 
     let mut suggestions = Vec::new();
     for (id,) in &ids {
@@ -729,7 +731,7 @@ pub async fn bulk_review_episode_suggestions(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -766,7 +768,7 @@ pub async fn bulk_review_episode_suggestions(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "action must be approve or reject"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -851,7 +853,7 @@ pub async fn get_episode_suggestion(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -861,7 +863,7 @@ pub async fn get_episode_suggestion(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Suggestion not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -891,7 +893,7 @@ pub async fn delete_episode_suggestion(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -901,7 +903,7 @@ pub async fn delete_episode_suggestion(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Suggestion not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -948,7 +950,7 @@ pub async fn review_episode_suggestion(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -967,7 +969,7 @@ pub async fn review_episode_suggestion(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Suggestion not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -988,7 +990,7 @@ pub async fn review_episode_suggestion(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "action must be approve or reject"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 

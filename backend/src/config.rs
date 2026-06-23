@@ -906,11 +906,7 @@ impl AppConfig {
         if self.image_storage_backend.eq_ignore_ascii_case("local") {
             return "local";
         }
-        if self.s3_configured() {
-            "s3"
-        } else {
-            "local"
-        }
+        if self.s3_configured() { "s3" } else { "local" }
     }
 
     /// Effective NZB storage backend.

@@ -10,10 +10,13 @@ pub mod sports;
 use std::cell::RefCell;
 use std::io::Cursor;
 
-use cosmic_text::{Align, Attrs, Buffer, Color as CosColor, Family, FontSystem, Metrics, Shaping, SwashCache, Weight};
+use cosmic_text::{
+    Align, Attrs, Buffer, Color as CosColor, Family, FontSystem, Metrics, Shaping, SwashCache,
+    Weight,
+};
 use image::{
-    imageops::{self, FilterType},
     DynamicImage, Rgba, RgbaImage,
+    imageops::{self, FilterType},
 };
 use imageproc::drawing::draw_filled_rect_mut;
 use imageproc::rect::Rect;
@@ -26,16 +29,13 @@ static WATERMARK: &[u8] = include_bytes!("../../../resources/images/logo_text.pn
 // Branded design fonts
 static FONT_IBM_PLEX_MEDIUM: &[u8] =
     include_bytes!("../../../resources/fonts/IBMPlexSans-Medium.ttf");
-static FONT_IBM_PLEX_BOLD: &[u8] =
-    include_bytes!("../../../resources/fonts/IBMPlexSans-Bold.ttf");
-static FONT_ARCHIVO_BLACK: &[u8] =
-    include_bytes!("../../../resources/fonts/Archivo-Black.ttf");
+static FONT_IBM_PLEX_BOLD: &[u8] = include_bytes!("../../../resources/fonts/IBMPlexSans-Bold.ttf");
+static FONT_ARCHIVO_BLACK: &[u8] = include_bytes!("../../../resources/fonts/Archivo-Black.ttf");
 static FONT_ARCHIVO_EXTRABOLD: &[u8] =
     include_bytes!("../../../resources/fonts/Archivo-ExtraBold.ttf");
 
 // Bundled Unicode fallback fonts (Cyrillic/Greek/Latin + Arabic/Persian/Urdu)
-static FONT_NOTO_SANS_BOLD: &[u8] =
-    include_bytes!("../../../resources/fonts/NotoSans-Bold.ttf");
+static FONT_NOTO_SANS_BOLD: &[u8] = include_bytes!("../../../resources/fonts/NotoSans-Bold.ttf");
 static FONT_NOTO_SANS_ARABIC_BOLD: &[u8] =
     include_bytes!("../../../resources/fonts/NotoSansArabic-Bold.ttf");
 
@@ -152,8 +152,7 @@ pub fn generate_placeholder(
     let mut canvas: RgbaImage = RgbaImage::new(W, H);
     for y in 0..H {
         for x in 0..W {
-            let t =
-                ((x as f32 / W as f32) * 0.45 + (y as f32 / H as f32) * 0.55).clamp(0.0, 1.0);
+            let t = ((x as f32 / W as f32) * 0.45 + (y as f32 / H as f32) * 0.55).clamp(0.0, 1.0);
             canvas.put_pixel(
                 x,
                 y,
@@ -298,7 +297,12 @@ pub fn generate_placeholder(
         _ => 22.0,
     };
     let title_max_w = (W - 44) as f32;
-    let (_, title_h) = measure_text(&display, Font::ArchivoExtraBold, title_size, Some(title_max_w));
+    let (_, title_h) = measure_text(
+        &display,
+        Font::ArchivoExtraBold,
+        title_size,
+        Some(title_max_w),
+    );
 
     let has_year = year.is_some();
     let has_chip = season.is_some() && episode.is_some();
@@ -340,8 +344,7 @@ pub fn generate_placeholder(
         }
 
         if has_chip {
-            let chip_str =
-                format!("S{:02} \u{00B7} E{:02}", season.unwrap(), episode.unwrap());
+            let chip_str = format!("S{:02} \u{00B7} E{:02}", season.unwrap(), episode.unwrap());
             let chip_tw = measure_text(&chip_str, Font::IbmPlexBold, 9.5, None).0 as i32;
             let pad = 8i32;
             let chip_w = chip_tw + pad * 2;
@@ -440,7 +443,12 @@ fn draw_text_plain(
         let cf = CosColor::rgba(color[0], color[1], color[2], 255);
         buf.draw(fs, cache, cf, |px, py, _w, _h, c| {
             let a = (c.a() as f32 * opacity) as u8;
-            composite(canvas, ox + px, oy + py, CosColor::rgba(c.r(), c.g(), c.b(), a));
+            composite(
+                canvas,
+                ox + px,
+                oy + py,
+                CosColor::rgba(c.r(), c.g(), c.b(), a),
+            );
         });
     });
 }
@@ -476,7 +484,12 @@ fn draw_text_outlined(
                 }
                 buf.draw(fs, cache, co, |px, py, _w, _h, c| {
                     let a = (c.a() as f32 * outline_opacity) as u8;
-                    composite(canvas, ox + px + dx, oy + py + dy, CosColor::rgba(c.r(), c.g(), c.b(), a));
+                    composite(
+                        canvas,
+                        ox + px + dx,
+                        oy + py + dy,
+                        CosColor::rgba(c.r(), c.g(), c.b(), a),
+                    );
                 });
             }
         }
@@ -486,7 +499,12 @@ fn draw_text_outlined(
         let cf = CosColor::rgba(fill[0], fill[1], fill[2], 255);
         buf.draw(fs, cache, cf, |px, py, _w, _h, c| {
             let a = (c.a() as f32 * fill_opacity) as u8;
-            composite(canvas, ox + px, oy + py, CosColor::rgba(c.r(), c.g(), c.b(), a));
+            composite(
+                canvas,
+                ox + px,
+                oy + py,
+                CosColor::rgba(c.r(), c.g(), c.b(), a),
+            );
         });
     });
 }
@@ -603,7 +621,9 @@ fn add_watermark(canvas: &mut RgbaImage) {
     let new_w = canvas.width() / 2;
     let aspect = wm.width() as f32 / wm.height() as f32;
     let new_h = ((new_w as f32) / aspect).max(1.0) as u32;
-    let wm = wm.resize_exact(new_w, new_h, FilterType::Lanczos3).to_rgba8();
+    let wm = wm
+        .resize_exact(new_w, new_h, FilterType::Lanczos3)
+        .to_rgba8();
     let x = canvas.width() as i64 - wm.width() as i64 - 10;
     imageops::overlay(canvas, &wm, x, 10);
 }

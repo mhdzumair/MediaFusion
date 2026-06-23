@@ -17,10 +17,11 @@ use crate::{
     },
     parser,
     scrapers::{
+        ScrapedStream, SearchMeta,
         fetcher::{fetch_byparr, fetch_plain},
         media_resolve,
         prowlarr::build_series_files,
-        stream_convert, ScrapedStream, SearchMeta,
+        stream_convert,
     },
     util::{rate_limit, retry},
 };

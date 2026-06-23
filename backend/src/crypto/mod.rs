@@ -22,7 +22,7 @@ impl std::error::Error for DecryptError {}
 /// This is the format used by the `encoded_user_data` HTTP header:
 ///   `base64url(json_bytes_of_UserData_object)`
 pub fn decode_encoded_user_data(header_val: &str) -> Option<serde_json::Value> {
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     // Add padding if needed before stripping — we strip after adding to be safe.
     let padded = match header_val.len() % 4 {
         2 => format!("{}==", header_val),
@@ -42,10 +42,10 @@ pub fn encrypt_user_data(
     key: &[u8; 32],
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     use aes::Aes256;
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-    use cbc::cipher::{block_padding::Pkcs7, BlockModeEncrypt, KeyIvInit};
-    use flate2::write::ZlibEncoder;
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use cbc::cipher::{BlockModeEncrypt, KeyIvInit, block_padding::Pkcs7};
     use flate2::Compression;
+    use flate2::write::ZlibEncoder;
 
     use std::io::Write;
 

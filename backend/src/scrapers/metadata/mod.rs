@@ -12,8 +12,8 @@ use serde_json::json;
 use sqlx::PgPool;
 
 pub use crate::db::{NormalizedEpisode, NormalizedMetadata, NormalizedSeason};
-pub use keys::{resolve_metadata_keys, MetadataServerKeys, ResolvedMetadataKeys};
-pub use match_search::{search_media_matches, MediaMatchSearchOptions};
+pub use keys::{MetadataServerKeys, ResolvedMetadataKeys, resolve_metadata_keys};
+pub use match_search::{MediaMatchSearchOptions, search_media_matches};
 pub use mdblist::{fetch_all_list_imdb_ids, ingest_list};
 pub use trakt::resolve_or_store_media;
 

@@ -8,9 +8,9 @@ use reqwest::Client;
 use serde_json::Value;
 
 use crate::providers::{
-    file_selection::{select_torrent_file_index, FileEntry},
-    usenet::webdav,
     ProviderError,
+    file_selection::{FileEntry, select_torrent_file_index},
+    usenet::webdav,
 };
 
 #[derive(Debug, Clone)]

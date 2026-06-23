@@ -191,7 +191,8 @@ async fn scrape_channel(
 
     let mut results = Vec::new();
     loop {
-        match iter.next().await {
+        let next = iter.next().await;
+        match next {
             Ok(Some(msg)) => {
                 if let Some(stream) = process_message(
                     &msg,

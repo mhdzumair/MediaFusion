@@ -16,12 +16,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
@@ -29,7 +29,7 @@ use serde_json::json;
 use sha2::Sha256;
 use uuid::Uuid;
 
-use crate::{db::contribution_defaults, db::StreamId, state::AppState};
+use crate::{db::StreamId, db::contribution_defaults, state::AppState};
 
 /// Editable stream scalar fields (Python `STREAM_EDITABLE_FIELDS` subset).
 pub const STREAM_SCALAR_EDITABLE_FIELDS: &[&str] = &[
@@ -407,7 +407,7 @@ pub async fn create_stream_suggestion(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -910,37 +910,42 @@ pub async fn apply_stream_field_change(
         let items = parse_string_list_value(val);
         let result = match field {
             "languages" => {
-                if let Err(e) = sqlx::query("DELETE FROM stream_language_link WHERE stream_id = $1")
+                match sqlx::query("DELETE FROM stream_language_link WHERE stream_id = $1")
                     .bind(stream_id)
                     .execute(pool)
                     .await
                 {
-                    Err(e)
-                } else {
-                    crate::db::stream_links::link_stream_languages(pool, stream_id, &items).await
+                    Err(e) => Err(e),
+                    _ => {
+                        crate::db::stream_links::link_stream_languages(pool, stream_id, &items)
+                            .await
+                    }
                 }
             }
             "audio_formats" => {
-                if let Err(e) = sqlx::query("DELETE FROM stream_audio_link WHERE stream_id = $1")
+                match sqlx::query("DELETE FROM stream_audio_link WHERE stream_id = $1")
                     .bind(stream_id)
                     .execute(pool)
                     .await
                 {
-                    Err(e)
-                } else {
-                    crate::db::stream_links::link_stream_audio_formats(pool, stream_id, &items)
-                        .await
+                    Err(e) => Err(e),
+                    _ => {
+                        crate::db::stream_links::link_stream_audio_formats(pool, stream_id, &items)
+                            .await
+                    }
                 }
             }
             "hdr_formats" => {
-                if let Err(e) = sqlx::query("DELETE FROM stream_hdr_link WHERE stream_id = $1")
+                match sqlx::query("DELETE FROM stream_hdr_link WHERE stream_id = $1")
                     .bind(stream_id)
                     .execute(pool)
                     .await
                 {
-                    Err(e)
-                } else {
-                    crate::db::stream_links::link_stream_hdr_formats(pool, stream_id, &items).await
+                    Err(e) => Err(e),
+                    _ => {
+                        crate::db::stream_links::link_stream_hdr_formats(pool, stream_id, &items)
+                            .await
+                    }
                 }
             }
             _ => return,
@@ -1023,7 +1028,7 @@ pub async fn list_my_stream_suggestions(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1072,7 +1077,8 @@ pub async fn list_my_stream_suggestions(
         next_idx + 1
     ));
 
-    let mut cq = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id);
+    let mut cq =
+        sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str())).bind(user_id);
     for v in &extra_binds {
         cq = cq.bind(v.clone());
     }
@@ -1081,7 +1087,8 @@ pub async fn list_my_stream_suggestions(
     }
     let total: i64 = cq.fetch_one(&state.pool_ro).await.unwrap_or(0);
 
-    let mut fq = sqlx::query_as::<_, (String,)>(&fetch_sql).bind(user_id);
+    let mut fq =
+        sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(fetch_sql.as_str())).bind(user_id);
     for v in &extra_binds {
         fq = fq.bind(v.clone());
     }
@@ -1120,7 +1127,7 @@ pub async fn get_stream_suggestion_stats(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1226,7 +1233,7 @@ pub async fn list_pending_stream_suggestions(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1269,13 +1276,13 @@ pub async fn list_pending_stream_suggestions(
         next_idx + 1
     ));
 
-    let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
+    let mut cq = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()));
     for v in &extra_binds {
         cq = cq.bind(v.clone());
     }
     let total: i64 = cq.fetch_one(&state.pool_ro).await.unwrap_or(0);
 
-    let mut fq = sqlx::query_as::<_, (String,)>(&fetch_sql);
+    let mut fq = sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(fetch_sql.as_str()));
     for v in &extra_binds {
         fq = fq.bind(v.clone());
     }
@@ -1313,7 +1320,7 @@ pub async fn bulk_review_stream_suggestions(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1334,7 +1341,7 @@ pub async fn bulk_review_stream_suggestions(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "action must be approve or reject"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1420,7 +1427,7 @@ pub async fn get_stream_suggestion(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1430,7 +1437,7 @@ pub async fn get_stream_suggestion(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Suggestion not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -1460,7 +1467,7 @@ pub async fn delete_stream_suggestion(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1470,7 +1477,7 @@ pub async fn delete_stream_suggestion(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Suggestion not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -1517,7 +1524,7 @@ pub async fn review_stream_suggestion(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1536,7 +1543,7 @@ pub async fn review_stream_suggestion(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Suggestion not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -1557,7 +1564,7 @@ pub async fn review_stream_suggestion(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "action must be approve or reject"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1625,7 +1632,7 @@ pub async fn triage_stream_suggestion(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1687,7 +1694,7 @@ pub async fn get_stream_editable_fields(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1711,7 +1718,7 @@ pub async fn get_stream_editable_fields(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Stream not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -1959,7 +1966,7 @@ pub async fn update_stream_broken_status(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 

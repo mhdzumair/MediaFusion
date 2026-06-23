@@ -2,13 +2,13 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 
 use crate::state::AppState;
@@ -107,11 +107,12 @@ pub async fn get_related_rows(
             quote_ident(&table),
             quote_ident(id_col)
         );
-        let fk_value: Option<String> = sqlx::query_scalar::<_, String>(&val_sql)
-            .bind(&id)
-            .fetch_optional(&state.pool_ro)
-            .await
-            .unwrap_or(None);
+        let fk_value: Option<String> =
+            sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(val_sql.as_str()))
+                .bind(&id)
+                .fetch_optional(&state.pool_ro)
+                .await
+                .unwrap_or(None);
 
         let (preview, row_count) = if let Some(ref fkv) = fk_value {
             // Fetch preview columns of the referenced row
@@ -121,11 +122,12 @@ pub async fn get_related_rows(
                 quote_ident(&ref_table),
                 quote_ident(&ref_col)
             );
-            let preview_row: Option<Value> = sqlx::query_scalar::<_, Value>(&preview_sql)
-                .bind(fkv)
-                .fetch_optional(&state.pool_ro)
-                .await
-                .unwrap_or(None);
+            let preview_row: Option<Value> =
+                sqlx::query_scalar::<_, Value>(sqlx::AssertSqlSafe(preview_sql.as_str()))
+                    .bind(fkv)
+                    .fetch_optional(&state.pool_ro)
+                    .await
+                    .unwrap_or(None);
             let count = if preview_row.is_some() { 1i64 } else { 0i64 };
             (preview_row, count)
         } else {
@@ -155,7 +157,7 @@ pub async fn get_related_rows(
             quote_ident(&ref_table),
             quote_ident(&ref_col)
         );
-        let count: i64 = sqlx::query_scalar::<_, i64>(&count_sql)
+        let count: i64 = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()))
             .bind(&id)
             .fetch_one(&state.pool_ro)
             .await

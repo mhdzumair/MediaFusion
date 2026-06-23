@@ -11,7 +11,7 @@ use sqlx::PgPool;
 use tracing::{debug, info, warn};
 
 use crate::{
-    db::streams::{upsert_stream_files, TorrentFileEntry},
+    db::streams::{TorrentFileEntry, upsert_stream_files},
     parser::episode_detector::{detect_episode, is_video_file},
 };
 
@@ -95,13 +95,16 @@ async fn store_annotation_files(pool: &PgPool, info_hash: &str, files: &[Provide
     if entries.is_empty() {
         return;
     }
-    if let Err(e) = upsert_stream_files(pool, info_hash, &entries).await {
-        warn!("metadata_update: annotation files for {info_hash}: {e}");
-    } else {
-        info!(
-            "metadata_update: stored {} annotation files for {info_hash} (manual linking needed)",
-            entries.len()
-        );
+    match upsert_stream_files(pool, info_hash, &entries).await {
+        Err(e) => {
+            warn!("metadata_update: annotation files for {info_hash}: {e}");
+        }
+        _ => {
+            info!(
+                "metadata_update: stored {} annotation files for {info_hash} (manual linking needed)",
+                entries.len()
+            );
+        }
     }
 }
 

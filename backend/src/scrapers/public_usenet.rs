@@ -12,9 +12,9 @@ use sha2::{Digest, Sha256};
 use crate::{
     parser,
     scrapers::{
+        ScrapedUsenetStream, SearchMeta,
         prowlarr::build_series_files,
         source_health::{self, HealthGateConfig},
-        ScrapedUsenetStream, SearchMeta,
     },
     state::KeywordFilterCache,
 };

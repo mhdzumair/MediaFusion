@@ -7,12 +7,12 @@ use std::sync::OnceLock;
 use axum::http::StatusCode;
 use chrono::Utc;
 use fred::prelude::KeysInterface;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    db::{contribution_defaults, MediaType, TorrentType, UserId},
+    db::{MediaType, TorrentType, UserId, contribution_defaults},
     parser::{detect_sports_category, episode_detector::detect_episode, parse_title},
     state::AppState,
 };
@@ -194,7 +194,9 @@ pub async fn enforce_upload_permissions(
     if uploads_last_hour > limit {
         return Err((
             StatusCode::TOO_MANY_REQUESTS,
-            format!("Upload rate limit reached. Please wait before submitting more than {limit} uploads/hour."),
+            format!(
+                "Upload rate limit reached. Please wait before submitting more than {limit} uploads/hour."
+            ),
         ));
     }
     Ok(())

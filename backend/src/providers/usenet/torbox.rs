@@ -14,8 +14,8 @@ use serde_json::Value;
 use tracing::debug;
 
 use crate::providers::{
-    torrents::transport::{append_query, encode_form_body, MediaFlowForward},
     ProviderError,
+    torrents::transport::{MediaFlowForward, append_query, encode_form_body},
 };
 
 use super::{is_video_name, loose_name_match};

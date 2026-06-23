@@ -13,12 +13,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
@@ -286,17 +286,25 @@ async fn apply_metadata_field_change(
                 tracing::warn!(
                     "apply_metadata_field_change: invalid nudity_status value: {suggested_value}"
                 );
-            } else if let Err(e) =
-                sqlx::query("UPDATE media SET nudity_status = $1, updated_at = NOW() WHERE id = $2")
-                    .bind(
-                        crate::db::NudityStatus::from_wire(&nudity_val)
-                            .unwrap_or(crate::db::NudityStatus::Unknown),
-                    )
-                    .bind(media_id)
-                    .execute(pool)
-                    .await
-            {
-                tracing::warn!("apply_metadata_field_change: nudity_status update failed: {e}");
+            } else {
+                match sqlx::query(
+                    "UPDATE media SET nudity_status = $1, updated_at = NOW() WHERE id = $2",
+                )
+                .bind(
+                    crate::db::NudityStatus::from_wire(&nudity_val)
+                        .unwrap_or(crate::db::NudityStatus::Unknown),
+                )
+                .bind(media_id)
+                .execute(pool)
+                .await
+                {
+                    Err(e) => {
+                        tracing::warn!(
+                            "apply_metadata_field_change: nudity_status update failed: {e}"
+                        );
+                    }
+                    _ => {}
+                }
             }
         }
         "is_add_title_to_poster" => {
@@ -371,7 +379,7 @@ pub async fn create_suggestion(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -556,7 +564,7 @@ pub async fn list_my_suggestions(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -674,7 +682,7 @@ pub async fn get_my_contribution_info(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -739,7 +747,7 @@ pub async fn list_pending_suggestions(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -796,13 +804,13 @@ pub async fn list_pending_suggestions(
         next_idx + 1
     ));
 
-    let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
+    let mut cq = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()));
     for v in &extra_binds {
         cq = cq.bind(v.clone());
     }
     let total: i64 = cq.fetch_one(&state.pool_ro).await.unwrap_or(0);
 
-    let mut fq = sqlx::query_as::<_, SuggestionRow>(&list_sql);
+    let mut fq = sqlx::query_as::<_, SuggestionRow>(sqlx::AssertSqlSafe(list_sql.as_str()));
     for v in &extra_binds {
         fq = fq.bind(v.clone());
     }
@@ -838,7 +846,7 @@ pub async fn bulk_review_suggestions(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -855,7 +863,7 @@ pub async fn bulk_review_suggestions(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "action must be approve or reject"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -920,7 +928,7 @@ pub async fn get_suggestion_stats(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1043,7 +1051,7 @@ pub async fn get_suggestion(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1078,7 +1086,7 @@ pub async fn get_suggestion(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Suggestion not found"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1108,7 +1116,7 @@ pub async fn delete_suggestion(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1126,7 +1134,7 @@ pub async fn delete_suggestion(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Suggestion not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some((ref st,)) if st != "pending" => {
             return (
@@ -1163,7 +1171,7 @@ pub async fn review_suggestion(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1179,7 +1187,7 @@ pub async fn review_suggestion(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "action must be approve or reject"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1197,7 +1205,7 @@ pub async fn review_suggestion(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Suggestion not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some((ref st, _, _, _)) if st != "pending" => {
             return (

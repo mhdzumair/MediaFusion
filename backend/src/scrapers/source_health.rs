@@ -322,7 +322,10 @@ pub async fn save_scraper_run_metrics(
     let formatted_summary = format!(
         "\n{sep}\n{title_line}\n{sep}\n\nMeta ID: {meta_id}\nTitle: {title}\n\nDuration: {dur:.2} seconds\n\nItems:\n  ├─ Found     : {found}\n  ├─ Processed : {processed}\n  ├─ Skipped   : {skipped}\n  └─ Errors    : {errors}\n\nSkip Reasons: {skips}\n{sep}\n",
         sep = "=".repeat(80),
-        title_line = format!("{} Scraping Metrics Summary", scraper_name.to_uppercase()).as_str().chars().collect::<String>(),
+        title_line = format!("{} Scraping Metrics Summary", scraper_name.to_uppercase())
+            .as_str()
+            .chars()
+            .collect::<String>(),
         meta_id = imdb_id.unwrap_or("unknown"),
         title = title,
         dur = duration_secs,

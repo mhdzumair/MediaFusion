@@ -1250,15 +1250,18 @@ mod prefetch_tests {
             json!({"meta_id": "603", "meta_title": "Episode 2"}),
         ];
         let reqs = collect_import_prefetch_requests("tt999", "series", "Show Name", None, &files);
-        assert!(reqs
-            .iter()
-            .any(|(id, ty, _)| id == "tt999" && ty == "series"));
-        assert!(reqs
-            .iter()
-            .any(|(id, ty, _)| id == "tt1234567" && ty == "movie"));
-        assert!(reqs
-            .iter()
-            .any(|(id, ty, _)| id == "tmdb:603" && ty == "series"));
+        assert!(
+            reqs.iter()
+                .any(|(id, ty, _)| id == "tt999" && ty == "series")
+        );
+        assert!(
+            reqs.iter()
+                .any(|(id, ty, _)| id == "tt1234567" && ty == "movie")
+        );
+        assert!(
+            reqs.iter()
+                .any(|(id, ty, _)| id == "tmdb:603" && ty == "series")
+        );
         assert_eq!(reqs.len(), 3);
     }
 

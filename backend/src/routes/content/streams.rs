@@ -8,10 +8,10 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -22,7 +22,7 @@ use crate::{
 };
 
 use super::stream_rows::{
-    my_stream_row_to_json, MyStreamRow, STREAM_BASE_COLS, STREAM_LINK_AGG_COLS,
+    MyStreamRow, STREAM_BASE_COLS, STREAM_LINK_AGG_COLS, my_stream_row_to_json,
 };
 use super::stream_suggestions::apply_stream_field_change;
 
@@ -203,7 +203,8 @@ pub async fn list_my_streams(
     );
 
     let count_sql = format!("SELECT COUNT(*) {from_joins}");
-    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id);
+    let mut count_query =
+        sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str())).bind(user_id);
     for v in &bind_values {
         count_query = count_query.bind(v.clone());
     }
@@ -252,7 +253,8 @@ pub async fn list_my_streams(
         next_idx + 1
     );
 
-    let mut list_query = sqlx::query_as::<_, MyStreamRow>(&list_sql).bind(user_id);
+    let mut list_query =
+        sqlx::query_as::<_, MyStreamRow>(sqlx::AssertSqlSafe(list_sql.as_str())).bind(user_id);
     for v in &bind_values {
         list_query = list_query.bind(v.clone());
     }
@@ -588,7 +590,7 @@ pub async fn delete_stream(
 
     if let Some(table) = type_table {
         let sql = format!("DELETE FROM {table} WHERE stream_id = $1");
-        if let Err(e) = sqlx::query(&sql)
+        if let Err(e) = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
             .bind(stream_id_i32)
             .execute(&mut *txn)
             .await

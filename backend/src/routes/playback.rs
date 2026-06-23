@@ -18,7 +18,7 @@ use std::sync::Arc;
 use axum::{
     body::Body,
     extract::{Path, State},
-    http::{header, Method, StatusCode},
+    http::{Method, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use fred::prelude::{Expiration, KeysInterface};

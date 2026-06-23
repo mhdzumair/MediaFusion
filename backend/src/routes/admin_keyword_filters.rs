@@ -12,12 +12,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
@@ -25,8 +25,8 @@ use serde_json::json;
 use sha2::Sha256;
 
 use crate::state::{
-    load_keyword_filter_cache, recompute_keyword_blocked, recompute_stream_keyword_blocked,
-    AppState,
+    AppState, load_keyword_filter_cache, recompute_keyword_blocked,
+    recompute_stream_keyword_blocked,
 };
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -180,7 +180,7 @@ pub async fn list_keyword_filters(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     if !check_admin_role(&state.pool, user_id).await {
@@ -295,7 +295,7 @@ pub async fn add_keyword_filter(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     if !check_admin_role(&state.pool, user_id).await {
@@ -370,7 +370,7 @@ pub async fn toggle_keyword_filter(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     if !check_admin_role(&state.pool, user_id).await {
@@ -421,7 +421,7 @@ pub async fn delete_keyword_filter(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     if !check_admin_role(&state.pool, user_id).await {
@@ -468,7 +468,7 @@ pub async fn list_keyword_whitelist(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     if !check_admin_role(&state.pool, user_id).await {
@@ -519,7 +519,7 @@ pub async fn add_whitelist_phrase(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     if !check_admin_role(&state.pool, user_id).await {
@@ -584,7 +584,7 @@ pub async fn delete_whitelist_phrase(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     if !check_admin_role(&state.pool, user_id).await {
@@ -630,7 +630,7 @@ pub async fn reload_keyword_cache(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     if !check_admin_role(&state.pool, user_id).await {

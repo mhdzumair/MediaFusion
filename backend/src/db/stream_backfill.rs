@@ -119,7 +119,7 @@ async fn mark_linked_streams<F>(
 where
     F: FnMut(&mut StreamLinkFlags),
 {
-    let linked_ids: Vec<i32> = sqlx::query_scalar(query)
+    let linked_ids: Vec<i32> = sqlx::query_scalar(sqlx::AssertSqlSafe(query))
         .bind(stream_ids)
         .fetch_all(pool)
         .await?;

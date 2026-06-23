@@ -12,12 +12,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
@@ -418,7 +418,8 @@ pub async fn list_watch_history(
             idx += 1;
         }
         let _ = idx; // suppress unused_assignments: idx is only needed while building the SQL string
-        let mut q = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id as i32);
+        let mut q = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()))
+            .bind(user_id as i32);
         if let Some(pid) = params.profile_id {
             q = q.bind(pid);
         }
@@ -496,7 +497,7 @@ pub async fn list_watch_history(
                 Option<HistorySource>,
                 Option<serde_json::Value>,
             ),
-        >(&sql)
+        >(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(user_id as i32);
         if let Some(pid) = params.profile_id {
             q = q.bind(pid as i32);
@@ -600,7 +601,7 @@ pub async fn continue_watching(
         Option<HistorySource>,
         Option<serde_json::Value>,
     )> = if let Some(pid) = params.profile_id {
-        match sqlx::query_as(&sql)
+        match sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
             .bind(user_id as i32)
             .bind(pid as i32)
             .fetch_all(&state.pool_ro)
@@ -613,7 +614,7 @@ pub async fn continue_watching(
             }
         }
     } else {
-        match sqlx::query_as(&sql)
+        match sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
             .bind(user_id as i32)
             .fetch_all(&state.pool_ro)
             .await

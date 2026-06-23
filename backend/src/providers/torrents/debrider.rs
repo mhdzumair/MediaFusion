@@ -5,9 +5,9 @@
 use serde_json::Value;
 
 use crate::providers::{
-    file_selection::{files_from_json, select_torrent_file_index, FileEntry},
-    torrents::transport::MediaFlowForward,
     ProviderError,
+    file_selection::{FileEntry, files_from_json, select_torrent_file_index},
+    torrents::transport::MediaFlowForward,
 };
 
 const BASE: &str = "https://debrider.app/api/v1";

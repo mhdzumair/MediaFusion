@@ -13,15 +13,15 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
 use fred::prelude::*;
 use fred::types::InfoKind;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 
 use crate::state::AppState;
 
@@ -648,7 +648,7 @@ pub async fn cache_key_get(
                         Err(_) => (json!(s), false),
                     },
                     Err(_) => {
-                        use base64::{engine::general_purpose::STANDARD, Engine as _};
+                        use base64::{Engine as _, engine::general_purpose::STANDARD};
                         (json!(STANDARD.encode(&b)), true)
                     }
                 },
@@ -815,58 +815,73 @@ pub async fn db_stats(headers: HeaderMap, State(state): State<Arc<AppState>>) ->
         return auth_guard::auth_failure_response(failure).into_response();
     }
 
-    let (version, db_name, size_pretty, total_bytes, connection_count, active_queries, max_conn, deadlocks, commits, rollbacks, cache_hit, uptime) =
-        tokio::join!(
-            fetch_scalar_str(&state.pool_ro, "SELECT version()"),
-            fetch_scalar_str(&state.pool_ro, "SELECT current_database()"),
-            fetch_scalar_str(
-                &state.pool_ro,
-                "SELECT pg_size_pretty(pg_database_size(current_database()))"
-            ),
-            fetch_scalar_i64(&state.pool_ro, "SELECT pg_database_size(current_database())"),
-            // Section C: total connections to current DB (not just active)
-            fetch_scalar_i64(
-                &state.pool_ro,
-                "SELECT count(*)::bigint FROM pg_stat_activity WHERE datname = current_database()"
-            ),
-            // Section C: active queries excluding self
-            fetch_scalar_i64(
-                &state.pool_ro,
-                "SELECT count(*)::bigint FROM pg_stat_activity WHERE state='active' AND pid != pg_backend_pid()"
-            ),
-            fetch_scalar_i64(
-                &state.pool_ro,
-                "SELECT current_setting('max_connections')::int"
-            ),
-            fetch_scalar_i64(
-                &state.pool_ro,
-                "SELECT COALESCE(deadlocks, 0) FROM pg_stat_database WHERE datname = current_database()"
-            ),
-            fetch_scalar_i64(
-                &state.pool_ro,
-                "SELECT COALESCE(xact_commit, 0) FROM pg_stat_database WHERE datname = current_database()"
-            ),
-            fetch_scalar_i64(
-                &state.pool_ro,
-                "SELECT COALESCE(xact_rollback, 0) FROM pg_stat_database WHERE datname = current_database()"
-            ),
-            // Section C: fold cache_hit into the join
-            async {
-                sqlx::query_scalar::<_, f64>(
-                    "SELECT CASE WHEN (blks_hit + blks_read) > 0 \
+    let (
+        version,
+        db_name,
+        size_pretty,
+        total_bytes,
+        connection_count,
+        active_queries,
+        max_conn,
+        deadlocks,
+        commits,
+        rollbacks,
+        cache_hit,
+        uptime,
+    ) = tokio::join!(
+        fetch_scalar_str(&state.pool_ro, "SELECT version()"),
+        fetch_scalar_str(&state.pool_ro, "SELECT current_database()"),
+        fetch_scalar_str(
+            &state.pool_ro,
+            "SELECT pg_size_pretty(pg_database_size(current_database()))"
+        ),
+        fetch_scalar_i64(
+            &state.pool_ro,
+            "SELECT pg_database_size(current_database())"
+        ),
+        // Section C: total connections to current DB (not just active)
+        fetch_scalar_i64(
+            &state.pool_ro,
+            "SELECT count(*)::bigint FROM pg_stat_activity WHERE datname = current_database()"
+        ),
+        // Section C: active queries excluding self
+        fetch_scalar_i64(
+            &state.pool_ro,
+            "SELECT count(*)::bigint FROM pg_stat_activity WHERE state='active' AND pid != pg_backend_pid()"
+        ),
+        fetch_scalar_i64(
+            &state.pool_ro,
+            "SELECT current_setting('max_connections')::int"
+        ),
+        fetch_scalar_i64(
+            &state.pool_ro,
+            "SELECT COALESCE(deadlocks, 0) FROM pg_stat_database WHERE datname = current_database()"
+        ),
+        fetch_scalar_i64(
+            &state.pool_ro,
+            "SELECT COALESCE(xact_commit, 0) FROM pg_stat_database WHERE datname = current_database()"
+        ),
+        fetch_scalar_i64(
+            &state.pool_ro,
+            "SELECT COALESCE(xact_rollback, 0) FROM pg_stat_database WHERE datname = current_database()"
+        ),
+        // Section C: fold cache_hit into the join
+        async {
+            sqlx::query_scalar::<_, f64>(
+                "SELECT CASE WHEN (blks_hit + blks_read) > 0 \
                      THEN round(blks_hit::numeric / (blks_hit + blks_read) * 100, 2) \
                      ELSE 0.0 END \
                      FROM pg_stat_database WHERE datname = current_database()",
-                )
-                .fetch_one(&state.pool_ro)
-                .await
-                .unwrap_or(0.0)
-            },
-            fetch_scalar_i64(
-                &state.pool_ro,
-                "SELECT EXTRACT(EPOCH FROM (now() - pg_postmaster_start_time()))::bigint",
-            ),
-        );
+            )
+            .fetch_one(&state.pool_ro)
+            .await
+            .unwrap_or(0.0)
+        },
+        fetch_scalar_i64(
+            &state.pool_ro,
+            "SELECT EXTRACT(EPOCH FROM (now() - pg_postmaster_start_time()))::bigint",
+        ),
+    );
 
     Json(DbStatsResponse {
         version,
@@ -1010,14 +1025,14 @@ fn format_bytes(bytes: i64) -> String {
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 
 async fn fetch_scalar_str(pool: &sqlx::PgPool, query: &str) -> String {
-    sqlx::query_scalar::<_, String>(query)
+    sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(query))
         .fetch_one(pool)
         .await
         .unwrap_or_else(|_| "unknown".to_string())
 }
 
 async fn fetch_scalar_i64(pool: &sqlx::PgPool, query: &str) -> i64 {
-    sqlx::query_scalar::<_, i64>(query)
+    sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(query))
         .fetch_one(pool)
         .await
         .unwrap_or(0)

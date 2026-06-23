@@ -53,15 +53,15 @@ use std::time::Duration;
 
 use async_stream::stream;
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::sse::{Event, KeepAlive, Sse},
     response::{IntoResponse, Response},
-    Json,
 };
 use chrono::Utc;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::{routes::auth_guard, state::AppState};
@@ -847,10 +847,12 @@ pub async fn run_imdb_dataset_import(
     if let Some(datasets) = body.datasets {
         overlay.insert(
             "datasets".into(),
-            json!(datasets
-                .iter()
-                .map(|s| s.to_ascii_lowercase())
-                .collect::<Vec<_>>()),
+            json!(
+                datasets
+                    .iter()
+                    .map(|s| s.to_ascii_lowercase())
+                    .collect::<Vec<_>>()
+            ),
         );
     }
     if let Some(include_adult) = body.include_adult {
@@ -1439,7 +1441,7 @@ pub async fn refresh_imdb_data(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Media not found at external provider"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -3272,8 +3274,11 @@ pub async fn stream_task_snapshots(
     let stream = stream! {
         loop {
             let snapshot = build_task_stream_snapshot(&state.pool_ro, &params).await;
-            if let Ok(event) = Event::default().event("snapshot").json_data(snapshot) {
-                yield Ok::<Event, Infallible>(event);
+            {
+                let sse_event = Event::default().event("snapshot").json_data(snapshot);
+                if let Ok(event) = sse_event {
+                    yield Ok::<Event, Infallible>(event);
+                }
             }
             tokio::time::sleep(Duration::from_millis(interval_ms)).await;
         }
@@ -3390,8 +3395,11 @@ pub async fn stream_scheduler_snapshots(
                 &list_params,
             )
             .await;
-            if let Ok(event) = Event::default().event("snapshot").json_data(snapshot) {
-                yield Ok::<Event, Infallible>(event);
+            {
+                let sse_event = Event::default().event("snapshot").json_data(snapshot);
+                if let Ok(event) = sse_event {
+                    yield Ok::<Event, Infallible>(event);
+                }
             }
             tokio::time::sleep(Duration::from_millis(interval_ms)).await;
         }
@@ -3683,17 +3691,19 @@ pub async fn stream_task_detail(
             match load_task_detail_json(&state.pool_ro, &task_id).await {
                 Some(detail) => {
                     let status = detail["status"].as_str().unwrap_or("").to_string();
-                    if let Ok(event) = Event::default().event("snapshot").json_data(detail) {
-                        yield Ok::<Event, Infallible>(event);
+                    {
+                        let sse_event = Event::default().event("snapshot").json_data(detail);
+                        if let Ok(event) = sse_event {
+                            yield Ok::<Event, Infallible>(event);
+                        }
                     }
                     if TERMINAL_TASK_STATUSES.contains(&status.as_str()) {
                         tokio::time::sleep(Duration::from_millis(interval_ms)).await;
                         if let Some(final_detail) =
                             load_task_detail_json(&state.pool_ro, &task_id).await
                         {
-                            if let Ok(event) =
-                                Event::default().event("snapshot").json_data(final_detail)
-                            {
+                            let sse_final = Event::default().event("snapshot").json_data(final_detail);
+                            if let Ok(event) = sse_final {
                                 yield Ok::<Event, Infallible>(event);
                             }
                         }

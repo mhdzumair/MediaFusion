@@ -24,9 +24,9 @@ use crate::{
     },
     parser,
     scrapers::{
-        browser,
+        ScrapedStream, SearchMeta, browser,
         fetcher::{fetch_byparr, fetch_plain},
-        media_resolve, stream_convert, ScrapedStream, SearchMeta,
+        media_resolve, stream_convert,
     },
     util::rate_limit,
 };

@@ -533,7 +533,7 @@ pub async fn recompute_keyword_blocked(
     }
 
     // Record which keyword version was just recomputed so we skip on next startup.
-    if let Err(e) = sqlx::query(
+    match sqlx::query(
         "INSERT INTO keyword_sync_state (id, file_hash, synced_at) VALUES ($1, $2, NOW())
          ON CONFLICT (id) DO UPDATE SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
     )
@@ -542,15 +542,18 @@ pub async fn recompute_keyword_blocked(
     .execute(pool)
     .await
     {
-        tracing::error!("recompute_all_keyword_blocked: failed to record version: {e}");
-    } else {
-        let elapsed = started.elapsed();
-        tracing::info!(
-            keywords = keywords.len(),
-            updated = total_updated,
-            elapsed_ms = elapsed.as_millis(),
-            "keyword filter: media is_keyword_blocked recompute complete"
-        );
+        Err(e) => {
+            tracing::error!("recompute_all_keyword_blocked: failed to record version: {e}");
+        }
+        _ => {
+            let elapsed = started.elapsed();
+            tracing::info!(
+                keywords = keywords.len(),
+                updated = total_updated,
+                elapsed_ms = elapsed.as_millis(),
+                "keyword filter: media is_keyword_blocked recompute complete"
+            );
+        }
     }
 }
 
@@ -632,7 +635,7 @@ pub async fn recompute_stream_keyword_blocked(
     }
 
     // Record which keyword version was just recomputed so we skip on next startup.
-    if let Err(e) = sqlx::query(
+    match sqlx::query(
         "INSERT INTO keyword_sync_state (id, file_hash, synced_at) VALUES ($1, $2, NOW())
          ON CONFLICT (id) DO UPDATE SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
     )
@@ -641,15 +644,18 @@ pub async fn recompute_stream_keyword_blocked(
     .execute(pool)
     .await
     {
-        tracing::error!("recompute_stream_keyword_blocked: failed to record version: {e}");
-    } else {
-        let elapsed = started.elapsed();
-        tracing::info!(
-            keywords = stream_keywords.len(),
-            updated = total_updated,
-            elapsed_ms = elapsed.as_millis(),
-            "keyword filter: stream is_keyword_blocked recompute complete"
-        );
+        Err(e) => {
+            tracing::error!("recompute_stream_keyword_blocked: failed to record version: {e}");
+        }
+        _ => {
+            let elapsed = started.elapsed();
+            tracing::info!(
+                keywords = stream_keywords.len(),
+                updated = total_updated,
+                elapsed_ms = elapsed.as_millis(),
+                "keyword filter: stream is_keyword_blocked recompute complete"
+            );
+        }
     }
 }
 

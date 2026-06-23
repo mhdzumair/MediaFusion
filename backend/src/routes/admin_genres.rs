@@ -10,12 +10,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
@@ -70,7 +70,7 @@ async fn check_admin_role(pool: &sqlx::PgPool, user_id: i32) -> bool {
 // ─── Auth guard macro ─────────────────────────────────────────────────────────
 
 macro_rules! require_admin {
-    ($headers:expr, $state:expr) => {{
+    ($headers:expr_2021, $state:expr_2021) => {{
         let user_id = match validate_admin($headers, &$state.config.secret_key_raw) {
             Some(id) => id,
             None => {
@@ -367,7 +367,7 @@ pub async fn create_genre(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"detail": e.to_string()})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -437,14 +437,14 @@ pub async fn update_genre(
                     StatusCode::NOT_FOUND,
                     Json(json!({"detail": "genre not found"})),
                 )
-                    .into_response()
+                    .into_response();
             }
             Err(e) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({"detail": e.to_string()})),
                 )
-                    .into_response()
+                    .into_response();
             }
             _ => {}
         }

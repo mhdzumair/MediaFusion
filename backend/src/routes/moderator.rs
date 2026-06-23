@@ -10,13 +10,13 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
 use serde::{Deserialize, Deserializer};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn bool_opt_from_str<'de, D: Deserializer<'de>>(d: D) -> Result<Option<bool>, D::Error> {
     let s: Option<String> = Option::deserialize(d)?;
@@ -317,7 +317,7 @@ pub async fn moderator_list_metadata(
 
     // Count
     let count_sql = format!("SELECT COUNT(*) FROM media m {where_clause}");
-    let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
+    let mut count_q = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()));
     if let Some(mt) = media_type_filter {
         count_q = count_q.bind(mt);
     }
@@ -353,7 +353,7 @@ pub async fn moderator_list_metadata(
          LIMIT {per_page} OFFSET {offset}"
     );
 
-    let mut list_q = sqlx::query_as::<_, MediaRow>(&list_sql);
+    let mut list_q = sqlx::query_as::<_, MediaRow>(sqlx::AssertSqlSafe(list_sql.as_str()));
     if let Some(mt) = media_type_filter {
         list_q = list_q.bind(mt);
     }
@@ -572,7 +572,7 @@ pub async fn moderator_fetch_external_metadata(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Media not found"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     let db_media_type = media_row.0.to_lowercase();
@@ -597,7 +597,7 @@ pub async fn moderator_fetch_external_metadata(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "external_id is required"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -659,7 +659,7 @@ pub async fn moderator_apply_external_metadata(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Media not found"})),
             )
-                .into_response()
+                .into_response();
         }
     };
     let db_media_type = media_row.0.to_lowercase();
@@ -684,7 +684,7 @@ pub async fn moderator_apply_external_metadata(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "external_id is required"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -717,7 +717,7 @@ pub async fn moderator_apply_external_metadata(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "External metadata not found"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 

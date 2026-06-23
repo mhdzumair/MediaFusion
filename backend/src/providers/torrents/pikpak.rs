@@ -11,15 +11,15 @@
 ///   Drive: api-drive.mypikpak.com
 ///   User:  user.mypikpak.com
 use base64::{
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
     Engine,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use reqwest::Client;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::providers::{
-    torrents::transport::{append_query, MediaFlowForward},
     ProviderError,
+    torrents::transport::{MediaFlowForward, append_query},
 };
 
 const API_HOST: &str = "api-drive.mypikpak.com";

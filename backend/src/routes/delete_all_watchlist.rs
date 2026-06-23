@@ -4,12 +4,12 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Json},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::{
     models::{
         stremio::{Meta, MetaItem, MetaPreview},
-        user_data::{provider_short_name, UserData},
+        user_data::{UserData, provider_short_name},
     },
     providers,
     state::AppState,

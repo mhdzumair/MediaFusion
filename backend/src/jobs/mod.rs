@@ -8,7 +8,7 @@ pub mod registry;
 pub mod runner;
 pub mod scheduler;
 
-pub use enqueue::{enqueue, enqueue_simple, EnqueueOpts};
+pub use enqueue::{EnqueueOpts, enqueue, enqueue_simple};
 pub use error::JobError;
 pub use handler::{ErasedHandler, JobCtx, JobHandler};
 pub use registry::JobRegistry;

@@ -372,7 +372,9 @@ mod tests {
 
     #[test]
     fn test_episode_title_extracted() {
-        let r = parse_title("Brothers.and.Sisters.S01E01.The.House.of.SS.2160p.JHS.WEB-DL.MULTi.AAC2.0.H.265-4kHdHub.Com.mkv");
+        let r = parse_title(
+            "Brothers.and.Sisters.S01E01.The.House.of.SS.2160p.JHS.WEB-DL.MULTi.AAC2.0.H.265-4kHdHub.Com.mkv",
+        );
         assert_eq!(r.title, "Brothers and Sisters");
         assert_eq!(r.seasons, vec![1]);
         assert_eq!(r.episodes, vec![1]);
@@ -381,19 +383,25 @@ mod tests {
 
     #[test]
     fn test_episode_title_e02() {
-        let r = parse_title("Brothers.and.Sisters.S01E02.Jayshrees.Second.Chance.2160p.JHS.WEB-DL.MULTi.AAC2.0.H.265-4kHdHub.Com.mkv");
+        let r = parse_title(
+            "Brothers.and.Sisters.S01E02.Jayshrees.Second.Chance.2160p.JHS.WEB-DL.MULTi.AAC2.0.H.265-4kHdHub.Com.mkv",
+        );
         assert_eq!(r.episode_title.as_deref(), Some("Jayshrees Second Chance"));
     }
 
     #[test]
     fn test_episode_title_e03() {
-        let r = parse_title("Brothers.and.Sisters.S01E03.Priyan.Guides.Jayshree.2160p.JHS.WEB-DL.MULTi.AAC2.0.H.265-4kHdHub.Com.mkv");
+        let r = parse_title(
+            "Brothers.and.Sisters.S01E03.Priyan.Guides.Jayshree.2160p.JHS.WEB-DL.MULTi.AAC2.0.H.265-4kHdHub.Com.mkv",
+        );
         assert_eq!(r.episode_title.as_deref(), Some("Priyan Guides Jayshree"));
     }
 
     #[test]
     fn test_episode_title_e04() {
-        let r = parse_title("Brothers.and.Sisters.S01E04.Harini.vs.Jayshrees.Secret.2160p.JHS.WEB-DL.MULTi.AAC2.0.H.265-4kHdHub.Com.mkv");
+        let r = parse_title(
+            "Brothers.and.Sisters.S01E04.Harini.vs.Jayshrees.Secret.2160p.JHS.WEB-DL.MULTi.AAC2.0.H.265-4kHdHub.Com.mkv",
+        );
         assert_eq!(
             r.episode_title.as_deref(),
             Some("Harini vs Jayshrees Secret")

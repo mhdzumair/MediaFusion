@@ -14,7 +14,7 @@ use std::sync::Arc;
 use axum::{
     body::Body,
     extract::State,
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use prometheus_client::{encoding::text::encode, metrics::gauge::Gauge, registry::Registry};
@@ -162,7 +162,7 @@ pub async fn handler(State(state): State<Arc<AppState>>, req: axum::extract::Req
 }
 
 async fn fetch_count(pool: &sqlx::PgPool, query: &str) -> i64 {
-    sqlx::query_scalar::<_, i64>(query)
+    sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(query))
         .fetch_one(pool)
         .await
         .unwrap_or(0)

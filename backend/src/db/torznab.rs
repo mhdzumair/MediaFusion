@@ -167,7 +167,7 @@ pub async fn search_by_title(
          LIMIT {limit_ph}"
     );
 
-    let mut q = sqlx::query_as::<_, Row>(&sql).bind(&pattern);
+    let mut q = sqlx::query_as::<_, Row>(sqlx::AssertSqlSafe(sql.as_str())).bind(&pattern);
     if let Some(y) = year {
         q = q.bind(y);
     }
@@ -228,7 +228,7 @@ async fn run(
     media_type: Option<MediaType>,
     limit: i64,
 ) -> Vec<TorznabRow> {
-    let mut q = sqlx::query_as::<_, Row>(sql).bind(param);
+    let mut q = sqlx::query_as::<_, Row>(sqlx::AssertSqlSafe(sql)).bind(param);
     if let Some(mt) = media_type {
         q = q.bind(mt);
     }

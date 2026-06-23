@@ -7,8 +7,8 @@
 use serde_json::Value;
 
 use crate::providers::{
-    file_selection::select_debrid_file_index, response_json, torrents::transport::MediaFlowForward,
-    ProviderError,
+    ProviderError, file_selection::select_debrid_file_index, response_json,
+    torrents::transport::MediaFlowForward,
 };
 
 const BASE_URL: &str = "https://easydebrid.com/api/v1";

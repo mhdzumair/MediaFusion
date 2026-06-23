@@ -37,21 +37,21 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use fred::prelude::*;
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::Sha256;
 
 use crate::{
-    db::{contribution_defaults, MediaId, StreamId},
+    db::{MediaId, StreamId, contribution_defaults},
     state::AppState,
 };
 
@@ -434,7 +434,7 @@ pub async fn list_blocked_media(
 
     // Total count
     let count_sql = format!("SELECT COUNT(*) FROM media m {where_clause}");
-    let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
+    let mut count_q = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()));
     if let Some(mt) = media_type_filter {
         count_q = count_q.bind(mt);
     }
@@ -469,7 +469,7 @@ pub async fn list_blocked_media(
         "#
     );
 
-    let mut list_q = sqlx::query(&list_sql);
+    let mut list_q = sqlx::query(sqlx::AssertSqlSafe(list_sql.as_str()));
     if let Some(mt) = media_type_filter {
         list_q = list_q.bind(mt);
     }

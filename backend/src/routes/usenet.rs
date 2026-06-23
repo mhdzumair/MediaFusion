@@ -23,7 +23,7 @@ use std::sync::Arc;
 use axum::{
     body::Body,
     extract::{Path, State},
-    http::{header, Method, StatusCode},
+    http::{Method, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use tracing::warn;
@@ -333,7 +333,7 @@ async fn handle_provider(
             );
             match playback_dedup::try_ready_after_wait(&state.redis, &ck).await {
                 playback_dedup::DedupWaitResult::Cached(url) => {
-                    return playback_redirect(method, url)
+                    return playback_redirect(method, url);
                 }
                 playback_dedup::DedupWaitResult::ReadyToResolve => {}
                 playback_dedup::DedupWaitResult::TimedOut => {

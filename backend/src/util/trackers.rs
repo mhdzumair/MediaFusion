@@ -109,7 +109,9 @@ pub async fn init_best_trackers(state: &AppState) {
     if !lock_acquired {
         // Another process (e.g. mediafusion-worker starting in parallel) is
         // already fetching. Poll for up to TRACKERS_CACHE_WAIT_SECS seconds.
-        debug!("Best tracker Redis lock held by another process; polling cache for up to {TRACKERS_CACHE_WAIT_SECS}s");
+        debug!(
+            "Best tracker Redis lock held by another process; polling cache for up to {TRACKERS_CACHE_WAIT_SECS}s"
+        );
         for _ in 0..TRACKERS_CACHE_WAIT_SECS {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             let cached = cached_best_trackers(&state.redis).await;

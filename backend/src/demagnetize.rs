@@ -161,17 +161,8 @@ async fn resolve_inner(hash: [u8; 20], budget: Duration) -> Result<TorrentMeta, 
 // ─── DHT peer discovery ───────────────────────────────────────────────────────
 
 async fn find_peers(hash: [u8; 20], timeout: Duration) -> Vec<SocketAddr> {
-    match tokio::time::timeout(
-        timeout,
-        tokio::task::spawn_blocking(move || dht_get_peers(hash)),
-    )
-    .await
-    {
-        Ok(Ok(peers)) => peers,
-        Ok(Err(e)) => {
-            tracing::warn!("demagnetize: spawn_blocking error: {e}");
-            vec![]
-        }
+    match tokio::time::timeout(timeout, dht_get_peers(hash)).await {
+        Ok(peers) => peers,
         Err(_) => {
             tracing::debug!("demagnetize: DHT discovery timed out");
             vec![]
@@ -179,9 +170,9 @@ async fn find_peers(hash: [u8; 20], timeout: Duration) -> Vec<SocketAddr> {
     }
 }
 
-/// Blocking DHT lookup.  Runs on the blocking thread pool so it does not
-/// stall the async executor.
-fn dht_get_peers(hash: [u8; 20]) -> Vec<SocketAddr> {
+async fn dht_get_peers(hash: [u8; 20]) -> Vec<SocketAddr> {
+    use futures::StreamExt as _;
+
     let dht = match mainline::Dht::client() {
         Ok(d) => d,
         Err(e) => {
@@ -191,8 +182,9 @@ fn dht_get_peers(hash: [u8; 20]) -> Vec<SocketAddr> {
     };
     let id = mainline::Id::from(hash);
     let mut peers: Vec<SocketAddr> = Vec::new();
+    let mut stream = dht.as_async().get_peers(id);
 
-    for batch in dht.get_peers(id) {
+    while let Some(batch) = stream.next().await {
         for addr in batch {
             peers.push(SocketAddr::V4(addr));
         }

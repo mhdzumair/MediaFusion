@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Json},
 };
 use hmac::{Hmac, KeyInit, Mac};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::Sha256;
 
 use std::time::Duration;
@@ -114,7 +114,7 @@ const MDBLIST_GENRES: &[&str] = &[
 
 fn catalog_meta(id: &str) -> Option<CatalogMeta> {
     macro_rules! c {
-        ($t:expr, $n:expr) => {
+        ($t:expr_2021, $n:expr_2021) => {
             Some(CatalogMeta {
                 catalog_type: $t,
                 name: $n,
@@ -122,7 +122,7 @@ fn catalog_meta(id: &str) -> Option<CatalogMeta> {
                 is_search: false,
             })
         };
-        ($t:expr, $n:expr, genres: $g:expr) => {
+        ($t:expr_2021, $n:expr_2021, genres: $g:expr_2021) => {
             Some(CatalogMeta {
                 catalog_type: $t,
                 name: $n,
@@ -130,7 +130,7 @@ fn catalog_meta(id: &str) -> Option<CatalogMeta> {
                 is_search: false,
             })
         };
-        ($t:expr, $n:expr, search) => {
+        ($t:expr_2021, $n:expr_2021, search) => {
             Some(CatalogMeta {
                 catalog_type: $t,
                 name: $n,
@@ -391,33 +391,34 @@ async fn serve_manifest(state: Arc<AppState>, user_data: UserData) -> impl IntoR
         return Json(cached).into_response();
     }
 
-    let genres: HashMap<String, Vec<String>> =
-        if let Some(v) = cache::get_json(&state.redis, GENRES_CACHE_KEY).await {
-            serde_json::from_value(v).unwrap_or_default()
-        } else {
-            // Never block manifest for 30s on a cold genres query — cap wait, then refresh in background.
-            const GENRES_WAIT: Duration = Duration::from_secs(3);
-            match tokio::time::timeout(
-                GENRES_WAIT,
-                genres::load_genres_cached(&state.pool_ro, &state.redis),
-            )
-            .await
-            {
-                Ok(g) => g,
-                Err(_) => {
-                    tracing::warn!(
+    let genres: HashMap<String, Vec<String>> = if let Some(v) =
+        cache::get_json(&state.redis, GENRES_CACHE_KEY).await
+    {
+        serde_json::from_value(v).unwrap_or_default()
+    } else {
+        // Never block manifest for 30s on a cold genres query — cap wait, then refresh in background.
+        const GENRES_WAIT: Duration = Duration::from_secs(3);
+        match tokio::time::timeout(
+            GENRES_WAIT,
+            genres::load_genres_cached(&state.pool_ro, &state.redis),
+        )
+        .await
+        {
+            Ok(g) => g,
+            Err(_) => {
+                tracing::warn!(
                     "manifest: genres query exceeded {:?}; serving manifest without dynamic genres",
                     GENRES_WAIT
                 );
-                    let pool = state.pool_ro.clone();
-                    let redis = state.redis.clone();
-                    tokio::spawn(async move {
-                        let _ = genres::load_genres_cached(&pool, &redis).await;
-                    });
-                    HashMap::new()
-                }
+                let pool = state.pool_ro.clone();
+                let redis = state.redis.clone();
+                tokio::spawn(async move {
+                    let _ = genres::load_genres_cached(&pool, &redis).await;
+                });
+                HashMap::new()
             }
-        };
+        }
+    };
     let genres = {
         let keyword_filters = state
             .keyword_filters

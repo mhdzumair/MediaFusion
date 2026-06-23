@@ -9,10 +9,10 @@ use crate::{
     models::user_data::UserData,
     parser,
     scrapers::{
-        easynews, jackett, mediafusion, newznab, prowlarr, public_indexers, public_usenet,
+        ScrapedStream, ScrapedUsenetStream, SearchMeta, easynews, jackett, mediafusion, newznab,
+        prowlarr, public_indexers, public_usenet,
         source_health::{self, HealthGateConfig},
         stream_convert, telegram, title_queries, torbox_search, torrentio, torznab, zilean,
-        ScrapedStream, ScrapedUsenetStream, SearchMeta,
     },
     state::AppState,
 };
@@ -174,7 +174,9 @@ pub async fn run_live_search(
 
     let (torrents, usenet) = tokio::join!(
         run_torrent_scrape(state, user_data, meta, media_type, season, episode),
-        run_usenet(state, user_data, meta, media_type, season, episode, scope, false,),
+        run_usenet(
+            state, user_data, meta, media_type, season, episode, scope, false,
+        ),
     );
 
     (torrents, usenet)

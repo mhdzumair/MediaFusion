@@ -1,6 +1,6 @@
 use aes::Aes256;
-use base64::{engine::general_purpose::URL_SAFE, Engine};
-use cbc::cipher::{block_padding::Pkcs7, BlockModeEncrypt, KeyIvInit};
+use base64::{Engine, engine::general_purpose::URL_SAFE};
+use cbc::cipher::{BlockModeEncrypt, KeyIvInit, block_padding::Pkcs7};
 use rand::Rng;
 use serde_json::Value;
 

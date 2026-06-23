@@ -9,7 +9,7 @@
 ///   cargo run --bin mediafusion-nsfw-setup -- --url https://example.com/model.onnx
 use std::path::{Path, PathBuf};
 
-use mediafusion_api::nsfw::{NsfwClassifier, NsfwScores, MODEL_HF_URL};
+use mediafusion_api::nsfw::{MODEL_HF_URL, NsfwClassifier, NsfwScores};
 
 struct Args {
     out: PathBuf,

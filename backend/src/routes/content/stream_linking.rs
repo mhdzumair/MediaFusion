@@ -15,12 +15,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
@@ -146,7 +146,7 @@ pub async fn create_stream_link(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -251,7 +251,7 @@ pub async fn create_bulk_stream_links(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -363,7 +363,7 @@ pub async fn delete_stream_link(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -519,7 +519,7 @@ pub async fn search_unlinked_streams(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -601,7 +601,7 @@ pub async fn update_file_links(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -642,7 +642,7 @@ pub async fn update_file_links(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Media not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(crate::db::MediaType::Series) => {}
         Some(_) => {
@@ -736,7 +736,7 @@ pub async fn get_stream_file_links(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -826,7 +826,7 @@ pub async fn get_stream_files_for_annotation(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -837,7 +837,7 @@ pub async fn get_stream_files_for_annotation(
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "Invalid stream ID"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -913,7 +913,7 @@ pub async fn get_streams_needing_annotation(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -986,7 +986,7 @@ pub async fn get_streams_needing_annotation(
          ts.info_hash, m.id AS media_id, m.title, m.year, m.type AS media_type, img.url";
 
     let rows: Vec<Row> = if let Some(ref pat) = search_pattern {
-        sqlx::query_as::<_, Row>(&format!(
+        sqlx::query_as::<_, Row>(sqlx::AssertSqlSafe(format!(
             r#"SELECT id, name, source, total_size, resolution, created_at, info_hash,
                       media_id, title, year, media_type, url,
                       COUNT(*) OVER() AS total_count
@@ -997,7 +997,7 @@ pub async fn get_streams_needing_annotation(
                ) sub
                ORDER BY created_at DESC
                LIMIT $1 OFFSET $2"#
-        ))
+        )))
         .bind(per_page)
         .bind(offset)
         .bind(pat)
@@ -1005,7 +1005,7 @@ pub async fn get_streams_needing_annotation(
         .await
         .unwrap_or_default()
     } else {
-        sqlx::query_as::<_, Row>(&format!(
+        sqlx::query_as::<_, Row>(sqlx::AssertSqlSafe(format!(
             r#"SELECT
                     s.id, s.name, s.source, ts.total_size, s.resolution, s.created_at,
                     ts.info_hash, m.id, m.title, m.year, m.type, img.url,
@@ -1013,7 +1013,7 @@ pub async fn get_streams_needing_annotation(
                {BASE_FROM}
                ORDER BY s.created_at DESC
                LIMIT $1 OFFSET $2"#
-        ))
+        )))
         .bind(per_page)
         .bind(offset)
         .fetch_all(&state.pool_ro)
@@ -1102,7 +1102,7 @@ pub async fn dismiss_annotation_request(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 

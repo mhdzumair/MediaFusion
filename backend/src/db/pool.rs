@@ -1,4 +1,4 @@
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
 
 /// Tuning knobs for a single PgPool instance.
@@ -55,12 +55,14 @@ pub async fn build(uri: &str, cfg: PoolConfig) -> Result<PgPool, sqlx::Error> {
                 // SET commands cannot use bind parameters in PostgreSQL; format the
                 // integer millisecond values directly. These are trusted config values,
                 // never user input.
-                sqlx::query(&format!("SET statement_timeout = {stmt_ms}"))
-                    .execute(&mut *conn)
-                    .await?;
-                sqlx::query(&format!(
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "SET statement_timeout = {stmt_ms}"
+                )))
+                .execute(&mut *conn)
+                .await?;
+                sqlx::query(sqlx::AssertSqlSafe(format!(
                     "SET idle_in_transaction_session_timeout = {idle_ms}"
-                ))
+                )))
                 .execute(&mut *conn)
                 .await?;
                 Ok(())

@@ -3,14 +3,14 @@
 /// Token format:
 ///   - Base64-encoded OAuth token → decode to JSON `{"access_token": "..."}` → Bearer
 ///   - Private API key → appended as `?apikey={token}` to every request
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use serde_json::Value;
 
 use crate::providers::{
+    ProviderError,
     file_selection::select_debrid_file_index,
     response_json,
-    torrents::transport::{append_query, encode_form_body, MediaFlowForward},
-    ProviderError,
+    torrents::transport::{MediaFlowForward, append_query, encode_form_body},
 };
 
 const BASE_URL: &str = "https://www.premiumize.me/api";

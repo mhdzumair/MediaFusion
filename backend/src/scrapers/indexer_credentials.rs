@@ -91,13 +91,15 @@ mod tests {
             url: Some("http://127.0.0.1:9696".into()),
             api_key: None,
         };
-        assert!(resolve_instance(
-            &instance,
-            &Some("http://global:9696".into()),
-            &Some("global-key".into()),
-            true,
-        )
-        .is_none());
+        assert!(
+            resolve_instance(
+                &instance,
+                &Some("http://global:9696".into()),
+                &Some("global-key".into()),
+                true,
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -126,12 +128,14 @@ mod tests {
             use_global: true,
             ..IndexerInstanceConfig::default()
         };
-        assert!(resolve_instance(
-            &instance,
-            &Some("http://prowlarr:9696".into()),
-            &Some("global-key".into()),
-            true,
-        )
-        .is_none());
+        assert!(
+            resolve_instance(
+                &instance,
+                &Some("http://prowlarr:9696".into()),
+                &Some("global-key".into()),
+                true,
+            )
+            .is_none()
+        );
     }
 }

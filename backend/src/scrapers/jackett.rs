@@ -1,21 +1,21 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 use reqwest::Client;
 use serde::Deserialize;
 
 use crate::{
     parser,
     scrapers::{
+        ScrapedStream, SearchMeta,
         prowlarr::build_series_files,
         torrent_info,
         torrent_metadata::{
             self, download_torrent_bytes, jackett_torrent_type, parse_torrent_bytes,
             resolve_download_url, should_persist_torrent_file, torrent_file_for_storage,
         },
-        ScrapedStream, SearchMeta,
     },
 };
 

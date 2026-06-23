@@ -8,9 +8,9 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Query, State},
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::Deserialize;
 use serde_json::json;

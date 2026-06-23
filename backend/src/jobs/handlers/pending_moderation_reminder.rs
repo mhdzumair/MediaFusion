@@ -171,7 +171,9 @@ async fn pending_count(
     sql: &str,
 ) -> Result<(i64, Option<DateTime<Utc>>), JobError> {
     use sqlx::Row;
-    let row = sqlx::query(sql).fetch_one(pool).await?;
+    let row = sqlx::query(sqlx::AssertSqlSafe(sql))
+        .fetch_one(pool)
+        .await?;
     let count: i64 = row.try_get(0)?;
     let oldest: Option<DateTime<Utc>> = row.try_get(1)?;
     Ok((count, oldest))

@@ -4,10 +4,10 @@
 use serde_json::Value;
 
 use crate::providers::{
+    ProviderError,
     file_selection::select_debrid_file_index,
     response_json,
-    torrents::transport::{encode_form_body, MediaFlowForward},
-    ProviderError,
+    torrents::transport::{MediaFlowForward, encode_form_body},
 };
 
 const BASE_URL: &str = "https://api.torbox.app/v1/api";

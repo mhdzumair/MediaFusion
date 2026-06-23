@@ -14,7 +14,7 @@ use crate::{
         handler::{JobCtx, JobHandler},
     },
     models::user_data::UserData,
-    scrapers::{background_queue, orchestrator, SearchMeta},
+    scrapers::{SearchMeta, background_queue, orchestrator},
     state::AppState,
 };
 

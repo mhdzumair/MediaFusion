@@ -101,11 +101,7 @@ impl JobHandler for ProwlarrFeedScraper {
                 let dt_str = s.disabled_till?;
                 let dt_str = dt_str.replace('Z', "+00:00");
                 let dt = chrono::DateTime::parse_from_rfc3339(&dt_str).ok()?;
-                if dt > now {
-                    Some(s.indexer_id)
-                } else {
-                    None
-                }
+                if dt > now { Some(s.indexer_id) } else { None }
             })
             .collect();
 

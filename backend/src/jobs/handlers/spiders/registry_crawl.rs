@@ -9,11 +9,11 @@ use crate::{
     },
     parser,
     scrapers::{
-        fetcher, media_resolve,
+        ScrapedStream, fetcher, media_resolve,
         prowlarr::build_series_files,
         public_indexer_registry::ALL_INDEXERS,
         public_indexers::{extract_row_data_pub, parse_size_bytes_pub},
-        stream_convert, ScrapedStream,
+        stream_convert,
     },
     util::rate_limit,
 };

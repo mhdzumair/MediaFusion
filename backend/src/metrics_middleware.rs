@@ -1,6 +1,6 @@
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::sync::atomic::Ordering;
 
 use axum::{extract::State, middleware::Next, response::Response};
 use fred::prelude::{

@@ -6,11 +6,11 @@ use tracing::{info, warn};
 
 use crate::{
     cache,
-    db::{store_media, MediaType, StoreMediaOpts},
+    db::{MediaType, StoreMediaOpts, store_media},
     models::user_data::MdbListItem,
 };
 
-use super::{fetch_normalized, FetchCtx};
+use super::{FetchCtx, fetch_normalized};
 
 const MDBLIST_BASE: &str = "https://api.mdblist.com";
 const MDBLIST_BATCH_SIZE: i64 = 200;

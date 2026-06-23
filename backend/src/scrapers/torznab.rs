@@ -3,7 +3,7 @@ use reqwest::Client;
 use crate::{
     models::user_data::TorznabEndpoint,
     parser,
-    scrapers::{prowlarr::build_series_files, ScrapedStream, SearchMeta},
+    scrapers::{ScrapedStream, SearchMeta, prowlarr::build_series_files},
     state::KeywordFilterCache,
 };
 
@@ -191,8 +191,8 @@ fn parse_xml(
     episode: Option<i32>,
     keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedStream> {
-    use quick_xml::events::Event;
     use quick_xml::Reader;
+    use quick_xml::events::Event;
 
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
@@ -225,10 +225,16 @@ fn parse_xml(
                         for attr in e.attributes().flatten() {
                             match attr.key.local_name().as_ref() {
                                 b"name" => {
-                                    name = attr.unescape_value().ok().map(|v| v.into_owned());
+                                    name = attr
+                                        .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                                        .ok()
+                                        .map(|v| v.into_owned());
                                 }
                                 b"value" => {
-                                    value = attr.unescape_value().ok().map(|v| v.into_owned());
+                                    value = attr
+                                        .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                                        .ok()
+                                        .map(|v| v.into_owned());
                                 }
                                 _ => {}
                             }
@@ -253,8 +259,10 @@ fn parse_xml(
                     b"enclosure" => {
                         for attr in e.attributes().flatten() {
                             if attr.key.local_name().as_ref() == b"length" {
-                                current.enclosure_length =
-                                    attr.unescape_value().ok().and_then(|v| v.parse().ok());
+                                current.enclosure_length = attr
+                                    .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                                    .ok()
+                                    .and_then(|v| v.parse().ok());
                             }
                         }
                     }

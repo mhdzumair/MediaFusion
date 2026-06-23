@@ -24,10 +24,9 @@ fn request_headers(behavior_hints: &Value) -> reqwest::header::HeaderMap {
     {
         for (key, value) in obj {
             if let Some(v) = value.as_str() {
-                if let (Ok(name), Ok(val)) = (
-                    reqwest::header::HeaderName::from_bytes(key.as_bytes()),
-                    reqwest::header::HeaderValue::from_str(v),
-                ) {
+                let name_result = reqwest::header::HeaderName::from_bytes(key.as_bytes());
+                let val_result = reqwest::header::HeaderValue::from_str(v);
+                if let (Ok(name), Ok(val)) = (name_result, val_result) {
                     headers.insert(name, val);
                 }
             }

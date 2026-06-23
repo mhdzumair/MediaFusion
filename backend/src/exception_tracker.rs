@@ -13,7 +13,7 @@ use fred::prelude::{HashesInterface, KeysInterface, SortedSetsInterface};
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 use tracing::{Event, Subscriber};
-use tracing_subscriber::{layer::Context, Layer};
+use tracing_subscriber::{Layer, layer::Context};
 
 pub const INDEX_KEY: &str = "exc:index";
 pub const KEY_PREFIX: &str = "exc:";

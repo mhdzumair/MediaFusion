@@ -28,10 +28,10 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Redirect, Response},
-    Json,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -39,8 +39,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     db::IntegrationType,
     jobs::{
-        enqueue::{enqueue_simple, EnqueueOpts},
-        handlers::integration_syncs::{sync_integration_inline, SyncOptions},
+        enqueue::{EnqueueOpts, enqueue_simple},
+        handlers::integration_syncs::{SyncOptions, sync_integration_inline},
     },
     routes::auth_guard,
     state::AppState,
@@ -812,7 +812,7 @@ pub async fn update_integration_settings(
             "UPDATE profile_integration SET {} WHERE id = ${idx}",
             sets.join(", ")
         );
-        let mut q = sqlx::query(&sql);
+        let mut q = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
         if let Some(v) = body.is_enabled {
             q = q.bind(v);
         }

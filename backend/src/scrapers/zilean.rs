@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use reqwest::Client;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 
 use crate::{

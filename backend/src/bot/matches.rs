@@ -1,6 +1,6 @@
 //! Metadata match search and inline-keyboard selection.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::{routes::content::import_helpers, state::AppState};
 

@@ -4,7 +4,7 @@ use std::time::Duration;
 use tracing::{info, warn};
 
 use crate::jobs::{
-    enqueue::{enqueue_simple, EnqueueOpts},
+    enqueue::{EnqueueOpts, enqueue_simple},
     error::JobError,
     handler::{JobCtx, JobHandler},
 };

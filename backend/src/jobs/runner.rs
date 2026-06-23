@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use sqlx::{postgres::PgListener, PgPool};
+use sqlx::{PgPool, postgres::PgListener};
 use tokio::sync::Semaphore;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;

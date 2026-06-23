@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use tokio::net::UdpSocket;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use tracing::{debug, info, warn};
 
 use crate::jobs::{
-    enqueue::{enqueue_simple, EnqueueOpts},
+    enqueue::{EnqueueOpts, enqueue_simple},
     error::JobError,
     handler::{JobCtx, JobHandler},
 };

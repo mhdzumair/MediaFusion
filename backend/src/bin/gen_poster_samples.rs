@@ -67,11 +67,18 @@ fn main() {
     let mut failed = 0usize;
 
     for (title, media_type, year) in samples {
-        match mediafusion_api::poster::generate_placeholder(title, media_type, *year) {
+        let poster_result = mediafusion_api::poster::generate_placeholder(title, media_type, *year);
+        match poster_result {
             Ok(bytes) => {
                 let safe: String = title
                     .chars()
-                    .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' })
+                    .map(|c| {
+                        if c.is_alphanumeric() || c == '-' {
+                            c
+                        } else {
+                            '_'
+                        }
+                    })
                     .collect();
                 let truncated: String = safe.chars().take(35).collect();
                 let path = out.join(format!("{}_{}.jpg", media_type, truncated));

@@ -6,13 +6,13 @@
 /// Token format accepted:
 ///   - PAT string directly
 ///   - Base64-encoded JSON: {"access_token": "...", ...}
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use reqwest::Client;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::providers::{
-    torrents::transport::{encode_form_body, MediaFlowForward},
     ProviderError,
+    torrents::transport::{MediaFlowForward, encode_form_body},
 };
 
 const BASE_URL: &str = "https://v2.seedr.cc/api/v0.1/p";
@@ -98,25 +98,25 @@ async fn handle_response(resp: reqwest::Response) -> Result<Value, ProviderError
             return Err(ProviderError::api(
                 "Seedr token is expired or invalid. Please reconnect your Seedr account.",
                 "invalid_token.mp4",
-            ))
+            ));
         }
         402 | 403 => {
             return Err(ProviderError::api(
                 "Seedr premium plan required for this operation.",
                 "debrid_service_down_error.mp4",
-            ))
+            ));
         }
         429 => {
             return Err(ProviderError::api(
                 "Seedr rate limit exceeded. Please try again later.",
                 "api_error.mp4",
-            ))
+            ));
         }
         500..=599 => {
             return Err(ProviderError::api(
                 "Seedr service is temporarily unavailable.",
                 "debrid_service_down_error.mp4",
-            ))
+            ));
         }
         _ => {}
     }
@@ -631,20 +631,20 @@ async fn add_torrent_to_folder(
             return Err(ProviderError::api(
                 "Not enough storage space in your Seedr account.",
                 "not_enough_space.mp4",
-            ))
+            ));
         }
         "queue_full" | "queue_full_added_to_wishlist" => {
             return Err(ProviderError::api(
                 "Seedr download queue is full. Please wait for current downloads to finish.",
                 "queue_full.mp4",
-            ))
+            ));
         }
         "" => {}
         other => {
             return Err(ProviderError::api(
                 format!("Seedr rejected the torrent: {other}"),
                 "transfer_error.mp4",
-            ))
+            ));
         }
     }
 
@@ -730,20 +730,20 @@ async fn add_torrent_file_to_folder(
             return Err(ProviderError::api(
                 "Not enough storage space in your Seedr account.",
                 "not_enough_space.mp4",
-            ))
+            ));
         }
         "queue_full" | "queue_full_added_to_wishlist" => {
             return Err(ProviderError::api(
                 "Seedr download queue is full. Please wait for current downloads to finish.",
                 "queue_full.mp4",
-            ))
+            ));
         }
         "" => {}
         other => {
             return Err(ProviderError::api(
                 format!("Seedr rejected the torrent file: {other}"),
                 "transfer_error.mp4",
-            ))
+            ));
         }
     }
 

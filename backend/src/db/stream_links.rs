@@ -65,8 +65,7 @@ const LINK_AUDIO_CHANNEL: &str = "INSERT INTO stream_channel_link(stream_id, cha
 const INSERT_LANGUAGE: &str =
     "INSERT INTO language(name) SELECT UNNEST($1::text[]) ON CONFLICT DO NOTHING";
 const SELECT_LANGUAGE: &str = "SELECT id, name FROM language WHERE name = ANY($1::text[])";
-const LINK_LANGUAGE: &str =
-    "INSERT INTO stream_language_link(stream_id, language_id, language_type) \
+const LINK_LANGUAGE: &str = "INSERT INTO stream_language_link(stream_id, language_id, language_type) \
      SELECT $1, UNNEST($2::int4[]), $3 ON CONFLICT DO NOTHING";
 
 // ─── Dimension ID resolution ──────────────────────────────────────────────────

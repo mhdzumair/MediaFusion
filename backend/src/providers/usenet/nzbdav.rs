@@ -8,8 +8,8 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::providers::{
-    file_selection::{select_usenet_file_index, FileEntry},
     ProviderError,
+    file_selection::{FileEntry, select_usenet_file_index},
 };
 
 use super::{sabnzbd, webdav};

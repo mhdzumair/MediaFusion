@@ -33,16 +33,16 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::Sha256;
 
 use crate::state::AppState;
@@ -396,7 +396,7 @@ pub async fn get_table_data(
                     quote_ident(&table_name),
                     where_sql
                 );
-                let mut q = sqlx::query_scalar::<_, i64>(&count_sql);
+                let mut q = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()));
                 for v in &bind_values {
                     q = q.bind(v);
                 }
@@ -437,7 +437,7 @@ pub async fn get_table_data(
                 per_page,
                 offset
             );
-            let mut q = sqlx::query_scalar::<_, Value>(&data_sql);
+            let mut q = sqlx::query_scalar::<_, Value>(sqlx::AssertSqlSafe(data_sql.as_str()));
             for v in &bind_values2 {
                 q = q.bind(v);
             }
@@ -510,7 +510,7 @@ pub async fn delete_table_rows(
         quote_ident(id_col)
     );
 
-    match sqlx::query(&query)
+    match sqlx::query(sqlx::AssertSqlSafe(query.as_str()))
         .bind(&ids_json)
         .execute(&state.pool)
         .await
@@ -622,7 +622,7 @@ pub async fn get_slow_queries(
            LIMIT $2"#
     );
 
-    let rows = match sqlx::query(&sql)
+    let rows = match sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(min_calls)
         .bind(limit)
         .bind(min_mean_time_ms)

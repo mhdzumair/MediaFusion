@@ -1,5 +1,5 @@
 /// Run import processors when contributions are approved (Python `_apply_contribution_review`).
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 
 use crate::{

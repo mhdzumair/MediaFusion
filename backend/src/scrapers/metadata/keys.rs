@@ -18,8 +18,12 @@ pub struct ResolvedMetadataKeys {
 
 async fn profile_provider_key(pool: &PgPool, user_id: UserId, provider: &str) -> Option<String> {
     let sql = match provider {
-        "tmdb" => "SELECT config->'tmdb'->>'ak' FROM user_profiles WHERE user_id = $1 AND is_default = true",
-        "tvdb" => "SELECT config->'tvdb'->>'ak' FROM user_profiles WHERE user_id = $1 AND is_default = true",
+        "tmdb" => {
+            "SELECT config->'tmdb'->>'ak' FROM user_profiles WHERE user_id = $1 AND is_default = true"
+        }
+        "tvdb" => {
+            "SELECT config->'tvdb'->>'ak' FROM user_profiles WHERE user_id = $1 AND is_default = true"
+        }
         "mdb" | "mdblist" => {
             "SELECT config->'mdb'->>'ak' FROM user_profiles WHERE user_id = $1 AND is_default = true"
         }

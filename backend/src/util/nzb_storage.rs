@@ -3,9 +3,9 @@
 use std::path::PathBuf;
 
 use aws_sdk_s3::primitives::ByteStream;
+use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use flate2::Compression;
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use std::io::{Read, Write};

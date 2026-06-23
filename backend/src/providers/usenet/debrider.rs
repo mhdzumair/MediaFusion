@@ -4,7 +4,7 @@
 ///   POST /link/generate → files array → select best video file → download_link
 use serde_json::Value;
 
-use crate::providers::{torrents::transport::MediaFlowForward, ProviderError};
+use crate::providers::{ProviderError, torrents::transport::MediaFlowForward};
 
 use super::select_best_file;
 

@@ -13,9 +13,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::State,
     response::{IntoResponse, Response},
-    Json,
 };
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
@@ -76,7 +76,10 @@ fn xml_attrs(bytes: &quick_xml::events::BytesStart<'_>) -> HashMap<String, Strin
         .filter_map(|a| a.ok())
         .filter_map(|a| {
             let key = std::str::from_utf8(a.key.as_ref()).ok()?.to_string();
-            let val = a.unescape_value().ok()?.to_string();
+            let val = a
+                .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .ok()?
+                .to_string();
             Some((key, val))
         })
         .collect()

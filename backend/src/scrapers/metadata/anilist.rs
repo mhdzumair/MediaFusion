@@ -1,6 +1,6 @@
 //! AniList GraphQL metadata provider for anime (MAL bridge).
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tracing::warn;
 
 use crate::db::{

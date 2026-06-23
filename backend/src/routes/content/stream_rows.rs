@@ -1,7 +1,7 @@
 //! Shared stream row SQL fragments and JSON mapping for catalog browse and owner streams.
 
 use chrono::{DateTime, Utc};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::db::StreamType;
 

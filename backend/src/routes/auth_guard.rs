@@ -1,7 +1,7 @@
 //! Shared JWT validation helpers for role-gated routes.
 
 use axum::http::{HeaderMap, StatusCode};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;

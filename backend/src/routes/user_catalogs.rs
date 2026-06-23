@@ -19,10 +19,10 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -521,7 +521,7 @@ pub async fn update_user_catalog(
         set_parts.join(", ")
     );
 
-    let mut q = sqlx::query_as::<_, CatalogRow>(&sql).bind(catalog_id);
+    let mut q = sqlx::query_as::<_, CatalogRow>(sqlx::AssertSqlSafe(sql.as_str())).bind(catalog_id);
     if let Some(ref name) = body.name {
         q = q.bind(name.clone());
     }

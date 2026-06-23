@@ -235,24 +235,30 @@ impl JobHandler for DiscoverPrewarm {
                 let title = entry.display_title();
                 let year = entry.year();
 
-                let media_id =
-                    match upsert_media(&ctx.state.pool, entry.id, db_type, &title, year).await {
-                        Ok(id) => id,
-                        Err(e) => {
-                            warn!(
+                let media_id = match upsert_media(&ctx.state.pool, entry.id, db_type, &title, year)
+                    .await
+                {
+                    Ok(id) => id,
+                    Err(e) => {
+                        warn!(
                             "discover_prewarm: upsert_media failed for tmdb_id={} '{title}': {e}",
                             entry.id
                         );
-                            continue;
-                        }
-                    };
+                        continue;
+                    }
+                };
 
                 created += 1;
 
-                if let Err(e) = link_to_catalog(&ctx.state.pool, media_id, catalog_name).await {
-                    warn!("discover_prewarm: link_to_catalog failed for media_id={media_id}: {e}");
-                } else {
-                    linked += 1;
+                match link_to_catalog(&ctx.state.pool, media_id, catalog_name).await {
+                    Err(e) => {
+                        warn!(
+                            "discover_prewarm: link_to_catalog failed for media_id={media_id}: {e}"
+                        );
+                    }
+                    _ => {
+                        linked += 1;
+                    }
                 }
             }
 

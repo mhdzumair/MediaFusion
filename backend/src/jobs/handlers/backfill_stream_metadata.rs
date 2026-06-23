@@ -16,12 +16,12 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::db::stream_backfill::{
-    backfill_stream_batch, default_backfill_stream_types, fetch_streams_for_backfill,
-    StreamBackfillStats,
+    StreamBackfillStats, backfill_stream_batch, default_backfill_stream_types,
+    fetch_streams_for_backfill,
 };
 use crate::db::types::StreamType;
 use crate::jobs::{
-    enqueue::{enqueue_simple, EnqueueOpts},
+    enqueue::{EnqueueOpts, enqueue_simple},
     error::JobError,
     handler::{JobCtx, JobHandler},
 };

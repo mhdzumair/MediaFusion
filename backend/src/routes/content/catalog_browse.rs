@@ -11,12 +11,12 @@
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
@@ -28,12 +28,12 @@ use crate::{
     db::{MediaType, StreamType, TorrentType},
     models::user_data::UserData,
     parser::{
-        cap_streams, compare_sort_keys, filter_streams_by_preferences, torrent_sort_key,
-        FilterContext,
+        FilterContext, cap_streams, compare_sort_keys, filter_streams_by_preferences,
+        torrent_sort_key,
     },
     routes::{
         content::stream_rows::{
-            format_size, BrowseStreamRow, STREAM_BASE_COLS, STREAM_LINK_AGG_COLS,
+            BrowseStreamRow, STREAM_BASE_COLS, STREAM_LINK_AGG_COLS, format_size,
         },
         stream::USENET_CAPABLE,
         user_library::extract_streaming_providers,
@@ -253,7 +253,7 @@ pub async fn search_catalog(
     let count_sql = format!(
         "SELECT COUNT(*) FROM media m WHERE (m.title ILIKE $1) AND m.adult = false{restriction}"
     );
-    let total: i64 = sqlx::query_scalar::<_, i64>(&count_sql)
+    let total: i64 = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()))
         .bind(&q)
         .fetch_one(&state.pool_ro)
         .await
@@ -266,10 +266,12 @@ pub async fn search_catalog(
            ORDER BY m.title
            LIMIT $2 OFFSET $3"#
     );
-    let list_q = sqlx::query_as::<_, (i32, String, MediaType, Option<i32>)>(&list_sql)
-        .bind(&q)
-        .bind(page_size)
-        .bind(offset);
+    let list_q = sqlx::query_as::<_, (i32, String, MediaType, Option<i32>)>(sqlx::AssertSqlSafe(
+        list_sql.as_str(),
+    ))
+    .bind(&q)
+    .bind(page_size)
+    .bind(offset);
     let rows: Vec<(i32, String, MediaType, Option<i32>)> =
         list_q.fetch_all(&state.pool_ro).await.unwrap_or_default();
 
@@ -393,7 +395,9 @@ pub async fn browse_catalog(
         ),
         "year" => format!("m.year {sort_dir} {nulls}, m.id ASC"),
         "title" => format!("m.title {sort_dir}, m.id ASC"),
-        "release_date" => format!("COALESCE(m.release_date, m.end_date) {sort_dir} {nulls}, m.id ASC"),
+        "release_date" => {
+            format!("COALESCE(m.release_date, m.end_date) {sort_dir} {nulls}, m.id ASC")
+        }
         _ => format!("m.last_stream_added {sort_dir} {nulls}, m.id ASC"), // latest
     };
 
@@ -514,7 +518,7 @@ pub async fn browse_catalog(
     {
         cached_count
     } else {
-        let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
+        let mut count_q = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()));
         count_q = count_q.bind(catalog_media_type);
         if let Some(ref v) = catalog_name_bind {
             count_q = count_q.bind(v.clone());
@@ -540,7 +544,7 @@ pub async fn browse_catalog(
         n
     };
 
-    // Build and execute list query
+    // Build and execute list query — the SQL string is dynamic so we assert it safe
     let mut list_q = sqlx::query_as::<
         _,
         (
@@ -554,7 +558,7 @@ pub async fn browse_catalog(
             Option<f64>,
             Option<chrono::DateTime<chrono::Utc>>,
         ),
-    >(&list_sql);
+    >(sqlx::AssertSqlSafe(list_sql.as_str()));
     list_q = list_q.bind(catalog_media_type);
     if let Some(ref v) = catalog_name_bind {
         list_q = list_q.bind(v.clone());
@@ -1206,7 +1210,7 @@ pub async fn get_media_streams(
     let stream_rows: Vec<BrowseStreamRow> = if catalog_type == "series" {
         let season = season.unwrap();
         let episode = episode.unwrap();
-        sqlx::query_as(&format!(
+        sqlx::query_as(sqlx::AssertSqlSafe(format!(
             r#"SELECT DISTINCT ON (s.id)
             {STREAM_BASE_COLS},
             sf.filename,
@@ -1229,7 +1233,7 @@ pub async fn get_media_streams(
              AND s.is_blocked = false
              {kw_filter}
            ORDER BY s.id"#
-        ))
+        )))
         .bind(media_id)
         .bind(season)
         .bind(episode)
@@ -1242,7 +1246,7 @@ pub async fn get_media_streams(
             vec![]
         })
     } else {
-        sqlx::query_as(&format!(
+        sqlx::query_as(sqlx::AssertSqlSafe(format!(
             r#"SELECT
             {STREAM_BASE_COLS},
             (SELECT sf.filename FROM stream_file sf WHERE sf.stream_id = s.id LIMIT 1) AS filename,
@@ -1261,7 +1265,7 @@ pub async fn get_media_streams(
              AND s.is_active = true
              AND s.is_blocked = false
              {kw_filter}"#
-        ))
+        )))
         .bind(media_id)
         .fetch_all(&state.pool_ro)
         .await
@@ -1301,7 +1305,7 @@ pub async fn get_media_streams(
     };
 
     // Step 2: for hashes not found in Redis, call the live provider API
-    if let (Some(ref svc), Some(ref tok)) = (&selected_provider, &provider_token) {
+    if let (Some(svc), Some(tok)) = (&selected_provider, &provider_token) {
         let cache_service = crate::providers::torrents::cache_federation::cache_service_name(
             svc,
             selected_stremthru_store.as_deref(),

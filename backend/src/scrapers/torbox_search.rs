@@ -9,7 +9,7 @@ use reqwest::Client;
 use crate::{
     models::user_data::UserData,
     parser,
-    scrapers::{prowlarr::build_series_files, ScrapedStream, ScrapedUsenetStream, SearchMeta},
+    scrapers::{ScrapedStream, ScrapedUsenetStream, SearchMeta, prowlarr::build_series_files},
     state::KeywordFilterCache,
 };
 

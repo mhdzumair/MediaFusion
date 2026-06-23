@@ -15,7 +15,7 @@ use crate::{
 
 use super::{
     import_helpers,
-    m3u_import::{import_tv_channel, M3uEntry},
+    m3u_import::{M3uEntry, import_tv_channel},
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────

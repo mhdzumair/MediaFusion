@@ -2,7 +2,7 @@
 ///
 /// Uses a PROPFIND Depth:1 request to list the download directory, then
 /// selects the best-matching video file by season/episode or size.
-use quick_xml::{events::Event, Reader};
+use quick_xml::{Reader, events::Event};
 
 use crate::providers::ProviderError;
 

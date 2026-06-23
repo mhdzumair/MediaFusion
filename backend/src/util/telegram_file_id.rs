@@ -3,7 +3,7 @@
 const TYPE_ID_FILE_REFERENCE_FLAG: i32 = 1 << 25;
 
 fn decode_telegram_base64(value: &str) -> Option<Vec<u8>> {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
 
     let normalized = value.replace('-', "+").replace('_', "/");
     let padding = (4 - normalized.len() % 4) % 4;

@@ -1,5 +1,5 @@
-use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 use tokio::sync::{Mutex, OnceCell};
 
 static TEST_POOL: OnceCell<PgPool> = OnceCell::const_new();

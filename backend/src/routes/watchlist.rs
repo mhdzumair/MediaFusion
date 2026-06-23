@@ -7,11 +7,11 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     body::Body,
     extract::{Path, Query, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -210,7 +210,7 @@ pub async fn get_watchlist(
                     StatusCode::UNAUTHORIZED,
                     Json(json!({"detail": "Unauthorized"})),
                 )
-                    .into_response()
+                    .into_response();
             }
         };
 

@@ -1,4 +1,4 @@
-use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
+use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use serde_json::Value;
 use std::io::{Read, Write};
 use tracing::warn;

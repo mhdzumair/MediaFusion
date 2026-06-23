@@ -186,7 +186,7 @@ async fn fetch_integrations(
     "#;
 
     let rows = if let Some(id) = id_filter {
-        sqlx::query(&format!("{base} AND pi.id = $1"))
+        sqlx::query(sqlx::AssertSqlSafe(format!("{base} AND pi.id = $1")))
             .bind(id)
             .fetch_all(pool)
             .await?

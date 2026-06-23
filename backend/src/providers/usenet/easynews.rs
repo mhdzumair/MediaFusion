@@ -6,9 +6,9 @@
 ///   3. Build streaming URL with embedded `user:pass@` credentials
 use serde_json::Value;
 
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 
-use crate::providers::{torrents::transport::MediaFlowForward, ProviderError};
+use crate::providers::{ProviderError, torrents::transport::MediaFlowForward};
 
 use super::{clean_for_search, is_video_ext, jaccard_similarity};
 

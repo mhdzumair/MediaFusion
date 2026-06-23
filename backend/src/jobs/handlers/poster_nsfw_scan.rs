@@ -271,7 +271,7 @@ async fn fetch_unscanned_batch(
         LIMIT $3
         "#
     );
-    let rows = sqlx::query(&sql)
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(after_id)
         .bind(model_ver)
         .bind(batch_size)

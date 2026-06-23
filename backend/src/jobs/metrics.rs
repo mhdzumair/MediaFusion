@@ -5,7 +5,7 @@ use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter::Counter;
 use prometheus_client::metrics::family::Family;
 use prometheus_client::metrics::gauge::Gauge;
-use prometheus_client::metrics::histogram::{exponential_buckets, Histogram};
+use prometheus_client::metrics::histogram::{Histogram, exponential_buckets};
 use prometheus_client::registry::Registry;
 use sqlx::PgPool;
 use tokio::time;
@@ -82,13 +82,13 @@ impl JobMetrics {
                 tokio::select! {
                     _ = cancel.cancelled() => break,
                     _ = interval.tick() => {
-                        if let Ok(rows) = sqlx::query!(
+                        let query_result = sqlx::query!(
                             "SELECT queue, COUNT(*) as cnt FROM jobs \
                              WHERE status = 'pending' GROUP BY queue"
                         )
                         .fetch_all(pool.as_ref())
-                        .await
-                        {
+                        .await;
+                        if let Ok(rows) = query_result {
                             for row in rows {
                                 let labels = QueueLabels { queue: row.queue };
                                 metrics.queue_depth.get_or_create(&labels)

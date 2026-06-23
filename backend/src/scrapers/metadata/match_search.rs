@@ -1,16 +1,15 @@
 use std::collections::HashSet;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 
 use crate::db::UserId;
 
-use super::{anilist, imdb, kitsu, tmdb, tvdb};
 use super::{
-    fetch_by_external_id_with_opts, fetch_normalized, import_match_from_details,
-    import_match_from_normalized, parse_import_meta_id, year_matches, FetchCtx,
-    IMPORT_SEARCH_LIMIT,
+    FetchCtx, IMPORT_SEARCH_LIMIT, fetch_by_external_id_with_opts, fetch_normalized,
+    import_match_from_details, import_match_from_normalized, parse_import_meta_id, year_matches,
 };
+use super::{anilist, imdb, kitsu, tmdb, tvdb};
 
 /// Options for unified media match search (DB first, then external providers).
 #[derive(Debug, Clone)]
@@ -356,7 +355,7 @@ async fn search_user_accessible_db_matches(
 
     sql.push_str(&format!(" ORDER BY total_streams DESC LIMIT {limit}"));
 
-    let ids: Vec<i32> = sqlx::query_scalar(&sql)
+    let ids: Vec<i32> = sqlx::query_scalar(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(&pattern)
         .bind(user_id)
         .fetch_all(pool)

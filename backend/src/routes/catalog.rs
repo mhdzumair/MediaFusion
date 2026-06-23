@@ -9,7 +9,7 @@ use serde_json::json;
 
 use crate::{
     cache, crypto,
-    db::{self, catalog as db_catalog, MediaType},
+    db::{self, MediaType, catalog as db_catalog},
     models::{
         stremio::{MetaPreview, Metas},
         user_data::{MdbListItem, UserData},

@@ -2,8 +2,8 @@
 
 use std::net::{Ipv4Addr, SocketAddrV4};
 
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use grammers_session::{storages::MemorySession, SessionData};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use grammers_session::{SessionData, storages::MemorySession};
 
 /// Parse session blob into SessionData (Telethon StringSession format).
 pub fn parse_session_data(session_b64: &str) -> Result<SessionData, String> {

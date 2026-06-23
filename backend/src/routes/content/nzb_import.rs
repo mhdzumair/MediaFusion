@@ -9,16 +9,16 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     body::Bytes,
     extract::{Multipart, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Redirect, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
-use quick_xml::{events::Event, Reader};
+use quick_xml::{Reader, events::Event};
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};

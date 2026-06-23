@@ -34,8 +34,9 @@ use crate::{
     },
     parser,
     scrapers::{
+        ScrapedStream, SearchMeta, StreamFile,
         fetcher::{fetch_byparr, fetch_plain, post_byparr},
-        media_resolve, stream_convert, ScrapedStream, SearchMeta, StreamFile,
+        media_resolve, stream_convert,
     },
     util::{rate_limit, retry},
 };

@@ -18,12 +18,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
@@ -598,7 +598,7 @@ pub async fn list_user_metadata(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -640,8 +640,10 @@ pub async fn list_user_metadata(
         idx + 1
     ));
 
-    let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(user_id);
-    let mut fetch_q = sqlx::query_scalar::<_, i32>(&fetch_sql).bind(user_id);
+    let mut count_q =
+        sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str())).bind(user_id);
+    let mut fetch_q =
+        sqlx::query_scalar::<_, i32>(sqlx::AssertSqlSafe(fetch_sql.as_str())).bind(user_id);
 
     if let Some(ref s) = params.search {
         let pattern = format!("%{}%", s);
@@ -688,7 +690,7 @@ pub async fn get_user_metadata(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -707,7 +709,7 @@ pub async fn get_user_metadata(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Metadata not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some((is_public, creator_id)) => {
             if creator_id != Some(user_id as i32) && !is_public {
@@ -738,7 +740,7 @@ pub async fn update_user_metadata(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -755,7 +757,7 @@ pub async fn update_user_metadata(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Metadata not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(cid) if cid != Some(user_id as i32) => {
             return (
@@ -772,7 +774,7 @@ pub async fn update_user_metadata(
     let mut idx = 2i32;
 
     macro_rules! push_field {
-        ($field:expr, $col:expr) => {
+        ($field:expr_2021, $col:expr_2021) => {
             if $field.is_some() {
                 updates.push(format!("{} = ${}", $col, idx));
                 idx += 1;
@@ -793,7 +795,7 @@ pub async fn update_user_metadata(
     let _ = idx;
 
     let sql = format!("UPDATE media SET {} WHERE id = $1", updates.join(", "));
-    let mut q = sqlx::query(&sql).bind(media_id);
+    let mut q = sqlx::query(sqlx::AssertSqlSafe(sql.as_str())).bind(media_id);
     if let Some(ref v) = body.title {
         q = q.bind(v);
     }
@@ -888,7 +890,7 @@ pub async fn delete_user_metadata(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -905,7 +907,7 @@ pub async fn delete_user_metadata(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Metadata not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(cid) if cid != Some(user_id as i32) => {
             return (
@@ -959,7 +961,7 @@ pub async fn add_season_to_series(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -978,7 +980,7 @@ pub async fn add_season_to_series(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Metadata not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -1110,7 +1112,7 @@ pub async fn add_episodes_to_series(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1129,7 +1131,7 @@ pub async fn add_episodes_to_series(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Metadata not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(r) => r,
     };
@@ -1173,7 +1175,7 @@ pub async fn add_episodes_to_series(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": format!("Season {} not found", body.season_number)})),
             )
-                .into_response()
+                .into_response();
         }
         Some(sid) => sid,
     };
@@ -1241,7 +1243,7 @@ pub async fn update_episode(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1258,7 +1260,7 @@ pub async fn update_episode(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Metadata not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(cid) if cid != Some(user_id) => {
             return (
@@ -1305,7 +1307,10 @@ pub async fn update_episode(
     }
     let _ = idx;
 
-    let sql = format!("UPDATE episode SET {} WHERE id = $1 RETURNING id, episode_number, title, overview, air_date::text, runtime_minutes, is_user_created, is_user_addition", updates.join(", "));
+    let sql = format!(
+        "UPDATE episode SET {} WHERE id = $1 RETURNING id, episode_number, title, overview, air_date::text, runtime_minutes, is_user_created, is_user_addition",
+        updates.join(", ")
+    );
     let mut q = sqlx::query_as::<
         _,
         (
@@ -1318,7 +1323,7 @@ pub async fn update_episode(
             bool,
             bool,
         ),
-    >(&sql)
+    >(sqlx::AssertSqlSafe(sql.as_str()))
     .bind(episode_id);
 
     if let Some(ref v) = body.title {
@@ -1373,7 +1378,7 @@ pub async fn delete_episode(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1390,7 +1395,7 @@ pub async fn delete_episode(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Metadata not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(cid) if cid != Some(user_id) => {
             return (
@@ -1469,7 +1474,7 @@ pub async fn admin_delete_episode(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1657,7 +1662,7 @@ pub async fn delete_season(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1674,7 +1679,7 @@ pub async fn delete_season(
                 StatusCode::NOT_FOUND,
                 Json(json!({"detail": "Metadata not found"})),
             )
-                .into_response()
+                .into_response();
         }
         Some(cid) if cid != Some(user_id) => {
             return (
@@ -1705,7 +1710,7 @@ pub async fn admin_delete_season(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -1768,7 +1773,7 @@ pub async fn import_from_external(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"detail": "Unauthorized"})),
             )
-                .into_response()
+                .into_response();
         }
     };
 

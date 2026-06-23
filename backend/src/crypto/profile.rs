@@ -254,8 +254,8 @@ pub fn merge_secrets(config: &mut Value, secrets: &Value) {
 /// Returns empty JSON object on any error.
 pub fn decrypt_secrets(encrypted: &str, key: &[u8; 32]) -> serde_json::Value {
     use aes::Aes256;
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-    use cbc::cipher::{block_padding::Pkcs7, BlockModeDecrypt, KeyIvInit};
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use cbc::cipher::{BlockModeDecrypt, KeyIvInit, block_padding::Pkcs7};
     type Dec = cbc::Decryptor<Aes256>;
 
     // Strip base64 padding that Python's urlsafe_b64encode adds (=) so we can
@@ -286,8 +286,8 @@ pub fn encrypt_secrets(secrets: &serde_json::Value, key: &[u8; 32]) -> Option<St
         return None;
     }
     use aes::Aes256;
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-    use cbc::cipher::{block_padding::Pkcs7, BlockModeEncrypt, KeyIvInit};
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use cbc::cipher::{BlockModeEncrypt, KeyIvInit, block_padding::Pkcs7};
 
     type Enc = cbc::Encryptor<Aes256>;
 

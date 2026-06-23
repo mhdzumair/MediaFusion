@@ -13,12 +13,11 @@ use scraper::{Html, Selector};
 use crate::{
     parser,
     scrapers::{
-        fetcher,
+        ScrapedStream, SearchMeta, fetcher,
         prowlarr::build_series_files,
-        public_indexer_registry::{get_indexers_for_media, HandlerType, IndexerDef},
+        public_indexer_registry::{HandlerType, IndexerDef, get_indexers_for_media},
         rss::parse_rss_xml,
         source_health::{self, HealthGateConfig},
-        ScrapedStream, SearchMeta,
     },
     state::KeywordFilterCache,
 };
@@ -722,7 +721,8 @@ fn select_text_in_element(element: scraper::ElementRef<'_>, selectors: &[&str]) 
 /// Find all rows matching the first selector that yields any elements.
 fn select_rows<'a>(doc: &'a Html, selectors: &[&str]) -> Vec<scraper::ElementRef<'a>> {
     for selector_str in selectors {
-        if let Ok(sel) = Selector::parse(selector_str) {
+        let parsed_sel = Selector::parse(selector_str);
+        if let Ok(sel) = parsed_sel {
             let rows: Vec<_> = doc.select(&sel).collect();
             if !rows.is_empty() {
                 return rows;

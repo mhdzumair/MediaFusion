@@ -5,7 +5,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use futures::future::join_all;
 use std::collections::HashMap;
@@ -14,10 +14,10 @@ use crate::{
     cache::{self, codec, stream_cache},
     crypto, db,
     db::TorrentType,
-    models::user_data::{provider_short_name, SortingOption, UserData},
+    models::user_data::{SortingOption, UserData, provider_short_name},
     parser::{
-        self, compare_sort_keys, filter_streams_by_preferences, resolution_cap_key,
-        sort_and_cap_stream_rows, torrent_sort_key, FilterContext,
+        self, FilterContext, compare_sort_keys, filter_streams_by_preferences, resolution_cap_key,
+        sort_and_cap_stream_rows, torrent_sort_key,
     },
     scrapers::{orchestrator, torrent_metadata},
     state::{AppState, KeywordFilterCache},
@@ -2442,11 +2442,9 @@ fn scraped_to_json(s: &crate::scrapers::ScrapedStream) -> Value {
 }
 
 // Default Python-compatible stream templates
-const DEFAULT_TITLE_TEMPLATE: &str =
-    "{addon.name} {if stream.type = torrent}🧲 {service.shortName} {if service.cached}⚡️{else}⏳{/if}{elif stream.type = usenet}📰 {service.shortName}{elif stream.type = telegram}📱{elif stream.type = youtube}▶️{elif stream.type = http}🌐{else}🔗{/if} {if stream.resolution}{stream.resolution}{/if}";
+const DEFAULT_TITLE_TEMPLATE: &str = "{addon.name} {if stream.type = torrent}🧲 {service.shortName} {if service.cached}⚡️{else}⏳{/if}{elif stream.type = usenet}📰 {service.shortName}{elif stream.type = telegram}📱{elif stream.type = youtube}▶️{elif stream.type = http}🌐{else}🔗{/if} {if stream.resolution}{stream.resolution}{/if}";
 
-const DEFAULT_DESC_TEMPLATE: &str =
-    "{if stream.hdr_formats}🎨 {stream.hdr_formats|join('|')} {/if}{if stream.quality}📺 {stream.quality} {/if}{if stream.codec}🎞️ {stream.codec} {/if}{if stream.audio_formats}🎵 {stream.audio_formats|join('|')} {/if}{if stream.channels}🔊 {stream.channels|join(' ')}{/if}\n{if stream.size > 0}📦 {stream.size|bytes}{if stream.folderSize > stream.size} / {stream.folderSize|bytes}{/if} {/if}{if stream.seeders > 0}👤 {stream.seeders}{/if}\n{if stream.languages}🌐 {stream.languages|join(' + ')}{/if}\n🔗 {stream.source}{if stream.uploader} | 🧑‍💻 {stream.uploader}{/if}";
+const DEFAULT_DESC_TEMPLATE: &str = "{if stream.hdr_formats}🎨 {stream.hdr_formats|join('|')} {/if}{if stream.quality}📺 {stream.quality} {/if}{if stream.codec}🎞️ {stream.codec} {/if}{if stream.audio_formats}🎵 {stream.audio_formats|join('|')} {/if}{if stream.channels}🔊 {stream.channels|join(' ')}{/if}\n{if stream.size > 0}📦 {stream.size|bytes}{if stream.folderSize > stream.size} / {stream.folderSize|bytes}{/if} {/if}{if stream.seeders > 0}👤 {stream.seeders}{/if}\n{if stream.languages}🌐 {stream.languages|join(' + ')}{/if}\n🔗 {stream.source}{if stream.uploader} | 🧑‍💻 {stream.uploader}{/if}";
 
 /// Build quality detail string for bingeGroup (mirrors Python parser.py:805-815).
 fn build_quality_detail(t: &Value) -> String {
@@ -2602,21 +2600,21 @@ fn build_stream_context(
 ) -> Value {
     let mut stream_obj = serde_json::Map::new();
     macro_rules! copy_str {
-        ($key:expr) => {
+        ($key:expr_2021) => {
             if let Some(v) = t.get($key).and_then(|v| v.as_str()) {
                 stream_obj.insert($key.to_string(), Value::String(v.to_string()));
             }
         };
     }
     macro_rules! copy_num {
-        ($key:expr) => {
+        ($key:expr_2021) => {
             if let Some(v) = t.get($key).and_then(|v| v.as_i64()) {
                 stream_obj.insert($key.to_string(), Value::Number(v.into()));
             }
         };
     }
     macro_rules! copy_bool {
-        ($key:expr) => {
+        ($key:expr_2021) => {
             if let Some(v) = t.get($key).and_then(|v| v.as_bool()) {
                 stream_obj.insert($key.to_string(), Value::Bool(v));
             }

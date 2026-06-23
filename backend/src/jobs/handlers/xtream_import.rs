@@ -504,7 +504,7 @@ impl JobHandler for XtreamImport {
                                 .await;
                             }
 
-                            match insert_http_stream_for_media(
+                            let insert_result = insert_http_stream_for_media(
                                 pool,
                                 media_id,
                                 name,
@@ -513,8 +513,8 @@ impl JobHandler for XtreamImport {
                                 is_public,
                                 None,
                             )
-                            .await
-                            {
+                            .await;
+                            match insert_result {
                                 Ok(true) => vod_imported += 1,
                                 Ok(false) => vod_skipped += 1,
                                 Err(e) => {
@@ -625,7 +625,8 @@ impl JobHandler for XtreamImport {
                             .await
                         {
                             Ok(r) if r.status().is_success() => {
-                                r.json::<serde_json::Value>().await.unwrap_or_default()
+                                let json = r.json::<serde_json::Value>().await;
+                                json.unwrap_or_default()
                             }
                             _ => serde_json::Value::Null,
                         }
@@ -689,7 +690,7 @@ impl JobHandler for XtreamImport {
                                         server, user, pass, ep_id_str, ep_ext
                                     );
 
-                                    match insert_http_stream_for_media(
+                                    let ep_insert = insert_http_stream_for_media(
                                         pool,
                                         media_id,
                                         ep_title,
@@ -698,8 +699,8 @@ impl JobHandler for XtreamImport {
                                         is_public,
                                         None,
                                     )
-                                    .await
-                                    {
+                                    .await;
+                                    match ep_insert {
                                         Ok(true) => series_imported += 1,
                                         Ok(false) => series_skipped += 1,
                                         Err(e) => {

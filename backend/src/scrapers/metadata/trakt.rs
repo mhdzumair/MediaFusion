@@ -3,9 +3,9 @@
 use sqlx::PgPool;
 use tracing::debug;
 
-use crate::db::{store_media, MediaId, StoreMediaOpts};
+use crate::db::{MediaId, StoreMediaOpts, store_media};
 
-use super::{fetch_normalized, FetchCtx};
+use super::{FetchCtx, fetch_normalized};
 
 /// Resolve a local media id from external ids, fetching and storing metadata when absent.
 pub async fn resolve_or_store_media(

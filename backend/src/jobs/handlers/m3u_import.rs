@@ -234,7 +234,13 @@ impl JobHandler for M3uImport {
 
         info!(
             "m3u_import: source_id={} done — parsed={} tv={} movie={} series={} skipped={} failed={}",
-            source.id, total_parsed, stats.tv, stats.movie, stats.series, stats.skipped, stats.failed
+            source.id,
+            total_parsed,
+            stats.tv,
+            stats.movie,
+            stats.series,
+            stats.skipped,
+            stats.failed
         );
 
         Ok(())

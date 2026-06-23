@@ -1,7 +1,7 @@
 //! Raw Telegram Bot HTTP API client.
 
 use reqwest::Client;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::state::AppState;
 

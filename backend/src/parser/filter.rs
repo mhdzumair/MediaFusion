@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use regex::Regex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::db::types::TorrentType;
 use crate::models::user_data::{SortingOption, StreamingProvider, UserData};
@@ -113,11 +113,7 @@ pub fn filter_streams_by_preferences(streams: Vec<Value>, ctx: &FilterContext<'_
                 .filter(|lang| supported_languages().contains(&Some(lang.clone())))
                 .map(Some)
                 .collect();
-            if langs.is_empty() {
-                vec![None]
-            } else {
-                langs
-            }
+            if langs.is_empty() { vec![None] } else { langs }
         };
 
         if let Some(obj) = row.as_object_mut() {
@@ -140,13 +136,15 @@ pub fn filter_streams_by_preferences(streams: Vec<Value>, ctx: &FilterContext<'_
             obj.insert("filtered_hdr_formats".into(), json!(filtered_hdr_formats));
             obj.insert(
                 "filtered_languages".into(),
-                json!(filtered_languages
-                    .iter()
-                    .map(|l| match l {
-                        Some(s) => Value::String(s.clone()),
-                        None => Value::Null,
-                    })
-                    .collect::<Vec<_>>()),
+                json!(
+                    filtered_languages
+                        .iter()
+                        .map(|l| match l {
+                            Some(s) => Value::String(s.clone()),
+                            None => Value::Null,
+                        })
+                        .collect::<Vec<_>>()
+                ),
             );
         }
 

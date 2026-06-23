@@ -12,8 +12,8 @@ Python equivalent:
 */
 
 use aes::Aes256;
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use cbc::cipher::{block_padding::Pkcs7, BlockModeDecrypt, KeyIvInit};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use cbc::cipher::{BlockModeDecrypt, KeyIvInit, block_padding::Pkcs7};
 use serde_json::Value;
 
 type Aes256CbcDec = cbc::Decryptor<Aes256>;

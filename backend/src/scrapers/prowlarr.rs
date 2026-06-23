@@ -7,12 +7,11 @@ use std::time::Duration;
 use crate::{
     parser,
     scrapers::{
-        torrent_info,
+        ScrapedStream, SearchMeta, StreamFile, torrent_info,
         torrent_metadata::{
             self, download_torrent_bytes, parse_torrent_bytes, prowlarr_torrent_type,
             resolve_download_url, should_persist_torrent_file, torrent_file_for_storage,
         },
-        ScrapedStream, SearchMeta, StreamFile,
     },
 };
 
@@ -444,11 +443,7 @@ async fn fetch_indexers(
             let dt_str = s.disabled_till?;
             let dt_str = dt_str.replace('Z', "+00:00");
             let dt = chrono::DateTime::parse_from_rfc3339(&dt_str).ok()?;
-            if dt > now {
-                Some(s.indexer_id)
-            } else {
-                None
-            }
+            if dt > now { Some(s.indexer_id) } else { None }
         })
         .collect();
 

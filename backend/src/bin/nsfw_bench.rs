@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use mediafusion_api::nsfw::{read_rss_kb, NsfwClassifier};
+use mediafusion_api::nsfw::{NsfwClassifier, read_rss_kb};
 
 struct Args {
     images_dir: PathBuf,

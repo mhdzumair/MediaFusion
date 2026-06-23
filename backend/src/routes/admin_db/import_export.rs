@@ -5,13 +5,13 @@ use std::time::Instant;
 
 use crate::state::AppState;
 use axum::{
-    extract::{Multipart, Path, Query, State},
-    http::{header, HeaderMap, StatusCode},
-    response::IntoResponse,
     Json,
+    extract::{Multipart, Path, Query, State},
+    http::{HeaderMap, StatusCode, header},
+    response::IntoResponse,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::{forbidden, validate_admin};
 
@@ -83,7 +83,7 @@ pub async fn export_table(
             "SELECT row_to_json(t) FROM (SELECT * FROM \"{}\" ORDER BY ctid LIMIT {}) t",
             table, limit
         );
-        sqlx::query_scalar::<_, Value>(&data_sql)
+        sqlx::query_scalar::<_, Value>(sqlx::AssertSqlSafe(data_sql.as_str()))
             .fetch_all(&state.pool_ro)
             .await
             .unwrap_or_default()
@@ -530,7 +530,10 @@ pub async fn import_execute(
                 }
             };
 
-            match sqlx::query(&sql).execute(&state.pool).await {
+            match sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+                .execute(&state.pool)
+                .await
+            {
                 Ok(r) => {
                     if r.rows_affected() > 0 {
                         rows_imported += 1;

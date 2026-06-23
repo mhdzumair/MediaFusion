@@ -5,14 +5,14 @@ pub mod sort;
 pub mod sports_parser;
 
 pub use constants::{
-    default_hdr_filter_vec, default_language_sorting_values, default_quality_filter_groups,
-    default_resolutions_vec, expand_quality_filter, normalized_hdr_filter_and_display,
-    LANGUAGES_FILTERS, QUALITY_GROUPS, RESOLUTIONS,
+    LANGUAGES_FILTERS, QUALITY_GROUPS, RESOLUTIONS, default_hdr_filter_vec,
+    default_language_sorting_values, default_quality_filter_groups, default_resolutions_vec,
+    expand_quality_filter, normalized_hdr_filter_and_display,
 };
 pub use filter::{
+    FilterContext, MAX_STREAM_NAME_FILTER_PATTERN_LENGTH, MAX_STREAM_NAME_FILTER_PATTERNS,
     cap_streams, filter_sort_and_cap_streams, filter_streams_by_preferences, resolution_cap_key,
-    sort_size_bytes_for_row, FilterContext, MAX_STREAM_NAME_FILTER_PATTERNS,
-    MAX_STREAM_NAME_FILTER_PATTERN_LENGTH,
+    sort_size_bytes_for_row,
 };
 pub use sort::{
     compare_sort_keys, parse_created_at_ts, quality_rank, sort_and_cap_stream_rows,
@@ -20,8 +20,8 @@ pub use sort::{
 };
 
 pub use sports_parser::{
-    classify_wwe_title, clean_sports_title, detect_sports_category, is_sports_title,
-    parse_racing_title, parse_sports_title, racing_session_episode, RacingParsed, WweEpisodeInfo,
+    RacingParsed, WweEpisodeInfo, classify_wwe_title, clean_sports_title, detect_sports_category,
+    is_sports_title, parse_racing_title, parse_sports_title, racing_session_episode,
 };
 
 use std::sync::OnceLock;

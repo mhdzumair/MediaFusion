@@ -5,7 +5,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::{crypto, models::user_data::UserData, providers::validator, state::AppState};
 

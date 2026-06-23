@@ -1,6 +1,6 @@
 //! Execute confirmed imports via the unified contribution pipeline.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::{
     db::telegram as tg_db,

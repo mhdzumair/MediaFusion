@@ -716,11 +716,7 @@ impl UserData {
                 .cloned()
                 .collect()
         } else if let Some(ref sp) = self.streaming_provider {
-            if sp.enabled {
-                vec![sp.clone()]
-            } else {
-                vec![]
-            }
+            if sp.enabled { vec![sp.clone()] } else { vec![] }
         } else {
             vec![]
         };

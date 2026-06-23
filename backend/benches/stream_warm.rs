@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 fn bench_decode_blob(c: &mut Criterion) {
     use mediafusion_api::cache::codec::{decode_blob, encode_blob};

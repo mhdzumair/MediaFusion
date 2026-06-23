@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     parser,
-    scrapers::{prowlarr::build_series_files, ScrapedUsenetStream, SearchMeta},
+    scrapers::{ScrapedUsenetStream, SearchMeta, prowlarr::build_series_files},
     state::KeywordFilterCache,
 };
 

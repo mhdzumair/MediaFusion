@@ -8,7 +8,7 @@
 /// `https://stremthru.432hz.dev` is used.
 use serde_json::Value;
 
-use crate::providers::{file_selection::select_debrid_file_index, response_json, ProviderError};
+use crate::providers::{ProviderError, file_selection::select_debrid_file_index, response_json};
 
 const DEFAULT_BASE_URL: &str = "https://stremthru.432hz.dev";
 const USER_AGENT: &str = "mediafusion";
