@@ -1,56 +1,92 @@
 pub mod sports;
 
-/// Poster annotation pipeline.
+/// Poster annotation and placeholder generation.
 ///
-/// Mirrors Python `utils/poster.py`:
-///   1. Resize to 300×450
-///   2. IMDb badge (semi-transparent rect + logo + rating text) at bottom-left
-///   3. MediaFusion watermark (logo_text.png) at top-right
-///   4. Optional centered title text with outline
+/// Text rendering uses `cosmic-text` (rustybuzz shaping + BiDi) for full
+/// Unicode support: Cyrillic, Arabic, Hebrew, Greek, Devanagari, CJK (via
+/// system fonts), etc.  Bundled Noto Sans fonts cover Cyrillic/Greek/Latin
+/// and Arabic out of the box; install `fonts-noto-cjk` in the container for
+/// CJK coverage.
+use std::cell::RefCell;
 use std::io::Cursor;
 
-use ab_glyph::{Font, FontArc, PxScale, ScaleFont};
+use cosmic_text::{Align, Attrs, Buffer, Color as CosColor, Family, FontSystem, Metrics, Shaping, SwashCache, Weight};
 use image::{
     imageops::{self, FilterType},
     DynamicImage, Rgba, RgbaImage,
 };
-use imageproc::drawing::{draw_filled_rect_mut, draw_text_mut};
+use imageproc::drawing::draw_filled_rect_mut;
 use imageproc::rect::Rect;
 
 // ─── Embedded assets ──────────────────────────────────────────────────────────
 
 static IMDB_LOGO: &[u8] = include_bytes!("../../../resources/images/imdb_logo.png");
 static WATERMARK: &[u8] = include_bytes!("../../../resources/images/logo_text.png");
-static FONT_MEDIUM: &[u8] = include_bytes!("../../../resources/fonts/IBMPlexSans-Medium.ttf");
-static FONT_BOLD: &[u8] = include_bytes!("../../../resources/fonts/IBMPlexSans-Bold.ttf");
-// Archivo Black (900) for ghost monogram; ExtraBold (800) for titles — matches design spec
-static FONT_ARCHIVO_BLACK: &[u8] = include_bytes!("../../../resources/fonts/Archivo-Black.ttf");
+
+// Branded design fonts
+static FONT_IBM_PLEX_MEDIUM: &[u8] =
+    include_bytes!("../../../resources/fonts/IBMPlexSans-Medium.ttf");
+static FONT_IBM_PLEX_BOLD: &[u8] =
+    include_bytes!("../../../resources/fonts/IBMPlexSans-Bold.ttf");
+static FONT_ARCHIVO_BLACK: &[u8] =
+    include_bytes!("../../../resources/fonts/Archivo-Black.ttf");
 static FONT_ARCHIVO_EXTRABOLD: &[u8] =
     include_bytes!("../../../resources/fonts/Archivo-ExtraBold.ttf");
 
-// Lazy-loaded fonts (compiled into the binary at startup)
-use std::sync::OnceLock;
-static MEDIUM_FONT: OnceLock<FontArc> = OnceLock::new();
-static BOLD_FONT: OnceLock<FontArc> = OnceLock::new();
-static ARCHIVO_BLACK_FONT: OnceLock<FontArc> = OnceLock::new();
-static ARCHIVO_EXTRABOLD_FONT: OnceLock<FontArc> = OnceLock::new();
+// Bundled Unicode fallback fonts (Cyrillic/Greek/Latin + Arabic/Persian/Urdu)
+static FONT_NOTO_SANS_BOLD: &[u8] =
+    include_bytes!("../../../resources/fonts/NotoSans-Bold.ttf");
+static FONT_NOTO_SANS_ARABIC_BOLD: &[u8] =
+    include_bytes!("../../../resources/fonts/NotoSansArabic-Bold.ttf");
 
-fn medium_font() -> &'static FontArc {
-    MEDIUM_FONT.get_or_init(|| FontArc::try_from_slice(FONT_MEDIUM).expect("IBM Plex Sans Medium"))
+// ─── Thread-local text system ─────────────────────────────────────────────────
+//
+// One FontSystem + SwashCache per spawn_blocking thread; initialised on first
+// use.  FontSystem::new() also loads system fonts, giving automatic CJK
+// fallback when e.g. fonts-noto-cjk is installed in the container.
+
+thread_local! {
+    static TL_TEXT: RefCell<(FontSystem, SwashCache)> = RefCell::new({
+        let mut fs = FontSystem::new();
+        // Branded fonts first — fontdb picks the first matching family/weight.
+        fs.db_mut().load_font_data(FONT_IBM_PLEX_MEDIUM.to_vec());
+        fs.db_mut().load_font_data(FONT_IBM_PLEX_BOLD.to_vec());
+        fs.db_mut().load_font_data(FONT_ARCHIVO_BLACK.to_vec());
+        fs.db_mut().load_font_data(FONT_ARCHIVO_EXTRABOLD.to_vec());
+        // Bundled Unicode fallbacks — cover Cyrillic, Greek, Arabic, etc.
+        fs.db_mut().load_font_data(FONT_NOTO_SANS_BOLD.to_vec());
+        fs.db_mut().load_font_data(FONT_NOTO_SANS_ARABIC_BOLD.to_vec());
+        (fs, SwashCache::new())
+    });
 }
 
-fn bold_font() -> &'static FontArc {
-    BOLD_FONT.get_or_init(|| FontArc::try_from_slice(FONT_BOLD).expect("IBM Plex Sans Bold"))
+// ─── Font spec ────────────────────────────────────────────────────────────────
+
+#[derive(Clone, Copy)]
+enum Font {
+    IbmPlexMedium,
+    IbmPlexBold,
+    ArchivoBlack,
+    ArchivoExtraBold,
 }
 
-fn archivo_black() -> &'static FontArc {
-    ARCHIVO_BLACK_FONT
-        .get_or_init(|| FontArc::try_from_slice(FONT_ARCHIVO_BLACK).expect("Archivo Black"))
-}
-
-fn archivo_extrabold() -> &'static FontArc {
-    ARCHIVO_EXTRABOLD_FONT
-        .get_or_init(|| FontArc::try_from_slice(FONT_ARCHIVO_EXTRABOLD).expect("Archivo ExtraBold"))
+impl Font {
+    fn attrs(self) -> Attrs<'static> {
+        match self {
+            Self::IbmPlexMedium => Attrs::new()
+                .family(Family::Name("IBM Plex Sans"))
+                .weight(Weight::MEDIUM),
+            Self::IbmPlexBold => Attrs::new()
+                .family(Family::Name("IBM Plex Sans"))
+                .weight(Weight::BOLD),
+            Self::ArchivoBlack => Attrs::new()
+                .family(Family::Name("Archivo Black"))
+                .weight(Weight::BLACK),
+            Self::ArchivoExtraBold => Attrs::new()
+                .family(Family::Name("Archivo"))
+                .weight(Weight::EXTRA_BOLD),
+        }
+    }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -64,33 +100,26 @@ pub struct AnnotateParams {
 
 /// Annotate a JPEG poster image.
 ///
-/// This is CPU-bound; wrap in `tokio::task::spawn_blocking` at the call site.
+/// CPU-bound; call from `tokio::task::spawn_blocking`.
 pub fn annotate(
     jpeg_bytes: &[u8],
     params: &AnnotateParams,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    // Load and resize to canonical 300×450 poster size
     let img = image::load_from_memory(jpeg_bytes)?.resize_exact(300, 450, FilterType::Lanczos3);
     let mut canvas = img.to_rgba8();
 
-    // 1. IMDb badge
     if let Some(rating) = params.imdb_rating {
         add_imdb_badge(&mut canvas, rating);
     }
-
-    // 2. Watermark
     add_watermark(&mut canvas);
-
-    // 3. Title text
     if params.is_add_title {
-        if let Some(ref title) = params.title {
-            if !title.is_empty() {
-                add_title(&mut canvas, title);
+        if let Some(ref t) = params.title {
+            if !t.is_empty() {
+                add_title(&mut canvas, t);
             }
         }
     }
 
-    // Encode as JPEG
     let rgb = DynamicImage::ImageRgba8(canvas).to_rgb8();
     let mut buf = Cursor::new(Vec::new());
     DynamicImage::ImageRgb8(rgb).write_to(&mut buf, image::ImageFormat::Jpeg)?;
@@ -99,18 +128,8 @@ pub fn annotate(
 
 /// Generate a placeholder poster (300×450 JPEG) for media without artwork.
 ///
-/// Layout (from the design spec):
-///  - 145° diagonal gradient `hsl(h,34%,13%) → hsl(h+22°,40%,24%)`
-///  - Bottom vignette for legibility
-///  - Top-left radial sheen (10% white)
-///  - Oversized ghost monogram bleeding off the bottom-right corner (7% white)
-///  - Type kicker (accent bar + media-type label) at top-left
-///  - MediaFusion watermark at top-right
-///  - Title anchored to bottom-left; size based on character count
-///  - Year and S·E chip metadata row below the title
-///
 /// Deterministic: same title+type always produces the same poster.
-/// CPU-bound; wrap in `tokio::task::spawn_blocking` at the call site.
+/// CPU-bound; call from `tokio::task::spawn_blocking`.
 pub fn generate_placeholder(
     title: &str,
     media_type: &str,
@@ -119,7 +138,7 @@ pub fn generate_placeholder(
     const W: u32 = 300;
     const H: u32 = 450;
 
-    // ── Colour palette ──────────────────────────────────────────────────────
+    // ── Colour palette (FNV hash of title → hue) ────────────────────────────
     let mut hash: u32 = 2_166_136_261;
     for byte in title.bytes() {
         hash = (hash ^ byte as u32).wrapping_mul(16_777_619);
@@ -133,7 +152,8 @@ pub fn generate_placeholder(
     let mut canvas: RgbaImage = RgbaImage::new(W, H);
     for y in 0..H {
         for x in 0..W {
-            let t = ((x as f32 / W as f32) * 0.45 + (y as f32 / H as f32) * 0.55).clamp(0.0, 1.0);
+            let t =
+                ((x as f32 / W as f32) * 0.45 + (y as f32 / H as f32) * 0.55).clamp(0.0, 1.0);
             canvas.put_pixel(
                 x,
                 y,
@@ -196,38 +216,31 @@ pub fn generate_placeholder(
     };
     let initials = placeholder_initials(&display);
     let (season, episode) = parse_placeholder_se(&display);
-    // Display fonts: Archivo Black for monogram (weight 900), ExtraBold for title (weight 800)
-    // UI fonts: IBM Plex Sans Bold/Medium for kicker, year, chip
-    let font_monogram = archivo_black();
-    let font_title = archivo_extrabold();
-    let font_ui = bold_font();
+    let accent_rgba = Rgba([accent.0, accent.1, accent.2, 255]);
 
     // ── 4. Oversized ghost monogram (bottom-right bleed, 7% white) ───────────
-    // CSS: right:-14px; bottom:-46px — bleeds off the corner.
-    // In image coords: x = W - glyph_width + 14, y = H - glyph_height + 46
-    let ghost_scale = PxScale::from(230.0);
-    let sf_ghost = font_monogram.as_scaled(ghost_scale);
-    let ghost_w = text_width(font_monogram, ghost_scale, &initials) as i32;
-    let ghost_h = (sf_ghost.ascent() - sf_ghost.descent()) as i32;
-    let ghost_x = W as i32 - ghost_w + 14;
-    let ghost_y = H as i32 - ghost_h + 46;
-    draw_text_mut(
+    let ghost_size = 230.0f32;
+    let (ghost_w, ghost_h) = measure_text(&initials, Font::ArchivoBlack, ghost_size, None);
+    let ghost_x = W as i32 - ghost_w as i32 + 14;
+    let ghost_y = H as i32 - ghost_h as i32 + 46;
+    draw_text_plain(
         &mut canvas,
-        Rgba([255u8, 255, 255, 18]), // 18/255 ≈ 7%
         ghost_x,
         ghost_y,
-        ghost_scale,
-        font_monogram,
         &initials,
+        Font::ArchivoBlack,
+        ghost_size,
+        None,
+        None,
+        Rgba([255, 255, 255, 18]),
     );
 
-    // ── 5. Top bar: accent bar + kicker (left) | "MediaFusion" text (right) ───
+    // ── 5. Top bar: accent bar + kicker (left) | "MediaFusion" (right) ───────
     let kicker = media_type_kicker(media_type);
-    let accent_rgba = Rgba([accent.0, accent.1, accent.2, 255]);
-    let label_scale = PxScale::from(14.0);
+    let label_size = 14.0f32;
     let top_y = 16i32;
 
-    // Accent bar: 18×3 px, vertically centred on text baseline
+    // Accent bar: 18×3 px
     for px in 22u32..40 {
         for py in 24u32..27 {
             if px < W && py < H {
@@ -235,105 +248,109 @@ pub fn generate_placeholder(
             }
         }
     }
-    // Kicker label — IBM Plex Sans Bold, white at 0.82 alpha, tracking .24em
-    draw_text_mut(
+
+    draw_text_plain(
         &mut canvas,
-        Rgba([255u8, 255, 255, 209]),
         44,
         top_y,
-        label_scale,
-        font_ui,
         kicker,
+        Font::IbmPlexBold,
+        label_size,
+        None,
+        None,
+        Rgba([255, 255, 255, 209]),
     );
 
-    // "MediaFusion" — IBM Plex Sans Bold, "Media" at 0.42 alpha, "Fusion" in accent
-    let mf_scale = PxScale::from(14.0);
-    let media_w = text_width(font_ui, mf_scale, "Media") as i32;
-    let fusion_w = text_width(font_ui, mf_scale, "Fusion") as i32;
-    let mf_x = W as i32 - 22 - media_w - fusion_w;
-    draw_text_mut(
+    // "Media" (dimmed) + "Fusion" (accent colour)
+    let media_w = measure_text("Media", Font::IbmPlexBold, label_size, None).0;
+    let fusion_w = measure_text("Fusion", Font::IbmPlexBold, label_size, None).0;
+    let mf_x = W as i32 - 22 - media_w as i32 - fusion_w as i32;
+    draw_text_plain(
         &mut canvas,
-        Rgba([255u8, 255, 255, 107]),
         mf_x,
         top_y,
-        mf_scale,
-        font_ui,
         "Media",
+        Font::IbmPlexBold,
+        label_size,
+        None,
+        None,
+        Rgba([255, 255, 255, 107]),
     );
-    draw_text_mut(
+    draw_text_plain(
         &mut canvas,
-        accent_rgba,
-        mf_x + media_w,
+        mf_x + media_w as i32,
         top_y,
-        mf_scale,
-        font_ui,
         "Fusion",
+        Font::IbmPlexBold,
+        label_size,
+        None,
+        None,
+        accent_rgba,
     );
 
-    // ── 7. Title + metadata anchored to bottom-left ──────────────────────────
+    // ── 7. Title anchored to bottom-left ─────────────────────────────────────
     let white = Rgba([255u8, 255, 255, 255]);
-
-    // Archivo ExtraBold (800) for title; size by character count per design spec
-    let title_px: f32 = match display.len() {
+    // Font size by character count (Unicode-aware)
+    let title_size: f32 = match display.chars().count() {
         0..=9 => 42.0,
         10..=16 => 34.0,
         17..=26 => 27.0,
         _ => 22.0,
     };
-    let title_scale = PxScale::from(title_px);
-    let sf_t = font_title.as_scaled(title_scale);
-    let title_line_h = (sf_t.ascent() - sf_t.descent()) as i32;
+    let title_max_w = (W - 44) as f32;
+    let (_, title_h) = measure_text(&display, Font::ArchivoExtraBold, title_size, Some(title_max_w));
 
-    // Word-wrap title — right margin 22px on each side
-    let title_lines = word_wrap(&display, font_title, title_scale, W as i32 - 44);
-
-    // Metadata row height (only rendered when data exists)
     let has_year = year.is_some();
     let has_chip = season.is_some() && episode.is_some();
     let meta_row_h = if has_year || has_chip { 26i32 } else { 0 };
+    let block_h = title_h as i32 + meta_row_h;
+    let ty = H as i32 - 22 - block_h;
 
-    let block_h = title_line_h * title_lines.len() as i32 + meta_row_h;
-    let mut ty = H as i32 - 22 - block_h;
-
-    for line in &title_lines {
-        // No text shadow needed — the bottom vignette provides contrast
-        draw_text_mut(&mut canvas, white, 22, ty, title_scale, font_title, line);
-        ty += title_line_h;
-    }
+    draw_text_plain(
+        &mut canvas,
+        22,
+        ty,
+        &display,
+        Font::ArchivoExtraBold,
+        title_size,
+        Some(title_max_w),
+        None,
+        white,
+    );
 
     // ── 8. Metadata row: year + S·E chip ─────────────────────────────────────
     if has_year || has_chip {
-        ty += 13; // 13px margin-top per design spec
+        let meta_y = ty + title_h as i32 + 13;
         let mut mx = 22i32;
 
         if let Some(y) = year {
             let ys = y.to_string();
-            let yscale = PxScale::from(11.0);
-            draw_text_mut(
+            draw_text_plain(
                 &mut canvas,
-                Rgba([255u8, 255, 255, 168]), // 0.66 alpha
                 mx,
-                ty + 2,
-                yscale,
-                font_ui,
+                meta_y + 2,
                 &ys,
+                Font::IbmPlexBold,
+                11.0,
+                None,
+                None,
+                Rgba([255, 255, 255, 168]),
             );
-            mx += text_width(font_ui, yscale, &ys) as i32 + 9;
+            mx += measure_text(&ys, Font::IbmPlexBold, 11.0, None).0 as i32 + 9;
         }
 
         if has_chip {
-            let chip_str = format!("S{:02} \u{00B7} E{:02}", season.unwrap(), episode.unwrap());
-            let cscale = PxScale::from(9.5);
-            let chip_tw = text_width(font_ui, cscale, &chip_str) as i32;
+            let chip_str =
+                format!("S{:02} \u{00B7} E{:02}", season.unwrap(), episode.unwrap());
+            let chip_tw = measure_text(&chip_str, Font::IbmPlexBold, 9.5, None).0 as i32;
             let pad = 8i32;
             let chip_w = chip_tw + pad * 2;
             let chip_h = 16i32;
 
-            // Chip background (accent at 12%)
             blend_rect(
                 &mut canvas,
                 mx,
-                ty,
+                meta_y,
                 chip_w,
                 chip_h,
                 accent.0,
@@ -341,11 +358,10 @@ pub fn generate_placeholder(
                 accent.2,
                 31,
             );
-            // Chip border (accent at 55%)
             outline_rect(
                 &mut canvas,
                 mx,
-                ty,
+                meta_y,
                 chip_w,
                 chip_h,
                 accent.0,
@@ -353,23 +369,270 @@ pub fn generate_placeholder(
                 accent.2,
                 140,
             );
-            // Chip text (accent colour)
-            draw_text_mut(
+            draw_text_plain(
                 &mut canvas,
-                accent_rgba,
                 mx + pad,
-                ty + (chip_h - 10) / 2,
-                cscale,
-                font_ui,
+                meta_y + (chip_h - 10) / 2,
                 &chip_str,
+                Font::IbmPlexBold,
+                9.5,
+                None,
+                None,
+                accent_rgba,
             );
         }
     }
 
     let rgb = DynamicImage::ImageRgba8(canvas).to_rgb8();
-    let mut buf = Cursor::new(Vec::new());
-    DynamicImage::ImageRgb8(rgb).write_to(&mut buf, image::ImageFormat::Jpeg)?;
-    Ok(buf.into_inner())
+    let mut out = Cursor::new(Vec::new());
+    DynamicImage::ImageRgb8(rgb).write_to(&mut out, image::ImageFormat::Jpeg)?;
+    Ok(out.into_inner())
+}
+
+// ─── Core text primitives ─────────────────────────────────────────────────────
+
+/// Alpha-composite a single pixel from a cosmic-text draw callback onto the canvas.
+#[inline]
+fn composite(canvas: &mut RgbaImage, x: i32, y: i32, src: CosColor) {
+    if x < 0 || y < 0 {
+        return;
+    }
+    let (cw, ch) = canvas.dimensions();
+    if x as u32 >= cw || y as u32 >= ch {
+        return;
+    }
+    let a = src.a() as f32 / 255.0;
+    if a <= 0.0 {
+        return;
+    }
+    let p = canvas.get_pixel_mut(x as u32, y as u32);
+    p[0] = (src.r() as f32 * a + p[0] as f32 * (1.0 - a)) as u8;
+    p[1] = (src.g() as f32 * a + p[1] as f32 * (1.0 - a)) as u8;
+    p[2] = (src.b() as f32 * a + p[2] as f32 * (1.0 - a)) as u8;
+    p[3] = ((a + p[3] as f32 / 255.0 * (1.0 - a)) * 255.0) as u8;
+}
+
+/// Draw shaped text at `(ox, oy)` with an optional 2-pixel outline for contrast.
+///
+/// When `max_width` is `Some(w)`, cosmic-text wraps at that width.
+/// `align` controls horizontal alignment within that width.
+fn draw_text_plain(
+    canvas: &mut RgbaImage,
+    ox: i32,
+    oy: i32,
+    text: &str,
+    font: Font,
+    size: f32,
+    max_width: Option<f32>,
+    align: Option<Align>,
+    color: Rgba<u8>,
+) {
+    TL_TEXT.with_borrow_mut(|(fs, cache)| {
+        let attrs = font.attrs();
+        let mut buf = Buffer::new(fs, Metrics::new(size, size * 1.2));
+        buf.set_size(max_width, None);
+        buf.set_text(text, &attrs, Shaping::Advanced, align);
+        buf.shape_until_scroll(fs, false);
+
+        // cosmic-text 0.19 ignores the input Color's alpha in its draw callback —
+        // coverage-based alpha only. Apply desired opacity by scaling c.a() ourselves.
+        let opacity = color[3] as f32 / 255.0;
+        let cf = CosColor::rgba(color[0], color[1], color[2], 255);
+        buf.draw(fs, cache, cf, |px, py, _w, _h, c| {
+            let a = (c.a() as f32 * opacity) as u8;
+            composite(canvas, ox + px, oy + py, CosColor::rgba(c.r(), c.g(), c.b(), a));
+        });
+    });
+}
+
+/// Draw shaped text with a 2-pixel pixel-outline for contrast (used on title overlays).
+fn draw_text_outlined(
+    canvas: &mut RgbaImage,
+    ox: i32,
+    oy: i32,
+    text: &str,
+    font: Font,
+    size: f32,
+    max_width: Option<f32>,
+    align: Option<Align>,
+    fill: Rgba<u8>,
+    outline: Rgba<u8>,
+) {
+    TL_TEXT.with_borrow_mut(|(fs, cache)| {
+        let attrs = font.attrs();
+        let mut buf = Buffer::new(fs, Metrics::new(size, size * 1.2));
+        buf.set_size(max_width, None);
+        buf.set_text(text, &attrs, Shaping::Advanced, align);
+        buf.shape_until_scroll(fs, false);
+
+        // Outline pass: draw at each ±2px offset
+        let outline_opacity = outline[3] as f32 / 255.0;
+        let co = CosColor::rgba(outline[0], outline[1], outline[2], 255);
+        const OW: i32 = 2;
+        for dx in -OW..=OW {
+            for dy in -OW..=OW {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                buf.draw(fs, cache, co, |px, py, _w, _h, c| {
+                    let a = (c.a() as f32 * outline_opacity) as u8;
+                    composite(canvas, ox + px + dx, oy + py + dy, CosColor::rgba(c.r(), c.g(), c.b(), a));
+                });
+            }
+        }
+
+        // Fill pass
+        let fill_opacity = fill[3] as f32 / 255.0;
+        let cf = CosColor::rgba(fill[0], fill[1], fill[2], 255);
+        buf.draw(fs, cache, cf, |px, py, _w, _h, c| {
+            let a = (c.a() as f32 * fill_opacity) as u8;
+            composite(canvas, ox + px, oy + py, CosColor::rgba(c.r(), c.g(), c.b(), a));
+        });
+    });
+}
+
+/// Measure the pixel bounding box of shaped, word-wrapped text.
+/// Returns `(width, height)`.
+fn measure_text(text: &str, font: Font, size: f32, max_width: Option<f32>) -> (f32, f32) {
+    TL_TEXT.with_borrow_mut(|(fs, _)| {
+        let attrs = font.attrs();
+        let mut buf = Buffer::new(fs, Metrics::new(size, size * 1.2));
+        buf.set_size(max_width, None);
+        buf.set_text(text, &attrs, Shaping::Advanced, None);
+        buf.shape_until_scroll(fs, false);
+
+        let mut w = 0.0f32;
+        let mut h = 0.0f32;
+        for run in buf.layout_runs() {
+            w = w.max(run.line_w);
+            h += run.line_height;
+        }
+        (w, h)
+    })
+}
+
+/// Count the number of visual lines after wrapping at `max_width`.
+fn line_count(text: &str, font: Font, size: f32, max_width: f32) -> usize {
+    TL_TEXT.with_borrow_mut(|(fs, _)| {
+        let attrs = font.attrs();
+        let mut buf = Buffer::new(fs, Metrics::new(size, size * 1.2));
+        buf.set_size(Some(max_width), None);
+        buf.set_text(text, &attrs, Shaping::Advanced, None);
+        buf.shape_until_scroll(fs, false);
+        buf.layout_runs().count()
+    })
+}
+
+/// Binary search for the largest font size ≥ `min` at which `text` fits in
+/// `max_lines` lines when wrapped at `max_width`.
+fn fit_font_size(
+    text: &str,
+    font: Font,
+    max_width: f32,
+    max_lines: usize,
+    initial: f32,
+    min: f32,
+) -> f32 {
+    let mut size = initial;
+    while size > min {
+        if line_count(text, font, size, max_width) <= max_lines {
+            return size;
+        }
+        size -= 1.0;
+    }
+    min
+}
+
+// ─── IMDb badge ───────────────────────────────────────────────────────────────
+
+fn add_imdb_badge(canvas: &mut RgbaImage, rating: f32) {
+    let size = 20.0f32;
+    let margin = 10i32;
+    let pad = 5i32;
+    let rating_text = format!(" {:.1}/10", rating);
+
+    let (text_w, text_h) = measure_text(&rating_text, Font::IbmPlexMedium, size, None);
+    let (tw, th) = (text_w as i32, text_h as i32);
+
+    let imdb_logo = image::load_from_memory(IMDB_LOGO).ok().map(|img| {
+        let aspect = img.width() as f32 / img.height() as f32;
+        let lw = (th as f32 * aspect).max(1.0) as u32;
+        img.resize_exact(lw, th.max(1) as u32, FilterType::Lanczos3)
+            .to_rgba8()
+    });
+
+    let logo_w = imdb_logo.as_ref().map(|l| l.width() as i32).unwrap_or(0);
+    let total_w = logo_w + tw + 2 * pad;
+    let total_h = th + 2 * pad;
+
+    let rect_x = margin;
+    let rect_y = canvas.height() as i32 - margin - total_h;
+    if rect_y < 0 {
+        return;
+    }
+
+    draw_filled_rect_mut(
+        canvas,
+        Rect::at(rect_x, rect_y).of_size(total_w as u32, total_h as u32),
+        Rgba([0u8, 0, 0, 176]),
+    );
+
+    if let Some(logo) = imdb_logo {
+        imageops::overlay(canvas, &logo, (rect_x + pad) as i64, (rect_y + pad) as i64);
+    }
+
+    draw_text_plain(
+        canvas,
+        rect_x + pad + logo_w,
+        rect_y,
+        &rating_text,
+        Font::IbmPlexMedium,
+        size,
+        None,
+        None,
+        Rgba([0xF5u8, 0xC5, 0x18, 0xFF]),
+    );
+}
+
+// ─── Watermark ────────────────────────────────────────────────────────────────
+
+fn add_watermark(canvas: &mut RgbaImage) {
+    let Ok(wm) = image::load_from_memory(WATERMARK) else {
+        return;
+    };
+    let new_w = canvas.width() / 2;
+    let aspect = wm.width() as f32 / wm.height() as f32;
+    let new_h = ((new_w as f32) / aspect).max(1.0) as u32;
+    let wm = wm.resize_exact(new_w, new_h, FilterType::Lanczos3).to_rgba8();
+    let x = canvas.width() as i64 - wm.width() as i64 - 10;
+    imageops::overlay(canvas, &wm, x, 10);
+}
+
+// ─── Title overlay ────────────────────────────────────────────────────────────
+
+fn add_title(canvas: &mut RgbaImage, title: &str) {
+    let max_w = canvas.width() as f32 - 20.0;
+    let size = fit_font_size(title, Font::IbmPlexBold, max_w, 3, 50.0, 20.0);
+    let (_, block_h) = measure_text(title, Font::IbmPlexBold, size, Some(max_w));
+
+    let y_start = ((canvas.height() as f32 - block_h) / 2.0).max(0.0) as i32;
+
+    let sy = (y_start as f32 - block_h / 2.0).clamp(0.0, canvas.height() as f32 - 1.0) as u32;
+    let ey = (y_start as f32 + block_h * 1.5).clamp(0.0, canvas.height() as f32 - 1.0) as u32;
+    let (text_color, outline_color) = text_color_for_region(canvas, 0, sy, canvas.width(), ey);
+
+    draw_text_outlined(
+        canvas,
+        10,
+        y_start,
+        title,
+        Font::IbmPlexBold,
+        size,
+        Some(max_w),
+        Some(Align::Center),
+        text_color,
+        outline_color,
+    );
 }
 
 // ─── Placeholder helpers ──────────────────────────────────────────────────────
@@ -453,8 +716,6 @@ fn placeholder_initials(title: &str) -> String {
     }
 }
 
-/// Parse year (1900–2099) and SxxExx season/episode from a title string.
-/// Parse SxxExx season/episode numbers from a title string (e.g. IPTV channel names).
 fn parse_placeholder_se(title: &str) -> (Option<i32>, Option<i32>) {
     let upper = title.to_uppercase();
     let bytes = upper.as_bytes();
@@ -533,174 +794,6 @@ fn outline_rect(
     }
 }
 
-// ─── IMDb badge ───────────────────────────────────────────────────────────────
-
-fn add_imdb_badge(canvas: &mut RgbaImage, rating: f32) {
-    let font = medium_font();
-    let scale = PxScale::from(20.0);
-    let margin = 10i32;
-    let pad = 5i32;
-
-    let rating_text = format!(" {:.1}/10", rating);
-
-    // Measure text height from font metrics
-    let text_h = {
-        let sf = font.as_scaled(scale);
-        sf.ascent() - sf.descent()
-    } as i32;
-
-    let text_w = text_width(font, scale, &rating_text) as i32;
-
-    // Load and resize IMDb logo to match text height
-    let imdb_logo = image::load_from_memory(IMDB_LOGO)
-        .map(|img| {
-            let aspect = img.width() as f32 / img.height() as f32;
-            let logo_w = (text_h as f32 * aspect) as u32;
-            img.resize_exact(logo_w, text_h as u32, FilterType::Lanczos3)
-                .to_rgba8()
-        })
-        .ok();
-
-    let logo_w = imdb_logo.as_ref().map(|l| l.width() as i32).unwrap_or(0);
-    let total_w = logo_w + text_w + 2 * pad;
-    let total_h = text_h + 2 * pad;
-
-    // Semi-transparent dark background rect
-    let rect_x = margin;
-    let rect_y = canvas.height() as i32 - margin - total_h;
-    let bg_color = Rgba([0u8, 0, 0, 176]);
-    if rect_y >= 0 {
-        draw_filled_rect_mut(
-            canvas,
-            Rect::at(rect_x, rect_y).of_size(total_w as u32, total_h as u32),
-            bg_color,
-        );
-    }
-
-    // Composite IMDb logo
-    if let Some(logo) = imdb_logo {
-        let logo_x = (rect_x + pad) as i64;
-        let logo_y = (rect_y + pad) as i64;
-        if logo_x >= 0 && logo_y >= 0 {
-            imageops::overlay(canvas, &logo, logo_x, logo_y);
-        }
-    }
-
-    // Draw rating text in IMDb gold
-    let text_x = rect_x + pad + logo_w;
-    let text_y = rect_y;
-    let gold = Rgba([0xF5u8, 0xC5, 0x18, 0xFF]);
-    if text_x >= 0 && text_y >= 0 {
-        draw_text_mut(canvas, gold, text_x, text_y, scale, font, &rating_text);
-    }
-}
-
-// ─── Watermark ────────────────────────────────────────────────────────────────
-
-fn add_watermark(canvas: &mut RgbaImage) {
-    let margin = 10i64;
-    let Ok(wm_img) = image::load_from_memory(WATERMARK) else {
-        return;
-    };
-    let new_w = canvas.width() / 2;
-    let aspect = wm_img.width() as f32 / wm_img.height() as f32;
-    let new_h = (new_w as f32 / aspect) as u32;
-    let wm = wm_img
-        .resize_exact(new_w, new_h, FilterType::Lanczos3)
-        .to_rgba8();
-    let x = canvas.width() as i64 - wm.width() as i64 - margin;
-    let y = margin;
-    imageops::overlay(canvas, &wm, x, y);
-}
-
-// ─── Title text ───────────────────────────────────────────────────────────────
-
-fn add_title(canvas: &mut RgbaImage, title: &str) {
-    let font = bold_font();
-    let max_w = canvas.width() as i32 - 20;
-    let max_lines = 3usize;
-
-    // Find a font size that fits within max_lines
-    let (lines, scale) = fit_title(title, font, max_w, max_lines, 50, 20);
-    if lines.is_empty() {
-        return;
-    }
-
-    let line_spacing = 10i32;
-    let sf = font.as_scaled(scale);
-    let line_h = (sf.ascent() - sf.descent()) as i32;
-    let block_h = line_h * lines.len() as i32 + line_spacing * (lines.len() as i32 - 1);
-
-    let y_start = ((canvas.height() as i32 - block_h) / 2).max(0);
-
-    // Sample center strip to pick text color
-    let sample_top = (y_start - block_h / 2).clamp(0, canvas.height() as i32 - 1) as u32;
-    let sample_bot = (y_start + block_h + block_h / 2).clamp(0, canvas.height() as i32 - 1) as u32;
-    let (text_color, outline_color) =
-        text_color_for_region(canvas, 0, sample_top, canvas.width(), sample_bot);
-
-    let mut y = y_start;
-    for line in &lines {
-        let w = text_width(font, scale, line) as i32;
-        let x = ((canvas.width() as i32 - w) / 2).max(0);
-        draw_outlined_text(canvas, x, y, scale, font, line, text_color, outline_color);
-        y += line_h + line_spacing;
-    }
-}
-
-// ─── Text helpers ─────────────────────────────────────────────────────────────
-
-fn text_width(font: &FontArc, scale: PxScale, text: &str) -> f32 {
-    let sf = font.as_scaled(scale);
-    text.chars().map(|c| sf.h_advance(font.glyph_id(c))).sum()
-}
-
-fn word_wrap(text: &str, font: &FontArc, scale: PxScale, max_w: i32) -> Vec<String> {
-    let mut lines: Vec<String> = Vec::new();
-    let mut current = String::new();
-
-    for word in text.split_whitespace() {
-        let candidate = if current.is_empty() {
-            word.to_string()
-        } else {
-            format!("{current} {word}")
-        };
-        if text_width(font, scale, &candidate) as i32 <= max_w {
-            current = candidate;
-        } else {
-            if !current.is_empty() {
-                lines.push(current);
-            }
-            current = word.to_string();
-        }
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    lines
-}
-
-fn fit_title(
-    title: &str,
-    font: &FontArc,
-    max_w: i32,
-    max_lines: usize,
-    initial_size: u32,
-    min_size: u32,
-) -> (Vec<String>, PxScale) {
-    for size in (min_size..=initial_size).rev() {
-        let scale = PxScale::from(size as f32);
-        let lines = word_wrap(title, font, scale, max_w);
-        if lines.len() <= max_lines {
-            return (lines, scale);
-        }
-    }
-    let scale = PxScale::from(min_size as f32);
-    let mut lines = word_wrap(title, font, scale, max_w);
-    lines.truncate(max_lines);
-    (lines, scale)
-}
-
 fn text_color_for_region(
     img: &RgbaImage,
     x: u32,
@@ -712,7 +805,6 @@ fn text_color_for_region(
     let mut g_sum = 0u64;
     let mut b_sum = 0u64;
     let mut count = 0u64;
-
     let x_end = (x + w).min(img.width());
     let y_end = y_bot.min(img.height());
     for py in y_top..y_end {
@@ -724,11 +816,9 @@ fn text_color_for_region(
             count += 1;
         }
     }
-
     if count == 0 {
         return (Rgba([255, 255, 255, 255]), Rgba([0, 0, 0, 255]));
     }
-
     let brightness =
         (0.299 * r_sum as f64 + 0.587 * g_sum as f64 + 0.114 * b_sum as f64) / count as f64;
     if brightness > 128.0 {
@@ -736,27 +826,4 @@ fn text_color_for_region(
     } else {
         (Rgba([255, 255, 255, 255]), Rgba([0, 0, 0, 255]))
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn draw_outlined_text(
-    canvas: &mut RgbaImage,
-    x: i32,
-    y: i32,
-    scale: PxScale,
-    font: &FontArc,
-    text: &str,
-    fill: Rgba<u8>,
-    outline: Rgba<u8>,
-) {
-    const W: i32 = 2;
-    for dx in -W..=W {
-        for dy in -W..=W {
-            if dx == 0 && dy == 0 {
-                continue;
-            }
-            draw_text_mut(canvas, outline, x + dx, y + dy, scale, font, text);
-        }
-    }
-    draw_text_mut(canvas, fill, x, y, scale, font, text);
 }

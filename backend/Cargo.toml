@@ -100,10 +100,11 @@ tempfile = "3"
 rand_core = "0.10"
 rand = { version = "0.10", features = ["std", "thread_rng"] }
 
-# Poster annotation (Phase 1d)
+# Poster annotation
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 imageproc = "0.26"
-ab_glyph = "0.2"
+# cosmic-text: full Unicode text shaping (HarfBuzz via rustybuzz), BiDi, font fallback
+cosmic-text = "0.19"
 
 # In-process LRU cache (imdb_id → media_id)
 moka = { version = "0.12", features = ["future", "sync"] }
