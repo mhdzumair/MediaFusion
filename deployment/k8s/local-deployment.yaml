@@ -17,18 +17,48 @@ spec:
       labels:
         app: mediafusion
     spec:
-      containers:
-      - name: mediafusion-scheduler
+      initContainers:
+      # Runs `MEDIAFUSION_MIGRATE=run` once per pod rollout.
+      # Kubernetes blocks the app container until this exits 0, so only one
+      # pod applies migrations at a time during a rolling deploy.
+      - name: migrate
         image: mhdzumair/mediafusion:6.0.0-beta.25
-        command: ["python", "-m", "workers.run_scheduler"]
+        command: ["/usr/local/bin/mediafusion-api"]
+        env:
+          - name: MEDIAFUSION_MIGRATE
+            value: "run"
+          - name: POSTGRES_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: POSTGRES_URI
+          - name: SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: SECRET_KEY
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+      containers:
+      - name: mediafusion-api
+        image: mhdzumair/mediafusion:6.0.0-beta.25
+        ports:
+        - containerPort: 8000
         resources:
           requests:
             memory: "300Mi"
-            cpu: "100m"
+            cpu: "200m"
           limits:
             memory: "600Mi"
-            cpu: "300m"
+            cpu: "500m"
         env:
+          - name: MEDIAFUSION_AUTO_MIGRATE
+            value: "false"
           - name: POSTGRES_URI
             valueFrom:
               secretKeyRef:

@@ -40,19 +40,31 @@ async fn main() {
         .await
         .expect("database preflight failed");
 
-    // One-shot migration commands: set MEDIAFUSION_MIGRATE=status or
-    // MEDIAFUSION_MIGRATE_ROLLBACK_TO=<version>, then the binary runs the
-    // command and exits without starting the server.
+    // One-shot migration commands: set MEDIAFUSION_MIGRATE=<cmd>, then the
+    // binary runs the command and exits without starting the server.
+    //
+    // Commands:
+    //   run    — apply all pending migrations (use this in a K8s init container
+    //            or Job so the app pods themselves skip migration on startup)
+    //   status — print applied/pending status for every migration
     if let Ok(cmd) = std::env::var("MEDIAFUSION_MIGRATE") {
         let uri = mediafusion_api::migrate::normalize_uri(&config.postgres_uri);
         let pool = sqlx::PgPool::connect(&uri)
             .await
             .expect("failed to connect to database");
         match cmd.trim() {
+            "run" => {
+                mediafusion_api::migrate::run(&pool)
+                    .await
+                    .expect("migration failed");
+                info!("migrations complete — exiting");
+            }
             "status" => mediafusion_api::migrate::status(&pool)
                 .await
                 .expect("migration status failed"),
-            other => panic!("unknown MEDIAFUSION_MIGRATE value '{other}'; expected 'status'"),
+            other => panic!(
+                "unknown MEDIAFUSION_MIGRATE value '{other}'; expected 'run' or 'status'"
+            ),
         }
         return;
     }
@@ -76,9 +88,14 @@ async fn main() {
         .await
         .expect("failed to build AppState");
 
-    mediafusion_api::migrate::run(&state.pool)
-        .await
-        .expect("database migration failed");
+    // Skip auto-migration when MEDIAFUSION_AUTO_MIGRATE=false.
+    // Use this on app pods when a dedicated init container / Job runs
+    // `MEDIAFUSION_MIGRATE=run` before the deployment rolls out.
+    if std::env::var("MEDIAFUSION_AUTO_MIGRATE").as_deref() != Ok("false") {
+        mediafusion_api::migrate::run(&state.pool)
+            .await
+            .expect("database migration failed");
+    }
 
     // Sync keyword file → DB and recompute blocked flags in the background so the
     // server starts accepting requests immediately.

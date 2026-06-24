@@ -116,30 +116,61 @@ pub async fn run(pool: &PgPool) -> Result<(), MigrateError> {
     remove_orphaned_migration_rows(pool, &migrator).await?;
 
     // Run migrations on a dedicated connection rather than borrowing one from
-    // the shared pool. Two reasons, both observed in production:
+    // the shared pool. Three reasons, all observed in production:
     //
-    //  1. statement_timeout: a pool may set a per-session statement_timeout via
-    //     an after_connect hook (e.g. an app-wide query-safety limit). The
-    //     migration advisory-lock acquisition below — and any heavy DDL — would
-    //     then be subject to it and fail with `57014 canceling statement due to
-    //     statement timeout`. Migrations must not inherit the app query timeout.
+    //  1. statement_timeout: the pool's after_connect hook sets a per-session
+    //     statement_timeout (DB_STATEMENT_TIMEOUT_MS, default 60 s).  The
+    //     advisory-lock acquisition and any heavy DDL would be subject to it
+    //     and fail with `57014 canceling statement due to statement timeout`.
+    //     Migrations must not inherit the app query timeout.
     //
     //  2. advisory-lock leak: sqlx's `Migrator::run` takes a session-level
     //     `pg_advisory_lock` and, if a migration fails, returns early WITHOUT
-    //     `pg_advisory_unlock`. A *pooled* connection is then returned to the
-    //     pool (not closed) still holding the lock, so every subsequent
-    //     migration attempt (other replicas, restarts) blocks forever on
-    //     `pg_advisory_lock`. A dedicated connection is closed here on both the
-    //     success and failure paths, ending the session and releasing the lock.
-    let mut conn = pool.connect_options().connect().await?;
-    sqlx::query("SET statement_timeout = 0")
+    //     `pg_advisory_unlock`. A *pooled* connection returned to the pool
+    //     would still hold the lock, blocking every subsequent attempt forever.
+    //     A dedicated connection is always closed here (success or failure),
+    //     ending the session and releasing the lock automatically.
+    //
+    //  3. managed-DB statement_timeout: some hosted providers (e.g. Supabase)
+    //     enforce a role-level statement_timeout that may survive `SET
+    //     statement_timeout = 0`.  Adding `SET lock_timeout = '5s'` means the
+    //     advisory-lock wait fails fast with 55P03 (lock_not_available) after
+    //     5 s rather than silently waiting 60 s until 57014 fires.  Combined
+    //     with the retry loop below, this handles rolling deployments where an
+    //     old pod holds the lock while it finishes its own migration run.
+    const LOCK_MAX_ATTEMPTS: u32 = 20;
+    const LOCK_RETRY_DELAY: Duration = Duration::from_secs(5);
+
+    let mut attempt = 0u32;
+    loop {
+        attempt += 1;
+
+        let mut conn = pool.connect_options().connect().await?;
+        sqlx::query(
+            "SET statement_timeout = 0; \
+             SET lock_timeout = '5s'",
+        )
         .execute(&mut conn)
         .await?;
-    let result = migrator.run(&mut conn).await;
-    // Always close so the session ends and the advisory lock is released, even
-    // when `result` is an error (sqlx skips its own unlock on failure).
-    let _ = conn.close().await;
-    result?;
+        let result = migrator.run(&mut conn).await;
+        // Always close so the session ends and the advisory lock is released,
+        // even on failure (sqlx skips its own unlock on error).
+        let _ = conn.close().await;
+
+        match result {
+            Ok(()) => break,
+            Err(ref e) if attempt < LOCK_MAX_ATTEMPTS && is_advisory_lock_error(e) => {
+                warn!(
+                    attempt,
+                    max_attempts = LOCK_MAX_ATTEMPTS,
+                    retry_delay_secs = LOCK_RETRY_DELAY.as_secs(),
+                    "migration advisory lock held by another session — will retry: {e}",
+                );
+                tokio::time::sleep(LOCK_RETRY_DELAY).await;
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
 
     info!("database migrations complete");
     Ok(())
@@ -373,6 +404,27 @@ async fn bridge_alembic(
         );
     }
     Ok(())
+}
+
+/// Returns `true` when a migration error is due to advisory-lock contention.
+///
+/// Two PG codes indicate the lock could not be acquired:
+/// - `55P03` lock_not_available — `lock_timeout` fired (our short 5 s timeout).
+/// - `57014` query_canceled    — `statement_timeout` fired while the session
+///   was blocked on `pg_advisory_lock` (managed-DB override case).
+///
+/// Both are safe to retry once the holder releases the lock.
+fn is_advisory_lock_error(e: &sqlx::migrate::MigrateError) -> bool {
+    let inner = match e {
+        sqlx::migrate::MigrateError::Execute(e) => e,
+        sqlx::migrate::MigrateError::ExecuteMigration(e, _) => e,
+        _ => return false,
+    };
+    if let sqlx::Error::Database(dbe) = inner {
+        matches!(dbe.code().as_deref(), Some("55P03") | Some("57014"))
+    } else {
+        false
+    }
 }
 
 /// Fix stored checksums that no longer match the compiled migrations.
