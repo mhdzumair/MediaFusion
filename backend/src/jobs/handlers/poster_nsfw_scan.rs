@@ -336,18 +336,19 @@ async fn fetch_poster_bytes(
 ) -> Result<Vec<u8>, JobError> {
     // Try RPDB first when we have an IMDb ID and API key.
     if let (Some(key), Some(imdb)) = (rpdb_key, imdb_id)
-        && imdb.starts_with("tt") {
-            let rpdb_url = format!(
-                "https://api.ratingposterdb.com/{key}/imdb/poster-default/{imdb}.jpg?fallback=true"
-            );
-            match get_url(http, &rpdb_url).await {
-                Ok(b) => return Ok(b),
-                Err(e) => {
-                    // Log at debug and fall through to stored URL.
-                    tracing::debug!("RPDB fetch failed for {imdb}: {e}");
-                }
+        && imdb.starts_with("tt")
+    {
+        let rpdb_url = format!(
+            "https://api.ratingposterdb.com/{key}/imdb/poster-default/{imdb}.jpg?fallback=true"
+        );
+        match get_url(http, &rpdb_url).await {
+            Ok(b) => return Ok(b),
+            Err(e) => {
+                // Log at debug and fall through to stored URL.
+                tracing::debug!("RPDB fetch failed for {imdb}: {e}");
             }
         }
+    }
 
     // Fallback to stored media_image URL.
     if !fallback_url.is_empty() {

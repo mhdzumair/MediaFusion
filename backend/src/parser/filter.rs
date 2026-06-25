@@ -52,11 +52,11 @@ pub fn filter_streams_by_preferences(streams: Vec<Value>, ctx: &FilterContext<'_
 
     // Step 1: usenet pre-pass
     if ctx.is_usenet
-        && let Some(provider) = ctx.primary_provider {
-            working.retain(|row| {
-                is_usenet_stream_compatible(row, provider, ud, ctx.allow_public_usenet)
-            });
-        }
+        && let Some(provider) = ctx.primary_provider
+    {
+        working
+            .retain(|row| is_usenet_stream_compatible(row, provider, ud, ctx.allow_public_usenet));
+    }
 
     let mut out = Vec::with_capacity(working.len());
 
@@ -335,9 +335,10 @@ pub fn sort_size_bytes_for_row(row: &Value, season: Option<i32>, episode: Option
         return total;
     }
     if let Some(file_size) = row.get("file_size").and_then(|v| v.as_i64())
-        && file_size > 0 {
-            return file_size;
-        }
+        && file_size > 0
+    {
+        return file_size;
+    }
     total
 }
 

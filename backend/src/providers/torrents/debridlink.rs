@@ -32,14 +32,15 @@ enum TokenKind {
 /// at least 20 characters long, we treat it as a refresh token.
 fn decode_token(token: &str) -> TokenKind {
     if let Ok(bytes) = B64.decode(token)
-        && let Ok(s) = std::str::from_utf8(&bytes) {
-            let trimmed = s.trim();
-            let is_printable_ascii = trimmed.bytes().all(|b| (0x21..0x7f).contains(&b));
-            let no_json_chars = !trimmed.contains('{') && !trimmed.contains(' ');
-            if is_printable_ascii && no_json_chars && trimmed.len() >= 20 {
-                return TokenKind::Refresh(trimmed.to_string());
-            }
+        && let Ok(s) = std::str::from_utf8(&bytes)
+    {
+        let trimmed = s.trim();
+        let is_printable_ascii = trimmed.bytes().all(|b| (0x21..0x7f).contains(&b));
+        let no_json_chars = !trimmed.contains('{') && !trimmed.contains(' ');
+        if is_printable_ascii && no_json_chars && trimmed.len() >= 20 {
+            return TokenKind::Refresh(trimmed.to_string());
         }
+    }
     TokenKind::Private(token.to_string())
 }
 
@@ -106,16 +107,15 @@ fn check_dl_error(body: &Value) -> Result<(), ProviderError> {
         .get("success")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
-    if !success
-        && let Some(err) = body.get("error").and_then(|v| v.as_str()) {
-            if let Some((msg, file)) = map_dl_error(err) {
-                return Err(ProviderError::api(msg, file));
-            }
-            return Err(ProviderError::api(
-                format!("Debrid-Link API error: {err}"),
-                "api_error.mp4",
-            ));
+    if !success && let Some(err) = body.get("error").and_then(|v| v.as_str()) {
+        if let Some((msg, file)) = map_dl_error(err) {
+            return Err(ProviderError::api(msg, file));
         }
+        return Err(ProviderError::api(
+            format!("Debrid-Link API error: {err}"),
+            "api_error.mp4",
+        ));
+    }
     Ok(())
 }
 
@@ -366,21 +366,22 @@ async fn wait_for_download(
         if let Some(torrent) = items.into_iter().next() {
             // Check for errors
             if let Some(err) = torrent.get("errorString").and_then(|v| v.as_str())
-                && !err.is_empty() {
-                    // Delete the broken torrent and bail
-                    dl_delete(
-                        http,
-                        bearer,
-                        &format!("/seedbox/{torrent_id}/delete"),
-                        forward,
-                    )
-                    .await
-                    .ok();
-                    return Err(ProviderError::api(
-                        format!("Debrid-Link torrent error: {err}"),
-                        "transfer_error.mp4",
-                    ));
-                }
+                && !err.is_empty()
+            {
+                // Delete the broken torrent and bail
+                dl_delete(
+                    http,
+                    bearer,
+                    &format!("/seedbox/{torrent_id}/delete"),
+                    forward,
+                )
+                .await
+                .ok();
+                return Err(ProviderError::api(
+                    format!("Debrid-Link torrent error: {err}"),
+                    "transfer_error.mp4",
+                ));
+            }
 
             let pct = torrent
                 .get("downloadPercent")
@@ -767,12 +768,13 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
         };
         for t in &arr {
             if t.get("downloadPercent").and_then(|v| v.as_i64()) == Some(100)
-                && let Some(h) = t.get("hashString").and_then(|v| v.as_str()) {
-                    let lower = h.to_lowercase();
-                    if hash_set.contains(&lower) {
-                        found.push(lower);
-                    }
+                && let Some(h) = t.get("hashString").and_then(|v| v.as_str())
+            {
+                let lower = h.to_lowercase();
+                if hash_set.contains(&lower) {
+                    found.push(lower);
                 }
+            }
         }
         if (page == 0 && arr.len() > PER_PAGE) || arr.len() < PER_PAGE {
             break;

@@ -40,9 +40,10 @@ fn validate_stream_core(
     }
     if media_type == "movie"
         && let (Some(py), Some(my)) = (parsed.year, meta.year)
-            && py != my {
-                return false;
-            }
+        && py != my
+    {
+        return false;
+    }
     if media_type == "series" && files.is_empty() {
         return false;
     }
@@ -89,9 +90,10 @@ fn validate_telegram_stream(
     }
     if media_type == "movie"
         && let (Some(py), Some(my)) = (stream.parsed.year, meta.year)
-            && py != my {
-                return false;
-            }
+        && py != my
+    {
+        return false;
+    }
     if media_type == "series" && stream.season.is_none() {
         return false;
     }
@@ -431,47 +433,47 @@ pub async fn run_usenet(
             .streaming_providers
             .iter()
             .find(|p| p.service == "easynews" && p.enabled)
-        {
-            let username = en_provider
-                .email
-                .as_deref()
-                .filter(|s| !s.is_empty())
-                .or_else(|| {
-                    en_provider
-                        .easynews_config
-                        .as_ref()
-                        .and_then(|c| c.get("username").or_else(|| c.get("email")))
-                        .and_then(|v| v.as_str())
-                        .filter(|s| !s.is_empty())
-                });
-            let password = en_provider
-                .password
-                .as_deref()
-                .filter(|s| !s.is_empty())
-                .or_else(|| {
-                    en_provider
-                        .easynews_config
-                        .as_ref()
-                        .and_then(|c| c.get("password"))
-                        .and_then(|v| v.as_str())
-                        .filter(|s| !s.is_empty())
-                });
-            if let (Some(u), Some(p)) = (username, password) {
-                let en = easynews::scrape_with_credentials(
-                    &state.http,
-                    u,
-                    p,
-                    meta,
-                    media_type,
-                    season,
-                    episode,
-                    &kf,
-                )
-                .await;
-                results.extend(en);
-                scraped_ids.push("easynews");
-            }
+    {
+        let username = en_provider
+            .email
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                en_provider
+                    .easynews_config
+                    .as_ref()
+                    .and_then(|c| c.get("username").or_else(|| c.get("email")))
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+            });
+        let password = en_provider
+            .password
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                en_provider
+                    .easynews_config
+                    .as_ref()
+                    .and_then(|c| c.get("password"))
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+            });
+        if let (Some(u), Some(p)) = (username, password) {
+            let en = easynews::scrape_with_credentials(
+                &state.http,
+                u,
+                p,
+                meta,
+                media_type,
+                season,
+                episode,
+                &kf,
+            )
+            .await;
+            results.extend(en);
+            scraped_ids.push("easynews");
         }
+    }
 
     // ── TorBox Usenet ─────────────────────────────────────────────────────────
     if is_stale("torbox_search", cfg.torbox_search_ttl) && torbox_search::has_token(user_data) {
@@ -817,97 +819,92 @@ async fn fan_out_with_opts(
     if is_stale("prowlarr", cfg.prowlarr_search_ttl)
         && let Some((url, key)) =
             crate::scrapers::indexer_credentials::resolve_prowlarr_credentials(&ic, &cfg)
-        {
-            let indexers = prowlarr::list_healthy_indexers(&http, &url, &key).await;
-            if !indexers.is_empty() {
-                let privacy_by_id = prowlarr::fetch_indexer_privacy_map(&http, &url, &key).await;
-                let privacy_by_id = Arc::new(privacy_by_id);
-                let deadline = Arc::new(tokio::time::Instant::now() + prowlarr_max_time);
-                for idx in indexers {
-                    let http = http.clone();
-                    let url = url.clone();
-                    let key = key.clone();
-                    let meta = meta.clone();
-                    let mt = media_type.to_string();
-                    let title_queries = title_queries.clone();
-                    let privacy_by_id = privacy_by_id.clone();
-                    let deadline = deadline.clone();
-                    let indexer_name = idx.name.clone();
-                    set.spawn(async move {
-                        let start = Utc::now();
-                        let t = std::time::Instant::now();
-                        let streams = prowlarr::scrape_indexer(
-                            &http,
-                            &url,
-                            &key,
-                            &idx,
-                            &meta,
-                            &mt,
-                            season,
-                            episode,
-                            prowlarr_max_process,
-                            prowlarr_query_timeout,
-                            title_queries.as_slice(),
-                            &privacy_by_id,
-                            *deadline,
-                        )
-                        .await;
-                        tracing::debug!(
-                            "prowlarr indexer {indexer_name}: {} streams",
-                            streams.len()
-                        );
-                        ("prowlarr", streams, start, t.elapsed().as_secs_f64())
-                    });
-                }
-                spawned_scrapers.push("prowlarr");
+    {
+        let indexers = prowlarr::list_healthy_indexers(&http, &url, &key).await;
+        if !indexers.is_empty() {
+            let privacy_by_id = prowlarr::fetch_indexer_privacy_map(&http, &url, &key).await;
+            let privacy_by_id = Arc::new(privacy_by_id);
+            let deadline = Arc::new(tokio::time::Instant::now() + prowlarr_max_time);
+            for idx in indexers {
+                let http = http.clone();
+                let url = url.clone();
+                let key = key.clone();
+                let meta = meta.clone();
+                let mt = media_type.to_string();
+                let title_queries = title_queries.clone();
+                let privacy_by_id = privacy_by_id.clone();
+                let deadline = deadline.clone();
+                let indexer_name = idx.name.clone();
+                set.spawn(async move {
+                    let start = Utc::now();
+                    let t = std::time::Instant::now();
+                    let streams = prowlarr::scrape_indexer(
+                        &http,
+                        &url,
+                        &key,
+                        &idx,
+                        &meta,
+                        &mt,
+                        season,
+                        episode,
+                        prowlarr_max_process,
+                        prowlarr_query_timeout,
+                        title_queries.as_slice(),
+                        &privacy_by_id,
+                        *deadline,
+                    )
+                    .await;
+                    tracing::debug!("prowlarr indexer {indexer_name}: {} streams", streams.len());
+                    ("prowlarr", streams, start, t.elapsed().as_secs_f64())
+                });
             }
+            spawned_scrapers.push("prowlarr");
         }
+    }
 
     // ── Jackett (global config, or user-overridden) ───────────────────────────
-    if cfg.is_scrap_from_jackett && is_stale("jackett", cfg.jackett_search_ttl)
+    if cfg.is_scrap_from_jackett
+        && is_stale("jackett", cfg.jackett_search_ttl)
         && let Some((url, key)) =
             crate::scrapers::indexer_credentials::resolve_jackett_credentials(&ic, &cfg)
-        {
-            let indexers = jackett::list_healthy_indexers(&http, &url, &key).await;
-            if !indexers.is_empty() {
-                let deadline = Arc::new(tokio::time::Instant::now() + jackett_max_time);
-                for idx in indexers {
-                    let http = http.clone();
-                    let url = url.clone();
-                    let key = key.clone();
-                    let meta = meta.clone();
-                    let mt = media_type.to_string();
-                    let title_queries = title_queries.clone();
-                    let deadline = deadline.clone();
-                    let indexer_name = idx.name.clone();
-                    set.spawn(async move {
-                        let start = Utc::now();
-                        let t = std::time::Instant::now();
-                        let streams = jackett::scrape_indexer(
-                            &http,
-                            &url,
-                            &key,
-                            &idx,
-                            &meta,
-                            &mt,
-                            season,
-                            episode,
-                            jackett_max_process,
-                            jackett_query_timeout,
-                            title_queries.as_slice(),
-                            *deadline,
-                        )
-                        .await;
-                        tracing::debug!(
-                            "jackett indexer {indexer_name}: {} streams",
-                            streams.len()
-                        );
-                        ("jackett", streams, start, t.elapsed().as_secs_f64())
-                    });
-                }
-                spawned_scrapers.push("jackett");
+    {
+        let indexers = jackett::list_healthy_indexers(&http, &url, &key).await;
+        if !indexers.is_empty() {
+            let deadline = Arc::new(tokio::time::Instant::now() + jackett_max_time);
+            for idx in indexers {
+                let http = http.clone();
+                let url = url.clone();
+                let key = key.clone();
+                let meta = meta.clone();
+                let mt = media_type.to_string();
+                let title_queries = title_queries.clone();
+                let deadline = deadline.clone();
+                let indexer_name = idx.name.clone();
+                set.spawn(async move {
+                    let start = Utc::now();
+                    let t = std::time::Instant::now();
+                    let streams = jackett::scrape_indexer(
+                        &http,
+                        &url,
+                        &key,
+                        &idx,
+                        &meta,
+                        &mt,
+                        season,
+                        episode,
+                        jackett_max_process,
+                        jackett_query_timeout,
+                        title_queries.as_slice(),
+                        *deadline,
+                    )
+                    .await;
+                    tracing::debug!("jackett indexer {indexer_name}: {} streams", streams.len());
+                    ("jackett", streams, start, t.elapsed().as_secs_f64())
+                });
             }
+            spawned_scrapers.push("jackett");
         }
+    }
 
     // ── Zilean (search + filtered endpoints in parallel) ──────────────────────
     if cfg.is_scrap_from_zilean && is_stale("zilean", cfg.zilean_search_ttl) {

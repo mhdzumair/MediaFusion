@@ -114,9 +114,10 @@ pub fn annotate(
     add_watermark(&mut canvas);
     if params.is_add_title
         && let Some(ref t) = params.title
-            && !t.is_empty() {
-                add_title(&mut canvas, t);
-            }
+        && !t.is_empty()
+    {
+        add_title(&mut canvas, t);
+    }
 
     let rgb = DynamicImage::ImageRgba8(canvas).to_rgb8();
     let mut buf = Cursor::new(Vec::new());
@@ -758,9 +759,10 @@ fn parse_placeholder_se(title: &str) -> (Option<i32>, Option<i32>) {
                     && let (Ok(s), Ok(e)) = (
                         upper[s_start..s_end].parse::<i32>(),
                         upper[e_start..e_end].parse::<i32>(),
-                    ) {
-                        return (Some(s), Some(e));
-                    }
+                    )
+                {
+                    return (Some(s), Some(e));
+                }
             }
         }
     }

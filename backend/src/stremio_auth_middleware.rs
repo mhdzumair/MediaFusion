@@ -83,25 +83,26 @@ pub async fn stremio_auth_middleware(
     // Only D- (anonymous encrypted) secrets need the api_password check.
     // U- secrets belong to logged-in users who never store api_password in their profile.
     if first_seg.starts_with("D-")
-        && let Some(ref required) = state.config.api_password {
-            let raw = match crypto::resolve_user_data(
-                first_seg,
-                &state.config.secret_key,
-                &state.pool,
-                &state.redis,
-            )
-            .await
-            {
-                Ok(v) => v,
-                Err(_) => return invalid_secret_response(&state, path),
-            };
-            let user_data: UserData = serde_json::from_value(raw).unwrap_or_default();
-            let provided = user_data.api_password.as_deref().unwrap_or("");
+        && let Some(ref required) = state.config.api_password
+    {
+        let raw = match crypto::resolve_user_data(
+            first_seg,
+            &state.config.secret_key,
+            &state.pool,
+            &state.redis,
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(_) => return invalid_secret_response(&state, path),
+        };
+        let user_data: UserData = serde_json::from_value(raw).unwrap_or_default();
+        let provided = user_data.api_password.as_deref().unwrap_or("");
 
-            if provided != required.as_str() {
-                return unauthorized_response(&state, path);
-            }
+        if provided != required.as_str() {
+            return unauthorized_response(&state, path);
         }
+    }
 
     next.run(req).await
 }

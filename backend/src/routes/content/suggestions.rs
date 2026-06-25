@@ -259,9 +259,9 @@ async fn apply_metadata_field_change(
                         .bind(media_id)
                         .execute(pool)
                         .await
-                {
-                    tracing::warn!("apply_metadata_field_change: year update failed: {e}");
-                }
+            {
+                tracing::warn!("apply_metadata_field_change: year update failed: {e}");
+            }
         }
         "runtime" => {
             if let Ok(minutes) = suggested_value.parse::<i32>()
@@ -272,9 +272,9 @@ async fn apply_metadata_field_change(
                 .bind(media_id)
                 .execute(pool)
                 .await
-                {
-                    tracing::warn!("apply_metadata_field_change: runtime update failed: {e}");
-                }
+            {
+                tracing::warn!("apply_metadata_field_change: runtime update failed: {e}");
+            }
         }
         "nudity_status" => {
             const VALID_NUDITY: &[&str] =
@@ -294,10 +294,9 @@ async fn apply_metadata_field_change(
                 )
                 .bind(media_id)
                 .execute(pool)
-                .await {
-                    tracing::warn!(
-                        "apply_metadata_field_change: nudity_status update failed: {e}"
-                    );
+                .await
+                {
+                    tracing::warn!("apply_metadata_field_change: nudity_status update failed: {e}");
                 }
             }
         }

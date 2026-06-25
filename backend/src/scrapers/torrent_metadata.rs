@@ -98,9 +98,10 @@ pub fn resolve_download_url(
     let guid = guid.filter(|u| !u.is_empty());
 
     if is_private_torrent_type(torrent_type)
-        && let Some(d) = download {
-            return Some(d.to_string());
-        }
+        && let Some(d) = download
+    {
+        return Some(d.to_string());
+    }
 
     if let Some(g) = guid.filter(|g| g.starts_with("magnet:")) {
         return Some(g.to_string());
@@ -111,9 +112,10 @@ pub fn resolve_download_url(
     }
 
     if let Some(d) = download
-        && d.starts_with("magnet:") {
-            return Some(d.to_string());
-        }
+        && d.starts_with("magnet:")
+    {
+        return Some(d.to_string());
+    }
 
     magnet
         .or(guid)
@@ -170,9 +172,10 @@ pub fn parse_torrent_bytes(bytes: &[u8]) -> Option<ParsedTorrent> {
 
     let mut announce_list = Vec::new();
     if let Some(announce) = &torrent.announce
-        && !announce.is_empty() {
-            announce_list.push(announce.clone());
-        }
+        && !announce.is_empty()
+    {
+        announce_list.push(announce.clone());
+    }
     if let Some(list) = &torrent.announce_list {
         for tier in list {
             for url in tier {

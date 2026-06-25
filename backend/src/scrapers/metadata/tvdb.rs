@@ -41,9 +41,10 @@ fn now_secs() -> u64 {
 async fn auth_token(http: &reqwest::Client, api_key: &str) -> Option<String> {
     let mut guard = cache().lock().await;
     if let Some(ref t) = guard.token
-        && now_secs() < guard.expires_at {
-            return Some(t.clone());
-        }
+        && now_secs() < guard.expires_at
+    {
+        return Some(t.clone());
+    }
 
     let resp = http
         .post(format!("{TVDB_API_URL}/login"))
@@ -397,9 +398,10 @@ async fn fetch_series_episodes(
             if page == 0 {
                 let alt_path = format!("series/{tvdb_id}/episodes/official/eng");
                 if let Some(alt) = tvdb_get(http, api_key, &alt_path, &[]).await
-                    && let Some(eps) = alt["data"]["episodes"].as_array() {
-                        all_episodes.extend(eps.clone());
-                    }
+                    && let Some(eps) = alt["data"]["episodes"].as_array()
+                {
+                    all_episodes.extend(eps.clone());
+                }
             }
             break;
         };

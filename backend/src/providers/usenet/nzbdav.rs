@@ -325,19 +325,20 @@ pub async fn delete_all(http: &reqwest::Client, config: &Value) -> Result<(), Pr
     {
         for slot in slots {
             if slot.get("status").and_then(|v| v.as_str()) == Some("Completed")
-                && let Some(nzo_id) = slot.get("nzo_id").and_then(|v| v.as_str()) {
-                    let _ = http
-                        .get(&api_url)
-                        .query(&[
-                            ("mode", "history"),
-                            ("name", "delete"),
-                            ("value", nzo_id),
-                            ("apikey", api_key),
-                            ("output", "json"),
-                        ])
-                        .send()
-                        .await;
-                }
+                && let Some(nzo_id) = slot.get("nzo_id").and_then(|v| v.as_str())
+            {
+                let _ = http
+                    .get(&api_url)
+                    .query(&[
+                        ("mode", "history"),
+                        ("name", "delete"),
+                        ("value", nzo_id),
+                        ("apikey", api_key),
+                        ("output", "json"),
+                    ])
+                    .send()
+                    .await;
+            }
         }
     }
     Ok(())

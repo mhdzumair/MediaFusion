@@ -984,16 +984,17 @@ fn parse_torrent_meta(name: &str, video_file_count: usize) -> TorrentMeta {
     // "{league} {event} {year}" and the session is the episode.
     if let Some(cat) = crate::parser::detect_sports_category(name) {
         if matches!(cat, "formula_racing" | "motogp_racing")
-            && let Some(racing) = crate::parser::parse_racing_title(name) {
-                return TorrentMeta {
-                    title: Some(racing.series_title.clone()),
-                    year: racing.year,
-                    parsed_type: "sports".to_string(),
-                    db_type: "series".to_string(),
-                    search_title: Some(racing.series_title),
-                    sports_category: Some(cat.to_string()),
-                };
-            }
+            && let Some(racing) = crate::parser::parse_racing_title(name)
+        {
+            return TorrentMeta {
+                title: Some(racing.series_title.clone()),
+                year: racing.year,
+                parsed_type: "sports".to_string(),
+                db_type: "series".to_string(),
+                search_title: Some(racing.series_title),
+                sports_category: Some(cat.to_string()),
+            };
+        }
 
         // Other sports → stored as a movie. Strip the date so FTS can match.
         let sports = crate::parser::parse_sports_title(name);
@@ -1090,13 +1091,14 @@ async fn find_metadata_match(
 
         let mut score = sim;
         if let Some(y) = year
-            && let Some(cy) = c.year {
-                if cy == y {
-                    score += 8;
-                } else if (cy - y).abs() <= 1 {
-                    score += 2;
-                }
+            && let Some(cy) = c.year
+        {
+            if cy == y {
+                score += 8;
+            } else if (cy - y).abs() <= 1 {
+                score += 2;
             }
+        }
         if c.imdb_id.is_some() {
             score += 2;
         }
@@ -1326,9 +1328,10 @@ pub async fn get_missing_torrents(
             for f in &mut video_files {
                 let path = f.get("path").and_then(|v| v.as_str()).unwrap_or("");
                 if let Some(title) = racing_file_episode_title(path)
-                    && let Some(obj) = f.as_object_mut() {
-                        obj.insert("episode_title".to_string(), json!(title));
-                    }
+                    && let Some(obj) = f.as_object_mut()
+                {
+                    obj.insert("episode_title".to_string(), json!(title));
+                }
             }
         }
 
@@ -2007,9 +2010,10 @@ async fn process_advanced_import(
     // ── Catalogs (sports category prepended for sports) ─────────────────────
     let mut catalogs = item.catalogs.clone().unwrap_or_default();
     if let Some(cat) = &sports_category
-        && !catalogs.iter().any(|c| c == cat) {
-            catalogs.insert(0, cat.clone());
-        }
+        && !catalogs.iter().any(|c| c == cat)
+    {
+        catalogs.insert(0, cat.clone());
+    }
 
     let languages = item
         .languages

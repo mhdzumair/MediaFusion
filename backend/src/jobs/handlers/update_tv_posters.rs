@@ -68,14 +68,15 @@ async fn fetch_channel_map(http: &reqwest::Client) -> Result<HashMap<String, Str
     let mut map: HashMap<String, String> = HashMap::with_capacity(channels.len() * 2);
     for ch in channels {
         if let Some(ref logo) = ch.logo
-            && !logo.is_empty() {
-                map.entry(ch.name.to_lowercase())
+            && !logo.is_empty()
+        {
+            map.entry(ch.name.to_lowercase())
+                .or_insert_with(|| logo.clone());
+            for alt in &ch.alt_names {
+                map.entry(alt.to_lowercase())
                     .or_insert_with(|| logo.clone());
-                for alt in &ch.alt_names {
-                    map.entry(alt.to_lowercase())
-                        .or_insert_with(|| logo.clone());
-                }
             }
+        }
     }
     Ok(map)
 }

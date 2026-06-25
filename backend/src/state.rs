@@ -889,10 +889,10 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
         .bind(&whitelist[..])
         .execute(&mut *tx)
         .await
-        {
-            tracing::error!("keyword sync: insert keyword_whitelist failed: {e}");
-            return;
-        }
+    {
+        tracing::error!("keyword sync: insert keyword_whitelist failed: {e}");
+        return;
+    }
 
     // Update stored hash
     if let Err(e) = sqlx::query(

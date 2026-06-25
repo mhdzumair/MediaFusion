@@ -606,9 +606,10 @@ pub fn get_indexers_for_media(
                 return false;
             }
             if let Some(ref enabled) = enabled_set
-                && !enabled.contains(def.key) {
-                    return false;
-                }
+                && !enabled.contains(def.key)
+            {
+                return false;
+            }
             // Skip CF indexers when Byparr is unavailable (worker-only)
             if def.solve_cloudflare && !byparr_available {
                 return false;

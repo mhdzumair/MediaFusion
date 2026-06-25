@@ -18,9 +18,10 @@ pub fn parse_session_data(session_b64: &str) -> Result<SessionData, String> {
 
     if let Ok(bytes) = BASE64.decode(trimmed)
         && let Ok(text) = std::str::from_utf8(&bytes)
-            && text.starts_with('1') {
-                return extract_data_from_telethon(text);
-            }
+        && text.starts_with('1')
+    {
+        return extract_data_from_telethon(text);
+    }
 
     Err(
         "Could not parse TELEGRAM_GRAMMERS_SESSION. Provide a Telethon StringSession \
@@ -84,8 +85,9 @@ pub fn convert_telethon_string(telethon_session: &str) -> Result<String, String>
     }
     if let Ok(bytes) = BASE64.decode(trimmed)
         && let Ok(text) = String::from_utf8(bytes)
-            && text.starts_with('1') {
-                return Ok(text);
-            }
+        && text.starts_with('1')
+    {
+        return Ok(text);
+    }
     Err("input is not a Telethon StringSession (must start with '1')".into())
 }

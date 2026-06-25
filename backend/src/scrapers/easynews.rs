@@ -80,9 +80,9 @@ pub async fn scrape(
                     if seen.insert(guid.clone())
                         && let Some(stream) =
                             parse_item(item, meta, media_type, season, episode, keyword_filters)
-                        {
-                            results.push(stream);
-                        }
+                    {
+                        results.push(stream);
+                    }
                 }
             }
         }
@@ -309,9 +309,10 @@ fn parse_item(
         }
         // Year validation
         if let (Some(py), Some(my)) = (parsed.year, meta.year)
-            && py != my {
-                return None;
-            }
+            && py != my
+        {
+            return None;
+        }
     }
 
     // Title similarity check
@@ -469,27 +470,30 @@ fn generate_download_url(
     // If server-provided farm URL fields are available, use them.
     if let (Some(down), Some(farm), Some(port), Some(hash), Some(title)) =
         (down_url, dl_farm, dl_port, file_hash, file_title)
-        && !down.is_empty() && !farm.is_empty() && !port.is_empty() {
-            let ext = file_extension.unwrap_or("");
-            let ext_dot = if !ext.is_empty() && !ext.starts_with('.') {
-                format!(".{ext}")
-            } else {
-                ext.to_string()
-            };
-            let file_path = format!("{hash}{ext_dot}/{title}{ext_dot}");
-            let encoded_path: String = file_path
-                .split('/')
-                .map(url_encode_component)
-                .collect::<Vec<_>>()
-                .join("/");
-            return format!(
-                "{}/{}/{}/{}",
-                inject_auth(down.trim_end_matches('/'), username, password),
-                url_encode_component(farm),
-                url_encode_component(port),
-                encoded_path,
-            );
-        }
+        && !down.is_empty()
+        && !farm.is_empty()
+        && !port.is_empty()
+    {
+        let ext = file_extension.unwrap_or("");
+        let ext_dot = if !ext.is_empty() && !ext.starts_with('.') {
+            format!(".{ext}")
+        } else {
+            ext.to_string()
+        };
+        let file_path = format!("{hash}{ext_dot}/{title}{ext_dot}");
+        let encoded_path: String = file_path
+            .split('/')
+            .map(url_encode_component)
+            .collect::<Vec<_>>()
+            .join("/");
+        return format!(
+            "{}/{}/{}/{}",
+            inject_auth(down.trim_end_matches('/'), username, password),
+            url_encode_component(farm),
+            url_encode_component(port),
+            encoded_path,
+        );
+    }
 
     // Legacy URL
     let effective_filename = match (filename.is_empty(), file_title, file_extension) {

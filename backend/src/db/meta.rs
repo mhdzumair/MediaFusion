@@ -48,9 +48,10 @@ pub struct EpisodeRow {
 /// Handles both "tt1234567" (imdb) and "mf12345" (internal) formats.
 fn parse_meta_id(meta_id: &str) -> MetaIdKind<'_> {
     if let Some(num) = meta_id.strip_prefix("mf")
-        && let Ok(id) = num.parse::<i32>() {
-            return MetaIdKind::Internal(MediaId(id));
-        }
+        && let Ok(id) = num.parse::<i32>()
+    {
+        return MetaIdKind::Internal(MediaId(id));
+    }
     MetaIdKind::External(meta_id)
 }
 

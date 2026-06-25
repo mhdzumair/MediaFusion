@@ -656,10 +656,12 @@ async fn apply_relink_media(pool: &sqlx::PgPool, stream_id: i32, link_data: &ser
         .and_then(|v| v.as_i64())
         .map(|v| v as i32);
 
-    if file_index.is_some() && (season_number.is_some() || episode_number.is_some())
-        && let Some((file_id,)) = files.first() {
-            // Upsert the file_media_link episode mapping for the target file+media.
-            let _ = sqlx::query(
+    if file_index.is_some()
+        && (season_number.is_some() || episode_number.is_some())
+        && let Some((file_id,)) = files.first()
+    {
+        // Upsert the file_media_link episode mapping for the target file+media.
+        let _ = sqlx::query(
                 "INSERT INTO file_media_link (file_id, media_id, season_number, episode_number, episode_end, created_at, is_primary, confidence, link_source)
                  VALUES ($1, $2, $3, $4, $5, NOW(), true, 1.0, 'SUGGESTION')
                  ON CONFLICT (file_id, media_id, season_number, episode_number)
@@ -672,7 +674,7 @@ async fn apply_relink_media(pool: &sqlx::PgPool, stream_id: i32, link_data: &ser
             .bind(episode_end)
             .execute(pool)
             .await;
-        }
+    }
 
     tracing::info!(
         "apply_relink_media: stream {stream_id} relinked to media {target_media_id} file_index={file_index:?}"
@@ -732,17 +734,17 @@ async fn apply_add_media_link(pool: &sqlx::PgPool, stream_id: i32, link_data: &s
         .map(|v| v as i32);
 
     if let Some(fi) = file_index
-        && (season_number.is_some() || episode_number.is_some()) {
-            let file: Option<(i32,)> = sqlx::query_as(
-                "SELECT id FROM stream_file WHERE stream_id = $1 AND file_index = $2",
-            )
-            .bind(stream_id)
-            .bind(fi)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
-            if let Some((file_id,)) = file {
-                let _ = sqlx::query(
+        && (season_number.is_some() || episode_number.is_some())
+    {
+        let file: Option<(i32,)> =
+            sqlx::query_as("SELECT id FROM stream_file WHERE stream_id = $1 AND file_index = $2")
+                .bind(stream_id)
+                .bind(fi)
+                .fetch_optional(pool)
+                .await
+                .unwrap_or(None);
+        if let Some((file_id,)) = file {
+            let _ = sqlx::query(
                     "INSERT INTO file_media_link (file_id, media_id, season_number, episode_number, episode_end, created_at, is_primary, confidence, link_source)
                      VALUES ($1, $2, $3, $4, $5, NOW(), true, 1.0, 'SUGGESTION')
                      ON CONFLICT (file_id, media_id, season_number, episode_number) DO UPDATE SET episode_end = EXCLUDED.episode_end",
@@ -754,8 +756,8 @@ async fn apply_add_media_link(pool: &sqlx::PgPool, stream_id: i32, link_data: &s
                 .bind(episode_end)
                 .execute(pool)
                 .await;
-            }
         }
+    }
 
     tracing::info!(
         "apply_add_media_link: stream {stream_id} linked to media {target_media_id} file_index={file_index:?}"
@@ -825,13 +827,14 @@ pub async fn apply_stream_field_change(
 
     if suggestion_type == "relink_media" || suggestion_type == "add_media_link" {
         if let Some(v) = value
-            && let Ok(link_data) = serde_json::from_str::<serde_json::Value>(v) {
-                if suggestion_type == "relink_media" {
-                    apply_relink_media(pool, stream_id, &link_data).await;
-                } else {
-                    apply_add_media_link(pool, stream_id, &link_data).await;
-                }
+            && let Ok(link_data) = serde_json::from_str::<serde_json::Value>(v)
+        {
+            if suggestion_type == "relink_media" {
+                apply_relink_media(pool, stream_id, &link_data).await;
+            } else {
+                apply_add_media_link(pool, stream_id, &link_data).await;
             }
+        }
         return;
     }
 
@@ -848,52 +851,58 @@ pub async fn apply_stream_field_change(
     if field.starts_with("episode_link:") {
         let parts: Vec<&str> = field.splitn(3, ':').collect();
         if parts.len() == 3
-            && let Ok(file_id) = parts[1].parse::<i32>() {
-                let link_field = parts[2];
-                if matches!(
-                    link_field,
-                    "season_number" | "episode_number" | "episode_end"
-                ) {
-                    let new_val: Option<i32> =
-                        value.and_then(|v| if v.is_empty() { None } else { v.parse().ok() });
-                    let result =
-                        match link_field {
-                            "season_number" => sqlx::query(
-                                "UPDATE file_media_link SET season_number = $1 WHERE file_id = $2",
-                            )
-                            .bind(new_val)
-                            .bind(file_id)
-                            .execute(pool)
-                            .await,
-                            "episode_number" => sqlx::query(
-                                "UPDATE file_media_link SET episode_number = $1 WHERE file_id = $2",
-                            )
-                            .bind(new_val)
-                            .bind(file_id)
-                            .execute(pool)
-                            .await,
-                            "episode_end" => sqlx::query(
-                                "UPDATE file_media_link SET episode_end = $1 WHERE file_id = $2",
-                            )
-                            .bind(new_val)
-                            .bind(file_id)
-                            .execute(pool)
-                            .await,
-                            _ => return,
-                        };
-                    if let Err(e) = result {
-                        tracing::warn!(
-                            "apply_stream_field_change: episode_link update failed for \
-                             file_id={file_id} field={link_field}: {e}"
-                        );
-                    } else {
-                        tracing::info!(
-                            "apply_stream_field_change: updated episode_link file_id={file_id} \
-                             {link_field}={new_val:?}"
-                        );
+            && let Ok(file_id) = parts[1].parse::<i32>()
+        {
+            let link_field = parts[2];
+            if matches!(
+                link_field,
+                "season_number" | "episode_number" | "episode_end"
+            ) {
+                let new_val: Option<i32> =
+                    value.and_then(|v| if v.is_empty() { None } else { v.parse().ok() });
+                let result = match link_field {
+                    "season_number" => {
+                        sqlx::query(
+                            "UPDATE file_media_link SET season_number = $1 WHERE file_id = $2",
+                        )
+                        .bind(new_val)
+                        .bind(file_id)
+                        .execute(pool)
+                        .await
                     }
+                    "episode_number" => {
+                        sqlx::query(
+                            "UPDATE file_media_link SET episode_number = $1 WHERE file_id = $2",
+                        )
+                        .bind(new_val)
+                        .bind(file_id)
+                        .execute(pool)
+                        .await
+                    }
+                    "episode_end" => {
+                        sqlx::query(
+                            "UPDATE file_media_link SET episode_end = $1 WHERE file_id = $2",
+                        )
+                        .bind(new_val)
+                        .bind(file_id)
+                        .execute(pool)
+                        .await
+                    }
+                    _ => return,
+                };
+                if let Err(e) = result {
+                    tracing::warn!(
+                        "apply_stream_field_change: episode_link update failed for \
+                             file_id={file_id} field={link_field}: {e}"
+                    );
+                } else {
+                    tracing::info!(
+                        "apply_stream_field_change: updated episode_link file_id={file_id} \
+                             {link_field}={new_val:?}"
+                    );
                 }
             }
+        }
         return;
     }
 

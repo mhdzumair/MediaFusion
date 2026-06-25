@@ -80,27 +80,28 @@ pub async fn store_nzb(config: &AppConfig, guid: &str, content: &[u8]) {
         && let (Some(client), Some(bucket)) = (
             crate::util::s3_client::build_s3_client(config).await,
             crate::util::s3_client::bucket_name(config),
-        ) {
-            match client
-                .put_object()
-                .bucket(bucket)
-                .key(s3_key(guid))
-                .body(ByteStream::from(compressed.clone()))
-                .content_type("application/gzip")
-                .send()
-                .await
-            {
-                Ok(_) => {
-                    info!(
-                        "Stored NZB {guid} to S3 ({} -> {} bytes gzipped)",
-                        content.len(),
-                        compressed.len()
-                    );
-                    return;
-                }
-                Err(e) => warn!("nzb_storage: S3 store failed for {guid}: {e}"),
+        )
+    {
+        match client
+            .put_object()
+            .bucket(bucket)
+            .key(s3_key(guid))
+            .body(ByteStream::from(compressed.clone()))
+            .content_type("application/gzip")
+            .send()
+            .await
+        {
+            Ok(_) => {
+                info!(
+                    "Stored NZB {guid} to S3 ({} -> {} bytes gzipped)",
+                    content.len(),
+                    compressed.len()
+                );
+                return;
             }
+            Err(e) => warn!("nzb_storage: S3 store failed for {guid}: {e}"),
         }
+    }
 
     let dir = local_dir(config);
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
@@ -123,30 +124,32 @@ pub async fn retrieve_nzb(config: &AppConfig, guid: &str) -> Option<Vec<u8>> {
         && let (Some(client), Some(bucket)) = (
             crate::util::s3_client::build_s3_client(config).await,
             crate::util::s3_client::bucket_name(config),
-        ) {
-            match client
-                .get_object()
-                .bucket(bucket)
-                .key(s3_key(guid))
-                .send()
-                .await
-            {
-                Ok(resp) => {
-                    if let Ok(data) = resp.body.collect().await {
-                        let bytes = data.into_bytes();
-                        return gzip_decompress(&bytes).ok();
-                    }
+        )
+    {
+        match client
+            .get_object()
+            .bucket(bucket)
+            .key(s3_key(guid))
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                if let Ok(data) = resp.body.collect().await {
+                    let bytes = data.into_bytes();
+                    return gzip_decompress(&bytes).ok();
                 }
-                Err(e) => tracing::debug!("nzb_storage: S3 retrieve miss for {guid}: {e}"),
             }
+            Err(e) => tracing::debug!("nzb_storage: S3 retrieve miss for {guid}: {e}"),
         }
+    }
 
     let dir = local_dir(config);
     let gz_path = dir.join(format!("{guid}.nzb.gz"));
     if let Ok(compressed) = tokio::fs::read(&gz_path).await
-        && let Ok(raw) = gzip_decompress(&compressed) {
-            return Some(raw);
-        }
+        && let Ok(raw) = gzip_decompress(&compressed)
+    {
+        return Some(raw);
+    }
     // Legacy uncompressed fallback
     let raw_path = dir.join(format!("{guid}.nzb"));
     tokio::fs::read(raw_path).await.ok()

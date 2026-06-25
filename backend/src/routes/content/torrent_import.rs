@@ -864,20 +864,20 @@ pub async fn analyze_torrent(
             state.config.requests_proxy_url.as_deref(),
         )
         .await
-        {
-            match dht_result {
-                Ok(meta) => {
-                    files = analyze_files_from_dht(&meta);
-                    file_count = files.len().max(1) as i32;
-                    total_size = meta.total_size;
-                    resolved_files = Some(analyze_dht_summary(&meta));
-                }
-                Err(e) => {
-                    tracing::warn!("demagnetize {info_hash}: {e}");
-                    resolved_files = Some(json!({"error": e.to_string()}));
-                }
+    {
+        match dht_result {
+            Ok(meta) => {
+                files = analyze_files_from_dht(&meta);
+                file_count = files.len().max(1) as i32;
+                total_size = meta.total_size;
+                resolved_files = Some(analyze_dht_summary(&meta));
+            }
+            Err(e) => {
+                tracing::warn!("demagnetize {info_hash}: {e}");
+                resolved_files = Some(json!({"error": e.to_string()}));
             }
         }
+    }
 
     (
         StatusCode::OK,
@@ -1239,21 +1239,22 @@ pub async fn import_magnet(
     .unwrap_or(None);
 
     if let Some(sid) = existing_id
-        && !force_import {
-            return torrent_already_exists_response(
-                &state,
-                sid,
-                &info_hash,
-                meta_id.as_deref(),
-                &meta_type,
-                title.as_deref(),
-                poster.as_deref(),
-                background.as_deref(),
-                release_date.as_deref(),
-                None,
-            )
-            .await;
-        }
+        && !force_import
+    {
+        return torrent_already_exists_response(
+            &state,
+            sid,
+            &info_hash,
+            meta_id.as_deref(),
+            &meta_type,
+            title.as_deref(),
+            poster.as_deref(),
+            background.as_deref(),
+            release_date.as_deref(),
+            None,
+        )
+        .await;
+    }
 
     let mut parsed = if parser::is_sports_title(&name_for_parse) {
         parser::parse_sports_title(&name_for_parse)
@@ -1262,17 +1263,20 @@ pub async fn import_magnet(
     };
     // Allow caller to override parser-detected values
     if let Some(ref r) = resolution
-        && !r.is_empty() {
-            parsed.resolution = Some(r.clone());
-        }
+        && !r.is_empty()
+    {
+        parsed.resolution = Some(r.clone());
+    }
     if let Some(ref q) = quality
-        && !q.is_empty() {
-            parsed.quality = Some(q.clone());
-        }
+        && !q.is_empty()
+    {
+        parsed.quality = Some(q.clone());
+    }
     if let Some(ref c) = codec
-        && !c.is_empty() {
-            parsed.codec = Some(c.clone());
-        }
+        && !c.is_empty()
+    {
+        parsed.codec = Some(c.clone());
+    }
     for a in form_audio {
         if !parsed.audio.iter().any(|x| x == &a) {
             parsed.audio.push(a);
@@ -1665,21 +1669,22 @@ pub async fn import_torrent(
     .unwrap_or(None);
 
     if let Some(sid) = existing_id
-        && !force_import {
-            return torrent_already_exists_response(
-                &state,
-                sid,
-                &info_hash,
-                meta_id.as_deref(),
-                &meta_type,
-                title.as_deref(),
-                poster.as_deref(),
-                background.as_deref(),
-                release_date.as_deref(),
-                None,
-            )
-            .await;
-        }
+        && !force_import
+    {
+        return torrent_already_exists_response(
+            &state,
+            sid,
+            &info_hash,
+            meta_id.as_deref(),
+            &meta_type,
+            title.as_deref(),
+            poster.as_deref(),
+            background.as_deref(),
+            release_date.as_deref(),
+            None,
+        )
+        .await;
+    }
 
     let mut parsed = if parser::is_sports_title(&torrent_name) {
         parser::parse_sports_title(&torrent_name)
@@ -1688,17 +1693,20 @@ pub async fn import_torrent(
     };
     // Allow caller to override parser-detected values
     if let Some(ref r) = resolution
-        && !r.is_empty() {
-            parsed.resolution = Some(r.clone());
-        }
+        && !r.is_empty()
+    {
+        parsed.resolution = Some(r.clone());
+    }
     if let Some(ref q) = quality
-        && !q.is_empty() {
-            parsed.quality = Some(q.clone());
-        }
+        && !q.is_empty()
+    {
+        parsed.quality = Some(q.clone());
+    }
     if let Some(ref c) = codec
-        && !c.is_empty() {
-            parsed.codec = Some(c.clone());
-        }
+        && !c.is_empty()
+    {
+        parsed.codec = Some(c.clone());
+    }
 
     let mut effective_files: Vec<FileEntry> = if !file_data.is_empty() {
         file_data
@@ -1817,9 +1825,10 @@ pub async fn import_torrent(
     // Extract trackers from .torrent announce fields
     let mut tracker_urls: Vec<String> = Vec::new();
     if let Some(announce) = &torrent.announce
-        && !announce.is_empty() {
-            tracker_urls.push(announce.clone());
-        }
+        && !announce.is_empty()
+    {
+        tracker_urls.push(announce.clone());
+    }
     if let Some(list) = &torrent.announce_list {
         for tier in list {
             for url in tier {

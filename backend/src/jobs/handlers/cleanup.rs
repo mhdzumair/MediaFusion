@@ -57,29 +57,28 @@ async fn scan_all_keys(redis: &fred::clients::Client, pattern: &str) -> Vec<Stri
 
 fn parse_scan_value(value: fred::types::Value) -> (String, Vec<String>) {
     if let fred::types::Value::Array(arr) = value
-        && arr.len() == 2 {
-            let cursor = match &arr[0] {
-                fred::types::Value::String(s) => s.to_string(),
-                fred::types::Value::Bytes(b) => String::from_utf8_lossy(b).to_string(),
-                fred::types::Value::Integer(n) => n.to_string(),
-                other => format!("{other:?}"),
-            };
-            let keys = if let fred::types::Value::Array(key_arr) = &arr[1] {
-                key_arr
-                    .iter()
-                    .filter_map(|v| match v {
-                        fred::types::Value::String(s) => Some(s.to_string()),
-                        fred::types::Value::Bytes(b) => {
-                            Some(String::from_utf8_lossy(b).to_string())
-                        }
-                        _ => None,
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            return (cursor, keys);
-        }
+        && arr.len() == 2
+    {
+        let cursor = match &arr[0] {
+            fred::types::Value::String(s) => s.to_string(),
+            fred::types::Value::Bytes(b) => String::from_utf8_lossy(b).to_string(),
+            fred::types::Value::Integer(n) => n.to_string(),
+            other => format!("{other:?}"),
+        };
+        let keys = if let fred::types::Value::Array(key_arr) = &arr[1] {
+            key_arr
+                .iter()
+                .filter_map(|v| match v {
+                    fred::types::Value::String(s) => Some(s.to_string()),
+                    fred::types::Value::Bytes(b) => Some(String::from_utf8_lossy(b).to_string()),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        return (cursor, keys);
+    }
     ("0".to_string(), Vec::new())
 }
 

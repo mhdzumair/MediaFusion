@@ -16,9 +16,10 @@ pub fn quality_rank(quality: Option<&str>, quality_filter: &[String]) -> f64 {
         if let Some((_, members)) = QUALITY_GROUPS
             .iter()
             .find(|(g, _)| *g == group_name.as_str())
-            && members.contains(&q) {
-                return idx as f64;
-            }
+            && members.contains(&q)
+        {
+            return idx as f64;
+        }
     }
     quality_filter.len() as f64
 }

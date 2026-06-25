@@ -117,19 +117,20 @@ pub async fn store_torrent_stream(
     .await;
 
     if let Ok(r) = &ts_result
-        && r.rows_affected() == 0 {
-            sqlx::query("DELETE FROM stream WHERE id = $1")
-                .bind(stream_id.0)
-                .execute(pool)
-                .await
-                .ok();
-            let existing: i32 =
-                sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
-                    .bind(&stream.info_hash)
-                    .fetch_one(pool)
-                    .await?;
-            return Ok(StoreStreamResult::AlreadyExists(StreamId(existing)));
-        }
+        && r.rows_affected() == 0
+    {
+        sqlx::query("DELETE FROM stream WHERE id = $1")
+            .bind(stream_id.0)
+            .execute(pool)
+            .await
+            .ok();
+        let existing: i32 =
+            sqlx::query_scalar("SELECT stream_id FROM torrent_stream WHERE info_hash = $1")
+                .bind(&stream.info_hash)
+                .fetch_one(pool)
+                .await?;
+        return Ok(StoreStreamResult::AlreadyExists(StreamId(existing)));
+    }
     ts_result?;
 
     if !stream.announce_list.is_empty() {
@@ -213,15 +214,16 @@ pub async fn store_usenet_stream(
     .await;
 
     if let Ok(r) = &us_result
-        && r.rows_affected() == 0 {
-            cleanup_orphan_stream(pool, stream_id).await;
-            let existing: i32 =
-                sqlx::query_scalar("SELECT stream_id FROM usenet_stream WHERE nzb_guid = $1")
-                    .bind(&stream.nzb_guid)
-                    .fetch_one(pool)
-                    .await?;
-            return Ok(StoreStreamResult::AlreadyExists(StreamId(existing)));
-        }
+        && r.rows_affected() == 0
+    {
+        cleanup_orphan_stream(pool, stream_id).await;
+        let existing: i32 =
+            sqlx::query_scalar("SELECT stream_id FROM usenet_stream WHERE nzb_guid = $1")
+                .bind(&stream.nzb_guid)
+                .fetch_one(pool)
+                .await?;
+        return Ok(StoreStreamResult::AlreadyExists(StreamId(existing)));
+    }
     us_result?;
 
     link_files_or_media(pool, stream_id, &stream.files, opts).await?;
@@ -345,10 +347,11 @@ pub async fn store_telegram_stream(
     };
 
     if let Ok(r) = &ts_result
-        && r.rows_affected() == 0 {
-            cleanup_orphan_stream(pool, stream_id).await;
-            return Ok(StoreStreamResult::AlreadyExists(stream_id));
-        }
+        && r.rows_affected() == 0
+    {
+        cleanup_orphan_stream(pool, stream_id).await;
+        return Ok(StoreStreamResult::AlreadyExists(stream_id));
+    }
     ts_result?;
 
     link_stream_to_media_with_flags(
@@ -361,9 +364,10 @@ pub async fn store_telegram_stream(
     .await?;
 
     if opts.media_type == super::types::MediaType::Series
-        && let (Some(s), Some(e)) = (opts.season, opts.episode) {
-            link_synthetic_episode_file(pool, stream_id, opts.media_id, s, e, opts).await?;
-        }
+        && let (Some(s), Some(e)) = (opts.season, opts.episode)
+    {
+        link_synthetic_episode_file(pool, stream_id, opts.media_id, s, e, opts).await?;
+    }
 
     Ok(StoreStreamResult::Inserted(stream_id))
 }
@@ -587,19 +591,11 @@ pub async fn upsert_torrent_files_by_hash(
         };
         if let Some(file_id) =
             insert_stream_file(&mut *txn, stream_id, &normalized, f.size > 0).await?
-            && let (Some(s), Some(e)) = (f.season, f.episode) {
-                insert_file_media_link(
-                    &mut *txn,
-                    file_id,
-                    media_id,
-                    s,
-                    e,
-                    None,
-                    false,
-                    link_source,
-                )
+            && let (Some(s), Some(e)) = (f.season, f.episode)
+        {
+            insert_file_media_link(&mut *txn, file_id, media_id, s, e, None, false, link_source)
                 .await?;
-            }
+        }
     }
 
     sqlx::query(

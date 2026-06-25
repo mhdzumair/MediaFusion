@@ -387,16 +387,16 @@ pub async fn import_acestream(
         .fetch_optional(&state.pool)
         .await
         .unwrap_or(None)
-        {
-            link_existing_acestream(&state.pool, existing_id, media_id, is_public).await;
-            return (
+    {
+        link_existing_acestream(&state.pool, existing_id, media_id, is_public).await;
+        return (
                 StatusCode::CONFLICT,
                 Json(
                     json!({"detail": "AceStream already imported (by info_hash)", "stream_id": existing_id}),
                 ),
             )
                 .into_response();
-        }
+    }
 
     let base = crate::db::StreamStoreBase {
         name: stream_name.clone(),

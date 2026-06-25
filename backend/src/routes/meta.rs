@@ -128,9 +128,10 @@ async fn serve_meta(
     let meta_id = raw_id.trim_end_matches(".json");
 
     if media_type == "movie"
-        && let Some(service) = delete_all_watchlist::parse_service(meta_id) {
-            return delete_all_watchlist::delete_all_meta_response(&state, &user_data, service);
-        }
+        && let Some(service) = delete_all_watchlist::parse_service(meta_id)
+    {
+        return delete_all_watchlist::delete_all_meta_response(&state, &user_data, service);
+    }
 
     // Embed keyword-filter version so any keyword change invalidates cached meta responses.
     let kf_ver = { state.keyword_filters.read().unwrap().version_tag() };
@@ -143,38 +144,39 @@ async fn serve_meta(
 
     let mut meta = build_meta(&state, media_type, meta_id).await;
     if meta.is_none()
-        && let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(meta_id) {
-            let ctx = crate::scrapers::metadata::FetchCtx {
-                tmdb_api_key: state.config.tmdb_api_key.as_deref(),
-                tvdb_api_key: state.config.tvdb_api_key.as_deref(),
-                mdblist_api_key: state.config.mdblist_api_key.as_deref(),
-                trakt_client_id: state.config.trakt_client_id.as_deref(),
-                trakt_client_secret: state.config.trakt_client_secret.as_deref(),
-                cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
-            };
-            let is_series = media_type == "series";
-            if let Some(normalized) = crate::scrapers::metadata::fetch_normalized(
-                &state.http,
-                &ctx,
-                provider,
-                &ext_id,
-                is_series,
+        && let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(meta_id)
+    {
+        let ctx = crate::scrapers::metadata::FetchCtx {
+            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
+            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+            mdblist_api_key: state.config.mdblist_api_key.as_deref(),
+            trakt_client_id: state.config.trakt_client_id.as_deref(),
+            trakt_client_secret: state.config.trakt_client_secret.as_deref(),
+            cinemeta_fallback: state.config.imdb_cinemeta_fallback_enabled,
+        };
+        let is_series = media_type == "series";
+        if let Some(normalized) = crate::scrapers::metadata::fetch_normalized(
+            &state.http,
+            &ctx,
+            provider,
+            &ext_id,
+            is_series,
+        )
+        .await
+            && crate::db::store_media(
+                &state.pool,
+                &normalized,
+                crate::db::StoreMediaOpts {
+                    nsfw_scan_on_import: state.config.poster_nsfw_enabled,
+                    ..crate::db::StoreMediaOpts::default()
+                },
             )
             .await
-                && crate::db::store_media(
-                    &state.pool,
-                    &normalized,
-                    crate::db::StoreMediaOpts {
-                        nsfw_scan_on_import: state.config.poster_nsfw_enabled,
-                        ..crate::db::StoreMediaOpts::default()
-                    },
-                )
-                .await
-                .is_ok()
-                {
-                    meta = build_meta(&state, media_type, meta_id).await;
-                }
+            .is_ok()
+        {
+            meta = build_meta(&state, media_type, meta_id).await;
         }
+    }
 
     let Some(meta) = meta else {
         return StatusCode::NOT_FOUND.into_response();

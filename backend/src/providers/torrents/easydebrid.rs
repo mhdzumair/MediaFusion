@@ -106,22 +106,23 @@ pub async fn get_video_url(
 
         // EasyDebrid returns { "link": "..." } on success
         if let Some(link) = body.get("link").and_then(|v| v.as_str())
-            && !link.is_empty() {
-                // EasyDebrid /link/generate returns a single direct link (not a file list),
-                // so we return it directly. File selection is not applicable here since the
-                // API resolves the best file server-side.
-                //
-                // If the API ever returns a list of links (future API change), the
-                // select_video_file helper below can be used. For now we surface the link
-                // as-is. The `_` prefixes below suppress unused-variable warnings while
-                // keeping the helper reachable from the module.
-                let _ = select_video_file;
-                let _ = filename;
-                let _ = file_index;
-                let _ = season;
-                let _ = episode;
-                return Ok(link.to_string());
-            }
+            && !link.is_empty()
+        {
+            // EasyDebrid /link/generate returns a single direct link (not a file list),
+            // so we return it directly. File selection is not applicable here since the
+            // API resolves the best file server-side.
+            //
+            // If the API ever returns a list of links (future API change), the
+            // select_video_file helper below can be used. For now we surface the link
+            // as-is. The `_` prefixes below suppress unused-variable warnings while
+            // keeping the helper reachable from the module.
+            let _ = select_video_file;
+            let _ = filename;
+            let _ = file_index;
+            let _ = season;
+            let _ = episode;
+            return Ok(link.to_string());
+        }
 
         // Status 200 but no usable link — fall through to cache request
         tracing::debug!(

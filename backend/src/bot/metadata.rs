@@ -111,14 +111,15 @@ pub fn episode_info(
     let mut episode_end = None;
 
     if episode_number.is_none()
-        && let Some(episodes) = analysis.get("episodes").and_then(|v| v.as_array()) {
-            if let Some(first) = episodes.first().and_then(|v| v.as_i64()) {
-                episode_number = Some(first as i32);
-            }
-            if episodes.len() > 1 {
-                episode_end = episodes.last().and_then(|v| v.as_i64()).map(|n| n as i32);
-            }
+        && let Some(episodes) = analysis.get("episodes").and_then(|v| v.as_array())
+    {
+        if let Some(first) = episodes.first().and_then(|v| v.as_i64()) {
+            episode_number = Some(first as i32);
         }
+        if episodes.len() > 1 {
+            episode_end = episodes.last().and_then(|v| v.as_i64()).map(|n| n as i32);
+        }
+    }
 
     (season_number, episode_number, episode_end)
 }

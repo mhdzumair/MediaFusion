@@ -124,11 +124,12 @@ async fn github_get_json(
         .get("x-ratelimit-remaining")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<i64>().ok())
-        && remaining < 10 {
-            warn!(
-                "dmm_hashlist: GitHub rate limit almost exhausted (remaining={remaining}). Set DMM_HASHLIST_GITHUB_TOKEN to raise the limit."
-            );
-        }
+        && remaining < 10
+    {
+        warn!(
+            "dmm_hashlist: GitHub rate limit almost exhausted (remaining={remaining}). Set DMM_HASHLIST_GITHUB_TOKEN to raise the limit."
+        );
+    }
 
     let val: serde_json::Value = resp.json().await?;
     Ok(val)
@@ -323,31 +324,32 @@ fn resolve_sports_stream(filename: &str, parsed: &parser::ParsedTitle) -> Option
     }
 
     if matches!(category, "formula_racing" | "motogp_racing")
-        && let Some(racing) = parser::parse_racing_title(filename) {
-            let session_src = racing.session.as_deref().unwrap_or(filename);
-            if let Some((episode, episode_title)) = parser::racing_session_episode(session_src) {
-                let files = vec![StreamFile {
-                    file_index: 0,
-                    filename: episode_title,
-                    season_number: 1,
-                    episode_number: episode,
-                }];
-                return Some(ResolvedStream {
-                    meta: SearchMeta {
-                        media_id: MediaId(0),
-                        imdb_id: None,
-                        title: racing.series_title,
-                        year: racing.year,
-                    },
-                    media_type: "series".to_string(),
-                    parsed: parsed.clone(),
-                    files,
-                    season: None,
-                    episode: None,
-                    catalog: Some(category.to_string()),
-                });
-            }
+        && let Some(racing) = parser::parse_racing_title(filename)
+    {
+        let session_src = racing.session.as_deref().unwrap_or(filename);
+        if let Some((episode, episode_title)) = parser::racing_session_episode(session_src) {
+            let files = vec![StreamFile {
+                file_index: 0,
+                filename: episode_title,
+                season_number: 1,
+                episode_number: episode,
+            }];
+            return Some(ResolvedStream {
+                meta: SearchMeta {
+                    media_id: MediaId(0),
+                    imdb_id: None,
+                    title: racing.series_title,
+                    year: racing.year,
+                },
+                media_type: "series".to_string(),
+                parsed: parsed.clone(),
+                files,
+                season: None,
+                episode: None,
+                catalog: Some(category.to_string()),
+            });
         }
+    }
 
     let clean_title = parsed
         .title
@@ -796,9 +798,10 @@ async fn run_ingestion(
                     None => continue,
                 };
                 if let Some(ref known) = latest_known_sha
-                    && sha == *known {
-                        break;
-                    }
+                    && sha == *known
+                {
+                    break;
+                }
                 to_process.push(sha);
             }
 

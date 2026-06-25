@@ -471,26 +471,30 @@ pub async fn handle_confirm_import(
             i64::from(i32::from(uid)),
         )
         .await
-            && user_info.contribute_anonymously && conv.anonymous_display_name.is_none() {
-                conv.step = ConversationStep::AwaitingAnonymousName;
-                conv.touch();
-                state_store::save_conversation(state, &conv).await;
-                let keyboard = json!({
-                    "inline_keyboard": [
-                        [{"text": "⏭ Skip (use Anonymous)", "callback_data": CallbackAction::AnonSkip { user_id }.encode(state).await}],
-                        [{"text": "◀️ Back to Review", "callback_data": CallbackAction::BackReview { user_id }.encode(state).await}],
-                        [{"text": "❌ Cancel", "callback_data": CallbackAction::Cancel { user_id }.encode(state).await}],
-                    ]
-                });
-                let _ = api.edit_message_text(
-                    chat_id,
-                    message_id,
-                    "🕶️ *Anonymous Contribution*\n\nSend a custom display name for this contribution.\n\
+        && user_info.contribute_anonymously
+        && conv.anonymous_display_name.is_none()
+    {
+        conv.step = ConversationStep::AwaitingAnonymousName;
+        conv.touch();
+        state_store::save_conversation(state, &conv).await;
+        let keyboard = json!({
+            "inline_keyboard": [
+                [{"text": "⏭ Skip (use Anonymous)", "callback_data": CallbackAction::AnonSkip { user_id }.encode(state).await}],
+                [{"text": "◀️ Back to Review", "callback_data": CallbackAction::BackReview { user_id }.encode(state).await}],
+                [{"text": "❌ Cancel", "callback_data": CallbackAction::Cancel { user_id }.encode(state).await}],
+            ]
+        });
+        let _ = api
+            .edit_message_text(
+                chat_id,
+                message_id,
+                "🕶️ *Anonymous Contribution*\n\nSend a custom display name for this contribution.\n\
                      • Max 50 chars\n\n_Send text now, or tap Skip to use Anonymous._",
-                    Some(keyboard),
-                ).await;
-                return;
-            }
+                Some(keyboard),
+            )
+            .await;
+        return;
+    }
 
     let _ = api
         .edit_message_text(chat_id, message_id, "⏳ *Importing...*", None)

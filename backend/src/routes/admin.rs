@@ -65,27 +65,28 @@ async fn redis_scan_page(
 fn parse_scan_value(value: Value) -> (String, Vec<String>) {
     // Redis SCAN returns: [cursor_bulk_string, [key1, key2, ...]]
     if let Value::Array(arr) = value
-        && arr.len() == 2 {
-            let cursor = match &arr[0] {
-                Value::String(s) => s.to_string(),
-                Value::Bytes(b) => String::from_utf8_lossy(b).to_string(),
-                Value::Integer(n) => n.to_string(),
-                other => format!("{other:?}"),
-            };
-            let keys = if let Value::Array(key_arr) = &arr[1] {
-                key_arr
-                    .iter()
-                    .filter_map(|v| match v {
-                        Value::String(s) => Some(s.to_string()),
-                        Value::Bytes(b) => Some(String::from_utf8_lossy(b).to_string()),
-                        _ => None,
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            return (cursor, keys);
-        }
+        && arr.len() == 2
+    {
+        let cursor = match &arr[0] {
+            Value::String(s) => s.to_string(),
+            Value::Bytes(b) => String::from_utf8_lossy(b).to_string(),
+            Value::Integer(n) => n.to_string(),
+            other => format!("{other:?}"),
+        };
+        let keys = if let Value::Array(key_arr) = &arr[1] {
+            key_arr
+                .iter()
+                .filter_map(|v| match v {
+                    Value::String(s) => Some(s.to_string()),
+                    Value::Bytes(b) => Some(String::from_utf8_lossy(b).to_string()),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        return (cursor, keys);
+    }
     ("0".to_string(), Vec::new())
 }
 
@@ -438,9 +439,10 @@ pub async fn cache_keys(
     for k in &raw_keys {
         let info = key_info(&state.redis, k).await;
         if let Some(ref tf) = params.type_filter
-            && info.get("type").and_then(|v| v.as_str()) != Some(tf.as_str()) {
-                continue;
-            }
+            && info.get("type").and_then(|v| v.as_str()) != Some(tf.as_str())
+        {
+            continue;
+        }
         keys_info.push(info);
     }
 

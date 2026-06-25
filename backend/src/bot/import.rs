@@ -182,10 +182,9 @@ fn build_contribution_data(
         "is_public": is_public,
         "sports_category": conv.sports_category,
     });
-    if is_anonymous
-        && let Some(name) = &conv.anonymous_display_name {
-            common["anonymous_display_name"] = json!(name);
-        }
+    if is_anonymous && let Some(name) = &conv.anonymous_display_name {
+        common["anonymous_display_name"] = json!(name);
+    }
     if let Some(poster) = &conv.custom_poster_url {
         common["custom_poster_url"] = json!(poster);
     }

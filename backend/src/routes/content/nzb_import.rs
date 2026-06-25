@@ -794,17 +794,18 @@ async fn do_nzb_import(
             .unwrap_or(None);
 
     if let Some(sid) = existing_id
-        && !force_import {
-            return (
-                StatusCode::CONFLICT,
-                Json(json!({
-                    "status": "exists",
-                    "message": "Stream already exists",
-                    "import_id": sid,
-                })),
-            )
-                .into_response();
-        }
+        && !force_import
+    {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "status": "exists",
+                "message": "Stream already exists",
+                "import_id": sid,
+            })),
+        )
+            .into_response();
+    }
 
     let parsed = parser::parse_title(name);
 

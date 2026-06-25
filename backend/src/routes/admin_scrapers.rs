@@ -515,9 +515,10 @@ pub async fn get_dmm_hashlist_status(
     let raw: Option<String> = state.redis.get("dmm_hashlist:status").await.unwrap_or(None);
 
     if let Some(s) = raw
-        && let Ok(v) = serde_json::from_str::<Value>(&s) {
-            return Json(v).into_response();
-        }
+        && let Ok(v) = serde_json::from_str::<Value>(&s)
+    {
+        return Json(v).into_response();
+    }
 
     Json(json!({
         "enabled": state.config.is_scrap_from_dmm_hashlist,
@@ -544,9 +545,10 @@ pub async fn get_imdb_dataset_status(
     let raw: Option<String> = state.redis.get("imdb_import:status").await.unwrap_or(None);
 
     if let Some(s) = raw
-        && let Ok(v) = serde_json::from_str::<Value>(&s) {
-            return Json(v).into_response();
-        }
+        && let Ok(v) = serde_json::from_str::<Value>(&s)
+    {
+        return Json(v).into_response();
+    }
 
     Json(json!({
         "phase": "idle",
@@ -701,13 +703,14 @@ pub async fn update_imdb_dataset_config(
     }
 
     if let Some(ref schedule) = body.schedule
-        && !is_valid_cron_schedule(schedule) {
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(json!({"detail": "schedule must be a 5-field cron expression"})),
-            )
-                .into_response();
-        }
+        && !is_valid_cron_schedule(schedule)
+    {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"detail": "schedule must be a 5-field cron expression"})),
+        )
+            .into_response();
+    }
 
     if let Some(ref datasets) = body.datasets {
         if datasets.is_empty() {
@@ -753,9 +756,10 @@ pub async fn update_imdb_dataset_config(
         }
     }
     if let Some(include_adult) = body.include_adult
-        && let Value::Object(ref mut map) = payload {
-            map.insert("include_adult".into(), json!(include_adult));
-        }
+        && let Value::Object(ref mut map) = payload
+    {
+        map.insert("include_adult".into(), json!(include_adult));
+    }
 
     let schedule = body.schedule.as_deref().unwrap_or(&current_schedule);
     let enabled = body.enabled.unwrap_or(current_enabled);
@@ -1318,51 +1322,52 @@ pub async fn update_media_images(
             meta_info,
             state.config.telegram_bot_token.as_deref(),
             state.config.telegram_chat_id.as_deref(),
-        ) {
-            let old_poster = old_images
-                .iter()
-                .find(|(t, _)| t == "poster")
-                .map(|(_, u)| u.clone());
-            let old_background = old_images
-                .iter()
-                .find(|(t, _)| t == "background")
-                .map(|(_, u)| u.clone());
-            let old_logo = old_images
-                .iter()
-                .find(|(t, _)| t == "logo")
-                .map(|(_, u)| u.clone());
-            let poster = format!(
-                "{}/poster/{}/{}.jpg",
-                state.config.poster_host_url.trim_end_matches('/'),
-                meta_type,
-                meta_id
-            );
-            let http = state.http.clone();
-            let meta_id = meta_id.clone();
-            let bot_token = bot_token.to_string();
-            let chat_id = chat_id.to_string();
-            let new_poster = body["poster"].as_str().map(str::to_string);
-            let new_background = body["background"].as_str().map(str::to_string);
-            let new_logo = body["logo"].as_str().map(str::to_string);
-            crate::bot::notify_if_enabled(&state, async move {
-                crate::bot::send_image_update_notification(
-                    &http,
-                    &bot_token,
-                    &chat_id,
-                    &meta_id,
-                    &title,
-                    &meta_type,
-                    &poster,
-                    old_poster.as_deref(),
-                    old_background.as_deref(),
-                    old_logo.as_deref(),
-                    new_poster.as_deref(),
-                    new_background.as_deref(),
-                    new_logo.as_deref(),
-                )
-                .await;
-            });
-        }
+        )
+    {
+        let old_poster = old_images
+            .iter()
+            .find(|(t, _)| t == "poster")
+            .map(|(_, u)| u.clone());
+        let old_background = old_images
+            .iter()
+            .find(|(t, _)| t == "background")
+            .map(|(_, u)| u.clone());
+        let old_logo = old_images
+            .iter()
+            .find(|(t, _)| t == "logo")
+            .map(|(_, u)| u.clone());
+        let poster = format!(
+            "{}/poster/{}/{}.jpg",
+            state.config.poster_host_url.trim_end_matches('/'),
+            meta_type,
+            meta_id
+        );
+        let http = state.http.clone();
+        let meta_id = meta_id.clone();
+        let bot_token = bot_token.to_string();
+        let chat_id = chat_id.to_string();
+        let new_poster = body["poster"].as_str().map(str::to_string);
+        let new_background = body["background"].as_str().map(str::to_string);
+        let new_logo = body["logo"].as_str().map(str::to_string);
+        crate::bot::notify_if_enabled(&state, async move {
+            crate::bot::send_image_update_notification(
+                &http,
+                &bot_token,
+                &chat_id,
+                &meta_id,
+                &title,
+                &meta_type,
+                &poster,
+                old_poster.as_deref(),
+                old_background.as_deref(),
+                old_logo.as_deref(),
+                new_poster.as_deref(),
+                new_background.as_deref(),
+                new_logo.as_deref(),
+            )
+            .await;
+        });
+    }
 
     Json(json!({
         "status": "success",
@@ -2271,9 +2276,10 @@ async fn load_cron_payload(pool: &sqlx::PgPool, cron_name: &str) -> Option<Value
 
 async fn load_dispatch_payload(pool: &sqlx::PgPool, job_id: &str, default_payload: Value) -> Value {
     if let Some(cron_name) = job_id_to_cron_name(job_id)
-        && let Some(stored) = load_cron_payload(pool, &cron_name).await {
-            return stored;
-        }
+        && let Some(stored) = load_cron_payload(pool, &cron_name).await
+    {
+        return stored;
+    }
     default_payload
 }
 
@@ -2556,13 +2562,14 @@ pub async fn update_scheduler_job(
     };
 
     if let Some(ref schedule) = body.schedule
-        && !is_valid_cron_schedule(schedule) {
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(json!({"detail": "schedule must be a 5-field cron expression"})),
-            )
-                .into_response();
-        }
+        && !is_valid_cron_schedule(schedule)
+    {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"detail": "schedule must be a 5-field cron expression"})),
+        )
+            .into_response();
+    }
 
     use sqlx::Row as _;
 
@@ -2994,17 +3001,20 @@ fn matches_task_filter(
     search: Option<&str>,
 ) -> bool {
     if let Some(s) = status
-        && rec["status"].as_str().unwrap_or("") != s {
-            return false;
-        }
+        && rec["status"].as_str().unwrap_or("") != s
+    {
+        return false;
+    }
     if let Some(q) = queue_name
-        && rec["queue_name"].as_str().unwrap_or("") != q {
-            return false;
-        }
+        && rec["queue_name"].as_str().unwrap_or("") != q
+    {
+        return false;
+    }
     if let Some(a) = actor_name
-        && rec["actor_name"].as_str().unwrap_or("") != a {
-            return false;
-        }
+        && rec["actor_name"].as_str().unwrap_or("") != a
+    {
+        return false;
+    }
     if let Some(needle) = search {
         let needle = needle.to_lowercase();
         let haystack = format!(

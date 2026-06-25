@@ -120,10 +120,11 @@ pub async fn update_metadata(
     season: Option<i32>,
 ) {
     if let Some(r) = redis
-        && !annotation_lock_acquired(r, info_hash).await {
-            debug!("metadata_update: skip {info_hash} — recent annotation lock");
-            return;
-        }
+        && !annotation_lock_acquired(r, info_hash).await
+    {
+        debug!("metadata_update: skip {info_hash} — recent annotation lock");
+        return;
+    }
 
     let video_files: Vec<&ProviderFile> = files
         .iter()

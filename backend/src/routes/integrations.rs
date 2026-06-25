@@ -1544,9 +1544,9 @@ pub async fn telegram_login(
         .bind(conflicting_id)
         .execute(&state.pool)
         .await
-        {
-            tracing::warn!("telegram_login clear conflict user {conflicting_id}: {e}");
-        }
+    {
+        tracing::warn!("telegram_login clear conflict user {conflicting_id}: {e}");
+    }
 
     // Link the Telegram account to the authenticated user
     if let Err(e) = sqlx::query(
@@ -1583,44 +1583,46 @@ pub async fn telegram_login(
 
     // Remove the stale cache entry if the user was previously linked to a different account
     if let Some(old_tg_id) = &current_telegram_id
-        && old_tg_id != &telegram_user_id {
-            let stale_key = crate::bot::user_mapping_key(old_tg_id);
-            let _: Result<i64, _> = state.redis.del(&stale_key).await;
-        }
+        && old_tg_id != &telegram_user_id
+    {
+        let stale_key = crate::bot::user_mapping_key(old_tg_id);
+        let _: Result<i64, _> = state.redis.del(&stale_key).await;
+    }
 
     // Consume the one-time login token
     let _: Result<i64, _> = state.redis.del(&token_key).await;
 
     // Send a confirmation message to the user in Telegram (fire-and-forget).
     if let Ok(tg_chat_id) = telegram_user_id.parse::<i64>()
-        && let Ok(api) = crate::bot::BotApi::from_state(&state) {
-            let username_hint = sqlx::query_scalar::<_, Option<String>>(
-                "SELECT NULLIF(username, '') FROM users WHERE id = $1",
-            )
-            .bind(user_id)
-            .fetch_optional(&state.pool_ro)
-            .await
-            .ok()
-            .flatten()
-            .flatten();
+        && let Ok(api) = crate::bot::BotApi::from_state(&state)
+    {
+        let username_hint = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT NULLIF(username, '') FROM users WHERE id = $1",
+        )
+        .bind(user_id)
+        .fetch_optional(&state.pool_ro)
+        .await
+        .ok()
+        .flatten()
+        .flatten();
 
-            let greeting = match &username_hint {
-                Some(name) => format!("*{}*", name),
-                None => "your MediaFusion account".to_string(),
-            };
+        let greeting = match &username_hint {
+            Some(name) => format!("*{}*", name),
+            None => "your MediaFusion account".to_string(),
+        };
 
-            let msg = format!(
-                "✅ *Account Linked Successfully!*\n\n\
+        let msg = format!(
+            "✅ *Account Linked Successfully!*\n\n\
                  Your Telegram account has been linked to {greeting}.\n\n\
                  You can now:\n\
                  • Forward content to the bot and it will be saved to your account\n\
                  • Use /status to verify your link at any time\n\
                  • Use /help to see all available commands"
-            );
-            tokio::spawn(async move {
-                let _ = api.send_message(tg_chat_id, &msg, None).await;
-            });
-        }
+        );
+        tokio::spawn(async move {
+            let _ = api.send_message(tg_chat_id, &msg, None).await;
+        });
+    }
 
     (
         StatusCode::OK,

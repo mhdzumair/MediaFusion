@@ -106,9 +106,10 @@ async fn lock_held(redis: &fred::clients::Client, cache_key: &str) -> bool {
 async fn read_cache_value(redis: &fred::clients::Client, cache_key: &str) -> Option<String> {
     if let Ok(Some(cached)) = redis.get::<Option<Vec<u8>>, _>(cache_key).await
         && let Ok(url) = String::from_utf8(cached)
-            && !url.is_empty() {
-                return Some(url);
-            }
+        && !url.is_empty()
+    {
+        return Some(url);
+    }
 
     redis
         .get::<Option<String>, _>(cache_key)

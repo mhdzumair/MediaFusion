@@ -1689,10 +1689,9 @@ pub async fn get_media_streams(
         let already_present = streams
             .iter()
             .any(|s| s.get("id").and_then(|v| v.as_i64()) == Some(pin_id as i64));
-        if !already_present
-            && let Some(pinned) = provider_compatible_outputs.get(&pin_id) {
-                streams.insert(0, pinned.clone());
-            }
+        if !already_present && let Some(pinned) = provider_compatible_outputs.get(&pin_id) {
+            streams.insert(0, pinned.clone());
+        }
     }
 
     Json(json!({

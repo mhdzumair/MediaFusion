@@ -115,9 +115,10 @@ fn parse_watchlist_service<'a>(catalog_id: &'a str, media_type: &str) -> Option<
             return Some(service);
         }
     } else if let Some(service) = catalog_id.strip_suffix("_watchlist_series")
-        && media_type == "series" {
-            return Some(service);
-        }
+        && media_type == "series"
+    {
+        return Some(service);
+    }
     None
 }
 
@@ -435,14 +436,16 @@ async fn handle_catalog(
 
     // Check cache
     if let Some(ref key) = cache_key
-        && let Some(cached) = cache::get_json(&state.redis, key).await {
-            if rpdb::needs_rpdb_poster_mutation(&user_data, media_type)
-                && let Ok(mut metas) = serde_json::from_value::<Metas>(cached.clone()) {
-                    rpdb::apply_rpdb_posters(&mut metas, &user_data, media_type);
-                    return Json(metas).into_response();
-                }
-            return Json(cached).into_response();
+        && let Some(cached) = cache::get_json(&state.redis, key).await
+    {
+        if rpdb::needs_rpdb_poster_mutation(&user_data, media_type)
+            && let Ok(mut metas) = serde_json::from_value::<Metas>(cached.clone())
+        {
+            rpdb::apply_rpdb_posters(&mut metas, &user_data, media_type);
+            return Json(metas).into_response();
         }
+        return Json(cached).into_response();
+    }
 
     let rows = if let Some(ref q) = extra.search {
         db_catalog::search_metadata(

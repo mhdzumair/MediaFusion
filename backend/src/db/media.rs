@@ -139,20 +139,21 @@ pub async fn resolve_media_ids(
 
     // mf{internal_id} — direct media.id lookup, no external ID join needed.
     if let Some(raw) = video_id.strip_prefix("mf")
-        && let Ok(id) = raw.parse::<i32>() {
-            let exists: Option<(MediaId,)> = sqlx::query_as(
-                "SELECT id FROM media WHERE id = $1 AND type = $2 AND adult = false LIMIT 1",
-            )
-            .bind(MediaId(id))
-            .bind(mt)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| format!("mf lookup: {e}"))?;
-            return Ok(match exists {
-                Some((media_id,)) => (media_id, vec![]),
-                None => (MediaId(0), vec![]),
-            });
-        }
+        && let Ok(id) = raw.parse::<i32>()
+    {
+        let exists: Option<(MediaId,)> = sqlx::query_as(
+            "SELECT id FROM media WHERE id = $1 AND type = $2 AND adult = false LIMIT 1",
+        )
+        .bind(MediaId(id))
+        .bind(mt)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("mf lookup: {e}"))?;
+        return Ok(match exists {
+            Some((media_id,)) => (media_id, vec![]),
+            None => (MediaId(0), vec![]),
+        });
+    }
 
     // Determine (provider, external_id) pair for external ID types.
     let (provider, external_id) = if video_id.starts_with("tt") {

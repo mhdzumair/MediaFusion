@@ -328,9 +328,10 @@ async fn mylist(
 fn find_item<'a>(list: &'a [Value], name: &str, nzb_guid: &str) -> Option<&'a Value> {
     list.iter().find(|item| {
         if let Some(h) = item.get("hash").and_then(|v| v.as_str())
-            && h.eq_ignore_ascii_case(nzb_guid) {
-                return true;
-            }
+            && h.eq_ignore_ascii_case(nzb_guid)
+        {
+            return true;
+        }
         item.get("name")
             .and_then(|v| v.as_str())
             .map(|n| loose_name_match(n, name))
@@ -370,10 +371,12 @@ fn select_file(info: &Value, _name: &str, season: i32, episode: i32) -> i64 {
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_lowercase();
-            if fname.contains(&se) && is_video_name(&fname)
-                && let Some(id) = f.get("id").and_then(|v| v.as_i64()) {
-                    return id;
-                }
+            if fname.contains(&se)
+                && is_video_name(&fname)
+                && let Some(id) = f.get("id").and_then(|v| v.as_i64())
+            {
+                return id;
+            }
         }
     }
 

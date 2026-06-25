@@ -72,45 +72,46 @@ pub async fn scrape(
 
         // Health gate: skip sources that are consistently failing
         if let Some(hg) = health_gate
-            && hg.enabled {
-                let within_budget = source_health::is_source_within_budget(
+            && hg.enabled
+        {
+            let within_budget = source_health::is_source_within_budget(
+                &hg.redis,
+                indexer.key,
+                hg.min_samples,
+                hg.min_success_rate,
+                hg.max_timeout_rate,
+                media_type,
+                &hg.scope_mode,
+                &hg.scope_override,
+            )
+            .await;
+            if !within_budget {
+                let snapshot = source_health::get_source_health(
                     &hg.redis,
                     indexer.key,
-                    hg.min_samples,
-                    hg.min_success_rate,
-                    hg.max_timeout_rate,
                     media_type,
                     &hg.scope_mode,
                     &hg.scope_override,
                 )
                 .await;
-                if !within_budget {
-                    let snapshot = source_health::get_source_health(
-                        &hg.redis,
+                // Recovery: let sources with enough consecutive successes through
+                let recovery_streak = hg.recovery_success_streak;
+                if recovery_streak > 0 && snapshot.consecutive_success >= recovery_streak {
+                    tracing::debug!(
+                        "public_indexers: health gate recovery admission for {}",
+                        indexer.key
+                    );
+                } else {
+                    tracing::debug!(
+                        "public_indexers: health gate blocked {} (success_rate={:.2}, timeout_rate={:.2})",
                         indexer.key,
-                        media_type,
-                        &hg.scope_mode,
-                        &hg.scope_override,
-                    )
-                    .await;
-                    // Recovery: let sources with enough consecutive successes through
-                    let recovery_streak = hg.recovery_success_streak;
-                    if recovery_streak > 0 && snapshot.consecutive_success >= recovery_streak {
-                        tracing::debug!(
-                            "public_indexers: health gate recovery admission for {}",
-                            indexer.key
-                        );
-                    } else {
-                        tracing::debug!(
-                            "public_indexers: health gate blocked {} (success_rate={:.2}, timeout_rate={:.2})",
-                            indexer.key,
-                            snapshot.success_rate(),
-                            snapshot.timeout_rate(),
-                        );
-                        continue;
-                    }
+                        snapshot.success_rate(),
+                        snapshot.timeout_rate(),
+                    );
+                    continue;
                 }
             }
+        }
 
         let (streams, request_ok) = scrape_indexer(
             client,
@@ -126,22 +127,23 @@ pub async fn scrape(
 
         // Record outcome for health tracking
         if let Some(hg) = health_gate
-            && hg.enabled {
-                source_health::record_source_outcome(
-                    &hg.redis,
-                    indexer.key,
-                    !streams.is_empty() || request_ok,
-                    false, // timed_out — not tracked at this granularity yet
-                    false, // challenge_solved
-                    media_type,
-                    &hg.scope_mode,
-                    &hg.scope_override,
-                    hg.counter_soft_cap,
-                    hg.decay_factor,
-                    hg.metrics_ttl_seconds,
-                )
-                .await;
-            }
+            && hg.enabled
+        {
+            source_health::record_source_outcome(
+                &hg.redis,
+                indexer.key,
+                !streams.is_empty() || request_ok,
+                false, // timed_out — not tracked at this granularity yet
+                false, // challenge_solved
+                media_type,
+                &hg.scope_mode,
+                &hg.scope_override,
+                hg.counter_soft_cap,
+                hg.decay_factor,
+                hg.metrics_ttl_seconds,
+            )
+            .await;
+        }
 
         for s in streams {
             if seen.insert(s.info_hash.clone()) {
@@ -304,9 +306,10 @@ async fn scrape_rss(
             }
             if media_type == "movie"
                 && let (Some(py), Some(my)) = (parsed.year, meta.year)
-                    && py != my {
-                        continue;
-                    }
+                && py != my
+            {
+                continue;
+            }
             let files = if media_type == "series" {
                 build_series_files(&parsed, season, episode)
             } else {
@@ -553,9 +556,10 @@ async fn scrape_html(
                         keyword_filters,
                     )
                     .await
-                        && seen.insert(stream.info_hash.clone()) {
-                            results.push(stream);
-                        }
+                        && seen.insert(stream.info_hash.clone())
+                    {
+                        results.push(stream);
+                    }
                 }
                 if !results.is_empty() {
                     break 'templates;
@@ -591,9 +595,10 @@ async fn process_row_data(
     }
     if media_type == "movie"
         && let (Some(py), Some(my)) = (parsed.year, meta.year)
-            && py != my {
-                return None;
-            }
+        && py != my
+    {
+        return None;
+    }
 
     // Try direct magnet from listing row
     let direct_hash = data
@@ -674,11 +679,12 @@ fn parse_pseudo(s: &str) -> (&str, SelectorPseudo) {
         return (css, SelectorPseudo::Text);
     }
     if s.ends_with(')')
-        && let Some(pos) = s.rfind("::attr(") {
-            let css = &s[..pos];
-            let attr = s[pos + 7..s.len() - 1].to_string();
-            return (css, SelectorPseudo::Attr(attr));
-        }
+        && let Some(pos) = s.rfind("::attr(")
+    {
+        let css = &s[..pos];
+        let attr = s[pos + 7..s.len() - 1].to_string();
+        return (css, SelectorPseudo::Attr(attr));
+    }
     (s, SelectorPseudo::None)
 }
 

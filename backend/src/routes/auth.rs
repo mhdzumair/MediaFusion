@@ -534,15 +534,16 @@ pub async fn register(
         && let (Some(api_key), Some(form_id)) = (
             state.config.convertkit_api_key.clone(),
             state.config.convertkit_form_id.clone(),
-        ) {
-            let email = req.email.clone();
-            let http = state.http.clone();
-            tokio::spawn(async move {
-                if let Err(e) = subscribe_to_convertkit(&http, &api_key, &form_id, &email).await {
-                    tracing::warn!("ConvertKit subscribe failed for {email}: {e}");
-                }
-            });
-        }
+        )
+    {
+        let email = req.email.clone();
+        let http = state.http.clone();
+        tokio::spawn(async move {
+            if let Err(e) = subscribe_to_convertkit(&http, &api_key, &form_id, &email).await {
+                tracing::warn!("ConvertKit subscribe failed for {email}: {e}");
+            }
+        });
+    }
 
     if !auto_verify {
         // Send verification email if SMTP is configured
@@ -784,15 +785,16 @@ pub async fn resend_verification(
     }
 
     if let Some(user) = fetch_user_by_email(&state.pool, &req.email).await
-        && !user.is_verified {
-            let token = create_email_verify_token(user.id, &state.config.secret_key_raw);
-            let _ = send_email_verification(&state, &user.email, user.username.as_deref(), &token)
-                .await;
-            let _ = state
-                .redis
-                .set::<(), _, _>(cooldown_key, "1", Some(Expiration::EX(60)), None, false)
-                .await;
-        }
+        && !user.is_verified
+    {
+        let token = create_email_verify_token(user.id, &state.config.secret_key_raw);
+        let _ =
+            send_email_verification(&state, &user.email, user.username.as_deref(), &token).await;
+        let _ = state
+            .redis
+            .set::<(), _, _>(cooldown_key, "1", Some(Expiration::EX(60)), None, false)
+            .await;
+    }
     (
         StatusCode::OK,
         Json(
@@ -817,20 +819,20 @@ pub async fn forgot_password(
     }
 
     if let Some(user) = fetch_user_by_email(&state.pool, &req.email).await
-        && user.is_active && user.password_hash.is_some() {
-            let pwd_prefix = user
-                .password_hash
-                .as_deref()
-                .unwrap_or("")
-                .get(..16)
-                .unwrap_or("")
-                .to_string();
-            let token =
-                create_password_reset_token(user.id, &pwd_prefix, &state.config.secret_key_raw);
-            let _ =
-                send_password_reset_email(&state, &user.email, user.username.as_deref(), &token)
-                    .await;
-        }
+        && user.is_active
+        && user.password_hash.is_some()
+    {
+        let pwd_prefix = user
+            .password_hash
+            .as_deref()
+            .unwrap_or("")
+            .get(..16)
+            .unwrap_or("")
+            .to_string();
+        let token = create_password_reset_token(user.id, &pwd_prefix, &state.config.secret_key_raw);
+        let _ =
+            send_password_reset_email(&state, &user.email, user.username.as_deref(), &token).await;
+    }
     (
         StatusCode::OK,
         Json(serde_json::json!({

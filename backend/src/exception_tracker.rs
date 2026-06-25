@@ -263,9 +263,10 @@ pub async fn query_list(
             continue;
         }
         if let Some(et) = exception_type
-            && data.get("type").map(|s| s.as_str()) != Some(et) {
-                continue;
-            }
+            && data.get("type").map(|s| s.as_str()) != Some(et)
+        {
+            continue;
+        }
         items.push(json!({
             "fingerprint": fp,
             "type": data.get("type").unwrap_or(&String::new()),

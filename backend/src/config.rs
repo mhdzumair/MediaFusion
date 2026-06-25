@@ -945,9 +945,10 @@ impl AppConfig {
 /// Resolve a repo-relative directory whether the process cwd is repo root or `backend/`.
 fn resolve_repo_relative_dir(env_key: &str, repo_relative: &str, marker: &str) -> String {
     if let Ok(v) = std::env::var(env_key)
-        && !v.is_empty() {
-            return v;
-        }
+        && !v.is_empty()
+    {
+        return v;
+    }
 
     let from_manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")

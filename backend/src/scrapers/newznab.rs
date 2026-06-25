@@ -50,9 +50,10 @@ pub async fn scrape(
 
             let mut url_with_key = api_url;
             if let Some(ak) = &idx.api_key
-                && !ak.is_empty() {
-                    url_with_key = format!("{url_with_key}?apikey={ak}");
-                }
+                && !ak.is_empty()
+            {
+                url_with_key = format!("{url_with_key}?apikey={ak}");
+            }
 
             TorznabEndpoint {
                 id: idx.id.clone(),

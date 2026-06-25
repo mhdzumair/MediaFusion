@@ -63,35 +63,37 @@ pub fn parse_eztv_rss(xml: &str) -> Vec<RssItem> {
             Ok(Event::Empty(ref e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
                 if name == "enclosure"
-                    && let Some(ref mut item) = current {
-                        let mut url: Option<String> = None;
-                        let mut length: Option<i64> = None;
-                        for attr in e.attributes().flatten() {
-                            let key =
-                                String::from_utf8_lossy(attr.key.local_name().as_ref()).to_string();
-                            let val = String::from_utf8_lossy(&attr.value).to_string();
-                            match key.as_str() {
-                                "url" => url = Some(val),
-                                "length" => length = val.parse::<i64>().ok(),
-                                _ => {}
-                            }
+                    && let Some(ref mut item) = current
+                {
+                    let mut url: Option<String> = None;
+                    let mut length: Option<i64> = None;
+                    for attr in e.attributes().flatten() {
+                        let key =
+                            String::from_utf8_lossy(attr.key.local_name().as_ref()).to_string();
+                        let val = String::from_utf8_lossy(&attr.value).to_string();
+                        match key.as_str() {
+                            "url" => url = Some(val),
+                            "length" => length = val.parse::<i64>().ok(),
+                            _ => {}
                         }
-                        item.enclosure_url = url;
-                        item.enclosure_size = length;
                     }
+                    item.enclosure_url = url;
+                    item.enclosure_size = length;
+                }
             }
             Ok(Event::Text(ref e)) => {
                 let text = e.decode().unwrap_or_default().trim().to_string();
                 if !text.is_empty()
-                    && let Some(ref mut item) = current {
-                        if in_title {
-                            item.title = text;
-                        } else if in_info_hash {
-                            item.info_hash = Some(text);
-                        } else if in_seeds {
-                            item.seeds = text.parse::<i32>().ok();
-                        }
+                    && let Some(ref mut item) = current
+                {
+                    if in_title {
+                        item.title = text;
+                    } else if in_info_hash {
+                        item.info_hash = Some(text);
+                    } else if in_seeds {
+                        item.seeds = text.parse::<i32>().ok();
                     }
+                }
                 in_title = false;
                 in_info_hash = false;
                 in_seeds = false;

@@ -79,9 +79,10 @@ fn extract_video_id(url: &str) -> Option<String> {
 
     for re in [re_watch, re_short, re_embed, re_shorts] {
         if let Some(caps) = re.captures(url)
-            && let Some(m) = caps.get(1) {
-                return Some(m.as_str().to_string());
-            }
+            && let Some(m) = caps.get(1)
+        {
+            return Some(m.as_str().to_string());
+        }
     }
     None
 }
@@ -174,45 +175,45 @@ async fn fetch_youtube_metadata(
             .send()
             .await
             && resp.status().is_success()
-                && let Ok(data) = resp.json::<serde_json::Value>().await
-                    && let Some(item) = data["items"].as_array().and_then(|a| a.first()) {
-                        let snippet = &item["snippet"];
-                        let content_details = &item["contentDetails"];
-                        let status = &item["status"];
-                        meta.title = snippet["title"].as_str().map(str::to_string);
-                        meta.channel_name = snippet["channelTitle"].as_str().map(str::to_string);
-                        meta.channel_id = snippet["channelId"].as_str().map(str::to_string);
-                        meta.is_live = snippet["liveBroadcastContent"].as_str() == Some("live");
-                        if let Some(dur) = content_details["duration"].as_str() {
-                            let secs = parse_iso8601_duration(dur);
-                            if secs > 0 {
-                                meta.duration_seconds = Some(secs);
-                            }
-                        }
-                        let region = &status["regionRestriction"];
-                        let allowed =
-                            normalize_country_list(region["allowed"].as_array().unwrap_or(&vec![]));
-                        let blocked =
-                            normalize_country_list(region["blocked"].as_array().unwrap_or(&vec![]));
-                        if !allowed.is_empty() {
-                            meta.geo_restriction_type = Some("allowed".to_string());
-                            meta.geo_restriction_countries = allowed;
-                        } else if !blocked.is_empty() {
-                            meta.geo_restriction_type = Some("blocked".to_string());
-                            meta.geo_restriction_countries = blocked;
-                        }
-                    }
+            && let Ok(data) = resp.json::<serde_json::Value>().await
+            && let Some(item) = data["items"].as_array().and_then(|a| a.first())
+        {
+            let snippet = &item["snippet"];
+            let content_details = &item["contentDetails"];
+            let status = &item["status"];
+            meta.title = snippet["title"].as_str().map(str::to_string);
+            meta.channel_name = snippet["channelTitle"].as_str().map(str::to_string);
+            meta.channel_id = snippet["channelId"].as_str().map(str::to_string);
+            meta.is_live = snippet["liveBroadcastContent"].as_str() == Some("live");
+            if let Some(dur) = content_details["duration"].as_str() {
+                let secs = parse_iso8601_duration(dur);
+                if secs > 0 {
+                    meta.duration_seconds = Some(secs);
+                }
+            }
+            let region = &status["regionRestriction"];
+            let allowed = normalize_country_list(region["allowed"].as_array().unwrap_or(&vec![]));
+            let blocked = normalize_country_list(region["blocked"].as_array().unwrap_or(&vec![]));
+            if !allowed.is_empty() {
+                meta.geo_restriction_type = Some("allowed".to_string());
+                meta.geo_restriction_countries = allowed;
+            } else if !blocked.is_empty() {
+                meta.geo_restriction_type = Some("blocked".to_string());
+                meta.geo_restriction_countries = blocked;
+            }
+        }
     }
 
     if (meta.title.is_none() || meta.channel_name.is_none())
-        && let Some((title, channel)) = fetch_oembed(http, video_id).await {
-            if meta.title.is_none() && !title.is_empty() {
-                meta.title = Some(title);
-            }
-            if meta.channel_name.is_none() && !channel.is_empty() {
-                meta.channel_name = Some(channel);
-            }
+        && let Some((title, channel)) = fetch_oembed(http, video_id).await
+    {
+        if meta.title.is_none() && !title.is_empty() {
+            meta.title = Some(title);
         }
+        if meta.channel_name.is_none() && !channel.is_empty() {
+            meta.channel_name = Some(channel);
+        }
+    }
 
     meta
 }

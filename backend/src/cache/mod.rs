@@ -109,31 +109,33 @@ pub async fn get_debrid_cache_status_federated(
         let _ = client.hdel::<(), _, _>(&cache_key, expired).await;
     }
 
-    if sync_federation && !federation_needed.is_empty()
-        && let Some(http) = http {
-            let remote = crate::providers::torrents::cache_federation::fetch_federated_status(
-                http,
-                mediafusion_url,
-                federation_service,
-                &federation_needed,
-            )
-            .await;
-            let mut to_store = Vec::new();
-            for (hash, is_cached) in remote {
-                if is_cached {
-                    result.insert(hash.clone(), true);
-                    to_store.push(hash);
-                }
-            }
-            if !to_store.is_empty() {
-                crate::providers::torrents::cache::store_cached_hashes(
-                    client,
-                    cache_service,
-                    &to_store,
-                )
-                .await;
+    if sync_federation
+        && !federation_needed.is_empty()
+        && let Some(http) = http
+    {
+        let remote = crate::providers::torrents::cache_federation::fetch_federated_status(
+            http,
+            mediafusion_url,
+            federation_service,
+            &federation_needed,
+        )
+        .await;
+        let mut to_store = Vec::new();
+        for (hash, is_cached) in remote {
+            if is_cached {
+                result.insert(hash.clone(), true);
+                to_store.push(hash);
             }
         }
+        if !to_store.is_empty() {
+            crate::providers::torrents::cache::store_cached_hashes(
+                client,
+                cache_service,
+                &to_store,
+            )
+            .await;
+        }
+    }
 
     result
 }

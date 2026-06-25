@@ -48,13 +48,13 @@ fn spider_homepage(spider_name: &str, default: &str, config_path: &str) -> Strin
     // Try to read and parse as JSON.
     if let Ok(text) = std::fs::read_to_string(config_path)
         && let Ok(root) = serde_json::from_str::<serde_json::Value>(&text)
-            && let Some(hp) = root
-                .get(spider_name)
-                .and_then(|v| v.get("homepage"))
-                .and_then(|v| v.as_str())
-            {
-                return hp.to_string();
-            }
+        && let Some(hp) = root
+            .get(spider_name)
+            .and_then(|v| v.get("homepage"))
+            .and_then(|v| v.as_str())
+    {
+        return hp.to_string();
+    }
     default.to_string()
 }
 
@@ -129,9 +129,10 @@ async fn scrape_tamil_forum(
                 let bp = byparr_url.clone();
                 async move {
                     if let Some(bp_url) = &bp
-                        && let Some(r) = fetch_byparr(&client, bp_url, &url).await {
-                            return Ok(r.html);
-                        }
+                        && let Some(r) = fetch_byparr(&client, bp_url, &url).await
+                    {
+                        return Ok(r.html);
+                    }
                     fetch_plain(&client, &url)
                         .await
                         .map(|r| r.html)
@@ -188,9 +189,10 @@ async fn scrape_tamil_forum(
                     let bp = byparr_url.clone();
                     async move {
                         if let Some(bp_url) = &bp
-                            && let Some(r) = fetch_byparr(&client, bp_url, &url).await {
-                                return Ok(r.html);
-                            }
+                            && let Some(r) = fetch_byparr(&client, bp_url, &url).await
+                        {
+                            return Ok(r.html);
+                        }
                         fetch_plain(&client, &url)
                             .await
                             .map(|r| r.html)
@@ -514,9 +516,10 @@ fn bencode_end(data: &[u8], pos: usize) -> Option<usize> {
 fn load_catalogs(spider_name: &str, config_path: &str) -> serde_json::Value {
     if let Ok(text) = std::fs::read_to_string(config_path)
         && let Ok(root) = serde_json::from_str::<serde_json::Value>(&text)
-            && let Some(catalogs) = root.get(spider_name).and_then(|v| v.get("catalogs")) {
-                return catalogs.clone();
-            }
+        && let Some(catalogs) = root.get(spider_name).and_then(|v| v.get("catalogs"))
+    {
+        return catalogs.clone();
+    }
     serde_json::Value::Object(serde_json::Map::new())
 }
 

@@ -57,18 +57,19 @@ pub fn parse_rss_xml(xml: &str) -> Vec<RssItem> {
                         if current.is_some() {
                             // Capture enclosure attributes
                             if name == "enclosure"
-                                && let Some(item) = current.as_mut() {
-                                    for attr in e.attributes().flatten() {
-                                        let k = String::from_utf8_lossy(attr.key.as_ref())
-                                            .to_lowercase();
-                                        let v = String::from_utf8_lossy(&attr.value).to_string();
-                                        match k.as_str() {
-                                            "url" => item.enclosure_url = Some(v),
-                                            "length" => item.enclosure_length = v.parse().ok(),
-                                            _ => {}
-                                        }
+                                && let Some(item) = current.as_mut()
+                            {
+                                for attr in e.attributes().flatten() {
+                                    let k =
+                                        String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
+                                    let v = String::from_utf8_lossy(&attr.value).to_string();
+                                    match k.as_str() {
+                                        "url" => item.enclosure_url = Some(v),
+                                        "length" => item.enclosure_length = v.parse().ok(),
+                                        _ => {}
                                     }
                                 }
+                            }
                             current_tag = name;
                         }
                     }
@@ -77,17 +78,18 @@ pub fn parse_rss_xml(xml: &str) -> Vec<RssItem> {
             Ok(Event::Empty(ref e)) if current.is_some() => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
                 if name == "enclosure"
-                    && let Some(item) = current.as_mut() {
-                        for attr in e.attributes().flatten() {
-                            let k = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
-                            let v = String::from_utf8_lossy(&attr.value).to_string();
-                            match k.as_str() {
-                                "url" => item.enclosure_url = Some(v),
-                                "length" => item.enclosure_length = v.parse().ok(),
-                                _ => {}
-                            }
+                    && let Some(item) = current.as_mut()
+                {
+                    for attr in e.attributes().flatten() {
+                        let k = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
+                        let v = String::from_utf8_lossy(&attr.value).to_string();
+                        match k.as_str() {
+                            "url" => item.enclosure_url = Some(v),
+                            "length" => item.enclosure_length = v.parse().ok(),
+                            _ => {}
                         }
                     }
+                }
             }
             Ok(Event::Text(ref e)) => {
                 if let Some(item) = current.as_mut() {
@@ -116,9 +118,10 @@ pub fn parse_rss_xml(xml: &str) -> Vec<RssItem> {
             Ok(Event::End(ref e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
                 if (name == "item" || name == "entry")
-                    && let Some(item) = current.take() {
-                        items.push(item);
-                    }
+                    && let Some(item) = current.take()
+                {
+                    items.push(item);
+                }
                 if current.is_some() {
                     current_tag.clear();
                 }
@@ -272,9 +275,10 @@ fn extract_info_hash(item: &RssItem, patterns: &Value) -> Option<String> {
     // 1. Direct info_hash field
     let direct_field = patterns.get("info_hash").and_then(|v| v.as_str());
     if let Some(val) = extract_field(item, direct_field)
-        && let Some(h) = parser::extract_info_hash(val) {
-            return Some(h);
-        }
+        && let Some(h) = parser::extract_info_hash(val)
+    {
+        return Some(h);
+    }
 
     // 2. info_hash_regex applied to info_hash_source
     let ih_regex = patterns.get("info_hash_regex").and_then(|v| v.as_str());
@@ -285,9 +289,10 @@ fn extract_info_hash(item: &RssItem, patterns: &Value) -> Option<String> {
             .or(item.link.as_deref())
             .unwrap_or("");
         if let Some(m) = apply_regex(source_text, regex)
-            && let Some(h) = parser::extract_info_hash(&m) {
-                return Some(h);
-            }
+            && let Some(h) = parser::extract_info_hash(&m)
+        {
+            return Some(h);
+        }
     }
 
     // 3. Magnet link from `magnet` field, then common locations
@@ -300,9 +305,10 @@ fn extract_info_hash(item: &RssItem, patterns: &Value) -> Option<String> {
     ];
     for candidate in magnet_candidates.iter().flatten() {
         if (candidate.contains("magnet:") || candidate.contains("btih:"))
-            && let Some(h) = parser::extract_info_hash(candidate) {
-                return Some(h);
-            }
+            && let Some(h) = parser::extract_info_hash(candidate)
+        {
+            return Some(h);
+        }
     }
 
     // 4. magnet_regex
@@ -310,9 +316,10 @@ fn extract_info_hash(item: &RssItem, patterns: &Value) -> Option<String> {
     if let Some(regex) = m_regex {
         let source_text = item.description.as_deref().unwrap_or("");
         if let Some(m) = apply_regex(source_text, regex)
-            && let Some(h) = parser::extract_info_hash(&m) {
-                return Some(h);
-            }
+            && let Some(h) = parser::extract_info_hash(&m)
+        {
+            return Some(h);
+        }
     }
 
     // 5. Last resort: scan description/link for any 40-hex string
@@ -355,9 +362,10 @@ fn extract_size(item: &RssItem, patterns: &Value) -> i64 {
     }
     // From description using regex for common patterns like "1.5 GB" or "1500 MB"
     if let Some(desc) = item.description.as_deref()
-        && let Some(b) = extract_size_from_text(desc) {
-            return b;
-        }
+        && let Some(b) = extract_size_from_text(desc)
+    {
+        return b;
+    }
     0
 }
 
@@ -448,16 +456,15 @@ async fn upsert_rss_stream(
     };
 
     let mut files = Vec::new();
-    if is_series
-        && let (Some(s), Some(e)) = (season, episode) {
-            files.push(crate::db::StreamFileStoreInput {
-                file_index: 0,
-                filename: name.to_string(),
-                size: Some(size),
-                season_number: s,
-                episode_number: e,
-            });
-        }
+    if is_series && let (Some(s), Some(e)) = (season, episode) {
+        files.push(crate::db::StreamFileStoreInput {
+            file_index: 0,
+            filename: name.to_string(),
+            size: Some(size),
+            season_number: s,
+            episode_number: e,
+        });
+    }
 
     let stream = crate::db::TorrentStoreInput {
         base: crate::db::StreamStoreBase::from_parsed(name.to_string(), source.to_string(), parsed)

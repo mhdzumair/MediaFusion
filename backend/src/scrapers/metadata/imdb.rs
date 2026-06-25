@@ -17,9 +17,9 @@ pub async fn fetch_by_id(
     if ctx.tmdb_api_key.is_some()
         && let Some(meta) =
             super::tmdb::find_by_external(http, ctx, "imdb_id", imdb_id, is_series).await
-        {
-            return Some(meta);
-        }
+    {
+        return Some(meta);
+    }
 
     if ctx.cinemeta_fallback {
         return cinemeta_fetch(http, imdb_id, is_series).await;

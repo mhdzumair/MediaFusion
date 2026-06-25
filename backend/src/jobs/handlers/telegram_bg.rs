@@ -114,26 +114,27 @@ async fn run_user_channel_scrape(
     }
 
     if let Some(notification_chat_id) = ctx.state.config.telegram_chat_id.as_deref()
-        && !notification_chat_id.is_empty() {
-            let summary = format!(
-                "📡 *Channel Scrape Completed*\n\n\
+        && !notification_chat_id.is_empty()
+    {
+        let summary = format!(
+            "📡 *Channel Scrape Completed*\n\n\
                  Channel: `{channel}`\n\
                  Submitted by: user `{telegram_user_id}`\n\
                  • Imported: {}\n\
                  • Skipped: {}\n\
                  • Errors: {}",
-                metrics.imported, metrics.skipped, metrics.errors
-            );
-            if let Some(api) = api.as_ref() {
-                let _ = api
-                    .send_message(
-                        notification_chat_id.parse().unwrap_or(chat_id),
-                        &summary,
-                        None,
-                    )
-                    .await;
-            }
+            metrics.imported, metrics.skipped, metrics.errors
+        );
+        if let Some(api) = api.as_ref() {
+            let _ = api
+                .send_message(
+                    notification_chat_id.parse().unwrap_or(chat_id),
+                    &summary,
+                    None,
+                )
+                .await;
         }
+    }
 
     crate::bot::clear_scrape_job(&ctx.state, telegram_user_id).await;
     Ok(())

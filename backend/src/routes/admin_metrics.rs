@@ -1166,9 +1166,10 @@ pub async fn get_search_run_metrics(
     for key in &all_keys {
         let scraper_name = key.strip_prefix(HISTORY_PREFIX).unwrap_or(key.as_str());
         if let Some(ref sf) = scraper_filter
-            && scraper_name.to_lowercase() != *sf {
-                continue;
-            }
+            && scraper_name.to_lowercase() != *sf
+        {
+            continue;
+        }
 
         use fred::prelude::ListInterface;
         let raw_entries: Vec<String> = state
@@ -1264,9 +1265,10 @@ pub async fn get_scrapy_schedulers(
                         };
                         let val: Option<String> = state.redis.get(&key_str).await.unwrap_or(None);
                         if let Some(s) = val
-                            && let Ok(v) = serde_json::from_str::<Value>(&s) {
-                                results.push(v);
-                            }
+                            && let Ok(v) = serde_json::from_str::<Value>(&s)
+                        {
+                            results.push(v);
+                        }
                     }
                 }
             }

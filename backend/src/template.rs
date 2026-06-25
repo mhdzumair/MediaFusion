@@ -137,26 +137,30 @@ fn parse_block(bytes: &[u8], pos: &mut usize, out: &mut Vec<Node>, inside_if: bo
             }
 
             let mut false_branch = Vec::new();
-            if *pos < n && bytes[*pos] == b'{'
-                && let Some(c2) = find_close(bytes, *pos) {
-                    let tag = std::str::from_utf8(&bytes[*pos + 1..c2])
-                        .unwrap_or("")
-                        .trim();
-                    if tag.eq_ignore_ascii_case("else") {
-                        *pos = c2 + 1; // consume {else}
-                        parse_block(bytes, pos, &mut false_branch, true, depth + 1);
-                    }
+            if *pos < n
+                && bytes[*pos] == b'{'
+                && let Some(c2) = find_close(bytes, *pos)
+            {
+                let tag = std::str::from_utf8(&bytes[*pos + 1..c2])
+                    .unwrap_or("")
+                    .trim();
+                if tag.eq_ignore_ascii_case("else") {
+                    *pos = c2 + 1; // consume {else}
+                    parse_block(bytes, pos, &mut false_branch, true, depth + 1);
                 }
+            }
             // consume {/if}
-            if *pos < n && bytes[*pos] == b'{'
-                && let Some(c2) = find_close(bytes, *pos) {
-                    let tag = std::str::from_utf8(&bytes[*pos + 1..c2])
-                        .unwrap_or("")
-                        .trim();
-                    if tag.eq_ignore_ascii_case("/if") {
-                        *pos = c2 + 1;
-                    }
+            if *pos < n
+                && bytes[*pos] == b'{'
+                && let Some(c2) = find_close(bytes, *pos)
+            {
+                let tag = std::str::from_utf8(&bytes[*pos + 1..c2])
+                    .unwrap_or("")
+                    .trim();
+                if tag.eq_ignore_ascii_case("/if") {
+                    *pos = c2 + 1;
                 }
+            }
             out.push(Node::If {
                 condition,
                 true_branch,
@@ -218,12 +222,13 @@ fn parse_var(inner: &str) -> (String, Vec<(String, Option<String>)>) {
         }
         let part = part.trim();
         if let Some(paren) = part.find('(')
-            && part.ends_with(')') {
-                let mod_name = part[..paren].trim().to_lowercase();
-                let arg = part[paren + 1..part.len() - 1].trim().to_string();
-                modifiers.push((mod_name, Some(arg)));
-                continue;
-            }
+            && part.ends_with(')')
+        {
+            let mod_name = part[..paren].trim().to_lowercase();
+            let arg = part[paren + 1..part.len() - 1].trim().to_string();
+            modifiers.push((mod_name, Some(arg)));
+            continue;
+        }
         modifiers.push((part.to_lowercase(), None));
     }
     (path, modifiers)

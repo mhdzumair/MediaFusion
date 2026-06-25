@@ -48,16 +48,18 @@ fn data_str<'a>(data: &'a Value, key: &str) -> Option<&'a str> {
 fn contribution_titles_indicate_adult(data: &Value) -> bool {
     for key in ["name", "title", "torrent_name"] {
         if let Some(t) = data_str(data, key)
-            && is_adult_content(t) {
-                return true;
-            }
+            && is_adult_content(t)
+        {
+            return true;
+        }
     }
     if let Some(files) = data.get("file_data").and_then(|v| v.as_array()) {
         for file in files {
             if let Some(fname) = file.get("filename").and_then(|v| v.as_str())
-                && is_adult_content(fname) {
-                    return true;
-                }
+                && is_adult_content(fname)
+            {
+                return true;
+            }
         }
     }
     false
@@ -350,16 +352,17 @@ async fn process_torrent(
     }
 
     if let Some(mid) = media_id
-        && effective_meta_type == "series" {
-            let fallback = data_str(data, "title").unwrap_or(name);
-            import_helpers::ensure_series_episode_metadata(
-                &state.pool,
-                mid as i64,
-                &file_rows,
-                fallback,
-            )
-            .await;
-        }
+        && effective_meta_type == "series"
+    {
+        let fallback = data_str(data, "title").unwrap_or(name);
+        import_helpers::ensure_series_episode_metadata(
+            &state.pool,
+            mid as i64,
+            &file_rows,
+            fallback,
+        )
+        .await;
+    }
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, true).await?;
 
@@ -525,14 +528,14 @@ async fn process_http(
         .fetch_optional(&state.pool)
         .await
         .map_err(|e| ImportProcessError::Other(e.to_string()))?
-        {
-            publish_stream(&state.pool, existing, true).await?;
-            return Ok(ImportProcessResult {
-                status: "exists",
-                stream_id: Some(existing as i64),
-                message: Some("HTTP stream already exists for this media".to_string()),
-            });
-        }
+    {
+        publish_stream(&state.pool, existing, true).await?;
+        return Ok(ImportProcessResult {
+            status: "exists",
+            stream_id: Some(existing as i64),
+            message: Some("HTTP stream already exists for this media".to_string()),
+        });
+    }
 
     let base = crate::db::StreamStoreBase {
         name: title.to_string(),
@@ -894,9 +897,10 @@ async fn apply_contribution_stream_extras(
     if let Some(mid) = media_id {
         let mut catalogs = contribution_string_list(data, "catalogs");
         if let Some(sports_cat) = data_str(data, "sports_category")
-            && !catalogs.iter().any(|c| c == sports_cat) {
-                catalogs.insert(0, sports_cat.to_string());
-            }
+            && !catalogs.iter().any(|c| c == sports_cat)
+        {
+            catalogs.insert(0, sports_cat.to_string());
+        }
         if !catalogs.is_empty() {
             link_media_catalogs(&state.pool, mid, &catalogs)
                 .await

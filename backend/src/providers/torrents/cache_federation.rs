@@ -18,9 +18,10 @@ pub fn get_cache_service_name(provider: &StreamingProvider) -> String {
 /// Same as [`get_cache_service_name`] when only raw fields are available.
 pub fn cache_service_name(service: &str, stremthru_store_name: Option<&str>) -> String {
     if service == "stremthru"
-        && let Some(name) = stremthru_store_name.filter(|s| !s.is_empty()) {
-            return name.to_string();
-        }
+        && let Some(name) = stremthru_store_name.filter(|s| !s.is_empty())
+    {
+        return name.to_string();
+    }
     service.to_string()
 }
 
@@ -200,24 +201,23 @@ async fn scan_keys(redis: &RedisClient, pattern: &str) -> Vec<String> {
 
 fn parse_scan(value: fred::types::Value) -> (String, Vec<String>) {
     if let fred::types::Value::Array(arr) = value
-        && arr.len() == 2 {
-            let cursor = value_to_string(&arr[0]);
-            let keys = if let fred::types::Value::Array(key_arr) = &arr[1] {
-                key_arr
-                    .iter()
-                    .filter_map(|v| match v {
-                        fred::types::Value::String(s) => Some(s.to_string()),
-                        fred::types::Value::Bytes(b) => {
-                            Some(String::from_utf8_lossy(b).to_string())
-                        }
-                        _ => None,
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            return (cursor, keys);
-        }
+        && arr.len() == 2
+    {
+        let cursor = value_to_string(&arr[0]);
+        let keys = if let fred::types::Value::Array(key_arr) = &arr[1] {
+            key_arr
+                .iter()
+                .filter_map(|v| match v {
+                    fred::types::Value::String(s) => Some(s.to_string()),
+                    fred::types::Value::Bytes(b) => Some(String::from_utf8_lossy(b).to_string()),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        return (cursor, keys);
+    }
     ("0".to_string(), Vec::new())
 }
 

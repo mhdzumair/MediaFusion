@@ -153,13 +153,14 @@ pub async fn list_users(
 
     // Validate role filter
     if let Some(ref role) = params.role
-        && !VALID_ROLES.contains(&role.as_str()) {
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(serde_json::json!({"error": format!("Invalid role: {role}")})),
-            )
-                .into_response();
-        }
+        && !VALID_ROLES.contains(&role.as_str())
+    {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({"error": format!("Invalid role: {role}")})),
+        )
+            .into_response();
+    }
 
     // Validate sort_by
     let order_expr = match params.sort_by.as_str() {
@@ -183,9 +184,10 @@ pub async fn list_users(
     // Build WHERE clause
     let mut conditions: Vec<String> = Vec::new();
     if let Some(ref role) = params.role
-        && let Some(user_role) = crate::db::UserRole::from_wire(role) {
-            conditions.push(format!("role = '{}'", user_role.as_wire()));
-        }
+        && let Some(user_role) = crate::db::UserRole::from_wire(role)
+    {
+        conditions.push(format!("role = '{}'", user_role.as_wire()));
+    }
     if let Some(ref search) = params.search {
         // Escape single quotes for safety (search is admin-only, but still good practice)
         let safe_search = search.replace('\'', "''");

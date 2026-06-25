@@ -65,9 +65,10 @@ pub async fn scrape(
                                     season,
                                     episode,
                                     keyword_filters,
-                                ) {
-                                    results.push(s);
-                                }
+                                )
+                            {
+                                results.push(s);
+                            }
                         }
                     }
                     IndexerOutcome::Error => {}
@@ -99,9 +100,10 @@ pub async fn scrape(
                                     season,
                                     episode,
                                     keyword_filters,
-                                ) {
-                                    results.push(s);
-                                }
+                                )
+                            {
+                                results.push(s);
+                            }
                         }
                     }
                     IndexerOutcome::Error => {}
@@ -216,9 +218,10 @@ fn validate_and_build(
     }
     if media_type == "movie"
         && let (Some(py), Some(my)) = (parsed.year, meta.year)
-            && py != my {
-                return None;
-            }
+        && py != my
+    {
+        return None;
+    }
     let files = if media_type == "series" {
         build_series_files(&parsed, season, episode)
     } else {

@@ -112,9 +112,10 @@ pub async fn resolve_entry_matched_media_id(
     media_type: &str,
 ) -> Option<String> {
     if let Some(ref id) = entry.matched_media_id
-        && !id.is_empty() {
-            return Some(id.clone());
-        }
+        && !id.is_empty()
+    {
+        return Some(id.clone());
+    }
 
     let title = entry.parsed_title.as_deref().unwrap_or(&entry.name);
     let matches = crate::scrapers::metadata::search_import_matches(
@@ -370,9 +371,10 @@ pub async fn process_m3u_entry(
             entry.entry_type = ov.entry_type.clone();
         }
         if let Some(ref mid) = ov.media_id
-            && !mid.is_empty() {
-                entry.matched_media_id = Some(mid.clone());
-            }
+            && !mid.is_empty()
+        {
+            entry.matched_media_id = Some(mid.clone());
+        }
     }
 
     match entry.entry_type.as_str() {
@@ -383,16 +385,18 @@ pub async fn process_m3u_entry(
         }
         "movie" => {
             if entry.matched_media_id.is_none()
-                && let Some(id) = resolve_entry_matched_media_id(ctx, entry, "movie").await {
-                    entry.matched_media_id = Some(id);
-                }
+                && let Some(id) = resolve_entry_matched_media_id(ctx, entry, "movie").await
+            {
+                entry.matched_media_id = Some(id);
+            }
             let _ = import_movie_entry(ctx, entry, source, user_id, is_public).await;
         }
         "series" => {
             if entry.matched_media_id.is_none()
-                && let Some(id) = resolve_entry_matched_media_id(ctx, entry, "series").await {
-                    entry.matched_media_id = Some(id);
-                }
+                && let Some(id) = resolve_entry_matched_media_id(ctx, entry, "series").await
+            {
+                entry.matched_media_id = Some(id);
+            }
             let _ = import_series_entry(ctx, entry, source, user_id, is_public).await;
         }
         _ => {}
@@ -419,9 +423,10 @@ pub async fn run_m3u_import_batch(
                 entry.entry_type = ov.entry_type.clone();
             }
             if let Some(ref mid) = ov.media_id
-                && !mid.is_empty() {
-                    entry.matched_media_id = Some(mid.clone());
-                }
+                && !mid.is_empty()
+            {
+                entry.matched_media_id = Some(mid.clone());
+            }
         }
         let entry_type = entry.entry_type.clone();
 
@@ -436,9 +441,10 @@ pub async fn run_m3u_import_batch(
             }
             "movie" => {
                 if entry.matched_media_id.is_none()
-                    && let Some(id) = resolve_entry_matched_media_id(ctx, &entry, "movie").await {
-                        entry.matched_media_id = Some(id);
-                    }
+                    && let Some(id) = resolve_entry_matched_media_id(ctx, &entry, "movie").await
+                {
+                    entry.matched_media_id = Some(id);
+                }
                 match import_movie_entry(ctx, &entry, source, user_id, is_public).await {
                     Ok(true) => stats.movie += 1,
                     Ok(false) => stats.skipped += 1,
@@ -450,9 +456,10 @@ pub async fn run_m3u_import_batch(
             }
             "series" => {
                 if entry.matched_media_id.is_none()
-                    && let Some(id) = resolve_entry_matched_media_id(ctx, &entry, "series").await {
-                        entry.matched_media_id = Some(id);
-                    }
+                    && let Some(id) = resolve_entry_matched_media_id(ctx, &entry, "series").await
+                {
+                    entry.matched_media_id = Some(id);
+                }
                 match import_series_entry(ctx, &entry, source, user_id, is_public).await {
                     Ok(true) => stats.series += 1,
                     Ok(false) => stats.skipped += 1,
@@ -501,9 +508,10 @@ pub async fn update_import_job_full(
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
         .unwrap_or_else(|| json!({}));
     if body.get("job_id").is_none()
-        && let Some(id) = job_key.strip_prefix("import_job:") {
-            body["job_id"] = json!(id);
-        }
+        && let Some(id) = job_key.strip_prefix("import_job:")
+    {
+        body["job_id"] = json!(id);
+    }
     body["status"] = json!(status);
     body["progress"] = json!(progress);
     body["total"] = json!(total);

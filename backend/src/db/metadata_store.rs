@@ -122,9 +122,10 @@ pub async fn find_existing_media(
     .flatten();
 
     if let Some((id, existing_title)) = fuzzy
-        && crate::parser::similarity_ratio(title, &existing_title) >= 70 {
-            return Some(MediaId(id));
-        }
+        && crate::parser::similarity_ratio(title, &existing_title) >= 70
+    {
+        return Some(MediaId(id));
+    }
 
     let _ = wire;
     None
@@ -148,9 +149,9 @@ async fn resolve_existing_media(
         if provider == "imdb"
             && let Some(id) =
                 crate::db::get_media_id_by_external_id(pool, ext_id, Some(wire)).await?
-            {
-                return Ok(Some(id));
-            }
+        {
+            return Ok(Some(id));
+        }
     }
 
     Ok(find_existing_media(pool, meta.media_type, &meta.title, meta.year).await)
@@ -960,9 +961,9 @@ async fn resolve_crew_person_id(pool: &PgPool, member: &NormalizedCrewMember) ->
             .bind(imdb_id)
             .fetch_optional(pool)
             .await
-        {
-            return Some(id);
-        }
+    {
+        return Some(id);
+    }
 
     if let Ok(Some(id)) = sqlx::query_scalar(
         "SELECT id FROM person WHERE lower(name) = lower($1) ORDER BY id LIMIT 1",

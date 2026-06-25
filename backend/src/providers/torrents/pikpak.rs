@@ -207,9 +207,10 @@ fn build_auth_headers(device_id: &str, captcha_token: Option<&str>) -> reqwest::
         h.insert("X-Device-ID", val);
     }
     if let Some(ct) = captcha_token.filter(|s| !s.is_empty())
-        && let Ok(val) = ct.parse() {
-            h.insert("X-Captcha-Token", val);
-        }
+        && let Ok(val) = ct.parse()
+    {
+        h.insert("X-Captcha-Token", val);
+    }
     h
 }
 
@@ -613,12 +614,13 @@ fn check_api_error(data: Value) -> Result<Value, ProviderError> {
         return Err(map_pikpak_error(msg));
     }
     if let Some(code) = api_error_code(&data)
-        && code != 0 {
-            let msg = data["error_description"]
-                .as_str()
-                .unwrap_or("PikPak API error");
-            return Err(map_pikpak_error(msg));
-        }
+        && code != 0
+    {
+        let msg = data["error_description"]
+            .as_str()
+            .unwrap_or("PikPak API error");
+        return Err(map_pikpak_error(msg));
+    }
     Ok(data)
 }
 
@@ -878,14 +880,15 @@ async fn resolve_torrent_folder_id(
         }
     };
     if let Some(item) = files.iter().find(|f| item_has_info_hash(f, info_hash))
-        && let Some(id) = item["id"].as_str() {
-            tracing::debug!(
-                hash = %info_hash,
-                file_id = %id,
-                "PikPak torrent resolved via My Pack listing"
-            );
-            return Ok(Some(id.to_string()));
-        }
+        && let Some(id) = item["id"].as_str()
+    {
+        tracing::debug!(
+            hash = %info_hash,
+            file_id = %id,
+            "PikPak torrent resolved via My Pack listing"
+        );
+        return Ok(Some(id.to_string()));
+    }
 
     // List responses often omit params.url/hash; the detail endpoint includes them.
     for item in &files {
@@ -1327,9 +1330,11 @@ fn select_video_file(
     }
 
     if let Some(fi) = file_index
-        && fi >= 0 && (fi as usize) < files.len() {
-            return Ok(fi as usize);
-        }
+        && fi >= 0
+        && (fi as usize) < files.len()
+    {
+        return Ok(fi as usize);
+    }
 
     let video_indices: Vec<usize> = files
         .iter()
@@ -1600,15 +1605,16 @@ async fn get_download_url(
     let data = fetch_file_playback_data(http, tokens, file_id, premium, forward).await?;
 
     if let Some(medias) = data["medias"].as_array().filter(|m| !m.is_empty())
-        && let Some(url) = pick_best_media_url(medias) {
-            tracing::debug!(
-                file_id = %file_id,
-                premium,
-                throughput_bytes = link_throughput_bytes(&url),
-                "PikPak playback using media link"
-            );
-            return Ok(url);
-        }
+        && let Some(url) = pick_best_media_url(medias)
+    {
+        tracing::debug!(
+            file_id = %file_id,
+            premium,
+            throughput_bytes = link_throughput_bytes(&url),
+            "PikPak playback using media link"
+        );
+        return Ok(url);
+    }
 
     data["web_content_link"]
         .as_str()
@@ -1758,22 +1764,22 @@ async fn retrieve_or_download_file(
             }
         } else if phase == "PHASE_TYPE_COMPLETE"
             && let Some(file_id) = task_file_id(&task)
-                && drive_file_exists(http, tokens, &file_id, forward).await
-                    && let Some(selected) = find_file_in_folder_tree(
-                        http,
-                        tokens,
-                        my_pack_folder_id,
-                        info_hash,
-                        filename,
-                        file_index,
-                        season,
-                        episode,
-                        forward,
-                    )
-                    .await?
-                    {
-                        return Ok(selected);
-                    }
+            && drive_file_exists(http, tokens, &file_id, forward).await
+            && let Some(selected) = find_file_in_folder_tree(
+                http,
+                tokens,
+                my_pack_folder_id,
+                info_hash,
+                filename,
+                file_index,
+                season,
+                episode,
+                forward,
+            )
+            .await?
+        {
+            return Ok(selected);
+        }
     }
 
     if let Some(_folder_id) =
@@ -2067,9 +2073,10 @@ fn extract_task_hash(task: &Value) -> Option<String> {
         return Some(h.to_lowercase());
     }
     if let Some(url) = magnet_or_resource_url(task)
-        && let Some(h) = extract_btih(url) {
-            return Some(h);
-        }
+        && let Some(h) = extract_btih(url)
+    {
+        return Some(h);
+    }
     if let Some(h) = task["reference_resource"]["hash"]
         .as_str()
         .filter(|s| s.len() >= 32)
@@ -2077,9 +2084,10 @@ fn extract_task_hash(task: &Value) -> Option<String> {
         return Some(h.to_lowercase());
     }
     if let Some(url) = magnet_or_resource_url(&task["reference_resource"])
-        && let Some(h) = extract_btih(url) {
-            return Some(h);
-        }
+        && let Some(h) = extract_btih(url)
+    {
+        return Some(h);
+    }
     None
 }
 

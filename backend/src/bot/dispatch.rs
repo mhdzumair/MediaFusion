@@ -41,12 +41,12 @@ async fn handle_message(state: &AppState, api: &BotApi, message: Message) {
 
     if let Some(conv) = state_store::get_conversation(state, user_id).await
         && conv.step == super::model::ConversationStep::AwaitingPosterInput
-            && let Some(photos) = &message.photo
-                && let Some(largest) = photos.last() {
-                    wizard::handle_poster_photo(state, api, user_id, chat_id, &largest.file_id)
-                        .await;
-                    return;
-                }
+        && let Some(photos) = &message.photo
+        && let Some(largest) = photos.last()
+    {
+        wizard::handle_poster_photo(state, api, user_id, chat_id, &largest.file_id).await;
+        return;
+    }
 
     if let Some(text) = text_or_caption {
         if text.starts_with('/') {

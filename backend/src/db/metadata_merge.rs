@@ -33,9 +33,10 @@ fn first_scalar_with_providers<T: Clone>(
     for provider in providers {
         for meta in metas {
             if meta_has_provider(meta, provider)
-                && let Some(v) = pick(meta) {
-                    return Some(v);
-                }
+                && let Some(v) = pick(meta)
+            {
+                return Some(v);
+            }
         }
     }
     for meta in metas {

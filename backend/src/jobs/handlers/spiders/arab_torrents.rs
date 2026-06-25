@@ -263,16 +263,17 @@ fn load_spider_config(config_path: &str) -> (String, serde_json::Value) {
     let default_catalogs = serde_json::json!({});
     if let Ok(text) = std::fs::read_to_string(config_path)
         && let Ok(root) = serde_json::from_str::<serde_json::Value>(&text)
-            && let Some(node) = root.get("arab_torrents") {
-                let homepage = node
-                    .get("homepage")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(DEFAULT_HOMEPAGE)
-                    .trim_end_matches('/')
-                    .to_string();
-                let catalogs = node.get("catalogs").cloned().unwrap_or(default_catalogs);
-                return (homepage, catalogs);
-            }
+        && let Some(node) = root.get("arab_torrents")
+    {
+        let homepage = node
+            .get("homepage")
+            .and_then(|v| v.as_str())
+            .unwrap_or(DEFAULT_HOMEPAGE)
+            .trim_end_matches('/')
+            .to_string();
+        let catalogs = node.get("catalogs").cloned().unwrap_or(default_catalogs);
+        return (homepage, catalogs);
+    }
     (DEFAULT_HOMEPAGE.to_string(), default_catalogs)
 }
 

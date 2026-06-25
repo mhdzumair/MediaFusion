@@ -25,10 +25,11 @@ enum TokenKind {
 fn decode_token(token: &str) -> TokenKind {
     if let Ok(bytes) = B64.decode(token)
         && let Ok(s) = std::str::from_utf8(&bytes)
-            && let Ok(v) = serde_json::from_str::<Value>(s)
-                && let Some(at) = v.get("access_token").and_then(|x| x.as_str()) {
-                    return TokenKind::Bearer(at.to_string());
-                }
+        && let Ok(v) = serde_json::from_str::<Value>(s)
+        && let Some(at) = v.get("access_token").and_then(|x| x.as_str())
+    {
+        return TokenKind::Bearer(at.to_string());
+    }
     TokenKind::ApiKey(token.to_string())
 }
 
@@ -223,28 +224,29 @@ fn check_status_code(status: reqwest::StatusCode) -> Result<(), ProviderError> {
 
 fn check_pm_error(body: &Value) -> Result<(), ProviderError> {
     if let Some(status) = body.get("status").and_then(|v| v.as_str())
-        && status != "success" {
-            let msg = body
-                .get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown error");
-            // Authentication failures use a dedicated video.
-            let msg_lower = msg.to_lowercase();
-            let video = if msg_lower.contains("not logged in")
-                || msg_lower.contains("invalid api key")
-                || msg_lower.contains("invalid apikey")
-                || msg_lower.contains("unauthorized")
-                || msg_lower.contains("authentication")
-            {
-                "invalid_token.mp4"
-            } else {
-                "transfer_error.mp4"
-            };
-            return Err(ProviderError::api(
-                format!("Premiumize API error: {msg}"),
-                video,
-            ));
-        }
+        && status != "success"
+    {
+        let msg = body
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown error");
+        // Authentication failures use a dedicated video.
+        let msg_lower = msg.to_lowercase();
+        let video = if msg_lower.contains("not logged in")
+            || msg_lower.contains("invalid api key")
+            || msg_lower.contains("invalid apikey")
+            || msg_lower.contains("unauthorized")
+            || msg_lower.contains("authentication")
+        {
+            "invalid_token.mp4"
+        } else {
+            "transfer_error.mp4"
+        };
+        return Err(ProviderError::api(
+            format!("Premiumize API error: {msg}"),
+            video,
+        ));
+    }
     Ok(())
 }
 
@@ -354,9 +356,10 @@ async fn get_or_create_folder(
     if let Some(folders) = body.get("content").and_then(|v| v.as_array()) {
         for f in folders {
             if f.get("name").and_then(|v| v.as_str()) == Some(name)
-                && let Some(id) = f.get("id").and_then(|v| v.as_str()) {
-                    return Ok(id.to_string());
-                }
+                && let Some(id) = f.get("id").and_then(|v| v.as_str())
+            {
+                return Ok(id.to_string());
+            }
         }
     }
     // Create new folder
@@ -561,9 +564,10 @@ pub async fn get_video_url(
                 file_index,
                 season,
                 episode,
-            ) {
-                return Ok(url);
-            }
+            )
+        {
+            return Ok(url);
+        }
         return Err(ProviderError::api(
             "No video file found in Premiumize direct download",
             "torrent_not_downloaded.mp4",
@@ -587,9 +591,10 @@ pub async fn get_video_url(
             file_index,
             season,
             episode,
-        ) {
-            return Ok(url);
-        }
+        )
+    {
+        return Ok(url);
+    }
 
     let transfer_id = transfer_resp
         .get("id")

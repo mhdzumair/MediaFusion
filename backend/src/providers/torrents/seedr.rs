@@ -26,10 +26,11 @@ static VIDEO_EXTS: &[&str] = &["mkv", "mp4", "avi", "webm", "mov", "flv", "m4v",
 pub fn resolve_bearer_token(raw: &str) -> String {
     if let Ok(decoded) = STANDARD.decode(raw.trim())
         && let Ok(s) = String::from_utf8(decoded)
-            && let Ok(v) = serde_json::from_str::<Value>(&s)
-                && let Some(t) = v["access_token"].as_str() {
-                    return t.to_string();
-                }
+        && let Ok(v) = serde_json::from_str::<Value>(&s)
+        && let Some(t) = v["access_token"].as_str()
+    {
+        return t.to_string();
+    }
     raw.trim().to_string()
 }
 
@@ -216,13 +217,15 @@ fn task_is_complete(task: &Value) -> bool {
     }
     // v2 progress is 0-100 integer; older API used 0.0-1.0 float
     if let Some(p) = task["progress"].as_i64()
-        && p >= 100 {
-            return true;
-        }
+        && p >= 100
+    {
+        return true;
+    }
     if let Some(p) = task["progress"].as_f64()
-        && p >= 1.0 {
-            return true;
-        }
+        && p >= 1.0
+    {
+        return true;
+    }
     false
 }
 
@@ -337,9 +340,10 @@ fn select_video<'a>(
 
     // 1. Explicit index
     if let Some(idx) = file_index
-        && let Some(f) = videos.get(idx as usize) {
-            return Some(f);
-        }
+        && let Some(f) = videos.get(idx as usize)
+    {
+        return Some(f);
+    }
 
     // 2. Filename substring match
     if let Some(fname) = filename {
@@ -391,9 +395,9 @@ async fn file_url(
             .as_str()
             .or_else(|| resp["stream_url"].as_str())
             .or_else(|| resp["link"]["url"].as_str())
-        {
-            return Ok(url.to_string());
-        }
+    {
+        return Ok(url.to_string());
+    }
 
     // Fall back to direct download URL
     let resp = api_get(
@@ -509,9 +513,10 @@ async fn check_status(
             return Ok(TorrentStatus::Downloading);
         }
         if task_is_complete(task)
-            && let Some(content_id) = task["folder_created_id"].as_i64() {
-                return Ok(TorrentStatus::Completed(content_id));
-            }
+            && let Some(content_id) = task["folder_created_id"].as_i64()
+        {
+            return Ok(TorrentStatus::Completed(content_id));
+        }
     }
 
     // Scan root filesystem for a hash-named folder.
@@ -894,10 +899,11 @@ pub async fn get_video_url(
                     }
                     // Use folder_created_id directly when task is complete.
                     if task_is_complete(&task_resp)
-                        && let Some(fcid) = task_resp["folder_created_id"].as_i64() {
-                            content_id = Some(fcid);
-                            break;
-                        }
+                        && let Some(fcid) = task_resp["folder_created_id"].as_i64()
+                    {
+                        content_id = Some(fcid);
+                        break;
+                    }
                 }
 
                 // Fallback: check whether the content sub-folder has appeared in the hash folder.
@@ -978,20 +984,22 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
         .cloned()
         .collect();
     if !remaining.is_empty()
-        && let Ok(tasks_resp) = api_get(http, &bearer, "/tasks", None).await {
-            for task in tasks_resp["tasks"].as_array().cloned().unwrap_or_default() {
-                if !task_is_complete(&task) {
-                    continue;
-                }
-                if task["folder_created_id"].as_i64().is_none() {
-                    continue;
-                }
-                if let Some(hash) = task_info_hash(&task)
-                    && remaining.contains(&hash) {
-                        cached.push(hash);
-                    }
+        && let Ok(tasks_resp) = api_get(http, &bearer, "/tasks", None).await
+    {
+        for task in tasks_resp["tasks"].as_array().cloned().unwrap_or_default() {
+            if !task_is_complete(&task) {
+                continue;
+            }
+            if task["folder_created_id"].as_i64().is_none() {
+                continue;
+            }
+            if let Some(hash) = task_info_hash(&task)
+                && remaining.contains(&hash)
+            {
+                cached.push(hash);
             }
         }
+    }
 
     cached
 }
@@ -1011,17 +1019,19 @@ pub async fn delete_all_torrents(http: &Client, token: &str) -> Result<(), Provi
 
     // Delete root folders whose path looks like an info hash (40-char SHA-1 or 32-char MD5).
     if let Ok(root) = api_get(http, &bearer, "/fs/root/contents", None).await
-        && let Some(folders) = root["folders"].as_array() {
-            for folder in folders {
-                let path = folder["path"].as_str().unwrap_or("").to_lowercase();
-                if is_info_hash_folder_name(&path)
-                    && let Some(id) = folder["id"].as_i64() {
-                        api_delete(http, &bearer, &format!("/fs/folder/{id}"), None)
-                            .await
-                            .ok();
-                    }
+        && let Some(folders) = root["folders"].as_array()
+    {
+        for folder in folders {
+            let path = folder["path"].as_str().unwrap_or("").to_lowercase();
+            if is_info_hash_folder_name(&path)
+                && let Some(id) = folder["id"].as_i64()
+            {
+                api_delete(http, &bearer, &format!("/fs/folder/{id}"), None)
+                    .await
+                    .ok();
             }
         }
+    }
 
     Ok(())
 }
@@ -1040,10 +1050,11 @@ pub async fn delete_torrent_by_hash(
     let tasks = list_tasks(http, &bearer, None).await.unwrap_or_default();
     for task in &tasks {
         if task_info_hash(task).as_deref() == Some(hash_lower.as_str())
-            && let Some(id) = task["id"].as_i64() {
-                api_delete(http, &bearer, &format!("/tasks/{id}"), None).await?;
-                deleted = true;
-            }
+            && let Some(id) = task["id"].as_i64()
+        {
+            api_delete(http, &bearer, &format!("/tasks/{id}"), None).await?;
+            deleted = true;
+        }
     }
 
     if let Some((folder_id, _)) = find_hash_folder(http, &bearer, &hash_lower, None).await? {

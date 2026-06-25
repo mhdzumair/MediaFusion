@@ -31,52 +31,55 @@ pub fn build_where(
     let mut filter_conditions: Vec<FilterCondition> = Vec::new();
     if let Some(json) = filters_json
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(json)
-            && let Some(arr) = v.as_array() {
-                for f in arr {
-                    if let Some(col) = f.get("column").and_then(|c| c.as_str()) {
-                        filter_conditions.push(FilterCondition {
-                            column: col.to_string(),
-                            operator: f
-                                .get("operator")
-                                .and_then(|o| o.as_str())
-                                .unwrap_or("equals")
-                                .to_string(),
-                            value: f
-                                .get("value")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                        });
-                    }
-                }
+        && let Some(arr) = v.as_array()
+    {
+        for f in arr {
+            if let Some(col) = f.get("column").and_then(|c| c.as_str()) {
+                filter_conditions.push(FilterCondition {
+                    column: col.to_string(),
+                    operator: f
+                        .get("operator")
+                        .and_then(|o| o.as_str())
+                        .unwrap_or("equals")
+                        .to_string(),
+                    value: f
+                        .get("value")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                });
             }
+        }
+    }
     // Legacy fallback
     if filter_conditions.is_empty()
         && let Some(fc) = filter_column
-            && col_types.contains_key(fc) {
-                filter_conditions.push(FilterCondition {
-                    column: fc.to_string(),
-                    operator: filter_operator.unwrap_or("equals").to_string(),
-                    value: filter_value.map(|s| s.to_string()),
-                });
-            }
+        && col_types.contains_key(fc)
+    {
+        filter_conditions.push(FilterCondition {
+            column: fc.to_string(),
+            operator: filter_operator.unwrap_or("equals").to_string(),
+            value: filter_value.map(|s| s.to_string()),
+        });
+    }
 
     // Search across text-like columns
     if let Some(q) = search
-        && !q.is_empty() {
-            let text_cols: Vec<String> = col_types
-                .iter()
-                .filter(|(_, t)| {
-                    let t = t.to_lowercase();
-                    t.contains("text") || t.contains("char") || t.contains("varchar") || t == "uuid"
-                })
-                .map(|(c, _)| format!("CAST({} AS TEXT) ILIKE ${}", quote_ident(c), idx))
-                .collect();
-            if !text_cols.is_empty() {
-                clauses.push(format!("({})", text_cols.join(" OR ")));
-                values.push(format!("%{}%", q));
-                idx += 1;
-            }
+        && !q.is_empty()
+    {
+        let text_cols: Vec<String> = col_types
+            .iter()
+            .filter(|(_, t)| {
+                let t = t.to_lowercase();
+                t.contains("text") || t.contains("char") || t.contains("varchar") || t == "uuid"
+            })
+            .map(|(c, _)| format!("CAST({} AS TEXT) ILIKE ${}", quote_ident(c), idx))
+            .collect();
+        if !text_cols.is_empty() {
+            clauses.push(format!("({})", text_cols.join(" OR ")));
+            values.push(format!("%{}%", q));
+            idx += 1;
         }
+    }
 
     // Apply filter conditions
     for fc in &filter_conditions {

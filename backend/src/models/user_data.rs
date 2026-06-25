@@ -276,9 +276,9 @@ impl StreamingProvider {
                 .stremthru_store_name
                 .as_deref()
                 .filter(|s| !s.is_empty())
-            {
-                return name.to_string();
-            }
+        {
+            return name.to_string();
+        }
         self.service.clone()
     }
 }
@@ -695,9 +695,10 @@ impl UserData {
             .collect();
         if providers.is_empty()
             && let Some(ref sp) = self.streaming_provider
-                && sp.enabled {
-                    providers.push(sp);
-                }
+            && sp.enabled
+        {
+            providers.push(sp);
+        }
         providers
     }
 

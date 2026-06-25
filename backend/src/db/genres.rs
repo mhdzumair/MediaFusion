@@ -60,9 +60,10 @@ pub async fn load_genres_cached(
     redis: &fred::clients::Client,
 ) -> HashMap<String, Vec<String>> {
     if let Some(v) = crate::cache::get_json(redis, GENRES_CACHE_KEY).await
-        && let Ok(g) = serde_json::from_value(v) {
-            return g;
-        }
+        && let Ok(g) = serde_json::from_value(v)
+    {
+        return g;
+    }
 
     let genres = get_all_genres_by_type(pool).await;
     let gv = serde_json::to_value(&genres).unwrap_or_default();

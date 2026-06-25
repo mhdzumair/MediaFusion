@@ -83,27 +83,28 @@ pub async fn retrieve_image(config: &AppConfig, key: &str) -> Option<(Vec<u8>, S
         && let (Some(client), Some(bucket)) = (
             crate::util::s3_client::build_s3_client(config).await,
             crate::util::s3_client::bucket_name(config),
-        ) {
-            match client
-                .get_object()
-                .bucket(bucket)
-                .key(&normalized)
-                .send()
-                .await
-            {
-                Ok(resp) => {
-                    let content_type = resp
-                        .content_type()
-                        .unwrap_or("application/octet-stream")
-                        .to_string();
-                    if let Ok(data) = resp.body.collect().await {
-                        return Some((data.into_bytes().to_vec(), content_type));
-                    }
+        )
+    {
+        match client
+            .get_object()
+            .bucket(bucket)
+            .key(&normalized)
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                let content_type = resp
+                    .content_type()
+                    .unwrap_or("application/octet-stream")
+                    .to_string();
+                if let Ok(data) = resp.body.collect().await {
+                    return Some((data.into_bytes().to_vec(), content_type));
                 }
-                Err(e) => warn!("image_storage: S3 retrieve failed key={normalized}: {e}"),
             }
-            return None;
+            Err(e) => warn!("image_storage: S3 retrieve failed key={normalized}: {e}"),
         }
+        return None;
+    }
 
     let file_name = normalized.rsplit('/').next()?;
     let path = PathBuf::from(&config.images_dir).join(file_name);

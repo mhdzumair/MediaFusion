@@ -1174,29 +1174,30 @@ pub fn add_defaults(p: &mut Parser) {
         let safe_idx = ctx.title.floor_char_boundary(raw_idx.min(ctx.title.len()));
         let search_str = &ctx.title[safe_idx..];
         if let Ok(Some(caps)) = re.captures(search_str)
-            && let Some(g1) = caps.get(1) {
-                let n_str = g1.as_str();
-                if let Ok(n) = n_str.parse::<i32>() {
-                    let g0 = caps.get(0).unwrap();
-                    let raw = g0.as_str().to_owned();
-                    let idx = g0.start() + safe_idx;
-                    ctx.matched.insert(
-                        "volumes".into(),
-                        MatchInfo {
-                            raw_match: raw.clone(),
-                            match_index: idx,
-                        },
-                    );
-                    ctx.result
-                        .insert("volumes".into(), FieldValue::Ints(vec![n]));
-                    return Some(HandlerReturn {
-                        raw_match: raw,
+            && let Some(g1) = caps.get(1)
+        {
+            let n_str = g1.as_str();
+            if let Ok(n) = n_str.parse::<i32>() {
+                let g0 = caps.get(0).unwrap();
+                let raw = g0.as_str().to_owned();
+                let idx = g0.start() + safe_idx;
+                ctx.matched.insert(
+                    "volumes".into(),
+                    MatchInfo {
+                        raw_match: raw.clone(),
                         match_index: idx,
-                        remove: true,
-                        skip_from_title: false,
-                    });
-                }
+                    },
+                );
+                ctx.result
+                    .insert("volumes".into(), FieldValue::Ints(vec![n]));
+                return Some(HandlerReturn {
+                    raw_match: raw,
+                    match_index: idx,
+                    remove: true,
+                    skip_from_title: false,
+                });
             }
+        }
         None
     }));
 
@@ -1799,20 +1800,21 @@ pub fn add_defaults(p: &mut Parser) {
         let anime_re = ANIME_RE.get_or_init(|| compile(r"One.*?Piece|Bleach|Naruto"));
         let ep_re = EP_RE.get_or_init(|| compile(r"\b\d{1,4}\b"));
         if anime_re.is_match(&ctx.title).unwrap_or(false)
-            && let Ok(Some(m)) = ep_re.find(&ctx.title) {
-                let s = m.as_str().to_owned();
-                if let Ok(n) = s.parse::<i32>() {
-                    let idx = m.start();
-                    ctx.result
-                        .insert("episodes".into(), FieldValue::Ints(vec![n]));
-                    return Some(HandlerReturn {
-                        raw_match: s,
-                        match_index: idx,
-                        remove: false,
-                        skip_from_title: false,
-                    });
-                }
+            && let Ok(Some(m)) = ep_re.find(&ctx.title)
+        {
+            let s = m.as_str().to_owned();
+            if let Ok(n) = s.parse::<i32>() {
+                let idx = m.start();
+                ctx.result
+                    .insert("episodes".into(), FieldValue::Ints(vec![n]));
+                return Some(HandlerReturn {
+                    raw_match: s,
+                    match_index: idx,
+                    remove: false,
+                    skip_from_title: false,
+                });
             }
+        }
         None
     }));
 
@@ -2719,16 +2721,18 @@ pub fn add_defaults(p: &mut Parser) {
     // handle_group: remove group if it overlaps other matches
     p.add_fn(Box::new(|ctx: &mut Ctx| {
         if let Some(group_info) = ctx.matched.get("group").cloned()
-            && group_info.raw_match.starts_with('[') && group_info.raw_match.ends_with(']') {
-                let end_idx = group_info.match_index + group_info.raw_match.len();
-                let overlaps = ctx
-                    .matched
-                    .iter()
-                    .any(|(k, v)| k != "group" && v.match_index < end_idx);
-                if overlaps {
-                    ctx.result.remove("group");
-                }
+            && group_info.raw_match.starts_with('[')
+            && group_info.raw_match.ends_with(']')
+        {
+            let end_idx = group_info.match_index + group_info.raw_match.len();
+            let overlaps = ctx
+                .matched
+                .iter()
+                .any(|(k, v)| k != "group" && v.match_index < end_idx);
+            if overlaps {
+                ctx.result.remove("group");
             }
+        }
         None
     }));
 
@@ -2937,9 +2941,10 @@ pub fn add_defaults(p: &mut Parser) {
     // handle_group_exclusion
     p.add_fn(Box::new(|ctx: &mut Ctx| {
         if let Some(FieldValue::Str(g)) = ctx.result.get("group")
-            && (g == "-" || g.is_empty()) {
-                ctx.result.remove("group");
-            }
+            && (g == "-" || g.is_empty())
+        {
+            ctx.result.remove("group");
+        }
         None
     }));
 

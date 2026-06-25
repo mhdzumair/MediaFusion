@@ -33,16 +33,17 @@ enum TokenKind {
 
 fn decode_token(token: &str) -> TokenKind {
     if let Ok(decoded) = B64.decode(token)
-        && let Ok(s) = std::str::from_utf8(&decoded) {
-            let parts: Vec<&str> = s.splitn(3, ':').collect();
-            if parts.len() == 3 {
-                return TokenKind::OAuth {
-                    client_id: parts[0].to_string(),
-                    client_secret: parts[1].to_string(),
-                    code: parts[2].to_string(),
-                };
-            }
+        && let Ok(s) = std::str::from_utf8(&decoded)
+    {
+        let parts: Vec<&str> = s.splitn(3, ':').collect();
+        if parts.len() == 3 {
+            return TokenKind::OAuth {
+                client_id: parts[0].to_string(),
+                client_secret: parts[1].to_string(),
+                code: parts[2].to_string(),
+            };
         }
+    }
     TokenKind::Private(token.to_string())
 }
 
@@ -565,13 +566,13 @@ async fn add_new_torrent(
     if let (Some(limit), Some(nb)) = (
         active.get("limit").and_then(|v| v.as_i64()),
         active.get("nb").and_then(|v| v.as_i64()),
-    )
-        && limit == nb {
-            return Err(ProviderError::api(
-                "Torrent limit reached",
-                "torrent_limit.mp4",
-            ));
-        }
+    ) && limit == nb
+    {
+        return Err(ProviderError::api(
+            "Torrent limit reached",
+            "torrent_limit.mp4",
+        ));
+    }
     if let Some(list) = active.get("list").and_then(|v| v.as_array()) {
         for item in list {
             if item.as_str().map(|s| s.to_lowercase()) == Some(info_hash.to_lowercase()) {
@@ -1075,9 +1076,10 @@ pub async fn list_downloaded_hashes(
         }
         for t in &list {
             if t.get("status").and_then(|v| v.as_str()) == Some("downloaded")
-                && let Some(h) = t.get("hash").and_then(|v| v.as_str()) {
-                    result.push(h.to_lowercase());
-                }
+                && let Some(h) = t.get("hash").and_then(|v| v.as_str())
+            {
+                result.push(h.to_lowercase());
+            }
         }
         if list.len() < PAGE_SIZE as usize {
             break;
@@ -1128,12 +1130,13 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
 
         for t in &arr {
             if t.get("status").and_then(|v| v.as_str()) == Some("downloaded")
-                && let Some(h) = t.get("hash").and_then(|v| v.as_str()) {
-                    let lower = h.to_lowercase();
-                    if hash_set.contains(&lower) {
-                        found.push(lower);
-                    }
+                && let Some(h) = t.get("hash").and_then(|v| v.as_str())
+            {
+                let lower = h.to_lowercase();
+                if hash_set.contains(&lower) {
+                    found.push(lower);
                 }
+            }
         }
         if found.len() >= hashes.len() || arr.len() < PAGE_SIZE as usize {
             break;

@@ -170,9 +170,10 @@ const MASK: &str = "••••••••";
 fn mask_object_fields(obj: &mut serde_json::Map<String, Value>, fields: &[&str]) {
     for field in fields {
         if let Some(v) = obj.get_mut(*field)
-            && v.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
-                *v = Value::String(MASK.to_string());
-            }
+            && v.as_str().map(|s| !s.is_empty()).unwrap_or(false)
+        {
+            *v = Value::String(MASK.to_string());
+        }
     }
 }
 
@@ -416,9 +417,10 @@ fn extract_provider_secrets(
     let sensitive_fields = ["token", "tk", "password", "pw", "email", "em"];
     for f in &sensitive_fields {
         if let Some(v) = clean.remove(*f)
-            && v.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
-                secrets_entry.insert((*f).to_string(), v);
-            }
+            && v.as_str().map(|s| !s.is_empty()).unwrap_or(false)
+        {
+            secrets_entry.insert((*f).to_string(), v);
+        }
     }
     // Also extract from sub-configs
     for sub_key in &["qbittorrent_config", "qbc"] {
@@ -426,9 +428,10 @@ fn extract_provider_secrets(
             let mut sub_secrets: serde_json::Map<String, Value> = serde_json::Map::new();
             for f in &["qb_password", "qpw", "qb_username", "qus"] {
                 if let Some(v) = sub.remove(*f)
-                    && v.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
-                        sub_secrets.insert((*f).to_string(), v);
-                    }
+                    && v.as_str().map(|s| !s.is_empty()).unwrap_or(false)
+                {
+                    sub_secrets.insert((*f).to_string(), v);
+                }
             }
             if !sub_secrets.is_empty() {
                 secrets_entry.insert((*sub_key).to_string(), Value::Object(sub_secrets));
@@ -440,9 +443,10 @@ fn extract_provider_secrets(
             let mut sub_secrets: serde_json::Map<String, Value> = serde_json::Map::new();
             for f in &["api_password", "ap"] {
                 if let Some(v) = sub.remove(*f)
-                    && v.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
-                        sub_secrets.insert((*f).to_string(), v);
-                    }
+                    && v.as_str().map(|s| !s.is_empty()).unwrap_or(false)
+                {
+                    sub_secrets.insert((*f).to_string(), v);
+                }
             }
             if !sub_secrets.is_empty() {
                 secrets_entry.insert((*sub_key).to_string(), Value::Object(sub_secrets));
@@ -454,9 +458,10 @@ fn extract_provider_secrets(
             let mut sub_secrets: serde_json::Map<String, Value> = serde_json::Map::new();
             for f in &["api_key", "ak"] {
                 if let Some(v) = sub.remove(*f)
-                    && v.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
-                        sub_secrets.insert((*f).to_string(), v);
-                    }
+                    && v.as_str().map(|s| !s.is_empty()).unwrap_or(false)
+                {
+                    sub_secrets.insert((*f).to_string(), v);
+                }
             }
             if !sub_secrets.is_empty() {
                 secrets_entry.insert((*sub_key).to_string(), Value::Object(sub_secrets));
@@ -468,9 +473,10 @@ fn extract_provider_secrets(
             let mut sub_secrets: serde_json::Map<String, Value> = serde_json::Map::new();
             for f in &["api_key", "ak"] {
                 if let Some(v) = sub.remove(*f)
-                    && v.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
-                        sub_secrets.insert((*f).to_string(), v);
-                    }
+                    && v.as_str().map(|s| !s.is_empty()).unwrap_or(false)
+                {
+                    sub_secrets.insert((*f).to_string(), v);
+                }
             }
             if !sub_secrets.is_empty() {
                 secrets_entry.insert((*sub_key).to_string(), Value::Object(sub_secrets));
@@ -482,9 +488,10 @@ fn extract_provider_secrets(
             let mut sub_secrets: serde_json::Map<String, Value> = serde_json::Map::new();
             for f in &["username", "un", "password", "pw"] {
                 if let Some(v) = sub.remove(*f)
-                    && v.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
-                        sub_secrets.insert((*f).to_string(), v);
-                    }
+                    && v.as_str().map(|s| !s.is_empty()).unwrap_or(false)
+                {
+                    sub_secrets.insert((*f).to_string(), v);
+                }
             }
             if !sub_secrets.is_empty() {
                 secrets_entry.insert((*sub_key).to_string(), Value::Object(sub_secrets));
@@ -553,9 +560,10 @@ pub fn split_config(config: &Value, key: &[u8; 32]) -> (Value, Option<String>) {
     normalize_config_aliases(&mut clean);
     if let Some(obj) = clean.as_object_mut()
         && let Some(v) = obj.remove("ap")
-            && v.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
-                all_secrets.insert("ap".to_string(), v);
-            }
+        && v.as_str().map(|s| !s.is_empty()).unwrap_or(false)
+    {
+        all_secrets.insert("ap".to_string(), v);
+    }
 
     let secrets_val = Value::Object(all_secrets);
     let encrypted = crate::crypto::profile::encrypt_secrets(&secrets_val, key);
@@ -889,10 +897,10 @@ pub async fn create_profile(
                 .bind(user_id)
                 .execute(&mut *tx)
                 .await
-        {
-            tracing::error!("create_profile unset default: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
+    {
+        tracing::error!("create_profile unset default: {e}");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
 
     let profile_uuid = uuid::Uuid::new_v4().to_string();
     let row: (i32, String, i32, String, serde_json::Value, Option<String>, bool, DateTime<Utc>) =
@@ -1058,10 +1066,10 @@ pub async fn update_profile(
                 .bind(user_id)
                 .execute(&mut *tx)
                 .await
-        {
-            tracing::error!("update_profile unset default: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
+    {
+        tracing::error!("update_profile unset default: {e}");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
 
     let new_is_default = body.is_default.unwrap_or(profile.is_default);
 
@@ -1195,10 +1203,10 @@ pub async fn delete_profile(
         .bind(id)
         .execute(&mut *tx)
         .await
-        {
-            tracing::error!("delete_profile promote default: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
+    {
+        tracing::error!("delete_profile promote default: {e}");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
 
     if let Err(e) = sqlx::query("DELETE FROM user_profiles WHERE id = $1 AND user_id = $2")
         .bind(id)

@@ -471,9 +471,10 @@ pub async fn check_cached(
         {
             for item in items {
                 if item.get("status").and_then(|v| v.as_str()) == Some("cached")
-                    && let Some(h) = item.get("hash").and_then(|v| v.as_str()) {
-                        cached.push(h.to_string());
-                    }
+                    && let Some(h) = item.get("hash").and_then(|v| v.as_str())
+                {
+                    cached.push(h.to_string());
+                }
             }
         }
     }

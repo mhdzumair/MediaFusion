@@ -1299,16 +1299,16 @@ async fn build_pipeline(
             state.config.poster_nsfw_enabled,
         )
         .await
-        {
-            let new_id = db::MediaId(created_raw_id);
-            // Update the id cache so subsequent requests hit the DB row directly.
-            state.id_cache.insert(cache_key, (new_id, vec![])).await;
-            media_id = new_id;
-            related_ids = vec![];
-            tracing::info!(
-                "stream: on-demand metadata created for {imdb_id} (media_id={created_raw_id})"
-            );
-        }
+    {
+        let new_id = db::MediaId(created_raw_id);
+        // Update the id cache so subsequent requests hit the DB row directly.
+        state.id_cache.insert(cache_key, (new_id, vec![])).await;
+        media_id = new_id;
+        related_ids = vec![];
+        tracing::info!(
+            "stream: on-demand metadata created for {imdb_id} (media_id={created_raw_id})"
+        );
+    }
 
     if state.config.background_search_enabled && media_id != db::MediaId(0) {
         let item_key = match (media_type, season, episode) {
@@ -1556,18 +1556,19 @@ async fn build_pipeline(
     // 7. Live scrape
     let mut live_usenet_raw: Vec<crate::scrapers::ScrapedUsenetStream> = Vec::new();
     if user_data.live_search_streams
-        && let Ok(Some(meta)) = db::get_media_meta(&state.pool, media_id, imdb_id).await {
-            let (scraped_torrents, scraped_usenet) = orchestrator::run_live_search(
-                state, &user_data, &meta, media_type, season, episode, &scope,
-            )
-            .await;
-            for s in scraped_torrents {
-                all_torrents.push(scraped_to_json(&s));
-            }
-            if !usenet_providers.is_empty() {
-                live_usenet_raw = scraped_usenet;
-            }
+        && let Ok(Some(meta)) = db::get_media_meta(&state.pool, media_id, imdb_id).await
+    {
+        let (scraped_torrents, scraped_usenet) = orchestrator::run_live_search(
+            state, &user_data, &meta, media_type, season, episode, &scope,
+        )
+        .await;
+        for s in scraped_torrents {
+            all_torrents.push(scraped_to_json(&s));
         }
+        if !usenet_providers.is_empty() {
+            live_usenet_raw = scraped_usenet;
+        }
+    }
 
     // Build all_hashes after live scrape (complete set)
     let all_hashes: Vec<String> = all_torrents
@@ -2502,9 +2503,10 @@ fn build_p2p_sources(t: &Value, hash: &str) -> Vec<String> {
     if let Some(announce_list) = t.get("announce_list").and_then(|v| v.as_array()) {
         for item in announce_list {
             if let Some(url) = item.as_str()
-                && !tracker_urls.iter().any(|existing| existing == url) {
-                    tracker_urls.push(url.to_string());
-                }
+                && !tracker_urls.iter().any(|existing| existing == url)
+            {
+                tracker_urls.push(url.to_string());
+            }
         }
     }
     let mut sources: Vec<String> = tracker_urls
@@ -2729,22 +2731,23 @@ fn format_streams(
             obj.insert("description".into(), json!(desc_str));
 
             if !secret_str.is_empty()
-                && let Some(provider) = primary_provider {
-                    // Generate debrid proxy URL
-                    let url = build_playback_url(
-                        host_url, secret_str, provider, hash, filename, season, episode,
-                    );
-                    obj.insert("url".into(), json!(url));
-                    behavior.insert("notWebReady".into(), json!(false));
-                    if let Some(fname) = behavior_filename {
-                        behavior.insert("filename".into(), json!(fname));
-                    }
-                    obj.insert("behaviorHints".into(), Value::Object(behavior));
-                    if let Some(fi) = file_index {
-                        obj.insert("fileIdx".into(), json!(fi as i32));
-                    }
-                    return Some(Value::Object(obj));
+                && let Some(provider) = primary_provider
+            {
+                // Generate debrid proxy URL
+                let url = build_playback_url(
+                    host_url, secret_str, provider, hash, filename, season, episode,
+                );
+                obj.insert("url".into(), json!(url));
+                behavior.insert("notWebReady".into(), json!(false));
+                if let Some(fname) = behavior_filename {
+                    behavior.insert("filename".into(), json!(fname));
                 }
+                obj.insert("behaviorHints".into(), Value::Object(behavior));
+                if let Some(fi) = file_index {
+                    obj.insert("fileIdx".into(), json!(fi as i32));
+                }
+                return Some(Value::Object(obj));
+            }
 
             // No provider — use infoHash for WebTorrent
             behavior.insert("notWebReady".into(), json!(true));
@@ -2818,21 +2821,22 @@ fn format_single_stream(
     obj.insert("description".into(), json!(desc_str));
 
     if !secret_str.is_empty()
-        && let Some(provider) = primary_provider {
-            let url = build_playback_url(
-                host_url, secret_str, provider, hash, filename, season, episode,
-            );
-            obj.insert("url".into(), json!(url));
-            behavior.insert("notWebReady".into(), json!(false));
-            if let Some(fname) = behavior_filename {
-                behavior.insert("filename".into(), json!(fname));
-            }
-            obj.insert("behaviorHints".into(), Value::Object(behavior));
-            if let Some(fi) = file_index {
-                obj.insert("fileIdx".into(), json!(fi as i32));
-            }
-            return Some(Value::Object(obj));
+        && let Some(provider) = primary_provider
+    {
+        let url = build_playback_url(
+            host_url, secret_str, provider, hash, filename, season, episode,
+        );
+        obj.insert("url".into(), json!(url));
+        behavior.insert("notWebReady".into(), json!(false));
+        if let Some(fname) = behavior_filename {
+            behavior.insert("filename".into(), json!(fname));
         }
+        obj.insert("behaviorHints".into(), Value::Object(behavior));
+        if let Some(fi) = file_index {
+            obj.insert("fileIdx".into(), json!(fi as i32));
+        }
+        return Some(Value::Object(obj));
+    }
 
     behavior.insert("notWebReady".into(), json!(true));
     if let Some(fname) = behavior_filename {
@@ -2977,20 +2981,22 @@ fn format_youtube_stream(
 
     // Append geo-restriction label if present
     if let Some(geo_type) = row.get("geo_restriction_type").and_then(|v| v.as_str())
-        && !geo_type.is_empty() && geo_type != "none" {
-            let geo_label = if let Some(countries) = row
-                .get("geo_restriction_countries")
-                .and_then(|v| v.as_array())
-            {
-                let c: Vec<&str> = countries.iter().filter_map(|v| v.as_str()).collect();
-                format!("{geo_type}: {}", c.join(", "))
-            } else {
-                geo_type.to_string()
-            };
-            if !title_str.contains(&geo_label) {
-                title_str = format!("{title_str} | {geo_label}");
-            }
+        && !geo_type.is_empty()
+        && geo_type != "none"
+    {
+        let geo_label = if let Some(countries) = row
+            .get("geo_restriction_countries")
+            .and_then(|v| v.as_array())
+        {
+            let c: Vec<&str> = countries.iter().filter_map(|v| v.as_str()).collect();
+            format!("{geo_type}: {}", c.join(", "))
+        } else {
+            geo_type.to_string()
+        };
+        if !title_str.contains(&geo_label) {
+            title_str = format!("{title_str} | {geo_label}");
         }
+    }
 
     Some(json!({ "name": title_str, "description": desc_str, "ytId": video_id }))
 }

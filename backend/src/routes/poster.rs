@@ -52,9 +52,9 @@ pub async fn handler(
                 meta.title.as_deref(),
             )
             .await
-            {
-                return jpeg_response(bytes);
-            }
+        {
+            return jpeg_response(bytes);
+        }
 
         // No artwork, or upstream fetch failed: generate a name-based placeholder
         // so the user always sees something instead of a broken image.

@@ -167,10 +167,11 @@ pub fn detect_content_type(message: &Message) -> Option<(ContentType, Value)> {
             ));
         }
         if let Some(caps) = acestream_re().captures(&candidate)
-            && !candidate.to_ascii_lowercase().contains("magnet:") {
-                let id = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-                return Some((ContentType::Acestream, json!(id)));
-            }
+            && !candidate.to_ascii_lowercase().contains("magnet:")
+        {
+            let id = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+            return Some((ContentType::Acestream, json!(id)));
+        }
         if let Some(m) = http_re().find(&candidate) {
             let url = m.as_str();
             if magnet_re().is_match(url)
