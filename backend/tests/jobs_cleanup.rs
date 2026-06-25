@@ -28,28 +28,28 @@ async fn scan_all_keys(client: &RedisClient, pattern: &str) -> Vec<String> {
 }
 
 fn parse_scan_value(value: RedisValue) -> (String, Vec<String>) {
-    if let RedisValue::Array(arr) = value {
-        if arr.len() == 2 {
-            let cursor = match &arr[0] {
-                RedisValue::String(s) => s.to_string(),
-                RedisValue::Bytes(b) => String::from_utf8_lossy(b).to_string(),
-                RedisValue::Integer(n) => n.to_string(),
-                other => format!("{other:?}"),
-            };
-            let keys = if let RedisValue::Array(key_arr) = &arr[1] {
-                key_arr
-                    .iter()
-                    .filter_map(|v| match v {
-                        RedisValue::String(s) => Some(s.to_string()),
-                        RedisValue::Bytes(b) => Some(String::from_utf8_lossy(b).to_string()),
-                        _ => None,
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            return (cursor, keys);
-        }
+    if let RedisValue::Array(arr) = value
+        && arr.len() == 2
+    {
+        let cursor = match &arr[0] {
+            RedisValue::String(s) => s.to_string(),
+            RedisValue::Bytes(b) => String::from_utf8_lossy(b).to_string(),
+            RedisValue::Integer(n) => n.to_string(),
+            other => format!("{other:?}"),
+        };
+        let keys = if let RedisValue::Array(key_arr) = &arr[1] {
+            key_arr
+                .iter()
+                .filter_map(|v| match v {
+                    RedisValue::String(s) => Some(s.to_string()),
+                    RedisValue::Bytes(b) => Some(String::from_utf8_lossy(b).to_string()),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        return (cursor, keys);
     }
     ("0".to_string(), Vec::new())
 }
