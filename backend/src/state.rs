@@ -287,20 +287,23 @@ impl AppState {
             .time_to_live(Duration::from_secs(23 * 3600))
             .build();
 
-        let http = crate::util::http::build(
-            config.requests_proxy_url.as_deref(),
-            config.tcp_keepalive_secs,
-        );
+        let general_proxy = if config.requests_proxy_non_debrid_enabled {
+            config.requests_proxy_url.as_deref()
+        } else {
+            None
+        };
+        let http = crate::util::http::build(general_proxy, config.tcp_keepalive_secs);
         let debrid_http = crate::util::http::build_debrid(
             config.requests_proxy_url.as_deref(),
             config.tcp_keepalive_secs,
         );
 
-        // Build no-proxy variants only when a proxy is configured AND there are
-        // excluded providers — otherwise None (no allocation, no memory waste).
-        let (http_no_proxy, debrid_http_no_proxy) = if config.requests_proxy_url.is_some()
-            && !config.requests_proxy_exclude_debrid_providers.is_empty()
-        {
+        // Build no-proxy variants when a proxy is configured AND either an include
+        // or exclude list is set (both modes need a direct-egress client).
+        let needs_no_proxy = config.requests_proxy_url.is_some()
+            && (!config.requests_proxy_exclude_debrid_providers.is_empty()
+                || !config.requests_proxy_include_debrid_providers.is_empty());
+        let (http_no_proxy, debrid_http_no_proxy) = if needs_no_proxy {
             (
                 Some(crate::util::http::build(None, config.tcp_keepalive_secs)),
                 Some(crate::util::http::build_debrid(
@@ -346,17 +349,34 @@ impl AppState {
     }
 
     /// Returns the appropriate general HTTP client for a debrid provider.
-    /// Excluded providers (via `REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS`) use the
-    /// no-proxy client so their traffic bypasses the gost/WARP tunnel directly.
+    ///
+    /// Include mode (`REQUESTS_PROXY_INCLUDE_DEBRID_PROVIDERS` non-empty): only the
+    /// listed providers use the proxy; all others connect directly.
+    /// Exclude mode (`REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS` non-empty): all providers
+    /// use the proxy except the listed ones.
     pub fn http_for_provider(&self, provider_id: &str) -> &reqwest::Client {
-        if let Some(ref c) = self.http_no_proxy {
-            if self
+        if let Some(ref no_proxy) = self.http_no_proxy {
+            if !self
+                .config
+                .requests_proxy_include_debrid_providers
+                .is_empty()
+            {
+                // Include mode: return no-proxy unless provider is in the include list.
+                if !self
+                    .config
+                    .requests_proxy_include_debrid_providers
+                    .iter()
+                    .any(|id| id == provider_id)
+                {
+                    return no_proxy;
+                }
+            } else if self
                 .config
                 .requests_proxy_exclude_debrid_providers
                 .iter()
                 .any(|id| id == provider_id)
             {
-                return c;
+                return no_proxy;
             }
         }
         &self.http
@@ -364,25 +384,40 @@ impl AppState {
 
     /// Returns the appropriate long-timeout debrid HTTP client for a provider.
     pub fn debrid_http_for_provider(&self, provider_id: &str) -> &reqwest::Client {
-        if let Some(ref c) = self.debrid_http_no_proxy {
-            if self
+        if let Some(ref no_proxy) = self.debrid_http_no_proxy {
+            if !self
+                .config
+                .requests_proxy_include_debrid_providers
+                .is_empty()
+            {
+                if !self
+                    .config
+                    .requests_proxy_include_debrid_providers
+                    .iter()
+                    .any(|id| id == provider_id)
+                {
+                    return no_proxy;
+                }
+            } else if self
                 .config
                 .requests_proxy_exclude_debrid_providers
                 .iter()
                 .any(|id| id == provider_id)
             {
-                return c;
+                return no_proxy;
             }
         }
         &self.debrid_http
     }
 
-    /// Returns the no-proxy HTTP client if configured, and the list of
-    /// provider IDs that should bypass the proxy. Used by validation paths
-    /// that need to select the right client per-provider.
-    pub fn proxy_bypass_clients(&self) -> (Option<&reqwest::Client>, &[String]) {
+    /// Returns the no-proxy HTTP client (if configured), the include list, and the
+    /// exclude list. Used by validation paths that need per-provider client selection.
+    ///
+    /// When `include` is non-empty it takes precedence over `exclude`.
+    pub fn proxy_bypass_clients(&self) -> (Option<&reqwest::Client>, &[String], &[String]) {
         (
             self.http_no_proxy.as_ref(),
+            &self.config.requests_proxy_include_debrid_providers,
             &self.config.requests_proxy_exclude_debrid_providers,
         )
     }

@@ -18,6 +18,220 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
+use url::Url;
+
+// ─── Proxy support ────────────────────────────────────────────────────────────
+
+/// Parsed proxy configuration for outbound TCP peer connections.
+#[derive(Clone, Debug)]
+enum ProxyKind {
+    Socks5,
+    Socks4,
+    Http,
+}
+
+#[derive(Clone, Debug)]
+struct ProxyConfig {
+    kind: ProxyKind,
+    host: String,
+    port: u16,
+    username: Option<String>,
+    password: Option<String>,
+}
+
+impl ProxyConfig {
+    fn parse(url: &str) -> Option<Self> {
+        let parsed = Url::parse(url).ok()?;
+        let kind = match parsed.scheme() {
+            "socks5" | "socks5h" => ProxyKind::Socks5,
+            "socks4" | "socks4a" => ProxyKind::Socks4,
+            "http" | "https" => ProxyKind::Http,
+            _ => return None,
+        };
+        let host = parsed.host_str()?.to_owned();
+        let port = parsed.port_or_known_default()?;
+        let username = if parsed.username().is_empty() {
+            None
+        } else {
+            Some(parsed.username().to_owned())
+        };
+        let password = parsed.password().map(|s| s.to_owned());
+        Some(Self {
+            kind,
+            host,
+            port,
+            username,
+            password,
+        })
+    }
+
+    async fn connect(
+        &self,
+        target: SocketAddr,
+    ) -> Result<TcpStream, Box<dyn std::error::Error + Send + Sync>> {
+        let mut proxy_stream = TcpStream::connect((&*self.host, self.port)).await?;
+        proxy_stream.set_nodelay(true)?;
+
+        match self.kind {
+            ProxyKind::Socks5 => {
+                socks5_connect(
+                    &mut proxy_stream,
+                    target,
+                    self.username.as_deref(),
+                    self.password.as_deref(),
+                )
+                .await?;
+            }
+            ProxyKind::Socks4 => {
+                socks4_connect(&mut proxy_stream, target).await?;
+            }
+            ProxyKind::Http => {
+                http_connect(&mut proxy_stream, target).await?;
+            }
+        }
+        Ok(proxy_stream)
+    }
+}
+
+/// Perform a SOCKS5 CONNECT handshake on an existing stream.
+async fn socks5_connect(
+    stream: &mut TcpStream,
+    target: SocketAddr,
+    username: Option<&str>,
+    password: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let auth_method: u8 = if username.is_some() { 0x02 } else { 0x00 };
+    // Greeting
+    stream.write_all(&[0x05, 0x01, auth_method]).await?;
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await?;
+    if resp[0] != 0x05 {
+        return Err("SOCKS5: unexpected version in greeting response".into());
+    }
+    if resp[1] == 0xFF {
+        return Err("SOCKS5: no acceptable authentication method".into());
+    }
+    // Username/password sub-negotiation (RFC 1929)
+    if resp[1] == 0x02 {
+        let user = username.unwrap_or("");
+        let pass = password.unwrap_or("");
+        let mut auth = vec![0x01, user.len() as u8];
+        auth.extend_from_slice(user.as_bytes());
+        auth.push(pass.len() as u8);
+        auth.extend_from_slice(pass.as_bytes());
+        stream.write_all(&auth).await?;
+        let mut ar = [0u8; 2];
+        stream.read_exact(&mut ar).await?;
+        if ar[1] != 0x00 {
+            return Err("SOCKS5: authentication failed".into());
+        }
+    }
+    // CONNECT request
+    let mut req = vec![0x05, 0x01, 0x00];
+    match target {
+        SocketAddr::V4(v4) => {
+            req.push(0x01);
+            req.extend_from_slice(&v4.ip().octets());
+        }
+        SocketAddr::V6(v6) => {
+            req.push(0x04);
+            req.extend_from_slice(&v6.ip().octets());
+        }
+    }
+    let port = target.port();
+    req.push((port >> 8) as u8);
+    req.push((port & 0xFF) as u8);
+    stream.write_all(&req).await?;
+    // Read reply (variable length — at minimum 10 bytes for IPv4)
+    let mut hdr = [0u8; 4];
+    stream.read_exact(&mut hdr).await?;
+    if hdr[0] != 0x05 {
+        return Err("SOCKS5: unexpected version in CONNECT reply".into());
+    }
+    if hdr[1] != 0x00 {
+        return Err(format!("SOCKS5: CONNECT failed, code={}", hdr[1]).into());
+    }
+    // Drain bound address from reply
+    match hdr[3] {
+        0x01 => {
+            let mut buf = [0u8; 6];
+            stream.read_exact(&mut buf).await?;
+        }
+        0x04 => {
+            let mut buf = [0u8; 18];
+            stream.read_exact(&mut buf).await?;
+        }
+        0x03 => {
+            let mut len = [0u8; 1];
+            stream.read_exact(&mut len).await?;
+            let mut buf = vec![0u8; len[0] as usize + 2];
+            stream.read_exact(&mut buf).await?;
+        }
+        _ => return Err("SOCKS5: unknown address type in reply".into()),
+    }
+    Ok(())
+}
+
+/// Perform a SOCKS4 CONNECT handshake on an existing stream (IPv4 only).
+async fn socks4_connect(
+    stream: &mut TcpStream,
+    target: SocketAddr,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let ip = match target {
+        SocketAddr::V4(v4) => v4.ip().octets(),
+        SocketAddr::V6(_) => return Err("SOCKS4 does not support IPv6 targets".into()),
+    };
+    let port = target.port();
+    let req = [
+        0x04,
+        0x01,
+        (port >> 8) as u8,
+        (port & 0xFF) as u8,
+        ip[0],
+        ip[1],
+        ip[2],
+        ip[3],
+        0x00, // null-terminated user ID
+    ];
+    stream.write_all(&req).await?;
+    let mut resp = [0u8; 8];
+    stream.read_exact(&mut resp).await?;
+    if resp[1] != 0x5A {
+        return Err(format!("SOCKS4: CONNECT rejected, code={}", resp[1]).into());
+    }
+    Ok(())
+}
+
+/// Perform an HTTP CONNECT tunnel handshake on an existing stream.
+async fn http_connect(
+    stream: &mut TcpStream,
+    target: SocketAddr,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let target_str = target.to_string();
+    let req = format!("CONNECT {target_str} HTTP/1.1\r\nHost: {target_str}\r\n\r\n");
+    stream.write_all(req.as_bytes()).await?;
+    // Read until we get the blank line that ends the response headers.
+    let mut buf = Vec::with_capacity(256);
+    loop {
+        let mut byte = [0u8; 1];
+        stream.read_exact(&mut byte).await?;
+        buf.push(byte[0]);
+        if buf.ends_with(b"\r\n\r\n") {
+            break;
+        }
+        if buf.len() > 4096 {
+            return Err("HTTP CONNECT: response header too large".into());
+        }
+    }
+    let status_line = std::str::from_utf8(&buf)
+        .ok()
+        .and_then(|s| s.lines().next())
+        .unwrap_or("");
+    if !status_line.contains("200") {
+        return Err(format!("HTTP CONNECT: proxy returned: {status_line}").into());
+    }
+    Ok(())
+}
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -52,15 +266,27 @@ pub struct FileInfo {
 ///
 /// Peers are discovered via BitTorrent Mainline DHT.  The first peer that
 /// delivers a valid info dictionary wins.
-pub async fn resolve(info_hash_hex: &str, overall_timeout: Duration) -> Result<TorrentMeta, Error> {
+///
+/// When `proxy_url` is `Some`, peer TCP connections are tunnelled through the
+/// proxy.  Supported schemes: `socks5://`, `socks4://`, `http://`, `https://`.
+pub async fn resolve(
+    info_hash_hex: &str,
+    overall_timeout: Duration,
+    proxy_url: Option<&str>,
+) -> Result<TorrentMeta, Error> {
     let hash = parse_hex20(info_hash_hex)?;
+    let proxy = proxy_url.and_then(ProxyConfig::parse);
 
-    tokio::time::timeout(overall_timeout, resolve_inner(hash, overall_timeout))
+    tokio::time::timeout(overall_timeout, resolve_inner(hash, overall_timeout, proxy))
         .await
         .map_err(|_| Error::Timeout)?
 }
 
-async fn resolve_inner(hash: [u8; 20], budget: Duration) -> Result<TorrentMeta, Error> {
+async fn resolve_inner(
+    hash: [u8; 20],
+    budget: Duration,
+    proxy: Option<ProxyConfig>,
+) -> Result<TorrentMeta, Error> {
     let started = std::time::Instant::now();
     let info_hash = fmt_hex(&hash);
 
@@ -95,8 +321,11 @@ async fn resolve_inner(hash: [u8; 20], budget: Duration) -> Result<TorrentMeta, 
     // Second half: race peers to fetch the info dict via BEP-9.
     let fetch_started = std::time::Instant::now();
     let per_peer = Duration::from_secs(12);
-    let fetch_result =
-        tokio::time::timeout(budget / 2, fetch_metadata_from_peers(peers, hash, per_peer)).await;
+    let fetch_result = tokio::time::timeout(
+        budget / 2,
+        fetch_metadata_from_peers(peers, hash, per_peer, proxy),
+    )
+    .await;
 
     match fetch_result {
         Ok(Some(raw)) => {
@@ -201,14 +430,16 @@ async fn fetch_metadata_from_peers(
     peers: Vec<SocketAddr>,
     hash: [u8; 20],
     per_peer: Duration,
+    proxy: Option<ProxyConfig>,
 ) -> Option<Vec<u8>> {
     let peer_id = random_peer_id();
 
     let mut tasks = stream::iter(peers)
         .map(|addr| {
             let pid = peer_id;
+            let px = proxy.clone();
             async move {
-                tokio::time::timeout(per_peer, fetch_from_peer(addr, hash, pid))
+                tokio::time::timeout(per_peer, fetch_from_peer(addr, hash, pid, px))
                     .await
                     .ok() // None on per-peer timeout
                     .and_then(|r| r.ok()) // None on protocol error
@@ -234,8 +465,12 @@ async fn fetch_from_peer(
     addr: SocketAddr,
     hash: [u8; 20],
     peer_id: [u8; 20],
+    proxy: Option<ProxyConfig>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    let mut stream = TcpStream::connect(addr).await?;
+    let mut stream = match proxy {
+        Some(cfg) => cfg.connect(addr).await?,
+        None => TcpStream::connect(addr).await?,
+    };
     stream.set_nodelay(true)?;
 
     // ── Step 1: BitTorrent handshake ─────────────────────────────────────────

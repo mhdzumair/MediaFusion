@@ -62,9 +62,9 @@ async fn main() {
             "status" => mediafusion_api::migrate::status(&pool)
                 .await
                 .expect("migration status failed"),
-            other => panic!(
-                "unknown MEDIAFUSION_MIGRATE value '{other}'; expected 'run' or 'status'"
-            ),
+            other => {
+                panic!("unknown MEDIAFUSION_MIGRATE value '{other}'; expected 'run' or 'status'")
+            }
         }
         return;
     }

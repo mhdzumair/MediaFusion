@@ -572,12 +572,16 @@ async fn resolve_dht_metadata(
     info_hash: &str,
     resolve_files: bool,
     resolve_timeout_secs: Option<u64>,
+    proxy_url: Option<&str>,
 ) -> Option<Result<crate::demagnetize::TorrentMeta, crate::demagnetize::Error>> {
     if !resolve_files {
         return None;
     }
     let secs = resolve_timeout_secs.unwrap_or(30).clamp(5, 60);
-    Some(crate::demagnetize::resolve(info_hash, std::time::Duration::from_secs(secs)).await)
+    Some(
+        crate::demagnetize::resolve(info_hash, std::time::Duration::from_secs(secs), proxy_url)
+            .await,
+    )
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -661,8 +665,12 @@ pub async fn analyze_magnet(
         .await;
         (matches, meta_match)
     };
-    let dht_future =
-        resolve_dht_metadata(&info_hash, body.resolve_files, body.resolve_timeout_secs);
+    let dht_future = resolve_dht_metadata(
+        &info_hash,
+        body.resolve_files,
+        body.resolve_timeout_secs,
+        state.config.requests_proxy_url.as_deref(),
+    );
 
     let ((matches, meta_match), dht_result) = tokio::join!(search_future, dht_future);
     tracing::debug!(
@@ -849,8 +857,13 @@ pub async fn analyze_torrent(
     .await;
 
     if files.is_empty() {
-        if let Some(dht_result) =
-            resolve_dht_metadata(&info_hash, resolve_files, resolve_timeout_secs).await
+        if let Some(dht_result) = resolve_dht_metadata(
+            &info_hash,
+            resolve_files,
+            resolve_timeout_secs,
+            state.config.requests_proxy_url.as_deref(),
+        )
+        .await
         {
             match dht_result {
                 Ok(meta) => {
@@ -937,8 +950,12 @@ pub async fn analyze_magnet_for_bot(
         "matches": matches,
     });
 
-    if let Ok(meta) =
-        crate::demagnetize::resolve(&info_hash, std::time::Duration::from_secs(30)).await
+    if let Ok(meta) = crate::demagnetize::resolve(
+        &info_hash,
+        std::time::Duration::from_secs(30),
+        state.config.requests_proxy_url.as_deref(),
+    )
+    .await
     {
         let files: Vec<serde_json::Value> = meta
             .files

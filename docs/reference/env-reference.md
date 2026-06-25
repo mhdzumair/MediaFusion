@@ -106,7 +106,9 @@ These 4 variables must be set before MediaFusion will start:
 | `BYPARR_URL` | — | [Byparr](https://github.com/ThePhaseless/Byparr) (FlareSolverr-compatible) base URL. When set, Cloudflare-protected indexers are fetched via Byparr. |
 | `BROWSERLESS_URL` | — | Browserless v2 base URL (e.g. `http://browserless:3000`) for JS-heavy scrapers. |
 | `REQUESTS_PROXY_URL` | — | HTTP proxy for all outbound scraper requests (and debrid API calls). Set to your gost/WARP tunnel URL. |
-| `REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS` | `[]` | Comma-separated (or JSON array) list of debrid provider IDs that bypass `REQUESTS_PROXY_URL` and connect directly. Valid IDs: `realdebrid`, `seedr`, `debridlink`, `alldebrid`, `offcloud`, `pikpak`, `torbox`, `premiumize`, `stremthru`, `easydebrid`, `debrider`. |
+| `REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS` | `[]` | Comma-separated (or JSON array) list of debrid provider IDs that bypass `REQUESTS_PROXY_URL` and connect directly. Ignored when `REQUESTS_PROXY_INCLUDE_DEBRID_PROVIDERS` is set. Valid IDs: `realdebrid`, `seedr`, `debridlink`, `alldebrid`, `offcloud`, `pikpak`, `torbox`, `premiumize`, `stremthru`, `easydebrid`, `debrider`. |
+| `REQUESTS_PROXY_INCLUDE_DEBRID_PROVIDERS` | `[]` | When non-empty, **only** these debrid provider IDs are routed through `REQUESTS_PROXY_URL`; all others connect directly. Takes precedence over `REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS`. Same format and valid IDs as the exclude list. |
+| `REQUESTS_PROXY_NON_DEBRID_ENABLED` | `true` | When `false`, general (non-debrid-provider) HTTP calls — catalog browsing, indexer tests, content discovery — bypass `REQUESTS_PROXY_URL` and connect directly. Debrid provider routing is unaffected. |
 
 ---
 

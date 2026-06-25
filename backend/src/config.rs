@@ -371,7 +371,15 @@ pub struct AppConfig {
     /// Provider service IDs that bypass `REQUESTS_PROXY_URL` and connect directly.
     /// Comma-separated or JSON array. Valid IDs: realdebrid, seedr, debridlink, alldebrid,
     /// offcloud, pikpak, torbox, premiumize, stremthru, torrin, easydebrid, debrider.
+    /// Ignored when `requests_proxy_include_debrid_providers` is non-empty.
     pub requests_proxy_exclude_debrid_providers: Vec<String>,
+    /// When non-empty, ONLY these provider IDs are routed through `REQUESTS_PROXY_URL`;
+    /// all others connect directly. Takes precedence over the exclude list.
+    /// Same comma-separated or JSON array format and valid IDs as the exclude list.
+    pub requests_proxy_include_debrid_providers: Vec<String>,
+    /// When false, general (non-debrid-provider) HTTP calls bypass `REQUESTS_PROXY_URL`
+    /// and connect directly. Debrid provider routing is unaffected. Default: true.
+    pub requests_proxy_non_debrid_enabled: bool,
     /// TCP keepalive probe interval for all outbound HTTP clients (seconds). Default: 15.
     /// Keeps NAT/conntrack mappings alive through the gost tunnel during idle periods.
     pub tcp_keepalive_secs: u64,
@@ -857,6 +865,21 @@ impl AppConfig {
                     }
                 })
                 .unwrap_or_default(),
+            requests_proxy_include_debrid_providers: env("REQUESTS_PROXY_INCLUDE_DEBRID_PROVIDERS")
+                .ok()
+                .map(|s| {
+                    if let Ok(v) = serde_json::from_str::<Vec<String>>(&s) {
+                        v.into_iter().map(|x| x.to_lowercase()).collect()
+                    } else {
+                        s.split(',')
+                            .map(|x| x.trim().to_lowercase())
+                            .filter(|x| !x.is_empty())
+                            .collect()
+                    }
+                })
+                .unwrap_or_default(),
+            requests_proxy_non_debrid_enabled: env("REQUESTS_PROXY_NON_DEBRID_ENABLED")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
             tcp_keepalive_secs: env("TCP_KEEPALIVE_SECS")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(15),
             egress_watchdog_enabled: env("EGRESS_WATCHDOG_ENABLED")

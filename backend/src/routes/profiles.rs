@@ -70,10 +70,11 @@ async fn validate_profile_config(
             })
         });
     let user_ip = validator::client_ip_from_headers(headers);
-    let (no_proxy, excluded) = state.proxy_bypass_clients();
+    let (no_proxy, included, excluded) = state.proxy_bypass_clients();
     let result = validator::validate_provider_credentials(
         &state.http,
         no_proxy,
+        included,
         excluded,
         &user_data,
         user_ip.as_deref(),

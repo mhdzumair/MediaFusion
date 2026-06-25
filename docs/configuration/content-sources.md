@@ -84,7 +84,9 @@ Used for public indexers that require JavaScript or Cloudflare bypass:
 | Variable | Default | Description |
 |---|---|---|
 | `REQUESTS_PROXY_URL` | `None` | Route all outbound HTTP (scrapers + debrid API calls) through this proxy |
-| `REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS` | `[]` | Comma-separated (or JSON array) debrid provider IDs that bypass the proxy and connect directly. E.g. `realdebrid,torbox`. Valid IDs: `realdebrid`, `seedr`, `debridlink`, `alldebrid`, `offcloud`, `pikpak`, `torbox`, `premiumize`, `stremthru`, `easydebrid`, `debrider`. |
+| `REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS` | `[]` | Comma-separated (or JSON array) debrid provider IDs that bypass the proxy and connect directly. Ignored when `REQUESTS_PROXY_INCLUDE_DEBRID_PROVIDERS` is set. E.g. `realdebrid,torbox`. Valid IDs: `realdebrid`, `seedr`, `debridlink`, `alldebrid`, `offcloud`, `pikpak`, `torbox`, `premiumize`, `stremthru`, `easydebrid`, `debrider`. |
+| `REQUESTS_PROXY_INCLUDE_DEBRID_PROVIDERS` | `[]` | When non-empty, **only** these debrid provider IDs are routed through the proxy; all others connect directly. Takes precedence over the exclude list. Same format and valid IDs as above. |
+| `REQUESTS_PROXY_NON_DEBRID_ENABLED` | `true` | Set to `false` to bypass the proxy for general HTTP calls (catalog, indexers, content discovery). Debrid provider routing is unaffected. |
 | `SCRAPLING_PROXY_URL` | `None` | Separate proxy for browser-based scraping |
 | `TCP_KEEPALIVE_SECS` | `15` | TCP keepalive interval for all outbound HTTP clients (seconds). Keeps the proxy tunnel's NAT/conntrack mappings alive during idle periods. |
 | `EGRESS_WATCHDOG_ENABLED` | `true` | Restart the pod when sustained egress loss is detected (see [env reference](../reference/env-reference.md#http-client--egress)). |

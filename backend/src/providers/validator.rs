@@ -341,6 +341,7 @@ async fn validate_one(
 pub async fn validate_provider_credentials(
     http: &Client,
     http_no_proxy: Option<&Client>,
+    include_services: &[String],
     excluded_services: &[String],
     user_data: &UserData,
     user_ip: Option<&str>,
@@ -348,7 +349,14 @@ pub async fn validate_provider_credentials(
 ) -> ValidationResult {
     for provider in user_data.get_active_providers(default_nzbdav) {
         let client = if let Some(c) = http_no_proxy {
-            if excluded_services.iter().any(|e| e == &provider.service) {
+            if !include_services.is_empty() {
+                // Include mode: only listed providers use the proxy.
+                if include_services.iter().any(|e| e == &provider.service) {
+                    http
+                } else {
+                    c
+                }
+            } else if excluded_services.iter().any(|e| e == &provider.service) {
                 c
             } else {
                 http
