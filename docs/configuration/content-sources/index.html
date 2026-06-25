@@ -2169,7 +2169,17 @@
 <tr>
 <td><code>REQUESTS_PROXY_EXCLUDE_DEBRID_PROVIDERS</code></td>
 <td><code>[]</code></td>
-<td>Comma-separated (or JSON array) debrid provider IDs that bypass the proxy and connect directly. E.g. <code>realdebrid,torbox</code>. Valid IDs: <code>realdebrid</code>, <code>seedr</code>, <code>debridlink</code>, <code>alldebrid</code>, <code>offcloud</code>, <code>pikpak</code>, <code>torbox</code>, <code>premiumize</code>, <code>stremthru</code>, <code>easydebrid</code>, <code>debrider</code>.</td>
+<td>Comma-separated (or JSON array) debrid provider IDs that bypass the proxy and connect directly. Ignored when <code>REQUESTS_PROXY_INCLUDE_DEBRID_PROVIDERS</code> is set. E.g. <code>realdebrid,torbox</code>. Valid IDs: <code>realdebrid</code>, <code>seedr</code>, <code>debridlink</code>, <code>alldebrid</code>, <code>offcloud</code>, <code>pikpak</code>, <code>torbox</code>, <code>premiumize</code>, <code>stremthru</code>, <code>easydebrid</code>, <code>debrider</code>.</td>
+</tr>
+<tr>
+<td><code>REQUESTS_PROXY_INCLUDE_DEBRID_PROVIDERS</code></td>
+<td><code>[]</code></td>
+<td>When non-empty, <strong>only</strong> these debrid provider IDs are routed through the proxy; all others connect directly. Takes precedence over the exclude list. Same format and valid IDs as above.</td>
+</tr>
+<tr>
+<td><code>REQUESTS_PROXY_NON_DEBRID_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Set to <code>false</code> to bypass the proxy for general HTTP calls (catalog, indexers, content discovery). Debrid provider routing is unaffected.</td>
 </tr>
 <tr>
 <td><code>SCRAPLING_PROXY_URL</code></td>
