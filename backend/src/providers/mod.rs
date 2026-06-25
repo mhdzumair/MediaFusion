@@ -65,6 +65,22 @@ pub async fn response_json(
         ));
     }
 
+    // Detect HTML responses (e.g. Cloudflare challenge pages) before attempting JSON parse.
+    // These arrive as 200 OK with an HTML body when the service is behind a WAF/CDN.
+    let trimmed = text.trim_start();
+    if trimmed.starts_with("<!DOCTYPE") || trimmed.starts_with("<html") {
+        let preview = if text.len() > 200 {
+            &text[..200]
+        } else {
+            &text
+        };
+        tracing::debug!("{context}: received HTML instead of JSON (HTTP {status}) — body: {preview}");
+        return Err(ProviderError::api(
+            format!("HTTP {status} — received HTML (service may be rate-limited or behind a WAF)"),
+            "debrid_service_down_error.mp4",
+        ));
+    }
+
     serde_json::from_str(&text).map_err(|e| {
         // Auth failures with non-JSON bodies (HTML proxy error pages) should show
         // the credentials error video, not the generic api_error.

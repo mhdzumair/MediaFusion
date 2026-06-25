@@ -656,10 +656,21 @@ pub async fn recompute_stream_keyword_blocked(
         match result {
             Ok(r) => total_updated += r.rows_affected(),
             Err(e) => {
-                tracing::error!(
-                    "recompute_stream_keyword_blocked batch [{from_id}..{to_id}] failed: {e}"
-                );
-                return;
+                // NotificationResponse errors are transient pool-connection issues (a connection
+                // that previously did LISTEN received an async notification during query execution).
+                // Skip the batch and continue rather than aborting the entire recompute.
+                let msg = e.to_string();
+                if msg.contains("NotificationResponse") {
+                    tracing::warn!(
+                        "recompute_stream_keyword_blocked batch [{from_id}..{to_id}] skipped \
+                         due to transient NotificationResponse on pool connection: {e}"
+                    );
+                } else {
+                    tracing::error!(
+                        "recompute_stream_keyword_blocked batch [{from_id}..{to_id}] failed: {e}"
+                    );
+                    return;
+                }
             }
         }
 

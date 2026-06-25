@@ -569,6 +569,8 @@ async fn resolve_target_media_id(
 async fn apply_relink_media(pool: &sqlx::PgPool, stream_id: i32, link_data: &serde_json::Value) {
     let Some(target_media_id) = resolve_target_media_id(pool, link_data).await else {
         tracing::error!(
+            stream_id,
+            link_data = %link_data,
             "apply_relink_media: could not resolve target_media_id for stream {stream_id}"
         );
         return;
@@ -685,6 +687,8 @@ async fn apply_relink_media(pool: &sqlx::PgPool, stream_id: i32, link_data: &ser
 async fn apply_add_media_link(pool: &sqlx::PgPool, stream_id: i32, link_data: &serde_json::Value) {
     let Some(target_media_id) = resolve_target_media_id(pool, link_data).await else {
         tracing::error!(
+            stream_id,
+            link_data = %link_data,
             "apply_add_media_link: could not resolve target_media_id for stream {stream_id}"
         );
         return;

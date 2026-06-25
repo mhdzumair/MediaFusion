@@ -90,7 +90,11 @@ pub async fn fetch_streams_bulk(
         .fetch_all(pool)
         .await
         .unwrap_or_else(|e| {
-            warn!("series streams query: {e}");
+            if e.to_string().contains("NotificationResponse") {
+                tracing::debug!("series streams query: transient NotificationResponse on pool connection: {e}");
+            } else {
+                warn!("series streams query: {e}");
+            }
             vec![]
         })
     } else {
@@ -208,7 +212,11 @@ pub async fn fetch_usenet_streams_bulk(
         .fetch_all(pool)
         .await
         .unwrap_or_else(|e| {
-            warn!("usenet series streams query: {e}");
+            if e.to_string().contains("NotificationResponse") {
+                tracing::debug!("usenet series streams query: transient NotificationResponse on pool connection: {e}");
+            } else {
+                warn!("usenet series streams query: {e}");
+            }
             vec![]
         })
     } else {
