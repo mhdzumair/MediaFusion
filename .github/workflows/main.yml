@@ -51,6 +51,8 @@ jobs:
       - name: Install Rust toolchain
         if: "!github.event.release.prerelease"
         uses: dtolnay/rust-toolchain@67ef31d5b988238dd797d409d6f9574278e20537 # stable
+        with:
+          toolchain: stable
 
       - name: Update version numbers
         if: "!github.event.release.prerelease"
@@ -134,6 +136,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@67ef31d5b988238dd797d409d6f9574278e20537 # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.rust_target }}
 
       - name: Install Zig (for cargo-zigbuild)

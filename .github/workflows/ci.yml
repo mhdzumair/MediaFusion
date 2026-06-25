@@ -162,6 +162,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@67ef31d5b988238dd797d409d6f9574278e20537 # stable
         with:
+          toolchain: stable
           components: rustfmt
 
       - name: Rustfmt check
@@ -181,6 +182,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@67ef31d5b988238dd797d409d6f9574278e20537 # stable
         with:
+          toolchain: stable
           components: clippy
 
       - name: Cache Rust dependencies
@@ -220,6 +222,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@67ef31d5b988238dd797d409d6f9574278e20537 # stable
+        with:
+          toolchain: stable
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
