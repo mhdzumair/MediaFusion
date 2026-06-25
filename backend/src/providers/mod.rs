@@ -74,7 +74,9 @@ pub async fn response_json(
         } else {
             &text
         };
-        tracing::debug!("{context}: received HTML instead of JSON (HTTP {status}) — body: {preview}");
+        tracing::debug!(
+            "{context}: received HTML instead of JSON (HTTP {status}) — body: {preview}"
+        );
         return Err(ProviderError::api(
             format!("HTTP {status} — received HTML (service may be rate-limited or behind a WAF)"),
             "debrid_service_down_error.mp4",

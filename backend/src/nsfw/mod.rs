@@ -16,10 +16,10 @@ pub fn read_rss_kb() -> u64 {
     {
         if let Ok(s) = std::fs::read_to_string("/proc/self/status") {
             for line in s.lines() {
-                if let Some(rest) = line.strip_prefix("VmRSS:") {
-                    if let Ok(kb) = rest.trim().trim_end_matches(" kB").trim().parse::<u64>() {
-                        return kb;
-                    }
+                if let Some(rest) = line.strip_prefix("VmRSS:")
+                    && let Ok(kb) = rest.trim().trim_end_matches(" kB").trim().parse::<u64>()
+                {
+                    return kb;
                 }
             }
         }
