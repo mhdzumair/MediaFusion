@@ -47,19 +47,17 @@ fn data_str<'a>(data: &'a Value, key: &str) -> Option<&'a str> {
 
 fn contribution_titles_indicate_adult(data: &Value) -> bool {
     for key in ["name", "title", "torrent_name"] {
-        if let Some(t) = data_str(data, key) {
-            if is_adult_content(t) {
+        if let Some(t) = data_str(data, key)
+            && is_adult_content(t) {
                 return true;
             }
-        }
     }
     if let Some(files) = data.get("file_data").and_then(|v| v.as_array()) {
         for file in files {
-            if let Some(fname) = file.get("filename").and_then(|v| v.as_str()) {
-                if is_adult_content(fname) {
+            if let Some(fname) = file.get("filename").and_then(|v| v.as_str())
+                && is_adult_content(fname) {
                     return true;
                 }
-            }
         }
     }
     false
@@ -351,8 +349,8 @@ async fn process_torrent(
         })?;
     }
 
-    if let Some(mid) = media_id {
-        if effective_meta_type == "series" {
+    if let Some(mid) = media_id
+        && effective_meta_type == "series" {
             let fallback = data_str(data, "title").unwrap_or(name);
             import_helpers::ensure_series_episode_metadata(
                 &state.pool,
@@ -362,7 +360,6 @@ async fn process_torrent(
             )
             .await;
         }
-    }
 
     apply_contribution_stream_extras(state, stream_id, data, media_id, true).await?;
 
@@ -517,8 +514,8 @@ async fn process_http(
 
     let media_id = resolve_media(state, &meta_id, meta_type, title, data, None).await;
 
-    if let Some(mid) = media_id {
-        if let Some(existing) = sqlx::query_scalar::<_, i32>(
+    if let Some(mid) = media_id
+        && let Some(existing) = sqlx::query_scalar::<_, i32>(
             "SELECT hs.stream_id FROM http_stream hs
              JOIN stream_media_link sml ON sml.stream_id = hs.stream_id
              WHERE hs.url = $1 AND sml.media_id = $2 LIMIT 1",
@@ -536,7 +533,6 @@ async fn process_http(
                 message: Some("HTTP stream already exists for this media".to_string()),
             });
         }
-    }
 
     let base = crate::db::StreamStoreBase {
         name: title.to_string(),
@@ -897,11 +893,10 @@ async fn apply_contribution_stream_extras(
 
     if let Some(mid) = media_id {
         let mut catalogs = contribution_string_list(data, "catalogs");
-        if let Some(sports_cat) = data_str(data, "sports_category") {
-            if !catalogs.iter().any(|c| c == sports_cat) {
+        if let Some(sports_cat) = data_str(data, "sports_category")
+            && !catalogs.iter().any(|c| c == sports_cat) {
                 catalogs.insert(0, sports_cat.to_string());
             }
-        }
         if !catalogs.is_empty() {
             link_media_catalogs(&state.pool, mid, &catalogs)
                 .await

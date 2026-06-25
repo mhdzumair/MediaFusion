@@ -1537,8 +1537,8 @@ pub async fn telegram_login(
     }
 
     // Clear the conflicting user's link before taking ownership
-    if let Some(conflicting_id) = conflicting_user_id {
-        if let Err(e) = sqlx::query(
+    if let Some(conflicting_id) = conflicting_user_id
+        && let Err(e) = sqlx::query(
             "UPDATE users SET telegram_user_id = NULL, telegram_linked_at = NULL WHERE id = $1",
         )
         .bind(conflicting_id)
@@ -1547,7 +1547,6 @@ pub async fn telegram_login(
         {
             tracing::warn!("telegram_login clear conflict user {conflicting_id}: {e}");
         }
-    }
 
     // Link the Telegram account to the authenticated user
     if let Err(e) = sqlx::query(
@@ -1583,19 +1582,18 @@ pub async fn telegram_login(
     }
 
     // Remove the stale cache entry if the user was previously linked to a different account
-    if let Some(old_tg_id) = &current_telegram_id {
-        if old_tg_id != &telegram_user_id {
+    if let Some(old_tg_id) = &current_telegram_id
+        && old_tg_id != &telegram_user_id {
             let stale_key = crate::bot::user_mapping_key(old_tg_id);
             let _: Result<i64, _> = state.redis.del(&stale_key).await;
         }
-    }
 
     // Consume the one-time login token
     let _: Result<i64, _> = state.redis.del(&token_key).await;
 
     // Send a confirmation message to the user in Telegram (fire-and-forget).
-    if let Ok(tg_chat_id) = telegram_user_id.parse::<i64>() {
-        if let Ok(api) = crate::bot::BotApi::from_state(&state) {
+    if let Ok(tg_chat_id) = telegram_user_id.parse::<i64>()
+        && let Ok(api) = crate::bot::BotApi::from_state(&state) {
             let username_hint = sqlx::query_scalar::<_, Option<String>>(
                 "SELECT NULLIF(username, '') FROM users WHERE id = $1",
             )
@@ -1623,7 +1621,6 @@ pub async fn telegram_login(
                 let _ = api.send_message(tg_chat_id, &msg, None).await;
             });
         }
-    }
 
     (
         StatusCode::OK,

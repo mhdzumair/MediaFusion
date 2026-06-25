@@ -168,11 +168,10 @@ pub async fn check_cached(
             .cloned()
             .unwrap_or_default();
         for (i, item) in results.iter().enumerate() {
-            if item.get("cached").and_then(|v| v.as_bool()) == Some(true) {
-                if let Some(h) = chunk.get(i) {
+            if item.get("cached").and_then(|v| v.as_bool()) == Some(true)
+                && let Some(h) = chunk.get(i) {
                     cached.push(h.clone());
                 }
-            }
         }
     }
     cached

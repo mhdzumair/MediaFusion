@@ -856,8 +856,8 @@ pub async fn analyze_torrent(
     )
     .await;
 
-    if files.is_empty() {
-        if let Some(dht_result) = resolve_dht_metadata(
+    if files.is_empty()
+        && let Some(dht_result) = resolve_dht_metadata(
             &info_hash,
             resolve_files,
             resolve_timeout_secs,
@@ -878,7 +878,6 @@ pub async fn analyze_torrent(
                 }
             }
         }
-    }
 
     (
         StatusCode::OK,
@@ -1239,8 +1238,8 @@ pub async fn import_magnet(
     .await
     .unwrap_or(None);
 
-    if let Some(sid) = existing_id {
-        if !force_import {
+    if let Some(sid) = existing_id
+        && !force_import {
             return torrent_already_exists_response(
                 &state,
                 sid,
@@ -1255,7 +1254,6 @@ pub async fn import_magnet(
             )
             .await;
         }
-    }
 
     let mut parsed = if parser::is_sports_title(&name_for_parse) {
         parser::parse_sports_title(&name_for_parse)
@@ -1263,21 +1261,18 @@ pub async fn import_magnet(
         parser::parse_title(&name_for_parse)
     };
     // Allow caller to override parser-detected values
-    if let Some(ref r) = resolution {
-        if !r.is_empty() {
+    if let Some(ref r) = resolution
+        && !r.is_empty() {
             parsed.resolution = Some(r.clone());
         }
-    }
-    if let Some(ref q) = quality {
-        if !q.is_empty() {
+    if let Some(ref q) = quality
+        && !q.is_empty() {
             parsed.quality = Some(q.clone());
         }
-    }
-    if let Some(ref c) = codec {
-        if !c.is_empty() {
+    if let Some(ref c) = codec
+        && !c.is_empty() {
             parsed.codec = Some(c.clone());
         }
-    }
     for a in form_audio {
         if !parsed.audio.iter().any(|x| x == &a) {
             parsed.audio.push(a);
@@ -1669,8 +1664,8 @@ pub async fn import_torrent(
     .await
     .unwrap_or(None);
 
-    if let Some(sid) = existing_id {
-        if !force_import {
+    if let Some(sid) = existing_id
+        && !force_import {
             return torrent_already_exists_response(
                 &state,
                 sid,
@@ -1685,7 +1680,6 @@ pub async fn import_torrent(
             )
             .await;
         }
-    }
 
     let mut parsed = if parser::is_sports_title(&torrent_name) {
         parser::parse_sports_title(&torrent_name)
@@ -1693,21 +1687,18 @@ pub async fn import_torrent(
         parser::parse_title(&torrent_name)
     };
     // Allow caller to override parser-detected values
-    if let Some(ref r) = resolution {
-        if !r.is_empty() {
+    if let Some(ref r) = resolution
+        && !r.is_empty() {
             parsed.resolution = Some(r.clone());
         }
-    }
-    if let Some(ref q) = quality {
-        if !q.is_empty() {
+    if let Some(ref q) = quality
+        && !q.is_empty() {
             parsed.quality = Some(q.clone());
         }
-    }
-    if let Some(ref c) = codec {
-        if !c.is_empty() {
+    if let Some(ref c) = codec
+        && !c.is_empty() {
             parsed.codec = Some(c.clone());
         }
-    }
 
     let mut effective_files: Vec<FileEntry> = if !file_data.is_empty() {
         file_data
@@ -1825,11 +1816,10 @@ pub async fn import_torrent(
 
     // Extract trackers from .torrent announce fields
     let mut tracker_urls: Vec<String> = Vec::new();
-    if let Some(announce) = &torrent.announce {
-        if !announce.is_empty() {
+    if let Some(announce) = &torrent.announce
+        && !announce.is_empty() {
             tracker_urls.push(announce.clone());
         }
-    }
     if let Some(list) = &torrent.announce_list {
         for tier in list {
             for url in tier {

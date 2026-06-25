@@ -109,8 +109,8 @@ pub async fn get_debrid_cache_status_federated(
         let _ = client.hdel::<(), _, _>(&cache_key, expired).await;
     }
 
-    if sync_federation && !federation_needed.is_empty() {
-        if let Some(http) = http {
+    if sync_federation && !federation_needed.is_empty()
+        && let Some(http) = http {
             let remote = crate::providers::torrents::cache_federation::fetch_federated_status(
                 http,
                 mediafusion_url,
@@ -134,7 +134,6 @@ pub async fn get_debrid_cache_status_federated(
                 .await;
             }
         }
-    }
 
     result
 }

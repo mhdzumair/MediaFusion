@@ -37,18 +37,16 @@ fn main() {
         .telegram_api_hash
         .unwrap_or_else(|| prompt("API Hash: "));
 
-    if let Some(existing) = &config.telegram_grammers_session {
-        if let Ok(data) = telegram_session::parse_session_data(existing) {
-            if telegram_session::session_is_authenticated(&data) {
+    if let Some(existing) = &config.telegram_grammers_session
+        && let Ok(data) = telegram_session::parse_session_data(existing)
+            && telegram_session::session_is_authenticated(&data) {
                 println!("Existing TELEGRAM_GRAMMERS_SESSION is already authenticated.");
                 return;
             }
-        }
-    }
 
     // Try converting legacy Telethon session from env TELEGRAM_SESSION_STRING if set
-    if let Ok(telethon) = env::var("TELEGRAM_SESSION_STRING") {
-        if !telethon.is_empty() {
+    if let Ok(telethon) = env::var("TELEGRAM_SESSION_STRING")
+        && !telethon.is_empty() {
             match telegram_session::convert_telethon_string(&telethon) {
                 Ok(blob) => {
                     println!("Converted Telethon session:");
@@ -58,7 +56,6 @@ fn main() {
                 Err(e) => eprintln!("Telethon conversion failed: {e}"),
             }
         }
-    }
 
     println!("Interactive grammers login is not yet wired in this binary.");
     println!("Convert an existing Telethon StringSession instead:");

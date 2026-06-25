@@ -64,11 +64,10 @@ async fn lookup_redis(redis: &fred::clients::Client, key: &[u8; 32], uuid: &str)
             obj.insert("pid".into(), serde_json::json!(pid));
         }
         // api_password may be cached at top level of the Redis object
-        if !obj.contains_key("ap") {
-            if let Some(ap) = cached.get("api_password").and_then(|v| v.as_str()) {
+        if !obj.contains_key("ap")
+            && let Some(ap) = cached.get("api_password").and_then(|v| v.as_str()) {
                 obj.insert("ap".into(), serde_json::json!(ap));
             }
-        }
     }
 
     Some(config)
@@ -167,11 +166,10 @@ pub fn merge_secrets(config: &mut Value, secrets: &Value) {
 
                 // Token fields
                 for field in ["tk", "token", "pw", "password", "em", "email"] {
-                    if let Some(val) = ps.get(field) {
-                        if !val.is_null() {
+                    if let Some(val) = ps.get(field)
+                        && !val.is_null() {
                             provider_obj.insert(field.into(), val.clone());
                         }
-                    }
                 }
                 // Nested configs
                 for nested_key in [
@@ -208,28 +206,26 @@ pub fn merge_secrets(config: &mut Value, secrets: &Value) {
 
     // MediaFlow api_password
     for mfc_key in ["mfc", "mediaflow_config"] {
-        if let Some(mfc_secrets) = secrets_obj.get(mfc_key).and_then(|v| v.as_object()) {
-            if let Some(mfc) = config_obj.get_mut(mfc_key).and_then(|v| v.as_object_mut()) {
+        if let Some(mfc_secrets) = secrets_obj.get(mfc_key).and_then(|v| v.as_object())
+            && let Some(mfc) = config_obj.get_mut(mfc_key).and_then(|v| v.as_object_mut()) {
                 for (k, v) in mfc_secrets {
                     if !v.is_null() {
                         mfc.insert(k.clone(), v.clone());
                     }
                 }
             }
-        }
     }
 
     // EasyNews credentials (stored under "enc" or "easynews_config")
     for enc_key in ["enc", "easynews_config"] {
-        if let Some(enc_secrets) = secrets_obj.get(enc_key).and_then(|v| v.as_object()) {
-            if let Some(enc) = config_obj.get_mut(enc_key).and_then(|v| v.as_object_mut()) {
+        if let Some(enc_secrets) = secrets_obj.get(enc_key).and_then(|v| v.as_object())
+            && let Some(enc) = config_obj.get_mut(enc_key).and_then(|v| v.as_object_mut()) {
                 for (k, v) in enc_secrets {
                     if !v.is_null() {
                         enc.insert(k.clone(), v.clone());
                     }
                 }
             }
-        }
         if secrets_obj.contains_key(enc_key) {
             break;
         }
@@ -240,12 +236,11 @@ pub fn merge_secrets(config: &mut Value, secrets: &Value) {
     // "api_password" appearing alongside "ap" and triggering a duplicate-field error.
     if !config_obj.contains_key("ap") && !config_obj.contains_key("api_password") {
         for ap_key in ["ap", "api_password"] {
-            if let Some(ap) = secrets_obj.get(ap_key) {
-                if !ap.is_null() {
+            if let Some(ap) = secrets_obj.get(ap_key)
+                && !ap.is_null() {
                     config_obj.insert("ap".into(), ap.clone());
                     break;
                 }
-            }
         }
     }
 }

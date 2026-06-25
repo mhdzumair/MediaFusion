@@ -113,8 +113,8 @@ async fn run_user_channel_scrape(
             .await;
     }
 
-    if let Some(notification_chat_id) = ctx.state.config.telegram_chat_id.as_deref() {
-        if !notification_chat_id.is_empty() {
+    if let Some(notification_chat_id) = ctx.state.config.telegram_chat_id.as_deref()
+        && !notification_chat_id.is_empty() {
             let summary = format!(
                 "📡 *Channel Scrape Completed*\n\n\
                  Channel: `{channel}`\n\
@@ -134,7 +134,6 @@ async fn run_user_channel_scrape(
                     .await;
             }
         }
-    }
 
     crate::bot::clear_scrape_job(&ctx.state, telegram_user_id).await;
     Ok(())

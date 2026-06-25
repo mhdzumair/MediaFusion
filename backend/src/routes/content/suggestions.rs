@@ -252,8 +252,8 @@ async fn apply_metadata_field_change(
             }
         }
         "year" => {
-            if let Ok(year) = suggested_value.parse::<i32>() {
-                if let Err(e) =
+            if let Ok(year) = suggested_value.parse::<i32>()
+                && let Err(e) =
                     sqlx::query("UPDATE media SET year = $1, updated_at = NOW() WHERE id = $2")
                         .bind(year)
                         .bind(media_id)
@@ -262,11 +262,10 @@ async fn apply_metadata_field_change(
                 {
                     tracing::warn!("apply_metadata_field_change: year update failed: {e}");
                 }
-            }
         }
         "runtime" => {
-            if let Ok(minutes) = suggested_value.parse::<i32>() {
-                if let Err(e) = sqlx::query(
+            if let Ok(minutes) = suggested_value.parse::<i32>()
+                && let Err(e) = sqlx::query(
                     "UPDATE media SET runtime_minutes = $1, updated_at = NOW() WHERE id = $2",
                 )
                 .bind(minutes)
@@ -276,7 +275,6 @@ async fn apply_metadata_field_change(
                 {
                     tracing::warn!("apply_metadata_field_change: runtime update failed: {e}");
                 }
-            }
         }
         "nudity_status" => {
             const VALID_NUDITY: &[&str] =
@@ -287,7 +285,7 @@ async fn apply_metadata_field_change(
                     "apply_metadata_field_change: invalid nudity_status value: {suggested_value}"
                 );
             } else {
-                match sqlx::query(
+                if let Err(e) = sqlx::query(
                     "UPDATE media SET nudity_status = $1, updated_at = NOW() WHERE id = $2",
                 )
                 .bind(
@@ -296,14 +294,10 @@ async fn apply_metadata_field_change(
                 )
                 .bind(media_id)
                 .execute(pool)
-                .await
-                {
-                    Err(e) => {
-                        tracing::warn!(
-                            "apply_metadata_field_change: nudity_status update failed: {e}"
-                        );
-                    }
-                    _ => {}
+                .await {
+                    tracing::warn!(
+                        "apply_metadata_field_change: nudity_status update failed: {e}"
+                    );
                 }
             }
         }

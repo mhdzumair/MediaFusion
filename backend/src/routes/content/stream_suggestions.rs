@@ -656,8 +656,8 @@ async fn apply_relink_media(pool: &sqlx::PgPool, stream_id: i32, link_data: &ser
         .and_then(|v| v.as_i64())
         .map(|v| v as i32);
 
-    if file_index.is_some() && (season_number.is_some() || episode_number.is_some()) {
-        if let Some((file_id,)) = files.first() {
+    if file_index.is_some() && (season_number.is_some() || episode_number.is_some())
+        && let Some((file_id,)) = files.first() {
             // Upsert the file_media_link episode mapping for the target file+media.
             let _ = sqlx::query(
                 "INSERT INTO file_media_link (file_id, media_id, season_number, episode_number, episode_end, created_at, is_primary, confidence, link_source)
@@ -673,7 +673,6 @@ async fn apply_relink_media(pool: &sqlx::PgPool, stream_id: i32, link_data: &ser
             .execute(pool)
             .await;
         }
-    }
 
     tracing::info!(
         "apply_relink_media: stream {stream_id} relinked to media {target_media_id} file_index={file_index:?}"
@@ -704,8 +703,8 @@ async fn apply_add_media_link(pool: &sqlx::PgPool, stream_id: i32, link_data: &s
     .await
     .unwrap_or(false);
 
-    if !already_exists {
-        if let Err(e) = sqlx::query(
+    if !already_exists
+        && let Err(e) = sqlx::query(
             "INSERT INTO stream_media_link (stream_id, media_id, file_index, is_primary, is_verified, created_at) VALUES ($1, $2, $3, FALSE, FALSE, NOW())",
         )
         .bind(stream_id)
@@ -717,7 +716,6 @@ async fn apply_add_media_link(pool: &sqlx::PgPool, stream_id: i32, link_data: &s
             tracing::warn!("apply_add_media_link: insert failed: {e}");
             return;
         }
-    }
 
     // Add file-level link if episode info provided
     let season_number: Option<i32> = link_data
@@ -733,8 +731,8 @@ async fn apply_add_media_link(pool: &sqlx::PgPool, stream_id: i32, link_data: &s
         .and_then(|v| v.as_i64())
         .map(|v| v as i32);
 
-    if let Some(fi) = file_index {
-        if season_number.is_some() || episode_number.is_some() {
+    if let Some(fi) = file_index
+        && (season_number.is_some() || episode_number.is_some()) {
             let file: Option<(i32,)> = sqlx::query_as(
                 "SELECT id FROM stream_file WHERE stream_id = $1 AND file_index = $2",
             )
@@ -758,7 +756,6 @@ async fn apply_add_media_link(pool: &sqlx::PgPool, stream_id: i32, link_data: &s
                 .await;
             }
         }
-    }
 
     tracing::info!(
         "apply_add_media_link: stream {stream_id} linked to media {target_media_id} file_index={file_index:?}"
@@ -827,15 +824,14 @@ pub async fn apply_stream_field_change(
     }
 
     if suggestion_type == "relink_media" || suggestion_type == "add_media_link" {
-        if let Some(v) = value {
-            if let Ok(link_data) = serde_json::from_str::<serde_json::Value>(v) {
+        if let Some(v) = value
+            && let Ok(link_data) = serde_json::from_str::<serde_json::Value>(v) {
                 if suggestion_type == "relink_media" {
                     apply_relink_media(pool, stream_id, &link_data).await;
                 } else {
                     apply_add_media_link(pool, stream_id, &link_data).await;
                 }
             }
-        }
         return;
     }
 
@@ -851,8 +847,8 @@ pub async fn apply_stream_field_change(
     // Handle episode_link:<file_id>:<field> corrections
     if field.starts_with("episode_link:") {
         let parts: Vec<&str> = field.splitn(3, ':').collect();
-        if parts.len() == 3 {
-            if let Ok(file_id) = parts[1].parse::<i32>() {
+        if parts.len() == 3
+            && let Ok(file_id) = parts[1].parse::<i32>() {
                 let link_field = parts[2];
                 if matches!(
                     link_field,
@@ -898,7 +894,6 @@ pub async fn apply_stream_field_change(
                     }
                 }
             }
-        }
         return;
     }
 

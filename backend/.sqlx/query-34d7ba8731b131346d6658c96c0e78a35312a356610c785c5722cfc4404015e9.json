@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "attempts",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "attempts"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "max_attempts",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "max_attempts"
+          }
+        }
       }
     ],
     "parameters": {

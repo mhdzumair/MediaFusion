@@ -724,8 +724,8 @@ pub async fn update_contribution_settings(
     let ct = body.contributor_threshold;
     let tt = body.trusted_threshold;
     let et = body.expert_threshold;
-    if let (Some(c), Some(t)) = (ct, tt) {
-        if c >= t {
+    if let (Some(c), Some(t)) = (ct, tt)
+        && c >= t {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(
@@ -734,16 +734,14 @@ pub async fn update_contribution_settings(
             )
                 .into_response();
         }
-    }
-    if let (Some(t), Some(e)) = (tt, et) {
-        if t >= e {
+    if let (Some(t), Some(e)) = (tt, et)
+        && t >= e {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({"detail": "Trusted threshold must be less than expert threshold"})),
             )
                 .into_response();
         }
-    }
     if let Some(v) = ct {
         let _ = sqlx::query(
             "UPDATE contribution_settings SET contributor_threshold = $1 WHERE id = 'default'",
@@ -1244,16 +1242,14 @@ pub async fn list_recent_requests(
     let mut items: Vec<Value> = Vec::new();
     for raw in &raw_entries {
         if let Ok(v) = serde_json::from_str::<Value>(raw) {
-            if let Some(ref method) = params.method {
-                if v.get("method").and_then(|m| m.as_str()) != Some(method.as_str()) {
+            if let Some(ref method) = params.method
+                && v.get("method").and_then(|m| m.as_str()) != Some(method.as_str()) {
                     continue;
                 }
-            }
-            if let Some(sc) = params.status_code {
-                if v.get("status_code").and_then(|s| s.as_i64()) != Some(sc) {
+            if let Some(sc) = params.status_code
+                && v.get("status_code").and_then(|s| s.as_i64()) != Some(sc) {
                     continue;
                 }
-            }
             if let Some(ref route) = params.route {
                 let path_val = v
                     .get("route_template")

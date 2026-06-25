@@ -124,13 +124,11 @@ async fn github_get_json(
         .get("x-ratelimit-remaining")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<i64>().ok())
-    {
-        if remaining < 10 {
+        && remaining < 10 {
             warn!(
                 "dmm_hashlist: GitHub rate limit almost exhausted (remaining={remaining}). Set DMM_HASHLIST_GITHUB_TOKEN to raise the limit."
             );
         }
-    }
 
     let val: serde_json::Value = resp.json().await?;
     Ok(val)
@@ -324,8 +322,8 @@ fn resolve_sports_stream(filename: &str, parsed: &parser::ParsedTitle) -> Option
         });
     }
 
-    if matches!(category, "formula_racing" | "motogp_racing") {
-        if let Some(racing) = parser::parse_racing_title(filename) {
+    if matches!(category, "formula_racing" | "motogp_racing")
+        && let Some(racing) = parser::parse_racing_title(filename) {
             let session_src = racing.session.as_deref().unwrap_or(filename);
             if let Some((episode, episode_title)) = parser::racing_session_episode(session_src) {
                 let files = vec![StreamFile {
@@ -350,7 +348,6 @@ fn resolve_sports_stream(filename: &str, parsed: &parser::ParsedTitle) -> Option
                 });
             }
         }
-    }
 
     let clean_title = parsed
         .title
@@ -798,11 +795,10 @@ async fn run_ingestion(
                     Some(s) => s.to_string(),
                     None => continue,
                 };
-                if let Some(ref known) = latest_known_sha {
-                    if sha == *known {
+                if let Some(ref known) = latest_known_sha
+                    && sha == *known {
                         break;
                     }
-                }
                 to_process.push(sha);
             }
 

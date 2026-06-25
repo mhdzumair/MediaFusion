@@ -167,11 +167,10 @@ async fn poll(
     for _ in 0u32..60 {
         tokio::time::sleep(Duration::from_secs(5)).await;
 
-        if !in_queue(http, api_url, api_key, nzo_id).await? {
-            if let Some(result) = in_history(http, api_url, api_key, nzo_id).await? {
+        if !in_queue(http, api_url, api_key, nzo_id).await?
+            && let Some(result) = in_history(http, api_url, api_key, nzo_id).await? {
                 return result;
             }
-        }
     }
     Err(ProviderError::api(
         "SABnzbd: download timed out after 5 minutes",

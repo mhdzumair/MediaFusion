@@ -426,11 +426,10 @@ pub async fn list_watch_history(
         if let Some(ref mt) = params.media_type {
             q = q.bind(mt.clone());
         }
-        if let Some(ref act) = params.action {
-            if let Some(wa) = WatchAction::from_wire(act) {
+        if let Some(ref act) = params.action
+            && let Some(wa) = WatchAction::from_wire(act) {
                 q = q.bind(wa);
             }
-        }
         match q.fetch_one(&state.pool_ro).await {
             Ok(c) => c,
             Err(e) => {
@@ -505,11 +504,10 @@ pub async fn list_watch_history(
         if let Some(ref mt) = params.media_type {
             q = q.bind(mt.clone());
         }
-        if let Some(ref act) = params.action {
-            if let Some(wa) = WatchAction::from_wire(act) {
+        if let Some(ref act) = params.action
+            && let Some(wa) = WatchAction::from_wire(act) {
                 q = q.bind(wa);
             }
-        }
         q = q.bind(page_size).bind(offset);
         match q.fetch_all(&state.pool_ro).await {
             Ok(r) => r,

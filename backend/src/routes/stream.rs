@@ -1281,8 +1281,7 @@ async fn build_pipeline(
         && related_ids.is_empty()
         && user_data.live_search_streams
         && crate::scrapers::metadata::parse_import_meta_id(imdb_id).is_some()
-    {
-        if let Some(created_raw_id) = crate::scrapers::media_resolve::ensure_media_for_import(
+        && let Some(created_raw_id) = crate::scrapers::media_resolve::ensure_media_for_import(
             &state.pool,
             &state.http,
             imdb_id,
@@ -1310,7 +1309,6 @@ async fn build_pipeline(
                 "stream: on-demand metadata created for {imdb_id} (media_id={created_raw_id})"
             );
         }
-    }
 
     if state.config.background_search_enabled && media_id != db::MediaId(0) {
         let item_key = match (media_type, season, episode) {
@@ -1557,8 +1555,8 @@ async fn build_pipeline(
 
     // 7. Live scrape
     let mut live_usenet_raw: Vec<crate::scrapers::ScrapedUsenetStream> = Vec::new();
-    if user_data.live_search_streams {
-        if let Ok(Some(meta)) = db::get_media_meta(&state.pool, media_id, imdb_id).await {
+    if user_data.live_search_streams
+        && let Ok(Some(meta)) = db::get_media_meta(&state.pool, media_id, imdb_id).await {
             let (scraped_torrents, scraped_usenet) = orchestrator::run_live_search(
                 state, &user_data, &meta, media_type, season, episode, &scope,
             )
@@ -1570,7 +1568,6 @@ async fn build_pipeline(
                 live_usenet_raw = scraped_usenet;
             }
         }
-    }
 
     // Build all_hashes after live scrape (complete set)
     let all_hashes: Vec<String> = all_torrents
@@ -2504,11 +2501,10 @@ fn build_p2p_sources(t: &Value, hash: &str) -> Vec<String> {
     let mut tracker_urls = trackers::all_trackers();
     if let Some(announce_list) = t.get("announce_list").and_then(|v| v.as_array()) {
         for item in announce_list {
-            if let Some(url) = item.as_str() {
-                if !tracker_urls.iter().any(|existing| existing == url) {
+            if let Some(url) = item.as_str()
+                && !tracker_urls.iter().any(|existing| existing == url) {
                     tracker_urls.push(url.to_string());
                 }
-            }
         }
     }
     let mut sources: Vec<String> = tracker_urls
@@ -2732,8 +2728,8 @@ fn format_streams(
             obj.insert("name".into(), json!(title_str));
             obj.insert("description".into(), json!(desc_str));
 
-            if !secret_str.is_empty() {
-                if let Some(provider) = primary_provider {
+            if !secret_str.is_empty()
+                && let Some(provider) = primary_provider {
                     // Generate debrid proxy URL
                     let url = build_playback_url(
                         host_url, secret_str, provider, hash, filename, season, episode,
@@ -2749,7 +2745,6 @@ fn format_streams(
                     }
                     return Some(Value::Object(obj));
                 }
-            }
 
             // No provider — use infoHash for WebTorrent
             behavior.insert("notWebReady".into(), json!(true));
@@ -2822,8 +2817,8 @@ fn format_single_stream(
     obj.insert("name".into(), json!(title_str));
     obj.insert("description".into(), json!(desc_str));
 
-    if !secret_str.is_empty() {
-        if let Some(provider) = primary_provider {
+    if !secret_str.is_empty()
+        && let Some(provider) = primary_provider {
             let url = build_playback_url(
                 host_url, secret_str, provider, hash, filename, season, episode,
             );
@@ -2838,7 +2833,6 @@ fn format_single_stream(
             }
             return Some(Value::Object(obj));
         }
-    }
 
     behavior.insert("notWebReady".into(), json!(true));
     if let Some(fname) = behavior_filename {
@@ -2982,8 +2976,8 @@ fn format_youtube_stream(
     };
 
     // Append geo-restriction label if present
-    if let Some(geo_type) = row.get("geo_restriction_type").and_then(|v| v.as_str()) {
-        if !geo_type.is_empty() && geo_type != "none" {
+    if let Some(geo_type) = row.get("geo_restriction_type").and_then(|v| v.as_str())
+        && !geo_type.is_empty() && geo_type != "none" {
             let geo_label = if let Some(countries) = row
                 .get("geo_restriction_countries")
                 .and_then(|v| v.as_array())
@@ -2997,7 +2991,6 @@ fn format_youtube_stream(
                 title_str = format!("{title_str} | {geo_label}");
             }
         }
-    }
 
     Some(json!({ "name": title_str, "description": desc_str, "ytId": video_id }))
 }

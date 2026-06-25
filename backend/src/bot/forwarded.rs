@@ -94,15 +94,14 @@ pub async fn store_forwarded_video(
     let mut backup_chat_id: Option<String> = None;
     let mut backup_message_id: Option<i64> = None;
 
-    if let Some(backup_channel) = &state.config.telegram_backup_channel_id {
-        if let Ok(result) = api
+    if let Some(backup_channel) = &state.config.telegram_backup_channel_id
+        && let Ok(result) = api
             .send_video(backup_channel.as_str(), file_id, Some(file_name))
             .await
         {
             backup_chat_id = Some(backup_channel.clone());
             backup_message_id = result.get("message_id").and_then(|v| v.as_i64());
         }
-    }
 
     let primary_chat_id = backup_chat_id.as_deref().unwrap_or("bot_contribution");
     let primary_message_id = backup_message_id.unwrap_or(0);

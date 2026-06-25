@@ -105,8 +105,8 @@ pub async fn get_video_url(
         let body: Value = response_json(generate_resp, "easydebrid link/generate").await?;
 
         // EasyDebrid returns { "link": "..." } on success
-        if let Some(link) = body.get("link").and_then(|v| v.as_str()) {
-            if !link.is_empty() {
+        if let Some(link) = body.get("link").and_then(|v| v.as_str())
+            && !link.is_empty() {
                 // EasyDebrid /link/generate returns a single direct link (not a file list),
                 // so we return it directly. File selection is not applicable here since the
                 // API resolves the best file server-side.
@@ -122,7 +122,6 @@ pub async fn get_video_url(
                 let _ = episode;
                 return Ok(link.to_string());
             }
-        }
 
         // Status 200 but no usable link — fall through to cache request
         tracing::debug!(

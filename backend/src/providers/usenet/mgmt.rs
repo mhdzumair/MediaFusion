@@ -31,8 +31,8 @@ pub async fn validate_sabnzbd(http: &Client, config: &Value) -> Result<(), Provi
             "invalid_credentials.mp4",
         ));
     }
-    if let Some(webdav_url) = str_field(config, &["webdav_url"]) {
-        if !webdav_url.is_empty() {
+    if let Some(webdav_url) = str_field(config, &["webdav_url"])
+        && !webdav_url.is_empty() {
             let user = str_field(config, &["webdav_username", "username"]).unwrap_or_default();
             let pass = str_field(config, &["webdav_password", "password"]).unwrap_or_default();
             super::webdav::list(http, webdav_url, "", user, pass)
@@ -41,7 +41,6 @@ pub async fn validate_sabnzbd(http: &Client, config: &Value) -> Result<(), Provi
                     ProviderError::api("Failed to verify WebDAV", "invalid_credentials.mp4")
                 })?;
         }
-    }
     Ok(())
 }
 

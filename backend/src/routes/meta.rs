@@ -127,11 +127,10 @@ async fn serve_meta(
 ) -> axum::response::Response {
     let meta_id = raw_id.trim_end_matches(".json");
 
-    if media_type == "movie" {
-        if let Some(service) = delete_all_watchlist::parse_service(meta_id) {
+    if media_type == "movie"
+        && let Some(service) = delete_all_watchlist::parse_service(meta_id) {
             return delete_all_watchlist::delete_all_meta_response(&state, &user_data, service);
         }
-    }
 
     // Embed keyword-filter version so any keyword change invalidates cached meta responses.
     let kf_ver = { state.keyword_filters.read().unwrap().version_tag() };
@@ -143,8 +142,8 @@ async fn serve_meta(
     }
 
     let mut meta = build_meta(&state, media_type, meta_id).await;
-    if meta.is_none() {
-        if let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(meta_id) {
+    if meta.is_none()
+        && let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(meta_id) {
             let ctx = crate::scrapers::metadata::FetchCtx {
                 tmdb_api_key: state.config.tmdb_api_key.as_deref(),
                 tvdb_api_key: state.config.tvdb_api_key.as_deref(),
@@ -162,8 +161,7 @@ async fn serve_meta(
                 is_series,
             )
             .await
-            {
-                if crate::db::store_media(
+                && crate::db::store_media(
                     &state.pool,
                     &normalized,
                     crate::db::StoreMediaOpts {
@@ -176,9 +174,7 @@ async fn serve_meta(
                 {
                     meta = build_meta(&state, media_type, meta_id).await;
                 }
-            }
         }
-    }
 
     let Some(meta) = meta else {
         return StatusCode::NOT_FOUND.into_response();

@@ -379,8 +379,8 @@ pub async fn import_acestream(
             .into_response();
     }
 
-    if let Some(ref h) = info_hash {
-        if let Some(existing_id) = sqlx::query_scalar(
+    if let Some(ref h) = info_hash
+        && let Some(existing_id) = sqlx::query_scalar(
             "SELECT stream_id FROM acestream_stream WHERE info_hash = $1 LIMIT 1",
         )
         .bind(h)
@@ -397,7 +397,6 @@ pub async fn import_acestream(
             )
                 .into_response();
         }
-    }
 
     let base = crate::db::StreamStoreBase {
         name: stream_name.clone(),

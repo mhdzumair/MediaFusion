@@ -20,11 +20,10 @@ pub async fn resolve_or_store_media(
     is_series: bool,
 ) -> Option<MediaId> {
     for (provider, id) in [("imdb", imdb), ("tmdb", tmdb), ("tvdb", tvdb), ("mal", mal)] {
-        if let Some(ext_id) = id {
-            if let Some(mid) = lookup_external(pool, provider, ext_id).await {
+        if let Some(ext_id) = id
+            && let Some(mid) = lookup_external(pool, provider, ext_id).await {
                 return Some(mid);
             }
-        }
     }
 
     let meta = if let Some(tid) = tmdb {

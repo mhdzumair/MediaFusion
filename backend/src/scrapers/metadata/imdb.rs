@@ -14,13 +14,12 @@ pub async fn fetch_by_id(
     imdb_id: &str,
     is_series: bool,
 ) -> Option<NormalizedMetadata> {
-    if ctx.tmdb_api_key.is_some() {
-        if let Some(meta) =
+    if ctx.tmdb_api_key.is_some()
+        && let Some(meta) =
             super::tmdb::find_by_external(http, ctx, "imdb_id", imdb_id, is_series).await
         {
             return Some(meta);
         }
-    }
 
     if ctx.cinemeta_fallback {
         return cinemeta_fetch(http, imdb_id, is_series).await;

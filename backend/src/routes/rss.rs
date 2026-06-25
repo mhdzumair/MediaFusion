@@ -510,8 +510,8 @@ pub async fn update_rss_feed(
         .execute(&state.pool)
         .await;
     }
-    if let Some(pp) = &body.parsing_patterns {
-        if let Ok(s) = serde_json::to_string(pp) {
+    if let Some(pp) = &body.parsing_patterns
+        && let Ok(s) = serde_json::to_string(pp) {
             let _ = sqlx::query(
                 "UPDATE rss_feed SET parsing_patterns = $1::json, updated_at = NOW() WHERE id = $2",
             )
@@ -520,9 +520,8 @@ pub async fn update_rss_feed(
             .execute(&state.pool)
             .await;
         }
-    }
-    if let Some(f) = &body.filters {
-        if let Ok(s) = serde_json::to_string(f) {
+    if let Some(f) = &body.filters
+        && let Ok(s) = serde_json::to_string(f) {
             let _ = sqlx::query(
                 "UPDATE rss_feed SET filters = $1::json, updated_at = NOW() WHERE id = $2",
             )
@@ -531,9 +530,8 @@ pub async fn update_rss_feed(
             .execute(&state.pool)
             .await;
         }
-    }
-    if let Some(cp) = &body.credential_params {
-        if let Ok(s) = serde_json::to_string(cp) {
+    if let Some(cp) = &body.credential_params
+        && let Ok(s) = serde_json::to_string(cp) {
             let _ = sqlx::query(
                 "UPDATE rss_feed SET credential_params = $1::jsonb, updated_at = NOW() WHERE id = $2",
             )
@@ -542,7 +540,6 @@ pub async fn update_rss_feed(
             .execute(&state.pool)
             .await;
         }
-    }
 
     // Return updated feed
     type FeedRow = (
@@ -1471,8 +1468,8 @@ pub async fn user_update_rss_feed(
             .execute(&state.pool)
             .await;
     }
-    if let Some(cp) = &body.credential_params {
-        if let Ok(s) = serde_json::to_string(cp) {
+    if let Some(cp) = &body.credential_params
+        && let Ok(s) = serde_json::to_string(cp) {
             let _ = sqlx::query(
                 "UPDATE rss_feed SET credential_params = $1::jsonb, updated_at = NOW() WHERE id = $2",
             )
@@ -1481,7 +1478,6 @@ pub async fn user_update_rss_feed(
             .execute(&state.pool)
             .await;
         }
-    }
     if let Some(ct) = &body.content_type {
         let _ =
             sqlx::query("UPDATE rss_feed SET content_type = $1, updated_at = NOW() WHERE id = $2")

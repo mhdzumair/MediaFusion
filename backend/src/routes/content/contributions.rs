@@ -351,26 +351,22 @@ pub async fn list_contributions(
         filter_binds.push(ListContribBind::Str(ct.clone()));
         idx += 1;
     }
-    if let Some(ref cs) = params.contribution_status {
-        if let Some(status) = crate::db::ContributionStatus::from_wire(cs) {
+    if let Some(ref cs) = params.contribution_status
+        && let Some(status) = crate::db::ContributionStatus::from_wire(cs) {
             count_sql.push_str(&format!(" AND status = ${idx}"));
             fetch_sql.push_str(&format!(" AND status = ${idx}"));
             filter_binds.push(ListContribBind::Status(status));
             idx += 1;
         }
-    }
-    if let Some(ref c) = params.contributor {
-        if c != "all" {
-            if let Some(uid_str) = c.strip_prefix("user:") {
-                if let Ok(uid) = uid_str.parse::<i32>() {
+    if let Some(ref c) = params.contributor
+        && c != "all"
+            && let Some(uid_str) = c.strip_prefix("user:")
+                && let Ok(uid) = uid_str.parse::<i32>() {
                     count_sql.push_str(&format!(" AND user_id = ${idx}"));
                     fetch_sql.push_str(&format!(" AND user_id = ${idx}"));
                     filter_binds.push(ListContribBind::Int(uid));
                     idx += 1;
                 }
-            }
-        }
-    }
     if let Some(ref q) = params.uploader_query {
         let q = q.trim();
         if !q.is_empty() {
@@ -646,13 +642,12 @@ pub async fn list_contribution_contributors(
             ct.replace('\'', "''")
         ));
     }
-    if let Some(ref cs) = params.contribution_status {
-        if let Some(status) = crate::db::ContributionStatus::from_wire(cs) {
+    if let Some(ref cs) = params.contribution_status
+        && let Some(status) = crate::db::ContributionStatus::from_wire(cs) {
             bind_idx += 1;
             sql.push_str(&format!(" AND c.status = ${bind_idx}"));
             status_bind = Some(status);
         }
-    }
     if let Some(ref q) = params.query {
         let esc = q.replace('\'', "''");
         sql.push_str(&format!(
@@ -1232,11 +1227,10 @@ pub async fn review_contribution(
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
-    if new_status == crate::db::ContributionStatus::Approved {
-        if let Some(uid) = row.user_id {
+    if new_status == crate::db::ContributionStatus::Approved
+        && let Some(uid) = row.user_id {
             award_contribution_points(&state.pool, uid as i64, &row.contribution_type).await;
         }
-    }
 
     let updated = match fetch_contrib_row(&state.pool, &contribution_id).await {
         None => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -1418,8 +1412,8 @@ async fn resolve_stream_for_contribution(pool: &sqlx::PgPool, row: &ContribRow) 
                 .unwrap_or("")
                 .trim()
                 .to_lowercase();
-            if !content_id.is_empty() {
-                if let Some(sid) = sqlx::query_scalar(
+            if !content_id.is_empty()
+                && let Some(sid) = sqlx::query_scalar(
                     "SELECT stream_id FROM acestream_stream WHERE content_id = $1 LIMIT 1",
                 )
                 .bind(&content_id)
@@ -1430,7 +1424,6 @@ async fn resolve_stream_for_contribution(pool: &sqlx::PgPool, row: &ContribRow) 
                 {
                     return Some(sid);
                 }
-            }
             let info_hash = data
                 .get("info_hash")
                 .and_then(|v| v.as_str())
@@ -1595,22 +1588,20 @@ fn is_adult_contribution(
 
     // Check top-level name and title fields (torrent_name, display name, resolved title)
     for key in &["name", "title"] {
-        if let Some(text) = data.get(key).and_then(|v| v.as_str()) {
-            if check_text(text) {
+        if let Some(text) = data.get(key).and_then(|v| v.as_str())
+            && check_text(text) {
                 return true;
             }
-        }
     }
 
     // Check per-file fields inside file_data
     if let Some(files) = data.get("file_data").and_then(|v| v.as_array()) {
         for file in files {
             for key in &["filename", "meta_title", "episode_title", "title"] {
-                if let Some(text) = file.get(key).and_then(|v| v.as_str()) {
-                    if check_text(text) {
+                if let Some(text) = file.get(key).and_then(|v| v.as_str())
+                    && check_text(text) {
                         return true;
                     }
-                }
             }
         }
     }
@@ -1672,12 +1663,11 @@ pub async fn bulk_review_contributions(
         fetch_binds.push(BulkFetchBind::Type(ct.clone()));
         bind_idx += 1;
     }
-    if let Some(ref ids) = body.contribution_ids {
-        if !ids.is_empty() {
+    if let Some(ref ids) = body.contribution_ids
+        && !ids.is_empty() {
             fetch_sql.push_str(&format!(" AND id = ANY(${bind_idx})"));
             fetch_binds.push(BulkFetchBind::Ids(ids.clone()));
         }
-    }
     fetch_sql.push_str(" ORDER BY created_at ASC");
 
     let mut fetch_query = sqlx::query_as::<_, (String, String, Option<i32>, serde_json::Value)>(

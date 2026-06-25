@@ -200,10 +200,10 @@ pub async fn find_or_create_media_with_anime(
             return None;
         }
 
-        if match_meta.provider == "tmdb" {
-            if let Some(key) = tmdb_api_key {
-                if normalized.external_id("imdb").is_none() {
-                    if let Some(iid) = crate::scrapers::metadata::imdb_id_from_tmdb(
+        if match_meta.provider == "tmdb"
+            && let Some(key) = tmdb_api_key
+                && normalized.external_id("imdb").is_none()
+                    && let Some(iid) = crate::scrapers::metadata::imdb_id_from_tmdb(
                         http,
                         &match_meta.external_id,
                         is_series,
@@ -213,9 +213,6 @@ pub async fn find_or_create_media_with_anime(
                     {
                         normalized.external_ids.push(("imdb".to_string(), iid));
                     }
-                }
-            }
-        }
 
         let media_id =
             crate::db::store_media(pool, &normalized, crate::db::StoreMediaOpts::default())
@@ -380,8 +377,8 @@ pub async fn fetch_external_metadata_for_import(
     }
 
     let is_series = meta_type == "series";
-    if let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(&meta_id) {
-        if let Some(meta) = crate::scrapers::metadata::fetch_normalized(
+    if let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(&meta_id)
+        && let Some(meta) = crate::scrapers::metadata::fetch_normalized(
             http,
             &import_fetch_ctx(tmdb_api_key, tvdb_api_key),
             provider,
@@ -392,7 +389,6 @@ pub async fn fetch_external_metadata_for_import(
         {
             return ImportMediaPrefetchEntry::Fetched(Box::new(meta));
         }
-    }
 
     ImportMediaPrefetchEntry::FallbackTitle(fallback_title.unwrap_or("Unknown").to_string())
 }
@@ -556,11 +552,9 @@ pub async fn ensure_media_for_import(
     if let Some(raw) = meta_id
         .strip_prefix("mf:")
         .or_else(|| meta_id.strip_prefix("mf"))
-    {
-        if let Ok(id) = raw.parse::<i32>() {
+        && let Ok(id) = raw.parse::<i32>() {
             return Some(id);
         }
-    }
 
     if let Ok(Some(id)) =
         crate::db::get_media_id_by_external_id(pool, meta_id, Some(meta_type)).await
@@ -581,8 +575,8 @@ pub async fn ensure_media_for_import(
     };
 
     let mut normalized = prefetched_meta(prefetch, meta_id, fetch_meta_type);
-    if normalized.is_none() && prefetch.is_none() {
-        if let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(meta_id) {
+    if normalized.is_none() && prefetch.is_none()
+        && let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(meta_id) {
             normalized = crate::scrapers::metadata::fetch_normalized(
                 http,
                 &import_fetch_ctx(tmdb_api_key, tvdb_api_key),
@@ -592,7 +586,6 @@ pub async fn ensure_media_for_import(
             )
             .await;
         }
-    }
 
     let fallback_title = overrides
         .title
@@ -617,11 +610,10 @@ pub async fn ensure_media_for_import(
         overrides.release_date,
     );
 
-    if meta.external_ids.is_empty() {
-        if let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(meta_id) {
+    if meta.external_ids.is_empty()
+        && let Some((provider, ext_id)) = crate::scrapers::metadata::parse_import_meta_id(meta_id) {
             meta.external_ids.push((provider.to_string(), ext_id));
         }
-    }
 
     if meta.adult {
         debug!(
@@ -709,14 +701,12 @@ pub fn is_valid_dmm_metadata_match(
 
     if let (Some(episode), Some(start_year), Some(air_year)) =
         (episode_number, candidate_year, parsed_year)
-    {
-        if episode > 0 {
+        && episode > 0 {
             let max_reasonable = (air_year - start_year + 1).saturating_mul(60);
             if max_reasonable > 0 && episode > max_reasonable {
                 return false;
             }
         }
-    }
 
     let Some(parsed_year) = parsed_year else {
         return true;
@@ -738,11 +728,10 @@ pub fn is_valid_dmm_metadata_match(
 }
 
 fn dmm_import_meta_id(entry: &serde_json::Value) -> Option<String> {
-    if let Some(imdb) = entry.get("imdb_id").and_then(|v| v.as_str()) {
-        if !imdb.is_empty() {
+    if let Some(imdb) = entry.get("imdb_id").and_then(|v| v.as_str())
+        && !imdb.is_empty() {
             return Some(imdb.to_string());
         }
-    }
     entry
         .get("id")
         .and_then(|v| v.as_str())
@@ -946,11 +935,10 @@ pub async fn search_meta_for_dmm_hashlist(
 
         let sim = crate::parser::max_similarity_ratio(title, candidate_title, &[]) as i32;
         let mut score = sim;
-        if let Some(y) = effective_year {
-            if candidate_year == Some(y) {
+        if let Some(y) = effective_year
+            && candidate_year == Some(y) {
                 score += 8;
             }
-        }
         if entry.get("imdb_id").and_then(|v| v.as_str()).is_some() {
             score += 2;
         }
@@ -1199,11 +1187,10 @@ pub async fn find_or_create_sports_stub(
     .ok()
     .flatten();
 
-    if let Some((id, existing_title)) = fuzzy {
-        if crate::parser::similarity_ratio(title, &existing_title) >= 70 {
+    if let Some((id, existing_title)) = fuzzy
+        && crate::parser::similarity_ratio(title, &existing_title) >= 70 {
             return Some(id);
         }
-    }
 
     // 3. Create stub with is_add_title_to_poster = true via the metadata funnel.
     let meta = crate::db::NormalizedMetadata {

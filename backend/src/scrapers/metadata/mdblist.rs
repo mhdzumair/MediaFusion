@@ -40,14 +40,13 @@ pub async fn fetch_all_list_imdb_ids(
     genre: Option<&str>,
 ) -> Vec<String> {
     let cache_key = list_items_key(list, genre);
-    if let Some(cached) = cache::get_json(redis, &cache_key).await {
-        if let Some(ids) = cached.as_array() {
+    if let Some(cached) = cache::get_json(redis, &cache_key).await
+        && let Some(ids) = cached.as_array() {
             return ids
                 .iter()
                 .filter_map(|v| v.as_str().map(str::to_string))
                 .collect();
         }
-    }
 
     let is_series = list.catalog_type == "series";
     let items_key = if is_series { "shows" } else { "movies" };

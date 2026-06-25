@@ -71,8 +71,8 @@ pub async fn scrape(
         }
 
         // Health gate: skip sources that are consistently failing
-        if let Some(hg) = health_gate {
-            if hg.enabled {
+        if let Some(hg) = health_gate
+            && hg.enabled {
                 let within_budget = source_health::is_source_within_budget(
                     &hg.redis,
                     indexer.key,
@@ -111,7 +111,6 @@ pub async fn scrape(
                     }
                 }
             }
-        }
 
         let (streams, request_ok) = scrape_indexer(
             client,
@@ -126,8 +125,8 @@ pub async fn scrape(
         .await;
 
         // Record outcome for health tracking
-        if let Some(hg) = health_gate {
-            if hg.enabled {
+        if let Some(hg) = health_gate
+            && hg.enabled {
                 source_health::record_source_outcome(
                     &hg.redis,
                     indexer.key,
@@ -143,7 +142,6 @@ pub async fn scrape(
                 )
                 .await;
             }
-        }
 
         for s in streams {
             if seen.insert(s.info_hash.clone()) {
@@ -304,13 +302,11 @@ async fn scrape_rss(
             if ratio < sim_min {
                 continue;
             }
-            if media_type == "movie" {
-                if let (Some(py), Some(my)) = (parsed.year, meta.year) {
-                    if py != my {
+            if media_type == "movie"
+                && let (Some(py), Some(my)) = (parsed.year, meta.year)
+                    && py != my {
                         continue;
                     }
-                }
-            }
             let files = if media_type == "series" {
                 build_series_files(&parsed, season, episode)
             } else {
@@ -557,11 +553,9 @@ async fn scrape_html(
                         keyword_filters,
                     )
                     .await
-                    {
-                        if seen.insert(stream.info_hash.clone()) {
+                        && seen.insert(stream.info_hash.clone()) {
                             results.push(stream);
                         }
-                    }
                 }
                 if !results.is_empty() {
                     break 'templates;
@@ -595,13 +589,11 @@ async fn process_row_data(
     if ratio < sim_min {
         return None;
     }
-    if media_type == "movie" {
-        if let (Some(py), Some(my)) = (parsed.year, meta.year) {
-            if py != my {
+    if media_type == "movie"
+        && let (Some(py), Some(my)) = (parsed.year, meta.year)
+            && py != my {
                 return None;
             }
-        }
-    }
 
     // Try direct magnet from listing row
     let direct_hash = data
@@ -681,13 +673,12 @@ fn parse_pseudo(s: &str) -> (&str, SelectorPseudo) {
     if let Some(css) = s.strip_suffix("::text") {
         return (css, SelectorPseudo::Text);
     }
-    if s.ends_with(')') {
-        if let Some(pos) = s.rfind("::attr(") {
+    if s.ends_with(')')
+        && let Some(pos) = s.rfind("::attr(") {
             let css = &s[..pos];
             let attr = s[pos + 7..s.len() - 1].to_string();
             return (css, SelectorPseudo::Attr(attr));
         }
-    }
     (s, SelectorPseudo::None)
 }
 

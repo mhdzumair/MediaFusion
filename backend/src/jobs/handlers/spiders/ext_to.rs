@@ -70,19 +70,15 @@ fn magnet_inline_re() -> &'static Regex {
 
 /// ext.to domain (from scraper config or default).
 fn ext_to_domain(config_path: &str) -> String {
-    if let Ok(text) = std::fs::read_to_string(config_path) {
-        if let Ok(root) = serde_json::from_str::<serde_json::Value>(&text) {
-            if let Some(domains) = root
+    if let Ok(text) = std::fs::read_to_string(config_path)
+        && let Ok(root) = serde_json::from_str::<serde_json::Value>(&text)
+            && let Some(domains) = root
                 .get("start_urls")
                 .and_then(|v| v.get("ext_to"))
                 .and_then(|v| v.as_array())
-            {
-                if let Some(domain) = domains.first().and_then(|v| v.as_str()) {
+                && let Some(domain) = domains.first().and_then(|v| v.as_str()) {
                     return domain.to_string();
                 }
-            }
-        }
-    }
     "ext.to".to_string()
 }
 
@@ -200,11 +196,10 @@ async fn fetch_html(
         let client = client.clone();
         let bp = byparr_url.clone();
         async move {
-            if let Some(bp_url) = &bp {
-                if let Some(r) = fetch_byparr(&client, bp_url, &url).await {
+            if let Some(bp_url) = &bp
+                && let Some(r) = fetch_byparr(&client, bp_url, &url).await {
                     return Ok(r.html);
                 }
-            }
             fetch_plain(&client, &url)
                 .await
                 .map(|r| r.html)
@@ -327,11 +322,10 @@ async fn fetch_magnet(
         let client = client.clone();
         let bp = byparr_url.clone();
         async move {
-            if let Some(bp_url) = &bp {
-                if let Some(r) = fetch_byparr(&client, bp_url, &url).await {
+            if let Some(bp_url) = &bp
+                && let Some(r) = fetch_byparr(&client, bp_url, &url).await {
                     return Ok(r);
                 }
-            }
             fetch_plain(&client, &url)
                 .await
                 .ok_or_else(|| format!("fetch failed: {url}"))

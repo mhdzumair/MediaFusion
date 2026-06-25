@@ -76,8 +76,8 @@ pub async fn store_nzb(config: &AppConfig, guid: &str, content: &[u8]) {
         }
     };
 
-    if config.effective_nzb_storage_backend() == "s3" {
-        if let (Some(client), Some(bucket)) = (
+    if config.effective_nzb_storage_backend() == "s3"
+        && let (Some(client), Some(bucket)) = (
             crate::util::s3_client::build_s3_client(config).await,
             crate::util::s3_client::bucket_name(config),
         ) {
@@ -101,7 +101,6 @@ pub async fn store_nzb(config: &AppConfig, guid: &str, content: &[u8]) {
                 Err(e) => warn!("nzb_storage: S3 store failed for {guid}: {e}"),
             }
         }
-    }
 
     let dir = local_dir(config);
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
@@ -120,8 +119,8 @@ pub async fn store_nzb(config: &AppConfig, guid: &str, content: &[u8]) {
 }
 
 pub async fn retrieve_nzb(config: &AppConfig, guid: &str) -> Option<Vec<u8>> {
-    if config.effective_nzb_storage_backend() == "s3" {
-        if let (Some(client), Some(bucket)) = (
+    if config.effective_nzb_storage_backend() == "s3"
+        && let (Some(client), Some(bucket)) = (
             crate::util::s3_client::build_s3_client(config).await,
             crate::util::s3_client::bucket_name(config),
         ) {
@@ -141,15 +140,13 @@ pub async fn retrieve_nzb(config: &AppConfig, guid: &str) -> Option<Vec<u8>> {
                 Err(e) => tracing::debug!("nzb_storage: S3 retrieve miss for {guid}: {e}"),
             }
         }
-    }
 
     let dir = local_dir(config);
     let gz_path = dir.join(format!("{guid}.nzb.gz"));
-    if let Ok(compressed) = tokio::fs::read(&gz_path).await {
-        if let Ok(raw) = gzip_decompress(&compressed) {
+    if let Ok(compressed) = tokio::fs::read(&gz_path).await
+        && let Ok(raw) = gzip_decompress(&compressed) {
             return Some(raw);
         }
-    }
     // Legacy uncompressed fallback
     let raw_path = dir.join(format!("{guid}.nzb"));
     tokio::fs::read(raw_path).await.ok()

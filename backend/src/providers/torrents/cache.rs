@@ -160,11 +160,10 @@ pub async fn get_user_hashes_cached(
 ) -> HashSet<String> {
     let key = format!("{USER_HASHES_PREFIX}{service}:{}", user_hash(token));
 
-    if let Ok(Some(json)) = redis.get::<Option<String>, _>(&key).await {
-        if let Ok(hashes) = serde_json::from_str::<Vec<String>>(&json) {
+    if let Ok(Some(json)) = redis.get::<Option<String>, _>(&key).await
+        && let Ok(hashes) = serde_json::from_str::<Vec<String>>(&json) {
             return hashes.into_iter().collect();
         }
-    }
 
     let hashes =
         match crate::providers::torrents::list_downloaded_hashes(http, service, token).await {

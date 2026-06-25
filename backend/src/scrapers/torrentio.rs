@@ -74,19 +74,17 @@ fn is_error_placeholder(url: &str) -> bool {
 fn parse_stream(stream: &Value) -> Option<ScrapedStream> {
     // Check all URL fields for error placeholders
     for key in &["url", "externalUrl", "videoUrl"] {
-        if let Some(url) = stream.get(key).and_then(|v| v.as_str()) {
-            if is_error_placeholder(url) {
+        if let Some(url) = stream.get(key).and_then(|v| v.as_str())
+            && is_error_placeholder(url) {
                 return None;
             }
-        }
     }
     if let Some(sources) = stream.get("sources").and_then(|v| v.as_array()) {
         for src in sources {
-            if let Some(url) = src.as_str() {
-                if is_error_placeholder(url) {
+            if let Some(url) = src.as_str()
+                && is_error_placeholder(url) {
                     return None;
                 }
-            }
         }
     }
 
@@ -123,18 +121,16 @@ fn parse_stream(stream: &Value) -> Option<ScrapedStream> {
                 }
             }
         }
-        if found.is_none() {
-            if let Some(sources) = stream.get("sources").and_then(|v| v.as_array()) {
+        if found.is_none()
+            && let Some(sources) = stream.get("sources").and_then(|v| v.as_array()) {
                 for src in sources {
-                    if let Some(url) = src.as_str() {
-                        if let Some(h) = parser::extract_info_hash(url) {
+                    if let Some(url) = src.as_str()
+                        && let Some(h) = parser::extract_info_hash(url) {
                             found = Some(h);
                             break;
                         }
-                    }
                 }
             }
-        }
         found?
     };
 

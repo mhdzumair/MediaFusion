@@ -271,15 +271,14 @@ pub struct StreamingProvider {
 impl StreamingProvider {
     /// Redis debrid-cache namespace (mirrors Python `get_cache_service_name`).
     pub fn cache_service_name(&self) -> String {
-        if self.service == "stremthru" {
-            if let Some(name) = self
+        if self.service == "stremthru"
+            && let Some(name) = self
                 .stremthru_store_name
                 .as_deref()
                 .filter(|s| !s.is_empty())
             {
                 return name.to_string();
             }
-        }
         self.service.clone()
     }
 }
@@ -694,13 +693,11 @@ impl UserData {
             .iter()
             .filter(|p| p.enabled)
             .collect();
-        if providers.is_empty() {
-            if let Some(ref sp) = self.streaming_provider {
-                if sp.enabled {
+        if providers.is_empty()
+            && let Some(ref sp) = self.streaming_provider
+                && sp.enabled {
                     providers.push(sp);
                 }
-            }
-        }
         providers
     }
 

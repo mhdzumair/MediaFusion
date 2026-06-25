@@ -221,21 +221,18 @@ pub fn parse_tmdb_response(data: &Value, is_series: bool) -> Option<NormalizedMe
     let mut external_ids = vec![("tmdb".to_string(), data["id"].as_i64()?.to_string())];
 
     if let Some(ext) = data["external_ids"].as_object() {
-        if let Some(imdb) = ext.get("imdb_id").and_then(|v| v.as_str()) {
-            if !imdb.is_empty() {
+        if let Some(imdb) = ext.get("imdb_id").and_then(|v| v.as_str())
+            && !imdb.is_empty() {
                 external_ids.push(("imdb".to_string(), imdb.to_string()));
             }
-        }
-        if let Some(tvdb) = ext.get("tvdb_id").and_then(|v| v.as_i64()) {
-            if tvdb > 0 {
+        if let Some(tvdb) = ext.get("tvdb_id").and_then(|v| v.as_i64())
+            && tvdb > 0 {
                 external_ids.push(("tvdb".to_string(), tvdb.to_string()));
             }
-        }
-    } else if let Some(imdb) = data["imdb_id"].as_str() {
-        if !imdb.is_empty() {
+    } else if let Some(imdb) = data["imdb_id"].as_str()
+        && !imdb.is_empty() {
             external_ids.push(("imdb".to_string(), imdb.to_string()));
         }
-    }
 
     let cast: Vec<NormalizedCastMember> = data["credits"]["cast"]
         .as_array()

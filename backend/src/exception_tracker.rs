@@ -262,11 +262,10 @@ pub async fn query_list(
             let _ = redis.zrem::<i64, _, _>(INDEX_KEY, fp.clone()).await;
             continue;
         }
-        if let Some(et) = exception_type {
-            if data.get("type").map(|s| s.as_str()) != Some(et) {
+        if let Some(et) = exception_type
+            && data.get("type").map(|s| s.as_str()) != Some(et) {
                 continue;
             }
-        }
         items.push(json!({
             "fingerprint": fp,
             "type": data.get("type").unwrap_or(&String::new()),

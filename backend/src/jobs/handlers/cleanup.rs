@@ -56,8 +56,8 @@ async fn scan_all_keys(redis: &fred::clients::Client, pattern: &str) -> Vec<Stri
 }
 
 fn parse_scan_value(value: fred::types::Value) -> (String, Vec<String>) {
-    if let fred::types::Value::Array(arr) = value {
-        if arr.len() == 2 {
+    if let fred::types::Value::Array(arr) = value
+        && arr.len() == 2 {
             let cursor = match &arr[0] {
                 fred::types::Value::String(s) => s.to_string(),
                 fred::types::Value::Bytes(b) => String::from_utf8_lossy(b).to_string(),
@@ -80,7 +80,6 @@ fn parse_scan_value(value: fred::types::Value) -> (String, Vec<String>) {
             };
             return (cursor, keys);
         }
-    }
     ("0".to_string(), Vec::new())
 }
 

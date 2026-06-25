@@ -48,13 +48,11 @@ fn parse_season_episode(
         return Some((default_season, parsed.episodes[0]));
     }
 
-    if parsed.seasons.is_empty() && parsed.episodes.is_empty() {
-        if let Some(date_match) = date_str_regex().find(base) {
-            if normalize_calendar_date(date_match.as_str()).is_some() {
+    if parsed.seasons.is_empty() && parsed.episodes.is_empty()
+        && let Some(date_match) = date_str_regex().find(base)
+            && normalize_calendar_date(date_match.as_str()).is_some() {
                 return None;
             }
-        }
-    }
 
     let title_parsed = ptt::parse_title(torrent_name);
     if title_parsed.seasons.len() == 1 && title_parsed.episodes.len() == 1 {
@@ -117,11 +115,10 @@ pub fn extract_air_date_from_label(label: &str) -> Option<String> {
     }
 
     let parsed = ptt::parse_title(text);
-    if let Some(ref raw_date) = parsed.date {
-        if let Some(normalized) = normalize_calendar_date(raw_date) {
+    if let Some(ref raw_date) = parsed.date
+        && let Some(normalized) = normalize_calendar_date(raw_date) {
             return Some(normalized);
         }
-    }
 
     let search_text = text.replace('\\', "/");
     let re = date_str_regex();
@@ -189,19 +186,17 @@ pub fn select_torrent_file_index(
         ));
     }
 
-    if let Some(fi) = file_index {
-        if fi >= 0 && (fi as usize) < files.len() {
+    if let Some(fi) = file_index
+        && fi >= 0 && (fi as usize) < files.len() {
             return Ok(fi as usize);
         }
-    }
 
     if let (Some(s), Some(e)) = (season, episode) {
         for f in &videos {
-            if let Some((fs, fe)) = parse_season_episode(&f.name, torrent_name, s) {
-                if fs == s && fe == e {
+            if let Some((fs, fe)) = parse_season_episode(&f.name, torrent_name, s)
+                && fs == s && fe == e {
                     return Ok(f.index);
                 }
-            }
         }
         if !videos.is_empty() {
             return Ok(videos[0].index);
@@ -294,8 +289,8 @@ pub fn select_debrid_file_index(
         return idx;
     }
 
-    if episode_air_date.is_some() {
-        if let Ok(idx) = select_usenet_file_index(
+    if episode_air_date.is_some()
+        && let Ok(idx) = select_usenet_file_index(
             &files,
             release_name,
             filename,
@@ -305,7 +300,6 @@ pub fn select_debrid_file_index(
         ) {
             return idx;
         }
-    }
 
     if let Ok(idx) =
         select_torrent_file_index(&files, release_name, filename, None, None, file_index, None)

@@ -79,8 +79,8 @@ pub async fn store_image(
 pub async fn retrieve_image(config: &AppConfig, key: &str) -> Option<(Vec<u8>, String)> {
     let normalized = normalize_image_storage_key(key).ok()?;
 
-    if config.effective_image_storage_backend() == "s3" {
-        if let (Some(client), Some(bucket)) = (
+    if config.effective_image_storage_backend() == "s3"
+        && let (Some(client), Some(bucket)) = (
             crate::util::s3_client::build_s3_client(config).await,
             crate::util::s3_client::bucket_name(config),
         ) {
@@ -104,7 +104,6 @@ pub async fn retrieve_image(config: &AppConfig, key: &str) -> Option<(Vec<u8>, S
             }
             return None;
         }
-    }
 
     let file_name = normalized.rsplit('/').next()?;
     let path = PathBuf::from(&config.images_dir).join(file_name);

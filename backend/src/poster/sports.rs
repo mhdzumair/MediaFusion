@@ -36,14 +36,13 @@ pub fn random_sports_poster(genres: &[String]) -> Option<String> {
         // Case-insensitive match, normalizing underscores to spaces
         let lower = genre.to_lowercase().replace('_', " ");
         for (key, val) in obj {
-            if key.to_lowercase().replace('_', " ") == lower {
-                if let Some(posters) = val.get("poster").and_then(|v| v.as_array()) {
+            if key.to_lowercase().replace('_', " ") == lower
+                && let Some(posters) = val.get("poster").and_then(|v| v.as_array()) {
                     let urls: Vec<&str> = posters.iter().filter_map(|v| v.as_str()).collect();
                     if let Some(url) = urls.choose(&mut rng) {
                         return Some((*url).to_string());
                     }
                 }
-            }
         }
     }
 
@@ -86,14 +85,13 @@ pub fn random_sports_poster_strict(genres: &[String]) -> Option<String> {
         }
         let lower = genre.to_lowercase().replace('_', " ");
         for (key, val) in obj {
-            if key.to_lowercase().replace('_', " ") == lower {
-                if let Some(posters) = val.get("poster").and_then(|v| v.as_array()) {
+            if key.to_lowercase().replace('_', " ") == lower
+                && let Some(posters) = val.get("poster").and_then(|v| v.as_array()) {
                     let urls: Vec<&str> = posters.iter().filter_map(|v| v.as_str()).collect();
                     if let Some(url) = urls.choose(&mut rng) {
                         return Some((*url).to_string());
                     }
                 }
-            }
         }
     }
 

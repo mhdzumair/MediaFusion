@@ -102,14 +102,12 @@ async fn lookup_matches_by_external_id(
             .await
             .ok()
             .flatten()
-    {
-        if let Some(mut entry) =
+        && let Some(mut entry) =
             super::build_db_match_from_media_id(pool, media_id.0, meta_type, None).await
         {
             tag_match(&mut entry, "database");
             return vec![entry];
         }
-    }
 
     if !opts.include_external {
         return vec![];
@@ -185,8 +183,8 @@ async fn search_matches_by_title_single(
     let mut seen = HashSet::new();
     let mut results = Vec::new();
 
-    if opts.include_user_content {
-        if let Some(user_id) = opts.user_id {
+    if opts.include_user_content
+        && let Some(user_id) = opts.user_id {
             for mut entry in search_user_accessible_db_matches(
                 pool,
                 user_id,
@@ -204,7 +202,6 @@ async fn search_matches_by_title_single(
                 }
             }
         }
-    }
 
     if opts.include_catalog {
         for mut entry in super::search_import_db_matches(pool, title, meta_type, year, limit).await
@@ -419,12 +416,11 @@ fn dedup_key(entry: &Value) -> Option<String> {
 }
 
 fn push_unique(results: &mut Vec<Value>, seen: &mut HashSet<String>, entry: Value) -> bool {
-    if let Some(key) = dedup_key(&entry) {
-        if seen.insert(key) {
+    if let Some(key) = dedup_key(&entry)
+        && seen.insert(key) {
             results.push(entry);
             return true;
         }
-    }
     false
 }
 

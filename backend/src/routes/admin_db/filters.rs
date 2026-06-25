@@ -29,9 +29,9 @@ pub fn build_where(
 
     // Parse filters from JSON array
     let mut filter_conditions: Vec<FilterCondition> = Vec::new();
-    if let Some(json) = filters_json {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
-            if let Some(arr) = v.as_array() {
+    if let Some(json) = filters_json
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(json)
+            && let Some(arr) = v.as_array() {
                 for f in arr {
                     if let Some(col) = f.get("column").and_then(|c| c.as_str()) {
                         filter_conditions.push(FilterCondition {
@@ -49,24 +49,20 @@ pub fn build_where(
                     }
                 }
             }
-        }
-    }
     // Legacy fallback
-    if filter_conditions.is_empty() {
-        if let Some(fc) = filter_column {
-            if col_types.contains_key(fc) {
+    if filter_conditions.is_empty()
+        && let Some(fc) = filter_column
+            && col_types.contains_key(fc) {
                 filter_conditions.push(FilterCondition {
                     column: fc.to_string(),
                     operator: filter_operator.unwrap_or("equals").to_string(),
                     value: filter_value.map(|s| s.to_string()),
                 });
             }
-        }
-    }
 
     // Search across text-like columns
-    if let Some(q) = search {
-        if !q.is_empty() {
+    if let Some(q) = search
+        && !q.is_empty() {
             let text_cols: Vec<String> = col_types
                 .iter()
                 .filter(|(_, t)| {
@@ -81,7 +77,6 @@ pub fn build_where(
                 idx += 1;
             }
         }
-    }
 
     // Apply filter conditions
     for fc in &filter_conditions {

@@ -1173,8 +1173,8 @@ pub fn add_defaults(p: &mut Parser) {
         // never split a multi-byte character (e.g. Cyrillic, CJK).
         let safe_idx = ctx.title.floor_char_boundary(raw_idx.min(ctx.title.len()));
         let search_str = &ctx.title[safe_idx..];
-        if let Ok(Some(caps)) = re.captures(search_str) {
-            if let Some(g1) = caps.get(1) {
+        if let Ok(Some(caps)) = re.captures(search_str)
+            && let Some(g1) = caps.get(1) {
                 let n_str = g1.as_str();
                 if let Ok(n) = n_str.parse::<i32>() {
                     let g0 = caps.get(0).unwrap();
@@ -1197,7 +1197,6 @@ pub fn add_defaults(p: &mut Parser) {
                     });
                 }
             }
-        }
         None
     }));
 
@@ -1721,13 +1720,11 @@ pub fn add_defaults(p: &mut Parser) {
 
     // handle_episodes: last-resort pattern scan
     p.add_fn(Box::new(|ctx: &mut Ctx| {
-        if ctx.result.contains_key("episodes") {
-            if let Some(FieldValue::Ints(v)) = ctx.result.get("episodes") {
-                if !v.is_empty() {
+        if ctx.result.contains_key("episodes")
+            && let Some(FieldValue::Ints(v)) = ctx.result.get("episodes")
+                && !v.is_empty() {
                     return None;
                 }
-            }
-        }
         let start_indexes: Vec<usize> = ["year", "seasons"]
             .iter()
             .filter_map(|k| ctx.matched.get(*k).map(|m| m.match_index))
@@ -1801,8 +1798,8 @@ pub fn add_defaults(p: &mut Parser) {
         static EP_RE: OnceCell<Regex> = OnceCell::new();
         let anime_re = ANIME_RE.get_or_init(|| compile(r"One.*?Piece|Bleach|Naruto"));
         let ep_re = EP_RE.get_or_init(|| compile(r"\b\d{1,4}\b"));
-        if anime_re.is_match(&ctx.title).unwrap_or(false) {
-            if let Ok(Some(m)) = ep_re.find(&ctx.title) {
+        if anime_re.is_match(&ctx.title).unwrap_or(false)
+            && let Ok(Some(m)) = ep_re.find(&ctx.title) {
                 let s = m.as_str().to_owned();
                 if let Ok(n) = s.parse::<i32>() {
                     let idx = m.start();
@@ -1816,7 +1813,6 @@ pub fn add_defaults(p: &mut Parser) {
                     });
                 }
             }
-        }
         None
     }));
 
@@ -2722,8 +2718,8 @@ pub fn add_defaults(p: &mut Parser) {
 
     // handle_group: remove group if it overlaps other matches
     p.add_fn(Box::new(|ctx: &mut Ctx| {
-        if let Some(group_info) = ctx.matched.get("group").cloned() {
-            if group_info.raw_match.starts_with('[') && group_info.raw_match.ends_with(']') {
+        if let Some(group_info) = ctx.matched.get("group").cloned()
+            && group_info.raw_match.starts_with('[') && group_info.raw_match.ends_with(']') {
                 let end_idx = group_info.match_index + group_info.raw_match.len();
                 let overlaps = ctx
                     .matched
@@ -2733,7 +2729,6 @@ pub fn add_defaults(p: &mut Parser) {
                     ctx.result.remove("group");
                 }
             }
-        }
         None
     }));
 
@@ -2941,11 +2936,10 @@ pub fn add_defaults(p: &mut Parser) {
 
     // handle_group_exclusion
     p.add_fn(Box::new(|ctx: &mut Ctx| {
-        if let Some(FieldValue::Str(g)) = ctx.result.get("group") {
-            if g == "-" || g.is_empty() {
+        if let Some(FieldValue::Str(g)) = ctx.result.get("group")
+            && (g == "-" || g.is_empty()) {
                 ctx.result.remove("group");
             }
-        }
         None
     }));
 

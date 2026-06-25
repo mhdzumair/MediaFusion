@@ -926,8 +926,8 @@ pub async fn import_m3u(
             .await;
 
             let mut source_id: Option<i32> = None;
-            if save_source_bg {
-                if let Some(ref url) = m3u_url_bg {
+            if save_source_bg
+                && let Some(ref url) = m3u_url_bg {
                     let save_name = if source_name_bg.is_empty() {
                         derive_source_name_from_url(url)
                     } else {
@@ -939,7 +939,6 @@ pub async fn import_m3u(
                     .await
                     .ok();
                 }
-            }
 
             let mut job_body = serde_json::json!({
                 "status": "completed",
@@ -998,8 +997,8 @@ pub async fn import_m3u(
     .await;
 
     let mut source_id: Option<i32> = None;
-    if save_source {
-        if let Some(ref url) = m3u_url {
+    if save_source
+        && let Some(ref url) = m3u_url {
             let save_name = params
                 .get("source_name")
                 .and_then(|v| v.as_str())
@@ -1017,7 +1016,6 @@ pub async fn import_m3u(
             .await
             .ok();
         }
-    }
 
     if let Some(ref key) = redis_key {
         let _: Result<(), _> = state.redis.del(key).await;
@@ -1058,15 +1056,14 @@ pub async fn get_import_job_status(
         Some(json_str) => {
             let status: serde_json::Value =
                 serde_json::from_str(&json_str).unwrap_or_else(|_| json!({"status": "unknown"}));
-            if let Some(owner) = status.get("user_id").and_then(|v| v.as_i64()) {
-                if owner != user_id {
+            if let Some(owner) = status.get("user_id").and_then(|v| v.as_i64())
+                && owner != user_id {
                     return (
                         StatusCode::FORBIDDEN,
                         Json(json!({"detail": "Job does not belong to this user"})),
                     )
                         .into_response();
                 }
-            }
             Json(status).into_response()
         }
         None => (

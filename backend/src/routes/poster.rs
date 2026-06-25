@@ -42,8 +42,8 @@ pub async fn handler(
         // Try to fetch and annotate the poster URL if one exists. Returns None
         // on any upstream error (404, unreachable, bad image format) so we can
         // fall through to the placeholder below.
-        if let Some(url) = poster_url {
-            if let Some(bytes) = fetch_annotate_cache(
+        if let Some(url) = poster_url
+            && let Some(bytes) = fetch_annotate_cache(
                 &state,
                 &cache_key,
                 &url,
@@ -55,7 +55,6 @@ pub async fn handler(
             {
                 return jpeg_response(bytes);
             }
-        }
 
         // No artwork, or upstream fetch failed: generate a name-based placeholder
         // so the user always sees something instead of a broken image.

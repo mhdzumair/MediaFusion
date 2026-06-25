@@ -284,15 +284,14 @@ fn process_message(
     }
 
     // For series: verify season/episode match
-    if media_type == "series" {
-        if let (Some(s), Some(e)) = (season, episode) {
+    if media_type == "series"
+        && let (Some(s), Some(e)) = (season, episode) {
             let matches_season = parsed.seasons.contains(&s);
             let matches_ep = parsed.episodes.contains(&e);
             if !matches_season || !matches_ep {
                 return None;
             }
         }
-    }
 
     Some(ScrapedTelegramStream {
         chat_id,

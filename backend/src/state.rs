@@ -865,8 +865,8 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
     }
 
     // Insert new keywords
-    if !keywords.is_empty() {
-        if let Err(e) = sqlx::query(
+    if !keywords.is_empty()
+        && let Err(e) = sqlx::query(
             "INSERT INTO keyword_filters (keyword, source, scope)
              SELECT UNNEST($1::text[]), 'file', 'media'
              ON CONFLICT (LOWER(keyword)) DO UPDATE SET source = 'file', is_active = true, scope = 'media'",
@@ -878,11 +878,10 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
             tracing::error!("keyword sync: insert keyword_filters failed: {e}");
             return;
         }
-    }
 
     // Insert new whitelist phrases
-    if !whitelist.is_empty() {
-        if let Err(e) = sqlx::query(
+    if !whitelist.is_empty()
+        && let Err(e) = sqlx::query(
             "INSERT INTO keyword_whitelist (phrase, reason, source)
              SELECT UNNEST($1::text[]), 'from keywords file', 'file'
              ON CONFLICT (LOWER(phrase)) DO UPDATE SET source = 'file'",
@@ -894,7 +893,6 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
             tracing::error!("keyword sync: insert keyword_whitelist failed: {e}");
             return;
         }
-    }
 
     // Update stored hash
     if let Err(e) = sqlx::query(
@@ -1001,8 +999,8 @@ pub async fn sync_stream_keywords_from_file(pool: &PgPool) {
     }
 
     // Insert new stream keywords (skip if empty)
-    if !stream_keywords.is_empty() {
-        if let Err(e) = sqlx::query(
+    if !stream_keywords.is_empty()
+        && let Err(e) = sqlx::query(
             "INSERT INTO keyword_filters (keyword, source, scope)
              SELECT UNNEST($1::text[]), 'file', 'stream'
              ON CONFLICT (LOWER(keyword)) DO UPDATE SET source = 'file', is_active = true, scope = 'stream'",
@@ -1014,7 +1012,6 @@ pub async fn sync_stream_keywords_from_file(pool: &PgPool) {
             tracing::error!("stream keyword sync: insert keyword_filters failed: {e}");
             return;
         }
-    }
 
     // Update stored hash
     if let Err(e) = sqlx::query(

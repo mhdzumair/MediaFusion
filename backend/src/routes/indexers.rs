@@ -150,16 +150,14 @@ fn parse_caps_xml(
             }
             Ok(Event::Text(ref e)) => {
                 // Capture title text for the last indexer pushed
-                if let Some(last) = indexers.last_mut() {
-                    if last.1.is_empty() {
-                        if let Ok(text) = e.decode() {
+                if let Some(last) = indexers.last_mut()
+                    && last.1.is_empty()
+                        && let Ok(text) = e.decode() {
                             let s = text.trim().to_string();
                             if !s.is_empty() {
                                 last.1 = s;
                             }
                         }
-                    }
-                }
             }
             Ok(Event::Eof) => break,
             Err(_) => break,

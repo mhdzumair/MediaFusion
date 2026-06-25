@@ -488,12 +488,11 @@ pub async fn render_batch_summary(state: &AppState, api: &BotApi, batch: &BatchS
             .edit_message_text(batch.chat_id, mid, &msg, keyboard)
             .await;
     } else {
-        if let Ok(new_mid) = api.send_message(batch.chat_id, &msg, keyboard).await {
-            if let Some(mut stored) = state_store::get_batch(state, batch.user_id).await {
+        if let Ok(new_mid) = api.send_message(batch.chat_id, &msg, keyboard).await
+            && let Some(mut stored) = state_store::get_batch(state, batch.user_id).await {
                 stored.summary_message_id = Some(new_mid);
                 stored.touch();
                 state_store::save_batch(state, &stored).await;
             }
-        }
     }
 }

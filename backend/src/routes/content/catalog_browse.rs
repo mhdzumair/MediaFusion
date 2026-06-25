@@ -1402,12 +1402,11 @@ pub async fn get_media_streams(
                 "cached": is_cached,
                 "created_at": r.created_at.map(|dt| dt.to_rfc3339()),
             });
-            if r.stream_type == StreamType::Torrent {
-                if let Some(ref h) = r.info_hash {
+            if r.stream_type == StreamType::Torrent
+                && let Some(ref h) = r.info_hash {
                     sort_ctx["info_hash"] = json!(h);
                     sort_ctx["torrent_type"] = json!(TorrentType::Public.as_wire());
                 }
-            }
 
             // Template context for name/description rendering
             let stream_ctx = json!({
@@ -1690,11 +1689,10 @@ pub async fn get_media_streams(
         let already_present = streams
             .iter()
             .any(|s| s.get("id").and_then(|v| v.as_i64()) == Some(pin_id as i64));
-        if !already_present {
-            if let Some(pinned) = provider_compatible_outputs.get(&pin_id) {
+        if !already_present
+            && let Some(pinned) = provider_compatible_outputs.get(&pin_id) {
                 streams.insert(0, pinned.clone());
             }
-        }
     }
 
     Json(json!({

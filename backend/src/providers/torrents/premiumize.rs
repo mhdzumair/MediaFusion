@@ -23,15 +23,12 @@ enum TokenKind {
 }
 
 fn decode_token(token: &str) -> TokenKind {
-    if let Ok(bytes) = B64.decode(token) {
-        if let Ok(s) = std::str::from_utf8(&bytes) {
-            if let Ok(v) = serde_json::from_str::<Value>(s) {
-                if let Some(at) = v.get("access_token").and_then(|x| x.as_str()) {
+    if let Ok(bytes) = B64.decode(token)
+        && let Ok(s) = std::str::from_utf8(&bytes)
+            && let Ok(v) = serde_json::from_str::<Value>(s)
+                && let Some(at) = v.get("access_token").and_then(|x| x.as_str()) {
                     return TokenKind::Bearer(at.to_string());
                 }
-            }
-        }
-    }
     TokenKind::ApiKey(token.to_string())
 }
 
@@ -225,8 +222,8 @@ fn check_status_code(status: reqwest::StatusCode) -> Result<(), ProviderError> {
 }
 
 fn check_pm_error(body: &Value) -> Result<(), ProviderError> {
-    if let Some(status) = body.get("status").and_then(|v| v.as_str()) {
-        if status != "success" {
+    if let Some(status) = body.get("status").and_then(|v| v.as_str())
+        && status != "success" {
             let msg = body
                 .get("message")
                 .and_then(|v| v.as_str())
@@ -248,7 +245,6 @@ fn check_pm_error(body: &Value) -> Result<(), ProviderError> {
                 video,
             ));
         }
-    }
     Ok(())
 }
 
@@ -357,11 +353,10 @@ async fn get_or_create_folder(
     let body = pm_get(http, kind, "/folder/list", &[], forward).await?;
     if let Some(folders) = body.get("content").and_then(|v| v.as_array()) {
         for f in folders {
-            if f.get("name").and_then(|v| v.as_str()) == Some(name) {
-                if let Some(id) = f.get("id").and_then(|v| v.as_str()) {
+            if f.get("name").and_then(|v| v.as_str()) == Some(name)
+                && let Some(id) = f.get("id").and_then(|v| v.as_str()) {
                     return Ok(id.to_string());
                 }
-            }
         }
     }
     // Create new folder
@@ -558,8 +553,8 @@ pub async fn get_video_url(
 
     if cached {
         let body = direct_download(http, &kind, &magnet, forward).await?;
-        if let Some(content) = body.get("content").and_then(|v| v.as_array()) {
-            if let Some(url) = select_from_directdl_content(
+        if let Some(content) = body.get("content").and_then(|v| v.as_array())
+            && let Some(url) = select_from_directdl_content(
                 content,
                 release_name,
                 filename,
@@ -569,7 +564,6 @@ pub async fn get_video_url(
             ) {
                 return Ok(url);
             }
-        }
         return Err(ProviderError::api(
             "No video file found in Premiumize direct download",
             "torrent_not_downloaded.mp4",
@@ -585,8 +579,8 @@ pub async fn get_video_url(
     };
 
     // If the transfer already has content (immediate), skip waiting
-    if let Some(content) = transfer_resp.get("content").and_then(|v| v.as_array()) {
-        if let Some(url) = select_from_directdl_content(
+    if let Some(content) = transfer_resp.get("content").and_then(|v| v.as_array())
+        && let Some(url) = select_from_directdl_content(
             content,
             release_name,
             filename,
@@ -596,7 +590,6 @@ pub async fn get_video_url(
         ) {
             return Ok(url);
         }
-    }
 
     let transfer_id = transfer_resp
         .get("id")

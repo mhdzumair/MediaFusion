@@ -1007,16 +1007,14 @@ pub fn enrich_series_file_episodes(file_rows: &mut [Value], torrent_name: &str) 
                 obj.insert("episode_number".to_string(), json!(ep.episode));
             } else {
                 let parsed_file = parse_title(&filename);
-                if !has_season {
-                    if let Some(s) = parsed_file.seasons.first() {
+                if !has_season
+                    && let Some(s) = parsed_file.seasons.first() {
                         obj.insert("season_number".to_string(), json!(s));
                     }
-                }
-                if !has_episode {
-                    if let Some(e) = parsed_file.episodes.first() {
+                if !has_episode
+                    && let Some(e) = parsed_file.episodes.first() {
                         obj.insert("episode_number".to_string(), json!(e));
                     }
-                }
             }
         }
 
@@ -1049,11 +1047,10 @@ fn should_replace_episode_title(
     if cleaned_current == proposed_title {
         return false;
     }
-    if let Some(fname) = filename.map(str::trim).filter(|s| !s.is_empty()) {
-        if cleaned_current.eq_ignore_ascii_case(fname) {
+    if let Some(fname) = filename.map(str::trim).filter(|s| !s.is_empty())
+        && cleaned_current.eq_ignore_ascii_case(fname) {
             return true;
         }
-    }
     static EP_NUM_RE: OnceLock<regex::Regex> = OnceLock::new();
     static EP_GENERIC_RE: OnceLock<regex::Regex> = OnceLock::new();
     let ep_num_re = EP_NUM_RE
@@ -1191,8 +1188,8 @@ pub async fn organize_user_series_episodes(
             .unwrap_or("")
             .to_string();
 
-        if is_racing {
-            if let Some((ep, title)) = crate::parser::racing_session_episode(&filename) {
+        if is_racing
+            && let Some((ep, title)) = crate::parser::racing_session_episode(&filename) {
                 if let Some(obj) = f.as_object_mut() {
                     obj.insert("episode_number".to_string(), json!(ep));
                     obj.entry("episode_title").or_insert(json!(title));
@@ -1206,7 +1203,6 @@ pub async fn organize_user_series_episodes(
                 }
                 continue;
             }
-        }
 
         // Date-based organization.
         let existing_date = f

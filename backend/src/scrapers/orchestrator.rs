@@ -38,13 +38,11 @@ fn validate_stream_core(
     if parser::similarity_ratio(parsed_title, &meta.title) < sim_min {
         return false;
     }
-    if media_type == "movie" {
-        if let (Some(py), Some(my)) = (parsed.year, meta.year) {
-            if py != my {
+    if media_type == "movie"
+        && let (Some(py), Some(my)) = (parsed.year, meta.year)
+            && py != my {
                 return false;
             }
-        }
-    }
     if media_type == "series" && files.is_empty() {
         return false;
     }
@@ -89,13 +87,11 @@ fn validate_telegram_stream(
     if parser::similarity_ratio(parsed_title, &meta.title) < sim_min {
         return false;
     }
-    if media_type == "movie" {
-        if let (Some(py), Some(my)) = (stream.parsed.year, meta.year) {
-            if py != my {
+    if media_type == "movie"
+        && let (Some(py), Some(my)) = (stream.parsed.year, meta.year)
+            && py != my {
                 return false;
             }
-        }
-    }
     if media_type == "series" && stream.season.is_none() {
         return false;
     }
@@ -430,8 +426,8 @@ pub async fn run_usenet(
 
     // ── Easynews ─────────────────────────────────────────────────────────────
     // Credentials come from the user's streaming provider config, not server config.
-    if is_stale("easynews", cfg.prowlarr_search_ttl) {
-        if let Some(en_provider) = user_data
+    if is_stale("easynews", cfg.prowlarr_search_ttl)
+        && let Some(en_provider) = user_data
             .streaming_providers
             .iter()
             .find(|p| p.service == "easynews" && p.enabled)
@@ -476,7 +472,6 @@ pub async fn run_usenet(
                 scraped_ids.push("easynews");
             }
         }
-    }
 
     // ── TorBox Usenet ─────────────────────────────────────────────────────────
     if is_stale("torbox_search", cfg.torbox_search_ttl) && torbox_search::has_token(user_data) {
@@ -819,8 +814,8 @@ async fn fan_out_with_opts(
     }
 
     // ── Prowlarr (global config, or user-overridden URL/key) ──────────────────
-    if is_stale("prowlarr", cfg.prowlarr_search_ttl) {
-        if let Some((url, key)) =
+    if is_stale("prowlarr", cfg.prowlarr_search_ttl)
+        && let Some((url, key)) =
             crate::scrapers::indexer_credentials::resolve_prowlarr_credentials(&ic, &cfg)
         {
             let indexers = prowlarr::list_healthy_indexers(&http, &url, &key).await;
@@ -867,11 +862,10 @@ async fn fan_out_with_opts(
                 spawned_scrapers.push("prowlarr");
             }
         }
-    }
 
     // ── Jackett (global config, or user-overridden) ───────────────────────────
-    if cfg.is_scrap_from_jackett && is_stale("jackett", cfg.jackett_search_ttl) {
-        if let Some((url, key)) =
+    if cfg.is_scrap_from_jackett && is_stale("jackett", cfg.jackett_search_ttl)
+        && let Some((url, key)) =
             crate::scrapers::indexer_credentials::resolve_jackett_credentials(&ic, &cfg)
         {
             let indexers = jackett::list_healthy_indexers(&http, &url, &key).await;
@@ -914,7 +908,6 @@ async fn fan_out_with_opts(
                 spawned_scrapers.push("jackett");
             }
         }
-    }
 
     // ── Zilean (search + filtered endpoints in parallel) ──────────────────────
     if cfg.is_scrap_from_zilean && is_stale("zilean", cfg.zilean_search_ttl) {

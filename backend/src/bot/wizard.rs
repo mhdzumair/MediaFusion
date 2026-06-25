@@ -466,14 +466,12 @@ pub async fn handle_confirm_import(
     if let Some(uid) =
         crate::db::telegram::resolve_mediafusion_user_id(&state.pool, &state.redis, conv.user_id)
             .await
-    {
-        if let Some(user_info) = crate::routes::content::import_helpers::fetch_user_info(
+        && let Some(user_info) = crate::routes::content::import_helpers::fetch_user_info(
             &state.pool,
             i64::from(i32::from(uid)),
         )
         .await
-        {
-            if user_info.contribute_anonymously && conv.anonymous_display_name.is_none() {
+            && user_info.contribute_anonymously && conv.anonymous_display_name.is_none() {
                 conv.step = ConversationStep::AwaitingAnonymousName;
                 conv.touch();
                 state_store::save_conversation(state, &conv).await;
@@ -493,8 +491,6 @@ pub async fn handle_confirm_import(
                 ).await;
                 return;
             }
-        }
-    }
 
     let _ = api
         .edit_message_text(chat_id, message_id, "⏳ *Importing...*", None)

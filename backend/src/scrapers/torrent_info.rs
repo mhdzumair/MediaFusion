@@ -90,11 +90,10 @@ fn parse_torrent_downloads(doc: &Html, _url: &str) -> TorrentInfoPage {
         .next()
     {
         let wrapper_text = wrapper.text().collect::<String>();
-        if let Some(re) = INFO_HASH_RE.get() {
-            if let Some(m) = re.find(&wrapper_text) {
+        if let Some(re) = INFO_HASH_RE.get()
+            && let Some(m) = re.find(&wrapper_text) {
                 info.info_hash = Some(m.as_str().to_string());
             }
-        }
     }
     info
 }

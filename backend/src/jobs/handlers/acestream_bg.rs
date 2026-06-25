@@ -190,11 +190,10 @@ fn clean_acestream_stream_name(raw: &str) -> (String, Option<String>) {
         .find(&label)
         .map(|m| m.as_str().to_lowercase());
     let lower = label.to_lowercase();
-    if lower.contains("f1tv") {
-        if let Some(ref res) = resolution {
+    if lower.contains("f1tv")
+        && let Some(ref res) = resolution {
             return (format!("F1TV {res}"), resolution);
         }
-    }
     if lower.contains("sky sport f1") {
         return ("Sky Sport F1".to_string(), resolution);
     }
@@ -382,8 +381,8 @@ fn extract_from_json_item(
         }
     }
     for key in ["info_hash", "infoHash"] {
-        if let Some(v) = item.get(key).and_then(|x| x.as_str()) {
-            if v.len() == 40 {
+        if let Some(v) = item.get(key).and_then(|x| x.as_str())
+            && v.len() == 40 {
                 out.push(AceCandidate {
                     content_id: None,
                     info_hash: Some(v.to_lowercase()),
@@ -398,7 +397,6 @@ fn extract_from_json_item(
                     metadata_poster: None,
                 });
             }
-        }
     }
     out
 }
@@ -821,15 +819,14 @@ async fn resolve_media_for_candidate(
 }
 
 fn dedupe_key(candidate: &AceCandidate) -> String {
-    if candidate.upsert_by_channel {
-        if let Some(ref ck) = candidate.channel_key {
+    if candidate.upsert_by_channel
+        && let Some(ref ck) = candidate.channel_key {
             return format!(
                 "channel:{ck}:{}:{}",
                 candidate.content_id.as_deref().unwrap_or(""),
                 candidate.info_hash.as_deref().unwrap_or("")
             );
         }
-    }
     format!(
         "{}:{}",
         candidate.content_id.as_deref().unwrap_or(""),

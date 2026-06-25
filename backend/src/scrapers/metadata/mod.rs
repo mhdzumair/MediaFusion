@@ -123,11 +123,10 @@ pub async fn fetch_normalized(
         "tmdb" => tmdb::fetch_by_id(http, ctx, external_id, is_series).await,
         "imdb" => imdb::fetch_by_id(http, ctx, external_id, is_series).await,
         "tvdb" => {
-            if let Some(key) = ctx.tvdb_api_key {
-                if let Some(meta) = tvdb::fetch_by_id(http, key, external_id, is_series).await {
+            if let Some(key) = ctx.tvdb_api_key
+                && let Some(meta) = tvdb::fetch_by_id(http, key, external_id, is_series).await {
                     return Some(meta);
                 }
-            }
             tmdb::find_by_external(http, ctx, "tvdb_id", external_id, is_series).await
         }
         "mal" => anilist::fetch_by_mal_id(http, external_id).await,
@@ -283,11 +282,10 @@ pub async fn search_by_title_with_anime_primary(
     let imdb_first = metadata_primary_source.eq_ignore_ascii_case("imdb");
 
     if imdb_first {
-        if cinemeta_fallback_enabled {
-            if let Some(m) = imdb::search_single(http, title, year, is_series).await {
+        if cinemeta_fallback_enabled
+            && let Some(m) = imdb::search_single(http, title, year, is_series).await {
                 return Some(m);
             }
-        }
         if let Some(m) = tmdb::search_single(http, &ctx, title, year, is_series).await {
             return Some(m);
         }
@@ -295,11 +293,10 @@ pub async fn search_by_title_with_anime_primary(
         if let Some(m) = tmdb::search_single(http, &ctx, title, year, is_series).await {
             return Some(m);
         }
-        if cinemeta_fallback_enabled {
-            if let Some(m) = imdb::search_single(http, title, year, is_series).await {
+        if cinemeta_fallback_enabled
+            && let Some(m) = imdb::search_single(http, title, year, is_series).await {
                 return Some(m);
             }
-        }
     }
 
     if is_series {
@@ -588,12 +585,11 @@ pub(super) async fn build_db_match_from_media_id(
         "runtime": details.and_then(|d| runtime_label(d.runtime_minutes)),
     });
 
-    if let Some((is_user_created, is_own)) = user_flags {
-        if let Some(obj) = entry.as_object_mut() {
+    if let Some((is_user_created, is_own)) = user_flags
+        && let Some(obj) = entry.as_object_mut() {
             obj.insert("is_user_created".to_string(), json!(is_user_created));
             obj.insert("is_own".to_string(), json!(is_own));
         }
-    }
 
     Some(entry)
 }
@@ -624,11 +620,10 @@ pub async fn refresh_media_from_providers(
     let mut refreshed = Vec::new();
 
     for provider in priority {
-        if let Some(filter) = provider_filter {
-            if !filter.iter().any(|p| p == provider) {
+        if let Some(filter) = provider_filter
+            && !filter.iter().any(|p| p == provider) {
                 continue;
             }
-        }
         let external_id = match ext_rows.iter().find(|(p, _)| p == provider) {
             Some((_, id)) => id.clone(),
             None => continue,

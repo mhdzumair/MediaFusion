@@ -70,11 +70,10 @@ pub fn build(proxy_url: Option<&str>, keepalive_secs: u64) -> reqwest::Client {
         .tcp_keepalive(ka)
         .tcp_keepalive_interval(ka)
         .tcp_keepalive_retries(3);
-    if let Some(proxy) = proxy_url.filter(|s| !s.is_empty()) {
-        if let Ok(p) = reqwest::Proxy::all(proxy) {
+    if let Some(proxy) = proxy_url.filter(|s| !s.is_empty())
+        && let Ok(p) = reqwest::Proxy::all(proxy) {
             builder = builder.proxy(p);
         }
-    }
     builder.build().expect("HTTP client build failed")
 }
 
@@ -97,10 +96,9 @@ pub fn build_debrid(proxy_url: Option<&str>, keepalive_secs: u64) -> reqwest::Cl
         .tcp_keepalive(ka)
         .tcp_keepalive_interval(ka)
         .tcp_keepalive_retries(3);
-    if let Some(proxy) = proxy_url.filter(|s| !s.is_empty()) {
-        if let Ok(p) = reqwest::Proxy::all(proxy) {
+    if let Some(proxy) = proxy_url.filter(|s| !s.is_empty())
+        && let Ok(p) = reqwest::Proxy::all(proxy) {
             builder = builder.proxy(p);
         }
-    }
     builder.build().expect("debrid HTTP client build failed")
 }

@@ -530,8 +530,8 @@ pub async fn register(
     .await;
 
     // ConvertKit newsletter subscription (fire-and-forget)
-    if req.newsletter_opt_in {
-        if let (Some(api_key), Some(form_id)) = (
+    if req.newsletter_opt_in
+        && let (Some(api_key), Some(form_id)) = (
             state.config.convertkit_api_key.clone(),
             state.config.convertkit_form_id.clone(),
         ) {
@@ -543,7 +543,6 @@ pub async fn register(
                 }
             });
         }
-    }
 
     if !auto_verify {
         // Send verification email if SMTP is configured
@@ -784,8 +783,8 @@ pub async fn resend_verification(
             .into_response();
     }
 
-    if let Some(user) = fetch_user_by_email(&state.pool, &req.email).await {
-        if !user.is_verified {
+    if let Some(user) = fetch_user_by_email(&state.pool, &req.email).await
+        && !user.is_verified {
             let token = create_email_verify_token(user.id, &state.config.secret_key_raw);
             let _ = send_email_verification(&state, &user.email, user.username.as_deref(), &token)
                 .await;
@@ -794,7 +793,6 @@ pub async fn resend_verification(
                 .set::<(), _, _>(cooldown_key, "1", Some(Expiration::EX(60)), None, false)
                 .await;
         }
-    }
     (
         StatusCode::OK,
         Json(
@@ -818,8 +816,8 @@ pub async fn forgot_password(
             .into_response();
     }
 
-    if let Some(user) = fetch_user_by_email(&state.pool, &req.email).await {
-        if user.is_active && user.password_hash.is_some() {
+    if let Some(user) = fetch_user_by_email(&state.pool, &req.email).await
+        && user.is_active && user.password_hash.is_some() {
             let pwd_prefix = user
                 .password_hash
                 .as_deref()
@@ -833,7 +831,6 @@ pub async fn forgot_password(
                 send_password_reset_email(&state, &user.email, user.username.as_deref(), &token)
                     .await;
         }
-    }
     (
         StatusCode::OK,
         Json(serde_json::json!({

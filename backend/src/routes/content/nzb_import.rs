@@ -793,8 +793,8 @@ async fn do_nzb_import(
             .await
             .unwrap_or(None);
 
-    if let Some(sid) = existing_id {
-        if !force_import {
+    if let Some(sid) = existing_id
+        && !force_import {
             return (
                 StatusCode::CONFLICT,
                 Json(json!({
@@ -805,7 +805,6 @@ async fn do_nzb_import(
             )
                 .into_response();
         }
-    }
 
     let parsed = parser::parse_title(name);
 

@@ -590,11 +590,10 @@ async fn trakt_export(
         if let Some(ref v) = imdb {
             ids["imdb"] = Value::String(v.clone());
         }
-        if let Some(ref v) = tmdb {
-            if let Ok(n) = v.parse::<i64>() {
+        if let Some(ref v) = tmdb
+            && let Ok(n) = v.parse::<i64>() {
                 ids["tmdb"] = n.into();
             }
-        }
 
         if item.media_type == "movie" {
             movies.push(
@@ -977,11 +976,10 @@ async fn simkl_export(
         if let Some(ref v) = imdb {
             ids["imdb"] = Value::String(v.clone());
         }
-        if let Some(ref v) = tmdb {
-            if let Ok(n) = v.parse::<i64>() {
+        if let Some(ref v) = tmdb
+            && let Ok(n) = v.parse::<i64>() {
                 ids["tmdb"] = n.into();
             }
-        }
 
         if item.media_type == "movie" {
             movies.push(serde_json::json!({

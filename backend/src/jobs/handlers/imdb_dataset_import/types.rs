@@ -95,11 +95,10 @@ pub fn resolve_datasets(
 
     // Include any extra keys not in DEFAULT_ORDER (shouldn't happen, but be safe).
     for key in keys {
-        if !ordered.iter().any(|d| d.key == key) {
-            if let Some(d) = dataset_by_key(key) {
+        if !ordered.iter().any(|d| d.key == key)
+            && let Some(d) = dataset_by_key(key) {
                 ordered.push(d);
             }
-        }
     }
 
     ordered

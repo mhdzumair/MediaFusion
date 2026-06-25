@@ -335,8 +335,8 @@ async fn fetch_poster_bytes(
     rpdb_key: Option<&str>,
 ) -> Result<Vec<u8>, JobError> {
     // Try RPDB first when we have an IMDb ID and API key.
-    if let (Some(key), Some(imdb)) = (rpdb_key, imdb_id) {
-        if imdb.starts_with("tt") {
+    if let (Some(key), Some(imdb)) = (rpdb_key, imdb_id)
+        && imdb.starts_with("tt") {
             let rpdb_url = format!(
                 "https://api.ratingposterdb.com/{key}/imdb/poster-default/{imdb}.jpg?fallback=true"
             );
@@ -348,7 +348,6 @@ async fn fetch_poster_bytes(
                 }
             }
         }
-    }
 
     // Fallback to stored media_image URL.
     if !fallback_url.is_empty() {

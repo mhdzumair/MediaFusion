@@ -127,14 +127,13 @@ fn offcloud_needs_premium(msg: &str) -> bool {
 
 fn check_offcloud_error(body: &Value) -> Result<(), ProviderError> {
     // Check for premium/plan errors anywhere in the response
-    if let Some(s) = body.as_str() {
-        if offcloud_needs_premium(s) {
+    if let Some(s) = body.as_str()
+        && offcloud_needs_premium(s) {
             return Err(ProviderError::api(
                 "Need premium OffCloud account",
                 "need_premium.mp4",
             ));
         }
-    }
     if let Some(obj) = body.as_object() {
         for (_, v) in obj {
             if v.as_str().is_some_and(offcloud_needs_premium) {
@@ -245,11 +244,10 @@ async fn get_torrent_status(
     if body.get("status").is_some() {
         return Ok(body);
     }
-    if let Some(arr) = body.get("requests").and_then(|v| v.as_array()) {
-        if let Some(first) = arr.first() {
+    if let Some(arr) = body.get("requests").and_then(|v| v.as_array())
+        && let Some(first) = arr.first() {
             return Ok(first.clone());
         }
-    }
     // May be returned as the whole object
     Ok(body)
 }
@@ -332,19 +330,18 @@ async fn explore_torrent(
 /// without needing to call explore.
 fn try_single_file_url(info: &Value, request_id: &str) -> Option<String> {
     // Direct `url` field
-    if let Some(url) = info.get("url").and_then(|v| v.as_str()) {
-        if !url.is_empty() {
+    if let Some(url) = info.get("url").and_then(|v| v.as_str())
+        && !url.is_empty() {
             return Some(url.to_string());
         }
-    }
 
     // isDirectory == false with server + fileName
     let is_dir = info
         .get("isDirectory")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
-    if !is_dir {
-        if let (Some(server), Some(file_name)) = (
+    if !is_dir
+        && let (Some(server), Some(file_name)) = (
             info.get("server").and_then(|v| v.as_str()),
             info.get("fileName").and_then(|v| v.as_str()),
         ) {
@@ -352,7 +349,6 @@ fn try_single_file_url(info: &Value, request_id: &str) -> Option<String> {
                 "https://{server}.offcloud.com/cloud/download/{request_id}/{file_name}"
             ));
         }
-    }
 
     None
 }

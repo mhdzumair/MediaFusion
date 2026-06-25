@@ -57,8 +57,8 @@ pub async fn scrape(
                     }
                     IndexerOutcome::Success(items) => {
                         for item in items {
-                            if seen.insert(item.nzb_guid.clone()) {
-                                if let Some(s) = validate_and_build(
+                            if seen.insert(item.nzb_guid.clone())
+                                && let Some(s) = validate_and_build(
                                     item,
                                     meta,
                                     media_type,
@@ -68,7 +68,6 @@ pub async fn scrape(
                                 ) {
                                     results.push(s);
                                 }
-                            }
                         }
                     }
                     IndexerOutcome::Error => {}
@@ -92,8 +91,8 @@ pub async fn scrape(
                     }
                     IndexerOutcome::Success(items) => {
                         for item in items {
-                            if seen.insert(item.nzb_guid.clone()) {
-                                if let Some(s) = validate_and_build(
+                            if seen.insert(item.nzb_guid.clone())
+                                && let Some(s) = validate_and_build(
                                     item,
                                     meta,
                                     media_type,
@@ -103,7 +102,6 @@ pub async fn scrape(
                                 ) {
                                     results.push(s);
                                 }
-                            }
                         }
                     }
                     IndexerOutcome::Error => {}
@@ -216,13 +214,11 @@ fn validate_and_build(
     if ratio < sim_min {
         return None;
     }
-    if media_type == "movie" {
-        if let (Some(py), Some(my)) = (parsed.year, meta.year) {
-            if py != my {
+    if media_type == "movie"
+        && let (Some(py), Some(my)) = (parsed.year, meta.year)
+            && py != my {
                 return None;
             }
-        }
-    }
     let files = if media_type == "series" {
         build_series_files(&parsed, season, episode)
     } else {

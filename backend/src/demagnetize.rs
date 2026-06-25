@@ -498,12 +498,11 @@ async fn fetch_from_peer(
         for _ in 0..25 {
             let (msg_id, payload) = read_msg(&mut stream).await?;
             // Extension handshake: msg_id=20, ext_id=0
-            if msg_id == 20 && payload.first() == Some(&0) {
-                if let Some(info) = parse_ext_handshake(&payload[1..]) {
+            if msg_id == 20 && payload.first() == Some(&0)
+                && let Some(info) = parse_ext_handshake(&payload[1..]) {
                     found = Some(info);
                     break;
                 }
-            }
         }
         found.ok_or("no extension handshake received")?
     };

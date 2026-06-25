@@ -6,27 +6,57 @@
       {
         "ordinal": 0,
         "name": "name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "cron_jobs",
+            "name": "name"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "schedule",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "cron_jobs",
+            "name": "schedule"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "queue",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "cron_jobs",
+            "name": "queue"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "payload",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "cron_jobs",
+            "name": "payload"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "last_enqueued_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "cron_jobs",
+            "name": "last_enqueued_at"
+          }
+        }
       }
     ],
     "parameters": {

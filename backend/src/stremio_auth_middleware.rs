@@ -82,8 +82,8 @@ pub async fn stremio_auth_middleware(
 
     // Only D- (anonymous encrypted) secrets need the api_password check.
     // U- secrets belong to logged-in users who never store api_password in their profile.
-    if first_seg.starts_with("D-") {
-        if let Some(ref required) = state.config.api_password {
+    if first_seg.starts_with("D-")
+        && let Some(ref required) = state.config.api_password {
             let raw = match crypto::resolve_user_data(
                 first_seg,
                 &state.config.secret_key,
@@ -102,7 +102,6 @@ pub async fn stremio_auth_middleware(
                 return unauthorized_response(&state, path);
             }
         }
-    }
 
     next.run(req).await
 }

@@ -77,13 +77,12 @@ pub async fn scrape(
             Ok(items) => {
                 for item in items {
                     let guid = &item.nzb_guid;
-                    if seen.insert(guid.clone()) {
-                        if let Some(stream) =
+                    if seen.insert(guid.clone())
+                        && let Some(stream) =
                             parse_item(item, meta, media_type, season, episode, keyword_filters)
                         {
                             results.push(stream);
                         }
-                    }
                 }
             }
         }
@@ -309,11 +308,10 @@ fn parse_item(
             return None;
         }
         // Year validation
-        if let (Some(py), Some(my)) = (parsed.year, meta.year) {
-            if py != my {
+        if let (Some(py), Some(my)) = (parsed.year, meta.year)
+            && py != my {
                 return None;
             }
-        }
     }
 
     // Title similarity check
@@ -471,8 +469,7 @@ fn generate_download_url(
     // If server-provided farm URL fields are available, use them.
     if let (Some(down), Some(farm), Some(port), Some(hash), Some(title)) =
         (down_url, dl_farm, dl_port, file_hash, file_title)
-    {
-        if !down.is_empty() && !farm.is_empty() && !port.is_empty() {
+        && !down.is_empty() && !farm.is_empty() && !port.is_empty() {
             let ext = file_extension.unwrap_or("");
             let ext_dot = if !ext.is_empty() && !ext.starts_with('.') {
                 format!(".{ext}")
@@ -493,7 +490,6 @@ fn generate_download_url(
                 encoded_path,
             );
         }
-    }
 
     // Legacy URL
     let effective_filename = match (filename.is_empty(), file_title, file_extension) {

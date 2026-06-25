@@ -32,11 +32,10 @@ fn first_scalar_with_providers<T: Clone>(
 ) -> Option<T> {
     for provider in providers {
         for meta in metas {
-            if meta_has_provider(meta, provider) {
-                if let Some(v) = pick(meta) {
+            if meta_has_provider(meta, provider)
+                && let Some(v) = pick(meta) {
                     return Some(v);
                 }
-            }
         }
     }
     for meta in metas {

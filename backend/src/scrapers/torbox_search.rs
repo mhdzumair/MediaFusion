@@ -124,8 +124,8 @@ async fn search_by_imdb(
     ];
     let season_str;
     let episode_str;
-    if media_type == "series" {
-        if let Some(s) = season {
+    if media_type == "series"
+        && let Some(s) = season {
             season_str = s.to_string();
             params.push(("season", &season_str));
             if let Some(e) = episode {
@@ -133,7 +133,6 @@ async fn search_by_imdb(
                 params.push(("episode", &episode_str));
             }
         }
-    }
 
     let resp = client
         .get(&url)
@@ -403,14 +402,13 @@ async fn search_usenet_by_imdb(
         ("check_cache", "false".into()),
         ("check_owned", "false".into()),
     ];
-    if media_type == "series" {
-        if let Some(s) = season {
+    if media_type == "series"
+        && let Some(s) = season {
             params.push(("season", s.to_string()));
             if let Some(e) = episode {
                 params.push(("episode", e.to_string()));
             }
         }
-    }
 
     let resp = client
         .get(&url)

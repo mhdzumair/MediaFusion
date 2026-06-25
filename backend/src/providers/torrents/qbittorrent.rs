@@ -52,8 +52,8 @@ fn parse_config(raw: &Value) -> Result<QbConfig, ProviderError> {
 
     let primary = str_field(&["webdav_downloads_path", "wdp"]).unwrap_or_else(|| "/".to_string());
     let mut downloads_paths = vec![primary];
-    if let Some(extra) = raw.get("webdav_extra_paths").or_else(|| raw.get("wep")) {
-        if let Some(arr) = extra.as_array() {
+    if let Some(extra) = raw.get("webdav_extra_paths").or_else(|| raw.get("wep"))
+        && let Some(arr) = extra.as_array() {
             for v in arr {
                 if let Some(s) = v.as_str() {
                     let t = s.trim();
@@ -63,7 +63,6 @@ fn parse_config(raw: &Value) -> Result<QbConfig, ProviderError> {
                 }
             }
         }
-    }
 
     let play_video_after = raw
         .get("play_video_after")
@@ -248,11 +247,10 @@ async fn wait_for_progress(
 ) -> Result<(), ProviderError> {
     let threshold = cfg.play_video_after as f64 / 100.0;
     for _ in 0..60 {
-        if let Some(progress) = qb_torrent_info(http, cfg, info_hash).await? {
-            if progress >= threshold {
+        if let Some(progress) = qb_torrent_info(http, cfg, info_hash).await?
+            && progress >= threshold {
                 return Ok(());
             }
-        }
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
     Err(ProviderError::api(

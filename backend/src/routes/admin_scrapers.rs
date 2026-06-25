@@ -514,11 +514,10 @@ pub async fn get_dmm_hashlist_status(
 
     let raw: Option<String> = state.redis.get("dmm_hashlist:status").await.unwrap_or(None);
 
-    if let Some(s) = raw {
-        if let Ok(v) = serde_json::from_str::<Value>(&s) {
+    if let Some(s) = raw
+        && let Ok(v) = serde_json::from_str::<Value>(&s) {
             return Json(v).into_response();
         }
-    }
 
     Json(json!({
         "enabled": state.config.is_scrap_from_dmm_hashlist,
@@ -544,11 +543,10 @@ pub async fn get_imdb_dataset_status(
 
     let raw: Option<String> = state.redis.get("imdb_import:status").await.unwrap_or(None);
 
-    if let Some(s) = raw {
-        if let Ok(v) = serde_json::from_str::<Value>(&s) {
+    if let Some(s) = raw
+        && let Ok(v) = serde_json::from_str::<Value>(&s) {
             return Json(v).into_response();
         }
-    }
 
     Json(json!({
         "phase": "idle",
@@ -702,15 +700,14 @@ pub async fn update_imdb_dataset_config(
         return forbidden();
     }
 
-    if let Some(ref schedule) = body.schedule {
-        if !is_valid_cron_schedule(schedule) {
+    if let Some(ref schedule) = body.schedule
+        && !is_valid_cron_schedule(schedule) {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 Json(json!({"detail": "schedule must be a 5-field cron expression"})),
             )
                 .into_response();
         }
-    }
 
     if let Some(ref datasets) = body.datasets {
         if datasets.is_empty() {
@@ -755,11 +752,10 @@ pub async fn update_imdb_dataset_config(
             map.insert("datasets".into(), json!(normalized));
         }
     }
-    if let Some(include_adult) = body.include_adult {
-        if let Value::Object(ref mut map) = payload {
+    if let Some(include_adult) = body.include_adult
+        && let Value::Object(ref mut map) = payload {
             map.insert("include_adult".into(), json!(include_adult));
         }
-    }
 
     let schedule = body.schedule.as_deref().unwrap_or(&current_schedule);
     let enabled = body.enabled.unwrap_or(current_enabled);
@@ -1317,8 +1313,8 @@ pub async fn update_media_images(
         }
     }
 
-    if !updated.is_empty() {
-        if let (Some((title, meta_type)), Some(bot_token), Some(chat_id)) = (
+    if !updated.is_empty()
+        && let (Some((title, meta_type)), Some(bot_token), Some(chat_id)) = (
             meta_info,
             state.config.telegram_bot_token.as_deref(),
             state.config.telegram_chat_id.as_deref(),
@@ -1367,7 +1363,6 @@ pub async fn update_media_images(
                 .await;
             });
         }
-    }
 
     Json(json!({
         "status": "success",
@@ -2275,11 +2270,10 @@ async fn load_cron_payload(pool: &sqlx::PgPool, cron_name: &str) -> Option<Value
 }
 
 async fn load_dispatch_payload(pool: &sqlx::PgPool, job_id: &str, default_payload: Value) -> Value {
-    if let Some(cron_name) = job_id_to_cron_name(job_id) {
-        if let Some(stored) = load_cron_payload(pool, &cron_name).await {
+    if let Some(cron_name) = job_id_to_cron_name(job_id)
+        && let Some(stored) = load_cron_payload(pool, &cron_name).await {
             return stored;
         }
-    }
     default_payload
 }
 
@@ -2561,15 +2555,14 @@ pub async fn update_scheduler_job(
             .into_response();
     };
 
-    if let Some(ref schedule) = body.schedule {
-        if !is_valid_cron_schedule(schedule) {
+    if let Some(ref schedule) = body.schedule
+        && !is_valid_cron_schedule(schedule) {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 Json(json!({"detail": "schedule must be a 5-field cron expression"})),
             )
                 .into_response();
         }
-    }
 
     use sqlx::Row as _;
 
@@ -3000,21 +2993,18 @@ fn matches_task_filter(
     actor_name: Option<&str>,
     search: Option<&str>,
 ) -> bool {
-    if let Some(s) = status {
-        if rec["status"].as_str().unwrap_or("") != s {
+    if let Some(s) = status
+        && rec["status"].as_str().unwrap_or("") != s {
             return false;
         }
-    }
-    if let Some(q) = queue_name {
-        if rec["queue_name"].as_str().unwrap_or("") != q {
+    if let Some(q) = queue_name
+        && rec["queue_name"].as_str().unwrap_or("") != q {
             return false;
         }
-    }
-    if let Some(a) = actor_name {
-        if rec["actor_name"].as_str().unwrap_or("") != a {
+    if let Some(a) = actor_name
+        && rec["actor_name"].as_str().unwrap_or("") != a {
             return false;
         }
-    }
     if let Some(needle) = search {
         let needle = needle.to_lowercase();
         let haystack = format!(

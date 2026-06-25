@@ -39,17 +39,14 @@ async fn handle_message(state: &AppState, api: &BotApi, message: Message) {
 
     let text_or_caption = message.text.as_deref().or(message.caption.as_deref());
 
-    if let Some(conv) = state_store::get_conversation(state, user_id).await {
-        if conv.step == super::model::ConversationStep::AwaitingPosterInput {
-            if let Some(photos) = &message.photo {
-                if let Some(largest) = photos.last() {
+    if let Some(conv) = state_store::get_conversation(state, user_id).await
+        && conv.step == super::model::ConversationStep::AwaitingPosterInput
+            && let Some(photos) = &message.photo
+                && let Some(largest) = photos.last() {
                     wizard::handle_poster_photo(state, api, user_id, chat_id, &largest.file_id)
                         .await;
                     return;
                 }
-            }
-        }
-    }
 
     if let Some(text) = text_or_caption {
         if text.starts_with('/') {

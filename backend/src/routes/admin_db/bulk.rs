@@ -81,15 +81,14 @@ pub async fn bulk_delete(
     let started = Instant::now();
 
     // If cascade=true, delete child records first using FK graph
-    if body.cascade.unwrap_or(false) {
-        if let Err(e) = cascade_delete(&state, &body.table, id_col, &id_strings).await {
+    if body.cascade.unwrap_or(false)
+        && let Err(e) = cascade_delete(&state, &body.table, id_col, &id_strings).await {
             tracing::error!("bulk_delete cascade error: {e}");
             // If it's a FK constraint violation, return 409
             if e.contains("foreign key") || e.contains("violates") {
                 return (StatusCode::CONFLICT, Json(json!({"detail": e}))).into_response();
             }
         }
-    }
 
     let ids_json = serde_json::to_string(&id_strings).unwrap_or_else(|_| "[]".to_string());
     let sql = format!(

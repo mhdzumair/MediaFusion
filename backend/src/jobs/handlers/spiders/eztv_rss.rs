@@ -62,8 +62,8 @@ pub fn parse_eztv_rss(xml: &str) -> Vec<RssItem> {
             }
             Ok(Event::Empty(ref e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                if name == "enclosure" {
-                    if let Some(ref mut item) = current {
+                if name == "enclosure"
+                    && let Some(ref mut item) = current {
                         let mut url: Option<String> = None;
                         let mut length: Option<i64> = None;
                         for attr in e.attributes().flatten() {
@@ -79,12 +79,11 @@ pub fn parse_eztv_rss(xml: &str) -> Vec<RssItem> {
                         item.enclosure_url = url;
                         item.enclosure_size = length;
                     }
-                }
             }
             Ok(Event::Text(ref e)) => {
                 let text = e.decode().unwrap_or_default().trim().to_string();
-                if !text.is_empty() {
-                    if let Some(ref mut item) = current {
+                if !text.is_empty()
+                    && let Some(ref mut item) = current {
                         if in_title {
                             item.title = text;
                         } else if in_info_hash {
@@ -93,7 +92,6 @@ pub fn parse_eztv_rss(xml: &str) -> Vec<RssItem> {
                             item.seeds = text.parse::<i32>().ok();
                         }
                     }
-                }
                 in_title = false;
                 in_info_hash = false;
                 in_seeds = false;

@@ -78,11 +78,10 @@ fn extract_video_id(url: &str) -> Option<String> {
         .get_or_init(|| regex::Regex::new(r"youtube\.com/shorts/([a-zA-Z0-9_-]{11})").unwrap());
 
     for re in [re_watch, re_short, re_embed, re_shorts] {
-        if let Some(caps) = re.captures(url) {
-            if let Some(m) = caps.get(1) {
+        if let Some(caps) = re.captures(url)
+            && let Some(m) = caps.get(1) {
                 return Some(m.as_str().to_string());
             }
-        }
     }
     None
 }
@@ -174,10 +173,9 @@ async fn fetch_youtube_metadata(
             .timeout(std::time::Duration::from_secs(10))
             .send()
             .await
-        {
-            if resp.status().is_success() {
-                if let Ok(data) = resp.json::<serde_json::Value>().await {
-                    if let Some(item) = data["items"].as_array().and_then(|a| a.first()) {
+            && resp.status().is_success()
+                && let Ok(data) = resp.json::<serde_json::Value>().await
+                    && let Some(item) = data["items"].as_array().and_then(|a| a.first()) {
                         let snippet = &item["snippet"];
                         let content_details = &item["contentDetails"];
                         let status = &item["status"];
@@ -204,13 +202,10 @@ async fn fetch_youtube_metadata(
                             meta.geo_restriction_countries = blocked;
                         }
                     }
-                }
-            }
-        }
     }
 
-    if meta.title.is_none() || meta.channel_name.is_none() {
-        if let Some((title, channel)) = fetch_oembed(http, video_id).await {
+    if (meta.title.is_none() || meta.channel_name.is_none())
+        && let Some((title, channel)) = fetch_oembed(http, video_id).await {
             if meta.title.is_none() && !title.is_empty() {
                 meta.title = Some(title);
             }
@@ -218,7 +213,6 @@ async fn fetch_youtube_metadata(
                 meta.channel_name = Some(channel);
             }
         }
-    }
 
     meta
 }

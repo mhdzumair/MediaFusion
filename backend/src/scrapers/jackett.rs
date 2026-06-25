@@ -462,8 +462,8 @@ async fn process_result(
 
     let needs_download = should_persist_torrent_file(torrent_type) || info_hash.is_none();
 
-    if needs_download {
-        if let Some(url) = download_pick.as_deref() {
+    if needs_download
+        && let Some(url) = download_pick.as_deref() {
             if url.starts_with("magnet:") {
                 info_hash = info_hash.or_else(|| parser::extract_info_hash(url));
                 announce_list = torrent_metadata::announce_list_from_magnet(url);
@@ -490,32 +490,26 @@ async fn process_result(
                         .map(|h| h.to_lowercase())
                         .filter(|h| h.len() == 40);
                 }
-                if torrent_file.is_none() {
-                    if let Some(dl) = page_info.download_url.as_deref() {
-                        if let Some(bytes) = download_torrent_bytes(client, dl, query_timeout).await
-                        {
-                            if let Some(parsed) = parse_torrent_bytes(&bytes) {
+                if torrent_file.is_none()
+                    && let Some(dl) = page_info.download_url.as_deref()
+                        && let Some(bytes) = download_torrent_bytes(client, dl, query_timeout).await
+                            && let Some(parsed) = parse_torrent_bytes(&bytes) {
                                 info_hash = Some(parsed.info_hash);
                                 announce_list = parsed.announce_list;
                                 size = size.filter(|s| *s > 0).or(Some(parsed.total_size));
                                 torrent_file =
                                     torrent_file_for_storage(torrent_type, Some(parsed.raw_bytes));
                             }
-                        }
-                    }
-                }
             }
         }
-    }
 
-    if info_hash.is_none() {
-        if let Some(m) = item.magnet_uri.as_deref() {
+    if info_hash.is_none()
+        && let Some(m) = item.magnet_uri.as_deref() {
             info_hash = parser::extract_info_hash(m);
             if announce_list.is_empty() {
                 announce_list = torrent_metadata::announce_list_from_magnet(m);
             }
         }
-    }
 
     let info_hash = info_hash?;
     let source = item.tracker.unwrap_or_else(|| "Jackett".to_string());

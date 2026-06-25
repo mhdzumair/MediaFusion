@@ -64,8 +64,8 @@ async fn redis_scan_page(
 /// Parse the SCAN response Value into (next_cursor, keys).
 fn parse_scan_value(value: Value) -> (String, Vec<String>) {
     // Redis SCAN returns: [cursor_bulk_string, [key1, key2, ...]]
-    if let Value::Array(arr) = value {
-        if arr.len() == 2 {
+    if let Value::Array(arr) = value
+        && arr.len() == 2 {
             let cursor = match &arr[0] {
                 Value::String(s) => s.to_string(),
                 Value::Bytes(b) => String::from_utf8_lossy(b).to_string(),
@@ -86,7 +86,6 @@ fn parse_scan_value(value: Value) -> (String, Vec<String>) {
             };
             return (cursor, keys);
         }
-    }
     ("0".to_string(), Vec::new())
 }
 
@@ -438,11 +437,10 @@ pub async fn cache_keys(
     let mut keys_info: Vec<JsonValue> = Vec::new();
     for k in &raw_keys {
         let info = key_info(&state.redis, k).await;
-        if let Some(ref tf) = params.type_filter {
-            if info.get("type").and_then(|v| v.as_str()) != Some(tf.as_str()) {
+        if let Some(ref tf) = params.type_filter
+            && info.get("type").and_then(|v| v.as_str()) != Some(tf.as_str()) {
                 continue;
             }
-        }
         keys_info.push(info);
     }
 

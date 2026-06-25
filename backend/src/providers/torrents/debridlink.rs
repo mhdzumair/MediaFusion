@@ -31,8 +31,8 @@ enum TokenKind {
 /// decoded string contains only printable ASCII (no spaces, no braces), and is
 /// at least 20 characters long, we treat it as a refresh token.
 fn decode_token(token: &str) -> TokenKind {
-    if let Ok(bytes) = B64.decode(token) {
-        if let Ok(s) = std::str::from_utf8(&bytes) {
+    if let Ok(bytes) = B64.decode(token)
+        && let Ok(s) = std::str::from_utf8(&bytes) {
             let trimmed = s.trim();
             let is_printable_ascii = trimmed.bytes().all(|b| (0x21..0x7f).contains(&b));
             let no_json_chars = !trimmed.contains('{') && !trimmed.contains(' ');
@@ -40,7 +40,6 @@ fn decode_token(token: &str) -> TokenKind {
                 return TokenKind::Refresh(trimmed.to_string());
             }
         }
-    }
     TokenKind::Private(token.to_string())
 }
 
@@ -107,8 +106,8 @@ fn check_dl_error(body: &Value) -> Result<(), ProviderError> {
         .get("success")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
-    if !success {
-        if let Some(err) = body.get("error").and_then(|v| v.as_str()) {
+    if !success
+        && let Some(err) = body.get("error").and_then(|v| v.as_str()) {
             if let Some((msg, file)) = map_dl_error(err) {
                 return Err(ProviderError::api(msg, file));
             }
@@ -117,7 +116,6 @@ fn check_dl_error(body: &Value) -> Result<(), ProviderError> {
                 "api_error.mp4",
             ));
         }
-    }
     Ok(())
 }
 
@@ -367,8 +365,8 @@ async fn wait_for_download(
 
         if let Some(torrent) = items.into_iter().next() {
             // Check for errors
-            if let Some(err) = torrent.get("errorString").and_then(|v| v.as_str()) {
-                if !err.is_empty() {
+            if let Some(err) = torrent.get("errorString").and_then(|v| v.as_str())
+                && !err.is_empty() {
                     // Delete the broken torrent and bail
                     dl_delete(
                         http,
@@ -383,7 +381,6 @@ async fn wait_for_download(
                         "transfer_error.mp4",
                     ));
                 }
-            }
 
             let pct = torrent
                 .get("downloadPercent")
@@ -769,14 +766,13 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
             _ => break,
         };
         for t in &arr {
-            if t.get("downloadPercent").and_then(|v| v.as_i64()) == Some(100) {
-                if let Some(h) = t.get("hashString").and_then(|v| v.as_str()) {
+            if t.get("downloadPercent").and_then(|v| v.as_i64()) == Some(100)
+                && let Some(h) = t.get("hashString").and_then(|v| v.as_str()) {
                     let lower = h.to_lowercase();
                     if hash_set.contains(&lower) {
                         found.push(lower);
                     }
                 }
-            }
         }
         if (page == 0 && arr.len() > PER_PAGE) || arr.len() < PER_PAGE {
             break;

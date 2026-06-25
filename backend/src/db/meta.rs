@@ -47,11 +47,10 @@ pub struct EpisodeRow {
 /// Resolve a Stremio meta_id to an internal media_id.
 /// Handles both "tt1234567" (imdb) and "mf12345" (internal) formats.
 fn parse_meta_id(meta_id: &str) -> MetaIdKind<'_> {
-    if let Some(num) = meta_id.strip_prefix("mf") {
-        if let Ok(id) = num.parse::<i32>() {
+    if let Some(num) = meta_id.strip_prefix("mf")
+        && let Ok(id) = num.parse::<i32>() {
             return MetaIdKind::Internal(MediaId(id));
         }
-    }
     MetaIdKind::External(meta_id)
 }
 

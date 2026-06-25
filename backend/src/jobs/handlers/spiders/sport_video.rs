@@ -34,9 +34,9 @@ use crate::{
 // ─── Config helpers ───────────────────────────────────────────────────────────
 
 fn load_sport_video_categories(config_path: &str) -> Vec<(String, String)> {
-    if let Ok(text) = std::fs::read_to_string(config_path) {
-        if let Ok(root) = serde_json::from_str::<serde_json::Value>(&text) {
-            if let Some(cats) = root
+    if let Ok(text) = std::fs::read_to_string(config_path)
+        && let Ok(root) = serde_json::from_str::<serde_json::Value>(&text)
+            && let Some(cats) = root
                 .get("sport_video")
                 .and_then(|v| v.get("categories"))
                 .and_then(|v| v.as_object())
@@ -46,8 +46,6 @@ fn load_sport_video_categories(config_path: &str) -> Vec<(String, String)> {
                     .filter_map(|(k, v)| v.as_str().map(|url| (k.clone(), url.to_string())))
                     .collect();
             }
-        }
-    }
 
     vec![
         (
@@ -240,11 +238,10 @@ async fn fetch_page(
 ) -> Option<FetchResult> {
     for attempt in 1u32..=3 {
         let result = async {
-            if let Some(bp) = byparr_url {
-                if let Some(r) = fetch_byparr(client, bp, url).await {
+            if let Some(bp) = byparr_url
+                && let Some(r) = fetch_byparr(client, bp, url).await {
                     return Ok(r);
                 }
-            }
             fetch_plain(client, url)
                 .await
                 .ok_or_else(|| format!("fetch failed: {url}"))
