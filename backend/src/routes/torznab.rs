@@ -9,6 +9,7 @@ use axum::{
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use crate::{db::torznab as db, state::AppState};
@@ -199,7 +200,7 @@ fn validation_samples() -> Vec<db::TorznabRow> {
             total_size: Some(2_147_483_648),
             seeders: Some(250),
             leechers: Some(10),
-            uploaded_at: None,
+            uploaded_at: Some(validation_uploaded_at()),
             resolution: Some("1080p".into()),
             media_type: "movie".into(),
             imdb_id: Some("tt0000001".into()),
@@ -213,7 +214,7 @@ fn validation_samples() -> Vec<db::TorznabRow> {
             total_size: Some(1_073_741_824),
             seeders: Some(180),
             leechers: Some(8),
-            uploaded_at: None,
+            uploaded_at: Some(validation_uploaded_at()),
             resolution: Some("1080p".into()),
             media_type: "series".into(),
             imdb_id: Some("tt0000002".into()),
@@ -222,6 +223,12 @@ fn validation_samples() -> Vec<db::TorznabRow> {
             trackers: vec![],
         },
     ]
+}
+
+fn validation_uploaded_at() -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+        .expect("validation timestamp must be a valid RFC 3339 datetime")
+        .with_timezone(&Utc)
 }
 
 fn build_rss(rows: &[db::TorznabRow], title: &str, host_url: &str) -> String {
@@ -401,5 +408,26 @@ fn validate_apikey(apikey: Option<&str>, required_password: Option<&str>) -> boo
         Some(pwd) => apikey
             .map(|k| k.split(':').next().unwrap_or(k) == pwd)
             .unwrap_or(false),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validation_samples_include_valid_pub_dates() {
+        let rss = build_rss(
+            &validation_samples(),
+            "MediaFusion",
+            "http://127.0.0.1:8001",
+        );
+
+        assert_eq!(rss.matches("<item>").count(), 2);
+        assert_eq!(
+            rss.matches("<pubDate>Mon, 01 Jan 2024 00:00:00 +0000</pubDate>")
+                .count(),
+            2
+        );
     }
 }
