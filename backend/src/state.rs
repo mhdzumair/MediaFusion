@@ -39,53 +39,18 @@ impl KeywordFilterCache {
         Self::matches_list(&self.keywords, &self.whitelist, text)
     }
 
-    /// True if `keyword` appears in `text` as a whole word (not inside a longer word).
-    /// Both `text` and `keyword` must already be lowercased.
-    fn whole_word_match(text: &str, keyword: &str) -> bool {
-        if keyword.is_empty() {
-            return false;
-        }
-        let klen = keyword.len();
-        let mut search = text;
-        let mut offset = 0usize;
-        while let Some(pos) = search.find(keyword) {
-            let abs = offset + pos;
-            let before_ok = abs == 0 || {
-                let ch = text[..abs].chars().next_back().unwrap();
-                !ch.is_alphanumeric() && ch != '_'
-            };
-            let end = abs + klen;
-            let after_ok = end >= text.len() || {
-                let ch = text[end..].chars().next().unwrap();
-                !ch.is_alphanumeric() && ch != '_'
-            };
-            if before_ok && after_ok {
-                return true;
-            }
-            // Advance past this occurrence to find the next one.
-            offset += pos + 1;
-            search = &text[offset..];
-            if search.len() < klen {
-                break;
-            }
-        }
-        false
-    }
-
     fn matches_list(keywords: &[String], whitelist: &[String], text: &str) -> bool {
         if text.is_empty() || keywords.is_empty() {
             return false;
         }
         let lower = text.to_lowercase();
-        // Whitelist uses substring match (permissive — any overlap clears the block).
         if whitelist
             .iter()
             .any(|phrase| lower.contains(phrase.as_str()))
         {
             return false;
         }
-        // Keywords use whole-word match: "cock" must not match inside "cocktail".
-        keywords.iter().any(|kw| Self::whole_word_match(&lower, kw))
+        keywords.iter().any(|kw| lower.contains(kw.as_str()))
     }
 
     /// Returns a SQL WHERE fragment that excludes media whose `m.title` is keyword-blocked.
@@ -432,7 +397,8 @@ const KW_BLOCKED_RECOMPUTE_ID: &str = "keyword-blocked-recompute";
 /// Uses `SET LOCAL statement_timeout = 0` inside a transaction — the override is
 /// scoped to that transaction and never leaks to other pool connections.
 /// Joins `terms` into a single POSIX regex alternation `(t1|t2|...)` with
-/// metacharacters escaped.  Returns `None` when the list is empty so callers
+/// metacharacters escaped.  Substring match — no word boundaries, so plurals and
+/// conjugations are captured.  Returns `None` when the list is empty so callers
 /// can pass `NULL` to PostgreSQL and skip the pattern match entirely.
 fn build_regex_pattern(terms: &[String]) -> Option<String> {
     if terms.is_empty() {
@@ -467,8 +433,7 @@ fn build_regex_pattern(terms: &[String]) -> Option<String> {
         })
         .collect::<Vec<_>>()
         .join("|");
-    // Wrap with word-boundary assertions so "cock" doesn't match inside "cocktail".
-    Some(format!("\\y({escaped})\\y"))
+    Some(format!("({escaped})"))
 }
 
 pub async fn recompute_keyword_blocked(
