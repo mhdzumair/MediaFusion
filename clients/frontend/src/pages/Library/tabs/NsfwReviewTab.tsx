@@ -31,7 +31,20 @@ import {
   Tag,
   ShieldCheck,
   Info,
+  ScanSearch,
+  ExternalLink,
 } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import { adminApi, type BlockedMediaItem } from '@/lib/api/admin'
 import { useToast } from '@/hooks/use-toast'
 import { Poster } from '@/components/ui/poster'
@@ -248,6 +261,91 @@ function NsfwItemCard({
   )
 }
 
+function NsfwScanButton() {
+  const { toast } = useToast()
+  const [open, setOpen] = useState(false)
+  const [keywordBlockedOnly, setKeywordBlockedOnly] = useState(false)
+
+  const scanMutation = useMutation({
+    mutationFn: () => adminApi.triggerNsfwScan(keywordBlockedOnly),
+    onSuccess: (result) => {
+      setOpen(false)
+      if (result.status === 'accepted') {
+        toast({
+          title: 'NSFW scan queued',
+          description: (
+            <span className="flex items-center gap-1.5">
+              Job #{result.job_id} is running.{' '}
+              <a
+                href={`/app/admin/tasks?q=${result.job_id}`}
+                className="inline-flex items-center gap-0.5 underline text-primary"
+                target="_blank"
+                rel="noreferrer"
+              >
+                View in Task Manager <ExternalLink className="h-3 w-3" />
+              </a>
+            </span>
+          ),
+        })
+      } else {
+        toast({
+          title: 'Scan already queued',
+          description: result.reason ?? 'A scan job is already pending or running.',
+        })
+      }
+    },
+    onError: (error: Error) => {
+      toast({ variant: 'destructive', title: 'Failed to start scan', description: error.message })
+    },
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className="gap-1.5 rounded-xl shrink-0">
+          <ScanSearch className="h-4 w-4" />
+          Run Scan
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Run NSFW Poster Scan</DialogTitle>
+          <DialogDescription>
+            Enqueues a background job to classify all media posters that have not yet been scored by the current model
+            version. You can track progress in the Task Manager.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center justify-between rounded-xl border border-border p-4 gap-4">
+          <div className="space-y-0.5">
+            <Label htmlFor="kw-only" className="text-sm font-medium">
+              Keyword-blocked only
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Restrict scan to media already flagged by the keyword filter — faster targeted sweep.
+            </p>
+          </div>
+          <Switch id="kw-only" checked={keywordBlockedOnly} onCheckedChange={setKeywordBlockedOnly} />
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)} className="rounded-xl">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => scanMutation.mutate()}
+            disabled={scanMutation.isPending}
+            className="rounded-xl gap-1.5"
+          >
+            {scanMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
+            Start Scan
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function NsfwReviewTab() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
@@ -297,7 +395,9 @@ export function NsfwReviewTab() {
               : 'Posters classified as potentially explicit'}
           </p>
         </div>
-        {!isAdmin && (
+        {isAdmin ? (
+          <NsfwScanButton />
+        ) : (
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger>

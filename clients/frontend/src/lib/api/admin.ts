@@ -634,6 +634,12 @@ export const adminApi = {
     return adminPatch(`/nsfw-flagged/${mediaId}`, { flagged })
   },
 
+  triggerNsfwScan: async (
+    keywordBlockedOnly = false,
+  ): Promise<{ status: 'accepted' | 'skipped'; job_id?: number; reason?: string; keyword_blocked_only: boolean }> => {
+    return adminPost('/nsfw/scan', { keyword_blocked_only: keywordBlockedOnly })
+  },
+
   // ============================================
   // Torrent Streams
   // ============================================
