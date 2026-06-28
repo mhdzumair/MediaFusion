@@ -136,6 +136,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         // ── Health ───────────────────────────────────────────────────────────
         .route("/health", get(health::handler))
         .route("/ready", get(health::ready_handler))
+        .route("/favicon.ico", get(health::favicon_handler))
         // ── Configure ────────────────────────────────────────────────────────
         .route("/configure", get(configure::handler))
         .route("/{secret_str}/configure", get(configure::user_handler))

@@ -1,6 +1,11 @@
 use std::sync::Arc;
 
-use axum::{Json, http::StatusCode, response::IntoResponse};
+use axum::{
+    Json,
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Redirect},
+};
 use fred::prelude::ClientLike;
 use serde_json::json;
 
@@ -11,8 +16,13 @@ pub async fn handler() -> impl IntoResponse {
     Json(json!({"status": "ok"}))
 }
 
+/// Redirects browsers to the configured logo URL (matches Python `GET /favicon.ico`).
+pub async fn favicon_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    Redirect::to(&state.config.logo_url)
+}
+
 /// Readiness probe — verifies DB and Redis are reachable (Python `core.ready`).
-pub async fn ready_handler(state: axum::extract::State<Arc<AppState>>) -> impl IntoResponse {
+pub async fn ready_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let mut checks = serde_json::Map::new();
     let mut healthy = true;
 
