@@ -1,10 +1,11 @@
-/// Admin NSFW poster review action endpoint.
+/// Admin NSFW poster review and scan trigger endpoints.
 ///
 /// The list of NSFW-flagged items is served by the existing media/blocked endpoint
-/// via `?filter=nsfw_flagged`. Only the review action (confirm/clear) is here.
+/// via `?filter=nsfw_flagged`. Review action and manual scan trigger live here.
 ///
 /// Routes (prefix /api/v1/admin):
 ///   PATCH /nsfw-flagged/{id}  → review_nsfw_item  (admin only; {flagged: bool})
+///   POST  /nsfw/scan          → trigger_nsfw_scan  (admin only; enqueues batch job)
 use std::sync::Arc;
 
 use axum::{
@@ -13,6 +14,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
+use crate::jobs::enqueue::{EnqueueOpts, enqueue_simple};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
@@ -115,6 +117,85 @@ pub async fn review_nsfw_item(
         Ok(_) => (StatusCode::NOT_FOUND, Json(json!({"detail": "not found"}))).into_response(),
         Err(e) => {
             tracing::error!("review_nsfw_item {media_id}: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// ─── Scan trigger ─────────────────────────────────────────────────────────────
+
+#[derive(Deserialize, Default)]
+pub struct NsfwScanRequest {
+    /// When true, restrict the batch scan to media that is already keyword-blocked.
+    /// Useful for a targeted sweep of suspected adult content.
+    #[serde(default)]
+    pub keyword_blocked_only: bool,
+}
+
+/// POST /api/v1/admin/nsfw/scan
+///
+/// Enqueues a `poster_nsfw_scan` batch job so the worker classifies all media
+/// whose poster has not yet been scored by the current model version.
+/// A dedupe key prevents duplicate jobs from stacking up in the queue.
+pub async fn trigger_nsfw_scan(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    body: Option<Json<NsfwScanRequest>>,
+) -> impl IntoResponse {
+    if !validate_admin(&headers, &state.config.secret_key_raw) {
+        return forbidden();
+    }
+
+    if state.nsfw_classifier.is_none() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"detail": "NSFW classifier is not loaded on this instance"})),
+        )
+            .into_response();
+    }
+
+    let params = body.map(|b| b.0).unwrap_or_default();
+    let payload = serde_json::json!({
+        "keyword_blocked_only": params.keyword_blocked_only,
+    });
+
+    let dedupe_key = if params.keyword_blocked_only {
+        "poster_nsfw_scan:keyword_blocked"
+    } else {
+        "poster_nsfw_scan:full"
+    };
+
+    match enqueue_simple(
+        &state.pool,
+        "poster_nsfw_scan",
+        &payload,
+        EnqueueOpts {
+            dedupe_key: Some(dedupe_key.to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    {
+        Ok(Some(job_id)) => (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "status": "accepted",
+                "job_id": job_id,
+                "keyword_blocked_only": params.keyword_blocked_only,
+            })),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::OK,
+            Json(json!({
+                "status": "skipped",
+                "reason": "A scan job is already queued or running",
+                "keyword_blocked_only": params.keyword_blocked_only,
+            })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("trigger_nsfw_scan: {e}");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }

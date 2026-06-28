@@ -575,6 +575,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/genres/{id}/types/{media_type}", delete(admin_genres::delete_genre_type))
         // ── Admin keyword filters ─────────────────────────────────────────────
         .route("/api/v1/admin/nsfw-flagged/{id}", patch(admin_nsfw::review_nsfw_item))
+        .route("/api/v1/admin/nsfw/scan", post(admin_nsfw::trigger_nsfw_scan))
         .route("/api/v1/admin/keyword-filters", get(admin_keyword_filters::list_keyword_filters).post(admin_keyword_filters::add_keyword_filter))
         .route("/api/v1/admin/keyword-filters/reload", post(admin_keyword_filters::reload_keyword_cache))
         .route("/api/v1/admin/keyword-filters/{id}", patch(admin_keyword_filters::toggle_keyword_filter).delete(admin_keyword_filters::delete_keyword_filter))
