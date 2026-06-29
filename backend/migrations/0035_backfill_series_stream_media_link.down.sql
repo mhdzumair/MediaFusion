@@ -1,0 +1,3 @@
+-- No rollback: removing backfilled rows would re-introduce the broken state.
+-- A manual rollback would require knowing which stream_media_link rows were
+-- inserted by the up migration vs. pre-existing rows, which is not tracked.

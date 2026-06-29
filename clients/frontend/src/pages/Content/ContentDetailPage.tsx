@@ -749,7 +749,9 @@ function StreamActionDialog({
                         audio_formats: Array.isArray(stream.audio_formats)
                           ? stream.audio_formats.join('|')
                           : stream.audio_formats,
-                        hdr_formats: stream.hdr_formats,
+                        hdr_formats: Array.isArray(stream.hdr_formats)
+                          ? stream.hdr_formats.join('|')
+                          : stream.hdr_formats,
                         source: stream.source,
                         languages: stream.languages,
                         size: stream.size,

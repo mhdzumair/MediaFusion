@@ -46,7 +46,8 @@ interface StreamCardProps {
 
 // Helper to format HDR formats array as string
 function getHdrFormatsString(stream: CatalogStreamInfo): string | undefined {
-  return stream.hdr_formats || undefined
+  if (!stream.hdr_formats) return undefined
+  return Array.isArray(stream.hdr_formats) ? stream.hdr_formats.join('|') : stream.hdr_formats
 }
 
 // Helper to format audio formats array as string

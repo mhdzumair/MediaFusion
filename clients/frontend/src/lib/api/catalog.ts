@@ -184,7 +184,7 @@ export interface StreamInfo {
   // Normalized quality attributes (formatted as joined strings for display)
   audio_formats?: string[] // Audio codec names (e.g., ["Atmos", "DTS"])
   channels?: string // Formatted channels string (e.g., "5.1|7.1")
-  hdr_formats?: string // Formatted HDR string (e.g., "DV|HDR10")
+  hdr_formats?: string | string[] // Pipe-joined string or array from API (e.g., "DV|HDR10" or ["DV","HDR10"])
 
   source?: string
   languages?: string[] // Array of language names

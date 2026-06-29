@@ -8,13 +8,13 @@
 ///   POST  /nsfw/scan          → trigger_nsfw_scan  (admin only; enqueues batch job)
 use std::sync::Arc;
 
+use crate::jobs::enqueue::{EnqueueOpts, enqueue_simple};
 use axum::{
     Json,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
-use crate::jobs::enqueue::{EnqueueOpts, enqueue_simple};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};

@@ -711,6 +711,17 @@ async fn link_files_or_media(
 
     if opts.media_type == MediaType::Series {
         if !files.is_empty() {
+            // Write stream_media_link so total_streams is incremented and the media
+            // appears in catalog queries that filter on total_streams > 0.
+            link_stream_to_media_with_flags(
+                pool,
+                stream_id,
+                opts.media_id,
+                opts.is_primary,
+                opts.is_verified,
+            )
+            .await?;
+
             for f in files {
                 if let Some(file_id) = insert_stream_file(pool, stream_id, f, false).await? {
                     let (season, episode) = if f.season_number > 0 && f.episode_number > 0 {

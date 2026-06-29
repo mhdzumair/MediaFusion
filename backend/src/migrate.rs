@@ -146,12 +146,12 @@ pub async fn run(pool: &PgPool) -> Result<(), MigrateError> {
         attempt += 1;
 
         let mut conn = pool.connect_options().connect().await?;
-        sqlx::query(
-            "SET statement_timeout = 0; \
-             SET lock_timeout = '5s'",
-        )
-        .execute(&mut conn)
-        .await?;
+        sqlx::query("SET statement_timeout = 0")
+            .execute(&mut conn)
+            .await?;
+        sqlx::query("SET lock_timeout = '5s'")
+            .execute(&mut conn)
+            .await?;
         let result = migrator.run(&mut conn).await;
         // Always close so the session ends and the advisory lock is released,
         // even on failure (sqlx skips its own unlock on error).

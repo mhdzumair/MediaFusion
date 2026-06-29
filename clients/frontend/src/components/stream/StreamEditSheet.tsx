@@ -190,7 +190,13 @@ export function StreamEditSheet({
     setPrevCurrentValues(currentValues)
     setFields(getInitialFields())
     setLanguages(currentValues?.languages || [])
-    setHdrFormats(currentValues?.hdr_formats?.split('|').filter(Boolean) || [])
+    setHdrFormats(
+      typeof currentValues?.hdr_formats === 'string'
+        ? currentValues.hdr_formats.split('|').filter(Boolean)
+        : Array.isArray(currentValues?.hdr_formats)
+          ? currentValues.hdr_formats
+          : [],
+    )
     setReason('')
     setSubmitResults([])
   }
@@ -214,7 +220,12 @@ export function StreamEditSheet({
 
   // Track HDR format modifications
   const hdrFormatsModified = useMemo(() => {
-    const original = currentValues?.hdr_formats?.split('|').filter(Boolean) || []
+    const original =
+      typeof currentValues?.hdr_formats === 'string'
+        ? currentValues.hdr_formats.split('|').filter(Boolean)
+        : Array.isArray(currentValues?.hdr_formats)
+          ? currentValues.hdr_formats
+          : []
     return JSON.stringify([...hdrFormats].sort()) !== JSON.stringify([...original].sort())
   }, [hdrFormats, currentValues?.hdr_formats])
 
