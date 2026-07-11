@@ -9,42 +9,7 @@ use std::sync::Arc;
 
 use mediafusion_api::{
     config::AppConfig,
-    jobs::{
-        JobRegistry,
-        handlers::{
-            acestream_bg::AcestreamBgScraper,
-            backfill_stream_metadata::BackfillStreamMetadata,
-            background_search::BackgroundSearch,
-            cleanup::Cleanup,
-            discover_prewarm::DiscoverPrewarm,
-            dmm_hashlist::DmmHashlistScraper,
-            imdb_dataset_import::ImdbDatasetImport,
-            integration_syncs::IntegrationSyncs,
-            jackett_feed::JackettFeedScraper,
-            m3u_import::M3uImport,
-            pending_moderation_reminder::PendingModerationReminder,
-            poster_nsfw_scan::PosterNsfwScan,
-            prowlarr_feed::ProwlarrFeedScraper,
-            rss_feed::RssFeedScraper,
-            spiders::{
-                arab_torrents::ArabTorrentsCrawl,
-                ext_to::{
-                    FormulaExtCrawl, MotogpExtCrawl, MoviesExtCrawl, UfcExtCrawl, WweExtCrawl,
-                },
-                eztv_rss::EztvRssCrawl,
-                registry_crawl::RegistryCrawl,
-                sport_video::SportVideoCrawl,
-                tamil_forums::{TamilBlastersCrawl, TamilMvCrawl},
-            },
-            telegram_bg::TelegramBgScraper,
-            update_seeders::UpdateSeeders,
-            update_tv_posters::UpdateTvPosters,
-            validate_tv::ValidateTvStreams,
-            xtream_import::XtreamImport,
-            youtube_bg::YoutubeBgScraper,
-        },
-        metrics::JobMetrics,
-    },
+    jobs::{JobRegistry, metrics::JobMetrics},
     state::{
         AppState, load_keyword_filter_cache, maybe_recompute_keyword_blocked,
         sync_keywords_from_file,
@@ -110,6 +75,14 @@ fn parse_args() -> CliArgs {
 #[tokio::main]
 async fn main() {
     let cli = parse_args();
+
+    if cli.list_jobs {
+        let mut reg = JobRegistry::new();
+        reg.register_all_handlers();
+        reg.list_queues();
+        return;
+    }
+
     let config = AppConfig::from_env();
 
     mediafusion_api::util::telemetry::init(None);
@@ -201,49 +174,8 @@ async fn main() {
         cancel.clone(),
     );
 
-    let mut reg = JobRegistry::new(Arc::clone(&state));
-
-    // Non-Scrapy background tasks
-    reg.register(Arc::new(BackgroundSearch));
-    reg.register(Arc::new(ProwlarrFeedScraper));
-    reg.register(Arc::new(JackettFeedScraper));
-    reg.register(Arc::new(RssFeedScraper));
-    reg.register(Arc::new(DmmHashlistScraper));
-    reg.register(Arc::new(YoutubeBgScraper));
-    reg.register(Arc::new(AcestreamBgScraper));
-    reg.register(Arc::new(TelegramBgScraper));
-    reg.register(Arc::new(BackfillStreamMetadata));
-    reg.register(Arc::new(ValidateTvStreams));
-    reg.register(Arc::new(UpdateSeeders));
-    reg.register(Arc::new(UpdateTvPosters));
-    reg.register(Arc::new(PosterNsfwScan));
-    reg.register(Arc::new(DiscoverPrewarm));
-    reg.register(Arc::new(ImdbDatasetImport));
-    reg.register(Arc::new(Cleanup));
-    reg.register(Arc::new(IntegrationSyncs));
-    reg.register(Arc::new(PendingModerationReminder));
-    reg.register(Arc::new(M3uImport));
-    reg.register(Arc::new(XtreamImport));
-
-    // Spider handlers
-    reg.register(Arc::new(EztvRssCrawl));
-    reg.register(Arc::new(RegistryCrawl)); // covers bt4g, nyaa, animetosho, subsplease, animepahe, bt52, uindex, x1337, thepiratebay, rutor, limetorrents, yts
-    reg.register(Arc::new(TamilMvCrawl));
-    reg.register(Arc::new(TamilBlastersCrawl));
-    reg.register(Arc::new(FormulaExtCrawl));
-    reg.register(Arc::new(MotogpExtCrawl));
-    reg.register(Arc::new(WweExtCrawl));
-    reg.register(Arc::new(UfcExtCrawl));
-    reg.register(Arc::new(MoviesExtCrawl));
-    reg.register(Arc::new(SportVideoCrawl));
-    reg.register(Arc::new(ArabTorrentsCrawl));
-
-    // ── CLI one-shot modes ────────────────────────────────────────────────────
-
-    if cli.list_jobs {
-        reg.list_queues();
-        return;
-    }
+    let mut reg = JobRegistry::with_state(Arc::clone(&state));
+    reg.register_all_handlers();
 
     if let Some(ref queue) = cli.run_job {
         info!(queue, args = %cli.args, "running job once (inline)");

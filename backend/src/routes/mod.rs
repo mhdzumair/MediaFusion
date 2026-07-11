@@ -869,7 +869,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         // ServeDir serves real files (assets, etc.) directly; unmatched paths fall
         // back to index.html so React Router handles client-side navigation.
         let spa_service = ServeDir::new(&frontend_dist_dir).fallback(ServeFile::new(&index_html));
-        axum::Router::<()>::new().nest_service("/", spa_service)
+        axum::Router::<()>::new().fallback_service(spa_service)
     };
 
     Router::new()
