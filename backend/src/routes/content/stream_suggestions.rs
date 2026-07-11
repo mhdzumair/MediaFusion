@@ -618,9 +618,7 @@ async fn resolve_target_media_id(
         }
     }
 
-    let Some(ctx) = fetch_ctx else {
-        return None;
-    };
+    let ctx = fetch_ctx?;
 
     let fetch_type = media_type.unwrap_or("movie");
     crate::scrapers::media_resolve::ensure_media_for_import(

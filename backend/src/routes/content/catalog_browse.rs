@@ -1168,12 +1168,8 @@ pub async fn get_media_streams(
 
     // MediaFlow configuration for web browser playback.
     // web_playback_enabled is true only when MediaFlow is configured with enable_web_playback.
-    let mediaflow_web_config = ud.mediaflow_config.as_ref().and_then(|m| {
-        if m.enable_web_playback && m.proxy_url.as_deref().filter(|s| !s.is_empty()).is_some() {
-            Some(m)
-        } else {
-            None
-        }
+    let mediaflow_web_config = ud.mediaflow_config.as_ref().filter(|m| {
+        m.enable_web_playback && m.proxy_url.as_deref().is_some_and(|s| !s.is_empty())
     });
     let web_playback_enabled = mediaflow_web_config.is_some();
     let season = effective_season;
