@@ -1585,7 +1585,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "episodes",
-        rei(r"^\[[^\u{005D}]+\](?:[^\-]|-(?!\s))+[. ]+-[. ]+(\d{1,4})[. ]+(?=\W)"),
+        rei(r"(?<=^\[[^\u{005D}]+\].+?[. ])-[. ]+(\d{1,4})[. ]+(?=\W)"),
         array(arc(tr_integer)),
         Opts::defaults().with_remove(true),
     );

@@ -61,6 +61,70 @@ pub async fn find_or_create_media_with_anime(
     anime_source_order: &[String],
     metadata_primary_source: &str,
 ) -> Option<MediaEntry> {
+    find_or_create_media_inner(
+        pool,
+        http,
+        title,
+        year,
+        is_series,
+        catalog_ids,
+        tmdb_api_key,
+        cinemeta_fallback_enabled,
+        anime_source_order,
+        metadata_primary_source,
+        false,
+    )
+    .await
+}
+
+/// Like `find_or_create_media_with_anime`, but never creates a title-only stub
+/// when DB and external lookups (TMDB/Cinemeta/anime providers) all fail to
+/// confidently match — the item is skipped (`None`) instead. Used by the RSS
+/// scraper (see [`crate::scrapers::media_resolve::search_meta_for_dmm_hashlist`]
+/// for the equivalent DMM-side gate) so untrusted public feeds can't seed the
+/// catalog with junk media rows for non-movie/series content or unmapped titles.
+pub async fn find_or_create_media_strict(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    title: &str,
+    year: Option<i32>,
+    is_series: bool,
+    catalog_ids: &[&str],
+    tmdb_api_key: Option<&str>,
+    cinemeta_fallback_enabled: bool,
+    anime_source_order: &[String],
+    metadata_primary_source: &str,
+) -> Option<MediaEntry> {
+    find_or_create_media_inner(
+        pool,
+        http,
+        title,
+        year,
+        is_series,
+        catalog_ids,
+        tmdb_api_key,
+        cinemeta_fallback_enabled,
+        anime_source_order,
+        metadata_primary_source,
+        true,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn find_or_create_media_inner(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    title: &str,
+    year: Option<i32>,
+    is_series: bool,
+    catalog_ids: &[&str],
+    tmdb_api_key: Option<&str>,
+    cinemeta_fallback_enabled: bool,
+    anime_source_order: &[String],
+    metadata_primary_source: &str,
+    strict: bool,
+) -> Option<MediaEntry> {
     let media_type = if is_series {
         MediaType::Series
     } else {
@@ -231,7 +295,13 @@ pub async fn find_or_create_media_with_anime(
         });
     }
 
-    // 4. No external match — create a minimal stub so the stream is not lost.
+    // 4. No external match — in strict mode, skip rather than creating junk.
+    if strict {
+        debug!("media_resolve: strict mode — no confident match for '{title}', skipping");
+        return None;
+    }
+
+    // No external match — create a minimal stub so the stream is not lost.
     let stub = crate::db::NormalizedMetadata {
         media_type,
         title: title.to_string(),

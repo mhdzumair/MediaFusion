@@ -61,7 +61,7 @@ pub use metadata_model::{
 };
 pub use metadata_store::{
     find_existing_media, link_genre, link_to_catalogs, store_external_id, store_media,
-    upsert_primary_image,
+    upsert_primary_image, upsert_series_episode,
 };
 pub use stream_links::{
     link_stream_audio_channels, link_stream_audio_formats, link_stream_hdr_formats,

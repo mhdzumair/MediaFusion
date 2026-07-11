@@ -180,6 +180,8 @@ services:
       - CONCURRENT=4
       - TIMEOUT=120000
       - ENABLE_CORS=true
+    ports:
+      - "3000:3000"
     restart: unless-stopped
     logging:
       driver: "json-file"

@@ -1051,7 +1051,10 @@ pub fn racing_session_episode(session_or_name: &str) -> Option<(i32, String)> {
             "Free Practice 3",
         ),
         (&["qualifying", "quali"], 4, "Qualifying"),
-        (&["grand prix", "race", " gp "], 5, "Race"),
+        // "weekend" covers full-weekend bundle releases (no specific session
+        // named) — grouped under the same slot as an unspecified "Grand Prix"
+        // upload, since neither names a single session.
+        (&["grand prix", "race", " gp ", "weekend"], 5, "Race"),
     ];
     let padded = format!(" {s} ");
     for (keywords, episode, title) in table {
@@ -1156,6 +1159,8 @@ mod racing_tests {
         assert_eq!(ep("Sprint"), (3, "Sprint".to_string()));
         // "Grand Prix" without a session word is the race.
         assert_eq!(ep("Canadian Grand Prix"), (5, "Race".to_string()));
+        // Full-weekend bundle release with no named session.
+        assert_eq!(ep("Formula 2 British Weekend"), (5, "Race".to_string()));
         // Unknown.
         assert!(racing_session_episode("Pit Lane Channel").is_none());
     }

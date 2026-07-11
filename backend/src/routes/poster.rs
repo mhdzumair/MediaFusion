@@ -50,6 +50,8 @@ pub async fn handler(
                 meta.imdb_rating,
                 meta.is_add_title,
                 meta.title.as_deref(),
+                &media_type,
+                meta.year,
             )
             .await
         {
@@ -112,6 +114,8 @@ async fn serve_event_poster(state: &AppState, event_id: &str, cache_key: &str) -
         imdb_rating,
         is_add_title,
         title.as_deref(),
+        "tv",
+        None,
     )
     .await
     {
@@ -283,6 +287,8 @@ async fn fetch_annotate_cache(
     imdb_rating: Option<f32>,
     is_add_title: bool,
     title: Option<&str>,
+    media_type: &str,
+    year: Option<i32>,
 ) -> Option<Vec<u8>> {
     let resp = state
         .http
@@ -316,6 +322,8 @@ async fn fetch_annotate_cache(
         imdb_rating,
         title: title.map(str::to_string),
         is_add_title,
+        media_type: media_type.to_string(),
+        year,
     };
     let raw_bytes_clone = raw_bytes.to_vec();
     let annotated =

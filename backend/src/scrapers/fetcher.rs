@@ -11,6 +11,10 @@ pub struct FetchResult {
     /// Cookies returned by the server (or by Byparr after solving a CF challenge).
     /// Each entry is `(name, value)`.
     pub cookies: Vec<(String, String)>,
+    /// User-Agent the fetch was made with (the exact browser fingerprint that
+    /// earned the cookies above — CF revalidates this on later requests, so
+    /// callers reusing `cookies` elsewhere must also replay this UA).
+    pub user_agent: String,
 }
 
 static CF_MARKERS: &[&str] = &[
@@ -59,6 +63,7 @@ pub async fn fetch_plain(client: &Client, url: &str) -> Option<FetchResult> {
         html,
         final_url,
         cookies: vec![],
+        user_agent: String::new(),
     })
 }
 
@@ -117,69 +122,18 @@ pub async fn fetch_byparr(client: &Client, byparr_url: &str, url: &str) -> Optio
         })
         .unwrap_or_default();
 
+    let user_agent = solution
+        .get("userAgent")
+        .and_then(|u| u.as_str())
+        .unwrap_or_default()
+        .to_string();
+
     Some(FetchResult {
         html,
         final_url,
         cookies,
+        user_agent,
     })
-}
-
-/// POST through byparr (FlareSolverr `request.post`) with form-encoded data.
-/// `cookies` are injected into the browser before the request, allowing the
-/// browser session to carry PHPSESSID and other site cookies.
-/// Returns the response body as a string, or None on failure.
-pub async fn post_byparr(
-    client: &Client,
-    byparr_url: &str,
-    url: &str,
-    post_data: &str,
-    cookies: &[(String, String)],
-) -> Option<String> {
-    #[derive(serde::Serialize)]
-    struct ByparrCookie<'a> {
-        name: &'a str,
-        value: &'a str,
-    }
-
-    #[derive(serde::Serialize)]
-    struct ByparrPostReq<'a> {
-        cmd: &'a str,
-        url: &'a str,
-        #[serde(rename = "postData")]
-        post_data: &'a str,
-        #[serde(rename = "maxTimeout")]
-        max_timeout: u64,
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        cookies: Vec<ByparrCookie<'a>>,
-    }
-
-    let body = ByparrPostReq {
-        cmd: "request.post",
-        url,
-        post_data,
-        max_timeout: 60_000,
-        cookies: cookies
-            .iter()
-            .map(|(k, v)| ByparrCookie { name: k, value: v })
-            .collect(),
-    };
-
-    let resp: serde_json::Value = client
-        .post(format!("{byparr_url}/v1"))
-        .json(&body)
-        .timeout(std::time::Duration::from_secs(65))
-        .send()
-        .await
-        .ok()?
-        .json()
-        .await
-        .ok()?;
-
-    resp.get("solution")
-        .and_then(|s| s.get("response"))
-        .and_then(|r| r.as_str())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
 }
 
 /// Fetch a page with CF bypass logic.

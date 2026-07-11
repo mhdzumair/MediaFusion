@@ -3,10 +3,33 @@ use sqlx::PgPool;
 use tracing::warn;
 
 use super::metadata_model::{
-    NormalizedCastMember, NormalizedCrewMember, NormalizedMetadata, NormalizedRating,
-    NormalizedSeason, NormalizedTrailer, StoreMediaOpts,
+    NormalizedCastMember, NormalizedCrewMember, NormalizedEpisode, NormalizedMetadata,
+    NormalizedRating, NormalizedSeason, NormalizedTrailer, StoreMediaOpts,
 };
 use super::types::{MediaId, MediaType};
+
+/// Upsert a single season/episode row for a series that has no external
+/// metadata provider (e.g. a sports "stub" series). Without this, `episode`
+/// stays empty even though `file_media_link` correctly points at the right
+/// season/episode, so the Stremio "videos" list for the series renders empty.
+pub async fn upsert_series_episode(
+    pool: &PgPool,
+    media_id: MediaId,
+    season_number: i32,
+    episode_number: i32,
+    title: &str,
+) -> Result<(), sqlx::Error> {
+    let season = NormalizedSeason {
+        season_number,
+        episodes: vec![NormalizedEpisode {
+            episode_number,
+            title: title.to_string(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    upsert_series(pool, media_id, std::slice::from_ref(&season), false, None).await
+}
 
 /// Idempotent find-or-create media + linked rows. On existing media, COALESCE-updates
 /// scalar fields and upserts children (refresh mode uses the same path).

@@ -34,6 +34,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS trg_adult_genre_link ON media_genre_link;
 CREATE TRIGGER trg_adult_genre_link
     AFTER INSERT ON media_genre_link
     FOR EACH ROW EXECUTE FUNCTION propagate_adult_genre();

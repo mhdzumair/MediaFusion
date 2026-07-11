@@ -96,6 +96,11 @@ pub struct AnnotateParams {
     pub imdb_rating: Option<f32>,
     pub title: Option<String>,
     pub is_add_title: bool,
+    /// Wire media type ("movie"/"series"/…) — drives the kicker label when
+    /// `is_add_title` is set. Defaults to "MEDIA" when empty.
+    pub media_type: String,
+    /// Release year — shown alongside the title when `is_add_title` is set.
+    pub year: Option<i32>,
 }
 
 /// Annotate a JPEG poster image.
@@ -111,12 +116,20 @@ pub fn annotate(
     if let Some(rating) = params.imdb_rating {
         add_imdb_badge(&mut canvas, rating);
     }
-    add_watermark(&mut canvas);
-    if params.is_add_title
-        && let Some(ref t) = params.title
-        && !t.is_empty()
-    {
-        add_title(&mut canvas, t);
+
+    let has_title_overlay =
+        params.is_add_title && params.title.as_ref().is_some_and(|t| !t.is_empty());
+
+    if has_title_overlay {
+        // The branded title block below already draws a "MediaFusion"
+        // wordmark in its kicker bar — skip the small PNG watermark so we
+        // don't brand the poster twice.
+        let title = params.title.as_deref().unwrap_or_default();
+        apply_bottom_vignette(&mut canvas);
+        let accent = accent_from_title(title);
+        draw_branded_title_block(&mut canvas, title, &params.media_type, params.year, accent);
+    } else {
+        add_watermark(&mut canvas);
     }
 
     let rgb = DynamicImage::ImageRgba8(canvas).to_rgb8();
@@ -138,11 +151,7 @@ pub fn generate_placeholder(
     const H: u32 = 450;
 
     // ── Colour palette (FNV hash of title → hue) ────────────────────────────
-    let mut hash: u32 = 2_166_136_261;
-    for byte in title.bytes() {
-        hash = (hash ^ byte as u32).wrapping_mul(16_777_619);
-    }
-    let hue_deg = (hash & 0xFFFF) as f32 / 65536.0 * 360.0;
+    let hue_deg = hue_from_title(title);
     let bg_top = hsl_to_rgb(hue_deg / 360.0, 0.34, 0.13);
     let bg_bot = hsl_to_rgb(((hue_deg + 22.0) % 360.0) / 360.0, 0.40, 0.24);
     let accent = hsl_to_rgb(hue_deg / 360.0, 0.72, 0.62);
@@ -165,27 +174,9 @@ pub fn generate_placeholder(
         }
     }
 
-    // ── 2. Bottom vignette ───────────────────────────────────────────────────
-    for y in 0..H {
-        let frac = y as f32 / H as f32;
-        let alpha: f32 = if frac < 0.38 {
-            0.0
-        } else if frac < 0.72 {
-            (frac - 0.38) / (0.72 - 0.38) * 0.30
-        } else {
-            0.30 + (frac - 0.72) / (1.0 - 0.72) * 0.32
-        };
-        if alpha > 0.0 {
-            for x in 0..W {
-                let p = canvas.get_pixel_mut(x, y);
-                p[0] = (p[0] as f32 * (1.0 - alpha)) as u8;
-                p[1] = (p[1] as f32 * (1.0 - alpha)) as u8;
-                p[2] = (p[2] as f32 * (1.0 - alpha)) as u8;
-            }
-        }
-    }
+    apply_bottom_vignette(&mut canvas);
 
-    // ── 3. Top-left radial sheen ─────────────────────────────────────────────
+    // ── Top-left radial sheen ─────────────────────────────────────────────
     let sheen_cx = W as f32 * 0.25;
     let sheen_cy = H as f32 * 0.08;
     let rx = W as f32 * 0.60;
@@ -203,7 +194,7 @@ pub fn generate_placeholder(
         }
     }
 
-    // ── Derived display values ───────────────────────────────────────────────
+    // ── Oversized ghost monogram (bottom-right bleed, 7% white) ─────────────
     let display = {
         let c = clean_placeholder_title(title);
         if c.trim().is_empty() {
@@ -213,10 +204,6 @@ pub fn generate_placeholder(
         }
     };
     let initials = placeholder_initials(&display);
-    let (season, episode) = parse_placeholder_se(&display);
-    let accent_rgba = Rgba([accent.0, accent.1, accent.2, 255]);
-
-    // ── 4. Oversized ghost monogram (bottom-right bleed, 7% white) ───────────
     let ghost_size = 230.0f32;
     let (ghost_w, ghost_h) = measure_text(&initials, Font::ArchivoBlack, ghost_size, None);
     let ghost_x = W as i32 - ghost_w as i32 + 14;
@@ -233,157 +220,7 @@ pub fn generate_placeholder(
         Rgba([255, 255, 255, 18]),
     );
 
-    // ── 5. Top bar: accent bar + kicker (left) | "MediaFusion" (right) ───────
-    let kicker = media_type_kicker(media_type);
-    let label_size = 14.0f32;
-    let top_y = 16i32;
-
-    // Accent bar: 18×3 px
-    for px in 22u32..40 {
-        for py in 24u32..27 {
-            if px < W && py < H {
-                canvas.put_pixel(px, py, accent_rgba);
-            }
-        }
-    }
-
-    draw_text_plain(
-        &mut canvas,
-        44,
-        top_y,
-        kicker,
-        Font::IbmPlexBold,
-        label_size,
-        None,
-        None,
-        Rgba([255, 255, 255, 209]),
-    );
-
-    // "Media" (dimmed) + "Fusion" (accent colour)
-    let media_w = measure_text("Media", Font::IbmPlexBold, label_size, None).0;
-    let fusion_w = measure_text("Fusion", Font::IbmPlexBold, label_size, None).0;
-    let mf_x = W as i32 - 22 - media_w as i32 - fusion_w as i32;
-    draw_text_plain(
-        &mut canvas,
-        mf_x,
-        top_y,
-        "Media",
-        Font::IbmPlexBold,
-        label_size,
-        None,
-        None,
-        Rgba([255, 255, 255, 107]),
-    );
-    draw_text_plain(
-        &mut canvas,
-        mf_x + media_w as i32,
-        top_y,
-        "Fusion",
-        Font::IbmPlexBold,
-        label_size,
-        None,
-        None,
-        accent_rgba,
-    );
-
-    // ── 7. Title anchored to bottom-left ─────────────────────────────────────
-    let white = Rgba([255u8, 255, 255, 255]);
-    // Font size by character count (Unicode-aware)
-    let title_size: f32 = match display.chars().count() {
-        0..=9 => 42.0,
-        10..=16 => 34.0,
-        17..=26 => 27.0,
-        _ => 22.0,
-    };
-    let title_max_w = (W - 44) as f32;
-    let (_, title_h) = measure_text(
-        &display,
-        Font::ArchivoExtraBold,
-        title_size,
-        Some(title_max_w),
-    );
-
-    let has_year = year.is_some();
-    let has_chip = season.is_some() && episode.is_some();
-    let meta_row_h = if has_year || has_chip { 26i32 } else { 0 };
-    let block_h = title_h as i32 + meta_row_h;
-    let ty = H as i32 - 22 - block_h;
-
-    draw_text_plain(
-        &mut canvas,
-        22,
-        ty,
-        &display,
-        Font::ArchivoExtraBold,
-        title_size,
-        Some(title_max_w),
-        None,
-        white,
-    );
-
-    // ── 8. Metadata row: year + S·E chip ─────────────────────────────────────
-    if has_year || has_chip {
-        let meta_y = ty + title_h as i32 + 13;
-        let mut mx = 22i32;
-
-        if let Some(y) = year {
-            let ys = y.to_string();
-            draw_text_plain(
-                &mut canvas,
-                mx,
-                meta_y + 2,
-                &ys,
-                Font::IbmPlexBold,
-                11.0,
-                None,
-                None,
-                Rgba([255, 255, 255, 168]),
-            );
-            mx += measure_text(&ys, Font::IbmPlexBold, 11.0, None).0 as i32 + 9;
-        }
-
-        if has_chip {
-            let chip_str = format!("S{:02} \u{00B7} E{:02}", season.unwrap(), episode.unwrap());
-            let chip_tw = measure_text(&chip_str, Font::IbmPlexBold, 9.5, None).0 as i32;
-            let pad = 8i32;
-            let chip_w = chip_tw + pad * 2;
-            let chip_h = 16i32;
-
-            blend_rect(
-                &mut canvas,
-                mx,
-                meta_y,
-                chip_w,
-                chip_h,
-                accent.0,
-                accent.1,
-                accent.2,
-                31,
-            );
-            outline_rect(
-                &mut canvas,
-                mx,
-                meta_y,
-                chip_w,
-                chip_h,
-                accent.0,
-                accent.1,
-                accent.2,
-                140,
-            );
-            draw_text_plain(
-                &mut canvas,
-                mx + pad,
-                meta_y + (chip_h - 10) / 2,
-                &chip_str,
-                Font::IbmPlexBold,
-                9.5,
-                None,
-                None,
-                accent_rgba,
-            );
-        }
-    }
+    draw_branded_title_block(&mut canvas, &display, media_type, year, accent);
 
     let rgb = DynamicImage::ImageRgba8(canvas).to_rgb8();
     let mut out = Cursor::new(Vec::new());
@@ -452,62 +289,6 @@ fn draw_text_plain(
     });
 }
 
-/// Draw shaped text with a 2-pixel pixel-outline for contrast (used on title overlays).
-fn draw_text_outlined(
-    canvas: &mut RgbaImage,
-    ox: i32,
-    oy: i32,
-    text: &str,
-    font: Font,
-    size: f32,
-    max_width: Option<f32>,
-    align: Option<Align>,
-    fill: Rgba<u8>,
-    outline: Rgba<u8>,
-) {
-    TL_TEXT.with_borrow_mut(|(fs, cache)| {
-        let attrs = font.attrs();
-        let mut buf = Buffer::new(fs, Metrics::new(size, size * 1.2));
-        buf.set_size(max_width, None);
-        buf.set_text(text, &attrs, Shaping::Advanced, align);
-        buf.shape_until_scroll(fs, false);
-
-        // Outline pass: draw at each ±2px offset
-        let outline_opacity = outline[3] as f32 / 255.0;
-        let co = CosColor::rgba(outline[0], outline[1], outline[2], 255);
-        const OW: i32 = 2;
-        for dx in -OW..=OW {
-            for dy in -OW..=OW {
-                if dx == 0 && dy == 0 {
-                    continue;
-                }
-                buf.draw(fs, cache, co, |px, py, _w, _h, c| {
-                    let a = (c.a() as f32 * outline_opacity) as u8;
-                    composite(
-                        canvas,
-                        ox + px + dx,
-                        oy + py + dy,
-                        CosColor::rgba(c.r(), c.g(), c.b(), a),
-                    );
-                });
-            }
-        }
-
-        // Fill pass
-        let fill_opacity = fill[3] as f32 / 255.0;
-        let cf = CosColor::rgba(fill[0], fill[1], fill[2], 255);
-        buf.draw(fs, cache, cf, |px, py, _w, _h, c| {
-            let a = (c.a() as f32 * fill_opacity) as u8;
-            composite(
-                canvas,
-                ox + px,
-                oy + py,
-                CosColor::rgba(c.r(), c.g(), c.b(), a),
-            );
-        });
-    });
-}
-
 /// Measure the pixel bounding box of shaped, word-wrapped text.
 /// Returns `(width, height)`.
 fn measure_text(text: &str, font: Font, size: f32, max_width: Option<f32>) -> (f32, f32) {
@@ -526,38 +307,6 @@ fn measure_text(text: &str, font: Font, size: f32, max_width: Option<f32>) -> (f
         }
         (w, h)
     })
-}
-
-/// Count the number of visual lines after wrapping at `max_width`.
-fn line_count(text: &str, font: Font, size: f32, max_width: f32) -> usize {
-    TL_TEXT.with_borrow_mut(|(fs, _)| {
-        let attrs = font.attrs();
-        let mut buf = Buffer::new(fs, Metrics::new(size, size * 1.2));
-        buf.set_size(Some(max_width), None);
-        buf.set_text(text, &attrs, Shaping::Advanced, None);
-        buf.shape_until_scroll(fs, false);
-        buf.layout_runs().count()
-    })
-}
-
-/// Binary search for the largest font size ≥ `min` at which `text` fits in
-/// `max_lines` lines when wrapped at `max_width`.
-fn fit_font_size(
-    text: &str,
-    font: Font,
-    max_width: f32,
-    max_lines: usize,
-    initial: f32,
-    min: f32,
-) -> f32 {
-    let mut size = initial;
-    while size > min {
-        if line_count(text, font, size, max_width) <= max_lines {
-            return size;
-        }
-        size -= 1.0;
-    }
-    min
 }
 
 // ─── IMDb badge ───────────────────────────────────────────────────────────────
@@ -627,31 +376,193 @@ fn add_watermark(canvas: &mut RgbaImage) {
     imageops::overlay(canvas, &wm, x, 10);
 }
 
-// ─── Title overlay ────────────────────────────────────────────────────────────
+// ─── Branded title block (shared by placeholders and real-photo overlays) ────
 
-fn add_title(canvas: &mut RgbaImage, title: &str) {
-    let max_w = canvas.width() as f32 - 20.0;
-    let size = fit_font_size(title, Font::IbmPlexBold, max_w, 3, 50.0, 20.0);
-    let (_, block_h) = measure_text(title, Font::IbmPlexBold, size, Some(max_w));
+/// Hue (in degrees) derived from an FNV hash of `title` — the shared basis
+/// for both the placeholder's gradient background and the accent colour used
+/// in the kicker bar / metadata chip, so the same title always produces the
+/// same palette.
+fn hue_from_title(title: &str) -> f32 {
+    let mut hash: u32 = 2_166_136_261;
+    for byte in title.bytes() {
+        hash = (hash ^ byte as u32).wrapping_mul(16_777_619);
+    }
+    (hash & 0xFFFF) as f32 / 65536.0 * 360.0
+}
 
-    let y_start = ((canvas.height() as f32 - block_h) / 2.0).max(0.0) as i32;
+fn accent_from_title(title: &str) -> (u8, u8, u8) {
+    hsl_to_rgb(hue_from_title(title) / 360.0, 0.72, 0.62)
+}
 
-    let sy = (y_start as f32 - block_h / 2.0).clamp(0.0, canvas.height() as f32 - 1.0) as u32;
-    let ey = (y_start as f32 + block_h * 1.5).clamp(0.0, canvas.height() as f32 - 1.0) as u32;
-    let (text_color, outline_color) = text_color_for_region(canvas, 0, sy, canvas.width(), ey);
+/// Darken the bottom portion of the canvas so title text stays legible
+/// regardless of what's underneath — a plain gradient (placeholder) or a
+/// real fetched photo (sports poster overlay).
+fn apply_bottom_vignette(canvas: &mut RgbaImage) {
+    let (w, h) = canvas.dimensions();
+    for y in 0..h {
+        let frac = y as f32 / h as f32;
+        let alpha: f32 = if frac < 0.38 {
+            0.0
+        } else if frac < 0.72 {
+            (frac - 0.38) / (0.72 - 0.38) * 0.30
+        } else {
+            0.30 + (frac - 0.72) / (1.0 - 0.72) * 0.32
+        };
+        if alpha > 0.0 {
+            for x in 0..w {
+                let p = canvas.get_pixel_mut(x, y);
+                p[0] = (p[0] as f32 * (1.0 - alpha)) as u8;
+                p[1] = (p[1] as f32 * (1.0 - alpha)) as u8;
+                p[2] = (p[2] as f32 * (1.0 - alpha)) as u8;
+            }
+        }
+    }
+}
 
-    draw_text_outlined(
+/// Draw the branded title block: top kicker bar (accent tick + media-type
+/// label + drawn "MediaFusion" wordmark) and a bottom-anchored title with an
+/// optional year / season-episode chip. Shared by `generate_placeholder`
+/// (over a synthetic gradient) and `annotate` (over a real fetched photo,
+/// e.g. curated sports artwork) so both render with the same visual language.
+fn draw_branded_title_block(
+    canvas: &mut RgbaImage,
+    title: &str,
+    media_type: &str,
+    year: Option<i32>,
+    accent: (u8, u8, u8),
+) {
+    let w = canvas.width();
+    let h = canvas.height();
+    let accent_rgba = Rgba([accent.0, accent.1, accent.2, 255]);
+    let (season, episode) = parse_placeholder_se(title);
+
+    // ── Top bar: accent tick + kicker (left) | "MediaFusion" (right) ────────
+    let kicker = media_type_kicker(media_type);
+    let label_size = 14.0f32;
+    let top_y = 16i32;
+
+    for px in 22u32..40 {
+        for py in 24u32..27 {
+            if px < w && py < h {
+                canvas.put_pixel(px, py, accent_rgba);
+            }
+        }
+    }
+
+    draw_text_plain(
         canvas,
-        10,
-        y_start,
-        title,
+        44,
+        top_y,
+        kicker,
         Font::IbmPlexBold,
-        size,
-        Some(max_w),
-        Some(Align::Center),
-        text_color,
-        outline_color,
+        label_size,
+        None,
+        None,
+        Rgba([255, 255, 255, 209]),
     );
+
+    let media_w = measure_text("Media", Font::IbmPlexBold, label_size, None).0;
+    let fusion_w = measure_text("Fusion", Font::IbmPlexBold, label_size, None).0;
+    let mf_x = w as i32 - 22 - media_w as i32 - fusion_w as i32;
+    draw_text_plain(
+        canvas,
+        mf_x,
+        top_y,
+        "Media",
+        Font::IbmPlexBold,
+        label_size,
+        None,
+        None,
+        Rgba([255, 255, 255, 107]),
+    );
+    draw_text_plain(
+        canvas,
+        mf_x + media_w as i32,
+        top_y,
+        "Fusion",
+        Font::IbmPlexBold,
+        label_size,
+        None,
+        None,
+        accent_rgba,
+    );
+
+    // ── Title anchored to bottom-left ────────────────────────────────────────
+    let white = Rgba([255u8, 255, 255, 255]);
+    let title_size: f32 = match title.chars().count() {
+        0..=9 => 42.0,
+        10..=16 => 34.0,
+        17..=26 => 27.0,
+        _ => 22.0,
+    };
+    let title_max_w = (w - 44) as f32;
+    let (_, title_h) = measure_text(title, Font::ArchivoExtraBold, title_size, Some(title_max_w));
+
+    let has_year = year.is_some();
+    let has_chip = season.is_some() && episode.is_some();
+    let meta_row_h = if has_year || has_chip { 26i32 } else { 0 };
+    let block_h = title_h as i32 + meta_row_h;
+    let ty = h as i32 - 22 - block_h;
+
+    draw_text_plain(
+        canvas,
+        22,
+        ty,
+        title,
+        Font::ArchivoExtraBold,
+        title_size,
+        Some(title_max_w),
+        None,
+        white,
+    );
+
+    // ── Metadata row: year + S·E chip ────────────────────────────────────────
+    if has_year || has_chip {
+        let meta_y = ty + title_h as i32 + 13;
+        let mut mx = 22i32;
+
+        if let Some(y) = year {
+            let ys = y.to_string();
+            draw_text_plain(
+                canvas,
+                mx,
+                meta_y + 2,
+                &ys,
+                Font::IbmPlexBold,
+                11.0,
+                None,
+                None,
+                Rgba([255, 255, 255, 168]),
+            );
+            mx += measure_text(&ys, Font::IbmPlexBold, 11.0, None).0 as i32 + 9;
+        }
+
+        if has_chip {
+            let chip_str = format!("S{:02} \u{00B7} E{:02}", season.unwrap(), episode.unwrap());
+            let chip_tw = measure_text(&chip_str, Font::IbmPlexBold, 9.5, None).0 as i32;
+            let pad = 8i32;
+            let chip_w = chip_tw + pad * 2;
+            let chip_h = 16i32;
+
+            blend_rect(
+                canvas, mx, meta_y, chip_w, chip_h, accent.0, accent.1, accent.2, 31,
+            );
+            outline_rect(
+                canvas, mx, meta_y, chip_w, chip_h, accent.0, accent.1, accent.2, 140,
+            );
+            draw_text_plain(
+                canvas,
+                mx + pad,
+                meta_y + (chip_h - 10) / 2,
+                &chip_str,
+                Font::IbmPlexBold,
+                9.5,
+                None,
+                None,
+                accent_rgba,
+            );
+        }
+    }
 }
 
 // ─── Placeholder helpers ──────────────────────────────────────────────────────
@@ -810,39 +721,5 @@ fn outline_rect(
     for py in y..y + h {
         blend(x, py);
         blend(x + w - 1, py);
-    }
-}
-
-fn text_color_for_region(
-    img: &RgbaImage,
-    x: u32,
-    y_top: u32,
-    w: u32,
-    y_bot: u32,
-) -> (Rgba<u8>, Rgba<u8>) {
-    let mut r_sum = 0u64;
-    let mut g_sum = 0u64;
-    let mut b_sum = 0u64;
-    let mut count = 0u64;
-    let x_end = (x + w).min(img.width());
-    let y_end = y_bot.min(img.height());
-    for py in y_top..y_end {
-        for px in x..x_end {
-            let p = img.get_pixel(px, py);
-            r_sum += p[0] as u64;
-            g_sum += p[1] as u64;
-            b_sum += p[2] as u64;
-            count += 1;
-        }
-    }
-    if count == 0 {
-        return (Rgba([255, 255, 255, 255]), Rgba([0, 0, 0, 255]));
-    }
-    let brightness =
-        (0.299 * r_sum as f64 + 0.587 * g_sum as f64 + 0.114 * b_sum as f64) / count as f64;
-    if brightness > 128.0 {
-        (Rgba([0, 0, 0, 255]), Rgba([255, 255, 255, 255]))
-    } else {
-        (Rgba([255, 255, 255, 255]), Rgba([0, 0, 0, 255]))
     }
 }

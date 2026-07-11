@@ -15,16 +15,24 @@
 ///      On the detail page:
 ///        - `window.pageToken` and `window.csrfToken` are extracted via regex.
 ///        - A numeric torrent ID is read from `.download-btn-magnet[data-id]`.
-///        - POST `/ajax/getTorrentMagnet.php` with HMAC-SHA256 signature to get magnet.
+///        - POST `/ajax/getTorrentMagnet.php` with fields `torrent_id`,
+///          `download_type`, `timestamp`, `hmac` (SHA256 of
+///          `torrent_id|timestamp|pageToken`, despite the field's name it's a
+///          plain hash, not an HMAC) and `sessid` (the csrfToken value).
+///        - This endpoint re-validates the CF clearance cookie against the
+///          User-Agent that earned it, so a bare `reqwest` POST always gets
+///          re-challenged even with the right cookies. We replay the cookie
+///          jar + UA harvested from byparr's detail-page fetch through a
+///          real browserless Chrome instance (`BROWSERLESS_URL`), which
+///          passes because it's an actual browser, not a bare HTTP client.
 ///        - Fallback: legacy inline `magnet:?...` in HTML.
 ///   3. Build `ScrapedStream` and write via `stream_convert::write_back_torrents`.
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use hmac::{Hmac, KeyInit, Mac};
 use regex::Regex;
 use scraper::{Html, Selector};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -34,14 +42,12 @@ use crate::{
     },
     parser,
     scrapers::{
-        ScrapedStream, SearchMeta, StreamFile,
-        fetcher::{fetch_byparr, fetch_plain, post_byparr},
+        ScrapedStream, SearchMeta, StreamFile, browser,
+        fetcher::{fetch_byparr, fetch_plain},
         media_resolve, stream_convert,
     },
     util::{rate_limit, retry},
 };
-
-type HmacSha256 = Hmac<Sha256>;
 
 // ─── Regex for security tokens ────────────────────────────────────────────────
 
@@ -147,14 +153,19 @@ const MOVIES_TV_SPEC: CatalogSpec = CatalogSpec {
 
 // ─── HMAC helpers ─────────────────────────────────────────────────────────────
 
-/// Compute HMAC-SHA256(`torrent_id|ts|page_token`) as a lowercase hex string.
+/// Compute SHA256(`torrent_id|ts|page_token`) as a lowercase hex string,
+/// matching the site's `computeHMAC()` JS helper (a plain hash, not HMAC,
+/// despite the name — the page token is mixed into the hashed message
+/// rather than used as an HMAC key).
 fn compute_hmac(torrent_id: u64, ts: u64, page_token: &str) -> String {
     let message = format!("{torrent_id}|{ts}|{page_token}");
-    let mut mac =
-        HmacSha256::new_from_slice(page_token.as_bytes()).expect("HMAC key length is valid");
-    mac.update(message.as_bytes());
-    let result = mac.finalize().into_bytes();
-    result.iter().map(|b| format!("{b:02x}")).collect()
+    let mut hasher = Sha256::new();
+    hasher.update(message.as_bytes());
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 fn unix_ts() -> u64 {
@@ -316,9 +327,11 @@ async fn fetch_magnet(
     detail_url: &str,
     client: &reqwest::Client,
     byparr_url: &Option<String>,
+    browserless_url: &Option<String>,
 ) -> Option<String> {
-    // Fetch the full result (not just HTML) so we can reuse CF clearance cookies
-    // in the subsequent AJAX magnet request, which is also CF-protected.
+    // Fetch the full result (not just HTML) so we can reuse the CF clearance
+    // cookies (and the User-Agent that earned them) in the subsequent AJAX
+    // magnet request, which is also CF-protected.
     let detail_result = retry::with_retry(label, || {
         let url = detail_url.to_string();
         let client = client.clone();
@@ -337,6 +350,7 @@ async fn fetch_magnet(
     .await
     .ok()?;
     let detail_cookies = detail_result.cookies;
+    let detail_user_agent = detail_result.user_agent;
     let detail_html = detail_result.html;
 
     // Fast path: magnet is often embedded directly in the page (e.g. inside a
@@ -348,7 +362,7 @@ async fn fetch_magnet(
 
     // Try AJAX magnet endpoint as fallback.
     let (page_token, csrf) = extract_security_tokens(&detail_html);
-    if let (Some(pt), Some(_csrf)) = (page_token, csrf) {
+    if let (Some(pt), Some(csrf)) = (page_token, csrf) {
         // Extract numeric torrent ID — do this in a scoped block so that the
         // non-Send `Html` value is dropped before any `.await` point.
         let numeric_id: Option<u64> = {
@@ -371,90 +385,55 @@ async fn fetch_magnet(
         });
 
         if let Some(tid) = numeric_id {
-            let ts = unix_ts();
-            let sig = compute_hmac(tid, ts, &pt);
             let ajax_url = format!("{base_url}/ajax/getTorrentMagnet.php");
 
-            let body = serde_json::json!({
-                "torrent_id": tid,
-                "ts": ts,
-                "token": sig,
-            });
-
-            // Form-encoded body for byparr (FlareSolverr only supports form POST).
-            let form_data = format!(
-                "torrent_id={tid}&ts={ts}&token={}",
-                urlencoding::encode(&sig),
-            );
-
-            // Cookie header for direct reqwest fallback.
-            let cookie_header = detail_cookies
-                .iter()
-                .map(|(k, v)| format!("{k}={v}"))
-                .collect::<Vec<_>>()
-                .join("; ");
+            // Cloudflare re-validates the clearance cookie against the
+            // User-Agent that earned it, so a bare reqwest POST with the
+            // right cookies still gets re-challenged. Replay the cookie jar
+            // + UA through a real browserless Chrome instance instead —
+            // that passes because it's an actual browser executing the
+            // fetch(), not a bare HTTP client.
+            let Some(bl_url) = browserless_url else {
+                warn!(
+                    "{label}: BROWSERLESS_URL not configured — ext.to's magnet AJAX \
+                     endpoint requires replaying a CF-cleared cookie through a real \
+                     browser, which byparr/reqwest alone cannot do."
+                );
+                return extract_inline_magnet(&detail_html);
+            };
 
             if let Ok(magnet) = retry::with_retry(label, || {
                 let client = client.clone();
                 let ajax_url = ajax_url.clone();
-                let body = body.clone();
-                let form_data = form_data.clone();
                 let referer = detail_url.to_string();
-                let byparr_url = byparr_url.clone();
+                let bl_url = bl_url.clone();
                 let detail_cookies = detail_cookies.clone();
-                let cookie_header = cookie_header.clone();
+                let detail_user_agent = detail_user_agent.clone();
+                let pt = pt.clone();
+                let csrf = csrf.clone();
                 async move {
-                    // Use byparr with session cookies injected so CF is bypassed
-                    // AND the PHP session is valid in the same request.
-                    let raw = if let Some(ref bp_url) = byparr_url {
-                        if let Some(r) =
-                            post_byparr(&client, bp_url, &ajax_url, &form_data, &detail_cookies)
-                                .await
-                        {
-                            r
-                        } else {
-                            // byparr unavailable — try direct with cookies (may hit CF)
-                            let mut req = client
-                                .post(&ajax_url)
-                                .header("X-Requested-With", "XMLHttpRequest")
-                                .header("Referer", &referer);
-                            if !cookie_header.is_empty() {
-                                req = req.header("Cookie", &cookie_header);
-                            }
-                            req.json(&body)
-                                .timeout(std::time::Duration::from_secs(20))
-                                .send()
-                                .await
-                                .map_err(|e| e.to_string())?
-                                .text()
-                                .await
-                                .map_err(|e| e.to_string())?
-                        }
-                    } else {
-                        let mut req = client
-                            .post(&ajax_url)
-                            .header("X-Requested-With", "XMLHttpRequest")
-                            .header("Referer", &referer);
-                        if !cookie_header.is_empty() {
-                            req = req.header("Cookie", &cookie_header);
-                        }
-                        req.json(&body)
-                            .timeout(std::time::Duration::from_secs(20))
-                            .send()
-                            .await
-                            .map_err(|e| e.to_string())?
-                            .text()
-                            .await
-                            .map_err(|e| e.to_string())?
-                    };
+                    let ts = unix_ts();
+                    let sig = compute_hmac(tid, ts, &pt);
+                    let form_data = format!(
+                        "torrent_id={tid}&download_type=magnet&timestamp={ts}&hmac={}&sessid={}",
+                        urlencoding::encode(&sig),
+                        urlencoding::encode(&csrf),
+                    );
+
+                    let raw = browser::post_with_cookies_via_browser(
+                        &client,
+                        &bl_url,
+                        &referer,
+                        &ajax_url,
+                        &form_data,
+                        &detail_cookies,
+                        &detail_user_agent,
+                    )
+                    .await
+                    .ok_or_else(|| "browserless request failed".to_string())?;
+
                     debug!(label, ajax_response = %&raw[..raw.len().min(500)], "AJAX magnet response");
-                    // byparr wraps JSON responses in <html><body><pre>…</pre></body></html>
-                    let json_str = raw
-                        .split("<pre>")
-                        .nth(1)
-                        .and_then(|s| s.split("</pre>").next())
-                        .unwrap_or(&raw);
-                    let resp = serde_json::from_str::<serde_json::Value>(json_str)
+                    let resp = serde_json::from_str::<serde_json::Value>(&raw)
                         .map_err(|e| e.to_string())?;
 
                     if resp.get("success").and_then(|v| v.as_bool()) != Some(true) {
@@ -499,6 +478,7 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
     let base_url = format!("https://{domain}");
     let client = &ctx.state.http;
     let byparr_url = ctx.state.config.byparr_url.clone();
+    let browserless_url = ctx.state.config.browserless_url.clone();
     let pool = &ctx.state.pool;
     let rate_key = domain.clone();
 
@@ -552,8 +532,15 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
 
                 info!("{}: scraping \"{}\" — {detail_url}", spec.source, title);
 
-                let magnet =
-                    fetch_magnet(spec.source, &base_url, &detail_url, client, &byparr_url).await;
+                let magnet = fetch_magnet(
+                    spec.source,
+                    &base_url,
+                    &detail_url,
+                    client,
+                    &byparr_url,
+                    &browserless_url,
+                )
+                .await;
 
                 let Some(magnet) = magnet else {
                     warn!(
@@ -649,6 +636,20 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
 
                 if media_id > 0 {
                     media_resolve::link_to_catalogs(pool, media_id, &[spec.category]).await;
+                    // Sports stub series have no external metadata provider, so
+                    // `episode`/`season` rows never get created on their own —
+                    // without this, `file_media_link` points at the right
+                    // season/episode but the Stremio "videos" list stays empty.
+                    if let Some(f) = files.first() {
+                        let _ = crate::db::upsert_series_episode(
+                            pool,
+                            crate::db::MediaId(media_id),
+                            f.season_number,
+                            f.episode_number,
+                            &f.filename,
+                        )
+                        .await;
+                    }
                 }
 
                 let stream = ScrapedStream {

@@ -80,6 +80,145 @@ export default async ({ page, context }) => {
 };
 "#;
 
+/// Playwright function that replays a Cloudflare-cleared cookie jar (harvested
+/// elsewhere, e.g. via byparr) through browserless to make one authenticated
+/// same-origin AJAX POST.
+///
+/// Cloudflare revalidates the clearance cookie against the User-Agent that
+/// earned it, not the TLS fingerprint of the client presenting it — a bare
+/// HTTP client (curl/reqwest) fails this even with a matching UA because it
+/// isn't running real browser JS, but browserless's actual Chrome passes as
+/// long as its UA is spoofed to match. We navigate to `refererUrl` first so
+/// the in-page `fetch()` is same-origin (no CORS) and cookies apply cleanly.
+const POST_WITH_COOKIES_FUNCTION: &str = r#"
+export default async ({ page, context }) => {
+    const { refererUrl, ajaxUrl, postData, cookies, userAgent } = context;
+
+    await page.setUserAgent(userAgent);
+    await page.setCookie(...cookies);
+    await page.goto(refererUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    const result = await page.evaluate(async (url, body) => {
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body,
+            credentials: 'include',
+        });
+        return { status: resp.status, text: await resp.text() };
+    }, ajaxUrl, postData);
+
+    return result;
+};
+"#;
+
+/// Make an authenticated POST to `ajax_url` by replaying a cookie jar (and
+/// the User-Agent that earned it) through a real browserless Chrome instance.
+///
+/// # Parameters
+/// - `referer_url` – same-origin page to navigate to first, so the in-page
+///   `fetch()` isn't blocked by CORS
+/// - `cookies`      – `(name, value)` pairs to inject before navigating
+/// - `user_agent`   – must match the UA used when the cookies were obtained
+///
+/// Returns the response body text on success (regardless of HTTP status —
+/// callers inspect the body themselves), or `None` on transport failure.
+pub async fn post_with_cookies_via_browser(
+    client: &Client,
+    browserless_url: &str,
+    referer_url: &str,
+    ajax_url: &str,
+    post_data: &str,
+    cookies: &[(String, String)],
+    user_agent: &str,
+) -> Option<String> {
+    #[derive(serde::Serialize)]
+    struct BrowserCookie<'a> {
+        name: &'a str,
+        value: &'a str,
+        domain: &'a str,
+        path: &'a str,
+    }
+
+    let domain = referer_url
+        .split("://")
+        .nth(1)
+        .and_then(|s| s.split('/').next())
+        .unwrap_or_default();
+
+    let cookies: Vec<BrowserCookie> = cookies
+        .iter()
+        .map(|(name, value)| BrowserCookie {
+            name,
+            value,
+            domain,
+            path: "/",
+        })
+        .collect();
+
+    let endpoint = format!(
+        "{}/chromium/function",
+        browserless_url.trim_end_matches('/')
+    );
+
+    let body = serde_json::json!({
+        "code": POST_WITH_COOKIES_FUNCTION,
+        "context": {
+            "refererUrl": referer_url,
+            "ajaxUrl": ajax_url,
+            "postData": post_data,
+            "cookies": cookies,
+            "userAgent": user_agent,
+        },
+    });
+
+    debug!("browser: POST {endpoint} for {ajax_url}");
+
+    let resp = match client
+        .post(&endpoint)
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(60))
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "browser: request to browserless failed: {e}"
+            );
+            return None;
+        }
+    };
+
+    if !resp.status().is_success() {
+        warn!(
+            "browser: browserless returned HTTP {} for {ajax_url}",
+            resp.status()
+        );
+        return None;
+    }
+
+    let result: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| warn!("browser: failed to parse browserless response: {e}"))
+        .ok()?;
+
+    if let Some(err) = result.get("error") {
+        warn!("browser: page function errored for {ajax_url}: {err}");
+        return None;
+    }
+
+    result
+        .get("text")
+        .and_then(|t| t.as_str())
+        .map(String::from)
+}
+
 /// Download a binary file (e.g. `.torrent`) through a browserless v2 Chrome instance,
 /// solving any JavaScript bot challenge in the process.
 ///

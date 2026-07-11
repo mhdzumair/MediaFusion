@@ -404,7 +404,9 @@ fn extract_seeders(item: &RssItem, patterns: &Value) -> Option<i32> {
 
 use crate::scrapers::media_resolve::MediaEntry;
 
-/// Delegate to the shared media resolution module.
+/// Delegate to the shared media resolution module in strict mode: RSS feeds
+/// are untrusted, so unmatched titles are skipped rather than becoming junk
+/// stub media rows (see `media_resolve::find_or_create_media_strict`).
 async fn find_or_create_media(
     pool: &PgPool,
     http: &reqwest::Client,
@@ -415,7 +417,7 @@ async fn find_or_create_media(
     tmdb_api_key: Option<&str>,
     cinemeta_fallback_enabled: bool,
 ) -> Option<MediaEntry> {
-    crate::scrapers::media_resolve::find_or_create_media(
+    crate::scrapers::media_resolve::find_or_create_media_strict(
         pool,
         http,
         title,
@@ -424,6 +426,8 @@ async fn find_or_create_media(
         catalog_ids,
         tmdb_api_key,
         cinemeta_fallback_enabled,
+        &[],
+        "tmdb",
     )
     .await
 }
@@ -447,8 +451,21 @@ async fn upsert_rss_stream(
     torrent_file: Option<Vec<u8>>,
     announce_list: &[String],
 ) -> bool {
-    let season = parsed.seasons.first().copied();
-    let episode = parsed.episodes.first().copied();
+    let mut season = parsed.seasons.first().copied();
+    let mut episode = parsed.episodes.first().copied();
+    if is_series && (season.is_none() || episode.is_none()) {
+        // PTT missed season/episode (e.g. absolute-numbered anime releases, or
+        // a naming convention its patterns don't cover) — fall back to the
+        // dedicated episode detector before giving up. Absolute numbering has
+        // no season concept, so default to season 1 rather than dropping the
+        // episode number entirely.
+        if let Some(ep) = crate::parser::episode_detector::detect_episode(name, 1) {
+            season = season.or(Some(ep.season));
+            episode = episode.or(Some(ep.episode));
+        } else if episode.is_some() {
+            season = season.or(Some(1));
+        }
+    }
     let media_type = if is_series {
         MediaType::Series
     } else {
@@ -722,7 +739,11 @@ pub async fn scrape_feed(
                 "rss_feed_movies"
             };
             let catalogs: Vec<&str> = vec![rss_catalog];
-            let parsed_title = parsed.title.as_deref().unwrap_or(&title);
+            let parsed_title = parsed
+                .title
+                .as_deref()
+                .filter(|t| !t.is_empty())
+                .unwrap_or(&title);
 
             match find_or_create_media(
                 pool,
@@ -738,8 +759,11 @@ pub async fn scrape_feed(
             {
                 Some(m) => m,
                 None => {
-                    warn!("rss_scraper: could not find/create media for '{title}'");
-                    errors += 1;
+                    // Strict mode: no confident DB/TMDB/Cinemeta match — likely
+                    // non-movie/series content or an unmapped title. Skip rather
+                    // than counting as an error.
+                    debug!("rss_scraper: no confident media match for '{title}', skipping");
+                    skipped += 1;
                     continue;
                 }
             }
