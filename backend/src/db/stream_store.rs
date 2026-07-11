@@ -85,6 +85,14 @@ pub async fn store_torrent_stream(
             .await
             .ok();
         }
+        if let Some(ref uploader) = stream.base.uploader {
+            sqlx::query("UPDATE stream SET uploader = $1 WHERE id = $2")
+                .bind(uploader)
+                .bind(stream_id)
+                .execute(pool)
+                .await
+                .ok();
+        }
         return Ok(StoreStreamResult::AlreadyExists(StreamId(stream_id)));
     }
 
@@ -569,15 +577,12 @@ pub async fn upsert_torrent_files_by_hash(
         None => return Ok(()),
     };
 
-    let existing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stream_file WHERE stream_id = $1")
-        .bind(stream_id.0)
-        .fetch_one(pool)
-        .await?;
-
-    if existing > 0 {
-        return Ok(());
-    }
-
+    // Note: intentionally no "skip if any stream_file rows already exist" guard
+    // here. A stream may already have one or more files mapped (e.g. a scraper
+    // stub for a single episode of a multi-file torrent) while other episodes
+    // remain unmapped. `insert_stream_file`/`insert_file_media_link` upsert on
+    // (stream_id, file_index) / (file_id, media_id, season, episode), so
+    // re-running this for files that already exist is a no-op, not a duplicate.
     let mut txn = pool.begin().await?;
     let total_size: i64 = files.iter().map(|f| f.size).sum();
 
@@ -593,6 +598,27 @@ pub async fn upsert_torrent_files_by_hash(
             insert_stream_file(&mut *txn, stream_id, &normalized, f.size > 0).await?
             && let (Some(s), Some(e)) = (f.season, f.episode)
         {
+            // A scraper stub may have linked the wrong physical file to this
+            // episode before the debrid provider's real file list was known.
+            // Drop any other file on this stream still claiming the same slot.
+            sqlx::query(
+                "DELETE FROM file_media_link fml \
+                 USING stream_file sf \
+                 WHERE fml.file_id = sf.id \
+                   AND sf.stream_id = $1 \
+                   AND fml.media_id = $2 \
+                   AND fml.season_number = $3 \
+                   AND fml.episode_number = $4 \
+                   AND sf.file_index != $5",
+            )
+            .bind(stream_id.0)
+            .bind(media_id.0)
+            .bind(s)
+            .bind(e)
+            .bind(f.file_index)
+            .execute(&mut *txn)
+            .await?;
+
             insert_file_media_link(&mut *txn, file_id, media_id, s, e, None, false, link_source)
                 .await?;
         }
@@ -606,7 +632,40 @@ pub async fn upsert_torrent_files_by_hash(
     .execute(&mut *txn)
     .await?;
 
+    // Some scrapers store a `file_index: -1` sentinel for a single guessed
+    // episode when they can't verify its real position in a multi-file
+    // torrent (e.g. a race weekend release naming only one session, before
+    // the full file list is known). Once real (>= 0) indices are being
+    // written for this stream, that guess is superseded — drop it via
+    // cascade so it can't linger as a duplicate/ambiguous episode mapping.
+    if files.iter().any(|f| f.file_index >= 0) {
+        sqlx::query("DELETE FROM stream_file WHERE stream_id = $1 AND file_index = -1")
+            .bind(stream_id.0)
+            .execute(&mut *txn)
+            .await?;
+    }
+
     txn.commit().await?;
+
+    // Keep series episode metadata in sync with file_media_link rows so the
+    // Stremio/frontend episode list shows every mapped session, not just the
+    // one created at scrape time.
+    for f in files {
+        if let (Some(s), Some(e)) = (f.season, f.episode) {
+            let title = crate::parser::racing_file_episode(&f.filename)
+                .map(|(_, t)| t)
+                .unwrap_or_else(|| f.filename.clone());
+            if let Err(err) =
+                super::metadata_store::upsert_series_episode(pool, media_id, s, e, &title).await
+            {
+                tracing::warn!(
+                    "upsert_series_episode media_id={} s{s}e{e}: {err}",
+                    media_id.0
+                );
+            }
+        }
+    }
+
     Ok(())
 }
 

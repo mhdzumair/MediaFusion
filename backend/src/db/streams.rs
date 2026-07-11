@@ -588,6 +588,12 @@ pub struct StreamPlaybackInfo {
     pub filename: Option<String>,
     /// True when no stream_file rows exist at all (metadata not yet stored).
     pub has_no_files: bool,
+    /// Count of `stream_file` rows already stored for this stream (any
+    /// episode) — compared against the debrid provider's real file count at
+    /// playback time to detect a partially-mapped torrent (e.g. a scraper
+    /// stub for one episode of a multi-file torrent) even when this specific
+    /// episode already has *some* file mapped.
+    pub total_files: i64,
     /// Total torrent size in bytes (from torrent_stream.total_size), if known.
     pub size_bytes: Option<i64>,
     /// Raw .torrent bytes for private/semi-private streams (when stored in DB).
@@ -633,13 +639,15 @@ pub async fn fetch_stream_playback_info(
                 LEFT JOIN torrent_tracker_link ttl ON ttl.torrent_id = ts.id
                 LEFT JOIN tracker t ON t.id = ttl.tracker_id
                 LEFT JOIN stream_file sf2 ON sf2.stream_id = st.id
-                LEFT JOIN (
-                    SELECT sf_inner.id, sf_inner.stream_id, sf_inner.file_index, sf_inner.filename
+                LEFT JOIN LATERAL (
+                    SELECT sf_inner.file_index, sf_inner.filename
                     FROM stream_file sf_inner
                     JOIN file_media_link fml ON fml.file_id = sf_inner.id
-                    WHERE fml.season_number = $2 AND fml.episode_number = $3
+                    WHERE sf_inner.stream_id = st.id
+                      AND fml.season_number = $2
+                      AND fml.episode_number = $3
                     LIMIT 1
-                ) sf ON sf.stream_id = st.id
+                ) sf ON true
                 WHERE ts.info_hash = $1
                 GROUP BY st.id, st.name, sf.file_index, sf.filename, ts.total_size, ts.torrent_file, ts.torrent_type
                 "#,
@@ -688,12 +696,22 @@ pub async fn fetch_stream_playback_info(
     .unwrap_or(None)?;
 
     let total_files = row.4.unwrap_or(0);
+    // For season/episode requests, "no files" means this *specific* episode
+    // isn't mapped yet — not that the stream has zero stream_file rows overall.
+    // Otherwise a single stub file (e.g. one scraped episode of a multi-file
+    // torrent) would permanently block re-resolving the rest of the episodes.
+    let has_no_files = if season.is_some() && episode.is_some() {
+        row.3.is_none()
+    } else {
+        total_files == 0
+    };
     Some(StreamPlaybackInfo {
         name: row.0,
         announce_list: row.1.unwrap_or_default(),
         file_index: row.2,
         filename: row.3,
-        has_no_files: total_files == 0,
+        has_no_files,
+        total_files,
         size_bytes: row.5.filter(|&s| s > 0),
         torrent_file: row.6.filter(|bytes| !bytes.is_empty()),
         torrent_type: row.7,

@@ -331,6 +331,7 @@ async fn scrape_rss(
                 torrent_type: crate::db::TorrentType::Public,
                 torrent_file: None,
                 announce_list: vec![],
+                uploader: None,
             });
         }
     }
@@ -433,6 +434,7 @@ async fn scrape_subsplease(
                 torrent_type: crate::db::TorrentType::Public,
                 torrent_file: None,
                 announce_list: vec![],
+                uploader: None,
             });
         }
     }
@@ -657,6 +659,7 @@ async fn process_row_data(
         torrent_type: crate::db::TorrentType::Public,
         torrent_file: None,
         announce_list: vec![],
+        uploader: None,
     })
 }
 

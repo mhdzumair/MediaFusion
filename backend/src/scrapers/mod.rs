@@ -60,6 +60,8 @@ pub struct ScrapedStream {
     /// Raw `.torrent` bytes — only populated for private/semi-private indexers.
     pub torrent_file: Option<Vec<u8>>,
     pub announce_list: Vec<String>,
+    /// Uploader username when the source exposes it (e.g. ext.to profile links).
+    pub uploader: Option<String>,
 }
 
 impl ScrapedStream {
@@ -86,6 +88,7 @@ impl ScrapedStream {
             torrent_type: TorrentType::Public,
             torrent_file: None,
             announce_list: Vec::new(),
+            uploader: None,
         }
     }
 }

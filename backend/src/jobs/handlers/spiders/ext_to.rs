@@ -223,18 +223,19 @@ async fn fetch_html(
     .ok()
 }
 
-/// Parse listing-page rows.  Returns (title, detail_url, seeders_opt, size_opt).
+/// Parse listing-page rows.  Returns (title, detail_url, seeders_opt, size_opt, row_uploader).
 fn parse_listing_rows(
     html: &str,
     base_url: &str,
     is_profile_page: bool,
     keyword: &str,
-) -> Vec<(String, String, Option<i32>, Option<i64>)> {
+) -> Vec<(String, String, Option<i32>, Option<i64>, Option<String>)> {
     let doc = Html::parse_document(html);
 
     let row_sel = Selector::parse("table.table-striped.table-hover tbody tr").expect("row_sel");
     let browse_link_sel = Selector::parse("a.torrent-title-link").expect("browse_link_sel");
     let profile_link_sel = Selector::parse("td.text-left .float-left a").expect("profile_link_sel");
+    let user_link_sel = Selector::parse(r#"a[href*="/user/"]"#).expect("user_link_sel");
     let seeders_sel =
         Selector::parse("td .add-block-wrapper span.text-success").expect("seeders_sel");
     let size_wrapper_sel =
@@ -274,6 +275,12 @@ fn parse_listing_rows(
             format!("{base_url}{href}")
         };
 
+        let row_uploader = row
+            .select(&user_link_sel)
+            .next()
+            .and_then(|el| el.value().attr("href"))
+            .and_then(username_from_user_href);
+
         let seeders: Option<i32> = row
             .select(&seeders_sel)
             .next()
@@ -299,9 +306,94 @@ fn parse_listing_rows(
             }
         }
 
-        results.push((title, detail_url, seeders, size_bytes));
+        results.push((title, detail_url, seeders, size_bytes, row_uploader));
     }
     results
+}
+
+fn username_from_user_href(href: &str) -> Option<String> {
+    static USER_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let re = USER_RE.get_or_init(|| {
+        Regex::new(r"/user/([^/?#]+)/?").expect("ext.to user href regex")
+    });
+    re.captures(href)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().to_string())
+}
+
+fn extract_uploader_from_detail_html(html: &str) -> Option<String> {
+    let doc = Html::parse_document(html);
+    let selectors = [
+        r#"a.simple-user[href*="/user/"]"#,
+        r#".detail-torrent-poster-info a[href*="/user/"]"#,
+        r#"a[href*="/user/"]"#,
+    ];
+    for sel in selectors {
+        let Ok(parsed) = Selector::parse(sel) else {
+            continue;
+        };
+        if let Some(href) = doc
+            .select(&parsed)
+            .next()
+            .and_then(|el| el.value().attr("href"))
+            .and_then(username_from_user_href)
+        {
+            return Some(href);
+        }
+    }
+    None
+}
+
+fn infer_uploader_from_title(title: &str, category: &str) -> Option<String> {
+    if category != "formula_racing" {
+        return None;
+    }
+
+    static ALIAS_RE: std::sync::OnceLock<Vec<(Regex, &'static str)>> = std::sync::OnceLock::new();
+    let aliases = ALIAS_RE.get_or_init(|| {
+        [
+            ("egortech", "egortech"),
+            ("f1carreras", "F1Carreras"),
+            ("smcgill1969", "smcgill1969"),
+        ]
+        .into_iter()
+        .map(|(alias, canonical)| {
+            let pattern = format!(
+                r"(?i)(?:^|[.\-_\[\]\s]){}(?:$|[.\-_\[\]\s])",
+                regex::escape(alias)
+            );
+            (Regex::new(&pattern).expect("formula uploader alias regex"), canonical)
+        })
+        .collect()
+    });
+
+    for (re, canonical) in aliases {
+        if re.is_match(title) {
+            return Some((*canonical).to_string());
+        }
+    }
+    None
+}
+
+fn resolve_uploader(
+    page_uploader: Option<&str>,
+    row_uploader: Option<String>,
+    detail_uploader: Option<String>,
+    title: &str,
+    category: &str,
+) -> Option<String> {
+    let inferred = infer_uploader_from_title(title, category);
+    let detected = page_uploader
+        .map(str::to_string)
+        .or(row_uploader)
+        .or(detail_uploader);
+
+    if let (Some(inf), Some(det)) = (&inferred, &detected) {
+        if inf.to_lowercase() != det.to_lowercase() {
+            return inferred;
+        }
+    }
+    detected.or(inferred)
 }
 
 /// Very simple human-readable size parser: "1.23 GB" → bytes.
@@ -320,7 +412,7 @@ fn parse_size_to_bytes(s: &str) -> Option<i64> {
     Some((num * multiplier) as i64)
 }
 
-/// Fetch a detail page and extract the magnet link.
+/// Fetch a detail page and extract the magnet link plus uploader (when present).
 async fn fetch_magnet(
     label: &str,
     base_url: &str,
@@ -328,7 +420,7 @@ async fn fetch_magnet(
     client: &reqwest::Client,
     byparr_url: &Option<String>,
     browserless_url: &Option<String>,
-) -> Option<String> {
+) -> Option<(String, Option<String>)> {
     // Fetch the full result (not just HTML) so we can reuse the CF clearance
     // cookies (and the User-Agent that earned them) in the subsequent AJAX
     // magnet request, which is also CF-protected.
@@ -352,12 +444,13 @@ async fn fetch_magnet(
     let detail_cookies = detail_result.cookies;
     let detail_user_agent = detail_result.user_agent;
     let detail_html = detail_result.html;
+    let detail_uploader = extract_uploader_from_detail_html(&detail_html);
 
     // Fast path: magnet is often embedded directly in the page (e.g. inside a
     // webga.zx viewer href). Skip AJAX entirely when it's already there.
     if let Some(magnet) = extract_inline_magnet(&detail_html) {
         debug!(label, "found inline magnet, skipping AJAX");
-        return Some(magnet);
+        return Some((magnet, detail_uploader));
     }
 
     // Try AJAX magnet endpoint as fallback.
@@ -399,7 +492,7 @@ async fn fetch_magnet(
                      endpoint requires replaying a CF-cleared cookie through a real \
                      browser, which byparr/reqwest alone cannot do."
                 );
-                return extract_inline_magnet(&detail_html);
+                return extract_inline_magnet(&detail_html).map(|magnet| (magnet, detail_uploader.clone()));
             };
 
             if let Ok(magnet) = retry::with_retry(label, || {
@@ -462,13 +555,93 @@ async fn fetch_magnet(
             })
             .await
             {
-                return Some(magnet);
+                return Some((magnet, detail_uploader));
             }
         }
     }
 
     // Fallback: inline magnet in HTML.
-    extract_inline_magnet(&detail_html)
+    extract_inline_magnet(&detail_html).map(|magnet| (magnet, detail_uploader))
+}
+
+// ─── DHT file-list enrichment for race-weekend torrents ──────────────────────
+
+/// Whether `info_hash` already has more than one resolved `stream_file` row
+/// (i.e. a previous scrape or play-time resolution already mapped the real
+/// multi-session file list) — used to skip the DHT round-trip on repeat scrapes.
+async fn racing_files_already_resolved(pool: &sqlx::PgPool, info_hash: &str) -> bool {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM stream_file sf \
+         JOIN torrent_stream ts ON ts.stream_id = sf.stream_id \
+         WHERE ts.info_hash = $1",
+    )
+    .bind(info_hash)
+    .fetch_one(pool)
+    .await
+    .map(|c| c > 1)
+    .unwrap_or(false)
+}
+
+/// Race-weekend torrents are frequently bundled as a single multi-file
+/// torrent covering every session (FP1/FP2/FP3/Qualifying/Sprint/Race), but
+/// the title alone only tells us which *one* session this particular release
+/// is about. ext.to exposes no direct `.torrent` download link (only a
+/// magnet/hash AJAX endpoint), so to discover the real file list — and map
+/// every session bundled inside to its correct episode — we resolve the
+/// magnet's info-dict via DHT (BEP-9) instead of guessing a single
+/// `file_index: 0` stub.
+///
+/// Best-effort: DHT resolution can fail for freshly-seeded torrents with no
+/// peers yet, or simply time out. On any failure we fall back to `fallback`
+/// (the single session parsed from the title), so behavior never regresses.
+async fn resolve_racing_files_via_dht(
+    info_hash: &str,
+    proxy_url: Option<&str>,
+    fallback: Vec<StreamFile>,
+) -> Vec<StreamFile> {
+    let meta =
+        match crate::demagnetize::resolve(info_hash, std::time::Duration::from_secs(20), proxy_url)
+            .await
+        {
+            Ok(m) => m,
+            Err(e) => {
+                debug!("ext_to: demagnetize failed for {info_hash}: {e}");
+                return fallback;
+            }
+        };
+
+    let mut files: Vec<StreamFile> = meta
+        .files
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, f)| {
+            let base = std::path::Path::new(&f.path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&f.path);
+            if !parser::episode_detector::is_video_file(base) {
+                return None;
+            }
+            let (episode, _) = parser::racing_file_episode(base)?;
+            Some(StreamFile {
+                file_index: idx as i32,
+                filename: base.to_string(),
+                season_number: 1,
+                episode_number: episode,
+            })
+        })
+        .collect();
+
+    if files.is_empty() {
+        debug!("ext_to: no recognisable sessions in DHT file list for {info_hash}");
+        return fallback;
+    }
+    files.sort_by_key(|f| f.episode_number);
+    info!(
+        "ext_to: DHT-resolved {} session file(s) for {info_hash}",
+        files.len()
+    );
+    files
 }
 
 // ─── Main catalog scraper ─────────────────────────────────────────────────────
@@ -482,22 +655,27 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
     let pool = &ctx.state.pool;
     let rate_key = domain.clone();
 
-    let mut start_urls: Vec<(String, bool)> = Vec::new(); // (url, is_profile_page)
+    let mut start_urls: Vec<(String, bool, Option<&str>)> = Vec::new(); // (url, is_profile_page, profile_username)
 
     for username in spec.profiles {
-        start_urls.push((format!("{base_url}/user/{username}/uploads/"), true));
+        start_urls.push((
+            format!("{base_url}/user/{username}/uploads/"),
+            true,
+            Some(username),
+        ));
     }
     for query in spec.queries {
         let encoded = urlencoding::encode(query);
         start_urls.push((
             format!("{base_url}/browse/?q={encoded}&sort=added&order=desc"),
             false,
+            None,
         ));
     }
 
     let mut total_written = 0usize;
 
-    for (start_url, is_profile) in start_urls {
+    for (start_url, is_profile, page_uploader) in start_urls {
         let mut current_url = start_url.clone();
 
         loop {
@@ -524,7 +702,7 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
 
             info!("{}: {} rows on {current_url}", spec.source, rows.len());
 
-            for (title, detail_url, seeders, size) in rows {
+            for (title, detail_url, seeders, size, row_uploader) in rows {
                 if ctx.is_cancelled() {
                     return Err(JobError::Cancelled);
                 }
@@ -532,7 +710,7 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
 
                 info!("{}: scraping \"{}\" — {detail_url}", spec.source, title);
 
-                let magnet = fetch_magnet(
+                let magnet_result = fetch_magnet(
                     spec.source,
                     &base_url,
                     &detail_url,
@@ -542,13 +720,21 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                 )
                 .await;
 
-                let Some(magnet) = magnet else {
+                let Some((magnet, detail_uploader)) = magnet_result else {
                     warn!(
                         "{}: no magnet for \"{}\" ({detail_url})",
                         spec.source, title
                     );
                     continue;
                 };
+
+                let uploader = resolve_uploader(
+                    page_uploader,
+                    row_uploader,
+                    detail_uploader,
+                    &title,
+                    spec.category,
+                );
 
                 let info_hash = parser::extract_info_hash(&magnet).map(|h| h.to_lowercase());
                 let Some(info_hash) = info_hash else {
@@ -595,13 +781,32 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                 {
                     // Race weekend → series, one episode per session
                     // (FP1/FP2/FP3/Qualifying/Sprint/Race), ordered by
-                    // `racing_session_episode`'s slot number.
-                    let files = vec![StreamFile {
-                        file_index: 0,
+                    // `racing_session_episode`'s slot number. The torrent
+                    // itself may bundle every session as separate files —
+                    // resolve the real file list via DHT so all of them get
+                    // mapped, not just the session named in this release's title.
+                    //
+                    // `file_index: -1` marks this as an *unverified* guess (we
+                    // don't actually know this session's position in the real
+                    // torrent). Playback file-selection treats negative
+                    // indices as absent, so it won't lock onto the wrong file
+                    // the way a confident-but-wrong `0` would.
+                    let fallback = vec![StreamFile {
+                        file_index: -1,
                         filename: episode_title,
                         season_number: 1,
                         episode_number: episode,
                     }];
+                    let files = if racing_files_already_resolved(pool, &info_hash).await {
+                        fallback
+                    } else {
+                        resolve_racing_files_via_dht(
+                            &info_hash,
+                            ctx.state.config.requests_proxy_url.as_deref(),
+                            fallback,
+                        )
+                        .await
+                    };
                     (racing.series_title.clone(), racing.year, "series", files)
                 } else {
                     // Movie or PPV event.
@@ -610,13 +815,14 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                 };
 
                 info!(
-                    "{}: ✓ title=\"{}\" info_hash={} seeders={:?} size={:?} \
+                    "{}: ✓ title=\"{}\" info_hash={} seeders={:?} size={:?} uploader={:?} \
                      clean_title=\"{}\" year={:?} media_type={}",
                     spec.source,
                     title,
                     info_hash,
                     seeders,
                     size,
+                    uploader,
                     clean_title,
                     year,
                     effective_media_type,
@@ -640,7 +846,9 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                     // `episode`/`season` rows never get created on their own —
                     // without this, `file_media_link` points at the right
                     // season/episode but the Stremio "videos" list stays empty.
-                    if let Some(f) = files.first() {
+                    // Register every file (not just the first) so a DHT-resolved
+                    // multi-session torrent shows all its sessions, not just one.
+                    for f in &files {
                         let _ = crate::db::upsert_series_episode(
                             pool,
                             crate::db::MediaId(media_id),
@@ -651,6 +859,14 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                         .await;
                     }
                 }
+
+                // `store_torrent_stream` skips `link_torrent_to_media` entirely when
+                // the info_hash already exists in the DB (e.g. this torrent was
+                // already scraped once with just a single-session stub) — capture
+                // the DHT-resolved multi-session file list now so we can persist it
+                // via the idempotent by-hash upsert path below regardless of that.
+                let extra_files_to_persist = (files.len() > 1).then(|| files.clone());
+                let info_hash_for_upsert = info_hash.clone();
 
                 let stream = ScrapedStream {
                     info_hash,
@@ -664,6 +880,7 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                     torrent_type: crate::db::TorrentType::Public,
                     torrent_file: None,
                     announce_list: vec![],
+                    uploader,
                 };
 
                 let meta = SearchMeta {
@@ -681,6 +898,25 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                     None,
                 )
                 .await;
+
+                if let Some(extra_files) = extra_files_to_persist {
+                    let entries: Vec<crate::db::streams::TorrentFileEntry> = extra_files
+                        .iter()
+                        .map(|f| crate::db::streams::TorrentFileEntry {
+                            file_index: f.file_index,
+                            filename: f.filename.clone(),
+                            size: 0,
+                            season: Some(f.season_number),
+                            episode: Some(f.episode_number),
+                        })
+                        .collect();
+                    let _ = crate::db::streams::upsert_stream_files(
+                        pool,
+                        &info_hash_for_upsert,
+                        &entries,
+                    )
+                    .await;
+                }
                 total_written += 1;
             }
 

@@ -26,7 +26,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    crypto, db, models::user_data::UserData, providers,
+    crypto, db, models::user_data::UserData, parser::episode_detector::is_video_file, providers,
     providers::torrents::metadata_update::ProviderFile, routes::playback_dedup,
     services::sync::spawn_playback_scrobble, state::AppState,
 };
@@ -282,12 +282,26 @@ async fn resolve(
 
     // 4. Check Redis cache, then deduplicate concurrent resolution.
     let cache_key = playback_cache_key(secret_str, info_hash, season, episode);
-    if let Some(cached) = get_playback_cache(&state.redis, &cache_key).await {
+    if let Some(cached) =
+        try_cached_playback_url(&state, &cache_key, info_hash, season, episode).await
+    {
         return Ok(cached);
     }
 
     match playback_dedup::prepare_resolve(&state.redis, &cache_key).await {
-        playback_dedup::DedupWaitResult::Cached(url) => return Ok(url),
+        playback_dedup::DedupWaitResult::Cached(url) => {
+            if playback_metadata_needs_refresh(&state.pool_ro, info_hash, season, episode).await {
+                tracing::info!(
+                    hash = %info_hash,
+                    season = ?season,
+                    episode = ?episode,
+                    "playback dedup cache bypassed — file metadata still looks like a scraper stub"
+                );
+                let _ = state.redis.del::<(), _>(&cache_key).await;
+            } else {
+                return Ok(url);
+            }
+        }
         playback_dedup::DedupWaitResult::TimedOut => {
             tracing::debug!(
                 provider = %provider_name,
@@ -295,7 +309,20 @@ async fn resolve(
                 "playback resolve timed out waiting for in-flight peer; retrying lock"
             );
             match playback_dedup::try_ready_after_wait(&state.redis, &cache_key).await {
-                playback_dedup::DedupWaitResult::Cached(url) => return Ok(url),
+                playback_dedup::DedupWaitResult::Cached(url) => {
+                    if playback_metadata_needs_refresh(
+                        &state.pool_ro,
+                        info_hash,
+                        season,
+                        episode,
+                    )
+                    .await
+                    {
+                        let _ = state.redis.del::<(), _>(&cache_key).await;
+                    } else {
+                        return Ok(url);
+                    }
+                }
                 playback_dedup::DedupWaitResult::ReadyToResolve => {}
                 playback_dedup::DedupWaitResult::TimedOut => {
                     return Err(playback_dedup::playback_resolve_timed_out());
@@ -309,7 +336,9 @@ async fn resolve(
         .await
         .ok_or_else(playback_dedup::playback_resolve_timed_out)?;
 
-    if let Some(cached) = get_playback_cache(&state.redis, &cache_key).await {
+    if let Some(cached) =
+        try_cached_playback_url(&state, &cache_key, info_hash, season, episode).await
+    {
         lock_guard.release().await;
         return Ok(cached);
     }
@@ -404,7 +433,6 @@ async fn resolve_playback_url(
         .ok_or_else(|| providers::ProviderError::api("Stream not found", "stream_not_found.mp4"))?;
 
     let resolved_filename = filename.or(stream_info.filename.as_deref());
-    let no_file_metadata = stream_info.has_no_files;
 
     // Build a MediaFlow forward transport when the user has a non-local proxy configured.
     // When the proxy URL is loopback/private the addon and MediaFlow share an IP, so
@@ -498,6 +526,7 @@ async fn resolve_playback_url(
                 episode,
                 ip_hint(true),
                 stream_info.torrent_file.as_deref(),
+                Some(stream_info.name.as_str()),
                 fwd,
             )
             .await?
@@ -678,8 +707,21 @@ async fn resolve_playback_url(
         }
     };
 
-    // If no file metadata in DB, store it in the background (future users benefit).
+    // Re-resolve and store file metadata in the background (future users benefit) when
+    // the DB's view of this torrent looks incomplete relative to what the provider just
+    // returned: this episode isn't mapped yet, its filename was never recorded, or the
+    // provider reports more files than we have stored (e.g. a scraper stub for a single
+    // episode of what's actually a multi-file torrent).
+    let no_file_metadata = stream_info.has_no_files
+        || stream_info.filename.is_none()
+        || provider_files.len() > stream_info.total_files as usize;
     if no_file_metadata && !provider_files.is_empty() {
+        tracing::info!(
+            hash = %info_hash,
+            provider_files = provider_files.len(),
+            stored_files = stream_info.total_files,
+            "spawning playback metadata enrichment"
+        );
         let pool = state.pool.clone();
         let redis = state.redis.clone();
         let hash = info_hash.to_string();
@@ -692,6 +734,25 @@ async fn resolve_playback_url(
                 &hash,
                 &files,
                 s,
+            )
+            .await;
+        });
+    } else if !provider_files.is_empty() {
+        tracing::debug!(
+            hash = %info_hash,
+            provider_files = provider_files.len(),
+            stored_files = stream_info.total_files,
+            no_file_metadata,
+            "playback metadata enrichment skipped"
+        );
+    }
+
+    if season.is_some() {
+        let pool = state.pool.clone();
+        let hash = info_hash.to_string();
+        tokio::spawn(async move {
+            providers::torrents::metadata_update::refresh_racing_episode_metadata(
+                &pool, &hash, season,
             )
             .await;
         });
@@ -858,6 +919,62 @@ fn playback_cache_key(
     hasher.update(raw.as_bytes());
     let hash = hex_encode(&hasher.finalize());
     format!("playback_url:{hash}")
+}
+
+async fn try_cached_playback_url(
+    state: &AppState,
+    cache_key: &str,
+    info_hash: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+) -> Option<String> {
+    let cached = get_playback_cache(&state.redis, cache_key).await?;
+    if playback_metadata_needs_refresh(&state.pool_ro, info_hash, season, episode).await {
+        tracing::info!(
+            hash = %info_hash,
+            season = ?season,
+            episode = ?episode,
+            "playback cache bypassed — file metadata still looks like a scraper stub"
+        );
+        let _ = state.redis.del::<(), _>(cache_key).await;
+        return None;
+    }
+    Some(cached)
+}
+
+/// True when the DB still has scraper-guessed file metadata that must be
+/// replaced by a debrid provider's real file list before a cached playback
+/// URL can be trusted (e.g. a single "Race" stub with no real filename).
+async fn playback_metadata_needs_refresh(
+    pool: &sqlx::PgPool,
+    info_hash: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+) -> bool {
+    let Some(info) = db::fetch_stream_playback_info(pool, info_hash, season, episode).await else {
+        return false;
+    };
+
+    // Series episode requests against a single mapped row whose filename is
+    // not a real on-disk video name (no extension — e.g. "Race", "Qualifying")
+    // are almost always scraper stubs for one session of a multi-file torrent.
+    if season.is_some() && episode.is_some() {
+        if info.total_files <= 1
+            && info
+                .filename
+                .as_ref()
+                .is_some_and(|name| !is_video_file(name))
+        {
+            return true;
+        }
+        // Episode not mapped for this stream while other files exist — force a
+        // fresh provider resolve so we can enrich metadata.
+        if info.has_no_files && info.total_files > 0 {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn build_magnet_link(info_hash: &str, announce_list: &[String]) -> String {

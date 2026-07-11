@@ -759,7 +759,17 @@ pub fn parse_sports_title(raw: &str) -> super::ParsedTitle {
         parsed.year = Some(y);
     }
 
+    // PTT does not map bare "UHD" (e.g. "Sky Sports F1 UHD") to a resolution.
+    if parsed.resolution.is_none() && uhd_resolution_re().is_match(raw) {
+        parsed.resolution = Some("2160p".into());
+    }
+
     parsed
+}
+
+fn uhd_resolution_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"(?i)\b(?:UHD|4K|2160p)\b").expect("uhd_resolution_re"))
 }
 
 /// Map a sports category key to its genre display name (mirrors scraper `category_to_genre`).
@@ -1025,8 +1035,58 @@ static RACING_SESSIONS: &[&str] = &[
 /// Using fixed slots keeps episode numbers stable across separate imports of the
 /// same Grand Prix (e.g. importing Qualifying first, then the Race later).
 /// Returns `None` when no known session is recognised.
+///
+/// Prefer [`racing_file_episode`] when mapping torrent *filenames* to episodes —
+/// it honours leading index prefixes (`01.`, `02.`, …) before falling back here.
 pub fn racing_session_episode(session_or_name: &str) -> Option<(i32, String)> {
-    let s = session_or_name.to_lowercase();
+    // Release filenames use dots as word separators (e.g. "Sprint.Qualifying",
+    // "Free.Practice") — normalise so keyword matching works the same as on
+    // human-readable titles with spaces.
+    let s = session_or_name.to_lowercase().replace('.', " ");
+
+    // Non-session "extras" some broadcasts release alongside the sessions
+    // themselves (press conferences, interviews, highlights reels, …). These
+    // titles/filenames often still mention the event name or bare "Grand
+    // Prix" in passing, which would otherwise fall through to the generic
+    // "Race" wildcard below and get misclassified as the actual race (e.g. a
+    // "British Grand Prix ... Press Conference" release is not the race).
+    // Reject them explicitly before the session table gets a chance to match.
+    const NON_SESSION_EXTRAS: &[&str] = &[
+        "press conference",
+        "interview",
+        "highlights",
+        "preview",
+        "review",
+        "paddock",
+        "grid walk",
+        "documentary",
+        "post race",
+        "post-race",
+        "pre race",
+        "pre-race",
+        "pitlane",
+        "pit lane",
+        "notebook",
+        "f1 show",
+        " ted ",
+    ];
+    if NON_SESSION_EXTRAS.iter().any(|kw| s.contains(kw)) {
+        return None;
+    }
+
+    // F2/F3 uploads often use bare "Practice" without a "Free" prefix.
+    if s.contains("practice")
+        && !s.contains("free practice")
+        && !s.contains("fp1")
+        && !s.contains("fp2")
+        && !s.contains("fp3")
+        && !s.contains("practice 1")
+        && !s.contains("practice 2")
+        && !s.contains("practice 3")
+    {
+        return Some((1, "Practice".to_string()));
+    }
+
     // Most-specific patterns first to avoid "qualifying"/"race" shadowing.
     let table: &[(&[&str], i32, &str)] = &[
         (
@@ -1051,6 +1111,15 @@ pub fn racing_session_episode(session_or_name: &str) -> Option<(i32, String)> {
             "Free Practice 3",
         ),
         (&["qualifying", "quali"], 4, "Qualifying"),
+        // Bare "free practice" without a session number (common in F1 release
+        // names like "Free.Practice.SkyF1HD") — only when FP2/FP3 didn't match.
+        (
+            &["free practice"],
+            1,
+            "Free Practice 1",
+        ),
+        (&["race two", "race 2"], 5, "Race Two"),
+        (&["race one", "race 1"], 4, "Race One"),
         // "weekend" covers full-weekend bundle releases (no specific session
         // named) — grouped under the same slot as an unspecified "Grand Prix"
         // upload, since neither names a single session.
@@ -1070,6 +1139,121 @@ pub fn racing_session_episode(session_or_name: &str) -> Option<(i32, String)> {
         }
     }
     None
+}
+
+/// Leading `NN.` index on bundled racing filenames (e.g. `01.Practice…`, `04.Race.Two…`).
+pub fn numbered_prefix_episode(filename: &str) -> Option<i32> {
+    let base = std::path::Path::new(filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(filename);
+    numbered_prefix_re()
+        .captures(base)
+        .and_then(|c| c.get(1))
+        .and_then(|m| m.as_str().parse::<i32>().ok())
+        .filter(|&n| n > 0)
+}
+
+fn numbered_prefix_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^(\d{1,3})\.").expect("numbered_prefix_re"))
+}
+
+/// Map a racing torrent *filename* to `(episode, display title)`.
+///
+/// Bundled F1/F2/F3 releases often prefix every file with a running index
+/// (`01.` … `10.`). When present, that index is the episode number and the
+/// fixed session-slot table (FP1=1, Qualifying=4, Race=5) is not used.
+pub fn racing_file_episode(filename: &str) -> Option<(i32, String)> {
+    if let Some(ep) = numbered_prefix_episode(filename) {
+        let title = racing_file_display_title(filename)
+            .or_else(|| racing_session_episode(filename).map(|(_, t)| t))
+            .unwrap_or_else(|| numbered_file_fallback_title(filename));
+        return Some((ep, title));
+    }
+    racing_session_episode(filename)
+}
+
+/// Human-readable episode label from a numbered racing filename (e.g.
+/// `01.F1…Drivers.Press.Conference…` → `"Drivers Press Conference"`).
+///
+/// Uses the trailing session/extra segment that [`parse_racing_title`] already
+/// extracts after the Grand Prix marker — the same approach as the Python
+/// `derive_sports_episode_title()` helper.
+pub fn racing_file_display_title(filename: &str) -> Option<String> {
+    let base = std::path::Path::new(filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(filename);
+    parse_racing_title(base)
+        .and_then(|r| r.session)
+        .map(|s| multi_space_re().replace_all(s.trim(), " ").into_owned())
+        .filter(|s| !s.is_empty())
+}
+
+/// Best-effort label when we have a numeric prefix but no session keyword.
+fn numbered_file_fallback_title(filename: &str) -> String {
+    if let Some(title) = racing_file_display_title(filename) {
+        return title;
+    }
+
+    let base = std::path::Path::new(filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(filename);
+    let stripped = numbered_prefix_re()
+        .replace(base, "")
+        .replace('.', " ");
+    // Drop technical tokens and racing metadata (year, round, league prefix).
+    let words: Vec<&str> = stripped
+        .split_whitespace()
+        .filter(|w| !is_racing_filename_noise(w))
+        .collect();
+    // Use the last few meaningful tokens (usually the session / extra name).
+    let tail: Vec<&str> = words.iter().copied().rev().take(5).collect();
+    if tail.is_empty() {
+        return format!("Episode {}", numbered_prefix_episode(filename).unwrap_or(0));
+    }
+    tail.into_iter()
+        .rev()
+        .map(title_case_word)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn is_racing_filename_noise(word: &str) -> bool {
+    let lower = word.to_lowercase();
+    if lower.eq_ignore_ascii_case("mkv") || lower.eq_ignore_ascii_case("mp4") {
+        return true;
+    }
+    if lower.ends_with('p')
+        && lower
+            .trim_end_matches(|c: char| c.is_ascii_alphabetic())
+            .chars()
+            .all(|c| c.is_ascii_digit())
+    {
+        return true;
+    }
+    if lower.len() == 4 && lower.chars().all(|c| c.is_ascii_digit()) {
+        return true;
+    }
+    if lower.len() <= 4
+        && lower.starts_with('r')
+        && lower[1..].chars().all(|c| c.is_ascii_digit())
+    {
+        return true;
+    }
+    matches!(
+        lower.as_str(),
+        "f1" | "f2" | "f3" | "formula" | "motogp" | "moto2" | "moto3"
+    ) || matches!(lower.as_str(), "grand" | "prix" | "british" | "skyf1hd" | "f1tv")
+}
+
+fn title_case_word(word: &str) -> String {
+    let mut c = word.chars();
+    c.next()
+        .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+        .unwrap_or_default()
 }
 
 /// Split a date-less title into `(event, session)` by detecting a trailing session keyword.
@@ -1163,6 +1347,110 @@ mod racing_tests {
         assert_eq!(ep("Formula 2 British Weekend"), (5, "Race".to_string()));
         // Unknown.
         assert!(racing_session_episode("Pit Lane Channel").is_none());
+        // Press conferences mention "Grand Prix" but are not the race session.
+        assert!(racing_session_episode(
+            "01.F1.2026.R09.British.Grand.Prix.Drivers.Press.Conference.SkyF1HD.1080P.mkv"
+        )
+        .is_none());
+        assert_eq!(
+            racing_session_episode(
+                "09.F1.2026.R09.British.Grand.Prix.Race.SkyF1HD.1080P.mkv"
+            ),
+            Some((5, "Race".to_string()))
+        );
+        assert_eq!(
+            racing_session_episode(
+                "04.F1.2026.R09.British.Grand.Prix.Sprint.Qualifying.SkyF1HD.1080P.mkv"
+            ),
+            Some((2, "Sprint Qualifying".to_string()))
+        );
+        assert_eq!(
+            racing_session_episode(
+                "03.F1.2026.R09.British.Grand.Prix.Free.Practice.SkyF1HD.1080P.mkv"
+            ),
+            Some((1, "Free Practice 1".to_string()))
+        );
+        assert_eq!(
+            racing_session_episode(
+                "07.F1.2026.R09.British.Grand.Prix.Qualifying.SkyF1HD.1080P.mkv"
+            ),
+            Some((4, "Qualifying".to_string()))
+        );
+        assert!(racing_session_episode(
+            "08.F1.2026.R09.British.Grand.Prix.Teds.Qualifying.Notebook.SkyF1HD.1080P.mkv"
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn numbered_prefix_episode_mapping() {
+        assert_eq!(numbered_prefix_episode("01.Formula.3.Practice.mkv"), Some(1));
+        assert_eq!(numbered_prefix_episode("04.Formula.3.Race.Two.mkv"), Some(4));
+        assert_eq!(numbered_prefix_episode("Race.mkv"), None);
+
+        assert_eq!(
+            racing_file_episode("02.Formula.3.2026.R05.British.Qualifying.SkyF1HD.1080P.mkv"),
+            Some((2, "Qualifying".to_string()))
+        );
+        assert_eq!(
+            racing_file_episode("01.Formula.2.2026.R07.British.Practice.SkyF1HD.1080P.mkv"),
+            Some((1, "Practice".to_string()))
+        );
+        assert_eq!(
+            racing_file_episode("Formula.2.2026.R07.British.Practice.SkyF1HD.1080P.mkv"),
+            Some((1, "Practice".to_string()))
+        );
+        assert_eq!(
+            racing_file_episode("03.Formula.3.2026.R05.British.Race.One.SkyF1HD.1080P.mkv"),
+            Some((3, "Race One".to_string()))
+        );
+        assert_eq!(
+            racing_file_episode("04.Formula.3.2026.R05.British.Race.Two.SkyF1HD.1080P.mkv"),
+            Some((4, "Race Two".to_string()))
+        );
+        // Numbered prefix wins over session-slot table (Qualifying would be slot 4).
+        assert_eq!(
+            racing_file_episode("02.F1.Qualifying.mkv").map(|(e, _)| e),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn numbered_prefix_f1_extra_titles() {
+        let cases = [
+            (
+                "01.F1.2026.R09.British.Grand.Prix.Drivers.Press.Conference.SkyF1HD.1080P.mkv",
+                1,
+                "Drivers Press Conference",
+            ),
+            (
+                "05.F1.2026.R09.British.Grand.Prix.Team.Principals.Press.Conference.SkyF1HD.1080P.mkv",
+                5,
+                "Team Principals Press Conference",
+            ),
+            (
+                "02.F1.2026.R09.British.Grand.Prix.F1.Show.SkyF1HD.1080P.mkv",
+                2,
+                "F1 Show",
+            ),
+            (
+                "08.F1.2026.R09.British.Grand.Prix.Teds.Qualifying.Notebook.SkyF1HD.1080P.mkv",
+                8,
+                "Teds Qualifying Notebook",
+            ),
+            (
+                "10.F1.2026.R09.British.Grand.Prix.Teds.Notebook.SkyF1HD.1080P.mkv",
+                10,
+                "Teds Notebook",
+            ),
+        ];
+        for (filename, ep, title) in cases {
+            let parsed = racing_file_episode(filename).unwrap_or_else(|| {
+                panic!("expected parse for {filename}")
+            });
+            assert_eq!(parsed.0, ep, "episode for {filename}");
+            assert_eq!(parsed.1, title, "title for {filename}");
+        }
     }
 }
 

@@ -211,6 +211,7 @@ impl JobHandler for ArabTorrentsCrawl {
                     announce_list: crate::scrapers::torrent_metadata::announce_list_from_magnet(
                         &item.magnet_link,
                     ),
+                    uploader: None,
                 };
 
                 let cfg = &ctx.state.config;

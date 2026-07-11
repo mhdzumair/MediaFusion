@@ -252,6 +252,7 @@ impl JobHandler for EztvRssCrawl {
                 torrent_type: crate::db::TorrentType::Public,
                 torrent_file: None,
                 announce_list: vec![],
+                uploader: None,
             };
 
             let cfg = &ctx.state.config;

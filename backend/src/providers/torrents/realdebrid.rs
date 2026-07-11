@@ -664,6 +664,7 @@ async fn create_download_link(
     bearer: &str,
     magnet: &str,
     torrent_info: Value,
+    release_name_hint: Option<&str>,
     filename: Option<&str>,
     season: Option<i32>,
     episode: Option<i32>,
@@ -693,9 +694,9 @@ async fn create_download_link(
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    let release_name = torrent_info
-        .get("filename")
-        .and_then(|v| v.as_str())
+    let release_name = release_name_hint
+        .filter(|s| !s.is_empty())
+        .or_else(|| torrent_info.get("filename").and_then(|v| v.as_str()))
         .unwrap_or("");
 
     let selected_idx =
@@ -813,6 +814,7 @@ pub async fn get_video_url(
     episode: Option<i32>,
     user_ip: Option<&str>,
     torrent_file: Option<&[u8]>,
+    release_name_hint: Option<&str>,
     forward: Option<&crate::providers::torrents::transport::MediaFlowForward>,
 ) -> Result<
     (
@@ -844,13 +846,22 @@ pub async fn get_video_url(
     // Check if torrent already exists in user's RD library
     let torrent_info = match find_torrent_by_hash(http, &bearer, info_hash).await? {
         Some(existing) => {
-            let status = existing
+            let torrent_id = existing
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let full_info = if torrent_id.is_empty() {
+                existing
+            } else {
+                get_torrent_info(http, &bearer, &torrent_id).await?
+            };
+            let status = full_info
                 .get("status")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             if matches!(status, "magnet_error" | "error" | "virus" | "dead") {
-                let torrent_id = existing.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                delete_torrent(http, &bearer, torrent_id).await.ok();
+                delete_torrent(http, &bearer, &torrent_id).await.ok();
                 add_new_torrent(
                     http,
                     &bearer,
@@ -862,7 +873,7 @@ pub async fn get_video_url(
                 )
                 .await?
             } else {
-                existing
+                full_info
             }
         }
         None => {
@@ -964,6 +975,7 @@ pub async fn get_video_url(
         &bearer,
         &magnet,
         torrent_info,
+        release_name_hint,
         filename,
         season,
         episode,

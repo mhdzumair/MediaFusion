@@ -1525,14 +1525,17 @@ pub async fn get_media_streams(
             let browser_url: Option<String> = raw_playback_url.as_deref().and_then(|raw| {
                 mediaflow_web_config.and_then(|mf| {
                     let proxy_url = mf.proxy_url.as_deref()?;
+                    let mut params = std::collections::BTreeMap::new();
+                    if let Some(ap) = mf.api_password.as_deref().filter(|s| !s.is_empty()) {
+                        params.insert("api_password".into(), ap.to_string());
+                    }
                     mediaflow::encode_mediaflow_proxy_url(
                         proxy_url,
                         "/proxy/stream",
                         Some(raw),
-                        std::collections::BTreeMap::new(),
+                        params,
                         None,
                         None,
-                        mf.api_password.as_deref(),
                     )
                     .ok()
                 })

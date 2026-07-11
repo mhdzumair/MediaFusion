@@ -33,8 +33,8 @@ pub async fn handler(
             Some(ref u) if !u.is_empty() => Some(u.clone()),
             // is_add_title = true: use full sports fallback (includes Other Sports catchall).
             _ if meta.is_add_title => resolve_sports_poster_url(&state, id).await,
-            // No stored poster: try a strict genre-matched sports poster (no catchall)
-            // so items with sports genres get a relevant poster even without is_add_title.
+            // No stored poster: try a strict catalog-matched sports poster (no catchall)
+            // so items with sports catalogs get a relevant poster even without is_add_title.
             None => resolve_sports_poster_strict(&state, id).await,
             _ => None,
         };
@@ -234,15 +234,15 @@ async fn resolve_poster_meta(state: &AppState, id: &str, media_type: &str) -> Op
     })
 }
 
-async fn fetch_genres(state: &AppState, id: &str) -> Vec<String> {
+async fn fetch_catalogs(state: &AppState, id: &str) -> Vec<String> {
     if let Some(num_str) = id.strip_prefix("mf:").or_else(|| id.strip_prefix("mf")) {
         let Ok(internal_id) = num_str.parse::<i32>() else {
             return vec![];
         };
         sqlx::query_scalar(
-            "SELECT g.name FROM genre g \
-             JOIN media_genre_link mgl ON mgl.genre_id = g.id \
-             WHERE mgl.media_id = $1",
+            "SELECT c.name FROM catalog c \
+             JOIN media_catalog_link mcl ON mcl.catalog_id = c.id \
+             WHERE mcl.media_id = $1",
         )
         .bind(internal_id)
         .fetch_all(&state.pool_ro)
@@ -250,9 +250,9 @@ async fn fetch_genres(state: &AppState, id: &str) -> Vec<String> {
         .unwrap_or_default()
     } else {
         sqlx::query_scalar(
-            "SELECT g.name FROM genre g \
-             JOIN media_genre_link mgl ON mgl.genre_id = g.id \
-             JOIN media_external_id meid ON meid.media_id = mgl.media_id \
+            "SELECT c.name FROM catalog c \
+             JOIN media_catalog_link mcl ON mcl.catalog_id = c.id \
+             JOIN media_external_id meid ON meid.media_id = mcl.media_id \
              WHERE meid.external_id = $1",
         )
         .bind(id)
@@ -262,18 +262,18 @@ async fn fetch_genres(state: &AppState, id: &str) -> Vec<String> {
     }
 }
 
-/// Full sports poster: genre-matched with "Other Sports"/"Sports" catchall.
+/// Full sports poster: catalog-matched with "Other Sports"/"Sports" catchall.
 /// Used when `is_add_title_to_poster = true`.
 async fn resolve_sports_poster_url(state: &AppState, id: &str) -> Option<String> {
-    let genres = fetch_genres(state, id).await;
-    crate::poster::sports::random_sports_poster(&genres)
+    let catalogs = fetch_catalogs(state, id).await;
+    crate::poster::sports::random_sports_poster_for_catalogs(&catalogs)
 }
 
-/// Strict sports poster: only matches if the item has an explicit sports genre.
+/// Strict sports poster: only matches if the item has an explicit sports catalog.
 /// No catchall — non-sports items receive `None` and fall through to 404.
 async fn resolve_sports_poster_strict(state: &AppState, id: &str) -> Option<String> {
-    let genres = fetch_genres(state, id).await;
-    crate::poster::sports::random_sports_poster_strict(&genres)
+    let catalogs = fetch_catalogs(state, id).await;
+    crate::poster::sports::random_sports_poster_strict_for_catalogs(&catalogs)
 }
 
 // ─── Fetch + annotate + cache ─────────────────────────────────────────────────

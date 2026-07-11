@@ -8,7 +8,10 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 use crate::{
-    parser::episode_detector::{detect_episode, is_video_file},
+    parser::{
+        episode_detector::{detect_episode, is_video_file},
+        parse_racing_title, racing_file_episode,
+    },
     providers::ProviderError,
     ptt,
 };
@@ -40,6 +43,16 @@ fn parse_season_episode(
     default_season: i32,
 ) -> Option<(i32, i32)> {
     let base = basename(filename);
+
+    // Numbered-prefix racing filenames must win over PTT / generic detectors —
+    // otherwise `01.Formula.2…` can be misread and episode 1 playback falls
+    // through to the first file in the torrent.
+    if parse_racing_title(torrent_name).is_some()
+        && let Some((episode, _)) = racing_file_episode(base)
+    {
+        return Some((default_season, episode));
+    }
+
     let parsed = ptt::parse_title(base);
     if let (Some(s), Some(e)) = (parsed.seasons.first(), parsed.episodes.first()) {
         return Some((*s, *e));
@@ -61,7 +74,19 @@ fn parse_season_episode(
         return Some((title_parsed.seasons[0], title_parsed.episodes[0]));
     }
 
-    detect_episode(base, default_season).map(|ep| (ep.season, ep.episode))
+    if let Some(ep) = detect_episode(base, default_season) {
+        return Some((ep.season, ep.episode));
+    }
+
+    // Race-weekend torrents label sessions by name (FP1/Qualifying/Race) rather
+    // than SxxExx. Only apply when the release title is a confirmed racing
+    // event — the keyword matcher is substring-based and would misfire on
+    // ordinary titles otherwise.
+    if parse_racing_title(torrent_name).is_some() {
+        return racing_file_episode(base).map(|(episode, _)| (default_season, episode));
+    }
+
+    None
 }
 
 fn date_str_regex() -> &'static Regex {
@@ -189,13 +214,6 @@ pub fn select_torrent_file_index(
         ));
     }
 
-    if let Some(fi) = file_index
-        && fi >= 0
-        && (fi as usize) < files.len()
-    {
-        return Ok(fi as usize);
-    }
-
     if let (Some(s), Some(e)) = (season, episode) {
         for f in &videos {
             if let Some((fs, fe)) = parse_season_episode(&f.name, torrent_name, s)
@@ -205,6 +223,18 @@ pub fn select_torrent_file_index(
                 return Ok(f.index);
             }
         }
+        // No filename reliably matched this season/episode. A caller-supplied
+        // `file_index` is still a useful fallback signal here, but it must
+        // never take priority over an actual filename-based season/episode
+        // match — scraper-guessed indices (e.g. a stub torrent with only one
+        // episode mapped) are otherwise indistinguishable from a verified
+        // index and would silently win, playing the wrong file.
+        if let Some(fi) = file_index
+            && fi >= 0
+            && (fi as usize) < files.len()
+        {
+            return Ok(fi as usize);
+        }
         if !videos.is_empty() {
             return Ok(videos[0].index);
         }
@@ -212,6 +242,13 @@ pub fn select_torrent_file_index(
             "Found video files but couldn't match season/episode",
             "episode_not_found.mp4",
         ));
+    }
+
+    if let Some(fi) = file_index
+        && fi >= 0
+        && (fi as usize) < files.len()
+    {
+        return Ok(fi as usize);
     }
 
     if let Some(air_date) = episode_air_date.filter(|d| !d.trim().is_empty()) {
@@ -407,6 +444,7 @@ pub fn select_usenet_file_index_with_options(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parser::racing_file_episode;
 
     fn entry(index: usize, name: &str, size: i64) -> FileEntry {
         FileEntry {
@@ -471,5 +509,134 @@ mod tests {
         let idx =
             select_torrent_file_index(&files, "Show", None, Some(1), Some(2), None, None).unwrap();
         assert_eq!(idx, 0);
+    }
+
+    #[test]
+    fn torrent_season_episode_match_wins_over_wrong_stub_file_index() {
+        // Regression test: a scraper-guessed `file_index` (e.g. a stub for a
+        // single mapped episode of a multi-file torrent) must never override
+        // an actual filename-based season/episode match — otherwise a request
+        // for S01E05 would silently play whatever sits at the stub's guessed
+        // index (here, a press conference at index 0) instead of the race.
+        let files = vec![
+            entry(0, "Drivers.Press.Conference.1080p.mkv", 1_000_000),
+            entry(1, "Free.Practice.1.1080p.mkv", 1_500_000),
+            entry(2, "Qualifying.1080p.mkv", 1_500_000),
+            entry(3, "Race.1080p.mkv", 2_000_000),
+        ];
+        // parse_season_episode falls back to `detect_episode`, which only
+        // recognises numeric patterns — so simulate the stub's season/episode
+        // request against a file that *does* carry a numeric marker matching
+        // it, while `file_index` (the stub's unverified guess) points at a
+        // different, wrong file.
+        let files_numeric = vec![
+            entry(0, "Drivers.Press.Conference.1080p.mkv", 1_000_000),
+            entry(1, "Race.S01E05.1080p.mkv", 2_000_000),
+        ];
+        let idx = select_torrent_file_index(
+            &files_numeric,
+            "Formula 1 British Grand Prix 2026",
+            None,
+            Some(1),
+            Some(5),
+            Some(0), // wrong stub guess — must not win
+            None,
+        )
+        .unwrap();
+        assert_eq!(idx, 1);
+
+        // Sanity: with no season/episode filter, the stub file_index is still
+        // honoured (movies / index-known cases keep their existing behavior).
+        let idx_no_se =
+            select_torrent_file_index(&files, "Formula 1", None, None, None, Some(2), None)
+                .unwrap();
+        assert_eq!(idx_no_se, 2);
+    }
+
+    #[test]
+    fn f1_race_weekend_session_names_match_over_wrong_stub_file_index() {
+        let files = vec![
+            entry(
+                0,
+                "01.F1.2026.R09.British.Grand.Prix.Drivers.Press.Conference.SkyF1HD.1080P.mkv",
+                1_000_000,
+            ),
+            entry(
+                2,
+                "03.F1.2026.R09.British.Grand.Prix.Free.Practice.SkyF1HD.1080P.mkv",
+                5_000_000,
+            ),
+            entry(
+                6,
+                "07.F1.2026.R09.British.Grand.Prix.Qualifying.SkyF1HD.1080P.mkv",
+                9_000_000,
+            ),
+            entry(
+                8,
+                "09.F1.2026.R09.British.Grand.Prix.Race.SkyF1HD.1080P.mkv",
+                16_000_000,
+            ),
+        ];
+        let idx = select_torrent_file_index(
+            &files,
+            "Formula 1 2026. R09. British Grand Prix. SkyF1HD. 1080P",
+            Some("Race"),
+            Some(1),
+            Some(9), // leading "09." prefix on the race file
+            Some(0), // scraper stub guessed index 0
+            None,
+        )
+        .unwrap();
+        assert_eq!(idx, 8);
+    }
+
+    #[test]
+    fn formula2_practice_uses_numbered_prefix_not_session_slot() {
+        let f = "01.Formula.2.2026.R07.British.Practice.SkyF1HD.1080P.mkv";
+        assert_eq!(
+            detect_episode(f, 1),
+            None,
+            "generic detector must not steal numbered racing filenames"
+        );
+        assert_eq!(
+            racing_file_episode(f).map(|(e, _)| e),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn f3_numbered_prefix_episode_order() {
+        let files = vec![
+            entry(
+                0,
+                "01.Formula.3.2026.R05.British.Practice.SkyF1HD.1080P.mkv",
+                2_000_000,
+            ),
+            entry(
+                1,
+                "02.Formula.3.2026.R05.British.Qualifying.SkyF1HD.1080P.mkv",
+                2_200_000,
+            ),
+            entry(
+                2,
+                "03.Formula.3.2026.R05.British.Race.One.SkyF1HD.1080P.mkv",
+                3_300_000,
+            ),
+            entry(
+                3,
+                "04.Formula.3.2026.R05.British.Race.Two.SkyF1HD.1080P.mkv",
+                4_000_000,
+            ),
+        ];
+        assert_eq!(
+            select_torrent_file_index(&files, "Formula 3 2026 R05 British", None, Some(1), Some(1), None, None)
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            select_torrent_file_index(&files, "Formula 3 2026 R05 British", None, Some(1), Some(4), None, None)
+                .unwrap(),
+            3
+        );
     }
 }

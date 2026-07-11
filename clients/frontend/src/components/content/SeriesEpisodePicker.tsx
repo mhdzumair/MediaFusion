@@ -234,7 +234,7 @@ export function SeriesEpisodePicker({
             </div>
 
             {/* Scrollable episode list with max height */}
-            <ScrollArea className="h-[400px] pr-3">
+            <ScrollArea className="h-[400px] pr-3" containScroll={false}>
               <div className="grid gap-2">
                 {episodes.map((episode) => {
                   const isSelected = selectedEpisode === episode.episode_number

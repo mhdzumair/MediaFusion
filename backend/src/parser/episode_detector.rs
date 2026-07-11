@@ -189,6 +189,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn formula2_practice_detect_episode_does_not_steal() {
+        let f = "01.Formula.2.2026.R07.British.Practice.SkyF1HD.1080P.mkv";
+        assert_eq!(detect_episode(f, 1), None);
+    }
+
+    #[test]
     fn test_sxxexx() {
         let r = detect_episode("Show.S02E05.mkv", 1).unwrap();
         assert_eq!(

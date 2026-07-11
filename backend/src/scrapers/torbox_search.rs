@@ -289,6 +289,7 @@ fn parse_torrents_json(
             torrent_type: crate::db::TorrentType::Public,
             torrent_file: None,
             announce_list: vec![],
+            uploader: None,
         });
     }
 

@@ -1187,7 +1187,7 @@ pub async fn organize_user_series_episodes(
             .unwrap_or("")
             .to_string();
 
-        if is_racing && let Some((ep, title)) = crate::parser::racing_session_episode(&filename) {
+        if is_racing && let Some((ep, title)) = crate::parser::racing_file_episode(&filename) {
             if let Some(obj) = f.as_object_mut() {
                 obj.insert("episode_number".to_string(), json!(ep));
                 obj.entry("episode_title").or_insert(json!(title));
@@ -1244,10 +1244,41 @@ pub async fn organize_user_series_episodes(
             .unwrap_or("");
         fa.cmp(fb)
     });
-    for idx in undated {
-        max_num += 1;
-        if let Some(obj) = file_rows[idx].as_object_mut() {
-            obj.insert("episode_number".to_string(), json!(max_num));
+    if is_racing {
+        let mut used: std::collections::HashSet<i32> = file_rows
+            .iter()
+            .filter_map(|f| f.get("episode_number").and_then(|v| v.as_i64()).map(|n| n as i32))
+            .collect();
+        for idx in undated {
+            let filename = file_rows[idx]
+                .get("filename")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let parsed = crate::parser::racing_file_episode(&filename);
+            let ep = crate::parser::numbered_prefix_episode(&filename)
+                .or_else(|| parsed.as_ref().map(|(episode, _)| *episode))
+                .unwrap_or_else(|| {
+                    let mut n = 1;
+                    while used.contains(&n) {
+                        n += 1;
+                    }
+                    n
+                });
+            used.insert(ep);
+            if let Some(obj) = file_rows[idx].as_object_mut() {
+                obj.insert("episode_number".to_string(), json!(ep));
+                if let Some((_, title)) = parsed {
+                    obj.entry("episode_title").or_insert(json!(title));
+                }
+            }
+        }
+    } else {
+        for idx in undated {
+            max_num += 1;
+            if let Some(obj) = file_rows[idx].as_object_mut() {
+                obj.insert("episode_number".to_string(), json!(max_num));
+            }
         }
     }
 }

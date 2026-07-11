@@ -466,6 +466,10 @@ fn build_tv_mediaflow_url(
         query_params.insert("key".into(), key.to_string());
     }
 
+    if let Some(ap) = api_password.filter(|s| !s.is_empty()) {
+        query_params.insert("api_password".into(), ap.to_string());
+    }
+
     let behavior_hints = row.get("behavior_hints").and_then(|v| v.as_object());
     let request_headers = behavior_hints
         .and_then(|bh| bh.get("proxyHeaders"))
@@ -483,7 +487,6 @@ fn build_tv_mediaflow_url(
         query_params,
         request_headers,
         response_headers,
-        api_password,
     )
 }
 

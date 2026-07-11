@@ -380,6 +380,7 @@ async fn store_torrent_stream(
         torrent_type: TorrentType::Public,
         torrent_file: None,
         announce_list: vec![],
+        uploader: None,
     };
 
     stream_convert::write_back_torrents(

@@ -13,18 +13,35 @@ fn artifacts() -> &'static Value {
     })
 }
 
-/// Return a random poster URL for one of the given genre names, with an
-/// unconditional "Other Sports"/"Sports" fallback when no genre matches.
-/// Used when `is_add_title_to_poster = true`.
-pub fn random_sports_poster(genres: &[String]) -> Option<String> {
+/// Map a sports catalog key (e.g. `formula_racing`) to a `sports_artifacts.json` top-level key.
+pub fn catalog_to_artifact_key(catalog: &str) -> Option<&'static str> {
+    match catalog {
+        "formula_racing" => Some("Formula Racing"),
+        "motogp_racing" => Some("MotoGP Racing"),
+        "fighting" => Some("Fighting (WWE, UFC)"),
+        "football" => Some("Football"),
+        "basketball" => Some("Basketball"),
+        "hockey" => Some("Hockey"),
+        "american_football" => Some("American Football"),
+        "baseball" => Some("Baseball"),
+        "rugby" => Some("Rugby/AFL"),
+        "tennis" => Some("Tennis"),
+        "golf" => Some("Golf"),
+        "cycling" => Some("Cycling"),
+        "athletics" => Some("Athletics"),
+        "wwe" => Some("WWE"),
+        _ => None,
+    }
+}
+
+fn pick_poster_for_keys(keys: &[String], allow_fallback: bool) -> Option<String> {
     let artifacts = artifacts();
     let obj = artifacts.as_object()?;
     let mut rng = rand::rng();
 
-    for genre in genres {
-        // Exact match
+    for key in keys {
         if let Some(posters) = obj
-            .get(genre)
+            .get(key)
             .and_then(|v| v.get("poster"))
             .and_then(|v| v.as_array())
         {
@@ -33,10 +50,9 @@ pub fn random_sports_poster(genres: &[String]) -> Option<String> {
                 return Some((*url).to_string());
             }
         }
-        // Case-insensitive match, normalizing underscores to spaces
-        let lower = genre.to_lowercase().replace('_', " ");
-        for (key, val) in obj {
-            if key.to_lowercase().replace('_', " ") == lower
+        let lower = key.to_lowercase().replace('_', " ");
+        for (artifact_key, val) in obj {
+            if artifact_key.to_lowercase().replace('_', " ") == lower
                 && let Some(posters) = val.get("poster").and_then(|v| v.as_array())
             {
                 let urls: Vec<&str> = posters.iter().filter_map(|v| v.as_str()).collect();
@@ -47,7 +63,10 @@ pub fn random_sports_poster(genres: &[String]) -> Option<String> {
         }
     }
 
-    // Fallback
+    if !allow_fallback {
+        return None;
+    }
+
     for key in &["Other Sports", "Sports"] {
         if let Some(posters) = obj
             .get(*key)
@@ -64,38 +83,44 @@ pub fn random_sports_poster(genres: &[String]) -> Option<String> {
     None
 }
 
-/// Return a random poster URL only when a genre explicitly matches a sports
-/// artifact key. Unlike `random_sports_poster`, this function does NOT fall
-/// back to "Other Sports"/"Sports" — returning `None` for non-sports items so
-/// the poster endpoint can still serve 404 for unrelated content.
-pub fn random_sports_poster_strict(genres: &[String]) -> Option<String> {
-    let artifacts = artifacts();
-    let obj = artifacts.as_object()?;
-    let mut rng = rand::rng();
+/// Return a random poster URL for one of the given sports catalog keys, with an
+/// unconditional "Other Sports"/"Sports" fallback when no catalog matches.
+/// Used when `is_add_title_to_poster = true`.
+pub fn random_sports_poster_for_catalogs(catalogs: &[String]) -> Option<String> {
+    let keys: Vec<String> = catalogs
+        .iter()
+        .filter_map(|c| catalog_to_artifact_key(c).map(str::to_string))
+        .collect();
+    pick_poster_for_keys(&keys, true)
+}
 
-    for genre in genres {
-        if let Some(posters) = obj
-            .get(genre)
-            .and_then(|v| v.get("poster"))
-            .and_then(|v| v.as_array())
-        {
-            let urls: Vec<&str> = posters.iter().filter_map(|v| v.as_str()).collect();
-            if let Some(url) = urls.choose(&mut rng) {
-                return Some((*url).to_string());
-            }
-        }
-        let lower = genre.to_lowercase().replace('_', " ");
-        for (key, val) in obj {
-            if key.to_lowercase().replace('_', " ") == lower
-                && let Some(posters) = val.get("poster").and_then(|v| v.as_array())
-            {
-                let urls: Vec<&str> = posters.iter().filter_map(|v| v.as_str()).collect();
-                if let Some(url) = urls.choose(&mut rng) {
-                    return Some((*url).to_string());
-                }
-            }
-        }
+/// Return a random poster URL only when a catalog explicitly maps to a sports
+/// artifact key. Unlike `random_sports_poster_for_catalogs`, this function does
+/// NOT fall back to "Other Sports"/"Sports".
+pub fn random_sports_poster_strict_for_catalogs(catalogs: &[String]) -> Option<String> {
+    let keys: Vec<String> = catalogs
+        .iter()
+        .filter_map(|c| catalog_to_artifact_key(c).map(str::to_string))
+        .collect();
+    pick_poster_for_keys(&keys, false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn catalog_maps_to_formula_racing_artifact() {
+        assert_eq!(
+            catalog_to_artifact_key("formula_racing"),
+            Some("Formula Racing")
+        );
     }
 
-    None
+    #[test]
+    fn catalog_poster_picks_formula_artwork() {
+        let url = random_sports_poster_for_catalogs(&["formula_racing".to_string()]);
+        assert!(url.is_some());
+        assert!(url.unwrap().starts_with("http"));
+    }
 }

@@ -660,6 +660,7 @@ async fn process_result(
         torrent_type,
         torrent_file,
         announce_list,
+        uploader: None,
     })
 }
 

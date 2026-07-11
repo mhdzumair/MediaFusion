@@ -2,9 +2,7 @@ use std::collections::BTreeMap;
 
 use url::Url;
 
-use crate::crypto::mediaflow::encrypt_mediaflow_token;
-
-/// Build a MediaFlow proxy URL with optional token encryption.
+/// Build a MediaFlow proxy URL with plain query parameters (no token encryption).
 ///
 /// Mirrors Python `encode_mediaflow_proxy_url`.
 pub fn encode_mediaflow_proxy_url(
@@ -14,7 +12,6 @@ pub fn encode_mediaflow_proxy_url(
     query_params: BTreeMap<String, String>,
     request_headers: Option<&serde_json::Map<String, serde_json::Value>>,
     response_headers: Option<&serde_json::Map<String, serde_json::Value>>,
-    encryption_api_password: Option<&str>,
 ) -> Result<String, String> {
     let base = mediaflow_proxy_url.trim_end_matches('/');
     let endpoint = endpoint.trim_start_matches('/');
@@ -41,23 +38,11 @@ pub fn encode_mediaflow_proxy_url(
 
     let base_url = format!("{base}/{endpoint}");
 
-    let query = if let Some(api_password) = encryption_api_password.filter(|s| !s.is_empty()) {
-        if !params.contains_key("api_password") {
-            params.insert("api_password".into(), api_password.to_string());
-        }
-        let map: serde_json::Map<String, serde_json::Value> = params
-            .into_iter()
-            .map(|(k, v)| (k, serde_json::Value::String(v)))
-            .collect();
-        let token = encrypt_mediaflow_token(api_password, map, None, None)?;
-        format!("token={}", urlencoding::encode(&token))
-    } else {
-        params
-            .into_iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(&v)))
-            .collect::<Vec<_>>()
-            .join("&")
-    };
+    let query = params
+        .into_iter()
+        .map(|(k, v)| format!("{}={}", k, urlencoding::encode(&v)))
+        .collect::<Vec<_>>()
+        .join("&");
 
     Ok(format!("{base_url}?{query}"))
 }
@@ -87,7 +72,6 @@ mod tests {
             "/proxy/hls/manifest.m3u8",
             Some("https://cdn.example.com/live.m3u8"),
             BTreeMap::from([("api_password".into(), "secret".into())]),
-            None,
             None,
             None,
         )

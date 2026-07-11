@@ -198,6 +198,7 @@ impl JobHandler for RegistryCrawl {
                     torrent_type: crate::db::TorrentType::Public,
                     torrent_file: None,
                     announce_list: vec![],
+                    uploader: None,
                 };
 
                 let is_series = media_type == "series";
