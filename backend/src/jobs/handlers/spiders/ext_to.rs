@@ -587,40 +587,40 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                 // events, etc.).
                 let wwe_info = parser::classify_wwe_title(&title);
                 let racing_info = parser::parse_racing_title(&title);
-                let (clean_title, year, effective_media_type, files) =
-                    if let Some(ref info) = wwe_info {
-                        // Weekly show → series episode.
-                        // Use the episode full title as the file name so
-                        // the episode appears with a descriptive label.
-                        let episode_title = parser::clean_sports_title(&title);
-                        let files = vec![StreamFile {
-                            file_index: 0,
-                            filename: episode_title,
-                            season_number: info.season_number,
-                            episode_number: info.episode_number,
-                        }];
-                        // The series itself has no year (it spans many seasons).
-                        (info.series_title.to_string(), None, "series", files)
-                    } else if let Some(ref racing) = racing_info
-                        && let Some((episode, episode_title)) = parser::racing_session_episode(
-                            racing.session.as_deref().unwrap_or(&title),
-                        )
-                    {
-                        // Race weekend → series, one episode per session
-                        // (FP1/FP2/FP3/Qualifying/Sprint/Race), ordered by
-                        // `racing_session_episode`'s slot number.
-                        let files = vec![StreamFile {
-                            file_index: 0,
-                            filename: episode_title,
-                            season_number: 1,
-                            episode_number: episode,
-                        }];
-                        (racing.series_title.clone(), racing.year, "series", files)
-                    } else {
-                        // Movie or PPV event.
-                        let clean = parsed.title.clone().unwrap_or_else(|| title.clone());
-                        (clean, parsed.year, spec.media_type, vec![])
-                    };
+                let (clean_title, year, effective_media_type, files) = if let Some(ref info) =
+                    wwe_info
+                {
+                    // Weekly show → series episode.
+                    // Use the episode full title as the file name so
+                    // the episode appears with a descriptive label.
+                    let episode_title = parser::clean_sports_title(&title);
+                    let files = vec![StreamFile {
+                        file_index: 0,
+                        filename: episode_title,
+                        season_number: info.season_number,
+                        episode_number: info.episode_number,
+                    }];
+                    // The series itself has no year (it spans many seasons).
+                    (info.series_title.to_string(), None, "series", files)
+                } else if let Some(ref racing) = racing_info
+                    && let Some((episode, episode_title)) =
+                        parser::racing_session_episode(racing.session.as_deref().unwrap_or(&title))
+                {
+                    // Race weekend → series, one episode per session
+                    // (FP1/FP2/FP3/Qualifying/Sprint/Race), ordered by
+                    // `racing_session_episode`'s slot number.
+                    let files = vec![StreamFile {
+                        file_index: 0,
+                        filename: episode_title,
+                        season_number: 1,
+                        episode_number: episode,
+                    }];
+                    (racing.series_title.clone(), racing.year, "series", files)
+                } else {
+                    // Movie or PPV event.
+                    let clean = parsed.title.clone().unwrap_or_else(|| title.clone());
+                    (clean, parsed.year, spec.media_type, vec![])
+                };
 
                 info!(
                     "{}: ✓ title=\"{}\" info_hash={} seeders={:?} size={:?} \

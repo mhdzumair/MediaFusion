@@ -22,7 +22,9 @@ fn map_ad_error(code: &str) -> Option<(&'static str, &'static str)> {
             ("Invalid or missing AllDebrid API key", "invalid_token.mp4")
         }
         "AUTH_BLOCKED" => ("API got blocked on AllDebrid", "alldebrid_api_blocked.mp4"),
-        "MAGNET_MUST_BE_PREMIUM" => ("Torrent must be premium on AllDebrid", "need_premium.mp4"),
+        "MAGNET_MUST_BE_PREMIUM" | "MUST_BE_PREMIUM" | "LINK_MUST_BE_PREMIUM" => {
+            ("Premium AllDebrid account required", "need_premium.mp4")
+        }
         "MAGNET_TOO_MANY_ACTIVE" | "MAGNET_TOO_MANY" => {
             ("Too many active torrents on AllDebrid", "torrent_limit.mp4")
         }

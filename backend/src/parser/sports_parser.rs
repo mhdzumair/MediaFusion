@@ -920,7 +920,9 @@ pub fn parse_racing_title(raw: &str) -> Option<RacingParsed> {
     // don't pollute the event name or block "Grand Prix" detection.
     let cleaned = strip_round_tokens(&cleaned);
     let cleaned = expand_gp_suffix(&cleaned);
-    let cleaned = multi_space_re().replace_all(cleaned.trim(), " ").into_owned();
+    let cleaned = multi_space_re()
+        .replace_all(cleaned.trim(), " ")
+        .into_owned();
 
     // Must be a racing release with a known league (checked on the normalised form,
     // since the raw name may use dot/underscore separators, e.g. "Formula.1").

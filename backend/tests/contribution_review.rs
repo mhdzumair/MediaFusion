@@ -316,6 +316,7 @@ async fn owner_direct_edit_updates_stream_fields() {
         "field_correction",
         Some("resolution"),
         Some("1080p"),
+        None,
     )
     .await;
     apply_stream_field_change(
@@ -324,6 +325,7 @@ async fn owner_direct_edit_updates_stream_fields() {
         "field_correction",
         Some("source"),
         Some("WEB-DL"),
+        None,
     )
     .await;
     apply_stream_field_change(
@@ -332,6 +334,7 @@ async fn owner_direct_edit_updates_stream_fields() {
         "field_correction",
         Some("languages"),
         Some(r#"["English","Tamil"]"#),
+        None,
     )
     .await;
 

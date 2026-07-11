@@ -174,6 +174,37 @@ pub async fn delete_metadata(
     .execute(&state.pool)
     .await;
 
+    // Series rows reference series_metadata without ON DELETE CASCADE on older schemas.
+    let _ = sqlx::query(
+        "DELETE FROM episode_image WHERE episode_id IN (
+            SELECT e.id FROM episode e
+            JOIN season s ON e.season_id = s.id
+            JOIN series_metadata sm ON s.series_id = sm.id
+            WHERE sm.media_id = $1
+        )",
+    )
+    .bind(media_id.0)
+    .execute(&state.pool)
+    .await;
+    let _ = sqlx::query(
+        "DELETE FROM episode WHERE season_id IN (
+            SELECT s.id FROM season s
+            JOIN series_metadata sm ON s.series_id = sm.id
+            WHERE sm.media_id = $1
+        )",
+    )
+    .bind(media_id.0)
+    .execute(&state.pool)
+    .await;
+    let _ = sqlx::query(
+        "DELETE FROM season WHERE series_id IN (
+            SELECT id FROM series_metadata WHERE media_id = $1
+        )",
+    )
+    .bind(media_id.0)
+    .execute(&state.pool)
+    .await;
+
     // Now delete the media (cascades to stream_media_link and media_catalog_link)
     match sqlx::query("DELETE FROM media WHERE id = $1")
         .bind(media_id.0)

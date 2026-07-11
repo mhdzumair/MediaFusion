@@ -183,14 +183,15 @@ async fn submit_nzb(
         .and_then(|v| v.as_str())
         .unwrap_or_default();
     if !success2 {
-        tracing::warn!("TorBox: file upload failed — full response: {add2}");
         let error_code = add2.get("error").and_then(|v| v.as_str()).unwrap_or("");
         if error_code == "PLAN_RESTRICTED_FEATURE" {
+            tracing::debug!("TorBox: usenet blocked by plan — {add2}");
             return Err(ProviderError::api(
                 "TorBox usenet requires a Pro plan",
                 "need_premium.mp4",
             ));
         }
+        tracing::debug!("TorBox: file upload failed — full response: {add2}");
         return Err(ProviderError::api(
             format!("TorBox: file upload failed: {detail2}"),
             "usenet_transfer_error.mp4",

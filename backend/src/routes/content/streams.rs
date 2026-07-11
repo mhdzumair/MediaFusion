@@ -364,6 +364,7 @@ pub async fn update_my_stream(
             "field_correction",
             Some(field),
             Some(value.as_str()),
+            None,
         )
         .await;
     }

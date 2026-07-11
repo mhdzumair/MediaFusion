@@ -31,6 +31,25 @@ use uuid::Uuid;
 
 use crate::{db::StreamId, db::contribution_defaults, state::AppState};
 
+/// Optional context for resolving external media IDs during relink/add-link suggestions.
+pub struct TargetMediaResolveContext<'a> {
+    pub http: &'a reqwest::Client,
+    pub tmdb_api_key: Option<&'a str>,
+    pub tvdb_api_key: Option<&'a str>,
+    pub nsfw_scan_on_import: bool,
+}
+
+impl<'a> TargetMediaResolveContext<'a> {
+    pub fn from_state(state: &'a AppState) -> Self {
+        Self {
+            http: &state.http,
+            tmdb_api_key: state.config.tmdb_api_key.as_deref(),
+            tvdb_api_key: state.config.tvdb_api_key.as_deref(),
+            nsfw_scan_on_import: state.config.poster_nsfw_enabled,
+        }
+    }
+}
+
 /// Editable stream scalar fields (Python `STREAM_EDITABLE_FIELDS` subset).
 pub const STREAM_SCALAR_EDITABLE_FIELDS: &[&str] = &[
     "name",
@@ -522,12 +541,14 @@ pub async fn create_stream_suggestion(
 
     // If auto-approved, apply changes
     if can_auto_approve {
+        let media_resolve = TargetMediaResolveContext::from_state(&state);
         apply_stream_field_change(
             &state.pool,
             stream_id.0,
             &body.suggestion_type,
             body.field_name.as_deref(),
             suggested_value.as_deref(),
+            Some(&media_resolve),
         )
         .await;
     }
@@ -549,26 +570,88 @@ pub async fn create_stream_suggestion(
 async fn resolve_target_media_id(
     pool: &sqlx::PgPool,
     link_data: &serde_json::Value,
+    fetch_ctx: Option<&TargetMediaResolveContext<'_>>,
 ) -> Option<i32> {
     if let Some(id) = link_data.get("target_media_id").and_then(|v| v.as_i64()) {
         return Some(id as i32);
     }
+
     let ext_id = link_data
         .get("target_external_id")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())?;
-    let media_type = link_data.get("target_media_type").and_then(|v| v.as_str());
-    crate::db::get_media_id_by_external_id(pool, ext_id, media_type)
+    let normalized_ext_id = crate::scrapers::media_resolve::normalize_contributor_meta_id(ext_id);
+    let ext_id = if normalized_ext_id.is_empty() {
+        ext_id
+    } else {
+        normalized_ext_id.as_str()
+    };
+
+    let media_type = link_data
+        .get("target_media_type")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let title = link_data
+        .get("target_title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    if let Some(mt) = media_type
+        && let Some(id) = super::import_helpers::lookup_import_media_id_with_fallback(
+            pool, ext_id, mt, title, None,
+        )
         .await
-        .ok()
-        .flatten()
-        .map(|mid| mid.0)
+    {
+        return Some(id.0);
+    }
+
+    if let Ok(Some(id)) = crate::db::get_media_id_by_external_id(pool, ext_id, None).await {
+        return Some(id.0);
+    }
+
+    for mt in ["series", "movie", "tv"] {
+        if media_type == Some(mt) {
+            continue;
+        }
+        if let Some(id) = super::import_helpers::lookup_import_media_id(pool, ext_id, mt).await {
+            return Some(id.0);
+        }
+    }
+
+    let Some(ctx) = fetch_ctx else {
+        return None;
+    };
+
+    let fetch_type = media_type.unwrap_or("movie");
+    crate::scrapers::media_resolve::ensure_media_for_import(
+        pool,
+        ctx.http,
+        ext_id,
+        fetch_type,
+        ctx.tmdb_api_key,
+        ctx.tvdb_api_key,
+        crate::scrapers::media_resolve::ImportMediaOverrides {
+            title: if title.is_empty() { None } else { Some(title) },
+            poster: None,
+            background: None,
+            release_date: None,
+            year: None,
+        },
+        None,
+        ctx.nsfw_scan_on_import,
+    )
+    .await
 }
 
 /// Apply relink_media: replace stream_media_link(s) and update file_media_link rows.
-async fn apply_relink_media(pool: &sqlx::PgPool, stream_id: i32, link_data: &serde_json::Value) {
-    let Some(target_media_id) = resolve_target_media_id(pool, link_data).await else {
-        tracing::error!(
+async fn apply_relink_media(
+    pool: &sqlx::PgPool,
+    stream_id: i32,
+    link_data: &serde_json::Value,
+    fetch_ctx: Option<&TargetMediaResolveContext<'_>>,
+) {
+    let Some(target_media_id) = resolve_target_media_id(pool, link_data, fetch_ctx).await else {
+        tracing::warn!(
             stream_id,
             link_data = %link_data,
             "apply_relink_media: could not resolve target_media_id for stream {stream_id}"
@@ -684,9 +767,14 @@ async fn apply_relink_media(pool: &sqlx::PgPool, stream_id: i32, link_data: &ser
 }
 
 /// Apply add_media_link: add an additional stream_media_link without removing existing ones.
-async fn apply_add_media_link(pool: &sqlx::PgPool, stream_id: i32, link_data: &serde_json::Value) {
-    let Some(target_media_id) = resolve_target_media_id(pool, link_data).await else {
-        tracing::error!(
+async fn apply_add_media_link(
+    pool: &sqlx::PgPool,
+    stream_id: i32,
+    link_data: &serde_json::Value,
+    fetch_ctx: Option<&TargetMediaResolveContext<'_>>,
+) {
+    let Some(target_media_id) = resolve_target_media_id(pool, link_data, fetch_ctx).await else {
+        tracing::warn!(
             stream_id,
             link_data = %link_data,
             "apply_add_media_link: could not resolve target_media_id for stream {stream_id}"
@@ -800,6 +888,7 @@ pub async fn apply_stream_field_change(
     suggestion_type: &str,
     field_name: Option<&str>,
     value: Option<&str>,
+    media_resolve: Option<&TargetMediaResolveContext<'_>>,
 ) {
     if suggestion_type == "report_broken" {
         // Increment broken report counter or block stream based on threshold
@@ -834,9 +923,9 @@ pub async fn apply_stream_field_change(
             && let Ok(link_data) = serde_json::from_str::<serde_json::Value>(v)
         {
             if suggestion_type == "relink_media" {
-                apply_relink_media(pool, stream_id, &link_data).await;
+                apply_relink_media(pool, stream_id, &link_data, media_resolve).await;
             } else {
-                apply_add_media_link(pool, stream_id, &link_data).await;
+                apply_add_media_link(pool, stream_id, &link_data, media_resolve).await;
             }
         }
         return;
@@ -1396,12 +1485,14 @@ pub async fn bulk_review_stream_suggestions(
         }
 
         if new_status == "approved" {
+            let media_resolve = TargetMediaResolveContext::from_state(&state);
             apply_stream_field_change(
                 &state.pool,
                 row.stream_id,
                 &row.suggestion_type,
                 row.field_name.as_deref(),
                 row.suggested_value.as_deref(),
+                Some(&media_resolve),
             )
             .await;
             if points_per_edit > 0 {
@@ -1600,12 +1691,14 @@ pub async fn review_stream_suggestion(
     .unwrap_or(contribution_defaults::POINTS_PER_STREAM_EDIT as i32);
 
     if new_status == "approved" {
+        let media_resolve = TargetMediaResolveContext::from_state(&state);
         apply_stream_field_change(
             &state.pool,
             row.stream_id,
             &row.suggestion_type,
             row.field_name.as_deref(),
             row.suggested_value.as_deref(),
+            Some(&media_resolve),
         )
         .await;
         if points_per_edit > 0 {

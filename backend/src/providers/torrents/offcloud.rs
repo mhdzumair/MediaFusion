@@ -162,6 +162,13 @@ fn check_offcloud_error(body: &Value) -> Result<(), ProviderError> {
                 "invalid_token.mp4",
             ));
         }
+        let msg_lower = msg.to_lowercase();
+        if msg_lower.contains("transfer not found") {
+            return Err(ProviderError::api(
+                format!("OffCloud error: {msg}"),
+                "torrent_not_downloaded.mp4",
+            ));
+        }
         return Err(ProviderError::api(
             format!("OffCloud error: {msg}"),
             "api_error.mp4",
