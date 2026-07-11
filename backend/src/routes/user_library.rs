@@ -1949,6 +1949,7 @@ async fn process_advanced_import(
             parsed.year,
             item.poster.as_deref(),
             db_type,
+            cat,
         )
         .await
         .ok_or_else(|| "Failed to create sports media".to_string())? as i64

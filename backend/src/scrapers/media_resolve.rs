@@ -1138,9 +1138,22 @@ pub async fn search_meta_for_scraped(
     .await
 }
 
+/// Racing categories where the title is almost entirely boilerplate ("Formula 1
+/// ... Grand Prix 2026") and only the circuit name varies — bag-of-words fuzzy
+/// matching routinely clears a 70% threshold for two *different* Grand Prix
+/// events (e.g. "British" vs "Canadian" Grand Prix 2026 share 5 of 7 tokens),
+/// silently merging unrelated races into one series. Exact title match is
+/// sufficient here since the racing parser already normalises event names
+/// deterministically, so fuzzy matching is skipped entirely for these.
+const RACING_CATEGORIES: &[&str] = &["formula_racing", "motogp_racing"];
+
 /// Find or create a minimal media stub for a sports event, skipping any external
 /// metadata lookup. Sports event titles (match replays, highlight clips) are not
 /// on TMDB/IMDb, so a remote lookup would be wasted latency.
+///
+/// `category` is the sports catalog key (e.g. "formula_racing", "fighting") —
+/// used only to decide whether fuzzy title matching is safe to apply; see
+/// `RACING_CATEGORIES`.
 ///
 /// Sets `is_add_title_to_poster = true` on newly-created stubs so the poster
 /// endpoint auto-selects a genre-matched poster from the bundled sports artifacts.
@@ -1150,6 +1163,7 @@ pub async fn find_or_create_sports_stub(
     year: Option<i32>,
     poster_url: Option<&str>,
     media_type: &str,
+    category: &str,
 ) -> Option<i32> {
     // 1. Exact title match (case-insensitive).
     let mt = wire_media_type(media_type)?;
@@ -1182,25 +1196,36 @@ pub async fn find_or_create_sports_stub(
         return Some(id);
     }
 
-    // 2. Fuzzy pg_trgm match (same threshold as find_or_create_media).
-    let fuzzy: Option<(i32, String)> = sqlx::query_as(
-        "SELECT id, title FROM media WHERE type = $1 AND title % $2 \
-         ORDER BY similarity(title, $2) DESC LIMIT 1",
-    )
-    .bind(mt)
-    .bind(title)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
+    let is_racing = RACING_CATEGORIES.contains(&category);
 
-    if let Some((id, existing_title)) = fuzzy
-        && crate::parser::similarity_ratio(title, &existing_title) >= 70
-    {
-        return Some(id);
+    if !is_racing {
+        // 2. Fuzzy pg_trgm match (same threshold as find_or_create_media).
+        let fuzzy: Option<(i32, String)> = sqlx::query_as(
+            "SELECT id, title FROM media WHERE type = $1 AND title % $2 \
+             ORDER BY similarity(title, $2) DESC LIMIT 1",
+        )
+        .bind(mt)
+        .bind(title)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+        if let Some((id, existing_title)) = fuzzy
+            && crate::parser::similarity_ratio(title, &existing_title) >= 70
+        {
+            return Some(id);
+        }
+
+        // 3. Create stub with is_add_title_to_poster = true via the metadata funnel.
+        if let Some(existing) = crate::db::find_existing_media(pool, mt, title, year).await {
+            if let Some(url) = poster_url {
+                crate::db::upsert_primary_image(pool, existing.0, "poster", url).await;
+            }
+            return Some(existing.0);
+        }
     }
 
-    // 3. Create stub with is_add_title_to_poster = true via the metadata funnel.
     let meta = crate::db::NormalizedMetadata {
         media_type: mt,
         title: title.to_string(),
@@ -1209,16 +1234,22 @@ pub async fn find_or_create_sports_stub(
         ..Default::default()
     };
 
-    if let Some(existing) = crate::db::find_existing_media(pool, mt, title, year).await {
-        if let Some(url) = poster_url {
-            crate::db::upsert_primary_image(pool, existing.0, "poster", url).await;
+    // `store_media` re-resolves by exact/fuzzy title match internally when
+    // `existing_media_id` is unset — the same collision-prone fuzzy path we
+    // just bypassed above. For racing, we already know (via the exact-match
+    // check at the top of this function) that no matching row exists, so
+    // force a plain insert by passing a zero id (falls through to the
+    // `insert_media_row` branch instead of `resolve_existing_media`).
+    let opts = if is_racing {
+        crate::db::StoreMediaOpts {
+            existing_media_id: Some(crate::db::MediaId(0)),
+            ..crate::db::StoreMediaOpts::sports_stub()
         }
-        return Some(existing.0);
-    }
+    } else {
+        crate::db::StoreMediaOpts::sports_stub()
+    };
 
-    let media_id = crate::db::store_media(pool, &meta, crate::db::StoreMediaOpts::sports_stub())
-        .await
-        .ok()?;
+    let media_id = crate::db::store_media(pool, &meta, opts).await.ok()?;
 
     debug!(
         "media_resolve: created sports stub {} ({media_type}) for '{title}'",

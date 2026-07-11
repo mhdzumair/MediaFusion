@@ -24,7 +24,7 @@ use regex::Regex;
 use tracing::{debug, info, warn};
 
 use crate::config::AppConfig;
-use crate::db::{MediaId, TorrentType};
+use crate::db::TorrentType;
 use crate::state::KeywordFilterCache;
 use crate::{
     jobs::{
@@ -294,83 +294,6 @@ struct ResolvedStream {
     files: Vec<StreamFile>,
     season: Option<i32>,
     episode: Option<i32>,
-    catalog: Option<String>,
-}
-
-fn resolve_sports_stream(filename: &str, parsed: &parser::ParsedTitle) -> Option<ResolvedStream> {
-    let category = parser::detect_sports_category(filename).unwrap_or("other_sports");
-
-    if let Some(wwe) = parser::classify_wwe_title(filename) {
-        let files = vec![StreamFile {
-            file_index: 0,
-            filename: parser::clean_sports_title(filename),
-            season_number: wwe.season_number,
-            episode_number: wwe.episode_number,
-        }];
-        return Some(ResolvedStream {
-            meta: SearchMeta {
-                media_id: MediaId(0),
-                imdb_id: None,
-                title: wwe.series_title.to_string(),
-                year: None,
-            },
-            media_type: "series".to_string(),
-            parsed: parsed.clone(),
-            files,
-            season: None,
-            episode: None,
-            catalog: Some(category.to_string()),
-        });
-    }
-
-    if matches!(category, "formula_racing" | "motogp_racing")
-        && let Some(racing) = parser::parse_racing_title(filename)
-    {
-        let session_src = racing.session.as_deref().unwrap_or(filename);
-        if let Some((episode, episode_title)) = parser::racing_session_episode(session_src) {
-            let files = vec![StreamFile {
-                file_index: 0,
-                filename: episode_title,
-                season_number: 1,
-                episode_number: episode,
-            }];
-            return Some(ResolvedStream {
-                meta: SearchMeta {
-                    media_id: MediaId(0),
-                    imdb_id: None,
-                    title: racing.series_title,
-                    year: racing.year,
-                },
-                media_type: "series".to_string(),
-                parsed: parsed.clone(),
-                files,
-                season: None,
-                episode: None,
-                catalog: Some(category.to_string()),
-            });
-        }
-    }
-
-    let clean_title = parsed
-        .title
-        .clone()
-        .filter(|t| !t.is_empty())
-        .unwrap_or_else(|| parser::clean_sports_title(filename));
-
-    Some(ResolvedStream {
-        meta: SearchMeta {
-            media_id: MediaId(0),
-            imdb_id: None,
-            title: clean_title,
-            year: parsed.year,
-        },
-        media_type: "movie".to_string(),
-        parsed: parsed.clone(),
-        files: vec![],
-        season: None,
-        episode: None,
-        catalog: Some(category.to_string()),
-    })
 }
 
 // ─── DB helpers ───────────────────────────────────────────────────────────────
@@ -401,85 +324,48 @@ async fn store_torrent_stream(
         return Ok(false);
     }
 
-    let is_sports = parser::is_sports_title(&entry.filename);
-    let parsed = if is_sports {
-        parser::parse_sports_title(&entry.filename)
-    } else {
-        parser::parse_title(&entry.filename)
+    let parsed = parser::parse_title(&entry.filename);
+
+    let is_series = !parsed.seasons.is_empty() || !parsed.episodes.is_empty();
+    let media_type = if is_series { "series" } else { "movie" };
+    let title = parsed
+        .title
+        .as_deref()
+        .filter(|t| !t.is_empty())
+        .unwrap_or(entry.filename.as_str());
+
+    let Some(meta) = media_resolve::search_meta_for_dmm_hashlist(
+        pool,
+        http,
+        title,
+        parsed.year,
+        is_series,
+        tmdb_api_key,
+        tvdb_api_key,
+        cinemeta_fallback,
+        Some(entry.filename.as_str()),
+        parsed.episodes.first().copied(),
+    )
+    .await
+    else {
+        return Ok(false);
     };
 
-    let resolved = if is_sports {
-        let Some(mut sports) = resolve_sports_stream(&entry.filename, &parsed) else {
-            return Ok(false);
-        };
-
-        let category = sports.catalog.as_deref().unwrap_or("other_sports");
-        let stub_type = if sports.media_type == "series" {
-            "SERIES"
-        } else {
-            "MOVIE"
-        };
-
-        let media_id = media_resolve::find_or_create_sports_stub(
-            pool,
-            &sports.meta.title,
-            sports.meta.year,
-            None,
-            stub_type,
-        )
-        .await
-        .unwrap_or(0);
-
-        if media_id <= 0 {
-            return Ok(false);
-        }
-
-        media_resolve::link_to_catalogs(pool, media_id, &[category]).await;
-        sports.meta.media_id = MediaId(media_id);
-        sports
+    let files = if is_series {
+        build_series_files(entry, &parsed)
     } else {
-        let is_series = !parsed.seasons.is_empty() || !parsed.episodes.is_empty();
-        let media_type = if is_series { "series" } else { "movie" };
-        let title = parsed
-            .title
-            .as_deref()
-            .filter(|t| !t.is_empty())
-            .unwrap_or(entry.filename.as_str());
+        vec![]
+    };
+    let season = parsed.seasons.first().copied();
+    let episode = parsed.episodes.first().copied();
 
-        let Some(meta) = media_resolve::search_meta_for_dmm_hashlist(
-            pool,
-            http,
-            title,
-            parsed.year,
-            is_series,
-            tmdb_api_key,
-            tvdb_api_key,
-            cinemeta_fallback,
-            Some(entry.filename.as_str()),
-            parsed.episodes.first().copied(),
-        )
-        .await
-        else {
-            return Ok(false);
-        };
-
-        let files = if is_series {
-            build_series_files(entry, &parsed)
-        } else {
-            vec![]
-        };
-        let season = parsed.seasons.first().copied();
-        let episode = parsed.episodes.first().copied();
-
-        ResolvedStream {
-            meta,
-            media_type: media_type.to_string(),
-            parsed,
-            files,
-            season,
-            episode,
-            catalog: None,
-        }
+    let resolved = ResolvedStream {
+        meta,
+        media_type: media_type.to_string(),
+        parsed,
+        files,
+        season,
+        episode,
     };
 
     let stream = ScrapedStream {
@@ -1147,36 +1033,6 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].season_number, 1);
         assert_eq!(files[0].episode_number, 2);
-    }
-
-    #[test]
-    fn resolve_sports_stream_wwe_weekly_is_series() {
-        let title = "WWE Monday Night Raw 2026 05 23 1080p";
-        let parsed = parser::parse_sports_title(title);
-        let resolved = resolve_sports_stream(title, &parsed).unwrap();
-        assert_eq!(resolved.media_type, "series");
-        assert_eq!(resolved.files.len(), 1);
-        assert_eq!(resolved.files[0].season_number, 2026);
-        assert_eq!(resolved.files[0].episode_number, 523);
-    }
-
-    #[test]
-    fn resolve_sports_stream_wwe_ppv_is_movie() {
-        let title = "WWE WrestleMania 40 2024 1080p";
-        let parsed = parser::parse_sports_title(title);
-        let resolved = resolve_sports_stream(title, &parsed).unwrap();
-        assert_eq!(resolved.media_type, "movie");
-        assert!(resolved.files.is_empty());
-    }
-
-    #[test]
-    fn resolve_sports_stream_racing_session_is_series() {
-        let title = "Formula 1 Canadian Grand Prix Qualifying 23.05.2026 1080p";
-        let parsed = parser::parse_sports_title(title);
-        let resolved = resolve_sports_stream(title, &parsed).unwrap();
-        assert_eq!(resolved.media_type, "series");
-        assert_eq!(resolved.files.len(), 1);
-        assert_eq!(resolved.files[0].episode_number, 4);
     }
 
     #[test]

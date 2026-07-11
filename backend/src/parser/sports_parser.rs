@@ -374,8 +374,9 @@ static SPORTS_CATEGORY_KEYWORDS: &[(&str, &[&str])] = &[
 ];
 
 /// Short keywords that require word-boundary matching to prevent false
-/// positives (e.g. "fc" inside "ufc", "spa" inside "spain", "raw" anywhere).
-static BOUNDARY_KEYWORDS: &[&str] = &["fc", "spa", "raw", "kbo", "f1", "f2", "f3"];
+/// positives (e.g. "fc" inside "ufc", "spa" inside "spain", "raw" anywhere,
+/// "mma" inside "Emmanuelle").
+static BOUNDARY_KEYWORDS: &[&str] = &["fc", "spa", "raw", "kbo", "f1", "f2", "f3", "mma"];
 
 // ─── Static regexes ───────────────────────────────────────────────────────────
 
@@ -820,6 +821,59 @@ fn racing_league(s: &str) -> Option<String> {
     Some(canonical.to_string())
 }
 
+/// Strip round-number noise tokens emitted by some release groups, e.g.
+/// "2026x09" (year x round) or "R09" (round marker). The year in "2026x09" is
+/// kept (as a standalone "2026" token) since `racing_year_and_strip` picks it
+/// up afterwards; the round number itself carries no reusable information for
+/// grouping, so it's dropped entirely.
+fn strip_round_tokens(s: &str) -> String {
+    static YEAR_X_ROUND_RE: OnceLock<Regex> = OnceLock::new();
+    static ROUND_RE: OnceLock<Regex> = OnceLock::new();
+    let year_x_round = YEAR_X_ROUND_RE
+        .get_or_init(|| Regex::new(r"\b((?:19|20)\d{2})x\d{1,3}\b").expect("year_x_round_re"));
+    let round = ROUND_RE.get_or_init(|| Regex::new(r"(?i)\bR\d{1,3}\b").expect("round_re"));
+
+    let s = year_x_round.replace_all(s, "$1");
+    round.replace_all(&s, "").into_owned()
+}
+
+/// Expand a concatenated "<Country>GP" token (e.g. "BritishGP") into
+/// "<Country> Grand Prix", without touching league names that legitimately
+/// end in "GP" (e.g. "MotoGP").
+fn expand_gp_suffix(s: &str) -> String {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"\b([A-Za-z]+)GP\b").expect("gp_suffix_re"));
+    re.replace_all(s, |caps: &regex::Captures| {
+        let prefix = &caps[1];
+        if prefix.eq_ignore_ascii_case("moto") {
+            caps[0].to_string()
+        } else {
+            format!("{prefix} Grand Prix")
+        }
+    })
+    .into_owned()
+}
+
+/// Known alternate circuit/event names that should collapse to one canonical
+/// form so the same Grand Prix weekend groups into a single series regardless
+/// of which wording a given release used.
+static CIRCUIT_ALIASES: &[(&str, &str)] = &[
+    ("great britain", "british"),
+    ("emilia-romagna", "emilia romagna"),
+    ("mexico city", "mexico"),
+    ("united states", "usa"),
+];
+
+fn normalize_circuit_aliases(s: &str) -> String {
+    let mut out = s.to_string();
+    for (alias, canonical) in CIRCUIT_ALIASES {
+        if let Some(idx) = out.to_lowercase().find(alias) {
+            out.replace_range(idx..idx + alias.len(), canonical);
+        }
+    }
+    out
+}
+
 /// Strip a DD MM YYYY / YYYY MM DD date from `s` (space-separated form) and return
 /// `(year, remainder)`. Falls back to a standalone 4-digit year token.
 fn racing_year_and_strip(s: &str) -> (Option<i32>, String) {
@@ -861,6 +915,12 @@ fn racing_year_and_strip(s: &str) -> (Option<i32>, String) {
 pub fn parse_racing_title(raw: &str) -> Option<RacingParsed> {
     // Strip broadcaster / quality / codec tokens and normalise separators to spaces.
     let cleaned = clean_sports_title(raw);
+    // Drop release-group round markers ("2026x09", "R09") and expand
+    // concatenated "<Country>GP" tokens before league/date detection so they
+    // don't pollute the event name or block "Grand Prix" detection.
+    let cleaned = strip_round_tokens(&cleaned);
+    let cleaned = expand_gp_suffix(&cleaned);
+    let cleaned = multi_space_re().replace_all(cleaned.trim(), " ").into_owned();
 
     // Must be a racing release with a known league (checked on the normalised form,
     // since the raw name may use dot/underscore separators, e.g. "Formula.1").
@@ -875,16 +935,29 @@ pub fn parse_racing_title(raw: &str) -> Option<RacingParsed> {
     // Split around "Grand Prix": the event is everything up to & including it,
     // and the remaining trailing text is the session (episode).
     let lower = no_date.to_lowercase();
-    let (event, session) = if let Some(idx) = lower.find("grand prix") {
+    let (event, session, had_grand_prix) = if let Some(idx) = lower.find("grand prix") {
         let end = idx + "grand prix".len();
         let event = no_date[..end].trim().to_string();
         let session = no_date[end..].trim().to_string();
-        (event, session)
+        (event, session, true)
     } else {
         // No "Grand Prix" marker — strip a trailing session keyword if present.
         let (event, session) = split_trailing_session(&no_date);
-        (event, session)
+        (event, session, false)
     };
+
+    // A recognised session with no explicit "Grand Prix" marker still implies
+    // a race weekend (e.g. "Formula 1 Great Britain Sprint Qualifying") — add
+    // the suffix so it groups with releases that spell it out.
+    let event = if !had_grand_prix && !session.is_empty() {
+        format!("{event} Grand Prix")
+    } else {
+        event
+    };
+
+    // Collapse known alternate circuit names ("Great Britain" vs "British", …)
+    // so differently-worded releases for the same event group together.
+    let event = normalize_circuit_aliases(&event);
 
     // Ensure the event begins with the canonical league name.
     let event = if event.to_lowercase().starts_with(&league.to_lowercase()) {
@@ -1083,5 +1156,29 @@ mod racing_tests {
         assert_eq!(ep("Canadian Grand Prix"), (5, "Race".to_string()));
         // Unknown.
         assert!(racing_session_episode("Pit Lane Channel").is_none());
+    }
+}
+
+#[cfg(test)]
+mod category_detection_tests {
+    use super::*;
+
+    #[test]
+    fn emmanuelle_is_not_mma() {
+        // "Emmanuelle" contains the substring "mma" ("E-mma-nuelle"); this must
+        // not be misdetected as the "fighting" (MMA) category.
+        assert_eq!(
+            detect_sports_category("Emmanuelle 2024 REMUX HD MA 51"),
+            None
+        );
+        assert!(!is_sports_title("Emmanuelle 2024 REMUX HD MA 51"));
+    }
+
+    #[test]
+    fn standalone_mma_is_fighting() {
+        assert_eq!(
+            detect_sports_category("MMA Fight Night 300 2026"),
+            Some("fighting")
+        );
     }
 }

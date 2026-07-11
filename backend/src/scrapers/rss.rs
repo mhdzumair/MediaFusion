@@ -689,6 +689,7 @@ pub async fn scrape_feed(
                 year,
                 None,
                 "movie",
+                sports_catalog,
             )
             .await
             {

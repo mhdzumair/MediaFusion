@@ -409,6 +409,7 @@ impl JobHandler for SportVideoCrawl {
                     parsed_title.year,
                     block.poster_url.as_deref(),
                     "MOVIE",
+                    detected_category,
                 )
                 .await
                 .unwrap_or(0);
