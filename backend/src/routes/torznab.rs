@@ -72,84 +72,127 @@ pub async fn handler(
         return xml_response(build_caps(&state));
     }
 
-    // Authentication check for private instances
-    if !validate_apikey(
-        params.apikey.as_deref(),
-        state.config.api_password.as_deref(),
-    ) {
-        return xml_error(100, "Invalid API key");
-    }
-
     if !state.config.enable_torznab_api {
         return xml_error(503, "Torznab API is disabled on this server");
     }
 
-    // Determine media_type from t=
-    let media_type: Option<&str> = match params.t.as_str() {
+    // Authentication check for private instances
+    if !validate_apikey(
+        params.apikey.as_deref(),
+        state.config.api_password.as_deref(),
+        state.config.is_public_instance,
+    ) {
+        return xml_error(100, "Invalid API key");
+    }
+
+    match resolve_search_action(&params) {
+        SearchAction::ValidationSamples => {
+            let samples = validation_samples(limit);
+            xml_response(build_rss(
+                &samples,
+                &state.config.addon_name,
+                &state.config.host_url,
+            ))
+        }
+        SearchAction::MissingParameters => xml_error(
+            200,
+            "Missing search parameters (q, imdbid, or tmdbid required)",
+        ),
+        SearchAction::Search(query) => {
+            let media_type = media_type_for_request(&params.t);
+            let results = match query {
+                TorznabQuery::Imdb(id) => {
+                    db::search_by_imdb(
+                        &state.pool_ro,
+                        &id,
+                        media_type,
+                        params.season,
+                        params.ep,
+                        limit,
+                    )
+                    .await
+                }
+                TorznabQuery::Tmdb(id) => {
+                    db::search_by_tmdb(
+                        &state.pool_ro,
+                        &id,
+                        media_type,
+                        params.season,
+                        params.ep,
+                        limit,
+                    )
+                    .await
+                }
+                TorznabQuery::Title(q) => {
+                    db::search_by_title(&state.pool_ro, &q, media_type, None, limit).await
+                }
+            };
+
+            let offset = params.offset as usize;
+            let results = if offset > 0 {
+                results.into_iter().skip(offset).collect()
+            } else {
+                results
+            };
+
+            xml_response(build_rss(
+                &results,
+                &state.config.addon_name,
+                &state.config.host_url,
+            ))
+        }
+    }
+}
+
+#[derive(Debug)]
+enum SearchAction {
+    ValidationSamples,
+    MissingParameters,
+    Search(TorznabQuery),
+}
+
+#[derive(Debug)]
+enum TorznabQuery {
+    Imdb(String),
+    Tmdb(String),
+    Title(String),
+}
+
+fn media_type_for_request(request_type: &str) -> Option<&str> {
+    match request_type.to_ascii_lowercase().as_str() {
         "movie" => Some("movie"),
         "tvsearch" => Some("series"),
         _ => None,
-    };
+    }
+}
 
-    let mut results = vec![];
+fn is_blank_query(query: Option<&str>) -> bool {
+    query.is_none_or(|q| q.trim().is_empty())
+}
 
-    if let Some(imdb) = &params.imdbid {
+fn resolve_search_action(params: &TorznabParams) -> SearchAction {
+    if let Some(imdb) = params.imdbid.as_deref().filter(|id| !id.trim().is_empty()) {
         let id = if imdb.starts_with("tt") {
-            imdb.clone()
+            imdb.to_string()
         } else {
             format!("tt{imdb}")
         };
-        results = db::search_by_imdb(
-            &state.pool_ro,
-            &id,
-            media_type,
-            params.season,
-            params.ep,
-            limit,
-        )
-        .await;
-    } else if let Some(tmdb) = &params.tmdbid {
-        results = db::search_by_tmdb(
-            &state.pool_ro,
-            tmdb,
-            media_type,
-            params.season,
-            params.ep,
-            limit,
-        )
-        .await;
-    } else if let Some(q) = &params.q {
-        if q.is_empty() && params.t == "search" {
-            // Prowlarr validation — return sample entries
-            return xml_response(build_rss(
-                &validation_samples(),
-                &state.config.addon_name,
-                &state.config.host_url,
-            ));
+        return SearchAction::Search(TorznabQuery::Imdb(id));
+    }
+
+    if let Some(tmdb) = params.tmdbid.as_deref().filter(|id| !id.trim().is_empty()) {
+        return SearchAction::Search(TorznabQuery::Tmdb(tmdb.to_string()));
+    }
+
+    if is_blank_query(params.q.as_deref()) {
+        if params.t.eq_ignore_ascii_case("search") {
+            return SearchAction::ValidationSamples;
         }
-        results = db::search_by_title(&state.pool_ro, q, media_type, None, limit).await;
-    } else if params.t == "search" {
-        return xml_response(build_rss(
-            &validation_samples(),
-            &state.config.addon_name,
-            &state.config.host_url,
-        ));
-    } else {
-        return xml_error(
-            200,
-            "Missing search parameters (q, imdbid, or tmdbid required)",
-        );
+        return SearchAction::MissingParameters;
     }
 
-    let offset = params.offset as usize;
-    if offset > 0 {
-        results = results.into_iter().skip(offset).collect();
-    }
-
-    xml_response(build_rss(
-        &results,
-        &state.config.addon_name,
-        &state.config.host_url,
+    SearchAction::Search(TorznabQuery::Title(
+        params.q.as_deref().unwrap().trim().to_string(),
     ))
 }
 
@@ -192,8 +235,8 @@ fn build_caps(state: &AppState) -> String {
     )
 }
 
-fn validation_samples() -> Vec<db::TorznabRow> {
-    vec![
+fn validation_samples(limit: i64) -> Vec<db::TorznabRow> {
+    let samples = vec![
         db::TorznabRow {
             info_hash: "1111111111111111111111111111111111111111".into(),
             name: "MediaFusion Validation Sample Movie 1080p".into(),
@@ -222,7 +265,11 @@ fn validation_samples() -> Vec<db::TorznabRow> {
             source: Some("validation".into()),
             trackers: vec![],
         },
-    ]
+    ];
+
+    let limit = usize::try_from(limit.clamp(1, 100)).unwrap_or(1);
+    let count = limit.min(samples.len());
+    samples.into_iter().take(count).collect()
 }
 
 fn validation_uploaded_at() -> DateTime<Utc> {
@@ -402,23 +449,48 @@ fn xml_error(code: u32, description: &str) -> Response {
     xml_response(xml)
 }
 
-fn validate_apikey(apikey: Option<&str>, required_password: Option<&str>) -> bool {
-    match required_password {
-        None | Some("") => true,
-        Some(pwd) => apikey
-            .map(|k| k.split(':').next().unwrap_or(k) == pwd)
-            .unwrap_or(false),
+fn validate_apikey(
+    apikey: Option<&str>,
+    required_password: Option<&str>,
+    is_public_instance: bool,
+) -> bool {
+    let require_password =
+        required_password.is_some_and(|pwd| !pwd.is_empty()) && !is_public_instance;
+    if !require_password {
+        return true;
     }
+
+    let Some(pwd) = required_password else {
+        return true;
+    };
+
+    apikey
+        .map(|k| k.split(':').next().unwrap_or(k) == pwd)
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn sample_params(t: &str, q: Option<&str>) -> TorznabParams {
+        TorznabParams {
+            t: t.to_string(),
+            apikey: None,
+            q: q.map(str::to_string),
+            imdbid: None,
+            tmdbid: None,
+            season: None,
+            ep: None,
+            limit: 50,
+            offset: 0,
+        }
+    }
+
     #[test]
     fn validation_samples_include_valid_pub_dates() {
         let rss = build_rss(
-            &validation_samples(),
+            &validation_samples(50),
             "MediaFusion",
             "http://127.0.0.1:8001",
         );
@@ -429,5 +501,44 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn validation_samples_respect_limit() {
+        assert_eq!(validation_samples(1).len(), 1);
+        assert_eq!(validation_samples(50).len(), 2);
+    }
+
+    #[test]
+    fn blank_search_term_returns_validation_samples() {
+        for q in [None, Some(""), Some("   ")] {
+            let action = resolve_search_action(&sample_params("search", q));
+            assert!(
+                matches!(action, SearchAction::ValidationSamples),
+                "expected validation samples for q={q:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn missing_query_on_non_search_requests_is_an_error() {
+        let action = resolve_search_action(&sample_params("movie", None));
+        assert!(matches!(action, SearchAction::MissingParameters));
+    }
+
+    #[test]
+    fn title_search_trims_query() {
+        let action = resolve_search_action(&sample_params("search", Some("  inception  ")));
+        match action {
+            SearchAction::Search(TorznabQuery::Title(q)) => assert_eq!(q, "inception"),
+            other => panic!("expected title search, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn public_instance_skips_apikey_requirement() {
+        assert!(validate_apikey(None, Some("secret"), true));
+        assert!(!validate_apikey(None, Some("secret"), false));
+        assert!(validate_apikey(Some("secret"), Some("secret"), false));
     }
 }
