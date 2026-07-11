@@ -51,8 +51,8 @@ pub mod torznab;
 pub mod watch_history;
 
 pub use media::{
-    get_media_id_by_external_id, get_media_meta, load_aka_titles, resolve_media_ids,
-    search_media_candidates,
+    delete_media_by_ids, get_media_id_by_external_id, get_media_meta, load_aka_titles,
+    resolve_media_ids, search_media_candidates,
 };
 pub use metadata_merge::merge_normalized;
 pub use metadata_model::{

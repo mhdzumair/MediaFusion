@@ -51,7 +51,8 @@ use serde_json::{Value, json};
 use sha2::Sha256;
 
 use crate::{
-    db::{MediaId, StreamId, contribution_defaults},
+    cache,
+    db::{MediaId, StreamId, contribution_defaults, delete_media_by_ids},
     state::AppState,
 };
 
@@ -159,65 +160,19 @@ pub async fn delete_metadata(
     if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
         return forbidden();
     }
-    // Delete streams that are ONLY linked to this media (no other media links)
-    let _ = sqlx::query(
-        "DELETE FROM stream WHERE id IN (
-            SELECT sml.stream_id FROM stream_media_link sml
-            WHERE sml.media_id = $1
-            AND NOT EXISTS (
-                SELECT 1 FROM stream_media_link sml2
-                WHERE sml2.stream_id = sml.stream_id AND sml2.media_id <> $1
-            )
-        )",
-    )
-    .bind(media_id.0)
-    .execute(&state.pool)
-    .await;
 
-    // Series rows reference series_metadata without ON DELETE CASCADE on older schemas.
-    let _ = sqlx::query(
-        "DELETE FROM episode_image WHERE episode_id IN (
-            SELECT e.id FROM episode e
-            JOIN season s ON e.season_id = s.id
-            JOIN series_metadata sm ON s.series_id = sm.id
-            WHERE sm.media_id = $1
-        )",
-    )
-    .bind(media_id.0)
-    .execute(&state.pool)
-    .await;
-    let _ = sqlx::query(
-        "DELETE FROM episode WHERE season_id IN (
-            SELECT s.id FROM season s
-            JOIN series_metadata sm ON s.series_id = sm.id
-            WHERE sm.media_id = $1
-        )",
-    )
-    .bind(media_id.0)
-    .execute(&state.pool)
-    .await;
-    let _ = sqlx::query(
-        "DELETE FROM season WHERE series_id IN (
-            SELECT id FROM series_metadata WHERE media_id = $1
-        )",
-    )
-    .bind(media_id.0)
-    .execute(&state.pool)
-    .await;
-
-    // Now delete the media (cascades to stream_media_link and media_catalog_link)
-    match sqlx::query("DELETE FROM media WHERE id = $1")
-        .bind(media_id.0)
-        .execute(&state.pool)
-        .await
-    {
-        Ok(r) if r.rows_affected() == 0 => (
+    let ids = [media_id.0];
+    match delete_media_by_ids(&state.pool, &ids).await {
+        Ok(0) => (
             StatusCode::NOT_FOUND,
             Json(json!({"detail": "Media not found"})),
         )
             .into_response(),
-        Ok(_) => Json(json!({"message": "Metadata and associated streams deleted successfully"}))
-            .into_response(),
+        Ok(_) => {
+            cache::invalidate_catalog_and_metadata_caches(&state.redis).await;
+            Json(json!({"message": "Metadata and associated streams deleted successfully"}))
+                .into_response()
+        }
         Err(e) => {
             tracing::error!("delete_metadata: {e}");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -256,6 +211,7 @@ pub async fn block_media(
         )
             .into_response(),
         Ok(_) => {
+            cache::invalidate_catalog_and_metadata_caches(&state.redis).await;
             let blocked_at = Utc::now();
             Json(json!({
                 "media_id": media_id,
@@ -343,7 +299,10 @@ pub async fn bulk_block_media(
     .execute(&state.pool)
     .await
     {
-        Ok(r) => Json(json!({"message": format!("{} item(s) blocked", r.rows_affected()), "count": r.rows_affected()})).into_response(),
+        Ok(r) => {
+            cache::invalidate_catalog_and_metadata_caches(&state.redis).await;
+            Json(json!({"message": format!("{} item(s) blocked", r.rows_affected()), "count": r.rows_affected()})).into_response()
+        }
         Err(e) => {
             tracing::error!("bulk_block_media: {e}");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -367,27 +326,12 @@ pub async fn bulk_delete_media(
         )
             .into_response();
     }
-    // Delete orphaned streams first
-    let _ = sqlx::query(
-        "DELETE FROM stream WHERE id IN (
-            SELECT sml.stream_id FROM stream_media_link sml
-            WHERE sml.media_id = ANY($1)
-            AND NOT EXISTS (
-                SELECT 1 FROM stream_media_link sml2
-                WHERE sml2.stream_id = sml.stream_id AND sml2.media_id <> ALL($1)
-            )
-        )",
-    )
-    .bind(&body.ids)
-    .execute(&state.pool)
-    .await;
 
-    match sqlx::query("DELETE FROM media WHERE id = ANY($1)")
-        .bind(&body.ids)
-        .execute(&state.pool)
-        .await
-    {
-        Ok(r) => Json(json!({"message": format!("{} item(s) deleted", r.rows_affected()), "count": r.rows_affected()})).into_response(),
+    match delete_media_by_ids(&state.pool, &body.ids).await {
+        Ok(r) => {
+            cache::invalidate_catalog_and_metadata_caches(&state.redis).await;
+            Json(json!({"message": format!("{} item(s) deleted", r), "count": r})).into_response()
+        }
         Err(e) => {
             tracing::error!("bulk_delete_media: {e}");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()

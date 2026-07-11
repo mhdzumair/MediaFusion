@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2, Trash2 } from 'lucide-react'
@@ -15,8 +14,6 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { useDeleteMetadata } from '@/hooks'
 import { useToast } from '@/hooks/use-toast'
 import { catalogKeys, type CatalogType } from '@/hooks/useCatalog'
@@ -32,10 +29,8 @@ export function DeleteContentButton({ mediaId, mediaTitle, mediaType }: DeleteCo
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const deleteMetadata = useDeleteMetadata()
-  const [confirmText, setConfirmText] = useState('')
 
   const isDeleting = deleteMetadata.isPending
-  const isConfirmValid = confirmText.trim().toUpperCase() === 'DELETE'
 
   const handleDelete = async () => {
     try {
@@ -78,33 +73,16 @@ export function DeleteContentButton({ mediaId, mediaTitle, mediaType }: DeleteCo
             Permanently Delete Metadata
           </AlertDialogTitle>
           <AlertDialogDescription>
-            This action is permanent and cannot be undone. Type <strong>DELETE</strong> to confirm deleting "
-            {mediaTitle}".
+            This action is permanent and cannot be undone. Are you sure you want to delete "{mediaTitle}"?
           </AlertDialogDescription>
         </AlertDialogHeader>
-
-        <div className="space-y-2">
-          <Label htmlFor="delete-confirm-input">Confirmation</Label>
-          <Input
-            id="delete-confirm-input"
-            value={confirmText}
-            onChange={(event) => setConfirmText(event.target.value)}
-            placeholder="Type DELETE to confirm"
-            className="rounded-xl"
-          />
-        </div>
 
         <AlertDialogFooter>
           <AlertDialogCancel className="rounded-xl" disabled={isDeleting}>
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction asChild>
-            <Button
-              variant="destructive"
-              className="rounded-xl"
-              onClick={handleDelete}
-              disabled={!isConfirmValid || isDeleting}
-            >
+            <Button variant="destructive" className="rounded-xl" onClick={handleDelete} disabled={isDeleting}>
               {isDeleting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

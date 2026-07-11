@@ -300,3 +300,95 @@ pub async fn get_media_id_by_external_id(
         .await
     }
 }
+
+/// Delete media rows and all dependent records that lack ON DELETE CASCADE.
+pub async fn delete_media_by_ids(pool: &PgPool, ids: &[i32]) -> Result<u64, sqlx::Error> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+
+    let mut tx = pool.begin().await?;
+
+    sqlx::query(
+        "DELETE FROM playback_tracking WHERE stream_id IN (
+            SELECT sml.stream_id FROM stream_media_link sml
+            WHERE sml.media_id = ANY($1)
+            AND NOT EXISTS (
+                SELECT 1 FROM stream_media_link sml2
+                WHERE sml2.stream_id = sml.stream_id AND sml2.media_id <> ALL($1)
+            )
+        )",
+    )
+    .bind(ids)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "DELETE FROM stream WHERE id IN (
+            SELECT sml.stream_id FROM stream_media_link sml
+            WHERE sml.media_id = ANY($1)
+            AND NOT EXISTS (
+                SELECT 1 FROM stream_media_link sml2
+                WHERE sml2.stream_id = sml.stream_id AND sml2.media_id <> ALL($1)
+            )
+        )",
+    )
+    .bind(ids)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM playback_tracking WHERE media_id = ANY($1)")
+        .bind(ids)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("DELETE FROM watch_history WHERE media_id = ANY($1)")
+        .bind(ids)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("DELETE FROM provider_metadata WHERE media_id = ANY($1)")
+        .bind(ids)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        "DELETE FROM episode_image WHERE episode_id IN (
+            SELECT e.id FROM episode e
+            JOIN season s ON e.season_id = s.id
+            JOIN series_metadata sm ON s.series_id = sm.id
+            WHERE sm.media_id = ANY($1)
+        )",
+    )
+    .bind(ids)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "DELETE FROM episode WHERE season_id IN (
+            SELECT s.id FROM season s
+            JOIN series_metadata sm ON s.series_id = sm.id
+            WHERE sm.media_id = ANY($1)
+        )",
+    )
+    .bind(ids)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "DELETE FROM season WHERE series_id IN (
+            SELECT id FROM series_metadata WHERE media_id = ANY($1)
+        )",
+    )
+    .bind(ids)
+    .execute(&mut *tx)
+    .await?;
+
+    let result = sqlx::query("DELETE FROM media WHERE id = ANY($1)")
+        .bind(ids)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(result.rows_affected())
+}

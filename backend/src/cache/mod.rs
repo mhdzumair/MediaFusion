@@ -155,3 +155,74 @@ pub async fn set_bytes(client: &RedisClient, key: &str, data: &[u8], ttl_secs: u
         warn!("cache set_bytes [{key}]: {e}");
     }
 }
+
+const MEDIA_DELETE_CACHE_PATTERNS: &[&str] = &[
+    "catalog:browse:*",
+    "catalog:count:*",
+    "catalog:*",
+    "movie_exists:*",
+    "series_exists:*",
+    "tv_exists:*",
+    "meta_cache:*",
+    "mf:*",
+];
+
+/// Clear catalog browse pages and metadata caches after media deletion.
+pub async fn invalidate_catalog_and_metadata_caches(client: &RedisClient) {
+    for pattern in MEDIA_DELETE_CACHE_PATTERNS {
+        delete_by_pattern(client, pattern).await;
+    }
+}
+
+async fn delete_by_pattern(client: &RedisClient, pattern: &str) {
+    let mut cursor = "0".to_string();
+    loop {
+        let result: Result<fred::types::Value, _> = client
+            .scan_page(cursor.clone(), pattern.to_string(), Some(500), None)
+            .await;
+
+        let (next_cursor, keys) = match result {
+            Ok(value) => parse_scan_value(value),
+            Err(e) => {
+                warn!("cache delete_by_pattern [{pattern}]: {e}");
+                break;
+            }
+        };
+
+        if !keys.is_empty() {
+            let _ = client.del::<(), _>(keys).await;
+        }
+
+        if next_cursor == "0" {
+            break;
+        }
+        cursor = next_cursor;
+    }
+}
+
+fn parse_scan_value(value: fred::types::Value) -> (String, Vec<String>) {
+    if let fred::types::Value::Array(arr) = value
+        && arr.len() == 2
+    {
+        let cursor = match &arr[0] {
+            fred::types::Value::String(s) => s.to_string(),
+            fred::types::Value::Bytes(b) => String::from_utf8_lossy(b).to_string(),
+            fred::types::Value::Integer(n) => n.to_string(),
+            other => format!("{other:?}"),
+        };
+        let keys = if let fred::types::Value::Array(key_arr) = &arr[1] {
+            key_arr
+                .iter()
+                .filter_map(|v| match v {
+                    fred::types::Value::String(s) => Some(s.to_string()),
+                    fred::types::Value::Bytes(b) => Some(String::from_utf8_lossy(b).to_string()),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        return (cursor, keys);
+    }
+    ("0".to_string(), Vec::new())
+}
