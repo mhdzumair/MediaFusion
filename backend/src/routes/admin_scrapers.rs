@@ -1805,7 +1805,7 @@ const SCHEDULER_JOBS: &[(&str, &str, &str, &str, &str)] = &[
         "formula_feeds",
         "Formula RSS Feeds",
         "scraper",
-        "Scrapes Formula content from BT4G and Reddit RSS (formulio-style fallback)",
+        "Scrapes Formula/MotoGP content from formulio RSS feeds (egortech, smcg, smcm, ss on BT4G/Knaben/Reddit)",
         "*/15 * * * *",
     ),
     (

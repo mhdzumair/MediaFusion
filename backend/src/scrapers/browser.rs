@@ -304,3 +304,101 @@ pub async fn fetch_torrent_via_browser(
     debug!("browser: fetched {} bytes for {torrent_url}", bytes.len());
     Some(bytes)
 }
+
+/// Playwright function: navigate to a URL and return the response body as text.
+const FETCH_TEXT_FUNCTION: &str = r#"
+export default async ({ page, context }) => {
+    const { feedUrl, userAgent } = context;
+    if (userAgent) {
+        await page.setUserAgent(userAgent);
+    }
+    const resp = await page.goto(feedUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    if (!resp) {
+        return { ok: false, reason: 'no_response' };
+    }
+    const status = resp.status();
+    const text = await resp.text();
+    return { ok: status >= 200 && status < 300, status, text };
+};
+"#;
+
+/// Fetch a text/XML document through browserless (real Chrome — bypasses Reddit 429/403).
+pub async fn fetch_text_via_browser(
+    client: &Client,
+    browserless_url: &str,
+    url: &str,
+    user_agent: Option<&str>,
+) -> Option<(u16, String)> {
+    let endpoint = format!(
+        "{}/chromium/function",
+        browserless_url.trim_end_matches('/')
+    );
+
+    let body = serde_json::json!({
+        "code": FETCH_TEXT_FUNCTION,
+        "context": {
+            "feedUrl": url,
+            "userAgent": user_agent,
+        },
+    });
+
+    debug!("browser: POST {endpoint} for text fetch {url}");
+
+    let resp = match client
+        .post(&endpoint)
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(90))
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(
+                error_kind = crate::util::http::transport_error_kind(&e),
+                "browser: text fetch request failed: {e}"
+            );
+            return None;
+        }
+    };
+
+    if !resp.status().is_success() {
+        warn!(
+            "browser: browserless returned HTTP {} for text fetch {url}",
+            resp.status()
+        );
+        return None;
+    }
+
+    let result: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| warn!("browser: failed to parse text fetch response: {e}"))
+        .ok()?;
+
+    if let Some(err) = result.get("error") {
+        warn!("browser: page function errored for text fetch {url}: {err}");
+        return None;
+    }
+
+    let status = result["status"].as_u64().unwrap_or(0) as u16;
+    let text = result["text"].as_str().unwrap_or("").to_string();
+
+    if !result["ok"].as_bool().unwrap_or(false) {
+        debug!(
+            "browser: text fetch HTTP {status} for {url} ({} bytes)",
+            text.len()
+        );
+        return Some((status, text));
+    }
+
+    if text.trim().is_empty() {
+        warn!("browser: empty text payload for {url}");
+        return None;
+    }
+
+    debug!(
+        "browser: fetched {} bytes (HTTP {status}) for {url}",
+        text.len()
+    );
+    Some((status, text))
+}
