@@ -18,6 +18,8 @@ use crate::{
     util::rate_limit,
 };
 
+use super::spider_args::parse_listing_page_args;
+
 pub struct RegistryCrawl;
 
 #[async_trait]
@@ -67,7 +69,12 @@ impl JobHandler for RegistryCrawl {
 
         let domain = rate_limit::domain_key(crawl.browse_url);
 
-        for page in 1..=crawl.max_pages {
+        let (pages, start_page) = parse_listing_page_args(&args);
+        let end_page = start_page
+            .saturating_add(pages.saturating_sub(1))
+            .min(crawl.max_pages);
+
+        for page in start_page..=end_page {
             if ctx.cancel.is_cancelled() {
                 debug!("registry_crawl: cancelled before page {page}");
                 return Err(JobError::Cancelled);

@@ -32,10 +32,12 @@ pub async fn handler(
         let poster_url = match meta.poster_url {
             Some(ref u) if !u.is_empty() => Some(u.clone()),
             // is_add_title = true: use full sports fallback (includes Other Sports catchall).
-            _ if meta.is_add_title => resolve_sports_poster_url(&state, id).await,
+            _ if meta.is_add_title => {
+                resolve_sports_poster_url(&state, id, meta.title.as_deref()).await
+            }
             // No stored poster: try a strict catalog-matched sports poster (no catchall)
             // so items with sports catalogs get a relevant poster even without is_add_title.
-            None => resolve_sports_poster_strict(&state, id).await,
+            None => resolve_sports_poster_strict(&state, id, meta.title.as_deref()).await,
             _ => None,
         };
 
@@ -262,17 +264,39 @@ async fn fetch_catalogs(state: &AppState, id: &str) -> Vec<String> {
     }
 }
 
+fn fighting_poster_for_title(title: Option<&str>) -> Option<String> {
+    title.and_then(crate::poster::sports::random_poster_for_fighting_title)
+}
+
 /// Full sports poster: catalog-matched with "Other Sports"/"Sports" catchall.
 /// Used when `is_add_title_to_poster = true`.
-async fn resolve_sports_poster_url(state: &AppState, id: &str) -> Option<String> {
+async fn resolve_sports_poster_url(
+    state: &AppState,
+    id: &str,
+    title: Option<&str>,
+) -> Option<String> {
     let catalogs = fetch_catalogs(state, id).await;
+    if catalogs.iter().any(|c| c == "fighting")
+        && let Some(url) = fighting_poster_for_title(title)
+    {
+        return Some(url);
+    }
     crate::poster::sports::random_sports_poster_for_catalogs(&catalogs)
 }
 
 /// Strict sports poster: only matches if the item has an explicit sports catalog.
 /// No catchall — non-sports items receive `None` and fall through to 404.
-async fn resolve_sports_poster_strict(state: &AppState, id: &str) -> Option<String> {
+async fn resolve_sports_poster_strict(
+    state: &AppState,
+    id: &str,
+    title: Option<&str>,
+) -> Option<String> {
     let catalogs = fetch_catalogs(state, id).await;
+    if catalogs.iter().any(|c| c == "fighting")
+        && let Some(url) = fighting_poster_for_title(title)
+    {
+        return Some(url);
+    }
     crate::poster::sports::random_sports_poster_strict_for_catalogs(&catalogs)
 }
 

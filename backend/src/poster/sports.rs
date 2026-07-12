@@ -105,6 +105,18 @@ pub fn random_sports_poster_strict_for_catalogs(catalogs: &[String]) -> Option<S
     pick_poster_for_keys(&keys, false)
 }
 
+/// Map a fighting torrent title to a brand-specific sports artifact key.
+pub fn fighting_brand_key(title: &str) -> &'static str {
+    crate::parser::detect_fighting_brand(title)
+}
+
+/// Pick a brand-appropriate fighting poster (WWE, AEW, UFC, Boxing, …).
+pub fn random_poster_for_fighting_title(title: &str) -> Option<String> {
+    let brand = fighting_brand_key(title);
+    pick_poster_for_keys(&[brand.to_string()], false)
+        .or_else(|| pick_poster_for_keys(&["Fighting".to_string()], false))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

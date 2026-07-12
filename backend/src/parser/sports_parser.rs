@@ -11,6 +11,7 @@
 ///   - `parse_sports_title(raw)` → ParsedTitle with correct title/year
 use std::sync::OnceLock;
 
+use chrono::Datelike;
 use regex::Regex;
 
 // ─── Category detection tables (ported from Python sports_parser.py) ──────────
@@ -396,6 +397,14 @@ fn bracket_tag_re() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\s*[\[\(][A-Za-z0-9._-]+[\]\)]").expect("bracket_tag_re"))
 }
 
+fn indexer_source_prefix_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"(?i)^(?:www\.)?[a-z0-9.-]+\.(?:org|net|com|pl)\s*-+\s*")
+            .expect("indexer_source_prefix_re")
+    })
+}
+
 fn file_ext_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -583,6 +592,12 @@ pub fn clean_sports_title(raw: &str) -> String {
     // Strip bracket/paren group tags first: "[TJET]", "[eztv]", "(PROPER)", …
     s = bracket_tag_re().replace_all(&s, "").into_owned();
 
+    // Strip indexer/source prefixes: "www.UIndex.org - boxing …"
+    s = indexer_source_prefix_re()
+        .replace(&s, "")
+        .trim()
+        .to_string();
+
     // Strip trailing release-group suffix (e.g. "-DARKSPORT", "-NWCHD")
     s = release_group_re().replace(&s, "").into_owned();
 
@@ -606,6 +621,169 @@ pub fn clean_sports_title(raw: &str) -> String {
     } else {
         s
     }
+}
+
+// ─── Team matchup canonicalization ─────────────────────────────────────────────
+
+/// Sports catalog keys where events are identified by two teams plus a date.
+/// Fuzzy pg_trgm matching is unsafe here: reversed team order and nearby dates
+/// routinely clear a 70% threshold and merge unrelated games.
+pub const TEAM_MATCHUP_CATEGORIES: &[&str] = &[
+    "baseball",
+    "basketball",
+    "hockey",
+    "american_football",
+    "football",
+    "rugby",
+];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeamMatchup {
+    pub team_a: String,
+    pub team_b: String,
+    /// Calendar date extracted from the title, when present.
+    pub event_date: Option<chrono::NaiveDate>,
+}
+
+fn team_matchup_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(
+            r"(?i)\b([A-Za-z][A-Za-z0-9&'.-]*(?:\s+[A-Za-z][A-Za-z0-9&'.-]*){0,5})\s+(?:vs\.?|versus|v\.?|@|\bat\b)\s+([A-Za-z][A-Za-z0-9&'.-]*(?:\s+[A-Za-z][A-Za-z0-9&'.-]*){0,5})\b",
+        )
+        .expect("team_matchup_re")
+    })
+}
+
+fn strip_trailing_date_from_team(name: &str) -> String {
+    static TRAILING_DATE: OnceLock<Regex> = OnceLock::new();
+    let re = TRAILING_DATE.get_or_init(|| {
+        Regex::new(
+            r"(?i)\s+(?:\d{1,2}[.\-/]\d{1,2}[.\-/](?:19|20)\d{2}|\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}|\d{4}\s+\d{1,2}\s+\d{1,2}|\d{1,2}\s+\d{1,2}\s+\d{4})$",
+        )
+        .expect("trailing_date_re")
+    });
+    multi_space_re()
+        .replace_all(re.replace(name, "").trim(), " ")
+        .into_owned()
+}
+
+fn trim_team_name(name: &str) -> String {
+    let mut s = strip_trailing_date_from_team(name)
+        .trim()
+        .trim_end_matches('.')
+        .to_string();
+    for token in ["1080p", "720p", "480p", "2160p", "4K", "UHD", "HDTV", "WEB"] {
+        if s.to_ascii_lowercase()
+            .ends_with(&token.to_ascii_lowercase())
+        {
+            s = s[..s.len().saturating_sub(token.len())].trim().to_string();
+        }
+    }
+    multi_space_re().replace_all(s.trim(), " ").into_owned()
+}
+
+/// Extract the trailing team-vs-team segment from a sports title.
+pub fn extract_team_matchup(title: &str) -> Option<TeamMatchup> {
+    if title.is_empty() {
+        return None;
+    }
+
+    let normalized = sep_re().replace_all(title, " ").into_owned();
+    let caps = team_matchup_re().captures(&normalized)?;
+    let team1 = trim_team_name(caps.get(1)?.as_str());
+    let team2 = trim_team_name(caps.get(2)?.as_str());
+    if team1.is_empty() || team2.is_empty() || team1.eq_ignore_ascii_case(&team2) {
+        return None;
+    }
+
+    Some(TeamMatchup {
+        team_a: team1,
+        team_b: team2,
+        event_date: extract_event_date_from_title(title),
+    })
+}
+
+/// Parse common sports event date formats embedded in torrent/page titles.
+pub fn extract_event_date_from_title(title: &str) -> Option<chrono::NaiveDate> {
+    static PATTERNS: &[(&str, &str)] = &[
+        (r"\b((?:19|20)\d{2})\.(\d{1,2})\.(\d{1,2})\b", "ymd_dot"),
+        (r"\b((?:19|20)\d{2})-(\d{1,2})-(\d{1,2})\b", "ymd_dash"),
+        (r"\b((?:19|20)\d{2})\s+(\d{1,2})\s+(\d{1,2})\b", "ymd_space"),
+        (r"\b(\d{1,2})\.(\d{1,2})\.((?:19|20)\d{2})\b", "dmy_dot"),
+        (r"\b(\d{1,2})-(\d{1,2})-((?:19|20)\d{2})\b", "dmy_dash"),
+        (r"\b(\d{1,2})\s+(\d{1,2})\s+((?:19|20)\d{2})\b", "dmy_space"),
+        (
+            r"\b((?:19|20)\d{2})_(\d{1,2})_(\d{1,2})\b",
+            "ymd_underscore",
+        ),
+    ];
+
+    for (pattern, kind) in PATTERNS {
+        let Ok(re) = Regex::new(pattern) else {
+            continue;
+        };
+        let Some(caps) = re.captures(title) else {
+            continue;
+        };
+        let (year, month, day): (i32, i32, i32) = match *kind {
+            "ymd_dot" | "ymd_dash" | "ymd_space" | "ymd_underscore" => (
+                caps.get(1)?.as_str().parse().ok()?,
+                caps.get(2)?.as_str().parse().ok()?,
+                caps.get(3)?.as_str().parse().ok()?,
+            ),
+            "dmy_dot" | "dmy_dash" | "dmy_space" => (
+                caps.get(3)?.as_str().parse().ok()?,
+                caps.get(2)?.as_str().parse().ok()?,
+                caps.get(1)?.as_str().parse().ok()?,
+            ),
+            _ => return None,
+        };
+        if (1..=12).contains(&month) && (1..=31).contains(&day) {
+            return chrono::NaiveDate::from_ymd_opt(year, month as u32, day as u32);
+        }
+    }
+    None
+}
+
+fn format_event_date(date: chrono::NaiveDate) -> String {
+    format!("{:02}.{:02}.{}", date.day(), date.month(), date.year())
+}
+
+/// Build a deterministic media title for a team matchup: teams sorted
+/// alphabetically (case-insensitive), joined with `" at "`, optional
+/// `DD.MM.YYYY` suffix when a date is known.
+pub fn canonical_matchup_title(title: &str) -> Option<String> {
+    let matchup = extract_team_matchup(title)?;
+    let mut teams = [matchup.team_a, matchup.team_b];
+    teams.sort_by_key(|a| a.to_ascii_lowercase());
+    let mut out = format!("{} at {}", teams[0], teams[1]);
+    if let Some(date) = matchup.event_date {
+        out.push(' ');
+        out.push_str(&format_event_date(date));
+    }
+    Some(out)
+}
+
+/// Resolve the media title/year used when creating or looking up sports stubs
+/// for team-based sports (MLB, NBA, etc.).
+pub fn resolve_team_matchup_media_title(
+    title: &str,
+    category: &str,
+) -> Option<(String, Option<i32>)> {
+    if !TEAM_MATCHUP_CATEGORIES.contains(&category) {
+        return None;
+    }
+    let canonical = canonical_matchup_title(title)?;
+    let year = extract_event_date_from_title(title)
+        .map(|d| d.year())
+        .or_else(|| {
+            year_re()
+                .captures(title)
+                .and_then(|c| c.get(1))
+                .and_then(|m| m.as_str().parse().ok())
+        });
+    Some((canonical, year))
 }
 
 // ─── WWE episode classification ──────────────────────────────────────────────
@@ -739,6 +917,165 @@ pub fn classify_wwe_title(title: &str) -> Option<WweEpisodeInfo> {
         season_number: year,
         episode_number: month * 100 + day,
     })
+}
+
+/// Weekly fighting series episode (WWE, AEW, …).
+pub struct FightingSeriesEpisode {
+    pub series_title: String,
+    pub season_number: i32,
+    pub episode_number: i32,
+    /// Brand key for poster selection (`WWE`, `AEW`, `UFC`, …).
+    pub brand: &'static str,
+}
+
+static AEW_PPV_IDENTIFIERS: &[&str] = &[
+    "forbidden door",
+    "all out",
+    "double or nothing",
+    "full gear",
+    "revolution",
+    "worlds end",
+    "wrestledream",
+    "all in",
+    "grand slam",
+];
+
+static AEW_WEEKLY_SHOWS: &[(&str, &str)] = &[
+    ("aew dynamite", "AEW Dynamite"),
+    ("aew collision", "AEW Collision"),
+    ("aew rampage", "AEW Rampage"),
+];
+
+fn season_episode_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?i)\bS(\d{1,2})E(\d{1,2})\b").expect("season_episode_re"))
+}
+
+fn parse_season_episode_from_title(title: &str) -> Option<(i32, i32)> {
+    let parsed = super::parse_title(title);
+    if let (Some(&season), Some(&episode)) = (parsed.seasons.first(), parsed.episodes.first()) {
+        return Some((season, episode));
+    }
+    let caps = season_episode_re().captures(title)?;
+    let season: i32 = caps.get(1)?.as_str().parse().ok()?;
+    let episode: i32 = caps.get(2)?.as_str().parse().ok()?;
+    Some((season, episode))
+}
+
+fn is_aew_ppv(normalized: &str) -> bool {
+    AEW_PPV_IDENTIFIERS
+        .iter()
+        .any(|ppv| normalized.contains(ppv))
+}
+
+/// Classify an AEW weekly show as a series episode when SxxExx or a date is present.
+pub fn classify_aew_title(title: &str) -> Option<FightingSeriesEpisode> {
+    let normalized = sep_re()
+        .replace_all(&title.to_lowercase(), " ")
+        .into_owned();
+
+    if !normalized.contains("aew") {
+        return None;
+    }
+
+    if is_aew_ppv(&normalized) {
+        return None;
+    }
+
+    for &(identifier, series) in AEW_WEEKLY_SHOWS {
+        if !normalized.contains(identifier) {
+            continue;
+        }
+
+        if let Some((season, episode)) = parse_season_episode_from_title(title) {
+            return Some(FightingSeriesEpisode {
+                series_title: series.to_string(),
+                season_number: season,
+                episode_number: episode,
+                brand: "AEW",
+            });
+        }
+
+        if let Some(caps) = wwe_date_re().captures(&normalized) {
+            let year: i32 = caps.get(1)?.as_str().parse().ok()?;
+            let month: i32 = caps.get(2)?.as_str().parse().ok()?;
+            let day: i32 = caps.get(3)?.as_str().parse().ok()?;
+            if (1990..=2030).contains(&year) && (1..=12).contains(&month) && (1..=31).contains(&day)
+            {
+                return Some(FightingSeriesEpisode {
+                    series_title: series.to_string(),
+                    season_number: year,
+                    episode_number: month * 100 + day,
+                    brand: "AEW",
+                });
+            }
+        }
+    }
+
+    None
+}
+
+/// Classify weekly fighting series episodes (WWE, AEW, …).
+pub fn classify_fighting_series_title(title: &str) -> Option<FightingSeriesEpisode> {
+    if let Some(wwe) = classify_wwe_title(title) {
+        return Some(FightingSeriesEpisode {
+            series_title: wwe.series_title.to_string(),
+            season_number: wwe.season_number,
+            episode_number: wwe.episode_number,
+            brand: "WWE",
+        });
+    }
+    classify_aew_title(title)
+}
+
+fn ufc_card_suffix_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"(?i)\s+(?:Main\s+Card|Early\s+Prelims?|Prelims?|PPV)\s*$")
+            .expect("ufc_card_suffix_re")
+    })
+}
+
+fn ufc_ppv_mid_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?i)\bPPV\b\s*").expect("ufc_ppv_mid_re"))
+}
+
+/// Strip UFC card-type suffixes and inline PPV tags for TMDB/event lookup.
+pub fn clean_ufc_event_title(title: &str) -> String {
+    let mut s = clean_sports_title(title);
+    s = ufc_card_suffix_re().replace(&s, "").into_owned();
+    s = ufc_ppv_mid_re().replace(&s, "").into_owned();
+    multi_space_re().replace_all(s.trim(), " ").into_owned()
+}
+
+/// Detect the fighting brand for poster selection.
+pub fn detect_fighting_brand(title: &str) -> &'static str {
+    let normalized = sep_re()
+        .replace_all(&title.to_lowercase(), " ")
+        .into_owned();
+    if normalized.contains("aew") {
+        "AEW"
+    } else if normalized.contains("ufc") {
+        "UFC"
+    } else if normalized.contains("bellator") {
+        "Bellator"
+    } else if normalized.contains("boxing") || normalized.contains("zuffa boxing") {
+        "Boxing"
+    } else if normalized.contains("wwe") {
+        "WWE"
+    } else {
+        "Fighting"
+    }
+}
+
+/// Build a display title for standalone fighting events (PPV, UFC cards, …).
+pub fn clean_fighting_event_title(raw: &str) -> String {
+    let normalized = sep_re().replace_all(&raw.to_lowercase(), " ").into_owned();
+    if normalized.contains("ufc") {
+        return clean_ufc_event_title(raw);
+    }
+    clean_sports_title(raw)
 }
 
 // ─── Title parsing ────────────────────────────────────────────────────────────
@@ -1618,6 +1955,35 @@ mod racing_tests {
 }
 
 #[cfg(test)]
+mod matchup_tests {
+    use super::*;
+
+    #[test]
+    fn canonical_title_sorts_reversed_teams_with_same_date() {
+        let a = canonical_matchup_title("Los Angeles Angels at Boston Red Sox 13.04.2024").unwrap();
+        let b = canonical_matchup_title("Boston Red Sox at Los Angeles Angels 13.04.2024").unwrap();
+        assert_eq!(a, "Boston Red Sox at Los Angeles Angels 13.04.2024");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn canonical_title_distinguishes_different_dates() {
+        let a = canonical_matchup_title("New York Mets at Atlanta Braves 06.07.2026").unwrap();
+        let b = canonical_matchup_title("New York Mets at Atlanta Braves 04.07.2026").unwrap();
+        assert_ne!(a, b);
+        assert_eq!(a, "Atlanta Braves at New York Mets 06.07.2026");
+        assert_eq!(b, "Atlanta Braves at New York Mets 04.07.2026");
+    }
+
+    #[test]
+    fn canonical_title_distinguishes_different_matchups() {
+        let a = canonical_matchup_title("Los Angeles Angels at Boston Red Sox 13.04.2024").unwrap();
+        let b = canonical_matchup_title("Boston Red Sox at Los Angeles Angels 04.07.2026").unwrap();
+        assert_ne!(a, b);
+    }
+}
+
+#[cfg(test)]
 mod category_detection_tests {
     use super::*;
 
@@ -1638,5 +2004,36 @@ mod category_detection_tests {
             detect_sports_category("MMA Fight Night 300 2026"),
             Some("fighting")
         );
+    }
+
+    #[test]
+    fn aew_dynamite_with_season_episode_is_series() {
+        let info =
+            classify_aew_title("AEW Dynamite S07E41 Beach Break MyAEW 2026-07-08 1080p").unwrap();
+        assert_eq!(info.series_title, "AEW Dynamite");
+        assert_eq!(info.season_number, 7);
+        assert_eq!(info.episode_number, 41);
+        assert_eq!(info.brand, "AEW");
+    }
+
+    #[test]
+    fn aew_forbidden_door_is_not_weekly_series() {
+        assert!(classify_aew_title("aew forbidden door 2026 ppv amzn 1080p").is_none());
+    }
+
+    #[test]
+    fn fighting_brand_detection() {
+        assert_eq!(detect_fighting_brand("AEW Collision S04E03"), "AEW");
+        assert_eq!(detect_fighting_brand("UFC Fight Night 240"), "UFC");
+        assert_eq!(detect_fighting_brand("WWE SmackDown 2026"), "WWE");
+    }
+
+    #[test]
+    fn classify_fighting_series_covers_aew() {
+        let info =
+            classify_fighting_series_title("AEW Collision S04E03 MyAEW 2026-07-11 1080p").unwrap();
+        assert_eq!(info.series_title, "AEW Collision");
+        assert_eq!(info.season_number, 4);
+        assert_eq!(info.episode_number, 3);
     }
 }

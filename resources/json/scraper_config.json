@@ -535,5 +535,15 @@
 		]
 	  }
 	]
+  },
+  "movierulz": {
+	"homepage": "https://www.5movierulz.day",
+	"categories": [
+	  "https://www.5movierulz.day/",
+	  "https://www.5movierulz.day/bollywood-movie-free/",
+	  "https://www.5movierulz.day/telugu-movie/",
+	  "https://www.5movierulz.day/tamil-movie-free/",
+	  "https://www.5movierulz.day/malayalam-movie-online/"
+	]
   }
 }

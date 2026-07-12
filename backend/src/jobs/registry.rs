@@ -25,7 +25,9 @@ use super::{
             arab_torrents::ArabTorrentsCrawl,
             ext_to::{FormulaExtCrawl, MotogpExtCrawl, MoviesExtCrawl, UfcExtCrawl, WweExtCrawl},
             eztv_rss::EztvRssCrawl,
+            fighting_feeds::FightingFeedsCrawl,
             formula_feeds::FormulaFeedsCrawl,
+            movierulz::MovieRulzCrawl,
             registry_crawl::RegistryCrawl,
             sport_video::SportVideoCrawl,
             tamil_forums::{TamilBlastersCrawl, TamilMvCrawl},
@@ -116,6 +118,8 @@ impl JobRegistry {
         self.register(Arc::new(TamilBlastersCrawl));
         self.register(Arc::new(FormulaExtCrawl));
         self.register(Arc::new(FormulaFeedsCrawl));
+        self.register(Arc::new(FightingFeedsCrawl));
+        self.register(Arc::new(MovieRulzCrawl));
         self.register(Arc::new(MotogpExtCrawl));
         self.register(Arc::new(WweExtCrawl));
         self.register(Arc::new(UfcExtCrawl));

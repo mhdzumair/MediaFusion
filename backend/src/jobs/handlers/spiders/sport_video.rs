@@ -404,9 +404,14 @@ impl JobHandler for SportVideoCrawl {
                 let detected_category: &str =
                     parser::detect_sports_category(&block.title).unwrap_or(category.as_str());
 
-                let media_id = media_resolve::find_or_create_sports_stub(
+                let media_title =
+                    parser::resolve_team_matchup_media_title(&block.title, detected_category)
+                        .map(|(t, _)| t)
+                        .unwrap_or_else(|| block.title.clone());
+
+                let media_id = media_resolve::find_or_create_sports_stub_with_title_poster(
                     pool,
-                    &block.title,
+                    &media_title,
                     parsed_title.year,
                     block.poster_url.as_deref(),
                     "MOVIE",
@@ -422,7 +427,7 @@ impl JobHandler for SportVideoCrawl {
                 let meta = SearchMeta {
                     media_id: crate::db::MediaId(media_id),
                     imdb_id: None,
-                    title: block.title.clone(),
+                    title: media_title,
                     year: parsed_title.year,
                 };
                 stream_convert::write_back_torrents(

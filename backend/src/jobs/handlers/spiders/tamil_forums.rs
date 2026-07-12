@@ -36,7 +36,7 @@ use crate::{
 //   - Torrent links: a[data-fileext='torrent'] (href = direct .torrent download URL)
 //   - Poster image:  div[data-role='commentContent'] img (first non-GIF)
 
-const MAX_PAGES: u32 = 5;
+use super::spider_args::parse_listing_page_args;
 
 // ─── Config reader ────────────────────────────────────────────────────────────
 
@@ -60,7 +60,7 @@ fn spider_homepage(spider_name: &str, default: &str, config_path: &str) -> Strin
 
 // ─── Shared scraping logic ────────────────────────────────────────────────────
 
-/// Scrape up to `MAX_PAGES` forum listing pages for `spider_name`.
+/// Scrape up to `pages` forum listing pages (from `start_page`) for `spider_name`.
 ///
 /// For each topic found, fetches the topic page, collects torrent download
 /// links, resolves/creates a media entry via title metadata lookup, and
@@ -70,6 +70,8 @@ async fn scrape_tamil_forum(
     source_label: &str,
     homepage: &str,
     catalogs: &serde_json::Value,
+    pages: u32,
+    start_page: u32,
     ctx: &JobCtx,
 ) -> Result<(), JobError> {
     let client = &ctx.state.http;
@@ -112,10 +114,15 @@ async fn scrape_tamil_forum(
         return Ok(());
     }
 
+    info!(
+        "{spider_name}: listing pages {start_page}..={}",
+        start_page.saturating_add(pages.saturating_sub(1))
+    );
+
     let mut all_streams: Vec<()> = Vec::new();
 
     for forum_id in &forum_ids {
-        for page in 1..=MAX_PAGES {
+        for page in start_page..start_page.saturating_add(pages) {
             if ctx.is_cancelled() {
                 return Err(JobError::Cancelled);
             }
@@ -534,11 +541,15 @@ impl JobHandler for TamilMvCrawl {
     const CONCURRENCY: usize = 1;
     type Args = serde_json::Value;
 
-    async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
+    async fn run(&self, args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
+        let (pages, start_page) = parse_listing_page_args(&args);
         let config_path = &ctx.state.config.scraper_config_path;
         let homepage = spider_homepage("tamilmv", "https://www.1tamilmv.earth", config_path);
         let catalogs = load_catalogs("tamilmv", config_path);
-        scrape_tamil_forum("tamilmv", "TamilMV", &homepage, &catalogs, &ctx).await
+        scrape_tamil_forum(
+            "tamilmv", "TamilMV", &homepage, &catalogs, pages, start_page, &ctx,
+        )
+        .await
     }
 }
 
@@ -550,7 +561,8 @@ impl JobHandler for TamilBlastersCrawl {
     const CONCURRENCY: usize = 1;
     type Args = serde_json::Value;
 
-    async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
+    async fn run(&self, args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
+        let (pages, start_page) = parse_listing_page_args(&args);
         let config_path = &ctx.state.config.scraper_config_path;
         let homepage = spider_homepage("tamil_blasters", "https://1tamilblasters.wtf", config_path);
         let catalogs = load_catalogs("tamil_blasters", config_path);
@@ -559,8 +571,36 @@ impl JobHandler for TamilBlastersCrawl {
             "TamilBlasters",
             &homepage,
             &catalogs,
+            pages,
+            start_page,
             &ctx,
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::jobs::handlers::spiders::spider_args::parse_listing_page_args;
+    use serde_json::json;
+
+    #[test]
+    fn listing_pages_default_to_one() {
+        assert_eq!(parse_listing_page_args(&json!({})), (1, 1));
+    }
+
+    #[test]
+    fn listing_pages_from_args() {
+        assert_eq!(
+            parse_listing_page_args(&json!({"pages": 5, "start_page": 2})),
+            (5, 2)
+        );
+        assert_eq!(parse_listing_page_args(&json!({"total_pages": 3})), (3, 1));
+    }
+
+    #[test]
+    fn listing_pages_clamped() {
+        assert_eq!(parse_listing_page_args(&json!({"pages": 0})), (1, 1));
+        assert_eq!(parse_listing_page_args(&json!({"pages": 999})), (100, 1));
     }
 }

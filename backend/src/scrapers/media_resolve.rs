@@ -1217,13 +1217,61 @@ pub async fn search_meta_for_scraped(
 /// deterministically, so fuzzy matching is skipped entirely for these.
 const RACING_CATEGORIES: &[&str] = &["formula_racing", "motogp_racing"];
 
+/// Resolve fighting content: try TMDB metadata for known series/events, then fall
+/// back to a sports stub with a brand-appropriate poster.
+pub async fn resolve_fighting_media(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    title: &str,
+    year: Option<i32>,
+    media_type: &str,
+    catalog: &str,
+    tmdb_api_key: Option<&str>,
+    cinemeta_fallback_enabled: bool,
+) -> Option<i32> {
+    let is_series = media_type.eq_ignore_ascii_case("series");
+    let lookup_title = if is_series {
+        title.to_string()
+    } else {
+        crate::parser::clean_fighting_event_title(title)
+    };
+
+    if tmdb_api_key.is_some()
+        && let Some(media) = find_or_create_media(
+            pool,
+            http,
+            &lookup_title,
+            year,
+            is_series,
+            &[catalog],
+            tmdb_api_key,
+            cinemeta_fallback_enabled,
+        )
+        .await
+    {
+        link_to_catalogs(pool, media.id, &[catalog]).await;
+        return Some(media.id);
+    }
+
+    let brand_poster = crate::poster::sports::random_poster_for_fighting_title(title);
+    find_or_create_sports_stub(
+        pool,
+        &lookup_title,
+        year,
+        brand_poster.as_deref(),
+        media_type,
+        catalog,
+    )
+    .await
+}
+
 /// Find or create a minimal media stub for a sports event, skipping any external
 /// metadata lookup. Sports event titles (match replays, highlight clips) are not
 /// on TMDB/IMDb, so a remote lookup would be wasted latency.
 ///
 /// `category` is the sports catalog key (e.g. "formula_racing", "fighting") —
 /// used only to decide whether fuzzy title matching is safe to apply; see
-/// `RACING_CATEGORIES`.
+/// `RACING_CATEGORIES` and `TEAM_MATCHUP_CATEGORIES`.
 ///
 /// Sets `is_add_title_to_poster = true` on newly-created stubs so the poster
 /// endpoint auto-selects a genre-matched poster from the bundled sports artifacts.
@@ -1235,14 +1283,55 @@ pub async fn find_or_create_sports_stub(
     media_type: &str,
     category: &str,
 ) -> Option<i32> {
+    find_or_create_sports_stub_inner(pool, title, year, poster_url, media_type, category, false)
+        .await
+}
+
+/// Like [`find_or_create_sports_stub`], but always sets `is_add_title_to_poster = true`
+/// on the resolved row — used by the sport-video scraper so scraped poster URLs still
+/// get the title overlay treatment.
+pub async fn find_or_create_sports_stub_with_title_poster(
+    pool: &PgPool,
+    title: &str,
+    year: Option<i32>,
+    poster_url: Option<&str>,
+    media_type: &str,
+    category: &str,
+) -> Option<i32> {
+    find_or_create_sports_stub_inner(pool, title, year, poster_url, media_type, category, true)
+        .await
+}
+
+pub async fn ensure_add_title_to_poster(pool: &PgPool, media_id: i32) {
+    let _ = sqlx::query(
+        "UPDATE media SET is_add_title_to_poster = true, updated_at = NOW() WHERE id = $1",
+    )
+    .bind(media_id)
+    .execute(pool)
+    .await;
+}
+
+async fn find_or_create_sports_stub_inner(
+    pool: &PgPool,
+    title: &str,
+    year: Option<i32>,
+    poster_url: Option<&str>,
+    media_type: &str,
+    category: &str,
+    force_add_title_to_poster: bool,
+) -> Option<i32> {
+    let (lookup_title, lookup_year) =
+        crate::parser::resolve_team_matchup_media_title(title, category)
+            .unwrap_or_else(|| (title.to_string(), year));
+
     // 1. Exact title match (case-insensitive).
     let mt = wire_media_type(media_type)?;
-    let row: Option<(i32,)> = if let Some(y) = year {
+    let row: Option<(i32,)> = if let Some(y) = lookup_year {
         sqlx::query_as(
             "SELECT id FROM media WHERE LOWER(title) = LOWER($1) \
              AND type = $2 AND (year = $3 OR year IS NULL) LIMIT 1",
         )
-        .bind(title)
+        .bind(&lookup_title)
         .bind(mt)
         .bind(y)
         .fetch_optional(pool)
@@ -1254,7 +1343,7 @@ pub async fn find_or_create_sports_stub(
             "SELECT id FROM media WHERE LOWER(title) = LOWER($1) \
              AND type = $2 LIMIT 1",
         )
-        .bind(title)
+        .bind(&lookup_title)
         .bind(mt)
         .fetch_optional(pool)
         .await
@@ -1263,34 +1352,46 @@ pub async fn find_or_create_sports_stub(
     };
 
     if let Some((id,)) = row {
+        if force_add_title_to_poster {
+            ensure_add_title_to_poster(pool, id).await;
+        }
         return Some(id);
     }
 
     let is_racing = RACING_CATEGORIES.contains(&category);
+    let is_team_matchup = crate::parser::TEAM_MATCHUP_CATEGORIES.contains(&category);
 
-    if !is_racing {
+    if !is_racing && !is_team_matchup {
         // 2. Fuzzy pg_trgm match (same threshold as find_or_create_media).
         let fuzzy: Option<(i32, String)> = sqlx::query_as(
             "SELECT id, title FROM media WHERE type = $1 AND title % $2 \
              ORDER BY similarity(title, $2) DESC LIMIT 1",
         )
         .bind(mt)
-        .bind(title)
+        .bind(&lookup_title)
         .fetch_optional(pool)
         .await
         .ok()
         .flatten();
 
         if let Some((id, existing_title)) = fuzzy
-            && crate::parser::similarity_ratio(title, &existing_title) >= 70
+            && crate::parser::similarity_ratio(&lookup_title, &existing_title) >= 70
         {
+            if force_add_title_to_poster {
+                ensure_add_title_to_poster(pool, id).await;
+            }
             return Some(id);
         }
 
         // 3. Create stub with is_add_title_to_poster = true via the metadata funnel.
-        if let Some(existing) = crate::db::find_existing_media(pool, mt, title, year).await {
+        if let Some(existing) =
+            crate::db::find_existing_media(pool, mt, &lookup_title, lookup_year).await
+        {
             if let Some(url) = poster_url {
                 crate::db::upsert_primary_image(pool, existing.0, "poster", url).await;
+            }
+            if force_add_title_to_poster {
+                ensure_add_title_to_poster(pool, existing.0).await;
             }
             return Some(existing.0);
         }
@@ -1298,19 +1399,19 @@ pub async fn find_or_create_sports_stub(
 
     let meta = crate::db::NormalizedMetadata {
         media_type: mt,
-        title: title.to_string(),
-        year,
+        title: lookup_title.clone(),
+        year: lookup_year,
         poster_url: poster_url.map(str::to_string),
         ..Default::default()
     };
 
     // `store_media` re-resolves by exact/fuzzy title match internally when
     // `existing_media_id` is unset — the same collision-prone fuzzy path we
-    // just bypassed above. For racing, we already know (via the exact-match
-    // check at the top of this function) that no matching row exists, so
-    // force a plain insert by passing a zero id (falls through to the
-    // `insert_media_row` branch instead of `resolve_existing_media`).
-    let opts = if is_racing {
+    // just bypassed above. For racing and team matchups, we already know (via
+    // the exact-match check at the top of this function) that no matching row
+    // exists, so force a plain insert by passing a zero id (falls through to
+    // the `insert_media_row` branch instead of `resolve_existing_media`).
+    let opts = if is_racing || is_team_matchup {
         crate::db::StoreMediaOpts {
             existing_media_id: Some(crate::db::MediaId(0)),
             ..crate::db::StoreMediaOpts::sports_stub()
@@ -1321,8 +1422,12 @@ pub async fn find_or_create_sports_stub(
 
     let media_id = crate::db::store_media(pool, &meta, opts).await.ok()?;
 
+    if force_add_title_to_poster {
+        ensure_add_title_to_poster(pool, media_id.0).await;
+    }
+
     debug!(
-        "media_resolve: created sports stub {} ({media_type}) for '{title}'",
+        "media_resolve: created sports stub {} ({media_type}) for '{title}' → '{lookup_title}'",
         media_id.0
     );
     Some(media_id.0)

@@ -54,6 +54,7 @@ use crate::{
 };
 
 use super::formula_racing::{self, HtmlTorrentFile};
+use super::spider_args::{effective_page_limit, parse_listing_page_args};
 
 type ListingRow = (String, String, Option<i32>, Option<i64>, Option<String>);
 
@@ -710,7 +711,11 @@ async fn fetch_detail_download(
 
 // ─── Main catalog scraper ─────────────────────────────────────────────────────
 
-pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Result<(), JobError> {
+pub(crate) async fn scrape_ext_catalog(
+    spec: &CatalogSpec,
+    args: &serde_json::Value,
+    ctx: &JobCtx,
+) -> Result<(), JobError> {
     let domain = ext_to_domain(&ctx.state.config.scraper_config_path);
     let base_url = format!("https://{domain}");
     let client = &ctx.state.http;
@@ -738,13 +743,40 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
     }
 
     let mut total_written = 0usize;
+    let (_, start_page) = parse_listing_page_args(args);
+    let page_limit = effective_page_limit(args);
 
     for (start_url, is_profile, page_uploader) in start_urls {
         let mut current_url = start_url.clone();
+        let mut listing_page = 1u32;
+        let mut pages_scraped = 0u32;
+
+        // Advance to `start_page` without processing rows.
+        while listing_page < start_page {
+            if ctx.is_cancelled() {
+                return Err(JobError::Cancelled);
+            }
+            rate_limit::wait(&rate_key, 1).await;
+            let Some(html) = fetch_html(spec.source, &current_url, client, &byparr_url).await
+            else {
+                break;
+            };
+            let next_url = find_next_page_url(&html, &base_url, &current_url, is_profile);
+            match next_url {
+                Some(next) => {
+                    current_url = next;
+                    listing_page += 1;
+                }
+                None => break,
+            }
+        }
 
         loop {
             if ctx.is_cancelled() {
                 return Err(JobError::Cancelled);
+            }
+            if pages_scraped >= page_limit {
+                break;
             }
 
             rate_limit::wait(&rate_key, 1).await;
@@ -764,7 +796,12 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                 break;
             }
 
-            info!("{}: {} rows on {current_url}", spec.source, rows.len());
+            info!(
+                "{}: {} rows on {current_url} (listing page {listing_page})",
+                spec.source,
+                rows.len()
+            );
+            pages_scraped += 1;
 
             for (title, detail_url, seeders, size, row_uploader) in rows {
                 if ctx.is_cancelled() {
@@ -827,7 +864,7 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                 // SmackDown, NXT, …), a race weekend (grouped into a series
                 // with one episode per session), Drive to Survive, or a
                 // standalone movie (PPV events, etc.).
-                let wwe_info = parser::classify_wwe_title(&title);
+                let wwe_info = parser::classify_fighting_series_title(&title);
                 let racing_info = parser::parse_racing_title(&title);
                 let drive_to_survive = parser::classify_drive_to_survive(&title);
                 let (clean_title, year, effective_media_type, files) =
@@ -844,9 +881,6 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                         }];
                         (series_title, None, "series", files)
                     } else if let Some(ref info) = wwe_info {
-                        // Weekly show → series episode.
-                        // Use the episode full title as the file name so
-                        // the episode appears with a descriptive label.
                         let episode_title = parser::clean_sports_title(&title);
                         let files = vec![StreamFile {
                             file_index: 0,
@@ -854,8 +888,7 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                             season_number: info.season_number,
                             episode_number: info.episode_number,
                         }];
-                        // The series itself has no year (it spans many seasons).
-                        (info.series_title.to_string(), None, "series", files)
+                        (info.series_title.clone(), None, "series", files)
                     } else if let Some(ref racing) = racing_info {
                         let display_title = racing
                             .session
@@ -873,8 +906,11 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                         .await;
                         (racing.series_title.clone(), racing.year, "series", files)
                     } else {
-                        // Movie or PPV event.
-                        let clean = parsed.title.clone().unwrap_or_else(|| title.clone());
+                        let clean = if spec.category == "fighting" {
+                            parser::clean_fighting_event_title(&title)
+                        } else {
+                            parsed.title.clone().unwrap_or_else(|| title.clone())
+                        };
                         (clean, parsed.year, spec.media_type, vec![])
                     };
 
@@ -893,16 +929,31 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                 );
 
                 let stub_media_type = effective_media_type.to_uppercase();
-                let media_id = media_resolve::find_or_create_sports_stub(
-                    pool,
-                    &clean_title,
-                    year,
-                    None,
-                    &stub_media_type,
-                    spec.category,
-                )
-                .await
-                .unwrap_or(0);
+                let media_id = if spec.category == "fighting" {
+                    media_resolve::resolve_fighting_media(
+                        pool,
+                        client,
+                        &clean_title,
+                        year,
+                        effective_media_type,
+                        spec.category,
+                        ctx.state.config.tmdb_api_key.as_deref(),
+                        ctx.state.config.imdb_cinemeta_fallback_enabled,
+                    )
+                    .await
+                    .unwrap_or(0)
+                } else {
+                    media_resolve::find_or_create_sports_stub(
+                        pool,
+                        &clean_title,
+                        year,
+                        None,
+                        &stub_media_type,
+                        spec.category,
+                    )
+                    .await
+                    .unwrap_or(0)
+                };
 
                 if media_id > 0 {
                     media_resolve::link_to_catalogs(pool, media_id, &[spec.category]).await;
@@ -987,7 +1038,10 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
             // Pagination.
             let next_url = find_next_page_url(&html, &base_url, &current_url, is_profile);
             match next_url {
-                Some(next) => current_url = next,
+                Some(next) => {
+                    current_url = next;
+                    listing_page += 1;
+                }
                 None => break,
             }
         }
@@ -1050,8 +1104,8 @@ impl JobHandler for FormulaExtCrawl {
     const CONCURRENCY: usize = 1;
     type Args = serde_json::Value;
 
-    async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        scrape_ext_catalog(&FORMULA_SPEC, &ctx).await
+    async fn run(&self, args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
+        scrape_ext_catalog(&FORMULA_SPEC, &args, &ctx).await
     }
 }
 
@@ -1063,8 +1117,8 @@ impl JobHandler for MotogpExtCrawl {
     const CONCURRENCY: usize = 1;
     type Args = serde_json::Value;
 
-    async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        scrape_ext_catalog(&MOTOGP_SPEC, &ctx).await
+    async fn run(&self, args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
+        scrape_ext_catalog(&MOTOGP_SPEC, &args, &ctx).await
     }
 }
 
@@ -1076,8 +1130,8 @@ impl JobHandler for WweExtCrawl {
     const CONCURRENCY: usize = 1;
     type Args = serde_json::Value;
 
-    async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        scrape_ext_catalog(&WWE_SPEC, &ctx).await
+    async fn run(&self, args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
+        scrape_ext_catalog(&WWE_SPEC, &args, &ctx).await
     }
 }
 
@@ -1089,8 +1143,8 @@ impl JobHandler for UfcExtCrawl {
     const CONCURRENCY: usize = 1;
     type Args = serde_json::Value;
 
-    async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        scrape_ext_catalog(&UFC_SPEC, &ctx).await
+    async fn run(&self, args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
+        scrape_ext_catalog(&UFC_SPEC, &args, &ctx).await
     }
 }
 
@@ -1102,7 +1156,7 @@ impl JobHandler for MoviesExtCrawl {
     const CONCURRENCY: usize = 1;
     type Args = serde_json::Value;
 
-    async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        scrape_ext_catalog(&MOVIES_TV_SPEC, &ctx).await
+    async fn run(&self, args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
+        scrape_ext_catalog(&MOVIES_TV_SPEC, &args, &ctx).await
     }
 }

@@ -72,6 +72,14 @@ import { computeHistoryDurationSeconds } from '@/lib/api/scheduler'
 import type { SchedulerCategory, SchedulerJobInfo } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ImdbDatasetImportPanel } from './ImdbDatasetImportPanel'
+import { ScraperPaginationPanel } from './components/ScraperPaginationPanel'
+import {
+  formatPaginationSummary,
+  mergePaginationIntoPayload,
+  parsePaginationFromPayload,
+  stripPaginationFromPayload,
+  supportsListingPagination,
+} from '@/lib/scraperPagination'
 
 function getCategoryIcon(category: SchedulerCategory) {
   switch (category) {
@@ -165,7 +173,24 @@ function JobDetailForm({
   const updateJob = useUpdateSchedulerJob()
   const { toast } = useToast()
   const [scheduleDraft, setScheduleDraft] = useState(job.crontab)
-  const [payloadDraft, setPayloadDraft] = useState(JSON.stringify(job.payload ?? {}, null, 2))
+  const basePayload = (job.payload ?? {}) as Record<string, unknown>
+  const listingPaginationSupported = supportsListingPagination(job.id)
+  const [paginationState, setPaginationState] = useState(() => parsePaginationFromPayload(basePayload))
+  const [extraPayloadDraft, setExtraPayloadDraft] = useState(() =>
+    listingPaginationSupported
+      ? JSON.stringify(stripPaginationFromPayload(basePayload), null, 2)
+      : JSON.stringify(basePayload, null, 2),
+  )
+  let mergedPayloadPreview: Record<string, unknown> = {}
+  try {
+    mergedPayloadPreview = mergePaginationIntoPayload(
+      JSON.parse(extraPayloadDraft || '{}') as Record<string, unknown>,
+      job.id,
+      paginationState,
+    )
+  } catch {
+    mergedPayloadPreview = mergePaginationIntoPayload({}, job.id, paginationState)
+  }
 
   const handleToggleEnabled = async (enabled: boolean) => {
     try {
@@ -200,13 +225,19 @@ function JobDetailForm({
 
   const handleSavePayload = async () => {
     try {
-      const parsed = JSON.parse(payloadDraft) as Record<string, unknown>
+      let parsedExtra: Record<string, unknown> = {}
+      if (extraPayloadDraft.trim()) {
+        parsedExtra = JSON.parse(extraPayloadDraft) as Record<string, unknown>
+      }
+      const parsed = listingPaginationSupported
+        ? mergePaginationIntoPayload(parsedExtra, job.id, paginationState)
+        : parsedExtra
       await updateJob.mutateAsync({ jobId: job.id, payload: { payload: parsed } })
       toast({ title: 'Payload Updated', description: `${job.display_name} payload saved.` })
     } catch (error) {
       const message =
         error instanceof SyntaxError
-          ? 'Payload must be valid JSON.'
+          ? 'Additional payload must be valid JSON.'
           : error instanceof Error
             ? error.message
             : 'An error occurred'
@@ -331,12 +362,31 @@ function JobDetailForm({
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-medium text-muted-foreground">Edit Payload (JSON)</label>
-          <Textarea
-            value={payloadDraft}
-            onChange={(event) => setPayloadDraft(event.target.value)}
-            className="font-mono text-xs min-h-[120px]"
-          />
+          <label className="text-xs font-medium text-muted-foreground">Run payload</label>
+          {listingPaginationSupported ? (
+            <>
+              <ScraperPaginationPanel jobId={job.id} value={paginationState} onChange={setPaginationState} />
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground">Additional payload keys (JSON)</label>
+                <Textarea
+                  value={extraPayloadDraft}
+                  onChange={(event) => setExtraPayloadDraft(event.target.value)}
+                  className="font-mono text-xs min-h-[80px]"
+                  placeholder="{}"
+                />
+              </div>
+              <div className="rounded-lg bg-muted/40 p-3 font-mono text-xs">
+                <p className="text-xs text-muted-foreground mb-1">Effective payload preview</p>
+                <pre>{JSON.stringify(mergedPayloadPreview, null, 2)}</pre>
+              </div>
+            </>
+          ) : (
+            <Textarea
+              value={extraPayloadDraft}
+              onChange={(event) => setExtraPayloadDraft(event.target.value)}
+              className="font-mono text-xs min-h-[120px]"
+            />
+          )}
           <Button size="sm" onClick={handleSavePayload} disabled={updateJob.isPending}>
             {updateJob.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -545,6 +595,9 @@ function JobRow({
           <div>
             <p className="font-medium">{job.display_name}</p>
             <p className="text-xs text-muted-foreground line-clamp-1">{job.description}</p>
+            {formatPaginationSummary(job.id, job.payload) && (
+              <p className="text-xs text-primary mt-0.5">{formatPaginationSummary(job.id, job.payload)}</p>
+            )}
           </div>
         </div>
       </TableCell>
@@ -639,6 +692,8 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [confirmRun, setConfirmRun] = useState<ConfirmRunState | null>(null)
   const [forceRun, setForceRun] = useState(false)
+  const [runPaginationState, setRunPaginationState] = useState(() => parsePaginationFromPayload(undefined))
+  const [useRunPaginationOverride, setUseRunPaginationOverride] = useState(false)
   const [confirmDmmFullRunOpen, setConfirmDmmFullRunOpen] = useState(false)
   const [resetDmmCheckpoints, setResetDmmCheckpoints] = useState(false)
   const [liveUpdatesEnabled, setLiveUpdatesEnabled] = useState(true)
@@ -692,6 +747,15 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
 
   const handleRunJob = async (job: SchedulerJobInfo, mode: RunMode) => {
     try {
+      let runPayload: Record<string, unknown> | undefined
+      if (mode === 'queue' && useRunPaginationOverride && supportsListingPagination(job.id)) {
+        runPayload = mergePaginationIntoPayload(
+          stripPaginationFromPayload((job.payload ?? {}) as Record<string, unknown>),
+          job.id,
+          runPaginationState,
+        )
+      }
+
       if (mode === 'inline') {
         const result = await runJobInline.mutateAsync(job.id)
         if (result.success) {
@@ -707,7 +771,7 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
           })
         }
       } else {
-        await runJob.mutateAsync({ jobId: job.id, forceRun })
+        await runJob.mutateAsync({ jobId: job.id, forceRun, payload: runPayload })
         toast({
           title: forceRun ? 'Job Force-Queued' : 'Job Queued',
           description: forceRun
@@ -716,6 +780,7 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
         })
       }
       setForceRun(false)
+      setUseRunPaginationOverride(false)
       setConfirmRun(null)
     } catch (error) {
       toast({
@@ -1088,6 +1153,8 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
                   globalSchedulerDisabled={stats?.global_scheduler_disabled ?? false}
                   onRun={() => {
                     setForceRun(false)
+                    setUseRunPaginationOverride(false)
+                    setRunPaginationState(parsePaginationFromPayload(job.payload))
                     setConfirmRun({ job, mode: 'queue' })
                   }}
                   onRunInline={() => setConfirmRun({ job, mode: 'inline' })}
@@ -1115,6 +1182,7 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
         onOpenChange={(open) => {
           if (!open) {
             setForceRun(false)
+            setUseRunPaginationOverride(false)
             setConfirmRun(null)
           }
         }}
@@ -1147,6 +1215,32 @@ export function SchedulerPage({ embedded = false }: { embedded?: boolean } = {})
                 <>
                   This will queue <strong>{confirmRun?.job.display_name}</strong> for immediate execution. The job will
                   run in the background.
+                  {confirmRun && supportsListingPagination(confirmRun.job.id) && (
+                    <div className="mt-4 space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium">Override pagination for this run</p>
+                          <p className="text-xs text-muted-foreground">
+                            Uses saved schedule payload when off. Saved:{' '}
+                            {formatPaginationSummary(confirmRun.job.id, confirmRun.job.payload) ?? '1 page'}
+                          </p>
+                        </div>
+                        <Switch
+                          checked={useRunPaginationOverride}
+                          onCheckedChange={setUseRunPaginationOverride}
+                          aria-label="Override pagination for manual run"
+                        />
+                      </div>
+                      {useRunPaginationOverride && (
+                        <ScraperPaginationPanel
+                          jobId={confirmRun.job.id}
+                          value={runPaginationState}
+                          onChange={setRunPaginationState}
+                          compact
+                        />
+                      )}
+                    </div>
+                  )}
                   <div className="mt-4 flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 p-3">
                     <div>
                       <p className="text-sm font-medium">Force run</p>

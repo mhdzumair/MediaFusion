@@ -122,6 +122,25 @@ pub async fn list_spiders(
     .into_response()
 }
 
+/// Merge optional run parameters from the admin request body into the job payload.
+fn merge_spider_run_payload(
+    mut payload: serde_json::Value,
+    body: &serde_json::Value,
+) -> serde_json::Value {
+    let Some(body_obj) = body.as_object() else {
+        return payload;
+    };
+    let Some(payload_obj) = payload.as_object_mut() else {
+        return payload;
+    };
+    for (key, value) in body_obj {
+        if key != "spider_name" {
+            payload_obj.insert(key.clone(), value.clone());
+        }
+    }
+    payload
+}
+
 /// POST /api/v1/admin/scrapers/run
 pub async fn run_scraper(
     headers: HeaderMap,
@@ -151,7 +170,8 @@ pub async fn run_scraper(
         )
             .into_response();
     };
-    let payload = payload.unwrap_or(serde_json::json!({}));
+    let payload = payload.unwrap_or_else(|| serde_json::json!({}));
+    let payload = merge_spider_run_payload(payload, &body);
     match crate::jobs::enqueue::enqueue_simple(&state.pool, queue, &payload, Default::default())
         .await
     {
@@ -182,6 +202,8 @@ fn spider_name_to_queue(spider_name: &str) -> Option<(&'static str, Option<serde
         "tamil_blasters" => Some(("spider_tamil_blasters", None)),
         "formula_ext" => Some(("spider_formula_ext", None)),
         "formula_feeds" => Some(("spider_formula_feeds", None)),
+        "fighting_feeds" => Some(("spider_fighting_feeds", None)),
+        "movierulz" => Some(("spider_movierulz", None)),
         "motogp_ext" => Some(("spider_motogp_ext", None)),
         "wwe_ext" => Some(("spider_wwe_ext", None)),
         "ufc_ext" => Some(("spider_ufc_ext", None)),
@@ -1809,6 +1831,20 @@ const SCHEDULER_JOBS: &[(&str, &str, &str, &str, &str)] = &[
         "*/15 * * * *",
     ),
     (
+        "fighting_feeds",
+        "Fighting RSS Feeds",
+        "scraper",
+        "Scrapes WWE/UFC/MMA/AEW/Bellator content from BT4G and Knaben RSS feeds",
+        "*/20 * * * *",
+    ),
+    (
+        "movierulz",
+        "MovieRulz",
+        "scraper",
+        "Scrapes Indian cinema magnet links from 5movierulz.day",
+        "0 */2 * * *",
+    ),
+    (
         "motogp_ext",
         "MotoGP EXT",
         "scraper",
@@ -2068,6 +2104,8 @@ const SCHEDULER_JOBS: &[(&str, &str, &str, &str, &str)] = &[
 const SCRAPY_SPIDER_IDS: &[&str] = &[
     "formula_ext",
     "formula_feeds",
+    "fighting_feeds",
+    "movierulz",
     "motogp_ext",
     "wwe_ext",
     "ufc_ext",
@@ -2232,6 +2270,8 @@ fn job_id_to_cron_name(job_id: &str) -> Option<String> {
             "tamil_blasters" => Some("spider_tamil_blasters".into()),
             "formula_ext" => Some("spider_formula_ext".into()),
             "formula_feeds" => Some("spider_formula_feeds".into()),
+            "fighting_feeds" => Some("spider_fighting_feeds".into()),
+            "movierulz" => Some("spider_movierulz".into()),
             "motogp_ext" => Some("spider_motogp_ext".into()),
             "wwe_ext" => Some("spider_wwe_ext".into()),
             "ufc_ext" => Some("spider_ufc_ext".into()),
@@ -2302,6 +2342,8 @@ fn job_id_to_queue(job_id: &str) -> &'static str {
             "tamilmv" | "tamil_blasters" => "spider_tamilmv",
             "formula_ext" => "spider_formula_ext",
             "formula_feeds" => "spider_formula_feeds",
+            "fighting_feeds" => "spider_fighting_feeds",
+            "movierulz" => "spider_movierulz",
             "motogp_ext" => "spider_motogp_ext",
             "wwe_ext" => "spider_wwe_ext",
             "ufc_ext" => "spider_ufc_ext",

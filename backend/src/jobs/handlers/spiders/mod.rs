@@ -1,8 +1,12 @@
 pub mod arab_torrents;
 pub mod ext_to;
 pub mod eztv_rss;
+pub mod fighting_feeds;
 pub mod formula_feeds;
 pub mod formula_racing;
+pub mod movierulz;
 pub mod registry_crawl;
+pub mod spider_args;
 pub mod sport_video;
+pub mod sports_rss_common;
 pub mod tamil_forums;

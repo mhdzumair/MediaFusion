@@ -20,10 +20,13 @@ pub use sort::{
 };
 
 pub use sports_parser::{
-    RacingParsed, WweEpisodeInfo, classify_drive_to_survive, classify_wwe_title,
-    clean_sports_title, detect_sports_category, is_sports_title, numbered_prefix_episode,
+    FightingSeriesEpisode, RacingParsed, TEAM_MATCHUP_CATEGORIES, WweEpisodeInfo,
+    canonical_matchup_title, classify_aew_title, classify_drive_to_survive,
+    classify_fighting_series_title, classify_wwe_title, clean_fighting_event_title,
+    clean_sports_title, clean_ufc_event_title, detect_fighting_brand, detect_sports_category,
+    extract_event_date_from_title, extract_team_matchup, is_sports_title, numbered_prefix_episode,
     parse_racing_title, parse_sports_title, racing_file_display_title, racing_file_episode,
-    racing_session_episode,
+    racing_session_episode, resolve_team_matchup_media_title,
 };
 
 use std::sync::OnceLock;
