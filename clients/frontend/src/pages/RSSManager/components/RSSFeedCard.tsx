@@ -152,6 +152,11 @@ export function RSSFeedCard({ feed, onEdit, showOwner, isAdmin }: RSSFeedCardPro
                       {feed.content_type}
                     </Badge>
                   )}
+                  {feed.media_resolve_mode === 'create_stub' && feed.content_type !== 'sports' && (
+                    <Badge variant="outline" className="text-xs border-amber-500/50 text-amber-600">
+                      create media
+                    </Badge>
+                  )}
                   {feed.source && (
                     <Badge variant="outline" className="text-xs">
                       {feed.source}
@@ -289,7 +294,7 @@ export function RSSFeedCard({ feed, onEdit, showOwner, isAdmin }: RSSFeedCardPro
           </div>
 
           {/* Last run stats */}
-          {metrics && metrics.items_processed_last_run > 0 && (
+          {metrics && (metrics.items_processed_last_run > 0 || metrics.items_skipped_last_run > 0) && (
             <div className="mt-2 text-xs text-muted-foreground">
               Last run: {metrics.items_processed_last_run} processed, {metrics.items_skipped_last_run} skipped,{' '}
               {metrics.errors_last_run} errors

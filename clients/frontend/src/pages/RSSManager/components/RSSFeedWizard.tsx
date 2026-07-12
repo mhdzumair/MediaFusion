@@ -223,6 +223,7 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
   const [autoDetectCatalog, setAutoDetectCatalog] = useState(false)
   const [contentType, setContentType] = useState('auto')
   const [catalogId, setCatalogId] = useState('auto')
+  const [mediaResolveMode, setMediaResolveMode] = useState('strict')
   const [parsingPatterns, setParsingPatterns] = useState<RSSFeedParsingPatterns>(defaultParsingPatterns)
   const [filters, setFilters] = useState<RSSFeedFilters>(defaultFilters)
   const [catalogPatterns, setCatalogPatterns] = useState<CatalogPattern[]>([])
@@ -266,6 +267,7 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
       setAutoDetectCatalog(feed.auto_detect_catalog)
       setContentType(feed.content_type || 'auto')
       setCatalogId(feed.catalog_id || 'auto')
+      setMediaResolveMode(feed.media_resolve_mode || 'strict')
       setParsingPatterns(feed.parsing_patterns || defaultParsingPatterns)
       setFilters(feed.filters || defaultFilters)
       setCatalogPatterns(feed.catalog_patterns || [])
@@ -281,6 +283,7 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
       setAutoDetectCatalog(false)
       setContentType('auto')
       setCatalogId('auto')
+      setMediaResolveMode('strict')
       setParsingPatterns(defaultParsingPatterns)
       setFilters(defaultFilters)
       setCatalogPatterns([])
@@ -340,6 +343,7 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
       auto_detect_catalog: autoDetectCatalog,
       content_type: contentType,
       catalog_id: contentType === 'sports' && catalogId !== 'auto' ? catalogId : undefined,
+      media_resolve_mode: mediaResolveMode,
       parsing_patterns: parsingPatterns,
       filters,
       catalog_patterns: catalogPatterns,
@@ -979,6 +983,28 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
                           </p>
                         </div>
                       )}
+
+                      <div className="space-y-2">
+                        <Label>Media Resolution</Label>
+                        <Select
+                          value={mediaResolveMode}
+                          onValueChange={setMediaResolveMode}
+                          disabled={contentType === 'sports'}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="strict">Strict matching (recommended)</SelectItem>
+                            <SelectItem value="create_stub">Create new media when unmatched</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          {contentType === 'sports'
+                            ? 'Sports events always create per-event media entries. This setting applies only to Auto/Movies/Series feeds.'
+                            : 'Strict mode only imports titles with a confident match in the database or external metadata (TMDB/IMDb). Use "Create new media" for niche feeds where titles do not map to standard movie/series metadata.'}
+                        </p>
+                      </div>
                     </CardContent>
                   </Card>
 
@@ -1046,6 +1072,16 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
                             <Badge variant="outline">{catalogId === 'auto' ? 'Auto-detect' : catalogId}</Badge>
                           </div>
                         )}
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Media Resolution</Label>
+                          <Badge variant="outline">
+                            {contentType === 'sports'
+                              ? 'Sports per-event (auto)'
+                              : mediaResolveMode === 'create_stub'
+                                ? 'Create new media'
+                                : 'Strict matching'}
+                          </Badge>
+                        </div>
                       </div>
 
                       <div className="border-t pt-4">

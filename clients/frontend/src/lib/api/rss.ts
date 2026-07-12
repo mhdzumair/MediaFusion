@@ -79,6 +79,7 @@ export interface UserRSSFeed {
   auto_detect_catalog: boolean
   content_type?: string
   catalog_id?: string
+  media_resolve_mode?: string
   parsing_patterns?: RSSFeedParsingPatterns
   filters?: RSSFeedFilters
   metrics?: RSSFeedMetrics
@@ -108,6 +109,7 @@ export interface UserRSSFeedCreate {
   auto_detect_catalog?: boolean
   content_type?: string
   catalog_id?: string
+  media_resolve_mode?: string
   parsing_patterns?: RSSFeedParsingPatterns
   filters?: RSSFeedFilters
   catalog_patterns?: CatalogPattern[]
@@ -122,6 +124,7 @@ export interface UserRSSFeedUpdate {
   auto_detect_catalog?: boolean
   content_type?: string
   catalog_id?: string
+  media_resolve_mode?: string
   parsing_patterns?: RSSFeedParsingPatterns
   filters?: RSSFeedFilters
   catalog_patterns?: CatalogPattern[]

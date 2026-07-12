@@ -437,9 +437,8 @@ fn extract_seeders(item: &RssItem, patterns: &Value) -> Option<i32> {
 
 use crate::scrapers::media_resolve::MediaEntry;
 
-/// Delegate to the shared media resolution module in strict mode: RSS feeds
-/// are untrusted, so unmatched titles are skipped rather than becoming junk
-/// stub media rows (see `media_resolve::find_or_create_media_strict`).
+/// Delegate to the shared media resolution module. When `strict` is true,
+/// unmatched titles are skipped rather than becoming junk stub media rows.
 async fn find_or_create_media(
     pool: &PgPool,
     http: &reqwest::Client,
@@ -449,26 +448,78 @@ async fn find_or_create_media(
     catalog_ids: &[&str],
     tmdb_api_key: Option<&str>,
     cinemeta_fallback_enabled: bool,
+    strict: bool,
 ) -> Option<MediaEntry> {
-    crate::scrapers::media_resolve::find_or_create_media_strict(
-        pool,
-        http,
-        title,
-        year,
-        is_series,
-        catalog_ids,
-        tmdb_api_key,
-        cinemeta_fallback_enabled,
-        &[],
-        "tmdb",
-    )
-    .await
+    if strict {
+        crate::scrapers::media_resolve::find_or_create_media_strict(
+            pool,
+            http,
+            title,
+            year,
+            is_series,
+            catalog_ids,
+            tmdb_api_key,
+            cinemeta_fallback_enabled,
+            &[],
+            "tmdb",
+        )
+        .await
+    } else {
+        crate::scrapers::media_resolve::find_or_create_media(
+            pool,
+            http,
+            title,
+            year,
+            is_series,
+            catalog_ids,
+            tmdb_api_key,
+            cinemeta_fallback_enabled,
+        )
+        .await
+    }
 }
 
 // ─── Stream upsert ────────────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RssStreamUpsert {
+    Processed,
+    Skipped(&'static str),
+}
+
+/// Ensure an existing torrent stream is linked to `media_id`. Returns true when a new link row is created.
+async fn ensure_stream_media_link(pool: &PgPool, stream_id: i32, media_id: i32) -> bool {
+    let already_linked: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM stream_media_link WHERE stream_id = $1 AND media_id = $2)",
+    )
+    .bind(stream_id)
+    .bind(media_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if already_linked {
+        return false;
+    }
+
+    crate::db::link_stream_to_media(
+        pool,
+        crate::db::StreamId(stream_id),
+        crate::db::MediaId(media_id),
+    )
+    .await
+    .is_ok()
+}
+
+fn is_sports_content_type(content_type: &str) -> bool {
+    content_type.trim().eq_ignore_ascii_case("sports")
+}
+
+fn effective_catalog_id(catalog_id: Option<&str>) -> Option<&str> {
+    catalog_id.filter(|c| !c.trim().is_empty() && !c.eq_ignore_ascii_case("auto"))
+}
+
 /// Upsert a single torrent stream for the given media entry.
-/// Returns true if a new row was inserted.
 #[allow(clippy::too_many_arguments)]
 async fn upsert_rss_stream(
     pool: &PgPool,
@@ -483,7 +534,7 @@ async fn upsert_rss_stream(
     torrent_type: TorrentType,
     torrent_file: Option<Vec<u8>>,
     announce_list: &[String],
-) -> bool {
+) -> RssStreamUpsert {
     let mut season = parsed.seasons.first().copied();
     let mut episode = parsed.episodes.first().copied();
     if is_series && (season.is_none() || episode.is_none()) {
@@ -532,8 +583,15 @@ async fn upsert_rss_stream(
         .with_episode(season, episode, None);
 
     match crate::db::store_torrent_stream(pool, &stream, &opts).await {
-        Ok(r) => r.was_inserted(),
-        Err(_) => false,
+        Ok(r) if r.was_inserted() => RssStreamUpsert::Processed,
+        Ok(r) => {
+            if ensure_stream_media_link(pool, r.stream_id().0, media_id).await {
+                RssStreamUpsert::Processed
+            } else {
+                RssStreamUpsert::Skipped("stream_already_linked")
+            }
+        }
+        Err(_) => RssStreamUpsert::Skipped("stream_store_error"),
     }
 }
 
@@ -547,6 +605,7 @@ async fn update_feed_metrics(
     items_skipped: i64,
     errors: i64,
     duration_secs: f64,
+    skip_reasons: &std::collections::HashMap<String, i64>,
 ) {
     let metrics = serde_json::json!({
         "total_items_found": items_found,
@@ -557,7 +616,7 @@ async fn update_feed_metrics(
         "items_skipped_last_run": items_skipped,
         "errors_last_run": errors,
         "last_scrape_duration": duration_secs,
-        "skip_reasons": {}
+        "skip_reasons": skip_reasons,
     });
 
     let _ = sqlx::query(
@@ -607,7 +666,9 @@ pub async fn scrape_feed(
     credential_params: Option<&Value>,
     content_type: &str,
     catalog_id: Option<&str>,
+    media_resolve_mode: &str,
 ) -> ScrapeResult {
+    let strict_media_resolve = media_resolve_mode != "create_stub";
     let start = std::time::Instant::now();
     let empty_patterns = Value::Object(serde_json::Map::new());
     let patterns = parsing_patterns.unwrap_or(&empty_patterns);
@@ -623,7 +684,17 @@ pub async fn scrape_feed(
             Ok(t) => t,
             Err(e) => {
                 warn!("rss_scraper: failed to read feed body for {feed_name}: {e}");
-                update_feed_metrics(pool, feed_id, 0, 0, 0, 1, start.elapsed().as_secs_f64()).await;
+                update_feed_metrics(
+                    pool,
+                    feed_id,
+                    0,
+                    0,
+                    0,
+                    1,
+                    start.elapsed().as_secs_f64(),
+                    &std::collections::HashMap::new(),
+                )
+                .await;
                 return ScrapeResult {
                     items_found: 0,
                     items_processed: 0,
@@ -634,7 +705,17 @@ pub async fn scrape_feed(
         },
         Ok(r) => {
             warn!("rss_scraper: feed {feed_name} returned HTTP {}", r.status());
-            update_feed_metrics(pool, feed_id, 0, 0, 0, 1, start.elapsed().as_secs_f64()).await;
+            update_feed_metrics(
+                pool,
+                feed_id,
+                0,
+                0,
+                0,
+                1,
+                start.elapsed().as_secs_f64(),
+                &std::collections::HashMap::new(),
+            )
+            .await;
             return ScrapeResult {
                 items_found: 0,
                 items_processed: 0,
@@ -647,7 +728,17 @@ pub async fn scrape_feed(
                 error_kind = crate::util::http::transport_error_kind(&e),
                 "rss_scraper: could not fetch feed {feed_name}: {e}"
             );
-            update_feed_metrics(pool, feed_id, 0, 0, 0, 1, start.elapsed().as_secs_f64()).await;
+            update_feed_metrics(
+                pool,
+                feed_id,
+                0,
+                0,
+                0,
+                1,
+                start.elapsed().as_secs_f64(),
+                &std::collections::HashMap::new(),
+            )
+            .await;
             return ScrapeResult {
                 items_found: 0,
                 items_processed: 0,
@@ -661,7 +752,17 @@ pub async fn scrape_feed(
     let items_found = items.len() as i64;
     if items_found == 0 {
         warn!("rss_scraper: no items in feed {feed_name}");
-        update_feed_metrics(pool, feed_id, 0, 0, 0, 0, start.elapsed().as_secs_f64()).await;
+        update_feed_metrics(
+            pool,
+            feed_id,
+            0,
+            0,
+            0,
+            0,
+            start.elapsed().as_secs_f64(),
+            &std::collections::HashMap::new(),
+        )
+        .await;
         return ScrapeResult {
             items_found: 0,
             items_processed: 0,
@@ -677,13 +778,24 @@ pub async fn scrape_feed(
     let mut skipped = 0i64;
     let mut errors = 0i64;
     let mut seen_hashes: HashSet<String> = HashSet::new();
+    let mut skip_reasons: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    let sports_feed = is_sports_content_type(content_type);
+    let resolved_catalog_id = effective_catalog_id(catalog_id);
+
+    let record_skip =
+        |reason: &'static str,
+         skipped: &mut i64,
+         skip_reasons: &mut std::collections::HashMap<String, i64>| {
+            *skipped += 1;
+            *skip_reasons.entry(reason.to_string()).or_insert(0) += 1;
+        };
 
     for item in &items {
         // Extract title
         let title = match extract_title(item, patterns) {
             Some(t) if !t.is_empty() => t,
             _ => {
-                skipped += 1;
+                record_skip("empty_title", &mut skipped, &mut skip_reasons);
                 continue;
             }
         };
@@ -691,7 +803,7 @@ pub async fn scrape_feed(
         // Skip content blocked by the admin keyword filter (includes adult keywords)
         if keyword_filters.matches_blocked_keyword(&title) {
             debug!("rss_scraper: skipping blocked title '{title}'");
-            skipped += 1;
+            record_skip("keyword_blocked", &mut skipped, &mut skip_reasons);
             continue;
         }
 
@@ -708,25 +820,25 @@ pub async fn scrape_feed(
             Some(e) => e,
             None => {
                 debug!("rss_scraper: no info_hash or torrent URL for '{title}'");
-                skipped += 1;
+                record_skip("no_torrent", &mut skipped, &mut skip_reasons);
                 continue;
             }
         };
         let info_hash = extracted.info_hash;
 
         if seen_hashes.contains(&info_hash) {
-            skipped += 1;
+            record_skip("duplicate_hash", &mut skipped, &mut skip_reasons);
             continue;
         }
 
         let size = extract_size(item, patterns);
         let seeders = extract_seeders(item, patterns);
 
-        let media = if content_type == "sports" {
+        let media = if sports_feed {
             // Sports path: use sports stub creator (sets is_add_title_to_poster=true) + catalog link
             let clean_title = parser::sports_parser::clean_sports_title(&title);
             let detected_cat = parser::sports_parser::detect_sports_category(&title);
-            let sports_catalog = catalog_id.or(detected_cat).unwrap_or("sports");
+            let sports_catalog = resolved_catalog_id.or(detected_cat).unwrap_or("sports");
             let catalogs: Vec<&str> = vec![sports_catalog];
 
             // Extract year from sports title parser
@@ -760,7 +872,7 @@ pub async fn scrape_feed(
         } else {
             // Standard PTT path
             let parsed = parser::parse_title(&title);
-            let is_series = match content_type {
+            let is_series = match content_type.trim().to_ascii_lowercase().as_str() {
                 "series" => true,
                 "movies" => false,
                 _ => !parsed.seasons.is_empty() || !parsed.episodes.is_empty(),
@@ -787,27 +899,30 @@ pub async fn scrape_feed(
                 &catalogs,
                 tmdb_api_key,
                 cinemeta_fallback_enabled,
+                strict_media_resolve,
             )
             .await
             {
                 Some(m) => m,
                 None => {
-                    // Strict mode: no confident DB/TMDB/Cinemeta match — likely
-                    // non-movie/series content or an unmapped title. Skip rather
-                    // than counting as an error.
-                    debug!("rss_scraper: no confident media match for '{title}', skipping");
-                    skipped += 1;
+                    if strict_media_resolve {
+                        debug!("rss_scraper: no confident media match for '{title}', skipping");
+                        record_skip("no_media_match", &mut skipped, &mut skip_reasons);
+                    } else {
+                        debug!("rss_scraper: could not resolve or create media for '{title}'");
+                        record_skip("media_create_failed", &mut skipped, &mut skip_reasons);
+                    }
                     continue;
                 }
             }
         };
 
         // For stream upsert we need is_series and parsed; re-derive for non-sports
-        let (is_series_for_stream, parsed_for_stream) = if content_type == "sports" {
+        let (is_series_for_stream, parsed_for_stream) = if sports_feed {
             (false, parser::parse_title(&title))
         } else {
             let parsed = parser::parse_title(&title);
-            let is_series = match content_type {
+            let is_series = match content_type.trim().to_ascii_lowercase().as_str() {
                 "series" => true,
                 "movies" => false,
                 _ => !parsed.seasons.is_empty() || !parsed.episodes.is_empty(),
@@ -816,7 +931,7 @@ pub async fn scrape_feed(
         };
 
         // Upsert stream
-        let inserted = upsert_rss_stream(
+        match upsert_rss_stream(
             pool,
             &info_hash,
             &title,
@@ -830,18 +945,21 @@ pub async fn scrape_feed(
             extracted.torrent_file,
             &extracted.announce_list,
         )
-        .await;
+        .await
+        {
+            RssStreamUpsert::Processed => {
+                processed += 1;
+                info!(
+                    "rss_scraper: inserted stream for '{}' ({:?}) → media {} ({})",
+                    title, media.year, media.id, media.title
+                );
+            }
+            RssStreamUpsert::Skipped(reason) => {
+                record_skip(reason, &mut skipped, &mut skip_reasons);
+            }
+        }
 
         seen_hashes.insert(info_hash);
-        if inserted {
-            processed += 1;
-            info!(
-                "rss_scraper: inserted stream for '{}' ({:?}) → media {} ({})",
-                title, media.year, media.id, media.title
-            );
-        } else {
-            skipped += 1;
-        }
     }
 
     let duration = start.elapsed().as_secs_f64();
@@ -853,6 +971,7 @@ pub async fn scrape_feed(
         skipped,
         errors,
         duration,
+        &skip_reasons,
     )
     .await;
 

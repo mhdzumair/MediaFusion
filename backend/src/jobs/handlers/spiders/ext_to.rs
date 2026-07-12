@@ -55,6 +55,8 @@ use crate::{
 
 use super::formula_racing::{self, HtmlTorrentFile};
 
+type ListingRow = (String, String, Option<i32>, Option<i64>, Option<String>);
+
 // ─── Regex for security tokens ────────────────────────────────────────────────
 
 fn page_token_re() -> &'static Regex {
@@ -235,7 +237,7 @@ fn parse_listing_rows(
     base_url: &str,
     is_profile_page: bool,
     keyword: &str,
-) -> Vec<(String, String, Option<i32>, Option<i64>, Option<String>)> {
+) -> Vec<ListingRow> {
     let doc = Html::parse_document(html);
 
     let row_sel = Selector::parse("table.table-striped.table-hover tbody tr").expect("row_sel");
@@ -396,10 +398,10 @@ fn resolve_uploader(
         .or(row_uploader)
         .or(detail_uploader);
 
-    if let (Some(inf), Some(det)) = (&inferred, &detected) {
-        if inf.to_lowercase() != det.to_lowercase() {
-            return inferred;
-        }
+    if let (Some(inf), Some(det)) = (&inferred, &detected)
+        && inf.to_lowercase() != det.to_lowercase()
+    {
+        return inferred;
     }
     detected.or(inferred)
 }
@@ -648,8 +650,8 @@ async fn fetch_detail_download(
                 let prefer_torrent =
                     detail_has_torrent_download(&detail_html) || !html_files.is_empty();
 
-                if prefer_torrent {
-                    if let Some(raw) = post_ext_to_ajax(
+                if prefer_torrent
+                    && let Some(raw) = post_ext_to_ajax(
                         label,
                         client,
                         bl_url,
@@ -663,20 +665,19 @@ async fn fetch_detail_download(
                         &detail_user_agent,
                     )
                     .await
-                    {
-                        debug!(label, ajax_response = %&raw[..raw.len().min(500)], "AJAX torrent response");
-                        torrent_bytes = torrent_bytes_from_ajax_response(
-                            client, bl_url, base_url, detail_url, &raw,
-                        )
-                        .await;
-                        if torrent_bytes.is_some() {
-                            debug!(label, "downloaded .torrent via AJAX");
-                        }
+                {
+                    debug!(label, ajax_response = %&raw[..raw.len().min(500)], "AJAX torrent response");
+                    torrent_bytes = torrent_bytes_from_ajax_response(
+                        client, bl_url, base_url, detail_url, &raw,
+                    )
+                    .await;
+                    if torrent_bytes.is_some() {
+                        debug!(label, "downloaded .torrent via AJAX");
                     }
                 }
 
-                if magnet.is_none() {
-                    if let Some(raw) = post_ext_to_ajax(
+                if magnet.is_none()
+                    && let Some(raw) = post_ext_to_ajax(
                         label,
                         client,
                         bl_url,
@@ -690,10 +691,9 @@ async fn fetch_detail_download(
                         &detail_user_agent,
                     )
                     .await
-                    {
-                        debug!(label, ajax_response = %&raw[..raw.len().min(500)], "AJAX magnet response");
-                        magnet = magnet_from_ajax_response(&raw);
-                    }
+                {
+                    debug!(label, ajax_response = %&raw[..raw.len().min(500)], "AJAX magnet response");
+                    magnet = magnet_from_ajax_response(&raw);
                 }
             }
         }

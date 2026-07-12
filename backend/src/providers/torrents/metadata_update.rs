@@ -22,6 +22,8 @@ use crate::{
 const ANNOTATION_LOCK_PREFIX: &str = "annotation_lock_";
 const ANNOTATION_LOCK_TTL: i64 = 259200; // 3 days
 
+type RacingFileRow = (i32, MediaId, String, Option<i32>, Option<i32>);
+
 /// A file entry returned by a debrid provider.
 #[derive(Debug, Clone)]
 pub struct ProviderFile {
@@ -273,7 +275,7 @@ async fn sync_series_episodes_for_hash(pool: &PgPool, info_hash: &str) {
 /// fixes both unmapped files and links that used the wrong episode slot
 /// (e.g. Practice assigned to episode 5 via sequential import fallback).
 async fn remap_unmapped_racing_files(pool: &PgPool, info_hash: &str, default_season: i32) {
-    let rows: Vec<(i32, MediaId, String, Option<i32>, Option<i32>)> = match sqlx::query_as(
+    let rows: Vec<RacingFileRow> = match sqlx::query_as(
         "SELECT sf.id, sml.media_id, sf.filename, fml.season_number, fml.episode_number \
          FROM torrent_stream ts \
          JOIN stream st ON st.id = ts.stream_id \

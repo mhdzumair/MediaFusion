@@ -116,6 +116,7 @@ pub struct UserRSSFeedCreate {
     pub credential_params: Option<Value>,
     pub content_type: Option<String>,
     pub catalog_id: Option<String>,
+    pub media_resolve_mode: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -132,6 +133,7 @@ pub struct UserRSSFeedUpdate {
     pub credential_params: Option<Value>,
     pub content_type: Option<String>,
     pub catalog_id: Option<String>,
+    pub media_resolve_mode: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -738,9 +740,10 @@ pub async fn run_rss_feed_scraper(
         Option<Value>,
         String,
         Option<String>,
+        String,
     );
     let row: Option<FeedRow> = sqlx::query_as(
-        "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id FROM rss_feed WHERE id = $1",
+        "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id, media_resolve_mode FROM rss_feed WHERE id = $1",
     )
     .bind(feed_id)
     .fetch_optional(&state.pool_ro)
@@ -759,6 +762,7 @@ pub async fn run_rss_feed_scraper(
         credential_params,
         content_type,
         catalog_id,
+        media_resolve_mode,
     ) = match row {
         Some(r) => r,
         None => {
@@ -798,6 +802,7 @@ pub async fn run_rss_feed_scraper(
             credential_params.as_ref(),
             &content_type,
             catalog_id.as_deref(),
+            &media_resolve_mode,
         )
         .await;
     });
@@ -1102,6 +1107,7 @@ fn user_feed_json(
     user_username: Option<&str>,
     content_type: &str,
     catalog_id: Option<&str>,
+    media_resolve_mode: &str,
 ) -> Value {
     json!({
         "id": id,
@@ -1122,6 +1128,7 @@ fn user_feed_json(
         "updated_at": updated_at,
         "content_type": content_type,
         "catalog_id": catalog_id,
+        "media_resolve_mode": media_resolve_mode,
         "user": {
             "id": user_id,
             "email": user_email,
@@ -1151,6 +1158,7 @@ struct UserFeedRow {
     user_username: Option<String>,
     content_type: String,
     catalog_id: Option<String>,
+    media_resolve_mode: String,
 }
 
 /// GET /api/v1/user-rss/feeds
@@ -1176,7 +1184,7 @@ pub async fn user_list_rss_feeds(
                       f.auto_detect_catalog, f.parsing_patterns, f.filters, f.metrics,
                       f.last_scraped_at, f.created_at, f.updated_at,
                       u.email AS user_email, u.username AS user_username,
-                      f.content_type, f.catalog_id
+                      f.content_type, f.catalog_id, f.media_resolve_mode
                FROM rss_feed f
                JOIN users u ON u.id = f.user_id
                ORDER BY f.created_at DESC"#,
@@ -1189,7 +1197,7 @@ pub async fn user_list_rss_feeds(
                       f.auto_detect_catalog, f.parsing_patterns, f.filters, f.metrics,
                       f.last_scraped_at, f.created_at, f.updated_at,
                       u.email AS user_email, u.username AS user_username,
-                      f.content_type, f.catalog_id
+                      f.content_type, f.catalog_id, f.media_resolve_mode
                FROM rss_feed f
                JOIN users u ON u.id = f.user_id
                WHERE f.user_id = $1
@@ -1226,6 +1234,7 @@ pub async fn user_list_rss_feeds(
                         r.user_username.as_deref(),
                         &r.content_type,
                         r.catalog_id.as_deref(),
+                        &r.media_resolve_mode,
                     )
                 })
                 .collect();
@@ -1343,10 +1352,11 @@ pub async fn user_create_rss_feed(
     let is_admin = matches!(user_role.as_deref(), Some("ADMIN") | Some("admin"));
 
     let content_type = body.content_type.as_deref().unwrap_or("auto");
+    let media_resolve_mode = body.media_resolve_mode.as_deref().unwrap_or("strict");
 
     let id: i32 = match sqlx::query_scalar(
-        r#"INSERT INTO rss_feed (uuid, user_id, name, url, is_active, is_public, is_approved, source, torrent_type, auto_detect_catalog, parsing_patterns, filters, credential_params, content_type, catalog_id, created_at, updated_at)
-           VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, $6, $7, $8, $9::json, $10::json, $11::jsonb, $12, $13, NOW(), NOW())
+        r#"INSERT INTO rss_feed (uuid, user_id, name, url, is_active, is_public, is_approved, source, torrent_type, auto_detect_catalog, parsing_patterns, filters, credential_params, content_type, catalog_id, media_resolve_mode, created_at, updated_at)
+           VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, $6, $7, $8, $9::json, $10::json, $11::jsonb, $12, $13, $14, NOW(), NOW())
            RETURNING id"#,
     )
     .bind(user_id)
@@ -1362,6 +1372,7 @@ pub async fn user_create_rss_feed(
     .bind(body.credential_params.as_ref().map(|v| v.to_string()))
     .bind(content_type)
     .bind(&body.catalog_id)
+    .bind(media_resolve_mode)
     .fetch_one(&state.pool)
     .await
     {
@@ -1503,6 +1514,16 @@ pub async fn user_update_rss_feed(
             .execute(&state.pool)
             .await;
         }
+    }
+
+    if let Some(mrm) = &body.media_resolve_mode {
+        let _ = sqlx::query(
+            "UPDATE rss_feed SET media_resolve_mode = $1, updated_at = NOW() WHERE id = $2",
+        )
+        .bind(mrm)
+        .bind(db_id)
+        .execute(&state.pool)
+        .await;
     }
 
     Json(json!({"id": db_id, "detail": "Updated successfully"})).into_response()
@@ -1820,16 +1841,17 @@ pub async fn user_scrape_single_feed(
         Option<serde_json::Value>,
         String,
         Option<String>,
+        String,
     );
     let row: Option<FeedRow> = if let Some(uid) = user_id_filter {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id FROM rss_feed WHERE id::text = $1 AND user_id = $2 AND is_approved = true",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id, media_resolve_mode FROM rss_feed WHERE id::text = $1 AND user_id = $2 AND is_approved = true",
         )
         .bind(&feed_id).bind(uid)
         .fetch_optional(&state.pool_ro).await.ok().flatten()
     } else {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id FROM rss_feed WHERE id::text = $1 AND is_approved = true",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id, media_resolve_mode FROM rss_feed WHERE id::text = $1 AND is_approved = true",
         )
         .bind(&feed_id)
         .fetch_optional(&state.pool_ro).await.ok().flatten()
@@ -1847,6 +1869,7 @@ pub async fn user_scrape_single_feed(
         credential_params,
         content_type,
         catalog_id,
+        media_resolve_mode,
     ) = match row {
         Some(r) => r,
         None => {
@@ -1887,6 +1910,7 @@ pub async fn user_scrape_single_feed(
             credential_params.as_ref(),
             &content_type,
             catalog_id.as_deref(),
+            &media_resolve_mode,
         )
         .await;
     });
@@ -1926,15 +1950,16 @@ pub async fn user_run_all_scrapers(
         Option<serde_json::Value>,
         String,
         Option<String>,
+        String,
     );
     let feeds: Vec<FeedRow> = if role == "admin" {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id FROM rss_feed WHERE is_active = true AND is_approved = true",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id, media_resolve_mode FROM rss_feed WHERE is_active = true AND is_approved = true",
         )
         .fetch_all(&state.pool_ro).await.unwrap_or_default()
     } else {
         sqlx::query_as(
-            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id FROM rss_feed WHERE is_active = true AND is_approved = true AND user_id = $1",
+            "SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id, media_resolve_mode FROM rss_feed WHERE is_active = true AND is_approved = true AND user_id = $1",
         )
         .bind(user_id)
         .fetch_all(&state.pool_ro).await.unwrap_or_default()
@@ -1963,6 +1988,7 @@ pub async fn user_run_all_scrapers(
             credential_params,
             content_type,
             catalog_id,
+            media_resolve_mode,
         ) in feeds
         {
             let feed_type =
@@ -1984,6 +2010,7 @@ pub async fn user_run_all_scrapers(
                 credential_params.as_ref(),
                 &content_type,
                 catalog_id.as_deref(),
+                &media_resolve_mode,
             )
             .await;
         }

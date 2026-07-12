@@ -24,12 +24,13 @@ struct RssFeedRow {
     credential_params: Option<serde_json::Value>,
     content_type: String,
     catalog_id: Option<String>,
+    media_resolve_mode: String,
 }
 
 async fn fetch_active_feeds(pool: &sqlx::PgPool) -> Result<Vec<RssFeedRow>, JobError> {
     let rows = sqlx::query(
         r#"
-        SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id
+        SELECT id, url, name, source, parsing_patterns, filters, auto_detect_catalog, torrent_type, credential_params, content_type, catalog_id, media_resolve_mode
         FROM rss_feed WHERE is_active = true AND is_approved = true
         "#,
     )
@@ -51,6 +52,7 @@ async fn fetch_active_feeds(pool: &sqlx::PgPool) -> Result<Vec<RssFeedRow>, JobE
             credential_params: row.try_get("credential_params")?,
             content_type: row.try_get("content_type")?,
             catalog_id: row.try_get("catalog_id")?,
+            media_resolve_mode: row.try_get("media_resolve_mode")?,
         });
     }
     Ok(feeds)
@@ -103,6 +105,7 @@ impl JobHandler for RssFeedScraper {
                 feed.credential_params.as_ref(),
                 &feed.content_type,
                 feed.catalog_id.as_deref(),
+                &feed.media_resolve_mode,
             )
             .await;
 
