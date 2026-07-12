@@ -38,6 +38,7 @@ import {
   useCatalogList,
   useAvailableCatalogs,
   useGenres,
+  useDebounce,
   catalogKeys,
   type CatalogType,
   type SortOption,
@@ -267,6 +268,10 @@ export function BrowseTab() {
   const urlSearch = searchParams.get('search') || ''
   const searchMode: SearchMode = urlSearchMode ?? (urlExternalId ? 'external_id' : 'title')
   const search = urlExternalId || urlSearch
+  const [searchInput, setSearchInput] = useState(search)
+  const debouncedSearch = useDebounce(searchInput, 300)
+  const lastPushedSearch = useRef(search)
+
   const browsePage = (() => {
     const n = parseInt(searchParams.get('page') ?? '1', 10)
     return Number.isFinite(n) && n > 0 ? n : 1
@@ -362,6 +367,20 @@ export function BrowseTab() {
     [searchMode, search, setSearchParams],
   )
 
+  // Push debounced input to URL for bookmarking and sharing
+  useEffect(() => {
+    if (debouncedSearch === lastPushedSearch.current) return
+    lastPushedSearch.current = debouncedSearch
+    updateUrl({ search: debouncedSearch }, { resetPage: true })
+  }, [debouncedSearch, updateUrl])
+
+  // Pull URL search into the input only on external navigation (back/forward, mode toggle)
+  useEffect(() => {
+    if (search === lastPushedSearch.current) return
+    lastPushedSearch.current = search
+    setSearchInput(search)
+  }, [search])
+
   // One-shot URL hydration so a stored catalogType materialises in URL on bare /library visit
   useEffect(() => {
     if (!searchParams.get('type') && storedState.catalogType) {
@@ -387,8 +406,8 @@ export function BrowseTab() {
   const commonParams = {
     catalog: selectedCatalog || undefined,
     genre: selectedGenre || undefined,
-    search: searchMode === 'title' ? search || undefined : undefined,
-    external_id: searchMode === 'external_id' ? search || undefined : undefined,
+    search: searchMode === 'title' ? debouncedSearch || undefined : undefined,
+    external_id: searchMode === 'external_id' ? debouncedSearch || undefined : undefined,
     sort,
     sort_dir: sortDir,
     page_size: pageSize,
@@ -545,12 +564,12 @@ export function BrowseTab() {
   useEffect(() => {
     hasScrolledToSelected.current = false
     hasRestoredBrowsePage.current = false
-  }, [catalogType, selectedCatalog, selectedGenre, search, searchMode, sort, sortDir])
+  }, [catalogType, selectedCatalog, selectedGenre, debouncedSearch, searchMode, sort, sortDir])
 
   // Clear bulk selection when page changes
   useEffect(() => {
     setSelectedIds(new Set())
-  }, [browsePage, catalogType, selectedCatalog, selectedGenre, search, searchMode, sort, sortDir, pageSize])
+  }, [browsePage, catalogType, selectedCatalog, selectedGenre, debouncedSearch, searchMode, sort, sortDir, pageSize])
 
   const handleCardClick = (item: ContentCardData) => {
     saveContentDetailReturnUrl(location.pathname, location.search, 'Browse')
@@ -612,8 +631,8 @@ export function BrowseTab() {
           window.scrollTo(0, 0)
           setRestoredScroll(true)
         }}
-        search={search}
-        onSearchChange={(v) => updateUrl({ search: v }, { resetPage: true })}
+        search={searchInput}
+        onSearchChange={setSearchInput}
         searchMode={searchMode}
         onSearchModeChange={(v) => updateUrl({ searchMode: v }, { resetPage: true })}
         showSearchMode
@@ -757,7 +776,9 @@ export function BrowseTab() {
         <div className="text-center py-12">
           <Film className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
           <p className="mt-4 text-muted-foreground">No items found</p>
-          {search && <p className="text-sm text-muted-foreground mt-2">Try adjusting your search or filters</p>}
+          {debouncedSearch && (
+            <p className="text-sm text-muted-foreground mt-2">Try adjusting your search or filters</p>
+          )}
         </div>
       ) : (
         <>
