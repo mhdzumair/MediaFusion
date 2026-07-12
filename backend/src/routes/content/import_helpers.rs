@@ -1247,7 +1247,11 @@ pub async fn organize_user_series_episodes(
     if is_racing {
         let mut used: std::collections::HashSet<i32> = file_rows
             .iter()
-            .filter_map(|f| f.get("episode_number").and_then(|v| v.as_i64()).map(|n| n as i32))
+            .filter_map(|f| {
+                f.get("episode_number")
+                    .and_then(|v| v.as_i64())
+                    .map(|n| n as i32)
+            })
             .collect();
         for idx in undated {
             let filename = file_rows[idx]

@@ -32,6 +32,15 @@ pub struct RssItem {
     pub extras: std::collections::HashMap<String, String>,
 }
 
+/// Strip XML namespace prefix (`{uri}local`) so Atom feeds (Reddit, etc.) match RSS tags.
+fn local_tag_name(raw: &[u8]) -> String {
+    let name = String::from_utf8_lossy(raw);
+    name.rsplit('}')
+        .next()
+        .unwrap_or(name.as_ref())
+        .to_lowercase()
+}
+
 /// Parse an RSS/Atom XML string into a list of flat items.
 pub fn parse_rss_xml(xml: &str) -> Vec<RssItem> {
     use quick_xml::Reader;
@@ -48,25 +57,34 @@ pub fn parse_rss_xml(xml: &str) -> Vec<RssItem> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
+                let name = local_tag_name(e.name().as_ref());
                 match name.as_str() {
                     "item" | "entry" => {
                         current = Some(RssItem::default());
                     }
                     _ => {
                         if current.is_some() {
-                            // Capture enclosure attributes
                             if name == "enclosure"
                                 && let Some(item) = current.as_mut()
                             {
                                 for attr in e.attributes().flatten() {
-                                    let k =
-                                        String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
+                                    let k = local_tag_name(attr.key.as_ref());
                                     let v = String::from_utf8_lossy(&attr.value).to_string();
                                     match k.as_str() {
                                         "url" => item.enclosure_url = Some(v),
                                         "length" => item.enclosure_length = v.parse().ok(),
                                         _ => {}
+                                    }
+                                }
+                            } else if name == "link"
+                                && let Some(item) = current.as_mut()
+                            {
+                                for attr in e.attributes().flatten() {
+                                    if local_tag_name(attr.key.as_ref()) == "href" {
+                                        let href = String::from_utf8_lossy(&attr.value).to_string();
+                                        if item.link.is_none() {
+                                            item.link = Some(href);
+                                        }
                                     }
                                 }
                             }
@@ -76,17 +94,28 @@ pub fn parse_rss_xml(xml: &str) -> Vec<RssItem> {
                 }
             }
             Ok(Event::Empty(ref e)) if current.is_some() => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
+                let name = local_tag_name(e.name().as_ref());
                 if name == "enclosure"
                     && let Some(item) = current.as_mut()
                 {
                     for attr in e.attributes().flatten() {
-                        let k = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
+                        let k = local_tag_name(attr.key.as_ref());
                         let v = String::from_utf8_lossy(&attr.value).to_string();
                         match k.as_str() {
                             "url" => item.enclosure_url = Some(v),
                             "length" => item.enclosure_length = v.parse().ok(),
                             _ => {}
+                        }
+                    }
+                } else if name == "link"
+                    && let Some(item) = current.as_mut()
+                {
+                    for attr in e.attributes().flatten() {
+                        if local_tag_name(attr.key.as_ref()) == "href" {
+                            let href = String::from_utf8_lossy(&attr.value).to_string();
+                            if item.link.is_none() {
+                                item.link = Some(href);
+                            }
                         }
                     }
                 }
@@ -103,7 +132,11 @@ pub fn parse_rss_xml(xml: &str) -> Vec<RssItem> {
                                 }
                             }
                             "description" | "summary" | "content" => {
-                                item.description = Some(text.clone())
+                                if let Some(existing) = &mut item.description {
+                                    existing.push_str(&text);
+                                } else {
+                                    item.description = Some(text.clone());
+                                }
                             }
                             "guid" | "id" => item.guid = Some(text.clone()),
                             other => {
@@ -116,7 +149,7 @@ pub fn parse_rss_xml(xml: &str) -> Vec<RssItem> {
                 }
             }
             Ok(Event::End(ref e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
+                let name = local_tag_name(e.name().as_ref());
                 if (name == "item" || name == "entry")
                     && let Some(item) = current.take()
                 {
@@ -828,5 +861,37 @@ pub async fn scrape_feed(
         items_processed: processed,
         items_skipped: skipped,
         errors,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_atom_feed_strips_namespace_and_extracts_content() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>Formula 1 2026. R09. British Grand Prix</title>
+    <link href="https://www.reddit.com/r/test/comments/abc/post/" />
+    <content type="html">&lt;a href="magnet:?xt=urn:btih:deadbeefdeadbeefdeadbeefdeadbeefdeadbeef&amp;amp;dn=test"&gt;magnet&lt;/a&gt;</content>
+  </entry>
+</feed>"#;
+
+        let items = parse_rss_xml(xml);
+        assert_eq!(items.len(), 1);
+        let item = &items[0];
+        assert_eq!(
+            item.title.as_deref(),
+            Some("Formula 1 2026. R09. British Grand Prix")
+        );
+        assert_eq!(
+            item.link.as_deref(),
+            Some("https://www.reddit.com/r/test/comments/abc/post/")
+        );
+        let desc = item.description.as_deref().unwrap_or("");
+        assert!(desc.contains("magnet:?xt=urn:btih:deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"));
+        assert!(extract_info_hash(item, &Value::Null).is_some());
     }
 }

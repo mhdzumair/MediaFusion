@@ -12,8 +12,9 @@ use tracing::{debug, info, warn};
 
 use crate::{
     db::{
+        MediaId,
         streams::{TorrentFileEntry, upsert_stream_files},
-        upsert_series_episode, MediaId,
+        upsert_series_episode,
     },
     parser::episode_detector::{detect_episode, is_video_file},
 };
@@ -78,11 +79,7 @@ async fn stream_name_for_hash(pool: &PgPool, info_hash: &str) -> Option<String> 
 /// Re-apply racing filename parsing and sync series episode rows after playback.
 /// Cheap to run on every series play — keeps the episode list current when the
 /// parser improves or files were partially mapped on a prior import.
-pub async fn refresh_racing_episode_metadata(
-    pool: &PgPool,
-    info_hash: &str,
-    season: Option<i32>,
-) {
+pub async fn refresh_racing_episode_metadata(pool: &PgPool, info_hash: &str, season: Option<i32>) {
     let stream_name = stream_name_for_hash(pool, info_hash).await;
     if stream_name
         .as_deref()
@@ -186,8 +183,7 @@ pub async fn update_metadata(
                         crate::parser::racing_file_episode(base)
                             .map(|(episode, _)| (default_season, episode))
                             .or_else(|| {
-                                detect_episode(base, default_season)
-                                    .map(|e| (e.season, e.episode))
+                                detect_episode(base, default_season).map(|e| (e.season, e.episode))
                             })
                     } else {
                         detect_episode(base, default_season).map(|e| (e.season, e.episode))
@@ -263,14 +259,8 @@ async fn sync_series_episodes_for_hash(pool: &PgPool, info_hash: &str) {
         let title = crate::parser::racing_file_episode(&filename)
             .map(|(_, t)| t)
             .unwrap_or(filename);
-        if let Err(e) = upsert_series_episode(
-            pool,
-            MediaId(media_id),
-            season,
-            episode,
-            &title,
-        )
-        .await
+        if let Err(e) =
+            upsert_series_episode(pool, MediaId(media_id), season, episode, &title).await
         {
             warn!(
                 "metadata_update: upsert_series_episode media_id={media_id} s{season}e{episode}: {e}"
@@ -311,13 +301,12 @@ async fn remap_unmapped_racing_files(pool: &PgPool, info_hash: &str, default_sea
             continue;
         }
 
-        if let Err(e) = sqlx::query(
-            "DELETE FROM file_media_link WHERE file_id = $1 AND media_id = $2",
-        )
-        .bind(file_id)
-        .bind(media_id.0)
-        .execute(pool)
-        .await
+        if let Err(e) =
+            sqlx::query("DELETE FROM file_media_link WHERE file_id = $1 AND media_id = $2")
+                .bind(file_id)
+                .bind(media_id.0)
+                .execute(pool)
+                .await
         {
             warn!("metadata_update: clear wrong link file_id={file_id}: {e}");
             continue;

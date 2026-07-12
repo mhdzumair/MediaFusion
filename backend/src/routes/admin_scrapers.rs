@@ -181,6 +181,7 @@ fn spider_name_to_queue(spider_name: &str) -> Option<(&'static str, Option<serde
         "tamilmv" => Some(("spider_tamilmv", None)),
         "tamil_blasters" => Some(("spider_tamil_blasters", None)),
         "formula_ext" => Some(("spider_formula_ext", None)),
+        "formula_feeds" => Some(("spider_formula_feeds", None)),
         "motogp_ext" => Some(("spider_motogp_ext", None)),
         "wwe_ext" => Some(("spider_wwe_ext", None)),
         "ufc_ext" => Some(("spider_ufc_ext", None)),
@@ -1801,6 +1802,13 @@ const SCHEDULER_JOBS: &[(&str, &str, &str, &str, &str)] = &[
         "*/30 * * * *",
     ),
     (
+        "formula_feeds",
+        "Formula RSS Feeds",
+        "scraper",
+        "Scrapes Formula content from BT4G and Reddit RSS (formulio-style fallback)",
+        "*/15 * * * *",
+    ),
+    (
         "motogp_ext",
         "MotoGP EXT",
         "scraper",
@@ -2059,6 +2067,7 @@ const SCHEDULER_JOBS: &[(&str, &str, &str, &str, &str)] = &[
 /// Scrapy spider job IDs — use `background_tasks:run_spider:spider_name={id}` Redis key.
 const SCRAPY_SPIDER_IDS: &[&str] = &[
     "formula_ext",
+    "formula_feeds",
     "motogp_ext",
     "wwe_ext",
     "ufc_ext",
@@ -2222,6 +2231,7 @@ fn job_id_to_cron_name(job_id: &str) -> Option<String> {
             "tamilmv" => Some("spider_tamilmv".into()),
             "tamil_blasters" => Some("spider_tamil_blasters".into()),
             "formula_ext" => Some("spider_formula_ext".into()),
+            "formula_feeds" => Some("spider_formula_feeds".into()),
             "motogp_ext" => Some("spider_motogp_ext".into()),
             "wwe_ext" => Some("spider_wwe_ext".into()),
             "ufc_ext" => Some("spider_ufc_ext".into()),
@@ -2291,6 +2301,7 @@ fn job_id_to_queue(job_id: &str) -> &'static str {
         return match job_id {
             "tamilmv" | "tamil_blasters" => "spider_tamilmv",
             "formula_ext" => "spider_formula_ext",
+            "formula_feeds" => "spider_formula_feeds",
             "motogp_ext" => "spider_motogp_ext",
             "wwe_ext" => "spider_wwe_ext",
             "ufc_ext" => "spider_ufc_ext",

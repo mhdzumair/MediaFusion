@@ -310,13 +310,8 @@ async fn resolve(
             );
             match playback_dedup::try_ready_after_wait(&state.redis, &cache_key).await {
                 playback_dedup::DedupWaitResult::Cached(url) => {
-                    if playback_metadata_needs_refresh(
-                        &state.pool_ro,
-                        info_hash,
-                        season,
-                        episode,
-                    )
-                    .await
+                    if playback_metadata_needs_refresh(&state.pool_ro, info_hash, season, episode)
+                        .await
                     {
                         let _ = state.redis.del::<(), _>(&cache_key).await;
                     } else {

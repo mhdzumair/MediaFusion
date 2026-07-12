@@ -20,9 +20,10 @@ pub use sort::{
 };
 
 pub use sports_parser::{
-    RacingParsed, WweEpisodeInfo, classify_wwe_title, clean_sports_title, detect_sports_category,
-    is_sports_title, numbered_prefix_episode, parse_racing_title, parse_sports_title,
-    racing_file_display_title, racing_file_episode, racing_session_episode,
+    RacingParsed, WweEpisodeInfo, classify_drive_to_survive, classify_wwe_title,
+    clean_sports_title, detect_sports_category, is_sports_title, numbered_prefix_episode,
+    parse_racing_title, parse_sports_title, racing_file_display_title, racing_file_episode,
+    racing_session_episode,
 };
 
 use std::sync::OnceLock;

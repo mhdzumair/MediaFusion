@@ -419,6 +419,63 @@ fn apply_bottom_vignette(canvas: &mut RgbaImage) {
     }
 }
 
+/// Darken the top edge so the kicker bar and MediaFusion wordmark stay readable
+/// on bright sky / grandstand backgrounds in sports poster overlays.
+fn apply_top_scrim(canvas: &mut RgbaImage) {
+    let (w, h) = canvas.dimensions();
+    let bar_h = (h as f32 * 0.18).clamp(52.0, 90.0) as u32;
+    for y in 0..bar_h.min(h) {
+        let frac = 1.0 - y as f32 / bar_h as f32;
+        let alpha = frac * 0.72;
+        if alpha > 0.0 {
+            for x in 0..w {
+                let p = canvas.get_pixel_mut(x, y);
+                p[0] = (p[0] as f32 * (1.0 - alpha)) as u8;
+                p[1] = (p[1] as f32 * (1.0 - alpha)) as u8;
+                p[2] = (p[2] as f32 * (1.0 - alpha)) as u8;
+            }
+        }
+    }
+}
+
+/// Draw text with a dark outline so labels remain legible on busy backgrounds.
+fn draw_text_outlined(
+    canvas: &mut RgbaImage,
+    ox: i32,
+    oy: i32,
+    text: &str,
+    font: Font,
+    size: f32,
+    max_width: Option<f32>,
+    align: Option<Align>,
+    fill: Rgba<u8>,
+) {
+    const OUTLINE: [(i32, i32); 8] = [
+        (-1, 0),
+        (1, 0),
+        (0, -1),
+        (0, 1),
+        (-1, -1),
+        (1, -1),
+        (-1, 1),
+        (1, 1),
+    ];
+    for (dx, dy) in OUTLINE {
+        draw_text_plain(
+            canvas,
+            ox + dx,
+            oy + dy,
+            text,
+            font,
+            size,
+            max_width,
+            align,
+            Rgba([0, 0, 0, 200]),
+        );
+    }
+    draw_text_plain(canvas, ox, oy, text, font, size, max_width, align, fill);
+}
+
 /// Draw the branded title block: top kicker bar (accent tick + media-type
 /// label + drawn "MediaFusion" wordmark) and a bottom-anchored title with an
 /// optional year / season-episode chip. Shared by `generate_placeholder`
@@ -436,6 +493,8 @@ fn draw_branded_title_block(
     let accent_rgba = Rgba([accent.0, accent.1, accent.2, 255]);
     let (season, episode) = parse_placeholder_se(title);
 
+    apply_top_scrim(canvas);
+
     // ── Top bar: accent tick + kicker (left) | "MediaFusion" (right) ────────
     let kicker = media_type_kicker(media_type);
     let label_size = 14.0f32;
@@ -449,7 +508,7 @@ fn draw_branded_title_block(
         }
     }
 
-    draw_text_plain(
+    draw_text_outlined(
         canvas,
         44,
         top_y,
@@ -458,13 +517,13 @@ fn draw_branded_title_block(
         label_size,
         None,
         None,
-        Rgba([255, 255, 255, 209]),
+        Rgba([255, 255, 255, 255]),
     );
 
     let media_w = measure_text("Media", Font::IbmPlexBold, label_size, None).0;
     let fusion_w = measure_text("Fusion", Font::IbmPlexBold, label_size, None).0;
     let mf_x = w as i32 - 22 - media_w as i32 - fusion_w as i32;
-    draw_text_plain(
+    draw_text_outlined(
         canvas,
         mf_x,
         top_y,
@@ -473,9 +532,9 @@ fn draw_branded_title_block(
         label_size,
         None,
         None,
-        Rgba([255, 255, 255, 107]),
+        Rgba([255, 255, 255, 235]),
     );
-    draw_text_plain(
+    draw_text_outlined(
         canvas,
         mf_x + media_w as i32,
         top_y,

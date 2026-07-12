@@ -598,10 +598,7 @@ mod tests {
             None,
             "generic detector must not steal numbered racing filenames"
         );
-        assert_eq!(
-            racing_file_episode(f).map(|(e, _)| e),
-            Some(1)
-        );
+        assert_eq!(racing_file_episode(f).map(|(e, _)| e), Some(1));
     }
 
     #[test]
@@ -629,13 +626,29 @@ mod tests {
             ),
         ];
         assert_eq!(
-            select_torrent_file_index(&files, "Formula 3 2026 R05 British", None, Some(1), Some(1), None, None)
-                .unwrap(),
+            select_torrent_file_index(
+                &files,
+                "Formula 3 2026 R05 British",
+                None,
+                Some(1),
+                Some(1),
+                None,
+                None
+            )
+            .unwrap(),
             0
         );
         assert_eq!(
-            select_torrent_file_index(&files, "Formula 3 2026 R05 British", None, Some(1), Some(4), None, None)
-                .unwrap(),
+            select_torrent_file_index(
+                &files,
+                "Formula 3 2026 R05 British",
+                None,
+                Some(1),
+                Some(4),
+                None,
+                None
+            )
+            .unwrap(),
             3
         );
     }

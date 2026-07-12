@@ -18,9 +18,8 @@ impl From<&ScrapedStream> for TorrentStoreInput {
             })
             .collect();
 
-        let mut base =
-            StreamStoreBase::from_parsed(s.name.clone(), s.source.clone(), &s.parsed)
-                .scraper_defaults();
+        let mut base = StreamStoreBase::from_parsed(s.name.clone(), s.source.clone(), &s.parsed)
+            .scraper_defaults();
         base.uploader = s.uploader.clone();
 
         Self {

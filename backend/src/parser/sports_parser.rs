@@ -469,6 +469,10 @@ fn tech_indicator_re() -> &'static Regex {
             "READNFO",
             "DIRFIX",
             "NFOFIX",
+            // Release-group / uploader tags common on Spanish F1 uploads
+            "EveHQ",
+            "Lat",
+            "Spa",
         ];
         let alternation = alts.join("|");
         Regex::new(&format!(r"(?i)[.\s]?(?:{})\b", alternation)).expect("tech_indicator_re")
@@ -480,7 +484,7 @@ fn broadcaster_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
         Regex::new(
-            r"(?i)\b(?:SkyF1(?:HD|UHD)?|Sky\s*Sports(?:\s*[A-Za-z0-9]+){0,2}|SkySports(?:\s*[A-Za-z0-9]+){0,2}|Sky(?:HD|UHD)?|F1TV(?:\s*Pro)?|BTSportHD|TNTSportsHD|V\s*Sport(?:\s*Ultra\s*HD)?)\b",
+            r"(?i)\b(?:SkyF1(?:HD|UHD)?|Sky\s*Sports(?:\s*[A-Za-z0-9]+){0,2}|SkySports(?:\s*[A-Za-z0-9]+){0,2}|Sky(?:HD|UHD)?|F1TV(?:\s*Pro)?|BTSportHD|TNTSportsHD|V\s*Sport(?:\s*Ultra\s*HD)?|ESPNF1(?:\s*Lat)?|DAZNF1|DAZN\s*F1)\b",
         )
         .expect("broadcaster_re")
     })
@@ -869,10 +873,107 @@ fn expand_gp_suffix(s: &str) -> String {
 /// of which wording a given release used.
 static CIRCUIT_ALIASES: &[(&str, &str)] = &[
     ("great britain", "british"),
+    ("reino unido", "british"),
     ("emilia-romagna", "emilia romagna"),
     ("mexico city", "mexico"),
     ("united states", "usa"),
+    ("estados unidos", "usa"),
 ];
+
+/// Spanish / alternate "GP &lt;country&gt;" tokens → English Grand Prix host name.
+static GP_COUNTRY_ALIASES: &[(&str, &str)] = &[
+    ("reino unido", "British"),
+    ("estados unidos", "United States"),
+    ("emilia romagna", "Emilia Romagna"),
+    ("san marino", "Emilia Romagna"),
+    ("arabia saudita", "Saudi Arabian"),
+    ("arabia saudí", "Saudi Arabian"),
+    ("saudi arabia", "Saudi Arabian"),
+    ("paises bajos", "Dutch"),
+    ("países bajos", "Dutch"),
+    ("netherlands", "Dutch"),
+    ("holanda", "Dutch"),
+    ("españa", "Spanish"),
+    ("espana", "Spanish"),
+    ("spain", "Spanish"),
+    ("italia", "Italian"),
+    ("italy", "Italian"),
+    ("monaco", "Monaco"),
+    ("mónaco", "Monaco"),
+    ("australia", "Australian"),
+    ("japon", "Japanese"),
+    ("japón", "Japanese"),
+    ("japan", "Japanese"),
+    ("china", "Chinese"),
+    ("singapur", "Singapore"),
+    ("singapore", "Singapore"),
+    ("bahrain", "Bahrain"),
+    ("baréin", "Bahrain"),
+    ("barein", "Bahrain"),
+    ("canada", "Canadian"),
+    ("canadá", "Canadian"),
+    ("miami", "Miami"),
+    ("las vegas", "Las Vegas"),
+    ("austria", "Austrian"),
+    ("hungria", "Hungarian"),
+    ("hungría", "Hungarian"),
+    ("hungary", "Hungarian"),
+    ("belgica", "Belgian"),
+    ("bélgica", "Belgian"),
+    ("belgium", "Belgian"),
+    ("azerbaijan", "Azerbaijan"),
+    ("azerbaiyán", "Azerbaijan"),
+    ("qatar", "Qatar"),
+    ("catar", "Qatar"),
+    ("brazil", "Brazilian"),
+    ("brasil", "Brazilian"),
+    ("mexico", "Mexican"),
+    ("méxico", "Mexican"),
+    ("abu dhabi", "Abu Dhabi"),
+    ("abudhabi", "Abu Dhabi"),
+];
+
+fn gp_country_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"(?i)\bGP\s+([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)\b").expect("gp_country_re")
+    })
+}
+
+/// Expand "GP Reino Unido" / "GP Austria" style tokens to "British Grand Prix", etc.
+fn expand_gp_country_names(s: &str) -> String {
+    let mut out = s.to_string();
+    let mut aliases: Vec<&&str> = GP_COUNTRY_ALIASES.iter().map(|(alias, _)| alias).collect();
+    aliases.sort_by_key(|alias| std::cmp::Reverse(alias.len()));
+
+    for alias in aliases {
+        let host = GP_COUNTRY_ALIASES
+            .iter()
+            .find(|(a, _)| *a == *alias)
+            .map(|(_, host)| *host)
+            .unwrap_or(alias);
+        let pattern = format!(r"(?i)\bGP\s+{}\b", regex::escape(alias));
+        if let Ok(re) = Regex::new(&pattern) {
+            out = re
+                .replace_all(&out, format!("{host} Grand Prix"))
+                .into_owned();
+        }
+    }
+
+    // Residual single-token "GP Monza" style — title-case the token.
+    out = gp_country_re()
+        .replace_all(&out, |caps: &regex::Captures| {
+            let token = caps[1]
+                .split_whitespace()
+                .map(title_case_word)
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!("{token} Grand Prix")
+        })
+        .into_owned();
+
+    out
+}
 
 fn normalize_circuit_aliases(s: &str) -> String {
     let mut out = s.to_string();
@@ -930,6 +1031,7 @@ pub fn parse_racing_title(raw: &str) -> Option<RacingParsed> {
     // don't pollute the event name or block "Grand Prix" detection.
     let cleaned = strip_round_tokens(&cleaned);
     let cleaned = expand_gp_suffix(&cleaned);
+    let cleaned = expand_gp_country_names(&cleaned);
     let cleaned = multi_space_re()
         .replace_all(cleaned.trim(), " ")
         .into_owned();
@@ -1007,14 +1109,17 @@ static RACING_SESSIONS: &[&str] = &[
     "practice 1",
     "practice 2",
     "practice 3",
+    "pole position",
     "qualifying",
     "sprint",
+    "carrera",
     "fp1",
     "fp2",
     "fp3",
     "practice",
     "warm up",
     "warmup",
+    "pole",
     "race",
 ];
 
@@ -1110,16 +1215,17 @@ pub fn racing_session_episode(session_or_name: &str) -> Option<(i32, String)> {
             3,
             "Free Practice 3",
         ),
-        (&["qualifying", "quali"], 4, "Qualifying"),
+        (
+            &["qualifying", "quali", "pole position", " pole "],
+            4,
+            "Qualifying",
+        ),
         // Bare "free practice" without a session number (common in F1 release
         // names like "Free.Practice.SkyF1HD") — only when FP2/FP3 didn't match.
-        (
-            &["free practice"],
-            1,
-            "Free Practice 1",
-        ),
+        (&["free practice"], 1, "Free Practice 1"),
         (&["race two", "race 2"], 5, "Race Two"),
         (&["race one", "race 1"], 4, "Race One"),
+        (&["carrera"], 5, "Race"),
         // "weekend" covers full-weekend bundle releases (no specific session
         // named) — grouped under the same slot as an unspecified "Grand Prix"
         // upload, since neither names a single session.
@@ -1157,6 +1263,21 @@ pub fn numbered_prefix_episode(filename: &str) -> Option<i32> {
 fn numbered_prefix_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"^(\d{1,3})\.").expect("numbered_prefix_re"))
+}
+
+/// Netflix documentary series bundled under Formula keyword searches.
+///
+/// Titles like `Formula 1 Drive to Survive S07E10 …` must not go through the
+/// race-weekend parser (which would treat them as a standalone movie).
+pub fn classify_drive_to_survive(raw: &str) -> Option<(String, i32, i32)> {
+    let normalized = raw.to_lowercase().replace('.', " ");
+    if !normalized.contains("drive to survive") {
+        return None;
+    }
+    let parsed = crate::parser::parse_title(raw);
+    let season = *parsed.seasons.first()?;
+    let episode = *parsed.episodes.first()?;
+    Some(("Formula 1: Drive to Survive".to_string(), season, episode))
 }
 
 /// Map a racing torrent *filename* to `(episode, display title)`.
@@ -1201,9 +1322,7 @@ fn numbered_file_fallback_title(filename: &str) -> String {
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(filename);
-    let stripped = numbered_prefix_re()
-        .replace(base, "")
-        .replace('.', " ");
+    let stripped = numbered_prefix_re().replace(base, "").replace('.', " ");
     // Drop technical tokens and racing metadata (year, round, league prefix).
     let words: Vec<&str> = stripped
         .split_whitespace()
@@ -1237,16 +1356,17 @@ fn is_racing_filename_noise(word: &str) -> bool {
     if lower.len() == 4 && lower.chars().all(|c| c.is_ascii_digit()) {
         return true;
     }
-    if lower.len() <= 4
-        && lower.starts_with('r')
-        && lower[1..].chars().all(|c| c.is_ascii_digit())
+    if lower.len() <= 4 && lower.starts_with('r') && lower[1..].chars().all(|c| c.is_ascii_digit())
     {
         return true;
     }
     matches!(
         lower.as_str(),
         "f1" | "f2" | "f3" | "formula" | "motogp" | "moto2" | "moto3"
-    ) || matches!(lower.as_str(), "grand" | "prix" | "british" | "skyf1hd" | "f1tv")
+    ) || matches!(
+        lower.as_str(),
+        "grand" | "prix" | "british" | "skyf1hd" | "f1tv"
+    )
 }
 
 fn title_case_word(word: &str) -> String {
@@ -1348,14 +1468,14 @@ mod racing_tests {
         // Unknown.
         assert!(racing_session_episode("Pit Lane Channel").is_none());
         // Press conferences mention "Grand Prix" but are not the race session.
-        assert!(racing_session_episode(
-            "01.F1.2026.R09.British.Grand.Prix.Drivers.Press.Conference.SkyF1HD.1080P.mkv"
-        )
-        .is_none());
-        assert_eq!(
+        assert!(
             racing_session_episode(
-                "09.F1.2026.R09.British.Grand.Prix.Race.SkyF1HD.1080P.mkv"
-            ),
+                "01.F1.2026.R09.British.Grand.Prix.Drivers.Press.Conference.SkyF1HD.1080P.mkv"
+            )
+            .is_none()
+        );
+        assert_eq!(
+            racing_session_episode("09.F1.2026.R09.British.Grand.Prix.Race.SkyF1HD.1080P.mkv"),
             Some((5, "Race".to_string()))
         );
         assert_eq!(
@@ -1376,16 +1496,24 @@ mod racing_tests {
             ),
             Some((4, "Qualifying".to_string()))
         );
-        assert!(racing_session_episode(
-            "08.F1.2026.R09.British.Grand.Prix.Teds.Qualifying.Notebook.SkyF1HD.1080P.mkv"
-        )
-        .is_none());
+        assert!(
+            racing_session_episode(
+                "08.F1.2026.R09.British.Grand.Prix.Teds.Qualifying.Notebook.SkyF1HD.1080P.mkv"
+            )
+            .is_none()
+        );
     }
 
     #[test]
     fn numbered_prefix_episode_mapping() {
-        assert_eq!(numbered_prefix_episode("01.Formula.3.Practice.mkv"), Some(1));
-        assert_eq!(numbered_prefix_episode("04.Formula.3.Race.Two.mkv"), Some(4));
+        assert_eq!(
+            numbered_prefix_episode("01.Formula.3.Practice.mkv"),
+            Some(1)
+        );
+        assert_eq!(
+            numbered_prefix_episode("04.Formula.3.Race.Two.mkv"),
+            Some(4)
+        );
         assert_eq!(numbered_prefix_episode("Race.mkv"), None);
 
         assert_eq!(
@@ -1445,12 +1573,47 @@ mod racing_tests {
             ),
         ];
         for (filename, ep, title) in cases {
-            let parsed = racing_file_episode(filename).unwrap_or_else(|| {
-                panic!("expected parse for {filename}")
-            });
+            let parsed = racing_file_episode(filename)
+                .unwrap_or_else(|| panic!("expected parse for {filename}"));
             assert_eq!(parsed.0, ep, "episode for {filename}");
             assert_eq!(parsed.1, title, "title for {filename}");
         }
+    }
+    #[test]
+    fn drive_to_survive_series_episode() {
+        let (title, season, episode) = classify_drive_to_survive(
+            "Formula 1 Drive to Survive S07E10 1080p WEB H264-SuccessfulCrab EZTV",
+        )
+        .unwrap();
+        assert_eq!(title, "Formula 1: Drive to Survive");
+        assert_eq!(season, 7);
+        assert_eq!(episode, 10);
+        assert!(classify_drive_to_survive("Formula 1 British Grand Prix 2026").is_none());
+    }
+
+    #[test]
+    fn spanish_gp_reino_unido_carrera() {
+        let r =
+            parse_racing_title("Formula 1 GP Reino Unido Carrera ESPNF1 Lat EveHQ 2026").unwrap();
+        assert_eq!(r.series_title, "Formula 1 British Grand Prix 2026");
+        assert_eq!(r.year, Some(2026));
+        assert_eq!(r.session.as_deref(), Some("Carrera"));
+        assert_eq!(
+            racing_session_episode("Carrera"),
+            Some((5, "Race".to_string()))
+        );
+    }
+
+    #[test]
+    fn spanish_gp_austria_pole() {
+        let r = parse_racing_title("Formula 1 GP Austria Pole DAZNF1 Spa EveHQ 2026").unwrap();
+        assert_eq!(r.series_title, "Formula 1 Austrian Grand Prix 2026");
+        assert_eq!(r.year, Some(2026));
+        assert_eq!(r.session.as_deref(), Some("Pole"));
+        assert_eq!(
+            racing_session_episode("Pole"),
+            Some((4, "Qualifying".to_string()))
+        );
     }
 }
 

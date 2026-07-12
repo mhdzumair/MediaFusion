@@ -13,10 +13,14 @@
 ///        - Seeders:  `td .add-block-wrapper span.text-success`
 ///   2. For each torrent row, follow the detail link.
 ///      On the detail page:
+///        - Parse the `#torrent_files` table when present (egortech uploads
+///          expose the real multi-session file list here — no DHT needed).
 ///        - `window.pageToken` and `window.csrfToken` are extracted via regex.
-///        - A numeric torrent ID is read from `.download-btn-magnet[data-id]`.
+///        - A numeric torrent ID is read from `.download-btn-magnet[data-id]`
+///          (or `.download-btn-torrent[data-id]` when only a file is offered).
 ///        - POST `/ajax/getTorrentMagnet.php` with fields `torrent_id`,
-///          `download_type`, `timestamp`, `hmac` (SHA256 of
+///          `download_type` (`torrent` preferred when a file download exists,
+///          otherwise `magnet`), `timestamp`, `hmac` (SHA256 of
 ///          `torrent_id|timestamp|pageToken`, despite the field's name it's a
 ///          plain hash, not an HMAC) and `sessid` (the csrfToken value).
 ///        - This endpoint re-validates the CF clearance cookie against the
@@ -44,10 +48,12 @@ use crate::{
     scrapers::{
         ScrapedStream, SearchMeta, StreamFile, browser,
         fetcher::{fetch_byparr, fetch_plain},
-        media_resolve, stream_convert,
+        media_resolve, stream_convert, torrent_metadata,
     },
     util::{rate_limit, retry},
 };
+
+use super::formula_racing::{self, HtmlTorrentFile};
 
 // ─── Regex for security tokens ────────────────────────────────────────────────
 
@@ -313,9 +319,8 @@ fn parse_listing_rows(
 
 fn username_from_user_href(href: &str) -> Option<String> {
     static USER_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-    let re = USER_RE.get_or_init(|| {
-        Regex::new(r"/user/([^/?#]+)/?").expect("ext.to user href regex")
-    });
+    let re =
+        USER_RE.get_or_init(|| Regex::new(r"/user/([^/?#]+)/?").expect("ext.to user href regex"));
     re.captures(href)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().to_string())
@@ -362,7 +367,10 @@ fn infer_uploader_from_title(title: &str, category: &str) -> Option<String> {
                 r"(?i)(?:^|[.\-_\[\]\s]){}(?:$|[.\-_\[\]\s])",
                 regex::escape(alias)
             );
-            (Regex::new(&pattern).expect("formula uploader alias regex"), canonical)
+            (
+                Regex::new(&pattern).expect("formula uploader alias regex"),
+                canonical,
+            )
         })
         .collect()
     });
@@ -412,18 +420,175 @@ fn parse_size_to_bytes(s: &str) -> Option<i64> {
     Some((num * multiplier) as i64)
 }
 
-/// Fetch a detail page and extract the magnet link plus uploader (when present).
-async fn fetch_magnet(
+/// Parsed detail-page payload: magnet link, optional `.torrent` bytes, and any
+/// file rows the site exposes directly in HTML.
+struct DetailDownload {
+    magnet: String,
+    torrent_bytes: Option<Vec<u8>>,
+    html_files: Vec<HtmlTorrentFile>,
+    uploader: Option<String>,
+}
+
+/// Parse `#torrent_files` rows from a detail page (Python `parse_torrent_details`).
+fn parse_html_file_list(html: &str) -> Vec<HtmlTorrentFile> {
+    let doc = Html::parse_document(html);
+    let row_sel = Selector::parse("#torrent_files table tr").expect("torrent_files row");
+    let name_sel =
+        Selector::parse("td.file-name-line-td span.folder-name a").expect("torrent file name");
+    let size_sel = Selector::parse("td.file-size-td div.file-size").expect("torrent file size");
+
+    let mut files = Vec::new();
+    for row in doc.select(&row_sel) {
+        let Some(name_el) = row.select(&name_sel).next() else {
+            continue;
+        };
+        let filename: String = name_el.text().collect();
+        let filename = filename.trim().to_string();
+        if filename.is_empty() || !parser::episode_detector::is_video_file(&filename) {
+            continue;
+        }
+
+        let size_texts: Vec<String> = row
+            .select(&size_sel)
+            .flat_map(|el| el.text())
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect();
+        let size_raw = size_texts
+            .get(1)
+            .or_else(|| size_texts.first())
+            .map(String::as_str);
+        let size = size_raw.and_then(parse_size_to_bytes);
+
+        files.push(HtmlTorrentFile {
+            file_index: files.len() as i32,
+            filename,
+            size,
+        });
+    }
+    files
+}
+
+fn detail_has_torrent_download(html: &str) -> bool {
+    let doc = Html::parse_document(html);
+    let torrent_btn = Selector::parse(".download-btn-torrent").expect("download-btn-torrent");
+    doc.select(&torrent_btn).next().is_some()
+}
+
+async fn post_ext_to_ajax(
+    label: &str,
+    client: &reqwest::Client,
+    browserless_url: &str,
+    detail_url: &str,
+    ajax_url: &str,
+    tid: u64,
+    page_token: &str,
+    csrf: &str,
+    download_type: &str,
+    detail_cookies: &[(String, String)],
+    detail_user_agent: &str,
+) -> Option<String> {
+    retry::with_retry(label, || {
+        let client = client.clone();
+        let ajax_url = ajax_url.to_string();
+        let referer = detail_url.to_string();
+        let bl_url = browserless_url.to_string();
+        let detail_cookies = detail_cookies.to_vec();
+        let detail_user_agent = detail_user_agent.to_string();
+        let pt = page_token.to_string();
+        let csrf = csrf.to_string();
+        let download_type = download_type.to_string();
+        async move {
+            let ts = unix_ts();
+            let sig = compute_hmac(tid, ts, &pt);
+            let form_data = format!(
+                "torrent_id={tid}&download_type={}&timestamp={ts}&hmac={}&sessid={}",
+                urlencoding::encode(&download_type),
+                urlencoding::encode(&sig),
+                urlencoding::encode(&csrf),
+            );
+
+            browser::post_with_cookies_via_browser(
+                &client,
+                &bl_url,
+                &referer,
+                &ajax_url,
+                &form_data,
+                &detail_cookies,
+                &detail_user_agent,
+            )
+            .await
+            .ok_or_else(|| "browserless request failed".to_string())
+        }
+    })
+    .await
+    .ok()
+}
+
+fn magnet_from_ajax_response(raw: &str) -> Option<String> {
+    let resp = serde_json::from_str::<serde_json::Value>(raw).ok()?;
+    if resp.get("success").and_then(|v| v.as_bool()) != Some(true) {
+        return None;
+    }
+    resp.get("url")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty() && s.starts_with("magnet:"))
+        .map(|s| s.to_string())
+        .or_else(|| {
+            resp.get("hash")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|h| format!("magnet:?xt=urn:btih:{h}"))
+        })
+}
+
+async fn torrent_bytes_from_ajax_response(
+    client: &reqwest::Client,
+    browserless_url: &str,
+    base_url: &str,
+    detail_url: &str,
+    raw: &str,
+) -> Option<Vec<u8>> {
+    if raw.as_bytes().first() == Some(&b'd') {
+        return Some(raw.as_bytes().to_vec());
+    }
+
+    let resp = serde_json::from_str::<serde_json::Value>(raw).ok()?;
+    if resp.get("success").and_then(|v| v.as_bool()) != Some(true) {
+        return None;
+    }
+
+    let url = resp.get("url").and_then(|v| v.as_str()).filter(|s| {
+        !s.is_empty()
+            && !s.starts_with("magnet:")
+            && (s.contains(".torrent") || s.contains("/download"))
+    })?;
+
+    let absolute = if url.starts_with("http") {
+        url.to_string()
+    } else {
+        format!("{base_url}/{}", url.trim_start_matches('/'))
+    };
+
+    browser::fetch_torrent_via_browser(client, browserless_url, detail_url, &absolute)
+        .await
+        .or(torrent_metadata::download_torrent_bytes(
+            client,
+            &absolute,
+            std::time::Duration::from_secs(30),
+        )
+        .await)
+}
+
+/// Fetch a detail page and extract magnet / torrent file plus HTML file rows.
+async fn fetch_detail_download(
     label: &str,
     base_url: &str,
     detail_url: &str,
     client: &reqwest::Client,
     byparr_url: &Option<String>,
     browserless_url: &Option<String>,
-) -> Option<(String, Option<String>)> {
-    // Fetch the full result (not just HTML) so we can reuse the CF clearance
-    // cookies (and the User-Agent that earned them) in the subsequent AJAX
-    // magnet request, which is also CF-protected.
+) -> Option<DetailDownload> {
     let detail_result = retry::with_retry(label, || {
         let url = detail_url.to_string();
         let client = client.clone();
@@ -445,31 +610,24 @@ async fn fetch_magnet(
     let detail_user_agent = detail_result.user_agent;
     let detail_html = detail_result.html;
     let detail_uploader = extract_uploader_from_detail_html(&detail_html);
+    let html_files = parse_html_file_list(&detail_html);
 
-    // Fast path: magnet is often embedded directly in the page (e.g. inside a
-    // webga.zx viewer href). Skip AJAX entirely when it's already there.
-    if let Some(magnet) = extract_inline_magnet(&detail_html) {
-        debug!(label, "found inline magnet, skipping AJAX");
-        return Some((magnet, detail_uploader));
-    }
+    let mut magnet = extract_inline_magnet(&detail_html);
+    let mut torrent_bytes: Option<Vec<u8>> = None;
 
-    // Try AJAX magnet endpoint as fallback.
     let (page_token, csrf) = extract_security_tokens(&detail_html);
-    if let (Some(pt), Some(csrf)) = (page_token, csrf) {
-        // Extract numeric torrent ID — do this in a scoped block so that the
-        // non-Send `Html` value is dropped before any `.await` point.
+    if let (Some(pt), Some(csrf)) = (page_token.clone(), csrf.clone()) {
         let numeric_id: Option<u64> = {
             let doc = Html::parse_document(&detail_html);
-            let btn_sel = Selector::parse(".download-btn-magnet").expect("download-btn-magnet");
-            let from_attr: Option<u64> = doc
-                .select(&btn_sel)
+            let magnet_btn = Selector::parse(".download-btn-magnet").expect("download-btn-magnet");
+            let torrent_btn =
+                Selector::parse(".download-btn-torrent").expect("download-btn-torrent");
+            doc.select(&torrent_btn)
                 .next()
+                .or_else(|| doc.select(&magnet_btn).next())
                 .and_then(|el| el.value().attr("data-id"))
-                .and_then(|s| s.parse().ok());
-            // doc is dropped here (end of block).
-            from_attr
+                .and_then(|s| s.parse().ok())
         }
-        // Also fall back to extracting from the URL itself (last `-<id>` segment).
         .or_else(|| {
             detail_url
                 .rsplit('-')
@@ -479,169 +637,75 @@ async fn fetch_magnet(
 
         if let Some(tid) = numeric_id {
             let ajax_url = format!("{base_url}/ajax/getTorrentMagnet.php");
-
-            // Cloudflare re-validates the clearance cookie against the
-            // User-Agent that earned it, so a bare reqwest POST with the
-            // right cookies still gets re-challenged. Replay the cookie jar
-            // + UA through a real browserless Chrome instance instead —
-            // that passes because it's an actual browser executing the
-            // fetch(), not a bare HTTP client.
-            let Some(bl_url) = browserless_url else {
+            if browserless_url.is_none() {
                 warn!(
-                    "{label}: BROWSERLESS_URL not configured — ext.to's magnet AJAX \
-                     endpoint requires replaying a CF-cleared cookie through a real \
-                     browser, which byparr/reqwest alone cannot do."
+                    "{label}: BROWSERLESS_URL not configured — ext.to AJAX downloads \
+                     require replaying a CF-cleared cookie through a real browser."
                 );
-                return extract_inline_magnet(&detail_html).map(|magnet| (magnet, detail_uploader.clone()));
-            };
+            }
 
-            if let Ok(magnet) = retry::with_retry(label, || {
-                let client = client.clone();
-                let ajax_url = ajax_url.clone();
-                let referer = detail_url.to_string();
-                let bl_url = bl_url.clone();
-                let detail_cookies = detail_cookies.clone();
-                let detail_user_agent = detail_user_agent.clone();
-                let pt = pt.clone();
-                let csrf = csrf.clone();
-                async move {
-                    let ts = unix_ts();
-                    let sig = compute_hmac(tid, ts, &pt);
-                    let form_data = format!(
-                        "torrent_id={tid}&download_type=magnet&timestamp={ts}&hmac={}&sessid={}",
-                        urlencoding::encode(&sig),
-                        urlencoding::encode(&csrf),
-                    );
+            if let Some(bl_url) = browserless_url.as_deref() {
+                let prefer_torrent =
+                    detail_has_torrent_download(&detail_html) || !html_files.is_empty();
 
-                    let raw = browser::post_with_cookies_via_browser(
-                        &client,
-                        &bl_url,
-                        &referer,
+                if prefer_torrent {
+                    if let Some(raw) = post_ext_to_ajax(
+                        label,
+                        client,
+                        bl_url,
+                        detail_url,
                         &ajax_url,
-                        &form_data,
+                        tid,
+                        &pt,
+                        &csrf,
+                        "torrent",
                         &detail_cookies,
                         &detail_user_agent,
                     )
                     .await
-                    .ok_or_else(|| "browserless request failed".to_string())?;
-
-                    debug!(label, ajax_response = %&raw[..raw.len().min(500)], "AJAX magnet response");
-                    let resp = serde_json::from_str::<serde_json::Value>(&raw)
-                        .map_err(|e| e.to_string())?;
-
-                    if resp.get("success").and_then(|v| v.as_bool()) != Some(true) {
-                        return Err(format!(
-                            "getTorrentMagnet failed: {}",
-                            resp.get("error")
-                                .and_then(|e| e.as_str())
-                                .unwrap_or("unknown")
-                        ));
+                    {
+                        debug!(label, ajax_response = %&raw[..raw.len().min(500)], "AJAX torrent response");
+                        torrent_bytes = torrent_bytes_from_ajax_response(
+                            client, bl_url, base_url, detail_url, &raw,
+                        )
+                        .await;
+                        if torrent_bytes.is_some() {
+                            debug!(label, "downloaded .torrent via AJAX");
+                        }
                     }
-
-                    let magnet = resp
-                        .get("url")
-                        .and_then(|v| v.as_str())
-                        .filter(|s| !s.is_empty())
-                        .map(|s| s.to_string())
-                        .or_else(|| {
-                            resp.get("hash")
-                                .and_then(|v| v.as_str())
-                                .filter(|s| !s.is_empty())
-                                .map(|h| format!("magnet:?xt=urn:btih:{h}"))
-                        })
-                        .ok_or_else(|| "no url/hash in response".to_string())?;
-                    Ok(magnet)
                 }
-            })
-            .await
-            {
-                return Some((magnet, detail_uploader));
+
+                if magnet.is_none() {
+                    if let Some(raw) = post_ext_to_ajax(
+                        label,
+                        client,
+                        bl_url,
+                        detail_url,
+                        &ajax_url,
+                        tid,
+                        &pt,
+                        &csrf,
+                        "magnet",
+                        &detail_cookies,
+                        &detail_user_agent,
+                    )
+                    .await
+                    {
+                        debug!(label, ajax_response = %&raw[..raw.len().min(500)], "AJAX magnet response");
+                        magnet = magnet_from_ajax_response(&raw);
+                    }
+                }
             }
         }
     }
 
-    // Fallback: inline magnet in HTML.
-    extract_inline_magnet(&detail_html).map(|magnet| (magnet, detail_uploader))
-}
-
-// ─── DHT file-list enrichment for race-weekend torrents ──────────────────────
-
-/// Whether `info_hash` already has more than one resolved `stream_file` row
-/// (i.e. a previous scrape or play-time resolution already mapped the real
-/// multi-session file list) — used to skip the DHT round-trip on repeat scrapes.
-async fn racing_files_already_resolved(pool: &sqlx::PgPool, info_hash: &str) -> bool {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM stream_file sf \
-         JOIN torrent_stream ts ON ts.stream_id = sf.stream_id \
-         WHERE ts.info_hash = $1",
-    )
-    .bind(info_hash)
-    .fetch_one(pool)
-    .await
-    .map(|c| c > 1)
-    .unwrap_or(false)
-}
-
-/// Race-weekend torrents are frequently bundled as a single multi-file
-/// torrent covering every session (FP1/FP2/FP3/Qualifying/Sprint/Race), but
-/// the title alone only tells us which *one* session this particular release
-/// is about. ext.to exposes no direct `.torrent` download link (only a
-/// magnet/hash AJAX endpoint), so to discover the real file list — and map
-/// every session bundled inside to its correct episode — we resolve the
-/// magnet's info-dict via DHT (BEP-9) instead of guessing a single
-/// `file_index: 0` stub.
-///
-/// Best-effort: DHT resolution can fail for freshly-seeded torrents with no
-/// peers yet, or simply time out. On any failure we fall back to `fallback`
-/// (the single session parsed from the title), so behavior never regresses.
-async fn resolve_racing_files_via_dht(
-    info_hash: &str,
-    proxy_url: Option<&str>,
-    fallback: Vec<StreamFile>,
-) -> Vec<StreamFile> {
-    let meta =
-        match crate::demagnetize::resolve(info_hash, std::time::Duration::from_secs(20), proxy_url)
-            .await
-        {
-            Ok(m) => m,
-            Err(e) => {
-                debug!("ext_to: demagnetize failed for {info_hash}: {e}");
-                return fallback;
-            }
-        };
-
-    let mut files: Vec<StreamFile> = meta
-        .files
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, f)| {
-            let base = std::path::Path::new(&f.path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(&f.path);
-            if !parser::episode_detector::is_video_file(base) {
-                return None;
-            }
-            let (episode, _) = parser::racing_file_episode(base)?;
-            Some(StreamFile {
-                file_index: idx as i32,
-                filename: base.to_string(),
-                season_number: 1,
-                episode_number: episode,
-            })
-        })
-        .collect();
-
-    if files.is_empty() {
-        debug!("ext_to: no recognisable sessions in DHT file list for {info_hash}");
-        return fallback;
-    }
-    files.sort_by_key(|f| f.episode_number);
-    info!(
-        "ext_to: DHT-resolved {} session file(s) for {info_hash}",
-        files.len()
-    );
-    files
+    let magnet = magnet?;
+    Some(DetailDownload {
+        magnet,
+        torrent_bytes,
+        html_files,
+        uploader: detail_uploader,
+    })
 }
 
 // ─── Main catalog scraper ─────────────────────────────────────────────────────
@@ -710,7 +774,7 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
 
                 info!("{}: scraping \"{}\" — {detail_url}", spec.source, title);
 
-                let magnet_result = fetch_magnet(
+                let download = fetch_detail_download(
                     spec.source,
                     &base_url,
                     &detail_url,
@@ -720,13 +784,18 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
                 )
                 .await;
 
-                let Some((magnet, detail_uploader)) = magnet_result else {
+                let Some(download) = download else {
                     warn!(
                         "{}: no magnet for \"{}\" ({detail_url})",
                         spec.source, title
                     );
                     continue;
                 };
+
+                let magnet = download.magnet;
+                let detail_uploader = download.uploader;
+                let html_files = download.html_files;
+                let torrent_bytes = download.torrent_bytes;
 
                 let uploader = resolve_uploader(
                     page_uploader,
@@ -756,63 +825,58 @@ pub(crate) async fn scrape_ext_catalog(spec: &CatalogSpec, ctx: &JobCtx) -> Resu
 
                 // Determine whether this is a weekly series episode (Raw,
                 // SmackDown, NXT, …), a race weekend (grouped into a series
-                // with one episode per session), or a standalone movie (PPV
-                // events, etc.).
+                // with one episode per session), Drive to Survive, or a
+                // standalone movie (PPV events, etc.).
                 let wwe_info = parser::classify_wwe_title(&title);
                 let racing_info = parser::parse_racing_title(&title);
-                let (clean_title, year, effective_media_type, files) = if let Some(ref info) =
-                    wwe_info
-                {
-                    // Weekly show → series episode.
-                    // Use the episode full title as the file name so
-                    // the episode appears with a descriptive label.
-                    let episode_title = parser::clean_sports_title(&title);
-                    let files = vec![StreamFile {
-                        file_index: 0,
-                        filename: episode_title,
-                        season_number: info.season_number,
-                        episode_number: info.episode_number,
-                    }];
-                    // The series itself has no year (it spans many seasons).
-                    (info.series_title.to_string(), None, "series", files)
-                } else if let Some(ref racing) = racing_info
-                    && let Some((episode, episode_title)) =
-                        parser::racing_session_episode(racing.session.as_deref().unwrap_or(&title))
-                {
-                    // Race weekend → series, one episode per session
-                    // (FP1/FP2/FP3/Qualifying/Sprint/Race), ordered by
-                    // `racing_session_episode`'s slot number. The torrent
-                    // itself may bundle every session as separate files —
-                    // resolve the real file list via DHT so all of them get
-                    // mapped, not just the session named in this release's title.
-                    //
-                    // `file_index: -1` marks this as an *unverified* guess (we
-                    // don't actually know this session's position in the real
-                    // torrent). Playback file-selection treats negative
-                    // indices as absent, so it won't lock onto the wrong file
-                    // the way a confident-but-wrong `0` would.
-                    let fallback = vec![StreamFile {
-                        file_index: -1,
-                        filename: episode_title,
-                        season_number: 1,
-                        episode_number: episode,
-                    }];
-                    let files = if racing_files_already_resolved(pool, &info_hash).await {
-                        fallback
-                    } else {
-                        resolve_racing_files_via_dht(
+                let drive_to_survive = parser::classify_drive_to_survive(&title);
+                let (clean_title, year, effective_media_type, files) =
+                    if let Some((series_title, season, episode)) = drive_to_survive {
+                        let episode_title = parsed
+                            .episode_title
+                            .clone()
+                            .unwrap_or_else(|| parser::clean_sports_title(&title));
+                        let files = vec![StreamFile {
+                            file_index: 0,
+                            filename: episode_title,
+                            season_number: season,
+                            episode_number: episode,
+                        }];
+                        (series_title, None, "series", files)
+                    } else if let Some(ref info) = wwe_info {
+                        // Weekly show → series episode.
+                        // Use the episode full title as the file name so
+                        // the episode appears with a descriptive label.
+                        let episode_title = parser::clean_sports_title(&title);
+                        let files = vec![StreamFile {
+                            file_index: 0,
+                            filename: episode_title,
+                            season_number: info.season_number,
+                            episode_number: info.episode_number,
+                        }];
+                        // The series itself has no year (it spans many seasons).
+                        (info.series_title.to_string(), None, "series", files)
+                    } else if let Some(ref racing) = racing_info {
+                        let display_title = racing
+                            .session
+                            .clone()
+                            .unwrap_or_else(|| parser::clean_sports_title(&title));
+                        let files = formula_racing::resolve_racing_files(
+                            spec.source,
                             &info_hash,
+                            &html_files,
+                            torrent_bytes.as_deref(),
+                            &display_title,
+                            pool,
                             ctx.state.config.requests_proxy_url.as_deref(),
-                            fallback,
                         )
-                        .await
+                        .await;
+                        (racing.series_title.clone(), racing.year, "series", files)
+                    } else {
+                        // Movie or PPV event.
+                        let clean = parsed.title.clone().unwrap_or_else(|| title.clone());
+                        (clean, parsed.year, spec.media_type, vec![])
                     };
-                    (racing.series_title.clone(), racing.year, "series", files)
-                } else {
-                    // Movie or PPV event.
-                    let clean = parsed.title.clone().unwrap_or_else(|| title.clone());
-                    (clean, parsed.year, spec.media_type, vec![])
-                };
 
                 info!(
                     "{}: ✓ title=\"{}\" info_hash={} seeders={:?} size={:?} uploader={:?} \
