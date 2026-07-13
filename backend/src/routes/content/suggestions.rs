@@ -219,6 +219,15 @@ async fn build_suggestion_json(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+fn parse_comma_list(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 /// Apply an approved metadata suggestion directly to the media record.
 /// Complex relational fields (genres, cast, etc.) are skipped — they require
 /// dedicated moderation tooling to resolve lookup IDs.
@@ -320,33 +329,11 @@ async fn apply_metadata_field_change(
         }
         "imdb_id" | "tmdb_id" | "tvdb_id" | "mal_id" | "kitsu_id" => {
             let provider = field_name.trim_end_matches("_id");
-            let updated = sqlx::query(
-                "UPDATE media_external_id SET external_id = $1, updated_at = NOW() WHERE media_id = $2 AND provider = $3",
-            )
-            .bind(suggested_value)
-            .bind(media_id)
-            .bind(provider)
-            .execute(pool)
-            .await;
-            match updated {
-                Ok(r) if r.rows_affected() == 0 => {
-                    if let Err(e) = sqlx::query(
-                        "INSERT INTO media_external_id (media_id, provider, external_id, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())",
-                    )
-                    .bind(media_id)
-                    .bind(provider)
-                    .bind(suggested_value)
-                    .execute(pool)
-                    .await
-                    {
-                        tracing::warn!("apply_metadata_field_change: {field_name} insert failed: {e}");
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("apply_metadata_field_change: {field_name} update failed: {e}");
-                }
-                _ => {}
-            }
+            crate::db::set_external_id_for_media(pool, media_id, provider, suggested_value).await;
+        }
+        "catalogs" => {
+            let catalogs = parse_comma_list(suggested_value);
+            crate::db::replace_catalogs_for_media(pool, media_id, &catalogs).await;
         }
         _ => {
             tracing::debug!(
@@ -792,10 +779,17 @@ pub async fn list_pending_suggestions(
         next_idx += 1;
     }
 
-    list_sql.push_str(&format!(
-        " ORDER BY created_at DESC LIMIT ${next_idx} OFFSET ${}",
-        next_idx + 1
-    ));
+    let (user_filters, user_binds) = super::suggestion_query_filters::build_suggestion_user_filters(
+        &mut next_idx,
+        params.uploader_query.as_deref(),
+        params.reviewer_query.as_deref(),
+    );
+    count_sql.push_str(&user_filters);
+    list_sql.push_str(&user_filters);
+    extra_binds.extend(user_binds);
+
+    list_sql.push_str(super::suggestion_query_filters::PENDING_FIRST_ORDER);
+    list_sql.push_str(&format!(" LIMIT ${next_idx} OFFSET ${}", next_idx + 1));
 
     let mut cq = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()));
     for v in &extra_binds {

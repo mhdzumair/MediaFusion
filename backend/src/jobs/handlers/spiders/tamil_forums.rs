@@ -38,6 +38,77 @@ use crate::{
 
 use super::spider_args::parse_listing_page_args;
 
+/// One forum listing to scrape, with language/video-type context for catalog linking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ForumTarget {
+    forum_id: String,
+    language: String,
+    video_type: String,
+}
+
+/// Build `{language}_{video_type}` catalog keys from scraper config (e.g. `tamil_hdrip`).
+fn catalog_id_for_target(language: &str, video_type: &str) -> String {
+    format!("{}_{}", language.to_ascii_lowercase(), video_type)
+}
+
+/// Collect forum IDs with their language and video-type from the nested catalogs config.
+fn collect_forum_targets(catalogs: &serde_json::Value) -> Vec<ForumTarget> {
+    let mut targets = Vec::new();
+    let Some(catalogs_map) = catalogs.as_object() else {
+        return targets;
+    };
+
+    for (language, lang_val) in catalogs_map {
+        let Some(lang_obj) = lang_val.as_object() else {
+            continue;
+        };
+        for (video_type, id_val) in lang_obj {
+            match id_val {
+                serde_json::Value::String(s) => {
+                    targets.push(ForumTarget {
+                        forum_id: s.clone(),
+                        language: language.clone(),
+                        video_type: video_type.clone(),
+                    });
+                }
+                serde_json::Value::Array(arr) => {
+                    for v in arr {
+                        if let Some(s) = v.as_str() {
+                            targets.push(ForumTarget {
+                                forum_id: s.to_string(),
+                                language: language.clone(),
+                                video_type: video_type.clone(),
+                            });
+                        }
+                    }
+                }
+                serde_json::Value::Number(n) => {
+                    targets.push(ForumTarget {
+                        forum_id: n.to_string(),
+                        language: language.clone(),
+                        video_type: video_type.clone(),
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+    targets
+}
+
+/// Mirrors Python `CatalogParsePipeline` guards for English/dubbed edge cases.
+fn should_link_catalog(language: &str, video_type: &str, torrent_name: &str) -> bool {
+    let lang_lower = language.to_ascii_lowercase();
+    let name_lower = torrent_name.to_ascii_lowercase();
+    if lang_lower == "english" && !name_lower.contains("eng") {
+        return false;
+    }
+    if video_type == "dubbed" && lang_lower == "english" {
+        return false;
+    }
+    true
+}
+
 // ─── Config reader ────────────────────────────────────────────────────────────
 
 /// Load the homepage for a spider from the scraper config JSON.
@@ -84,32 +155,9 @@ async fn scrape_tamil_forum(
     let torrent_sel =
         Selector::parse("a[data-fileext='torrent']").expect("a[data-fileext='torrent']");
 
-    // Collect all forum IDs from the config.
-    let mut forum_ids: Vec<String> = Vec::new();
-    if let Some(catalogs_map) = catalogs.as_object() {
-        for (_lang, lang_val) in catalogs_map {
-            if let Some(lang_obj) = lang_val.as_object() {
-                for (_vtype, id_val) in lang_obj {
-                    match id_val {
-                        serde_json::Value::String(s) => forum_ids.push(s.clone()),
-                        serde_json::Value::Array(arr) => {
-                            for v in arr {
-                                if let Some(s) = v.as_str() {
-                                    forum_ids.push(s.to_string());
-                                }
-                            }
-                        }
-                        serde_json::Value::Number(n) => {
-                            forum_ids.push(n.to_string());
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-    }
+    let forum_targets = collect_forum_targets(catalogs);
 
-    if forum_ids.is_empty() {
+    if forum_targets.is_empty() {
         warn!("{spider_name}: no forum IDs found in config, aborting");
         return Ok(());
     }
@@ -121,7 +169,12 @@ async fn scrape_tamil_forum(
 
     let mut all_streams: Vec<()> = Vec::new();
 
-    for forum_id in &forum_ids {
+    for target in &forum_targets {
+        let forum_id = &target.forum_id;
+        let catalog_id = catalog_id_for_target(&target.language, &target.video_type);
+        let is_series = target.video_type == "series";
+        let media_type_str = if is_series { "series" } else { "movie" };
+
         for page in start_page..start_page.saturating_add(pages) {
             if ctx.is_cancelled() {
                 return Err(JobError::Cancelled);
@@ -253,28 +306,37 @@ async fn scrape_tamil_forum(
                     continue;
                 }
 
-                // Parse the title once for this topic; derive media type from PTT.
+                // Parse the title once for this topic.
                 let parsed = parser::parse_title(&title);
                 let clean_title = parsed.title.as_deref().unwrap_or(&title).to_string();
-                let is_series = !parsed.seasons.is_empty() || !parsed.episodes.is_empty();
-                let media_type_str = if is_series { "series" } else { "movie" };
 
                 // Resolve or create media (PTT clean title → DB lookup → TMDB → stub).
                 let tmdb_key = ctx.state.config.tmdb_api_key.as_deref();
+                let catalog_ids: Vec<&str> =
+                    if should_link_catalog(&target.language, &target.video_type, &title) {
+                        vec![catalog_id.as_str()]
+                    } else {
+                        vec![]
+                    };
                 let media_entry = media_resolve::find_or_create_media(
                     pool,
                     &ctx.state.http,
                     &clean_title,
                     parsed.year,
                     is_series,
-                    &[],
+                    &catalog_ids,
                     tmdb_key,
                     ctx.state.config.imdb_cinemeta_fallback_enabled,
                 )
                 .await;
 
                 let (media_id, imdb_id) = match media_entry {
-                    Some(m) => (m.id, None::<String>),
+                    Some(m) => {
+                        if !catalog_ids.is_empty() {
+                            media_resolve::link_to_catalogs(pool, m.id, &catalog_ids).await;
+                        }
+                        (m.id, None::<String>)
+                    }
                     None => {
                         warn!("{spider_name}: could not find/create media for '{title}'");
                         continue;
@@ -584,6 +646,8 @@ mod tests {
     use crate::jobs::handlers::spiders::spider_args::parse_listing_page_args;
     use serde_json::json;
 
+    use super::{ForumTarget, catalog_id_for_target, collect_forum_targets, should_link_catalog};
+
     #[test]
     fn listing_pages_default_to_one() {
         assert_eq!(parse_listing_page_args(&json!({})), (1, 1));
@@ -602,5 +666,73 @@ mod tests {
     fn listing_pages_clamped() {
         assert_eq!(parse_listing_page_args(&json!({"pages": 0})), (1, 1));
         assert_eq!(parse_listing_page_args(&json!({"pages": 999})), (100, 1));
+    }
+
+    #[test]
+    fn collect_forum_targets_preserves_language_and_video_type() {
+        let catalogs = json!({
+            "tamil": {
+                "hdrip": ["11-web-hd", "12-hd-rips"],
+                "series": "19-web-series"
+            },
+            "malayalam": {
+                "tcrip": "35-predvd"
+            }
+        });
+
+        let mut targets = collect_forum_targets(&catalogs);
+        targets.sort_by(|a, b| a.forum_id.cmp(&b.forum_id));
+
+        assert_eq!(
+            targets,
+            vec![
+                ForumTarget {
+                    forum_id: "11-web-hd".into(),
+                    language: "tamil".into(),
+                    video_type: "hdrip".into(),
+                },
+                ForumTarget {
+                    forum_id: "12-hd-rips".into(),
+                    language: "tamil".into(),
+                    video_type: "hdrip".into(),
+                },
+                ForumTarget {
+                    forum_id: "19-web-series".into(),
+                    language: "tamil".into(),
+                    video_type: "series".into(),
+                },
+                ForumTarget {
+                    forum_id: "35-predvd".into(),
+                    language: "malayalam".into(),
+                    video_type: "tcrip".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn catalog_id_for_target_matches_python_catalog_parse_pipeline() {
+        assert_eq!(catalog_id_for_target("Tamil", "hdrip"), "tamil_hdrip");
+        assert_eq!(catalog_id_for_target("english", "series"), "english_series");
+    }
+
+    #[test]
+    fn should_link_catalog_skips_english_without_eng_marker() {
+        assert!(!should_link_catalog(
+            "english",
+            "hdrip",
+            "Avatar (2022) 1080p BluRay"
+        ));
+        assert!(should_link_catalog(
+            "english",
+            "hdrip",
+            "Avatar (2022) 1080p BluRay ENG"
+        ));
+        assert!(!should_link_catalog(
+            "english",
+            "dubbed",
+            "Movie Dual Audio ENG"
+        ));
+        assert!(should_link_catalog("tamil", "hdrip", "Jailer (2023)"));
     }
 }

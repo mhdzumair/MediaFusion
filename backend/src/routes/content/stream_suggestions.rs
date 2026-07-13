@@ -157,6 +157,8 @@ fn default_page_size() -> i64 {
 pub struct PendingQuery {
     pub status: Option<String>,
     pub suggestion_type: Option<String>,
+    pub uploader_query: Option<String>,
+    pub reviewer_query: Option<String>,
     #[serde(default = "default_page")]
     pub page: i64,
     #[serde(default = "default_page_size")]
@@ -1366,10 +1368,17 @@ pub async fn list_pending_stream_suggestions(
         next_idx += 1;
     }
 
-    fetch_sql.push_str(&format!(
-        " ORDER BY created_at ASC LIMIT ${next_idx} OFFSET ${}",
-        next_idx + 1
-    ));
+    let (user_filters, user_binds) = super::suggestion_query_filters::build_suggestion_user_filters(
+        &mut next_idx,
+        params.uploader_query.as_deref(),
+        params.reviewer_query.as_deref(),
+    );
+    count_sql.push_str(&user_filters);
+    fetch_sql.push_str(&user_filters);
+    extra_binds.extend(user_binds);
+
+    fetch_sql.push_str(super::suggestion_query_filters::PENDING_FIRST_ORDER);
+    fetch_sql.push_str(&format!(" LIMIT ${next_idx} OFFSET ${}", next_idx + 1));
 
     let mut cq = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()));
     for v in &extra_binds {

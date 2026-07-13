@@ -238,7 +238,7 @@ pub async fn update_metadata(
 /// Upsert `season`/`episode` metadata rows for every mapped file on this torrent
 /// so the series episode list stays in sync with `file_media_link`.
 async fn sync_series_episodes_for_hash(pool: &PgPool, info_hash: &str) {
-    let rows: Vec<(i32, i32, i32, String)> = match sqlx::query_as(
+    let rows: Vec<(i32, Option<i32>, Option<i32>, String)> = match sqlx::query_as(
         "SELECT sml.media_id, fml.season_number, fml.episode_number, sf.filename \
          FROM torrent_stream ts \
          JOIN stream_media_link sml ON sml.stream_id = ts.stream_id \
@@ -258,6 +258,9 @@ async fn sync_series_episodes_for_hash(pool: &PgPool, info_hash: &str) {
     };
 
     for (media_id, season, episode, filename) in rows {
+        let (Some(season), Some(episode)) = (season, episode) else {
+            continue;
+        };
         let title = crate::parser::racing_file_episode(&filename)
             .map(|(_, t)| t)
             .unwrap_or(filename);

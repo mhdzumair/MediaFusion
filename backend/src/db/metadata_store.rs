@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
 use sqlx::PgPool;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use super::metadata_model::{
     NormalizedCastMember, NormalizedCrewMember, NormalizedEpisode, NormalizedMetadata,
@@ -310,6 +310,66 @@ pub async fn store_external_id(pool: &PgPool, media_id: i32, provider: &str, ext
     }
 }
 
+/// Assign an external ID to a media row, replacing any prior value for that provider.
+///
+/// If `(provider, external_id)` is already linked to a different media row the
+/// assignment is skipped — the unique `uq_provider_external_id` constraint prevents
+/// sharing one provider ID across multiple media entries.
+pub async fn set_external_id_for_media(
+    pool: &PgPool,
+    media_id: i32,
+    provider: &str,
+    external_id: &str,
+) {
+    if external_id.is_empty() {
+        return;
+    }
+
+    let existing_owner: Option<i32> = sqlx::query_scalar(
+        "SELECT media_id FROM media_external_id WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    if let Some(owner_id) = existing_owner {
+        if owner_id != media_id {
+            debug!(
+                "set_external_id_for_media: {provider}={external_id} already linked to media {owner_id}, skipping media {media_id}"
+            );
+        }
+        return;
+    }
+
+    if let Err(e) =
+        sqlx::query("DELETE FROM media_external_id WHERE media_id = $1 AND provider = $2")
+            .bind(media_id)
+            .bind(provider)
+            .execute(pool)
+            .await
+    {
+        warn!("set_external_id_for_media: delete old {provider} for media {media_id}: {e}");
+        return;
+    }
+
+    if let Err(e) = sqlx::query(
+        "INSERT INTO media_external_id (media_id, provider, external_id, created_at, updated_at) \
+         VALUES ($1, $2, $3, NOW(), NOW()) \
+         ON CONFLICT (provider, external_id) DO NOTHING",
+    )
+    .bind(media_id)
+    .bind(provider)
+    .bind(external_id)
+    .execute(pool)
+    .await
+    {
+        warn!("set_external_id_for_media({provider}, media_id={media_id}): {e}");
+    }
+}
+
 async fn upsert_external_ids(pool: &PgPool, media_id: MediaId, external_ids: &[(String, String)]) {
     for (provider, ext_id) in external_ids {
         store_external_id(pool, media_id.0, provider, ext_id).await;
@@ -390,6 +450,25 @@ pub async fn link_to_catalogs(pool: &PgPool, media_id: i32, catalog_ids: &[&str]
         .execute(pool)
         .await;
     }
+}
+
+/// Replace all catalog links for a media row with the given catalog names.
+pub async fn replace_catalogs_for_media(pool: &PgPool, media_id: i32, catalog_names: &[String]) {
+    if let Err(e) = sqlx::query("DELETE FROM media_catalog_link WHERE media_id = $1")
+        .bind(media_id)
+        .execute(pool)
+        .await
+    {
+        warn!("replace_catalogs_for_media: delete failed for media {media_id}: {e}");
+        return;
+    }
+
+    let refs: Vec<&str> = catalog_names
+        .iter()
+        .map(String::as_str)
+        .filter(|name| !name.is_empty())
+        .collect();
+    link_to_catalogs(pool, media_id, &refs).await;
 }
 
 async fn upsert_catalogs(pool: &PgPool, media_id: i32, catalogs: &[String]) {

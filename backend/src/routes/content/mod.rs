@@ -18,6 +18,7 @@ pub mod stream_linking;
 pub mod stream_rows;
 pub mod stream_suggestions;
 pub mod streams;
+pub mod suggestion_query_filters;
 pub mod suggestions;
 pub mod torrent_import;
 pub mod user_metadata;

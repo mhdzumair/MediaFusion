@@ -146,14 +146,6 @@ pub async fn trigger_nsfw_scan(
         return forbidden();
     }
 
-    if state.nsfw_classifier.is_none() {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"detail": "NSFW classifier is not loaded on this instance"})),
-        )
-            .into_response();
-    }
-
     let params = body.map(|b| b.0).unwrap_or_default();
     let payload = serde_json::json!({
         "keyword_blocked_only": params.keyword_blocked_only,

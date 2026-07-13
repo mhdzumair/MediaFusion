@@ -77,6 +77,10 @@ fn map_error_code(code: i64) -> Option<(&'static str, &'static str)> {
             "Real-Debrid traffic limit reached",
             "exceed_remote_traffic_limit.mp4",
         ),
+        20 => (
+            "Real-Debrid hoster not available for free users",
+            "need_premium.mp4",
+        ),
         21 => ("Real-Debrid too many active downloads", "torrent_limit.mp4"),
         22 => ("Real-Debrid IP not allowed", "ip_not_allowed.mp4"),
         24 => ("Real-Debrid file unavailable", "torrent_not_downloaded.mp4"),
@@ -1155,4 +1159,24 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
         }
     }
     found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_rd_error;
+    use crate::providers::ProviderError;
+    use serde_json::json;
+
+    #[test]
+    fn hoster_not_free_maps_to_need_premium() {
+        let body = json!({"error": "hoster_not_free", "error_code": 20});
+        let err = check_rd_error(&body).unwrap_err();
+        match err {
+            ProviderError::Api { video_file, .. } => {
+                assert_eq!(video_file, "need_premium.mp4");
+            }
+            other => panic!("expected Api error, got {other:?}"),
+        }
+        assert!(!err.is_unexpected());
+    }
 }

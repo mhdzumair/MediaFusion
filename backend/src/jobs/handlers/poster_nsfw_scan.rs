@@ -52,8 +52,9 @@ impl JobHandler for PosterNsfwScan {
         let classifier = match state.nsfw_classifier.as_ref() {
             Some(c) => c.clone(),
             None => {
-                info!("poster_nsfw_scan: classifier not loaded, skipping");
-                return Ok(());
+                return Err(JobError::Other(
+                    "NSFW classifier is not loaded on this worker — set POSTER_NSFW_ENABLED=true and provide the ONNX model file".into(),
+                ));
             }
         };
 
