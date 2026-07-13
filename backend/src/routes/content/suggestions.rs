@@ -229,8 +229,6 @@ fn parse_comma_list(value: &str) -> Vec<String> {
 }
 
 /// Apply an approved metadata suggestion directly to the media record.
-/// Complex relational fields (genres, cast, etc.) are skipped — they require
-/// dedicated moderation tooling to resolve lookup IDs.
 async fn apply_metadata_field_change(
     pool: &sqlx::PgPool,
     media_id: i32,
@@ -334,6 +332,49 @@ async fn apply_metadata_field_change(
         "catalogs" => {
             let catalogs = parse_comma_list(suggested_value);
             crate::db::replace_catalogs_for_media(pool, media_id, &catalogs).await;
+        }
+        "poster" => {
+            crate::db::replace_primary_image_for_media(pool, media_id, "poster", suggested_value)
+                .await;
+        }
+        "background" => {
+            crate::db::replace_primary_image_for_media(
+                pool,
+                media_id,
+                "background",
+                suggested_value,
+            )
+            .await;
+        }
+        "genres" => {
+            let genres = parse_comma_list(suggested_value);
+            crate::db::replace_genres_for_media(pool, media_id, &genres).await;
+        }
+        "country" => {
+            crate::db::update_tv_country_for_media(pool, media_id, suggested_value).await;
+        }
+        "language" => {
+            crate::db::update_tv_language_for_media(pool, media_id, suggested_value).await;
+        }
+        "aka_titles" => {
+            let titles = parse_comma_list(suggested_value);
+            crate::db::replace_aka_titles_for_media(pool, media_id, &titles).await;
+        }
+        "cast" => {
+            let names = parse_comma_list(suggested_value);
+            crate::db::replace_cast_for_media(pool, media_id, &names).await;
+        }
+        "directors" => {
+            let names = parse_comma_list(suggested_value);
+            crate::db::replace_directors_for_media(pool, media_id, &names).await;
+        }
+        "writers" => {
+            let names = parse_comma_list(suggested_value);
+            crate::db::replace_writers_for_media(pool, media_id, &names).await;
+        }
+        "parental_certificate" => {
+            let certificates = crate::db::expand_parental_certificate_selection(suggested_value);
+            crate::db::replace_parental_certificates_for_media(pool, media_id, &certificates).await;
         }
         _ => {
             tracing::debug!(

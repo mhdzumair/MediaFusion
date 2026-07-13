@@ -38,6 +38,7 @@ pub mod meta;
 pub mod metadata_merge;
 pub mod metadata_model;
 pub mod metadata_store;
+pub mod metadata_suggestion_apply;
 pub mod pool;
 pub mod retry;
 pub mod stream_backfill;
@@ -63,6 +64,12 @@ pub use metadata_store::{
     find_existing_media, link_genre, link_to_catalogs, replace_catalogs_for_media,
     set_external_id_for_media, store_external_id, store_media, upsert_primary_image,
     upsert_series_episode,
+};
+pub use metadata_suggestion_apply::{
+    expand_parental_certificate_selection, replace_aka_titles_for_media, replace_cast_for_media,
+    replace_directors_for_media, replace_genres_for_media, replace_parental_certificates_for_media,
+    replace_primary_image_for_media, replace_writers_for_media, update_tv_country_for_media,
+    update_tv_language_for_media,
 };
 pub use stream_links::{
     link_stream_audio_channels, link_stream_audio_formats, link_stream_hdr_formats,
