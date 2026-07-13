@@ -22,7 +22,7 @@ spec:
       # Kubernetes blocks the app container until this exits 0, so only one
       # pod applies migrations at a time during a rolling deploy.
       - name: migrate
-        image: mhdzumair/mediafusion:6.0.0-beta.28
+        image: mhdzumair/mediafusion:6.0.0-beta.29
         command: ["/usr/local/bin/mediafusion-api"]
         env:
           - name: MEDIAFUSION_MIGRATE
@@ -46,7 +46,7 @@ spec:
             cpu: "200m"
       containers:
       - name: mediafusion-api
-        image: mhdzumair/mediafusion:6.0.0-beta.28
+        image: mhdzumair/mediafusion:6.0.0-beta.29
         ports:
         - containerPort: 8000
         resources:
@@ -240,7 +240,7 @@ spec:
     spec:
       containers:
       - name: taskiq-worker-default
-        image: mhdzumair/mediafusion:6.0.0-beta.28
+        image: mhdzumair/mediafusion:6.0.0-beta.29
         command: ["taskiq", "worker", "workers.taskiq_worker:broker_default", "--workers", "1", "--max-async-tasks", "8", "--ack-type", "when_executed"]
         env:
           - name: HOST_URL
@@ -302,7 +302,7 @@ spec:
     spec:
       containers:
       - name: taskiq-worker-scrapy
-        image: mhdzumair/mediafusion:6.0.0-beta.28
+        image: mhdzumair/mediafusion:6.0.0-beta.29
         command: ["taskiq", "worker", "workers.taskiq_worker:broker_scrapy", "--workers", "1", "--max-async-tasks", "1", "--ack-type", "when_executed"]
         env:
           - name: HOST_URL
@@ -386,7 +386,7 @@ spec:
     spec:
       containers:
       - name: taskiq-worker-import
-        image: mhdzumair/mediafusion:6.0.0-beta.28
+        image: mhdzumair/mediafusion:6.0.0-beta.29
         command: ["taskiq", "worker", "workers.taskiq_worker:broker_import", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
         env:
           - name: HOST_URL
@@ -448,7 +448,7 @@ spec:
     spec:
       containers:
       - name: taskiq-worker-priority
-        image: mhdzumair/mediafusion:6.0.0-beta.28
+        image: mhdzumair/mediafusion:6.0.0-beta.29
         command: ["taskiq", "worker", "workers.taskiq_worker:broker_priority", "--workers", "1", "--max-async-tasks", "4", "--ack-type", "when_executed"]
         env:
           - name: HOST_URL
