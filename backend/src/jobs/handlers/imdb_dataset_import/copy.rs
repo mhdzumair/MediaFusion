@@ -12,12 +12,8 @@ use crate::jobs::error::JobError;
 const COPY_BUF_LINES: usize = 8_192;
 const COPY_FLUSH_BYTES: usize = 4 * 1024 * 1024;
 
-async fn begin_long_running_conn(
-    conn: &mut PoolConnection<Postgres>,
-) -> Result<(), JobError> {
-    sqlx::query("BEGIN")
-        .execute(&mut **conn)
-        .await?;
+async fn begin_long_running_conn(conn: &mut PoolConnection<Postgres>) -> Result<(), JobError> {
+    sqlx::query("BEGIN").execute(&mut **conn).await?;
     sqlx::query("SET LOCAL statement_timeout = '0'")
         .execute(&mut **conn)
         .await?;
