@@ -9,6 +9,7 @@ import {
   Eye,
   Film,
   Filter,
+  Layers,
   ListChecks,
   Loader2,
   Trash2,
@@ -52,6 +53,7 @@ import {
 import type { StreamSuggestion, StreamSuggestionStatus } from '@/lib/api'
 
 import { IssueTriageControls } from './IssueTriageControls'
+import { StreamSuggestionGroupedView } from './StreamSuggestionGroupedView'
 import {
   formatStreamFieldName,
   formatStreamSuggestionType,
@@ -82,6 +84,7 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
   const [bulkRejectNotes, setBulkRejectNotes] = useState('')
   const [isBulkApprovingSelected, setIsBulkApprovingSelected] = useState(false)
   const [isBulkRejectingSelected, setIsBulkRejectingSelected] = useState(false)
+  const [groupByInfoHash, setGroupByInfoHash] = useState(true)
   const debouncedUploaderQuery = useDebounce(uploaderQuery, 350)
   const debouncedReviewerQuery = useDebounce(reviewerQuery, 350)
 
@@ -281,6 +284,37 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
     }
   }
 
+  const handleBulkReviewGroup = async (suggestionIds: string[], action: 'approve' | 'reject') => {
+    if (!suggestionIds.length) return
+    if (action === 'approve') {
+      setIsBulkApprovingSelected(true)
+    } else {
+      setIsBulkRejectingSelected(true)
+    }
+
+    try {
+      await bulkReviewSuggestions.mutateAsync({
+        suggestionIds,
+        action,
+      })
+      setSelectedSuggestionIds((current) => current.filter((id) => !suggestionIds.includes(id)))
+      refetch()
+    } catch {
+      // Error handled by mutation
+    } finally {
+      if (action === 'approve') {
+        setIsBulkApprovingSelected(false)
+      } else {
+        setIsBulkRejectingSelected(false)
+      }
+    }
+  }
+
+  const openReviewDialog = (suggestion: StreamSuggestion) => {
+    setSelectedSuggestion(suggestion)
+    setReviewDialogOpen(true)
+  }
+
   const showInitialLoading = isLoading && !data
 
   return (
@@ -380,6 +414,15 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
           <ListChecks className="h-4 w-4 mr-2" />
           {bulkModeEnabled ? 'Exit Bulk Mode' : 'Bulk Action Mode'}
         </Button>
+        <Button
+          variant={groupByInfoHash ? 'default' : 'outline'}
+          className="rounded-xl"
+          onClick={() => setGroupByInfoHash((value) => !value)}
+          disabled={isAnyActionPending}
+        >
+          <Layers className="h-4 w-4 mr-2" />
+          {groupByInfoHash ? 'Grouped by Hash' : 'Flat List'}
+        </Button>
       </div>
 
       {bulkModeEnabled && (
@@ -435,6 +478,24 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
           <Film className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
           <p className="mt-4 text-muted-foreground">No stream suggestions found</p>
         </div>
+      ) : groupByInfoHash ? (
+        <StreamSuggestionGroupedView
+          suggestions={suggestionsOnPage}
+          bulkModeEnabled={bulkModeEnabled}
+          selectedSuggestionIds={selectedSuggestionIds}
+          isAnyActionPending={isAnyActionPending}
+          isBulkApprovingSelected={isBulkApprovingSelected}
+          isBulkRejectingSelected={isBulkRejectingSelected}
+          onToggleSuggestionSelection={toggleSuggestionSelection}
+          onReviewSuggestion={openReviewDialog}
+          onBulkReviewGroup={handleBulkReviewGroup}
+          onRefetch={() => void refetch()}
+          getReviewerLabel={getReviewerLabel}
+          getReviewBadge={getReviewBadge}
+          isRelinkSuggestion={isRelinkSuggestion}
+          buildRelinkCurrentValue={buildRelinkCurrentValue}
+          buildRelinkSuggestedValue={buildRelinkSuggestedValue}
+        />
       ) : (
         <div className="space-y-3">
           {data.suggestions.map((suggestion) => {
@@ -612,8 +673,7 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
                         variant="outline"
                         className="rounded-lg"
                         onClick={() => {
-                          setSelectedSuggestion(suggestion)
-                          setReviewDialogOpen(true)
+                          openReviewDialog(suggestion)
                         }}
                       >
                         <Eye className="h-4 w-4 mr-1" />

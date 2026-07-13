@@ -273,3 +273,117 @@ export function isIssueStreamSuggestion(suggestion: StreamSuggestion): boolean {
   const b = baseStreamSuggestionType(suggestion.suggestion_type)
   return b === 'report_broken' || b === 'other'
 }
+
+export function streamSuggestionGroupKey(suggestion: StreamSuggestion): string {
+  const hash = suggestion.info_hash?.trim()
+  if (hash) return `hash:${hash}`
+  return `stream:${suggestion.stream_id}`
+}
+
+export function extractFileLabelFromReason(reason: string | null): string | null {
+  if (!reason) return null
+  const prefix = 'Remove episode link for file: '
+  if (reason.startsWith(prefix)) {
+    const label = reason.slice(prefix.length).trim()
+    return label || null
+  }
+  const fixPrefix = 'Episode link fix for file: '
+  if (reason.startsWith(fixPrefix)) {
+    const label = reason.slice(fixPrefix.length).trim()
+    return label || null
+  }
+  return null
+}
+
+export function fileGroupKeyForSuggestion(suggestion: StreamSuggestion): string {
+  const episodeInfo = parseEpisodeLinkField(suggestion.field_name)
+  if (episodeInfo) {
+    const fileLabel = extractFileLabelFromReason(suggestion.reason)
+    return fileLabel ? `file:${episodeInfo.fileId}:${fileLabel}` : `file:${episodeInfo.fileId}`
+  }
+  return 'general'
+}
+
+export interface StreamSuggestionInfoHashGroup {
+  key: string
+  infoHash: string | null
+  streamId: string
+  streamName: string | null
+  streamType: string | null
+  sourceMediaTitle: string | null
+  suggestions: StreamSuggestion[]
+  pendingCount: number
+}
+
+export interface StreamSuggestionFileGroup {
+  key: string
+  label: string
+  suggestions: StreamSuggestion[]
+}
+
+export function groupStreamSuggestionsByInfoHash(suggestions: StreamSuggestion[]): StreamSuggestionInfoHashGroup[] {
+  const groups = new Map<string, StreamSuggestionInfoHashGroup>()
+
+  for (const suggestion of suggestions) {
+    const key = streamSuggestionGroupKey(suggestion)
+    const existing = groups.get(key)
+    if (existing) {
+      existing.suggestions.push(suggestion)
+      if (suggestion.status === 'pending') {
+        existing.pendingCount += 1
+      }
+      continue
+    }
+
+    groups.set(key, {
+      key,
+      infoHash: suggestion.info_hash?.trim() || null,
+      streamId: suggestion.stream_id,
+      streamName: suggestion.stream_name,
+      streamType: suggestion.stream_type,
+      sourceMediaTitle: suggestion.source_media_title,
+      suggestions: [suggestion],
+      pendingCount: suggestion.status === 'pending' ? 1 : 0,
+    })
+  }
+
+  return Array.from(groups.values()).sort((left, right) => {
+    if (right.pendingCount !== left.pendingCount) {
+      return right.pendingCount - left.pendingCount
+    }
+    const leftLabel = left.streamName || left.streamId
+    const rightLabel = right.streamName || right.streamId
+    return leftLabel.localeCompare(rightLabel)
+  })
+}
+
+export function groupSuggestionsByFile(suggestions: StreamSuggestion[]): StreamSuggestionFileGroup[] {
+  const groups = new Map<string, StreamSuggestionFileGroup>()
+
+  for (const suggestion of suggestions) {
+    const key = fileGroupKeyForSuggestion(suggestion)
+    const episodeInfo = parseEpisodeLinkField(suggestion.field_name)
+    const reasonLabel = extractFileLabelFromReason(suggestion.reason)
+    const label =
+      reasonLabel || (episodeInfo ? `File #${episodeInfo.fileId}` : suggestion.field_name || 'General changes')
+
+    const existing = groups.get(key)
+    if (existing) {
+      existing.suggestions.push(suggestion)
+      continue
+    }
+
+    groups.set(key, {
+      key,
+      label,
+      suggestions: [suggestion],
+    })
+  }
+
+  return Array.from(groups.values())
+}
+
+export function truncateInfoHash(infoHash: string, visible = 8): string {
+  if (infoHash.length <= visible * 2 + 1) return infoHash
+  return `${infoHash.slice(0, visible)}…${infoHash.slice(-visible)}`
+}

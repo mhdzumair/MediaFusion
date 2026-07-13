@@ -376,3 +376,130 @@ async fn owner_direct_edit_updates_stream_fields() {
         .await
         .ok();
 }
+
+/// Clearing episode_link fields via approved suggestions must NULL the file_media_link columns.
+#[tokio::test]
+async fn stream_suggestion_episode_link_clear_applies() {
+    use mediafusion_api::db::{LinkSource, MediaType};
+    use mediafusion_api::routes::content::stream_suggestions::apply_stream_field_change;
+
+    let _db = common::lock_db_tests().await;
+    let pool = common::test_pool().await;
+
+    let suffix = Uuid::new_v4().simple().to_string();
+    let media_id: i32 = sqlx::query_scalar(
+        r#"INSERT INTO media (type, title, adult, is_blocked, is_public, is_user_created,
+                              total_streams, nudity_status, year, created_at)
+           VALUES ($1, $2, false, false, true, false, 0, 'UNKNOWN', 2020, NOW())
+           RETURNING id"#,
+    )
+    .bind(MediaType::Series)
+    .bind(format!("test_episode_link_{suffix}"))
+    .fetch_one(pool)
+    .await
+    .expect("insert media");
+
+    let stream_id: i32 = sqlx::query_scalar::<_, i32>(
+        r#"INSERT INTO stream (
+               stream_type, name, source, is_active, is_blocked, is_public, playback_count,
+               is_remastered, is_upscaled, is_proper, is_repack, is_extended,
+               is_complete, is_dubbed, is_subbed, created_at
+           ) VALUES ('TORRENT', 'episode link test', 'test', true, false, true, 0,
+                     false, false, false, false, false, false, false, false, NOW())
+           RETURNING id"#,
+    )
+    .fetch_one(pool)
+    .await
+    .expect("insert stream");
+
+    let info_hash = format!("bb{:038x}", stream_id);
+    sqlx::query(
+        r#"INSERT INTO torrent_stream (stream_id, info_hash, total_size, torrent_type, file_count, created_at)
+           VALUES ($1, $2, 1000, 'PUBLIC', 1, NOW())"#,
+    )
+    .bind(stream_id)
+    .bind(&info_hash)
+    .execute(pool)
+    .await
+    .expect("insert torrent_stream");
+
+    let file_id: i32 = sqlx::query_scalar(
+        r#"INSERT INTO stream_file (stream_id, file_index, filename, file_type, is_archive)
+           VALUES ($1, 0, 'episode.mkv', 'VIDEO', false)
+           RETURNING id"#,
+    )
+    .bind(stream_id)
+    .fetch_one(pool)
+    .await
+    .expect("insert stream_file");
+
+    sqlx::query(
+        r#"INSERT INTO file_media_link (
+               file_id, media_id, season_number, episode_number, episode_end,
+               is_primary, confidence, link_source, created_at
+           ) VALUES ($1, $2, 1, 2, 3, true, 1.0, $3, NOW())"#,
+    )
+    .bind(file_id)
+    .bind(media_id)
+    .bind(LinkSource::User)
+    .execute(pool)
+    .await
+    .expect("insert file_media_link");
+
+    apply_stream_field_change(
+        pool,
+        stream_id,
+        "field_correction",
+        Some(&format!("episode_link:{file_id}:season_number")),
+        Some(""),
+        None,
+    )
+    .await;
+    apply_stream_field_change(
+        pool,
+        stream_id,
+        "field_correction",
+        Some(&format!("episode_link:{file_id}:episode_number")),
+        Some(""),
+        None,
+    )
+    .await;
+
+    let (season, episode, episode_end): (Option<i32>, Option<i32>, Option<i32>) = sqlx::query_as(
+        "SELECT season_number, episode_number, episode_end FROM file_media_link WHERE file_id = $1",
+    )
+    .bind(file_id)
+    .fetch_one(pool)
+    .await
+    .expect("fetch file_media_link");
+
+    assert_eq!(season, None);
+    assert_eq!(episode, None);
+    assert_eq!(episode_end, Some(3));
+
+    sqlx::query("DELETE FROM file_media_link WHERE file_id = $1")
+        .bind(file_id)
+        .execute(pool)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM stream_file WHERE id = $1")
+        .bind(file_id)
+        .execute(pool)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM torrent_stream WHERE stream_id = $1")
+        .bind(stream_id)
+        .execute(pool)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM stream WHERE id = $1")
+        .bind(stream_id)
+        .execute(pool)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM media WHERE id = $1")
+        .bind(media_id)
+        .execute(pool)
+        .await
+        .ok();
+}

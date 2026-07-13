@@ -327,6 +327,21 @@ async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_j
         .await
         .unwrap_or(None);
 
+    let (stream_type, info_hash): (Option<String>, Option<String>) =
+        sqlx::query_as::<_, (crate::db::StreamType, Option<String>)>(
+            r#"SELECT s.stream_type, ts.info_hash
+               FROM stream s
+               LEFT JOIN torrent_stream ts ON ts.stream_id = s.id
+               WHERE s.id = $1"#,
+        )
+        .bind(row.stream_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .map(|(st, hash)| (Some(st.as_wire().to_string()), hash))
+        .unwrap_or((None, None));
+
     // Source media via stream_media_link
     let source_media: Option<(i32, String, crate::db::MediaType, Option<i32>)> = sqlx::query_as(
         r#"SELECT m.id, m.title, m.type, m.year
@@ -381,6 +396,8 @@ async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_j
         "username": username,
         "stream_id": row.stream_id,
         "stream_name": stream_name,
+        "stream_type": stream_type,
+        "info_hash": info_hash,
         "media_id": src_media_id,
         "source_media_id": src_media_id,
         "source_media_type": src_media_type,

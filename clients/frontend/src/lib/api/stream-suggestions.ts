@@ -54,6 +54,8 @@ export interface StreamSuggestion {
   username: string | null
   stream_id: string
   stream_name: string | null
+  stream_type: string | null
+  info_hash: string | null
   media_id: number | null
   source_media_id: number | null
   source_media_type: 'movie' | 'series' | 'tv' | null
