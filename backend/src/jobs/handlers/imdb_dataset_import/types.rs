@@ -109,8 +109,14 @@ pub fn resolve_datasets(
 pub struct ImportStatus {
     pub phase: String,
     pub dataset: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub merge_step: Option<String>,
     pub rows_loaded: Option<i64>,
     pub rows_merged: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rows_processed: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rows_total: Option<i64>,
     pub started_at: String,
     pub message: Option<String>,
 }

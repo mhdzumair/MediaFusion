@@ -11,6 +11,14 @@ use crate::jobs::error::JobError;
 const COPY_BUF_LINES: usize = 8_192;
 const COPY_FLUSH_BYTES: usize = 4 * 1024 * 1024;
 
+pub async fn staging_row_count(pool: &PgPool, dataset: &DatasetDef) -> Result<i64, JobError> {
+    let sql = format!("SELECT COUNT(*)::bigint FROM {}", dataset.staging_table);
+    let count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql.as_str()))
+        .fetch_one(pool)
+        .await?;
+    Ok(count)
+}
+
 /// TRUNCATE staging, stream-decompress the gz TSV, COPY into Postgres.
 pub async fn copy_into_staging(
     pool: &PgPool,
@@ -93,11 +101,13 @@ pub async fn copy_into_staging(
         "COPY into staging complete"
     );
 
-    sqlx::query("UPDATE imdb_import_state SET rows_loaded = $2 WHERE dataset = $1")
-        .bind(dataset.key)
-        .bind(row_count)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE imdb_import_state SET rows_loaded = $2, rows_merged = NULL WHERE dataset = $1",
+    )
+    .bind(dataset.key)
+    .bind(row_count)
+    .execute(pool)
+    .await?;
 
     Ok(row_count)
 }

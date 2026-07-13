@@ -207,6 +207,20 @@ export function ImdbDatasetImportPanel() {
                   <p className="font-medium mt-1">{liveStatus.dataset ?? '—'}</p>
                 </div>
                 <div>
+                  <p className="text-xs text-muted-foreground">Merge Step</p>
+                  <p className="font-medium mt-1">{liveStatus.merge_step ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Progress</p>
+                  <p className="font-medium mt-1">
+                    {liveStatus.rows_processed != null
+                      ? liveStatus.rows_total != null
+                        ? `${formatRows(liveStatus.rows_processed)} / ${formatRows(liveStatus.rows_total)}`
+                        : formatRows(liveStatus.rows_processed)
+                      : '—'}
+                  </p>
+                </div>
+                <div>
                   <p className="text-xs text-muted-foreground">Rows Loaded</p>
                   <p className="font-medium mt-1">{formatRows(liveStatus.rows_loaded)}</p>
                 </div>
@@ -302,6 +316,16 @@ export function ImdbDatasetImportPanel() {
               </div>
             </div>
 
+            {/* Catalog summary — staged rows vs merged media */}
+            {config?.imdb_catalog && (
+              <p className="text-xs text-muted-foreground">
+                Staging table row counts are raw IMDb TSV lines. Merged counts are rows written into the catalog.
+                Metrics page totals include all sources — IMDb-linked catalog:{' '}
+                {config.imdb_catalog.movies.toLocaleString()} movies, {config.imdb_catalog.series.toLocaleString()}{' '}
+                series.
+              </p>
+            )}
+
             {/* Per-dataset import state */}
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
               {(config?.available_datasets ?? []).map((dataset) => {
@@ -309,7 +333,12 @@ export function ImdbDatasetImportPanel() {
                 return (
                   <div key={dataset} className="rounded-xl border border-border/50 bg-muted/20 p-3">
                     <p className="text-xs text-muted-foreground capitalize">{dataset}</p>
-                    <p className="text-sm mt-1">{formatRows(row?.rows_loaded)} rows</p>
+                    <p className="text-sm mt-1">
+                      <span className="text-muted-foreground">Staged:</span> {formatRows(row?.rows_loaded)}
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Merged:</span> {formatRows(row?.rows_merged)}
+                    </p>
                     <p className="text-[11px] text-muted-foreground mt-1 truncate">
                       {row?.last_run_at ? new Date(row.last_run_at).toLocaleString() : 'Never'}
                     </p>

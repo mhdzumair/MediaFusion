@@ -350,13 +350,79 @@ impl QueueRunner {
         event: &str,
         detail: Option<serde_json::Value>,
     ) {
-        let _ = sqlx::query!(
-            "INSERT INTO job_events (job_id, event, detail) VALUES ($1, $2, $3)",
-            job_id,
-            event,
-            detail
-        )
-        .execute(pool)
-        .await;
+        job_write_event(pool, job_id, event, detail).await;
     }
+}
+
+/// Insert a `running` job row for inline CLI runs (`--run-job`).
+pub(crate) async fn insert_inline_job(
+    pool: &PgPool,
+    queue: &str,
+    payload: &serde_json::Value,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO jobs (queue, payload, status, priority, attempts, max_attempts, started_at, worker_id)
+        VALUES ($1, $2, 'running', 100, 1, 1, now(), 'inline-cli')
+        RETURNING id
+        "#,
+    )
+    .bind(queue)
+    .bind(payload)
+    .fetch_one(pool)
+    .await
+}
+
+pub(crate) async fn mark_job_success(pool: &PgPool, job_id: i64) {
+    let _ = sqlx::query!(
+        "UPDATE jobs SET status='success', finished_at=now() WHERE id=$1",
+        job_id
+    )
+    .execute(pool)
+    .await;
+    job_write_event(pool, job_id, "success", None).await;
+}
+
+pub(crate) async fn mark_job_cancelled(pool: &PgPool, job_id: i64) {
+    let _ = sqlx::query!(
+        "UPDATE jobs SET status='cancelled', finished_at=now() WHERE id=$1",
+        job_id
+    )
+    .execute(pool)
+    .await;
+    job_write_event(pool, job_id, "cancelled", None).await;
+}
+
+/// Mark an inline job failed (no retries — max_attempts is always 1).
+pub(crate) async fn mark_job_failed(pool: &PgPool, job_id: i64, error: &str) {
+    let _ = sqlx::query!(
+        "UPDATE jobs SET status='dead', finished_at=now(), last_error=$1 WHERE id=$2",
+        error,
+        job_id
+    )
+    .execute(pool)
+    .await;
+    job_write_event(
+        pool,
+        job_id,
+        "dead",
+        Some(serde_json::json!({"error": error})),
+    )
+    .await;
+}
+
+async fn job_write_event(
+    pool: &PgPool,
+    job_id: i64,
+    event: &str,
+    detail: Option<serde_json::Value>,
+) {
+    let _ = sqlx::query!(
+        "INSERT INTO job_events (job_id, event, detail) VALUES ($1, $2, $3)",
+        job_id,
+        event,
+        detail
+    )
+    .execute(pool)
+    .await;
 }

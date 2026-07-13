@@ -5,6 +5,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use super::{
+    error::JobError,
     handler::{ErasedHandler, JobCtx},
     handlers::{
         acestream_bg::AcestreamBgScraper,
@@ -40,7 +41,9 @@ use super::{
         youtube_bg::YoutubeBgScraper,
     },
     metrics::JobMetrics,
-    runner::QueueRunner,
+    runner::{
+        QueueRunner, insert_inline_job, mark_job_cancelled, mark_job_failed, mark_job_success,
+    },
     scheduler,
 };
 use crate::state::AppState;
@@ -128,7 +131,7 @@ impl JobRegistry {
         self.register(Arc::new(ArabTorrentsCrawl));
     }
 
-    /// Run a single job inline without touching the DB queue, then exit.
+    /// Run a single job inline (CLI `--run-job`), recording progress in the `jobs` table.
     /// `args` is the raw JSON payload passed to the handler.
     pub async fn run_once(
         &self,
@@ -144,17 +147,50 @@ impl JobRegistry {
             format!("unknown queue '{queue}' — run with --list-jobs to see options")
         })?;
 
+        let payload = if args.is_null() {
+            serde_json::json!({})
+        } else {
+            args
+        };
+
+        if queue == "imdb_dataset_import"
+            && let Some(running_id) =
+                super::handlers::imdb_dataset_import::active_import_job_id(&state.pool)
+                    .await
+                    .map_err(|e| format!("failed to check import status: {e}"))?
+        {
+            return Err(format!(
+                "IMDb import already running (job #{running_id}). \
+                 Wait for it to finish, or stop the worker process before starting another run."
+            ));
+        }
+
+        let job_id = insert_inline_job(&state.pool, queue, &payload)
+            .await
+            .map_err(|e| format!("failed to record inline job: {e}"))?;
+
         let ctx = JobCtx {
-            job_id: -1,
+            job_id,
             attempt: 1,
             state: Arc::clone(state),
             cancel,
         };
 
-        handler
-            .run_erased(args, ctx)
-            .await
-            .map_err(|e| format!("job failed: {e}"))
+        match handler.run_erased(payload, ctx).await {
+            Ok(()) => {
+                mark_job_success(&state.pool, job_id).await;
+                Ok(())
+            }
+            Err(JobError::Cancelled) => {
+                mark_job_cancelled(&state.pool, job_id).await;
+                Err("job cancelled".into())
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                mark_job_failed(&state.pool, job_id, &msg).await;
+                Err(format!("job failed: {msg}"))
+            }
+        }
     }
 
     /// Start all runners and the scheduler. Blocks until `cancel` fires.

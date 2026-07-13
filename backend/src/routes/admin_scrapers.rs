@@ -565,17 +565,70 @@ pub async fn get_imdb_dataset_status(
         return forbidden();
     }
 
+    crate::jobs::handlers::imdb_dataset_import::reclaim_stale_import_jobs(&state.pool).await;
+
     let raw: Option<String> = state.redis.get("imdb_import:status").await.unwrap_or(None);
 
+    let running_job: Option<i64> = sqlx::query_scalar(
+        r#"SELECT id FROM jobs
+           WHERE queue = 'imdb_dataset_import'
+             AND status = 'running'
+           ORDER BY started_at DESC
+           LIMIT 1"#,
+    )
+    .fetch_optional(&state.pool_ro)
+    .await
+    .unwrap_or(None);
+
+    let pg_active: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+               SELECT 1 FROM pg_stat_activity
+               WHERE datname = current_database()
+                 AND state = 'active'
+                 AND pid <> pg_backend_pid()
+                 AND (query ILIKE '%imdb_stage_%' OR query ILIKE '%imdb_dataset_import%')
+           )"#,
+    )
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or(false);
+
     if let Some(s) = raw
-        && let Ok(v) = serde_json::from_str::<Value>(&s)
+        && let Ok(mut v) = serde_json::from_str::<Value>(&s)
     {
+        let phase = v.get("phase").and_then(|p| p.as_str()).unwrap_or("idle");
+        let in_progress = matches!(phase, "merge" | "copy" | "download" | "starting");
+
+        if in_progress && running_job.is_none() && !pg_active {
+            v["phase"] = json!("stale");
+            v["message"] = json!(
+                "Worker exited unexpectedly — re-run the import (staging data may still be present)"
+            );
+        } else if let Some(job_id) = running_job {
+            v["job_id"] = json!(job_id);
+            v["worker_active"] = json!(pg_active);
+        }
+
         return Json(v).into_response();
+    }
+
+    if let Some(job_id) = running_job {
+        return Json(json!({
+            "phase": if pg_active { "running" } else { "stale" },
+            "job_id": job_id,
+            "worker_active": pg_active,
+            "message": if pg_active {
+                "Import running but Redis status unavailable"
+            } else {
+                "Job marked running but no active worker found"
+            }
+        }))
+        .into_response();
     }
 
     Json(json!({
         "phase": "idle",
-        "message": "IMDb dataset import status not available"
+        "message": "No IMDb dataset import in progress"
     }))
     .into_response()
 }
@@ -669,13 +722,27 @@ pub async fn get_imdb_dataset_config(
     let (datasets, include_adult) = parse_imdb_payload(&payload);
 
     let import_state = sqlx::query(
-        r#"SELECT dataset, etag, last_modified, rows_loaded, last_run_at
+        r#"SELECT dataset, etag, last_modified, rows_loaded, rows_merged, last_run_at
            FROM imdb_import_state
            ORDER BY dataset"#,
     )
     .fetch_all(&state.pool_ro)
     .await
     .unwrap_or_default();
+
+    let imdb_catalog_counts: (i64, i64) = sqlx::query_as(
+        r#"
+        SELECT
+            COUNT(*) FILTER (WHERE m.type = 'MOVIE'::mediatype) AS movies,
+            COUNT(*) FILTER (WHERE m.type = 'SERIES'::mediatype) AS series
+        FROM media m
+        INNER JOIN media_external_id mei
+            ON mei.media_id = m.id AND mei.provider = 'imdb'
+        "#,
+    )
+    .fetch_one(&state.pool_ro)
+    .await
+    .unwrap_or((0, 0));
 
     let state_rows: Vec<Value> = import_state
         .iter()
@@ -685,6 +752,7 @@ pub async fn get_imdb_dataset_config(
                 "etag": row.try_get::<Option<String>, _>("etag").ok()?,
                 "last_modified": row.try_get::<Option<String>, _>("last_modified").ok()?,
                 "rows_loaded": row.try_get::<Option<i64>, _>("rows_loaded").ok()?,
+                "rows_merged": row.try_get::<Option<i64>, _>("rows_merged").ok()?,
                 "last_run_at": row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("last_run_at").ok()?.map(|dt| dt.to_rfc3339()),
             }))
         })
@@ -700,6 +768,10 @@ pub async fn get_imdb_dataset_config(
         "available_datasets": IMDB_DATASET_KEYS,
         "last_enqueued_at": last_enqueued_at.map(|dt| dt.to_rfc3339()),
         "import_state": state_rows,
+        "imdb_catalog": {
+            "movies": imdb_catalog_counts.0,
+            "series": imdb_catalog_counts.1,
+        },
     }))
     .into_response()
 }
@@ -834,6 +906,7 @@ pub struct RunImdbDatasetImportRequest {
     pub include_adult: Option<bool>,
     #[serde(default)]
     pub merge_only: bool,
+    pub local_dir: Option<String>,
 }
 
 /// POST /api/v1/admin/scrapers/imdb-dataset/run
@@ -886,6 +959,9 @@ pub async fn run_imdb_dataset_import(
     }
     if body.merge_only {
         overlay.insert("merge_only".into(), json!(true));
+    }
+    if let Some(ref local_dir) = body.local_dir {
+        overlay.insert("local_dir".into(), json!(local_dir));
     }
     if !overlay.is_empty() {
         payload = merge_json_objects(payload, Value::Object(overlay));
@@ -2181,6 +2257,8 @@ async fn fetch_job_info(
 
     let (last_run, last_run_status, is_running, time_since_last_run) = if let Some(ref r) = row {
         let status: String = r.get::<String, _>("status");
+        let created_at: Option<chrono::DateTime<chrono::Utc>> =
+            r.try_get("created_at").ok().flatten();
         let started_at: Option<chrono::DateTime<chrono::Utc>> =
             r.try_get("started_at").ok().flatten();
         let finished_at: Option<chrono::DateTime<chrono::Utc>> =
@@ -2188,23 +2266,24 @@ async fn fetch_job_info(
         let (effective_status, is_running_now) = effective_job_status(&status, started_at);
 
         let (last_run_str, time_since) = if let Some(dt) = finished_at {
-            let delta = Utc::now() - dt;
-            let mins = delta.num_minutes();
-            let time_since = if mins < 60 {
-                format!("{mins} minute{}", if mins == 1 { "" } else { "s" })
-            } else {
-                let hrs = delta.num_hours();
-                if hrs < 24 {
-                    format!("{hrs} hour{}", if hrs == 1 { "" } else { "s" })
-                } else {
-                    format!(
-                        "{} day{}",
-                        delta.num_days(),
-                        if delta.num_days() == 1 { "" } else { "s" }
-                    )
-                }
-            };
-            (Some(dt.to_rfc3339()), time_since)
+            (Some(dt.to_rfc3339()), format_time_since(dt))
+        } else if is_running_now {
+            let started = started_at.or(created_at).unwrap_or_else(Utc::now);
+            (
+                Some(started.to_rfc3339()),
+                format!("Running for {}", format_time_since(started)),
+            )
+        } else if status == "pending" {
+            let queued = created_at.unwrap_or_else(Utc::now);
+            (
+                Some(queued.to_rfc3339()),
+                format!("Queued for {}", format_time_since(queued)),
+            )
+        } else if let Some(started) = started_at {
+            (
+                Some(started.to_rfc3339()),
+                format!("Started {} ago (incomplete)", format_time_since(started)),
+            )
         } else {
             (None, "Never completed".to_string())
         };
@@ -2239,6 +2318,26 @@ async fn fetch_job_info(
         "next_run_timestamp": next_run_timestamp,
         "is_running": is_running,
     })
+}
+
+fn format_time_since(dt: chrono::DateTime<Utc>) -> String {
+    let delta = Utc::now() - dt;
+    let mins = delta.num_minutes();
+    if mins < 1 {
+        return "just now".to_string();
+    }
+    if mins < 60 {
+        return format!("{mins} minute{}", if mins == 1 { "" } else { "s" });
+    }
+    let hrs = delta.num_hours();
+    if hrs < 24 {
+        return format!("{hrs} hour{}", if hrs == 1 { "" } else { "s" });
+    }
+    format!(
+        "{} day{}",
+        delta.num_days(),
+        if delta.num_days() == 1 { "" } else { "s" }
+    )
 }
 
 fn format_time_until(target: chrono::DateTime<Utc>) -> String {
@@ -2339,7 +2438,8 @@ fn job_id_to_queue(job_id: &str) -> &'static str {
     if SCRAPY_SPIDER_IDS.contains(&job_id) {
         // For status display, use the spider queue (generic mapping)
         return match job_id {
-            "tamilmv" | "tamil_blasters" => "spider_tamilmv",
+            "tamilmv" => "spider_tamilmv",
+            "tamil_blasters" => "spider_tamil_blasters",
             "formula_ext" => "spider_formula_ext",
             "formula_feeds" => "spider_formula_feeds",
             "fighting_feeds" => "spider_fighting_feeds",

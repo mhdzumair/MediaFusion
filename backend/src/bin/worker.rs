@@ -179,10 +179,20 @@ async fn main() {
 
     if let Some(ref queue) = cli.run_job {
         info!(queue, args = %cli.args, "running job once (inline)");
-        match reg.run_once(queue, cli.args, cancel).await {
+        let run_cancel = cancel.clone();
+        {
+            let run_cancel = run_cancel.clone();
+            tokio::spawn(async move {
+                tokio::signal::ctrl_c().await.ok();
+                info!("inline job cancelled via Ctrl+C");
+                run_cancel.cancel();
+            });
+        }
+        match reg.run_once(queue, cli.args, run_cancel).await {
             Ok(()) => info!(queue, "job completed successfully"),
             Err(e) => {
-                tracing::error!(queue, "{e}");
+                eprintln!("job failed: {e}");
+                tracing::error!(queue, error = %e, "inline job failed");
                 std::process::exit(1);
             }
         }

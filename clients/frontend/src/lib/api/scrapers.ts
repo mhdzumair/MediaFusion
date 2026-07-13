@@ -104,6 +104,7 @@ export interface ImdbDatasetImportStateRow {
   etag: string | null
   last_modified: string | null
   rows_loaded: number | null
+  rows_merged: number | null
   last_run_at: string | null
 }
 
@@ -117,6 +118,10 @@ export interface ImdbDatasetImportConfigResponse {
   available_datasets: string[]
   last_enqueued_at: string | null
   import_state: ImdbDatasetImportStateRow[]
+  imdb_catalog?: {
+    movies: number
+    series: number
+  }
 }
 
 export interface UpdateImdbDatasetImportConfigRequest {
@@ -131,13 +136,17 @@ export interface RunImdbDatasetImportRequest {
   force?: boolean
   include_adult?: boolean
   merge_only?: boolean
+  local_dir?: string
 }
 
 export interface ImdbDatasetImportStatusResponse {
   phase: string
   dataset?: string | null
+  merge_step?: string | null
   rows_loaded?: number | null
   rows_merged?: number | null
+  rows_processed?: number | null
+  rows_total?: number | null
   started_at?: string | null
   message?: string | null
 }
