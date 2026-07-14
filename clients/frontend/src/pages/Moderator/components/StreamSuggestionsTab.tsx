@@ -50,6 +50,7 @@ import {
   useReviewStreamSuggestion,
   useStreamSuggestionStats,
 } from '@/hooks'
+import { useToast } from '@/hooks/use-toast'
 import type { StreamSuggestion, StreamSuggestionStatus } from '@/lib/api'
 
 import { IssueTriageControls } from './IssueTriageControls'
@@ -97,6 +98,7 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
     reviewer_query: debouncedReviewerQuery.trim() || undefined,
   })
   const { data: stats } = useStreamSuggestionStats()
+  const { toast } = useToast()
   const reviewSuggestion = useReviewStreamSuggestion()
   const bulkReviewSuggestions = useBulkReviewStreamSuggestions()
   const isAnyActionPending = reviewSuggestion.isPending || bulkReviewSuggestions.isPending
@@ -140,7 +142,12 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
   const selectedPendingSuggestionIds = selectedSuggestionIds.filter((suggestionId) =>
     pendingSuggestionIdSet.has(suggestionId),
   )
+  const actionablePendingSuggestionIds = selectedPendingSuggestionIds.filter((suggestionId) => {
+    const suggestion = suggestionsOnPage.find((item) => item.id === suggestionId)
+    return suggestion ? !isIssueStreamSuggestion(suggestion) : false
+  })
   const selectedPendingCount = selectedPendingSuggestionIds.length
+  const actionablePendingCount = actionablePendingSuggestionIds.length
   const allPendingOnPageSelected =
     pendingSuggestionsOnPage.length > 0 &&
     pendingSuggestionsOnPage.every((suggestion) => selectedSuggestionIdSet.has(suggestion.id))
@@ -250,7 +257,14 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
   }
 
   const handleBulkReviewSelected = async (action: 'approve' | 'reject') => {
-    if (!selectedPendingCount) return
+    if (!actionablePendingCount) {
+      toast({
+        title: 'No actionable suggestions selected',
+        description: 'Issue reports use triage acknowledgement only.',
+        variant: 'destructive',
+      })
+      return
+    }
     if (action === 'approve') {
       setIsBulkApprovingSelected(true)
     } else {
@@ -259,10 +273,14 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
 
     try {
       const reviewNotes = (action === 'approve' ? bulkApproveNotes : bulkRejectNotes).trim() || undefined
-      await bulkReviewSuggestions.mutateAsync({
-        suggestionIds: selectedPendingSuggestionIds,
+      const result = await bulkReviewSuggestions.mutateAsync({
+        suggestionIds: actionablePendingSuggestionIds,
         action,
         reviewNotes,
+      })
+      toast({
+        title: action === 'approve' ? 'Bulk approve complete' : 'Bulk reject complete',
+        description: `${result.approved + result.rejected} updated, ${result.skipped} skipped.`,
       })
       if (action === 'approve') {
         setBulkApproveDialogOpen(false)
@@ -285,7 +303,18 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
   }
 
   const handleBulkReviewGroup = async (suggestionIds: string[], action: 'approve' | 'reject') => {
-    if (!suggestionIds.length) return
+    const actionableIds = suggestionIds.filter((suggestionId) => {
+      const suggestion = suggestionsOnPage.find((item) => item.id === suggestionId)
+      return suggestion ? !isIssueStreamSuggestion(suggestion) : false
+    })
+    if (!actionableIds.length) {
+      toast({
+        title: 'Nothing to approve in this group',
+        description: 'Issue reports in this torrent need triage acknowledgement instead.',
+        variant: 'destructive',
+      })
+      return
+    }
     if (action === 'approve') {
       setIsBulkApprovingSelected(true)
     } else {
@@ -293,9 +322,13 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
     }
 
     try {
-      await bulkReviewSuggestions.mutateAsync({
-        suggestionIds,
+      const result = await bulkReviewSuggestions.mutateAsync({
+        suggestionIds: actionableIds,
         action,
+      })
+      toast({
+        title: action === 'approve' ? 'Group approved' : 'Group rejected',
+        description: `${result.approved + result.rejected} updated, ${result.skipped} skipped.`,
       })
       setSelectedSuggestionIds((current) => current.filter((id) => !suggestionIds.includes(id)))
       refetch()
@@ -442,7 +475,7 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
           <Button
             className="rounded-xl bg-emerald-600 hover:bg-emerald-700"
             onClick={() => setBulkApproveDialogOpen(true)}
-            disabled={!selectedPendingCount || isAnyActionPending}
+            disabled={!actionablePendingCount || isAnyActionPending}
           >
             {isBulkApprovingSelected ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -455,7 +488,7 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
             variant="destructive"
             className="rounded-xl"
             onClick={() => setBulkRejectDialogOpen(true)}
-            disabled={!selectedPendingCount || isAnyActionPending}
+            disabled={!actionablePendingCount || isAnyActionPending}
           >
             {isBulkRejectingSelected ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -786,7 +819,11 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
               <Eye className="h-5 w-5 text-primary" />
               Review Stream Suggestion
             </DialogTitle>
-            <DialogDescription>Review this suggestion and approve or reject it.</DialogDescription>
+            <DialogDescription>
+              {selectedSuggestion && isIssueStreamSuggestion(selectedSuggestion)
+                ? 'Use issue triage below to acknowledge this report.'
+                : 'Review this suggestion and approve or reject it.'}
+            </DialogDescription>
           </DialogHeader>
 
           <ScrollArea className="flex-1 min-h-0 pr-1">
@@ -1059,15 +1096,21 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Review Notes (optional)</label>
-                  <Textarea
-                    value={reviewNotes}
-                    onChange={(e) => setReviewNotes(e.target.value)}
-                    placeholder="Add notes about your decision..."
-                    rows={2}
-                  />
-                </div>
+                {isIssueStreamSuggestion(selectedSuggestion) && (
+                  <IssueTriageControls suggestion={selectedSuggestion} onUpdated={() => void refetch()} />
+                )}
+
+                {!isIssueStreamSuggestion(selectedSuggestion) && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Review Notes (optional)</label>
+                    <Textarea
+                      value={reviewNotes}
+                      onChange={(e) => setReviewNotes(e.target.value)}
+                      placeholder="Add notes about your decision..."
+                      rows={2}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </ScrollArea>
@@ -1076,7 +1119,7 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
             <Button variant="outline" onClick={() => setReviewDialogOpen(false)} disabled={reviewSuggestion.isPending}>
               {selectedSuggestion?.status === 'pending' ? 'Cancel' : 'Close'}
             </Button>
-            {selectedSuggestion?.status === 'pending' && (
+            {selectedSuggestion?.status === 'pending' && !isIssueStreamSuggestion(selectedSuggestion) && (
               <>
                 <Button
                   variant="destructive"

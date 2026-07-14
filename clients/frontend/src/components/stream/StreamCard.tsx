@@ -166,39 +166,23 @@ export function StreamCard({
           const originalFile = annotationFiles.find((f) => f.file_id === editedFile.file_id)
           if (!originalFile) continue
 
-          // Excluded file: submit suggestions to clear its annotation data
+          // Excluded file: one suggestion clears all episode link fields at once.
           if (!editedFile.included) {
-            if (originalFile.season_number !== null) {
+            const hadLink =
+              originalFile.season_number !== null ||
+              originalFile.episode_number !== null ||
+              originalFile.episode_end !== null
+            if (hadLink) {
               await createSuggestion.mutateAsync({
                 streamId: stream.id,
                 data: {
                   suggestion_type: 'field_correction',
-                  field_name: `episode_link:${editedFile.file_id}:season_number`,
-                  current_value: String(originalFile.season_number),
-                  suggested_value: '',
-                  reason: `Remove episode link for file: ${editedFile.file_name}`,
-                },
-              })
-            }
-            if (originalFile.episode_number !== null) {
-              await createSuggestion.mutateAsync({
-                streamId: stream.id,
-                data: {
-                  suggestion_type: 'field_correction',
-                  field_name: `episode_link:${editedFile.file_id}:episode_number`,
-                  current_value: String(originalFile.episode_number),
-                  suggested_value: '',
-                  reason: `Remove episode link for file: ${editedFile.file_name}`,
-                },
-              })
-            }
-            if (originalFile.episode_end !== null) {
-              await createSuggestion.mutateAsync({
-                streamId: stream.id,
-                data: {
-                  suggestion_type: 'field_correction',
-                  field_name: `episode_link:${editedFile.file_id}:episode_end`,
-                  current_value: String(originalFile.episode_end),
+                  field_name: `episode_link:${editedFile.file_id}:clear`,
+                  current_value: [
+                    originalFile.season_number ?? '',
+                    originalFile.episode_number ?? '',
+                    originalFile.episode_end ?? '',
+                  ].join('/'),
                   suggested_value: '',
                   reason: `Remove episode link for file: ${editedFile.file_name}`,
                 },

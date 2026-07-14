@@ -29,7 +29,10 @@ export function IssueTriageControls({ suggestion, onUpdated }: IssueTriageContro
 
   return (
     <div className="mt-2 space-y-2 rounded-lg border border-border/50 bg-muted/20 p-2">
-      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Issue triage</p>
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Issue acknowledgement</p>
+      <p className="text-xs text-muted-foreground">
+        Broken reports and other issues only need triage — no approve/reject step.
+      </p>
       <div className="flex flex-wrap items-center gap-2">
         <Select value={status} onValueChange={(v) => setStatus(v as IssueTriageStatus)}>
           <SelectTrigger className="h-8 w-[160px] text-xs">
@@ -37,7 +40,7 @@ export function IssueTriageControls({ suggestion, onUpdated }: IssueTriageContro
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="reviewed">Reviewed</SelectItem>
+            <SelectItem value="reviewed">Acknowledged</SelectItem>
             <SelectItem value="dismissed">Dismissed</SelectItem>
             <SelectItem value="action_taken">Action taken</SelectItem>
           </SelectContent>
@@ -46,16 +49,16 @@ export function IssueTriageControls({ suggestion, onUpdated }: IssueTriageContro
           type="button"
           size="sm"
           className="h-8 rounded-lg"
-          disabled={updateTriage.isPending}
+          disabled={updateTriage.isPending || status === 'open'}
           onClick={() => void handleSave()}
         >
-          {updateTriage.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Save triage'}
+          {updateTriage.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Save acknowledgement'}
         </Button>
       </div>
       <Textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
-        placeholder="Optional triage note (moderator-only)"
+        placeholder="Optional note (moderator-only)"
         rows={2}
         className="text-xs min-h-0"
       />

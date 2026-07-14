@@ -84,6 +84,7 @@ export function parseEpisodeLinkField(
     season_number: 'Season',
     episode_number: 'Episode',
     episode_end: 'Episode End',
+    clear: 'Clear link',
   }
 
   return {
@@ -298,8 +299,9 @@ export function extractFileLabelFromReason(reason: string | null): string | null
 export function fileGroupKeyForSuggestion(suggestion: StreamSuggestion): string {
   const episodeInfo = parseEpisodeLinkField(suggestion.field_name)
   if (episodeInfo) {
-    const fileLabel = extractFileLabelFromReason(suggestion.reason)
-    return fileLabel ? `file:${episodeInfo.fileId}:${fileLabel}` : `file:${episodeInfo.fileId}`
+    const fileLabel =
+      suggestion.file_name || extractFileLabelFromReason(suggestion.reason) || `File #${episodeInfo.fileId}`
+    return `file:${episodeInfo.fileId}:${fileLabel}`
   }
   return 'general'
 }
@@ -365,7 +367,9 @@ export function groupSuggestionsByFile(suggestions: StreamSuggestion[]): StreamS
     const episodeInfo = parseEpisodeLinkField(suggestion.field_name)
     const reasonLabel = extractFileLabelFromReason(suggestion.reason)
     const label =
-      reasonLabel || (episodeInfo ? `File #${episodeInfo.fileId}` : suggestion.field_name || 'General changes')
+      suggestion.file_name ||
+      reasonLabel ||
+      (episodeInfo ? `File #${episodeInfo.fileId}` : suggestion.field_name || 'General changes')
 
     const existing = groups.get(key)
     if (existing) {

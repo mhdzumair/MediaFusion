@@ -101,7 +101,7 @@ export function ModeratorDashboardPage() {
     streamStatusParam === 'auto_approved' ||
     streamStatusParam === 'rejected'
       ? streamStatusParam
-      : 'all'
+      : 'pending'
 
   const metadataStatusParam = searchParams.get('metadataStatus')
   const metadataStatusFilter: SuggestionStatus | 'all' =
@@ -351,7 +351,7 @@ export function ModeratorDashboardPage() {
         <TabsContent value="streams">
           <StreamSuggestionsTab
             statusFilter={streamStatusFilter}
-            onStatusFilterChange={(status) => updateModeratorParam('streamStatus', status, 'all')}
+            onStatusFilterChange={(status) => updateModeratorParam('streamStatus', status, 'pending')}
           />
         </TabsContent>
 

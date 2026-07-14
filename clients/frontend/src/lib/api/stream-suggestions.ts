@@ -28,7 +28,8 @@ export type StreamFieldName =
 
 // Dynamic field name for episode link corrections
 // Format: episode_link:{file_id}:{field} where field is season_number, episode_number, or episode_end
-export type EpisodeLinkFieldName = `episode_link:${number}:${'season_number' | 'episode_number' | 'episode_end'}`
+export type EpisodeLinkFieldName =
+  `episode_link:${number}:${'season_number' | 'episode_number' | 'episode_end' | 'clear'}`
 
 export interface StreamSuggestionCreateRequest {
   suggestion_type: StreamSuggestionType
@@ -70,6 +71,7 @@ export interface StreamSuggestion {
   target_media_poster_url: string | null
   suggestion_type: string
   field_name: string | null
+  file_name: string | null
   current_value: string | null
   suggested_value: string | null
   reason: string | null

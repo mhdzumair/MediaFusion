@@ -390,6 +390,21 @@ async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_j
         .map(|(l, p)| (Some(l), Some(p)))
         .unwrap_or((None, None));
 
+    let episode_file_name = if let Some(field) = row.field_name.as_deref()
+        && let Some(rest) = field.strip_prefix("episode_link:")
+        && let Some(file_id_str) = rest.split(':').next()
+        && let Ok(file_id) = file_id_str.parse::<i32>()
+    {
+        sqlx::query_scalar::<_, String>("SELECT filename FROM stream_file WHERE id = $1")
+            .bind(file_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+
     json!({
         "id": row.id,
         "user_id": row.user_id,
@@ -412,6 +427,7 @@ async fn suggestion_to_json(pool: &sqlx::PgPool, row: &SuggestionRow) -> serde_j
         "target_media_poster_url": null,
         "suggestion_type": row.suggestion_type,
         "field_name": row.field_name,
+        "file_name": episode_file_name,
         "current_value": row.current_value,
         "suggested_value": row.suggested_value,
         "reason": row.reason,
@@ -964,6 +980,24 @@ pub async fn apply_stream_field_change(
             && let Ok(file_id) = parts[1].parse::<i32>()
         {
             let link_field = parts[2];
+            if link_field == "clear" {
+                if let Err(e) = sqlx::query(
+                    "UPDATE file_media_link SET season_number = NULL, episode_number = NULL, episode_end = NULL WHERE file_id = $1",
+                )
+                .bind(file_id)
+                .execute(pool)
+                .await
+                {
+                    tracing::warn!(
+                        "apply_stream_field_change: episode_link clear failed for file_id={file_id}: {e}"
+                    );
+                } else {
+                    tracing::info!(
+                        "apply_stream_field_change: cleared episode_link for file_id={file_id}"
+                    );
+                }
+                return;
+            }
             if matches!(
                 link_field,
                 "season_number" | "episode_number" | "episode_end"
@@ -1351,7 +1385,7 @@ pub async fn list_pending_stream_suggestions(
         }
     };
 
-    let role = crate::db::get_user_role(&state.pool_ro, user_id).await;
+    let role = crate::db::get_user_role(&state.pool, user_id).await;
     if !role.is_some_and(crate::db::is_mod_or_admin) {
         return (
             StatusCode::FORBIDDEN,
@@ -1401,19 +1435,19 @@ pub async fn list_pending_stream_suggestions(
     for v in &extra_binds {
         cq = cq.bind(v.clone());
     }
-    let total: i64 = cq.fetch_one(&state.pool_ro).await.unwrap_or(0);
+    let total: i64 = cq.fetch_one(&state.pool).await.unwrap_or(0);
 
     let mut fq = sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(fetch_sql.as_str()));
     for v in &extra_binds {
         fq = fq.bind(v.clone());
     }
     fq = fq.bind(page_size).bind(offset);
-    let ids: Vec<(String,)> = fq.fetch_all(&state.pool_ro).await.unwrap_or_default();
+    let ids: Vec<(String,)> = fq.fetch_all(&state.pool).await.unwrap_or_default();
 
     let mut suggestions = Vec::new();
     for (id,) in &ids {
-        if let Some(row) = fetch_suggestion(&state.pool_ro, id).await {
-            suggestions.push(suggestion_to_json(&state.pool_ro, &row).await);
+        if let Some(row) = fetch_suggestion(&state.pool, id).await {
+            suggestions.push(suggestion_to_json(&state.pool, &row).await);
         }
     }
 
@@ -1509,16 +1543,21 @@ pub async fn bulk_review_stream_suggestions(
         }
 
         if new_status == "approved" {
-            let media_resolve = TargetMediaResolveContext::from_state(&state);
-            apply_stream_field_change(
-                &state.pool,
-                row.stream_id,
-                &row.suggestion_type,
-                row.field_name.as_deref(),
-                row.suggested_value.as_deref(),
-                Some(&media_resolve),
-            )
-            .await;
+            let is_issue = ISSUE_SUGGESTION_TYPES
+                .iter()
+                .any(|issue_type| row.suggestion_type.starts_with(issue_type));
+            if !is_issue {
+                let media_resolve = TargetMediaResolveContext::from_state(&state);
+                apply_stream_field_change(
+                    &state.pool,
+                    row.stream_id,
+                    &row.suggestion_type,
+                    row.field_name.as_deref(),
+                    row.suggested_value.as_deref(),
+                    Some(&media_resolve),
+                )
+                .await;
+            }
             if points_per_edit > 0 {
                 let _ = sqlx::query(
                     "UPDATE users SET contribution_points = GREATEST(0, COALESCE(contribution_points, 0) + $1), stream_edits_approved = COALESCE(stream_edits_approved, 0) + 1 WHERE id = $2",
@@ -1715,16 +1754,21 @@ pub async fn review_stream_suggestion(
     .unwrap_or(contribution_defaults::POINTS_PER_STREAM_EDIT as i32);
 
     if new_status == "approved" {
-        let media_resolve = TargetMediaResolveContext::from_state(&state);
-        apply_stream_field_change(
-            &state.pool,
-            row.stream_id,
-            &row.suggestion_type,
-            row.field_name.as_deref(),
-            row.suggested_value.as_deref(),
-            Some(&media_resolve),
-        )
-        .await;
+        let is_issue = ISSUE_SUGGESTION_TYPES
+            .iter()
+            .any(|issue_type| row.suggestion_type.starts_with(issue_type));
+        if !is_issue {
+            let media_resolve = TargetMediaResolveContext::from_state(&state);
+            apply_stream_field_change(
+                &state.pool,
+                row.stream_id,
+                &row.suggestion_type,
+                row.field_name.as_deref(),
+                row.suggested_value.as_deref(),
+                Some(&media_resolve),
+            )
+            .await;
+        }
         if points_per_edit > 0 {
             let _ = sqlx::query(
                 "UPDATE users SET contribution_points = GREATEST(0, COALESCE(contribution_points, 0) + $1), stream_edits_approved = COALESCE(stream_edits_approved, 0) + 1 WHERE id = $2",
@@ -1796,6 +1840,18 @@ pub async fn triage_stream_suggestion(
     {
         tracing::error!("triage_stream_suggestion: {e}");
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    if body.issue_triage_status != "open" {
+        let _ = sqlx::query(
+            "UPDATE stream_suggestions SET status = 'approved', reviewed_by = $1, \
+             reviewed_at = COALESCE(reviewed_at, NOW()) \
+             WHERE id = $2 AND status = 'pending'",
+        )
+        .bind(user_id.to_string())
+        .bind(&suggestion_id)
+        .execute(&state.pool)
+        .await;
     }
 
     let updated = match fetch_suggestion(&state.pool, &suggestion_id).await {

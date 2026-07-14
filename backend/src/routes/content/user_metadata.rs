@@ -935,14 +935,16 @@ pub async fn delete_user_metadata(
         }
     }
 
-    if let Err(e) = sqlx::query("DELETE FROM media WHERE id = $1")
-        .bind(media_id)
-        .execute(&state.pool)
-        .await
-    {
+    if let Err(e) = crate::db::delete_media_by_ids(&state.pool, &[media_id.0]).await {
         tracing::error!("delete_user_metadata: {e}");
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"detail": "Failed to delete metadata"})),
+        )
+            .into_response();
     }
+
+    crate::cache::invalidate_catalog_and_metadata_caches(&state.redis).await;
 
     StatusCode::NO_CONTENT.into_response()
 }

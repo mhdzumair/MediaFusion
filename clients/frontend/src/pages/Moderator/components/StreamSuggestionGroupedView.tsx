@@ -46,6 +46,16 @@ function pendingIdsInGroup(group: StreamSuggestionInfoHashGroup): string[] {
 function renderSuggestionChanges(suggestion: StreamSuggestion) {
   const episodeInfo = parseEpisodeLinkField(suggestion.field_name)
   if (episodeInfo) {
+    if (episodeInfo.field === 'clear') {
+      return (
+        <div className="flex items-center gap-2 text-sm">
+          <Badge variant="secondary" className="text-[10px]">
+            Remove file link
+          </Badge>
+          <span className="text-emerald-400 font-medium">Clear season / episode / end</span>
+        </div>
+      )
+    }
     return (
       <div className="flex items-center gap-2 text-sm">
         <Badge variant="secondary" className="text-[10px]">
@@ -173,6 +183,8 @@ export function StreamSuggestionGroupedView({
                         <span className="uppercase">{group.streamType}</span>
                       </>
                     )}
+                    <span>•</span>
+                    <span>Stream #{group.streamId}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -319,9 +331,19 @@ export function StreamSuggestionGroupedView({
                                   variant="outline"
                                   className="rounded-lg flex-shrink-0"
                                   onClick={() => onReviewSuggestion(suggestion)}
+                                  disabled={isIssueStreamSuggestion(suggestion)}
+                                  title={
+                                    isIssueStreamSuggestion(suggestion)
+                                      ? 'Use issue triage to acknowledge reports'
+                                      : undefined
+                                  }
                                 >
                                   <Eye className="h-4 w-4 mr-1" />
-                                  {suggestion.status === 'pending' ? 'Review' : 'View'}
+                                  {suggestion.status === 'pending'
+                                    ? isIssueStreamSuggestion(suggestion)
+                                      ? 'Triage below'
+                                      : 'Review'
+                                    : 'View'}
                                 </Button>
                               </div>
                             </div>
