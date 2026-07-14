@@ -450,31 +450,24 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
   }
 
   const handleSaveList = (listConfig: MDBListItem) => {
+    const catalogId = `mdblist_${listConfig.ct}_${listConfig.i}`
+    const previousList = lists.find((l) => l.i === listConfig.i)
+    const previousCatalogId = previousList ? `mdblist_${previousList.ct}_${previousList.i}` : null
+
     // Remove existing entry for this list ID if exists
     const newLists = lists.filter((l) => l.i !== listConfig.i)
     newLists.push(listConfig)
 
-    // Also add to catalog_configs (cc) for catalog integration
-    const catalogId = `mdblist_${listConfig.ct}_${listConfig.i}`
-    const currentConfigs = getMigratedCatalogConfigs()
-    const existingConfig = currentConfigs.find((c) => c.ci === catalogId)
+    // Keep catalog_configs (cc) in sync with MDBList list definitions
+    const currentConfigs = getMigratedCatalogConfigs().filter((c) => c.ci !== catalogId && c.ci !== previousCatalogId)
+    const existingConfig = getMigratedCatalogConfigs().find((c) => c.ci === catalogId || c.ci === previousCatalogId)
 
-    if (!existingConfig) {
-      onChange({
-        ...config,
-        mdb: { ...mdbConfig, l: newLists },
-        cc: [...currentConfigs, { ci: catalogId, en: true }],
-        sc: [], // Clear legacy format
-      })
-    } else {
-      // Already exists, just update mdblist
-      onChange({
-        ...config,
-        mdb: { ...mdbConfig, l: newLists },
-        cc: currentConfigs,
-        sc: [], // Clear legacy format
-      })
-    }
+    onChange({
+      ...config,
+      mdb: { ...mdbConfig, l: newLists },
+      cc: [...currentConfigs, { ci: catalogId, en: existingConfig?.en ?? true }],
+      sc: [], // Clear legacy format
+    })
   }
 
   const removeList = (listId: number) => {
@@ -502,7 +495,21 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
 
     const newLists = [...lists]
     ;[newLists[index], newLists[newIndex]] = [newLists[newIndex], newLists[index]]
-    updateConfig({ l: newLists })
+
+    // Mirror MDBList order into catalog_configs so Stremio catalog order stays consistent
+    const currentConfigs = getMigratedCatalogConfigs()
+    const mdblistIds = new Set(newLists.map((l) => `mdblist_${l.ct}_${l.i}`))
+    const mdblistConfigs = newLists.map((list) => {
+      const catalogId = `mdblist_${list.ct}_${list.i}`
+      return currentConfigs.find((c) => c.ci === catalogId) ?? { ci: catalogId, en: true }
+    })
+    const otherConfigs = currentConfigs.filter((c) => !mdblistIds.has(c.ci))
+
+    onChange({
+      ...config,
+      mdb: { ...mdbConfig, l: newLists },
+      cc: [...mdblistConfigs, ...otherConfigs],
+    })
   }
 
   const handleTabChange = (tab: string) => {

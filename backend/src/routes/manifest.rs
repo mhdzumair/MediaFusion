@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use axum::{
     extract::{Path, State},
@@ -13,7 +16,7 @@ use std::time::Duration;
 use crate::{
     cache, crypto,
     db::genres::{self, GENRES_CACHE_KEY},
-    models::user_data::UserData,
+    models::user_data::{MdbListItem, UserData},
     state::AppState,
 };
 
@@ -205,14 +208,40 @@ fn catalog_meta(id: &str) -> Option<CatalogMeta> {
 
 // ─── HMAC cache key ───────────────────────────────────────────────────────────
 
-fn manifest_cache_key(version: &str, secret_key_raw: &str, user_data: &UserData) -> String {
-    let payload = serde_json::to_string(user_data).unwrap_or_default();
+/// Hash the raw decrypted/stored config JSON for manifest caching.
+///
+/// `UserData` serialization skips `mdblist_config` (`skip_serializing`), so re-serializing
+/// the struct would omit MDBList lists/API keys and serve stale manifests after list edits.
+fn manifest_cache_key(version: &str, secret_key_raw: &str, config_raw: &Value) -> String {
+    let payload = serde_json::to_string(config_raw).unwrap_or_default();
     let mut mac =
         HmacSha256::new_from_slice(secret_key_raw.as_bytes()).expect("HMAC accepts any key");
     mac.update(payload.as_bytes());
     let digest = mac.finalize().into_bytes();
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
     format!("manifest:rs:{version}:{hex}")
+}
+
+fn mdblist_catalog_json(list: &MdbListItem, catalog_id: &str) -> Value {
+    json!({
+        "id": catalog_id,
+        "type": list.catalog_type,
+        "name": list.title,
+        "extra": [
+            {"name": "skip", "isRequired": false},
+            {"name": "genre", "isRequired": false, "options": MDBLIST_GENRES},
+        ],
+    })
+}
+
+/// Whether an MDBList catalog is explicitly disabled in `catalog_configs`.
+/// Missing entries default to enabled so `mdb.l` remains the source of truth.
+fn mdblist_explicitly_disabled(user_data: &UserData, catalog_id: &str) -> bool {
+    user_data
+        .catalog_configs
+        .iter()
+        .find(|c| c.catalog_id == catalog_id)
+        .is_some_and(|c| !c.enabled)
 }
 
 // ─── Manifest builder ─────────────────────────────────────────────────────────
@@ -278,6 +307,8 @@ fn build_manifest(
             .map(|l| (l.catalog_id(), l))
             .collect();
 
+        let mut included_mdblist: HashSet<String> = HashSet::new();
+
         for cfg in user_data.catalog_configs.iter().filter(|c| c.enabled) {
             let cid = &cfg.catalog_id;
             if cid.starts_with("my_library_") && user_data.user_id.is_none() {
@@ -288,15 +319,8 @@ fn build_manifest(
                 let Some(list) = mdblist_by_id.get(cid) else {
                     continue;
                 };
-                catalogs.push(json!({
-                    "id": cid,
-                    "type": list.catalog_type,
-                    "name": list.title,
-                    "extra": [
-                        {"name": "skip", "isRequired": false},
-                        {"name": "genre", "isRequired": false, "options": MDBLIST_GENRES},
-                    ],
-                }));
+                catalogs.push(mdblist_catalog_json(list, cid));
+                included_mdblist.insert(cid.clone());
                 continue;
             }
 
@@ -328,6 +352,17 @@ fn build_manifest(
                 "extra": extra,
             }));
         }
+
+        // Include MDBList catalogs defined in `mdb.l` even when `catalog_configs` drifted
+        // (e.g. catalog type changed in the UI but the old `mdblist_{type}_{id}` entry remains).
+        for list in user_data.mdblist_lists() {
+            let cid = list.catalog_id();
+            if included_mdblist.contains(&cid) || mdblist_explicitly_disabled(user_data, &cid) {
+                continue;
+            }
+            catalogs.push(mdblist_catalog_json(&list, &cid));
+            included_mdblist.insert(cid);
+        }
     }
 
     let mut manifest = json!({
@@ -350,7 +385,7 @@ fn build_manifest(
 // ─── Route handlers ───────────────────────────────────────────────────────────
 
 pub async fn public_manifest(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    serve_manifest(state, UserData::default()).await
+    serve_manifest(state, UserData::default(), json!({})).await
 }
 
 pub async fn user_manifest(
@@ -375,15 +410,19 @@ pub async fn user_manifest(
                 .into_response();
         }
     };
-    let user_data = serde_json::from_value::<UserData>(raw).unwrap_or_default();
-    serve_manifest(state, user_data).await.into_response()
+    let user_data = serde_json::from_value::<UserData>(raw.clone()).unwrap_or_default();
+    serve_manifest(state, user_data, raw).await.into_response()
 }
 
-async fn serve_manifest(state: Arc<AppState>, user_data: UserData) -> impl IntoResponse {
+async fn serve_manifest(
+    state: Arc<AppState>,
+    user_data: UserData,
+    config_raw: Value,
+) -> impl IntoResponse {
     let cache_key = manifest_cache_key(
         &state.config.addon_version,
         &state.config.secret_key_raw,
-        &user_data,
+        &config_raw,
     );
     let ttl = state.config.meta_cache_ttl.min(300);
 
