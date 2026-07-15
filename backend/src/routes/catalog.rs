@@ -141,7 +141,7 @@ async fn handle_watchlist_catalog(
     };
 
     let hashes: Vec<String> = crate::providers::torrents::cache::get_user_hashes_cached(
-        &state.http,
+        state.http_for_provider(service),
         &state.redis,
         service,
         token,

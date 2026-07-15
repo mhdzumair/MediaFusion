@@ -21,6 +21,7 @@ use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use serde::Deserialize;
 
+use crate::scrapers::newznab::build_newznab_api_url;
 use crate::state::AppState;
 
 // ─── Request structs ──────────────────────────────────────────────────────────
@@ -594,12 +595,14 @@ pub async fn test_newznab_indexer(
         .into_response();
     }
 
-    let base = indexer.url.trim_end_matches('/');
-    let test_url = if base.ends_with("/api") {
-        base.to_string()
-    } else {
-        format!("{base}/api")
-    };
+    let test_url = build_newznab_api_url(&indexer.url);
+    if test_url.is_empty() {
+        return Json(serde_json::json!({
+            "success": false,
+            "message": "URL is required",
+        }))
+        .into_response();
+    }
 
     let mut req = state.http.get(&test_url).query(&[("t", "caps")]);
     if let Some(ref key) = indexer.api_key {

@@ -415,7 +415,12 @@ pub async fn run_usenet(
     let now = scrape_timestamp_now();
     let last_scraped = fetch_last_scraped(
         &state.redis,
-        &["easynews", "torbox_search", "public_usenet_indexers"],
+        &[
+            "easynews",
+            "torbox_search",
+            "newznab",
+            "public_usenet_indexers",
+        ],
         &cache_key,
     )
     .await;
@@ -489,6 +494,35 @@ pub async fn run_usenet(
         .await;
         results.extend(tb);
         scraped_ids.push("torbox_search");
+    }
+
+    // ── User-configured Newznab indexers ──────────────────────────────────────
+    if is_stale("newznab", cfg.prowlarr_search_ttl) {
+        let newznab_idxs: Vec<_> = user_data
+            .indexer_config
+            .as_ref()
+            .map(|ic| {
+                ic.newznab_indexers
+                    .iter()
+                    .filter(|n| n.enabled)
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if !newznab_idxs.is_empty() {
+            let nz = newznab::scrape(
+                &state.http,
+                &newznab_idxs,
+                meta,
+                media_type,
+                season,
+                episode,
+                &kf,
+            )
+            .await;
+            results.extend(nz);
+            scraped_ids.push("newznab");
+        }
     }
 
     // ── Public Usenet indexers (NZBIndex + Binsearch) ─────────────────────────
@@ -732,7 +766,6 @@ async fn fan_out_with_opts(
         "jackett",
         "torznab",
         "torbox_search",
-        "newznab",
         "public_indexers",
     ];
     let last_scraped = fetch_last_scraped(redis, &scraper_ids, &cache_key).await;
@@ -962,30 +995,6 @@ async fn fan_out_with_opts(
                 ("torznab", streams, start, t.elapsed().as_secs_f64())
             });
             spawned_scrapers.push("torznab");
-        }
-    }
-
-    // ── User-configured Newznab indexers ─────────────────────────────────────
-    // Newznab shares the prowlarr TTL (same cadence as Prowlarr per scraping.rs).
-    if is_stale("newznab", cfg.prowlarr_search_ttl) {
-        let newznab_idxs: Vec<_> = ic
-            .newznab_indexers
-            .into_iter()
-            .filter(|n| n.enabled)
-            .collect();
-        if !newznab_idxs.is_empty() {
-            let http = http.clone();
-            let meta = meta.clone();
-            let mt = media_type.to_string();
-            let kf = kf.clone();
-            set.spawn(async move {
-                let start = Utc::now();
-                let t = std::time::Instant::now();
-                let streams =
-                    newznab::scrape(&http, &newznab_idxs, &meta, &mt, season, episode, &kf).await;
-                ("newznab", streams, start, t.elapsed().as_secs_f64())
-            });
-            spawned_scrapers.push("newznab");
         }
     }
 

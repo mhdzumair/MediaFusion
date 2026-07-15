@@ -3,6 +3,7 @@
 /// Each sub-module owns a single provider's playback logic. Common helpers
 /// (file selection, name matching) live here so all providers share them.
 pub mod cache;
+pub mod config_fields;
 pub mod debrider;
 pub mod easynews;
 pub mod mgmt;

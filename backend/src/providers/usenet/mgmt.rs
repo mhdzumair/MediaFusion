@@ -4,18 +4,18 @@ use serde_json::Value;
 
 use crate::providers::ProviderError;
 
-use super::{easynews, nzbdav, torbox};
-
-fn str_field<'a>(config: &'a Value, keys: &[&str]) -> Option<&'a str> {
-    keys.iter()
-        .find_map(|k| config.get(*k).and_then(|v| v.as_str()))
-        .filter(|s| !s.is_empty())
-}
+use super::{
+    config_fields::{
+        API_KEY_KEYS, PASSWORD_KEYS, URL_KEYS, USERNAME_KEYS, WEBDAV_PASS_KEYS, WEBDAV_URL_KEYS,
+        WEBDAV_USER_KEYS, str_field,
+    },
+    easynews, nzbdav, torbox,
+};
 
 pub async fn validate_sabnzbd(http: &Client, config: &Value) -> Result<(), ProviderError> {
-    let base = str_field(config, &["url", "base_url"])
+    let base = str_field(config, URL_KEYS)
         .ok_or_else(|| ProviderError::api("SABnzbd: no url in config", "invalid_config.mp4"))?;
-    let api_key = str_field(config, &["api_key", "apikey"])
+    let api_key = str_field(config, API_KEY_KEYS)
         .ok_or_else(|| ProviderError::api("SABnzbd: no api_key in config", "invalid_config.mp4"))?;
     let api_url = format!("{}/api", base.trim_end_matches('/'));
     let v: Value = http
@@ -31,11 +31,11 @@ pub async fn validate_sabnzbd(http: &Client, config: &Value) -> Result<(), Provi
             "invalid_credentials.mp4",
         ));
     }
-    if let Some(webdav_url) = str_field(config, &["webdav_url"])
+    if let Some(webdav_url) = str_field(config, WEBDAV_URL_KEYS)
         && !webdav_url.is_empty()
     {
-        let user = str_field(config, &["webdav_username", "username"]).unwrap_or_default();
-        let pass = str_field(config, &["webdav_password", "password"]).unwrap_or_default();
+        let user = str_field(config, WEBDAV_USER_KEYS).unwrap_or_default();
+        let pass = str_field(config, WEBDAV_PASS_KEYS).unwrap_or_default();
         super::webdav::list(http, webdav_url, "", user, pass)
             .await
             .map_err(|_| {
@@ -46,10 +46,10 @@ pub async fn validate_sabnzbd(http: &Client, config: &Value) -> Result<(), Provi
 }
 
 pub async fn validate_nzbget(http: &Client, config: &Value) -> Result<(), ProviderError> {
-    let base = str_field(config, &["url"])
+    let base = str_field(config, URL_KEYS)
         .ok_or_else(|| ProviderError::api("NZBGet: no url in config", "invalid_config.mp4"))?;
-    let username = str_field(config, &["username"]).unwrap_or("nzbget");
-    let password = str_field(config, &["password"]).unwrap_or("tegbzn6789");
+    let username = str_field(config, USERNAME_KEYS).unwrap_or("nzbget");
+    let password = str_field(config, PASSWORD_KEYS).unwrap_or("tegbzn6789");
     let rpc_url = format!("{}/jsonrpc", base.trim_end_matches('/'));
     let body = serde_json::json!({
         "method": "version",
@@ -67,8 +67,8 @@ pub async fn validate_nzbget(http: &Client, config: &Value) -> Result<(), Provid
 }
 
 pub async fn validate_easynews(http: &Client, config: &Value) -> Result<(), ProviderError> {
-    let username = str_field(config, &["username", "un", "user"]).unwrap_or_default();
-    let password = str_field(config, &["password", "pw", "pass"]).unwrap_or_default();
+    let username = str_field(config, USERNAME_KEYS).unwrap_or_default();
+    let password = str_field(config, PASSWORD_KEYS).unwrap_or_default();
     if username.is_empty() || password.is_empty() {
         return Err(ProviderError::api(
             "EasyNews credentials missing",
@@ -122,10 +122,10 @@ pub async fn list_downloaded_usenet_names(
 }
 
 async fn sabnzbd_history_names(http: &Client, config: &Value) -> Vec<String> {
-    let Some(base) = str_field(config, &["url", "base_url"]) else {
+    let Some(base) = str_field(config, URL_KEYS) else {
         return Vec::new();
     };
-    let Some(api_key) = str_field(config, &["api_key", "apikey"]) else {
+    let Some(api_key) = str_field(config, API_KEY_KEYS) else {
         return Vec::new();
     };
     let api_url = format!("{}/api", base.trim_end_matches('/'));
@@ -164,11 +164,11 @@ async fn sabnzbd_history_names(http: &Client, config: &Value) -> Vec<String> {
 }
 
 async fn nzbget_history_names(http: &Client, config: &Value) -> Vec<String> {
-    let Some(base) = str_field(config, &["url"]) else {
+    let Some(base) = str_field(config, URL_KEYS) else {
         return Vec::new();
     };
-    let username = str_field(config, &["username"]).unwrap_or("nzbget");
-    let password = str_field(config, &["password"]).unwrap_or("tegbzn6789");
+    let username = str_field(config, USERNAME_KEYS).unwrap_or("nzbget");
+    let password = str_field(config, PASSWORD_KEYS).unwrap_or("tegbzn6789");
     let rpc_url = format!("{}/jsonrpc", base.trim_end_matches('/'));
     let body = serde_json::json!({
         "method": "history",
@@ -233,9 +233,9 @@ pub async fn delete_all_usenet(
 }
 
 async fn sabnzbd_delete_all(http: &Client, config: &Value) -> Result<(), ProviderError> {
-    let base = str_field(config, &["url", "base_url"])
+    let base = str_field(config, URL_KEYS)
         .ok_or_else(|| ProviderError::api("SABnzbd: no url", "invalid_config.mp4"))?;
-    let api_key = str_field(config, &["api_key", "apikey"])
+    let api_key = str_field(config, API_KEY_KEYS)
         .ok_or_else(|| ProviderError::api("SABnzbd: no api_key", "invalid_config.mp4"))?;
     let api_url = format!("{}/api", base.trim_end_matches('/'));
     let _ = http
@@ -253,10 +253,10 @@ async fn sabnzbd_delete_all(http: &Client, config: &Value) -> Result<(), Provide
 }
 
 async fn nzbget_delete_all(http: &Client, config: &Value) -> Result<(), ProviderError> {
-    let base = str_field(config, &["url"])
+    let base = str_field(config, URL_KEYS)
         .ok_or_else(|| ProviderError::api("NZBGet: no url", "invalid_config.mp4"))?;
-    let username = str_field(config, &["username"]).unwrap_or("nzbget");
-    let password = str_field(config, &["password"]).unwrap_or("tegbzn6789");
+    let username = str_field(config, USERNAME_KEYS).unwrap_or("nzbget");
+    let password = str_field(config, PASSWORD_KEYS).unwrap_or("tegbzn6789");
     let rpc_url = format!("{}/jsonrpc", base.trim_end_matches('/'));
     let body = serde_json::json!({
         "method": "editqueue",

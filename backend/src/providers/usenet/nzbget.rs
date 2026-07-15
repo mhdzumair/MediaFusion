@@ -11,7 +11,13 @@ use serde_json::Value;
 
 use crate::providers::ProviderError;
 
-use super::webdav;
+use super::{
+    config_fields::{
+        PASSWORD_KEYS, URL_KEYS, USERNAME_KEYS, WEBDAV_PASS_KEYS, WEBDAV_URL_KEYS,
+        WEBDAV_USER_KEYS, str_field,
+    },
+    webdav,
+};
 
 /// `config` is the raw JSON from `StreamingProvider.nzbget_config`.
 /// `submission_url`: MediaFusion proxy URL (empty on localhost).
@@ -25,23 +31,23 @@ pub async fn get_url(
     season: i32,
     episode: i32,
 ) -> Result<String, ProviderError> {
-    let base_url = str_field(config, &["url"])
+    let base_url = str_field(config, URL_KEYS)
         .ok_or_else(|| ProviderError::api("NZBGet: no url in config", "invalid_config.mp4"))?
         .trim_end_matches('/')
         .to_string();
-    let username = str_field(config, &["username"])
+    let username = str_field(config, USERNAME_KEYS)
         .unwrap_or("nzbget")
         .to_string();
-    let password = str_field(config, &["password"])
+    let password = str_field(config, PASSWORD_KEYS)
         .unwrap_or("tegbzn6789")
         .to_string();
-    let webdav_url = str_field(config, &["webdav_url"])
+    let webdav_url = str_field(config, WEBDAV_URL_KEYS)
         .unwrap_or_default()
         .to_string();
-    let webdav_user = str_field(config, &["webdav_username", "username"])
+    let webdav_user = str_field(config, WEBDAV_USER_KEYS)
         .unwrap_or(&username)
         .to_string();
-    let webdav_pass = str_field(config, &["webdav_password", "password"])
+    let webdav_pass = str_field(config, WEBDAV_PASS_KEYS)
         .unwrap_or(&password)
         .to_string();
 
@@ -251,9 +257,4 @@ async fn poll(
 }
 
 // ─── Config field helper ───────────────────────────────────────────────────────
-
-fn str_field<'a>(config: &'a Value, keys: &[&str]) -> Option<&'a str> {
-    keys.iter()
-        .find_map(|k| config.get(*k).and_then(|v| v.as_str()))
-        .filter(|s| !s.is_empty())
-}
+// Re-exported via config_fields for tests and sibling modules.

@@ -12,13 +12,12 @@ use crate::providers::{
     file_selection::{FileEntry, select_usenet_file_index},
 };
 
-use super::{sabnzbd, webdav};
-
-fn str_field<'a>(config: &'a Value, keys: &[&str]) -> Option<&'a str> {
-    keys.iter()
-        .find_map(|k| config.get(*k).and_then(|v| v.as_str()))
-        .filter(|s| !s.is_empty())
-}
+use super::{
+    config_fields::{
+        API_KEY_KEYS, CATEGORY_KEYS, URL_KEYS, WEBDAV_PASS_KEYS, WEBDAV_USER_KEYS, str_field,
+    },
+    sabnzbd, webdav,
+};
 
 fn job_folder_guesses(download_name: &str, stream_name: &str) -> Vec<String> {
     let mut ordered = Vec::new();
@@ -91,11 +90,11 @@ async fn find_file_in_downloads(
     episode: i32,
     episode_air_date: Option<&str>,
 ) -> Result<String, ProviderError> {
-    let webdav_base = str_field(config, &["url"])
+    let webdav_base = str_field(config, URL_KEYS)
         .ok_or_else(|| ProviderError::api("NzbDAV: no url in config", "invalid_config.mp4"))?;
-    let webdav_user = str_field(config, &["webdav_username", "username"]).unwrap_or_default();
-    let webdav_pass = str_field(config, &["webdav_password", "password"]).unwrap_or_default();
-    let category = str_field(config, &["category", "cat"]).unwrap_or("MediaFusion");
+    let webdav_user = str_field(config, WEBDAV_USER_KEYS).unwrap_or_default();
+    let webdav_pass = str_field(config, WEBDAV_PASS_KEYS).unwrap_or_default();
+    let category = str_field(config, CATEGORY_KEYS).unwrap_or("MediaFusion");
 
     for folder_guess in job_folder_guesses(download_name, stream_name) {
         for root in download_path_candidates(category, &folder_guess) {
@@ -125,9 +124,9 @@ pub async fn validate_credentials(
     http: &reqwest::Client,
     config: &Value,
 ) -> Result<(), ProviderError> {
-    let base = str_field(config, &["url"])
+    let base = str_field(config, URL_KEYS)
         .ok_or_else(|| ProviderError::api("NzbDAV: no url in config", "invalid_config.mp4"))?;
-    let api_key = str_field(config, &["api_key", "apikey"])
+    let api_key = str_field(config, API_KEY_KEYS)
         .ok_or_else(|| ProviderError::api("NzbDAV: no api_key in config", "invalid_config.mp4"))?;
     let api_url = format!("{}/api", base.trim_end_matches('/'));
     let v: Value = http
@@ -144,8 +143,8 @@ pub async fn validate_credentials(
         ));
     }
 
-    let webdav_user = str_field(config, &["webdav_username", "username"]).unwrap_or_default();
-    let webdav_pass = str_field(config, &["webdav_password", "password"]).unwrap_or_default();
+    let webdav_user = str_field(config, WEBDAV_USER_KEYS).unwrap_or_default();
+    let webdav_pass = str_field(config, WEBDAV_PASS_KEYS).unwrap_or_default();
     webdav::list(http, base, "", webdav_user, webdav_pass)
         .await
         .map_err(|_| {
@@ -168,12 +167,12 @@ pub async fn get_url(
     episode: i32,
     episode_air_date: Option<&str>,
 ) -> Result<String, ProviderError> {
-    let base = str_field(config, &["url"])
+    let base = str_field(config, URL_KEYS)
         .ok_or_else(|| ProviderError::api("NzbDAV: no url in config", "invalid_config.mp4"))?;
-    let api_key = str_field(config, &["api_key", "apikey"])
+    let api_key = str_field(config, API_KEY_KEYS)
         .ok_or_else(|| ProviderError::api("NzbDAV: no api_key in config", "invalid_config.mp4"))?;
-    let webdav_user = str_field(config, &["webdav_username", "username"]).unwrap_or_default();
-    let webdav_pass = str_field(config, &["webdav_password", "password"]).unwrap_or_default();
+    let webdav_user = str_field(config, WEBDAV_USER_KEYS).unwrap_or_default();
+    let webdav_pass = str_field(config, WEBDAV_PASS_KEYS).unwrap_or_default();
     let api_url = format!("{}/api", base.trim_end_matches('/'));
 
     let nzo_id = sabnzbd::submit_nzb(
@@ -259,11 +258,11 @@ async fn poll_history(
 }
 
 pub async fn list_downloaded_names(http: &reqwest::Client, config: &Value) -> Vec<String> {
-    let base = match str_field(config, &["url"]) {
+    let base = match str_field(config, URL_KEYS) {
         Some(u) => u,
         None => return Vec::new(),
     };
-    let api_key = match str_field(config, &["api_key", "apikey"]) {
+    let api_key = match str_field(config, API_KEY_KEYS) {
         Some(k) => k,
         None => return Vec::new(),
     };
@@ -301,9 +300,9 @@ pub async fn list_downloaded_names(http: &reqwest::Client, config: &Value) -> Ve
 }
 
 pub async fn delete_all(http: &reqwest::Client, config: &Value) -> Result<(), ProviderError> {
-    let base = str_field(config, &["url"])
+    let base = str_field(config, URL_KEYS)
         .ok_or_else(|| ProviderError::api("NzbDAV: no url", "invalid_config.mp4"))?;
-    let api_key = str_field(config, &["api_key", "apikey"])
+    let api_key = str_field(config, API_KEY_KEYS)
         .ok_or_else(|| ProviderError::api("NzbDAV: no api_key", "invalid_config.mp4"))?;
     let api_url = format!("{}/api", base.trim_end_matches('/'));
     let h: Value = http
