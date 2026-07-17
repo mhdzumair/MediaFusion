@@ -19,6 +19,18 @@ export interface AuthorizeResponse {
   error?: string
   error_code?: number
   message?: string
+  result?: string
+}
+
+export function isPendingDeviceAuthorization(result: AuthorizeResponse): boolean {
+  const error = (result.error || result.result || '').toLowerCase()
+  const message = (result.message || '').toLowerCase()
+  return (
+    error === 'authorization_pending' ||
+    error === 'slow_down' ||
+    message.includes('pending') ||
+    message.includes('waiting')
+  )
 }
 
 export type OAuthMode = 'device_code' | 'redirect'
@@ -97,6 +109,10 @@ export async function authorizeWithDeviceCode(provider: string, deviceCode: stri
   const result = (await response.json().catch(() => ({}))) as AuthorizeResponse
 
   if (!response.ok) {
+    if (isPendingDeviceAuthorization(result)) {
+      return result
+    }
+
     // Real-Debrid returns 403 while waiting for user authorization.
     const isPendingAuthorization = result.error === null && result.error_code === null && !result.token
     if (isPendingAuthorization) {
@@ -105,6 +121,10 @@ export async function authorizeWithDeviceCode(provider: string, deviceCode: stri
 
     const error = result as AuthorizeResponse & { detail?: string }
     throw new Error(error.detail || error.message || error.error || 'Authorization failed')
+  }
+
+  if (!result.token && isPendingDeviceAuthorization(result)) {
+    return result
   }
 
   return result

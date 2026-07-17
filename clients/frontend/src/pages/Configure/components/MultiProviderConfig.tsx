@@ -41,6 +41,7 @@ import {
   authorizeWithDeviceCode,
   getOAuthMode,
   getOAuthAuthorizationUrl,
+  isPendingDeviceAuthorization,
   type DeviceCodeResponse,
 } from '@/lib/api/debrid-oauth'
 import { decryptUserData } from '@/lib/api/anonymous'
@@ -406,13 +407,13 @@ function SingleProviderEditor({
             return
           }
 
-          if (result.error || result.message) {
-            const resultMessage = (result.message || result.error || 'Authorization failed').trim()
-            const resultMessageLower = resultMessage.toLowerCase()
-
-            if (resultMessageLower.includes('pending') || resultMessageLower.includes('waiting')) {
+          if (result.error || result.message || result.result) {
+            if (isPendingDeviceAuthorization(result)) {
               return
             }
+
+            const resultMessage = (result.message || result.error || result.result || 'Authorization failed').trim()
+            const resultMessageLower = resultMessage.toLowerCase()
 
             clearInterval(pollIntervalRef.current!)
             if (resultMessageLower.includes('expired')) {
@@ -425,7 +426,12 @@ function SingleProviderEditor({
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Unknown error'
           const normalizedErrorMessage = errorMessage.toLowerCase()
-          if (normalizedErrorMessage.includes('pending') || normalizedErrorMessage.includes('waiting')) {
+          if (
+            normalizedErrorMessage.includes('authorization_pending') ||
+            normalizedErrorMessage.includes('slow_down') ||
+            normalizedErrorMessage.includes('pending') ||
+            normalizedErrorMessage.includes('waiting')
+          ) {
             return
           }
 

@@ -320,24 +320,15 @@ pub async fn debridlink_authorize(
                             json_body.get("refresh_token").and_then(|v| v.as_str())
                         {
                             let encoded = URL_SAFE_NO_PAD.encode(refresh_token.as_bytes());
-                            (StatusCode::OK, Json(serde_json::json!({"token": encoded})))
-                                .into_response()
-                        } else {
-                            tracing::warn!("debridlink_authorize: no refresh_token in response");
-                            (
-                                StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK),
-                                Json(json_body),
-                            )
-                                .into_response()
+                            return (StatusCode::OK, Json(serde_json::json!({"token": encoded})))
+                                .into_response();
                         }
-                    } else {
-                        (
-                            StatusCode::from_u16(status.as_u16())
-                                .unwrap_or(StatusCode::BAD_GATEWAY),
-                            Json(json_body),
-                        )
-                            .into_response()
+                        tracing::warn!("debridlink_authorize: no refresh_token in response");
                     }
+
+                    // Return 200 with the provider body for pending/expired OAuth states so the
+                    // frontend keeps polling (matches Python DebridLink.authorize behavior).
+                    (StatusCode::OK, Json(json_body)).into_response()
                 }
                 Err(e) => {
                     tracing::error!("debridlink_authorize: parse error: {e}");
