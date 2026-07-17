@@ -23,10 +23,10 @@ use crate::{
 async fn build_meta(state: &AppState, media_type: &str, meta_id: &str) -> Option<Meta> {
     let row = db_meta::get_media_meta(&state.pool_ro, meta_id, media_type).await?;
 
-    // Hard-block media whose title matches the global keyword filter.
+    // Hard-block media whose title or description matches the global keyword filter.
     {
         let kf = state.keyword_filters.read().unwrap();
-        if kf.matches_blocked_media_keyword(&row.title) {
+        if kf.matches_blocked_media_text(&row.title, row.description.as_deref()) {
             return None;
         }
     }

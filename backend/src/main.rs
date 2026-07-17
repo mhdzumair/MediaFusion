@@ -105,8 +105,8 @@ async fn main() {
         tokio::spawn(async move {
             sync_keywords_from_file(&pool).await;
             let kf = load_keyword_filter_cache(&pool).await;
-            maybe_recompute_keyword_blocked(&pool, &kf).await;
-            maybe_recompute_stream_keyword_blocked(&pool, &kf).await;
+            maybe_recompute_keyword_blocked(&pool).await;
+            maybe_recompute_stream_keyword_blocked(&pool).await;
             *kf_lock.write().unwrap() = kf;
         });
     }

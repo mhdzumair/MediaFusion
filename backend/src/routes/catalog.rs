@@ -17,7 +17,7 @@ use crate::{
     routes::delete_all_watchlist,
     scrapers::metadata::fetch_all_list_imdb_ids,
     scrapers::rpdb,
-    state::AppState,
+    state::{AppState, KeywordFilterCache},
     util::retry,
 };
 
@@ -86,9 +86,14 @@ fn preview_poster(
     })
 }
 
-fn rows_to_metas(rows: Vec<db_catalog::CatalogRow>, poster_host_url: &str) -> Metas {
+fn rows_to_metas(
+    rows: Vec<db_catalog::CatalogRow>,
+    poster_host_url: &str,
+    kf: &KeywordFilterCache,
+) -> Metas {
     let metas = rows
         .into_iter()
+        .filter(|r| !kf.matches_blocked_media_text(&r.title, r.description.as_deref()))
         .map(|r| {
             let id = r
                 .imdb_id
@@ -107,6 +112,15 @@ fn rows_to_metas(rows: Vec<db_catalog::CatalogRow>, poster_host_url: &str) -> Me
         })
         .collect();
     Metas { metas }
+}
+
+/// Strip keyword-blocked titles from a Stremio catalog response. Applied both
+/// when building fresh results and when serving cached pages so stale DB flags
+/// cannot leak adult titles through Redis.
+fn filter_metas_runtime(metas: &mut Metas, kf: &KeywordFilterCache) {
+    metas
+        .metas
+        .retain(|m| !kf.matches_blocked_media_text(&m.name, m.description.as_deref()));
 }
 
 fn parse_watchlist_service<'a>(catalog_id: &'a str, media_type: &str) -> Option<&'a str> {
@@ -175,7 +189,8 @@ async fn handle_watchlist_catalog(
     )
     .await;
 
-    let mut metas = rows_to_metas(rows, &state.config.poster_host_url).metas;
+    let kf = state.keyword_filters.read().unwrap().clone();
+    let mut metas = rows_to_metas(rows, &state.config.poster_host_url, &kf).metas;
 
     if media_type == "movie"
         && delete_all_watchlist::supports_delete_all(service)
@@ -244,7 +259,8 @@ async fn fetch_mdblist_catalog(
         )
         .await;
 
-        return rows_to_metas(rows, &state.config.poster_host_url);
+        let kf = state.keyword_filters.read().unwrap().clone();
+        return rows_to_metas(rows, &state.config.poster_host_url, &kf);
     }
 
     let offset = (extra.skip / MDBLIST_BATCH_SIZE) * MDBLIST_BATCH_SIZE;
@@ -323,7 +339,8 @@ async fn fetch_mdblist_catalog(
                 return None;
             }
             let title = item["title"].as_str()?.to_string();
-            if kf.matches_blocked_media_keyword(&title) {
+            let description = item["description"].as_str();
+            if kf.matches_blocked_media_text(&title, description) {
                 return None;
             }
             let year = item["release_year"].as_i64().map(|y| y as i32);
@@ -411,7 +428,8 @@ async fn handle_catalog(
 
     // Version tag from keyword filter — embeds into cache keys so any keyword
     // change automatically invalidates cached catalog pages.
-    let kf_ver = state.keyword_filters.read().unwrap().version_tag();
+    let kf = state.keyword_filters.read().unwrap().clone();
+    let kf_ver = kf.version_tag();
 
     // Build cache key: user-scoped for personal catalogs, shared for public ones.
     // Embed the keyword-filter version so any keyword change invalidates cached pages.
@@ -441,10 +459,15 @@ async fn handle_catalog(
         if rpdb::needs_rpdb_poster_mutation(&user_data, media_type)
             && let Ok(mut metas) = serde_json::from_value::<Metas>(cached.clone())
         {
+            filter_metas_runtime(&mut metas, &kf);
             rpdb::apply_rpdb_posters(&mut metas, &user_data, media_type);
             return Json(metas).into_response();
         }
-        return Json(cached).into_response();
+        if let Ok(mut metas) = serde_json::from_value::<Metas>(cached) {
+            filter_metas_runtime(&mut metas, &kf);
+            return Json(metas).into_response();
+        }
+        return Json(Metas { metas: vec![] }).into_response();
     }
 
     let rows = if let Some(ref q) = extra.search {
@@ -475,7 +498,7 @@ async fn handle_catalog(
         .await
     };
 
-    let mut metas = rows_to_metas(rows, &state.config.poster_host_url);
+    let mut metas = rows_to_metas(rows, &state.config.poster_host_url, &kf);
     rpdb::apply_rpdb_posters(&mut metas, &user_data, media_type);
     let response = serde_json::to_value(&metas).unwrap_or_else(|_| json!({"metas":[]}));
 

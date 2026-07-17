@@ -1336,7 +1336,10 @@ async fn build_pipeline(
 
     // Guard: don't serve streams for restricted media (manual / keyword / NSFW).
     if media_id != db::MediaId(0) {
-        let blocked = crate::state::media_is_restricted(&state.pool, media_id.0).await;
+        let kf = state.keyword_filters.read().unwrap().clone();
+        let blocked =
+            crate::state::media_is_restricted_with_filters(&state.pool, media_id.0, Some(&kf))
+                .await;
 
         if blocked {
             let torrent_providers: Vec<crate::models::user_data::StreamingProvider> = user_data

@@ -25,7 +25,7 @@ use serde_json::json;
 use sha2::Sha256;
 
 use crate::state::{
-    AppState, KwRecomputeKind, kw_recompute_single_flight, load_keyword_filter_cache,
+    AppState, KwRecomputeKind, kw_recompute_single_flight, try_load_keyword_filter_cache,
 };
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -143,10 +143,18 @@ pub struct WhitelistRow {
 // ─── Reload cache helper ──────────────────────────────────────────────────────
 
 async fn reload_cache(state: &AppState) {
-    let mut new_cache = load_keyword_filter_cache(&state.pool).await;
-    new_cache.nsfw_filter_enabled = state.config.poster_nsfw_enabled;
-    if let Ok(mut w) = state.keyword_filters.write() {
-        *w = new_cache;
+    match try_load_keyword_filter_cache(&state.pool).await {
+        Ok(mut new_cache) => {
+            new_cache.nsfw_filter_enabled = state.config.poster_nsfw_enabled;
+            if let Ok(mut w) = state.keyword_filters.write() {
+                *w = new_cache;
+            }
+        }
+        Err(e) => {
+            tracing::error!(
+                "keyword filter cache reload failed, keeping previous in-memory filters: {e}"
+            );
+        }
     }
     // Converge the blocked flags via the deployment-wide single-flight lease —
     // an admin keyword edit must not launch unguarded full-table sweeps
@@ -154,9 +162,7 @@ async fn reload_cache(state: &AppState) {
     let pool = state.pool.clone();
     let pool2 = pool.clone();
     tokio::spawn(async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Media).await });
-    tokio::spawn(
-        async move { kw_recompute_single_flight(&pool2, KwRecomputeKind::Stream).await },
-    );
+    tokio::spawn(async move { kw_recompute_single_flight(&pool2, KwRecomputeKind::Stream).await });
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -635,7 +641,17 @@ pub async fn reload_keyword_cache(
             .into_response();
     }
 
-    let mut new_cache = load_keyword_filter_cache(&state.pool).await;
+    let mut new_cache = match try_load_keyword_filter_cache(&state.pool).await {
+        Ok(cache) => cache,
+        Err(e) => {
+            tracing::error!("keyword filter cache reload failed: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": "Failed to reload keyword filter cache"})),
+            )
+                .into_response();
+        }
+    };
     new_cache.nsfw_filter_enabled = state.config.poster_nsfw_enabled;
     let keywords_count = new_cache.keywords.len();
     let stream_keywords_count = new_cache.stream_keywords.len();

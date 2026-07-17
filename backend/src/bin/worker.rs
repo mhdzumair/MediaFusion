@@ -132,8 +132,7 @@ async fn main() {
     *state.keyword_filters.write().unwrap() = load_keyword_filter_cache(&state.pool).await;
 
     {
-        let kf = state.keyword_filters.read().unwrap().clone();
-        maybe_recompute_keyword_blocked(&state.pool, &kf).await;
+        maybe_recompute_keyword_blocked(&state.pool).await;
     }
 
     mediafusion_api::bot::register_notification_handlers(Arc::clone(&state));

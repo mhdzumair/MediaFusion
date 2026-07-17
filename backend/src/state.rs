@@ -39,6 +39,57 @@ impl KeywordFilterCache {
         Self::matches_list(&self.keywords, &self.whitelist, text)
     }
 
+    /// Check a media title and optional description against media-scoped keywords.
+    pub fn matches_blocked_media_text(&self, title: &str, description: Option<&str>) -> bool {
+        if self.matches_blocked_media_keyword(title) {
+            return true;
+        }
+        if let Some(desc) = description
+            && !desc.is_empty()
+            && self.matches_blocked_media_keyword(desc)
+        {
+            return true;
+        }
+        false
+    }
+
+    /// Check stream display name and optional filename against stream-scoped keywords.
+    pub fn is_stream_text_blocked(&self, name: &str, filename: Option<&str>) -> bool {
+        if self.matches_blocked_keyword(name) {
+            return true;
+        }
+        if let Some(file) = filename
+            && !file.is_empty()
+            && self.matches_blocked_keyword(file)
+        {
+            return true;
+        }
+        false
+    }
+
+    /// Returns true when media should be hidden from regular users.
+    /// Applies DB flags plus a runtime keyword safety net when the DB column is stale.
+    pub fn should_hide_media(
+        &self,
+        is_blocked: bool,
+        is_keyword_blocked: bool,
+        keyword_block_override: bool,
+        poster_nsfw_flagged: bool,
+        title: &str,
+        description: Option<&str>,
+    ) -> bool {
+        if is_blocked || poster_nsfw_flagged {
+            return true;
+        }
+        if is_keyword_blocked && !keyword_block_override {
+            return true;
+        }
+        if !keyword_block_override && self.matches_blocked_media_text(title, description) {
+            return true;
+        }
+        false
+    }
+
     fn matches_list(keywords: &[String], whitelist: &[String], text: &str) -> bool {
         if text.is_empty() || keywords.is_empty() {
             return false;
@@ -131,14 +182,49 @@ pub fn restriction_fragment() -> &'static str {
 /// Used by single-row guard points (`get_media_detail`, `get_media_streams`,
 /// `get_media_metadata`, `stream.rs` build_pipeline).
 pub async fn media_is_restricted(pool: &PgPool, media_id: i32) -> bool {
-    sqlx::query_scalar::<_, bool>(
-        "SELECT (is_blocked OR (is_keyword_blocked AND NOT keyword_block_override) OR poster_nsfw_flagged) FROM media WHERE id = $1",
+    media_is_restricted_with_filters(pool, media_id, None).await
+}
+
+/// Like [`media_is_restricted`], but when `keyword_filters` is provided also
+/// applies an in-memory keyword check as a safety net for stale DB flags.
+pub async fn media_is_restricted_with_filters(
+    pool: &PgPool,
+    media_id: i32,
+    keyword_filters: Option<&KeywordFilterCache>,
+) -> bool {
+    let row = sqlx::query_as::<_, (bool, bool, bool, bool, String, Option<String>)>(
+        "SELECT is_blocked, is_keyword_blocked, keyword_block_override, poster_nsfw_flagged, title, description
+         FROM media WHERE id = $1",
     )
     .bind(media_id)
     .fetch_optional(pool)
     .await
-    .unwrap_or(None)
-    .unwrap_or(false)
+    .unwrap_or(None);
+
+    let Some((
+        is_blocked,
+        is_keyword_blocked,
+        keyword_block_override,
+        poster_nsfw_flagged,
+        title,
+        description,
+    )) = row
+    else {
+        return false;
+    };
+
+    if let Some(kf) = keyword_filters {
+        kf.should_hide_media(
+            is_blocked,
+            is_keyword_blocked,
+            keyword_block_override,
+            poster_nsfw_flagged,
+            &title,
+            description.as_deref(),
+        )
+    } else {
+        is_blocked || poster_nsfw_flagged || (is_keyword_blocked && !keyword_block_override)
+    }
 }
 
 /// Returns `true` when **all** media linked to the given torrent `info_hash` are
@@ -741,9 +827,8 @@ pub async fn kw_recompute_single_flight(pool: &PgPool, kind: KwRecomputeKind) {
         // Renew (owner-fenced) while the sweep runs. Returns only on ownership
         // loss or renewal-deadline breach, which aborts the sweep via select!.
         let renew_until_lost = async {
-            let mut tick = tokio::time::interval(std::time::Duration::from_secs(
-                RECOMPUTE_LEASE_RENEW_SECS,
-            ));
+            let mut tick =
+                tokio::time::interval(std::time::Duration::from_secs(RECOMPUTE_LEASE_RENEW_SECS));
             // The interval's first tick is immediate, so the first loop
             // iteration performs a real fenced renewal right away — if the
             // task was paused between claim and here long enough to lose the
@@ -764,8 +849,7 @@ pub async fn kw_recompute_single_flight(pool: &PgPool, kind: KwRecomputeKind) {
                 .bind(kind.lease_id())
                 .bind(&owner)
                 .execute(pool);
-                match tokio::time::timeout(std::time::Duration::from_secs(remaining), renewal)
-                    .await
+                match tokio::time::timeout(std::time::Duration::from_secs(remaining), renewal).await
                 {
                     Ok(Ok(r)) if r.rows_affected() == 0 => {
                         tracing::warn!("{label}: lease ownership lost, aborting this sweep");
@@ -851,11 +935,15 @@ async fn publish_marker_fenced(
     label: &str,
 ) -> bool {
     match sqlx::query(
-        "INSERT INTO keyword_sync_state (id, file_hash, synced_at)
-         SELECT $1, $2, NOW()
-         WHERE EXISTS (
-             SELECT 1 FROM keyword_sync_state WHERE id = $3 AND file_hash = $4
+        "WITH owned AS (
+             UPDATE keyword_sync_state
+             SET synced_at = NOW()
+             WHERE id = $3 AND file_hash = $4
+             RETURNING 1
          )
+         INSERT INTO keyword_sync_state (id, file_hash, synced_at)
+         SELECT $1, $2, NOW()
+         FROM owned
          ON CONFLICT (id) DO UPDATE
            SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
     )
@@ -903,7 +991,9 @@ async fn release_lease(pool: &PgPool, lease_id: &str, owner: &str, label: &str) 
         .execute(pool)
         .await
     {
-        tracing::warn!("{label}: failed to release lease (expires in {RECOMPUTE_LEASE_STALE_SECS}s): {e}");
+        tracing::warn!(
+            "{label}: failed to release lease (expires in {RECOMPUTE_LEASE_STALE_SECS}s): {e}"
+        );
     }
 }
 
@@ -1004,59 +1094,60 @@ async fn recompute_stream_keyword_blocked(
 }
 
 /// Check whether stream `is_keyword_blocked` needs a recompute and, if so, spawn one.
-pub async fn maybe_recompute_stream_keyword_blocked(pool: &PgPool, kf: &KeywordFilterCache) {
-    // Use the full version_tag so any keyword/whitelist change (including media-scope changes
-    // that may have crossover with stream scope) triggers a stream recompute too.
-    let ver = kf.version_tag();
-    let ver_str = format!("{:016x}", ver);
-
-    let stored: Option<String> =
-        sqlx::query_scalar("SELECT file_hash FROM keyword_sync_state WHERE id = $1")
-            .bind(STREAM_KW_BLOCKED_RECOMPUTE_ID)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
-
-    if stored.as_deref() == Some(ver_str.as_str()) {
-        tracing::debug!(
-            "stream keyword blocked: column up to date (version {ver_str}), skipping recompute"
-        );
-        return;
+pub async fn maybe_recompute_stream_keyword_blocked(pool: &PgPool) {
+    match try_load_keyword_filter_cache(pool).await {
+        Ok(kf) => {
+            let ver_str = format!("{:016x}", kf.version_tag());
+            if recorded_version(pool, STREAM_KW_BLOCKED_RECOMPUTE_ID)
+                .await
+                .as_deref()
+                == Some(ver_str.as_str())
+            {
+                tracing::debug!(
+                    "stream keyword blocked: column up to date (version {ver_str}), skipping recompute"
+                );
+                return;
+            }
+            tracing::info!(
+                "stream keyword blocked: version changed ({ver_str}), recomputing in background"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                "stream keyword blocked: keyword state load failed, scheduling recompute: {e}"
+            );
+        }
     }
-
-    tracing::info!(
-        "stream keyword blocked: version changed ({ver_str}), recomputing in background"
-    );
     let pool = pool.clone();
-    tokio::spawn(
-        async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Stream).await },
-    );
+    tokio::spawn(async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Stream).await });
 }
 
 /// Check whether `is_keyword_blocked` needs a recompute and, if so, spawn one.
 ///
-/// Compares the current keyword `version_tag` against the last-recomputed version
-/// stored in `keyword_sync_state`.  On a normal restart with unchanged keywords
-/// this is a single cheap SELECT and the heavy UPDATE is skipped entirely.
-pub async fn maybe_recompute_keyword_blocked(pool: &PgPool, kf: &KeywordFilterCache) {
-    let ver = kf.media_version_tag();
-    let ver_str = format!("{:016x}", ver);
-
-    let stored: Option<String> =
-        sqlx::query_scalar("SELECT file_hash FROM keyword_sync_state WHERE id = $1")
-            .bind(KW_BLOCKED_RECOMPUTE_ID)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
-
-    if stored.as_deref() == Some(ver_str.as_str()) {
-        tracing::debug!(
-            "keyword blocked: column up to date (version {ver_str}), skipping recompute"
-        );
-        return;
+/// Reloads keyword state from the DB rather than trusting a caller-supplied cache,
+/// so a degraded empty cache cannot suppress a needed recompute.
+pub async fn maybe_recompute_keyword_blocked(pool: &PgPool) {
+    match try_load_keyword_filter_cache(pool).await {
+        Ok(kf) => {
+            let ver_str = format!("{:016x}", kf.media_version_tag());
+            if recorded_version(pool, KW_BLOCKED_RECOMPUTE_ID)
+                .await
+                .as_deref()
+                == Some(ver_str.as_str())
+            {
+                tracing::debug!(
+                    "keyword blocked: column up to date (version {ver_str}), skipping recompute"
+                );
+                return;
+            }
+            tracing::info!(
+                "keyword blocked: version changed ({ver_str}), recomputing in background"
+            );
+        }
+        Err(e) => {
+            tracing::warn!("keyword blocked: keyword state load failed, scheduling recompute: {e}");
+        }
     }
-
-    tracing::info!("keyword blocked: version changed ({ver_str}), recomputing in background");
     let pool = pool.clone();
     tokio::spawn(async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Media).await });
 }
@@ -1376,4 +1467,49 @@ pub async fn sync_stream_keywords_from_file(pool: &PgPool) {
         "stream keyword sync: done — {} keywords (hash {hash})",
         stream_keywords.len()
     );
+}
+
+#[cfg(test)]
+mod keyword_filter_tests {
+    use super::KeywordFilterCache;
+
+    fn test_cache() -> KeywordFilterCache {
+        KeywordFilterCache {
+            keywords: vec!["milf".into(), "xxx".into()],
+            stream_keywords: vec!["milf".into(), "xxx".into()],
+            whitelist: vec![],
+            nsfw_filter_enabled: false,
+        }
+    }
+
+    #[test]
+    fn runtime_media_filter_catches_adult_title() {
+        let kf = test_cache();
+        assert!(kf.matches_blocked_media_text(
+            "FTVMilfs 25 04 01 Avalon Mira Her Mesmerizing Bounce XXX",
+            None,
+        ));
+    }
+
+    #[test]
+    fn runtime_stream_filter_checks_filename() {
+        let kf = test_cache();
+        assert!(kf.is_stream_text_blocked(
+            "clean display name",
+            Some("FTVMilfs 25 04 01 Avalon Mira Her Mesmerizing Bounce XXX 2160p MP4"),
+        ));
+    }
+
+    #[test]
+    fn should_hide_media_when_db_flag_stale() {
+        let kf = test_cache();
+        assert!(kf.should_hide_media(
+            false,
+            false,
+            false,
+            false,
+            "FTVMilfs 25 04 01 Avalon Mira Her Mesmerizing Bounce XXX",
+            None,
+        ));
+    }
 }

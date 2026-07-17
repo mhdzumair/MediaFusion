@@ -275,8 +275,10 @@ pub async fn search_catalog(
     let rows: Vec<(i32, String, MediaType, Option<i32>)> =
         list_q.fetch_all(&state.pool_ro).await.unwrap_or_default();
 
+    let kf = state.keyword_filters.read().unwrap().clone();
     let items: Vec<serde_json::Value> = rows
         .into_iter()
+        .filter(|(_, title, _, _)| !kf.matches_blocked_media_text(title, None))
         .map(|(id, title, mtype, year)| {
             json!({
                 "id": id,
@@ -629,8 +631,12 @@ pub async fn browse_catalog(
             .insert(provider, serde_json::Value::String(ext_id));
     }
 
+    let kf = state.keyword_filters.read().unwrap().clone();
     let items: Vec<serde_json::Value> = rows
         .into_iter()
+        .filter(|(_, title, _, _, description, _, _, _, _)| {
+            !kf.matches_blocked_media_text(title, description.as_deref())
+        })
         .map(
             |(
                 id,
@@ -757,9 +763,22 @@ pub async fn get_media_detail(
         crate::routes::auth_guard::decode_access_token(&headers, &state.config.secret_key_raw)
             .map(|(_, role)| role == "admin")
             .unwrap_or(false);
-    if (is_blocked || (is_keyword_blocked && !keyword_block_override) || poster_nsfw_flagged)
-        && !is_admin
-    {
+    let restricted = {
+        let kf = state.keyword_filters.read().unwrap();
+        if is_admin {
+            is_blocked || poster_nsfw_flagged || (is_keyword_blocked && !keyword_block_override)
+        } else {
+            kf.should_hide_media(
+                is_blocked,
+                is_keyword_blocked,
+                keyword_block_override,
+                poster_nsfw_flagged,
+                &title,
+                description.as_deref(),
+            )
+        }
+    };
+    if restricted && !is_admin {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({"detail": "Media not found"})),
@@ -1186,7 +1205,10 @@ pub async fn get_media_streams(
     // Guard: don't serve streams for restricted media (manual / keyword / NSFW).
     // Admins can still retrieve streams for review on the detail page.
     {
-        let restricted = crate::state::media_is_restricted(&state.pool_ro, media_id).await;
+        let kf = state.keyword_filters.read().unwrap().clone();
+        let restricted =
+            crate::state::media_is_restricted_with_filters(&state.pool_ro, media_id, Some(&kf))
+                .await;
         if restricted && !is_privileged {
             return Json(json!({ "streams": [] })).into_response();
         }
@@ -1274,6 +1296,21 @@ pub async fn get_media_streams(
 
     tracing::debug!(
         "get_media_streams: found {} rows for media_id={media_id}",
+        stream_rows.len()
+    );
+
+    let kf = state.keyword_filters.read().unwrap().clone();
+    let stream_rows: Vec<BrowseStreamRow> = if is_privileged {
+        stream_rows
+    } else {
+        stream_rows
+            .into_iter()
+            .filter(|r| !kf.is_stream_text_blocked(&r.name, r.filename.as_deref()))
+            .collect()
+    };
+
+    tracing::debug!(
+        "get_media_streams: {} rows after runtime keyword filter for media_id={media_id}",
         stream_rows.len()
     );
 

@@ -220,7 +220,7 @@ pub async fn realdebrid_authorize(
         }
     };
 
-    match realdebrid::authorize_device_code(&state.http_for_provider("realdebrid"), &device_code)
+    match realdebrid::authorize_device_code(state.http_for_provider("realdebrid"), &device_code)
         .await
     {
         Ok(json_body) => (StatusCode::OK, Json(json_body)).into_response(),

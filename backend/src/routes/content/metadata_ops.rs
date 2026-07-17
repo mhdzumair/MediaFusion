@@ -515,7 +515,9 @@ pub async fn get_media_metadata(
         };
 
     // Restriction gate: blocked/keyword-blocked/NSFW media is only visible to admins.
-    let is_restricted = crate::state::media_is_restricted(&state.pool_ro, media_id).await;
+    let kf = state.keyword_filters.read().unwrap().clone();
+    let is_restricted =
+        crate::state::media_is_restricted_with_filters(&state.pool_ro, media_id, Some(&kf)).await;
     if is_restricted {
         let is_admin =
             crate::routes::auth_guard::decode_access_token(&headers, &state.config.secret_key_raw)

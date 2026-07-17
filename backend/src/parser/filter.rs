@@ -193,7 +193,8 @@ pub fn filter_streams_by_preferences(streams: Vec<Value>, ctx: &FilterContext<'_
 
         // Step 10: 18+
         let name = row.get("name").and_then(|v| v.as_str()).unwrap_or("");
-        if ctx.keyword_filters.matches_blocked_keyword(name) {
+        let filename = row.get("filename").and_then(|v| v.as_str());
+        if ctx.keyword_filters.is_stream_text_blocked(name, filename) {
             continue;
         }
 
