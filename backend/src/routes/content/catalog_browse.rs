@@ -1634,6 +1634,7 @@ pub async fn get_media_streams(
         season,
         episode,
         primary_provider: ud.get_primary_provider(),
+        usenet_providers: None,
         is_usenet: false,
         allow_public_usenet,
         keyword_filters: &kf,

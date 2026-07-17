@@ -30,6 +30,8 @@ pub struct FilterContext<'a> {
     pub season: Option<i32>,
     pub episode: Option<i32>,
     pub primary_provider: Option<&'a StreamingProvider>,
+    /// When set, usenet rows are kept if compatible with any listed provider.
+    pub usenet_providers: Option<&'a [StreamingProvider]>,
     pub is_usenet: bool,
     pub allow_public_usenet: bool,
     pub keyword_filters: &'a KeywordFilterCache,
@@ -50,12 +52,19 @@ pub fn filter_streams_by_preferences(streams: Vec<Value>, ctx: &FilterContext<'_
 
     let mut working = streams;
 
-    // Step 1: usenet pre-pass
-    if ctx.is_usenet
-        && let Some(provider) = ctx.primary_provider
-    {
-        working
-            .retain(|row| is_usenet_stream_compatible(row, provider, ud, ctx.allow_public_usenet));
+    // Step 1: usenet pre-pass — keep rows compatible with at least one configured provider.
+    if ctx.is_usenet {
+        working.retain(|row| {
+            if let Some(providers) = ctx.usenet_providers {
+                providers
+                    .iter()
+                    .any(|p| is_usenet_stream_compatible(row, p, ud, ctx.allow_public_usenet))
+            } else if let Some(provider) = ctx.primary_provider {
+                is_usenet_stream_compatible(row, provider, ud, ctx.allow_public_usenet)
+            } else {
+                true
+            }
+        });
     }
 
     let mut out = Vec::with_capacity(working.len());

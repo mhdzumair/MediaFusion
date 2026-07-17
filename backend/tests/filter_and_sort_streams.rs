@@ -88,6 +88,7 @@ fn run_pipeline(
         season,
         episode,
         primary_provider: None,
+        usenet_providers: None,
         is_usenet: false,
         allow_public_usenet: false,
         keyword_filters: &kf,

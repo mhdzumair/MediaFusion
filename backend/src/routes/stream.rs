@@ -870,7 +870,7 @@ pub async fn resolve(
             episode,
             true,
             allow_public_usenet,
-            usenet_providers_refs.first().copied(),
+            Some(&p.usenet_providers),
             &kf,
         );
         for row in filtered {
@@ -1083,14 +1083,15 @@ fn filter_pipeline_rows(
     episode: Option<i32>,
     is_usenet: bool,
     allow_public_usenet: bool,
-    primary_provider: Option<&crate::models::user_data::StreamingProvider>,
+    usenet_providers: Option<&[crate::models::user_data::StreamingProvider]>,
     keyword_filters: &KeywordFilterCache,
 ) -> Vec<Value> {
     let ctx = FilterContext {
         user_data,
         season,
         episode,
-        primary_provider,
+        primary_provider: usenet_providers.and_then(|providers| providers.first()),
+        usenet_providers,
         is_usenet,
         allow_public_usenet,
         keyword_filters,
@@ -1122,7 +1123,7 @@ fn apply_content_filters_to_pipeline(
         episode,
         true,
         allow_public_usenet,
-        p.usenet_providers.first(),
+        Some(&p.usenet_providers),
         keyword_filters,
     );
     p.http_rows = filter_pipeline_rows(
