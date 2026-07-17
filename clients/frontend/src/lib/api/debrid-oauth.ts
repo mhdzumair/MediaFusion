@@ -94,12 +94,20 @@ export async function authorizeWithDeviceCode(provider: string, deviceCode: stri
     body: JSON.stringify({ device_code: deviceCode }),
   })
 
+  const result = (await response.json().catch(() => ({}))) as AuthorizeResponse
+
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Authorization failed' }))
-    throw new Error(error.detail || error.message || 'Authorization failed')
+    // Real-Debrid returns 403 while waiting for user authorization.
+    const isPendingAuthorization = result.error === null && result.error_code === null && !result.token
+    if (isPendingAuthorization) {
+      return result
+    }
+
+    const error = result as AuthorizeResponse & { detail?: string }
+    throw new Error(error.detail || error.message || error.error || 'Authorization failed')
   }
 
-  return response.json()
+  return result
 }
 
 /**

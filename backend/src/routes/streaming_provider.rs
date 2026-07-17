@@ -20,12 +20,13 @@ use fred::prelude::HashesInterface;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{state::AppState, util::http as http_util, util::retry};
+use crate::{
+    providers::torrents::realdebrid, state::AppState, util::http as http_util, util::retry,
+};
 
 const CACHE_KEY_PREFIX: &str = "debrid_cache:";
 const EXPIRY_DAYS_SECS: i64 = 7 * 86400;
 
-const REALDEBRID_CLIENT_ID: &str = "X245A4XAIBGVM";
 const DEBRIDLINK_CLIENT_ID: &str = "RyrV22FOg30DsxjYPziRKA";
 
 #[derive(Deserialize)]
@@ -163,7 +164,7 @@ fn normalize_service(service: &str) -> &str {
 pub async fn realdebrid_get_device_code(State(state): State<Arc<AppState>>) -> Response {
     let url = format!(
         "https://api.real-debrid.com/oauth/v2/device/code?client_id={}&new_credentials=yes",
-        REALDEBRID_CLIENT_ID
+        realdebrid::OPENSOURCE_CLIENT_ID
     );
     match retry::with_transport_retry("realdebrid_get_device_code", || {
         state.http_for_provider("realdebrid").get(&url).send()
@@ -219,34 +220,18 @@ pub async fn realdebrid_authorize(
         }
     };
 
-    let url = format!(
-        "https://api.real-debrid.com/oauth/v2/device/credentials?client_id={}&code={}",
-        REALDEBRID_CLIENT_ID, device_code
-    );
-    match state.http_for_provider("realdebrid").get(&url).send().await {
-        Ok(resp) => {
-            let status = resp.status();
-            match resp.json::<Value>().await {
-                Ok(json_body) => (
-                    StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK),
-                    Json(json_body),
-                )
-                    .into_response(),
-                Err(e) => {
-                    tracing::error!("realdebrid_authorize: parse error: {e}");
-                    (
-                        StatusCode::BAD_GATEWAY,
-                        Json(serde_json::json!({"detail": "Invalid response from Real-Debrid"})),
-                    )
-                        .into_response()
-                }
-            }
-        }
+    match realdebrid::authorize_device_code(&state.http_for_provider("realdebrid"), &device_code)
+        .await
+    {
+        Ok(json_body) => (StatusCode::OK, Json(json_body)).into_response(),
         Err(e) => {
-            tracing::error!("realdebrid_authorize: request error: {e}");
+            tracing::error!("realdebrid_authorize: {e}");
             (
-                StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({"detail": "Failed to contact Real-Debrid"})),
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "error": e.to_string(),
+                    "message": e.to_string(),
+                })),
             )
                 .into_response()
         }

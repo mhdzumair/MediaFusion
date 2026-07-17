@@ -19,6 +19,7 @@ use crate::{
 
 const BASE_URL: &str = "https://api.real-debrid.com/rest/1.0";
 const OAUTH_URL: &str = "https://api.real-debrid.com/oauth/v2";
+pub const OPENSOURCE_CLIENT_ID: &str = "X245A4XAIBGVM";
 
 // ─── Token decode ─────────────────────────────────────────────────────────────
 
@@ -116,15 +117,63 @@ fn check_rd_error(body: &Value) -> Result<(), ProviderError> {
     Ok(())
 }
 
+// ─── OAuth helpers ────────────────────────────────────────────────────────────
+
+/// Encode Real-Debrid OAuth credentials into the token string stored in user config.
+pub fn encode_oauth_token(client_id: &str, client_secret: &str, refresh_token: &str) -> String {
+    B64.encode(format!("{client_id}:{client_secret}:{refresh_token}").as_bytes())
+}
+
+/// Complete the Real-Debrid device-code OAuth flow for the configure UI.
+///
+/// Returns a pending payload until the user authorizes, then `{"token": "<encoded>"}`.
+pub async fn authorize_device_code(
+    http: &reqwest::Client,
+    device_code: &str,
+) -> Result<Value, ProviderError> {
+    let url = format!(
+        "{OAUTH_URL}/device/credentials?client_id={OPENSOURCE_CLIENT_ID}&code={device_code}"
+    );
+    let resp = retry::with_transport_retry("rd authorize_device_code", || http.get(&url).send())
+        .await
+        .map_err(ProviderError::Http)?;
+
+    let body: Value = resp.json().await.map_err(|e| {
+        ProviderError::api(
+            format!("Invalid Real-Debrid OAuth response: {e}"),
+            "api_error.mp4",
+        )
+    })?;
+
+    let Some(client_secret) = body.get("client_secret").and_then(|v| v.as_str()) else {
+        return Ok(body);
+    };
+
+    let client_id = body
+        .get("client_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or(OPENSOURCE_CLIENT_ID);
+
+    let token_body =
+        exchange_oauth_token(http, client_id, client_secret, device_code, None).await?;
+
+    if let Some(refresh_token) = token_body.get("refresh_token").and_then(|v| v.as_str()) {
+        let token = encode_oauth_token(client_id, client_secret, refresh_token);
+        return Ok(serde_json::json!({"token": token}));
+    }
+
+    Ok(token_body)
+}
+
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
-async fn get_access_token(
+async fn exchange_oauth_token(
     http: &reqwest::Client,
     client_id: &str,
     client_secret: &str,
     code: &str,
     user_ip: Option<&str>,
-) -> Result<String, ProviderError> {
+) -> Result<Value, ProviderError> {
     let mut form = vec![
         ("client_id", client_id.to_string()),
         ("client_secret", client_secret.to_string()),
@@ -138,7 +187,7 @@ async fn get_access_token(
         form.push(("ip", ip.to_string()));
     }
 
-    let resp = retry::with_transport_retry("rd get_access_token", || async {
+    let resp = retry::with_transport_retry("rd exchange_oauth_token", || async {
         http.post(format!("{OAUTH_URL}/token"))
             .form(&form)
             .send()
@@ -147,7 +196,17 @@ async fn get_access_token(
     .await
     .map_err(ProviderError::Http)?;
 
-    let body: Value = response_json(resp, "rd get_access_token").await?;
+    response_json(resp, "rd exchange_oauth_token").await
+}
+
+async fn get_access_token(
+    http: &reqwest::Client,
+    client_id: &str,
+    client_secret: &str,
+    code: &str,
+    user_ip: Option<&str>,
+) -> Result<String, ProviderError> {
+    let body = exchange_oauth_token(http, client_id, client_secret, code, user_ip).await?;
     check_rd_error(&body)?;
     body.get("access_token")
         .and_then(|v| v.as_str())
@@ -1163,9 +1222,17 @@ pub async fn check_cached(http: &reqwest::Client, token: &str, hashes: &[String]
 
 #[cfg(test)]
 mod tests {
-    use super::check_rd_error;
+    use super::{check_rd_error, encode_oauth_token};
     use crate::providers::ProviderError;
+    use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
     use serde_json::json;
+
+    #[test]
+    fn encode_oauth_token_matches_python_format() {
+        let encoded = encode_oauth_token("client", "secret", "refresh");
+        let decoded = String::from_utf8(B64.decode(encoded).unwrap()).unwrap();
+        assert_eq!(decoded, "client:secret:refresh");
+    }
 
     #[test]
     fn hoster_not_free_maps_to_need_premium() {
