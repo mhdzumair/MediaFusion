@@ -436,14 +436,11 @@ fn build_regex_pattern(terms: &[String]) -> Option<String> {
     Some(format!("({escaped})"))
 }
 
-pub async fn recompute_keyword_blocked(
+async fn recompute_keyword_blocked(
     pool: &PgPool,
-    version_tag: u64,
     keywords: &[String],
     whitelist: &[String],
-) {
-    let ver_str = format!("{:016x}", version_tag);
-
+) -> bool {
     // Compile the full keyword/whitelist lists into single regex alternations once.
     // PostgreSQL's NFA evaluates one pattern per row in O(len(text)) regardless of
     // how many alternations are present — vastly cheaper than 1 position() call per
@@ -458,12 +455,13 @@ pub async fn recompute_keyword_blocked(
     {
         Ok(Some(id)) => id,
         Ok(None) => {
-            tracing::debug!("keyword blocked: media table is empty, skipping recompute");
-            return;
+            // An empty table is trivially converged.
+            tracing::debug!("keyword blocked: media table is empty, nothing to sweep");
+            return true;
         }
         Err(e) => {
             tracing::error!("recompute_all_keyword_blocked failed to get max id: {e}");
-            return;
+            return false;
         }
     };
 
@@ -522,7 +520,7 @@ pub async fn recompute_keyword_blocked(
                 tracing::error!(
                     "recompute_all_keyword_blocked batch [{from_id}..{to_id}] failed: {e}"
                 );
-                return;
+                return false;
             }
         }
 
@@ -532,45 +530,392 @@ pub async fn recompute_keyword_blocked(
         }
     }
 
-    // Record which keyword version was just recomputed so we skip on next startup.
-    match sqlx::query(
-        "INSERT INTO keyword_sync_state (id, file_hash, synced_at) VALUES ($1, $2, NOW())
-         ON CONFLICT (id) DO UPDATE SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
-    )
-    .bind(KW_BLOCKED_RECOMPUTE_ID)
-    .bind(&ver_str)
-    .execute(pool)
-    .await
-    {
-        Err(e) => {
-            tracing::error!("recompute_all_keyword_blocked: failed to record version: {e}");
+    // Completion-marker publication lives in kw_recompute_single_flight, fenced
+    // on lease ownership — a sweep that lost its lease must not publish.
+    let elapsed = started.elapsed();
+    tracing::info!(
+        keywords = keywords.len(),
+        updated = total_updated,
+        elapsed_ms = elapsed.as_millis(),
+        "keyword filter: media is_keyword_blocked recompute complete"
+    );
+    true
+}
+
+const STREAM_KW_BLOCKED_RECOMPUTE_ID: &str = "stream-keyword-blocked-recompute";
+
+// Deployment-wide single-flight leases for the keyword-blocked recomputes.
+// `keyword_filters` is a global table, so every process computes the identical
+// result — and even a minimal deployment runs the API and the worker as
+// separate processes, both of which trigger recomputes at startup. Without
+// coordination, each process that starts (or restarts mid-sweep, since
+// completion is only recorded at the end) launches its own full-table regex
+// recompute; with several replicas these overlapping sweeps contend on the
+// same tuples and can dominate database CPU.
+//
+// Coordination uses a lease row in the existing `keyword_sync_state` table
+// rather than `pg_advisory_lock`: deployments may route the app through
+// PgBouncer in transaction pooling mode, where session advisory locks
+// land on an arbitrary backend that is immediately returned to the pool — the
+// lock can leak, unlock on a different backend, and fail to exclude anyone.
+// The lease claim is a single-statement atomic upsert (transaction-pooling
+// safe) and holds no pool connection while the sweep runs, so it also cannot
+// deadlock a DB_POOL_SIZE=1 pool. The winner renews the lease periodically;
+// if it dies, the lease goes stale and the next starting process claims it.
+const RECOMPUTE_LEASE_STALE_SECS: f64 = 180.0;
+const RECOMPUTE_LEASE_RENEW_SECS: u64 = 60;
+// Must stay comfortably below RECOMPUTE_LEASE_STALE_SECS: a holder that cannot
+// confirm a renewal for this long aborts its sweep BEFORE the lease can go
+// stale under it and a successor can claim.
+const RECOMPUTE_RENEW_ABORT_SECS: u64 = 120;
+const RECOMPUTE_RETRY_SLEEP_SECS: u64 = 180;
+const RECOMPUTE_MAX_ATTEMPTS: u32 = 48;
+const MEDIA_KW_RECOMPUTE_LEASE_ID: &str = "keyword-blocked-recompute-lease";
+const STREAM_KW_RECOMPUTE_LEASE_ID: &str = "stream-keyword-blocked-recompute-lease";
+
+/// Read the recorded completion version for `marker_id` (e.g.
+/// [`STREAM_KW_BLOCKED_RECOMPUTE_ID`]).
+async fn recorded_version(pool: &PgPool, marker_id: &str) -> Option<String> {
+    sqlx::query_scalar("SELECT file_hash FROM keyword_sync_state WHERE id = $1")
+        .bind(marker_id)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None)
+}
+
+/// Which keyword-blocked recompute a single-flight run targets.
+#[derive(Clone, Copy)]
+pub enum KwRecomputeKind {
+    /// `media.is_keyword_blocked` from media-scoped keywords.
+    Media,
+    /// `stream.is_keyword_blocked` from stream-scoped keywords.
+    Stream,
+}
+
+impl KwRecomputeKind {
+    fn lease_id(self) -> &'static str {
+        match self {
+            Self::Media => MEDIA_KW_RECOMPUTE_LEASE_ID,
+            Self::Stream => STREAM_KW_RECOMPUTE_LEASE_ID,
         }
-        _ => {
-            let elapsed = started.elapsed();
-            tracing::info!(
-                keywords = keywords.len(),
-                updated = total_updated,
-                elapsed_ms = elapsed.as_millis(),
-                "keyword filter: media is_keyword_blocked recompute complete"
-            );
+    }
+    fn marker_id(self) -> &'static str {
+        match self {
+            Self::Media => KW_BLOCKED_RECOMPUTE_ID,
+            Self::Stream => STREAM_KW_BLOCKED_RECOMPUTE_ID,
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Self::Media => "keyword blocked recompute",
+            Self::Stream => "stream keyword blocked recompute",
+        }
+    }
+    fn version(self, kf: &KeywordFilterCache) -> u64 {
+        match self {
+            Self::Media => kf.media_version_tag(),
+            // Full tag: any keyword/whitelist change (including media-scope
+            // changes that may have crossover with stream scope) triggers a
+            // stream recompute.
+            Self::Stream => kf.version_tag(),
+        }
+    }
+    /// Run the full-table sweep. Returns `true` only when every batch
+    /// succeeded; marker publication is the caller's (fenced) responsibility.
+    async fn sweep(self, pool: &PgPool, kf: &KeywordFilterCache) -> bool {
+        match self {
+            Self::Media => recompute_keyword_blocked(pool, &kf.keywords, &kf.whitelist).await,
+            Self::Stream => {
+                recompute_stream_keyword_blocked(pool, &kf.stream_keywords, &kf.whitelist).await
+            }
         }
     }
 }
 
-const STREAM_KW_BLOCKED_RECOMPUTE_ID: &str = "stream-keyword-blocked-recompute";
+/// Converge `kind`'s `is_keyword_blocked` column to the CURRENT keyword state
+/// under a deployment-wide lease. This is the only entry point allowed to run
+/// full-table sweeps — every trigger (startup version check, keyword file
+/// sync, admin keyword edits) routes through here.
+///
+/// Loop semantics (every statement is single-statement autocommit, so this is
+/// safe behind transaction-mode PgBouncer):
+/// * Each attempt reloads the keyword state from the DB and targets THAT
+///   version. While we waited, another pod (possibly running a newer image)
+///   may have changed the keywords: chasing the live version means an
+///   old-image pod can never downgrade the flags after a newer pod's sweep —
+///   both converge to whatever the DB says now.
+/// * If the completion marker already records the current version, done.
+///   This is rechecked after every claim, so a contender that wins the lease
+///   after the previous holder completed the same version exits immediately.
+/// * The lease claim is an atomic upsert that takes the lease only when
+///   absent or stale. The row stores a unique owner token; renewal and
+///   release are fenced on it, so a preempted holder can neither refresh nor
+///   delete a successor's lease.
+/// * While sweeping, the lease is renewed every [`RECOMPUTE_LEASE_RENEW_SECS`].
+///   If renewal fences out (0 rows), ownership was lost — abort the sweep. If
+///   renewals keep failing, abort once [`RECOMPUTE_RENEW_ABORT_SECS`] pass
+///   without a confirmed renewal — BEFORE the lease can go stale under us —
+///   so two sweeps never overlap and a stale holder can never overwrite a
+///   successor's completion marker.
+/// * A finished sweep is verified against the marker (the sweep records it
+///   internally only on full success); on any failure we back off before
+///   retrying rather than immediately rescanning.
+pub async fn kw_recompute_single_flight(pool: &PgPool, kind: KwRecomputeKind) {
+    let label = kind.label();
+    // Unique owner token for lease fencing: pod hostname + wall-clock nanos.
+    let owner = format!(
+        "{}:{}",
+        std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into()),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    );
+
+    for attempt in 1..=RECOMPUTE_MAX_ATTEMPTS {
+        // Fresh truth each attempt — see doc comment. Must be the fallible
+        // load: a transient read failure silently coerced to "no keywords"
+        // would clear every blocked flag and record a fabricated version.
+        let kf = match try_load_keyword_filter_cache(pool).await {
+            Ok(kf) => kf,
+            Err(e) => {
+                tracing::warn!("{label}: keyword state load failed, retrying: {e}");
+                tokio::time::sleep(std::time::Duration::from_secs(RECOMPUTE_RETRY_SLEEP_SECS))
+                    .await;
+                continue;
+            }
+        };
+        let ver = kind.version(&kf);
+        let ver_str = format!("{ver:016x}");
+
+        if recorded_version(pool, kind.marker_id()).await.as_deref() == Some(ver_str.as_str()) {
+            tracing::debug!("{label}: version {ver_str} already recorded, done");
+            return;
+        }
+
+        // Atomic claim: insert the lease row, or take it over only when stale.
+        // Exactly one contender gets a row back per stale-window.
+        let claimed: Option<String> = sqlx::query_scalar(
+            "INSERT INTO keyword_sync_state (id, file_hash, synced_at)
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (id) DO UPDATE
+               SET file_hash = EXCLUDED.file_hash, synced_at = NOW()
+               WHERE keyword_sync_state.synced_at < NOW() - ($3 * interval '1 second')
+             RETURNING id",
+        )
+        .bind(kind.lease_id())
+        .bind(&owner)
+        .bind(RECOMPUTE_LEASE_STALE_SECS)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("{label}: lease claim failed: {e}");
+            None
+        });
+
+        if claimed.is_none() {
+            tracing::debug!(
+                "{label}: another pod holds the recompute lease (attempt {attempt}), waiting"
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(RECOMPUTE_RETRY_SLEEP_SECS)).await;
+            continue;
+        }
+
+        // We hold the lease. Recheck the marker: the previous holder may have
+        // completed this very version between our check above and the claim.
+        if recorded_version(pool, kind.marker_id()).await.as_deref() == Some(ver_str.as_str()) {
+            tracing::debug!("{label}: version {ver_str} completed while claiming, done");
+            release_lease(pool, kind.lease_id(), &owner, label).await;
+            return;
+        }
+
+        // Confirm ownership with a fenced renewal immediately before starting
+        // the sweep: if this task was paused/descheduled long enough after the
+        // claim for the lease to go stale, a successor may already own it.
+        if !renew_lease_fenced(pool, kind.lease_id(), &owner, label).await {
+            tracing::warn!("{label}: lease lost before sweep start, retrying");
+            tokio::time::sleep(std::time::Duration::from_secs(RECOMPUTE_RETRY_SLEEP_SECS)).await;
+            continue;
+        }
+
+        // Renew (owner-fenced) while the sweep runs. Returns only on ownership
+        // loss or renewal-deadline breach, which aborts the sweep via select!.
+        let renew_until_lost = async {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(
+                RECOMPUTE_LEASE_RENEW_SECS,
+            ));
+            // The interval's first tick is immediate, so the first loop
+            // iteration performs a real fenced renewal right away — if the
+            // task was paused between claim and here long enough to lose the
+            // lease, the sweep is aborted at once, not 60s later.
+            let mut last_confirmed = std::time::Instant::now();
+            loop {
+                tick.tick().await;
+                // Bound the whole renewal attempt (pool acquire included) by
+                // the remaining abort budget: an unbounded await here could
+                // block past our own lease expiry while the sweep keeps
+                // running, letting a successor claim and overlap us.
+                let remaining = RECOMPUTE_RENEW_ABORT_SECS
+                    .saturating_sub(last_confirmed.elapsed().as_secs())
+                    .max(1);
+                let renewal = sqlx::query(
+                    "UPDATE keyword_sync_state SET synced_at = NOW() WHERE id = $1 AND file_hash = $2",
+                )
+                .bind(kind.lease_id())
+                .bind(&owner)
+                .execute(pool);
+                match tokio::time::timeout(std::time::Duration::from_secs(remaining), renewal)
+                    .await
+                {
+                    Ok(Ok(r)) if r.rows_affected() == 0 => {
+                        tracing::warn!("{label}: lease ownership lost, aborting this sweep");
+                        return;
+                    }
+                    Ok(Ok(_)) => last_confirmed = std::time::Instant::now(),
+                    Ok(Err(e)) => tracing::warn!("{label}: lease renewal error: {e}"),
+                    Err(_) => tracing::warn!("{label}: lease renewal timed out after {remaining}s"),
+                }
+                // If we cannot CONFIRM a renewal for long enough that the lease
+                // could go stale under us, abort before a successor can claim —
+                // never run past our own lease.
+                if last_confirmed.elapsed().as_secs() >= RECOMPUTE_RENEW_ABORT_SECS {
+                    tracing::warn!(
+                        "{label}: no confirmed lease renewal for {RECOMPUTE_RENEW_ABORT_SECS}s, \
+                         aborting this sweep before the lease expires"
+                    );
+                    return;
+                }
+            }
+        };
+
+        let swept_ok = tokio::select! {
+            ok = kind.sweep(pool, &kf) => ok,
+            _ = renew_until_lost => false,
+        };
+
+        // Publish the completion marker ONLY through an atomic owner-fenced
+        // statement: a holder that silently lost its lease (runtime pause,
+        // renewal stall) cannot publish at all, so it can never overwrite a
+        // successor's completion state. `published` implies we owned the lease
+        // at the instant of publication.
+        let published = swept_ok
+            && publish_marker_fenced(
+                pool,
+                kind.marker_id(),
+                &ver_str,
+                kind.lease_id(),
+                &owner,
+                label,
+            )
+            .await;
+
+        release_lease(pool, kind.lease_id(), &owner, label).await;
+
+        if published {
+            // Swept and published — but do NOT return yet: the keywords may
+            // have changed again mid-sweep (e.g. an admin edit reverted to a
+            // previously recorded version, which a fresh contender would see
+            // as "already recorded" and skip). Loop once more: the top-of-loop
+            // reload compares the marker against the LIVE keyword state and
+            // exits only when they agree, otherwise we keep converging.
+            tracing::info!("{label}: swept version {ver_str}, reverifying against live state");
+            continue;
+        }
+        if swept_ok {
+            tracing::warn!(
+                "{label}: sweep finished but lease ownership could not be confirmed at \
+                 publication, retrying to reverify"
+            );
+        } else {
+            // Sweep failed (batch error) or was aborted on ownership loss.
+            tracing::warn!("{label}: sweep did not complete for version {ver_str}, backing off");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(RECOMPUTE_RETRY_SLEEP_SECS)).await;
+    }
+    tracing::error!(
+        "{label}: giving up after {RECOMPUTE_MAX_ATTEMPTS} attempts; will retry on next pod start"
+    );
+}
+
+/// Atomically publish the completion marker, fenced on lease ownership: the
+/// upsert proposes a row only when the lease row still carries our owner
+/// token, all in one statement (transaction-pooling safe). Returns `true`
+/// only when the marker was actually written — i.e. we owned the lease at the
+/// instant of publication. A holder that lost its lease cannot publish.
+async fn publish_marker_fenced(
+    pool: &PgPool,
+    marker_id: &str,
+    ver_str: &str,
+    lease_id: &str,
+    owner: &str,
+    label: &str,
+) -> bool {
+    match sqlx::query(
+        "INSERT INTO keyword_sync_state (id, file_hash, synced_at)
+         SELECT $1, $2, NOW()
+         WHERE EXISTS (
+             SELECT 1 FROM keyword_sync_state WHERE id = $3 AND file_hash = $4
+         )
+         ON CONFLICT (id) DO UPDATE
+           SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
+    )
+    .bind(marker_id)
+    .bind(ver_str)
+    .bind(lease_id)
+    .bind(owner)
+    .execute(pool)
+    .await
+    {
+        Ok(r) => r.rows_affected() > 0,
+        Err(e) => {
+            tracing::error!("{label}: fenced marker publication failed: {e}");
+            false
+        }
+    }
+}
+
+/// Owner-fenced lease renewal. Returns `true` only when we still own the
+/// lease (the fenced UPDATE touched the row). Errors count as "not confirmed"
+/// — callers must treat that as possible ownership loss.
+async fn renew_lease_fenced(pool: &PgPool, lease_id: &str, owner: &str, label: &str) -> bool {
+    match sqlx::query(
+        "UPDATE keyword_sync_state SET synced_at = NOW() WHERE id = $1 AND file_hash = $2",
+    )
+    .bind(lease_id)
+    .bind(owner)
+    .execute(pool)
+    .await
+    {
+        Ok(r) => r.rows_affected() > 0,
+        Err(e) => {
+            tracing::warn!("{label}: fenced lease renewal failed: {e}");
+            false
+        }
+    }
+}
+
+/// Delete the lease row, fenced on the owner token so a preempted holder can
+/// never remove a successor's lease.
+async fn release_lease(pool: &PgPool, lease_id: &str, owner: &str, label: &str) {
+    if let Err(e) = sqlx::query("DELETE FROM keyword_sync_state WHERE id = $1 AND file_hash = $2")
+        .bind(lease_id)
+        .bind(owner)
+        .execute(pool)
+        .await
+    {
+        tracing::warn!("{label}: failed to release lease (expires in {RECOMPUTE_LEASE_STALE_SECS}s): {e}");
+    }
+}
 
 /// Batch-recompute `stream.is_keyword_blocked` for all rows.
 ///
 /// Mirrors `recompute_keyword_blocked` but targets the `stream` table using
 /// stream-scoped keywords (scope 'stream' or 'all').
-pub async fn recompute_stream_keyword_blocked(
+async fn recompute_stream_keyword_blocked(
     pool: &PgPool,
-    version_tag: u64,
     stream_keywords: &[String],
     whitelist: &[String],
-) {
-    let ver_str = format!("{:016x}", version_tag);
-
+) -> bool {
     let kw_pattern: Option<String> = build_regex_pattern(stream_keywords);
     let wl_pattern: Option<String> = build_regex_pattern(whitelist);
 
@@ -581,12 +926,13 @@ pub async fn recompute_stream_keyword_blocked(
     {
         Ok(Some(id)) => id,
         Ok(None) => {
-            tracing::debug!("stream keyword blocked: stream table is empty, skipping recompute");
-            return;
+            // An empty table is trivially converged.
+            tracing::debug!("stream keyword blocked: stream table is empty, nothing to sweep");
+            return true;
         }
         Err(e) => {
             tracing::error!("recompute_stream_keyword_blocked failed to get max id: {e}");
-            return;
+            return false;
         }
     };
 
@@ -634,7 +980,7 @@ pub async fn recompute_stream_keyword_blocked(
                     tracing::error!(
                         "recompute_stream_keyword_blocked batch [{from_id}..{to_id}] failed: {e}"
                     );
-                    return;
+                    return false;
                 }
             }
         }
@@ -645,29 +991,16 @@ pub async fn recompute_stream_keyword_blocked(
         }
     }
 
-    // Record which keyword version was just recomputed so we skip on next startup.
-    match sqlx::query(
-        "INSERT INTO keyword_sync_state (id, file_hash, synced_at) VALUES ($1, $2, NOW())
-         ON CONFLICT (id) DO UPDATE SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
-    )
-    .bind(STREAM_KW_BLOCKED_RECOMPUTE_ID)
-    .bind(&ver_str)
-    .execute(pool)
-    .await
-    {
-        Err(e) => {
-            tracing::error!("recompute_stream_keyword_blocked: failed to record version: {e}");
-        }
-        _ => {
-            let elapsed = started.elapsed();
-            tracing::info!(
-                keywords = stream_keywords.len(),
-                updated = total_updated,
-                elapsed_ms = elapsed.as_millis(),
-                "keyword filter: stream is_keyword_blocked recompute complete"
-            );
-        }
-    }
+    // Completion-marker publication lives in kw_recompute_single_flight, fenced
+    // on lease ownership — a sweep that lost its lease must not publish.
+    let elapsed = started.elapsed();
+    tracing::info!(
+        keywords = stream_keywords.len(),
+        updated = total_updated,
+        elapsed_ms = elapsed.as_millis(),
+        "keyword filter: stream is_keyword_blocked recompute complete"
+    );
+    true
 }
 
 /// Check whether stream `is_keyword_blocked` needs a recompute and, if so, spawn one.
@@ -695,11 +1028,9 @@ pub async fn maybe_recompute_stream_keyword_blocked(pool: &PgPool, kf: &KeywordF
         "stream keyword blocked: version changed ({ver_str}), recomputing in background"
     );
     let pool = pool.clone();
-    let stream_keywords = kf.stream_keywords.clone();
-    let whitelist = kf.whitelist.clone();
-    tokio::spawn(async move {
-        recompute_stream_keyword_blocked(&pool, ver, &stream_keywords, &whitelist).await
-    });
+    tokio::spawn(
+        async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Stream).await },
+    );
 }
 
 /// Check whether `is_keyword_blocked` needs a recompute and, if so, spawn one.
@@ -727,37 +1058,56 @@ pub async fn maybe_recompute_keyword_blocked(pool: &PgPool, kf: &KeywordFilterCa
 
     tracing::info!("keyword blocked: version changed ({ver_str}), recomputing in background");
     let pool = pool.clone();
-    let keywords = kf.keywords.clone();
-    let whitelist = kf.whitelist.clone();
-    tokio::spawn(async move { recompute_keyword_blocked(&pool, ver, &keywords, &whitelist).await });
+    tokio::spawn(async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Media).await });
 }
 
 pub async fn load_keyword_filter_cache(pool: &PgPool) -> KeywordFilterCache {
+    // In-memory filtering degrades gracefully to "no filters" on a transient
+    // read failure; the DB-column sweeps must NOT (see
+    // try_load_keyword_filter_cache) — an empty state there would clear every
+    // blocked flag and record a fabricated version.
+    try_load_keyword_filter_cache(pool)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("keyword filter cache load failed, using empty filters: {e}");
+            KeywordFilterCache {
+                keywords: vec![],
+                stream_keywords: vec![],
+                whitelist: vec![],
+                nsfw_filter_enabled: false,
+            }
+        })
+}
+
+/// Fallible variant of [`load_keyword_filter_cache`], for callers that must
+/// distinguish "no keywords configured" from "could not read the keywords"
+/// (the single-flight sweeps: sweeping with silently-empty state would clear
+/// every `is_keyword_blocked` flag and record a fabricated version).
+pub async fn try_load_keyword_filter_cache(
+    pool: &PgPool,
+) -> Result<KeywordFilterCache, sqlx::Error> {
     let keywords: Vec<String> = sqlx::query_scalar(
         "SELECT LOWER(keyword) FROM keyword_filters WHERE is_active = true AND scope IN ('all', 'media') ORDER BY keyword",
     )
     .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    .await?;
 
     let stream_keywords: Vec<String> = sqlx::query_scalar(
         "SELECT LOWER(keyword) FROM keyword_filters WHERE is_active = true AND scope IN ('all', 'stream') ORDER BY keyword",
     )
     .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    .await?;
 
     let whitelist: Vec<String> =
         sqlx::query_scalar("SELECT LOWER(phrase) FROM keyword_whitelist ORDER BY phrase")
             .fetch_all(pool)
-            .await
-            .unwrap_or_default();
-    KeywordFilterCache {
+            .await?;
+    Ok(KeywordFilterCache {
         keywords,
         stream_keywords,
         whitelist,
         nsfw_filter_enabled: false, // caller sets this from config after loading
-    }
+    })
 }
 
 /// Sync `keywords/media-keywords.txt` into the DB.
@@ -890,14 +1240,16 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
         return;
     }
 
-    let ver = KeywordFilterCache {
-        keywords: keywords.clone(),
-        stream_keywords: vec![],
-        whitelist: whitelist.clone(),
-        nsfw_filter_enabled: false,
+    // Converge the media flags in the background via the deployment-wide
+    // single-flight lease (which reloads the merged file+admin keyword state
+    // from the DB — computing a version from the file lists alone here would
+    // disagree with the DB-derived tag whenever admin-managed rows exist).
+    {
+        let pool = pool.clone();
+        tokio::spawn(
+            async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Media).await },
+        );
     }
-    .media_version_tag();
-    recompute_keyword_blocked(pool, ver, &keywords, &whitelist).await;
 
     tracing::info!(
         "keyword sync: done — {} keywords, {} whitelist phrases (hash {hash})",
@@ -1010,20 +1362,15 @@ pub async fn sync_stream_keywords_from_file(pool: &PgPool) {
     }
 
     // Load the current whitelist for the recompute
-    let whitelist: Vec<String> =
-        sqlx::query_scalar("SELECT LOWER(phrase) FROM keyword_whitelist ORDER BY phrase")
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default();
-
-    let ver = KeywordFilterCache {
-        keywords: vec![],
-        stream_keywords: stream_keywords.clone(),
-        whitelist: whitelist.clone(),
-        nsfw_filter_enabled: false,
+    // Converge the stream flags in the background via the deployment-wide
+    // single-flight lease (see the media sync above for why the version must
+    // come from the DB, not the file lists).
+    {
+        let pool = pool.clone();
+        tokio::spawn(
+            async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Stream).await },
+        );
     }
-    .version_tag();
-    recompute_stream_keyword_blocked(pool, ver, &stream_keywords, &whitelist).await;
 
     tracing::info!(
         "stream keyword sync: done — {} keywords (hash {hash})",

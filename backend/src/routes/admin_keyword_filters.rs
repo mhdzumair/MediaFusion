@@ -25,8 +25,7 @@ use serde_json::json;
 use sha2::Sha256;
 
 use crate::state::{
-    AppState, load_keyword_filter_cache, recompute_keyword_blocked,
-    recompute_stream_keyword_blocked,
+    AppState, KwRecomputeKind, kw_recompute_single_flight, load_keyword_filter_cache,
 };
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -146,23 +145,18 @@ pub struct WhitelistRow {
 async fn reload_cache(state: &AppState) {
     let mut new_cache = load_keyword_filter_cache(&state.pool).await;
     new_cache.nsfw_filter_enabled = state.config.poster_nsfw_enabled;
-    let media_ver = new_cache.media_version_tag();
-    let stream_ver = new_cache.version_tag();
-    let keywords = new_cache.keywords.clone();
-    let stream_kws = new_cache.stream_keywords.clone();
-    let whitelist = new_cache.whitelist.clone();
-    let whitelist2 = whitelist.clone();
     if let Ok(mut w) = state.keyword_filters.write() {
         *w = new_cache;
     }
+    // Converge the blocked flags via the deployment-wide single-flight lease —
+    // an admin keyword edit must not launch unguarded full-table sweeps
+    // alongside whatever other processes are doing.
     let pool = state.pool.clone();
     let pool2 = pool.clone();
-    tokio::spawn(async move {
-        recompute_keyword_blocked(&pool, media_ver, &keywords, &whitelist).await
-    });
-    tokio::spawn(async move {
-        recompute_stream_keyword_blocked(&pool2, stream_ver, &stream_kws, &whitelist2).await
-    });
+    tokio::spawn(async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Media).await });
+    tokio::spawn(
+        async move { kw_recompute_single_flight(&pool2, KwRecomputeKind::Stream).await },
+    );
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
