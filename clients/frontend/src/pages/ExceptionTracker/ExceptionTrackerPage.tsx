@@ -284,7 +284,7 @@ function ExceptionRow({
 export function ExceptionTrackerPage() {
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(20)
-  const [typeFilter, setTypeFilter] = useState('')
+  const [searchFilter, setSearchFilter] = useState('')
   const [selectedFp, setSelectedFp] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
 
@@ -299,7 +299,7 @@ export function ExceptionTrackerPage() {
   } = useExceptionList({
     page,
     per_page: perPage,
-    exception_type: typeFilter || undefined,
+    search: searchFilter || undefined,
   })
   const clearMutation = useClearException()
   const clearAllMutation = useClearAllExceptions()
@@ -406,21 +406,21 @@ export function ExceptionTrackerPage() {
             {/* Type filter */}
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <Input
-                placeholder="Filter by exception type..."
-                value={typeFilter}
+                placeholder="Search exceptions by error message, type, or source..."
+                value={searchFilter}
                 onChange={(e) => {
-                  setTypeFilter(e.target.value)
+                  setSearchFilter(e.target.value)
                   setPage(1)
                 }}
                 className="h-8 max-w-xs text-sm"
               />
-              {typeFilter && (
+              {searchFilter && (
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 shrink-0"
                   onClick={() => {
-                    setTypeFilter('')
+                    setSearchFilter('')
                     setPage(1)
                   }}
                 >
@@ -501,7 +501,7 @@ export function ExceptionTrackerPage() {
             <div className="flex flex-col items-center justify-center py-16 text-center space-y-2">
               <Bug className="h-8 w-8 text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground">
-                {typeFilter ? 'No exceptions match this filter.' : 'No exceptions have been recorded.'}
+                {searchFilter ? 'No exceptions match this search.' : 'No exceptions have been recorded.'}
               </p>
             </div>
           ) : (

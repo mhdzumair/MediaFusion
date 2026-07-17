@@ -42,6 +42,9 @@ export interface AsyncMultiSelectProps {
 
   // Debounce delay for search (ms)
   debounceMs?: number
+
+  // Keep currently selected values at the top of the dropdown list
+  pinSelectedToTop?: boolean
 }
 
 export function AsyncMultiSelect({
@@ -61,6 +64,7 @@ export function AsyncMultiSelect({
   maxDisplayed = 3,
   onCreate,
   debounceMs = 300,
+  pinSelectedToTop = true,
 }: AsyncMultiSelectProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState('')
@@ -73,6 +77,24 @@ export function AsyncMultiSelect({
 
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const loadMoreSentinelRef = React.useRef<HTMLDivElement>(null)
+
+  const mergeOptions = React.useCallback(
+    (results: AsyncMultiSelectOption[]) => {
+      if (!pinSelectedToTop || selected.length === 0) {
+        return results
+      }
+
+      const selectedOptions = selected.map((value) => {
+        const fromResults = results.find((option) => option.value === value)
+        const fromInitial = initialOptions.find((option) => option.value === value)
+        return fromResults ?? fromInitial ?? { value, label: value }
+      })
+      const selectedValues = new Set(selected)
+      const remaining = results.filter((option) => !selectedValues.has(option.value))
+      return [...selectedOptions, ...remaining]
+    },
+    [initialOptions, pinSelectedToTop, selected],
+  )
 
   // Debounce search input
   React.useEffect(() => {
@@ -93,7 +115,7 @@ export function AsyncMultiSelect({
       try {
         const results = await onSearch(debouncedSearch)
         if (!cancelled) {
-          setOptions(results)
+          setOptions(mergeOptions(results))
         }
       } catch (error) {
         console.error('Failed to fetch options:', error)
@@ -112,7 +134,7 @@ export function AsyncMultiSelect({
     return () => {
       cancelled = true
     }
-  }, [debouncedSearch, open, onSearch])
+  }, [debouncedSearch, open, onSearch, mergeOptions])
 
   // Keep internal has-more state in sync with parent.
   React.useEffect(() => {
@@ -144,7 +166,7 @@ export function AsyncMultiSelect({
         setSearch('')
         // Refresh options to include the new item
         const results = await onSearch('')
-        setOptions(results)
+        setOptions(mergeOptions(results))
       } catch (error) {
         console.error('Failed to create item:', error)
       } finally {
@@ -169,7 +191,7 @@ export function AsyncMultiSelect({
     setIsLoadingMore(true)
     try {
       const moreOptions = await onLoadMore()
-      setOptions((prev) => [...prev, ...moreOptions])
+      setOptions((prev) => mergeOptions([...prev, ...moreOptions]))
       if (moreOptions.length === 0) {
         setInternalHasMore(false)
       }
@@ -178,7 +200,7 @@ export function AsyncMultiSelect({
     } finally {
       setIsLoadingMore(false)
     }
-  }, [onLoadMore, isLoadingMore, internalHasMore])
+  }, [onLoadMore, isLoadingMore, internalHasMore, mergeOptions])
 
   React.useEffect(() => {
     if (!open || !loadMoreOnScroll || !onLoadMore || !internalHasMore) return

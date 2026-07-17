@@ -38,6 +38,8 @@ export interface ExceptionListResponse {
 export interface ExceptionListParams {
   page?: number
   per_page?: number
+  search?: string
+  /** @deprecated Use `search` instead */
   exception_type?: string
 }
 

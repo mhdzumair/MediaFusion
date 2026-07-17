@@ -135,17 +135,22 @@ async fn validate_one(
                 Some(t) => t,
                 None => return ValidationResult::error("DebridLink token is missing"),
             };
-            match http
-                .get("https://debrid-link.com/api/v2/user")
-                .bearer_auth(token)
-                .send()
-                .await
-            {
-                Ok(r) if r.status().is_success() => ValidationResult::success(),
-                Ok(r) => ValidationResult::error(format!(
-                    "Failed to validate DebridLink credentials (HTTP {})",
-                    r.status()
-                )),
+            match super::torrents::debridlink::resolve_bearer(http, token).await {
+                Ok(bearer) => match http
+                    .get("https://debrid-link.com/api/v2/account/infos")
+                    .bearer_auth(&bearer)
+                    .send()
+                    .await
+                {
+                    Ok(r) if r.status().is_success() => ValidationResult::success(),
+                    Ok(r) => ValidationResult::error(format!(
+                        "Failed to validate DebridLink credentials (HTTP {})",
+                        r.status()
+                    )),
+                    Err(e) => ValidationResult::error(format!(
+                        "Failed to validate DebridLink credentials: {e}"
+                    )),
+                },
                 Err(e) => ValidationResult::error(format!(
                     "Failed to validate DebridLink credentials: {e}"
                 )),

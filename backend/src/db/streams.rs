@@ -154,7 +154,11 @@ pub async fn fetch_streams_bulk(
         .fetch_all(pool)
         .await
         .unwrap_or_else(|e| {
-            warn!("movie streams query: {e}");
+            if e.to_string().contains("NotificationResponse") {
+                tracing::debug!("movie streams query: transient NotificationResponse on pool connection: {e}");
+            } else {
+                warn!("movie streams query: {e}");
+            }
             vec![]
         })
     };
@@ -249,7 +253,11 @@ pub async fn fetch_usenet_streams_bulk(
         .fetch_all(pool)
         .await
         .unwrap_or_else(|e| {
-            warn!("usenet movie streams query: {e}");
+            if e.to_string().contains("NotificationResponse") {
+                tracing::debug!("usenet movie streams query: transient NotificationResponse on pool connection: {e}");
+            } else {
+                warn!("usenet movie streams query: {e}");
+            }
             vec![]
         })
     };

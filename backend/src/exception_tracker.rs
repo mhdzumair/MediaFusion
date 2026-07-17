@@ -233,7 +233,7 @@ pub async fn query_list(
     redis: &fred::clients::Client,
     page: i64,
     per_page: i64,
-    exception_type: Option<&str>,
+    search: Option<&str>,
 ) -> serde_json::Value {
     use fred::prelude::SortedSetsInterface;
     use serde_json::json;
@@ -262,10 +262,22 @@ pub async fn query_list(
             let _ = redis.zrem::<i64, _, _>(INDEX_KEY, fp.clone()).await;
             continue;
         }
-        if let Some(et) = exception_type
-            && data.get("type").map(|s| s.as_str()) != Some(et)
-        {
-            continue;
+        if let Some(term) = search {
+            let term = term.trim().to_ascii_lowercase();
+            if !term.is_empty() {
+                let haystacks = [
+                    data.get("type").map(String::as_str).unwrap_or(""),
+                    data.get("message").map(String::as_str).unwrap_or(""),
+                    data.get("source").map(String::as_str).unwrap_or(""),
+                    data.get("traceback").map(String::as_str).unwrap_or(""),
+                ];
+                let matches = haystacks
+                    .iter()
+                    .any(|value| value.to_ascii_lowercase().contains(&term));
+                if !matches {
+                    continue;
+                }
+            }
         }
         items.push(json!({
             "fingerprint": fp,

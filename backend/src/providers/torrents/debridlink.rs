@@ -76,7 +76,7 @@ async fn exchange_refresh_token(
         })
 }
 
-async fn resolve_bearer(http: &reqwest::Client, token: &str) -> Result<String, ProviderError> {
+pub async fn resolve_bearer(http: &reqwest::Client, token: &str) -> Result<String, ProviderError> {
     match decode_token(token) {
         TokenKind::Private(t) => Ok(t),
         TokenKind::Refresh(rt) => exchange_refresh_token(http, &rt).await,

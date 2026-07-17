@@ -64,7 +64,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::{routes::auth_guard, state::AppState};
+use crate::{db::delete_media_by_ids, routes::auth_guard, state::AppState};
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -1137,8 +1137,14 @@ pub async fn migrate_media(
 
     let mut migrated_sources: Vec<serde_json::Value> = Vec::new();
     let mut total_stream_links: u64 = 0;
+    let mut total_file_links: u64 = 0;
+    let to_id_i32 = to_id as i32;
 
     for from_id in &from_ids {
+        let from_id_i32 = *from_id as i32;
+        let mut stream_links_migrated = 0u64;
+        let mut file_links_migrated = 0u64;
+
         let res = sqlx::query(
             r#"UPDATE stream_media_link s SET media_id = $1
                WHERE media_id = $2
@@ -1147,34 +1153,86 @@ pub async fn migrate_media(
                    WHERE t.stream_id = s.stream_id AND t.media_id = $1
                  )"#,
         )
-        .bind(to_id as i32)
-        .bind(*from_id as i32)
+        .bind(to_id_i32)
+        .bind(from_id_i32)
         .execute(&state.pool)
         .await;
         match res {
             Ok(r) => {
-                let links = r.rows_affected();
-                total_stream_links += links;
-                migrated_sources.push(json!({
-                    "from_media_id": from_id,
-                    "stream_links_migrated": links,
-                    "stream_links_deleted_as_duplicates": 0,
-                    "file_links_migrated": 0,
-                    "file_links_deleted_as_duplicates": 0
-                }));
+                stream_links_migrated = r.rows_affected();
+                total_stream_links += stream_links_migrated;
             }
             Err(e) => {
                 tracing::error!("migrate_media stream_media_link error for id {from_id}: {e}");
             }
         }
-    }
 
-    // Delete the source media rows
-    let del_result = sqlx::query("DELETE FROM media WHERE id = ANY($1)")
-        .bind(&from_ids)
+        let file_res = sqlx::query(
+            r#"UPDATE file_media_link f SET media_id = $1
+               WHERE media_id = $2
+                 AND NOT EXISTS (
+                   SELECT 1 FROM file_media_link t
+                   WHERE t.file_id = f.file_id
+                     AND t.season_number = f.season_number
+                     AND t.episode_number = f.episode_number
+                     AND t.media_id = $1
+                 )"#,
+        )
+        .bind(to_id_i32)
+        .bind(from_id_i32)
         .execute(&state.pool)
         .await;
-    if let Err(e) = del_result {
+        match file_res {
+            Ok(r) => {
+                file_links_migrated = r.rows_affected();
+                total_file_links += file_links_migrated;
+            }
+            Err(e) => {
+                tracing::error!("migrate_media file_media_link error for id {from_id}: {e}");
+            }
+        }
+
+        migrated_sources.push(json!({
+            "from_media_id": from_id,
+            "stream_links_migrated": stream_links_migrated,
+            "stream_links_deleted_as_duplicates": 0,
+            "file_links_migrated": file_links_migrated,
+            "file_links_deleted_as_duplicates": 0
+        }));
+    }
+
+    // Migrate user records to the target media before deleting sources.
+    for from_id in &from_ids {
+        let from_id_i32 = *from_id as i32;
+        if let Err(e) = sqlx::query("UPDATE watch_history SET media_id = $1 WHERE media_id = $2")
+            .bind(to_id_i32)
+            .bind(from_id_i32)
+            .execute(&state.pool)
+            .await
+        {
+            tracing::error!("migrate_media watch_history error for id {from_id}: {e}");
+        }
+        if let Err(e) =
+            sqlx::query("UPDATE playback_tracking SET media_id = $1 WHERE media_id = $2")
+                .bind(to_id_i32)
+                .bind(from_id_i32)
+                .execute(&state.pool)
+                .await
+        {
+            tracing::error!("migrate_media playback_tracking error for id {from_id}: {e}");
+        }
+    }
+
+    let from_ids_i32: Vec<i32> = from_ids.iter().map(|id| *id as i32).collect();
+    if let Err(e) = sqlx::query("DELETE FROM provider_metadata WHERE media_id = ANY($1)")
+        .bind(&from_ids_i32)
+        .execute(&state.pool)
+        .await
+    {
+        tracing::error!("migrate_media provider_metadata delete error: {e}");
+    }
+
+    if let Err(e) = delete_media_by_ids(&state.pool, &from_ids_i32).await {
         tracing::error!("migrate_media DELETE media error: {e}");
     }
 
@@ -1188,7 +1246,7 @@ pub async fn migrate_media(
         "to_media_id": to_id,
         "stream_links_migrated": total_stream_links,
         "stream_links_deleted_as_duplicates": 0,
-        "file_links_migrated": 0,
+        "file_links_migrated": total_file_links,
         "file_links_deleted_as_duplicates": 0
     }))
     .into_response()

@@ -816,6 +816,9 @@ pub async fn reset_contribution_settings(
 pub struct ExceptionListQuery {
     pub page: Option<i64>,
     pub per_page: Option<i64>,
+    /// Case-insensitive keyword search across type, message, source, and traceback.
+    pub search: Option<String>,
+    /// Deprecated alias for `search` (exact type match kept for backward compatibility).
     pub exception_type: Option<String>,
 }
 
@@ -853,13 +856,11 @@ pub async fn list_exceptions(
     }
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
-    let result = crate::exception_tracker::query_list(
-        &state.redis,
-        page,
-        per_page,
-        params.exception_type.as_deref(),
-    )
-    .await;
+    let search = params
+        .search
+        .as_deref()
+        .or(params.exception_type.as_deref());
+    let result = crate::exception_tracker::query_list(&state.redis, page, per_page, search).await;
     Json(result).into_response()
 }
 
