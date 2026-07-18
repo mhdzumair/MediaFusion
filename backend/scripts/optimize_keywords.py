@@ -78,6 +78,7 @@ def main() -> None:
             print(f"  - {redundant!r:40s}  covered by → {covers!r}")
 
     if not args.dry_run:
+        kept = sorted(kept)
         path.write_text("\n".join(kept) + "\n", encoding="utf-8")
         print(f"\nWrote {len(kept)} keywords to {path}")
     else:
