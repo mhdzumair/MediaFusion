@@ -393,6 +393,39 @@ class ApiClient {
 
     return data as T
   }
+
+  async getBlob(endpoint: string, retry = true): Promise<Blob> {
+    const headers: HeadersInit = {}
+    if (this.accessToken) {
+      headers['Authorization'] = `Bearer ${this.accessToken}`
+    }
+    if (this.apiKey) {
+      headers['X-API-Key'] = this.apiKey
+    }
+
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout(120_000),
+    })
+
+    if (response.status === 401 && retry) {
+      const refreshed = await this.refreshAccessToken()
+      if (refreshed) {
+        return this.getBlob(endpoint, false)
+      }
+      this.clearTokens()
+      throw new Error('Session expired. Please log in again.')
+    }
+
+    if (!response.ok) {
+      throw new ApiRequestError(`HTTP error ${response.status}`, response.status, {
+        detail: `HTTP error ${response.status}`,
+      })
+    }
+
+    return response.blob()
+  }
 }
 
 // Custom error class for better error handling

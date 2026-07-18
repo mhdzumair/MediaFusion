@@ -23,6 +23,14 @@ pub async fn append_forwarded_video(
     chat_id: i64,
     raw_input: serde_json::Value,
 ) {
+    if let Some(existing) = state_store::get_batch(state, user_id).await
+        && existing.is_complete()
+        && !existing.awaiting_series_input
+        && !existing.awaiting_season_input
+    {
+        state_store::clear_batch(state, user_id).await;
+    }
+
     let mut batch = state_store::get_batch(state, user_id)
         .await
         .unwrap_or_else(|| BatchState {

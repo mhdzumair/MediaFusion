@@ -10,7 +10,11 @@ use super::{
     batch,
     callback::CallbackAction,
     content_exists, detect, import, matches,
-    metadata::{field_options, is_valid_poster_url},
+    metadata::{
+        field_options, format_audio_display, is_valid_poster_url,
+        seed_metadata_overrides_from_analysis, selected_languages, toggle_audio_override,
+        toggle_channel_override, toggle_language_override,
+    },
     model::{ContentType, ConversationState, ConversationStep},
     state_store, text,
 };
@@ -106,6 +110,22 @@ pub async fn handle_media_type_selection(
     conv.analysis_result = Some(analysis.clone());
     conv.matches = analysis.get("matches").and_then(|v| v.as_array()).cloned();
 
+    if media_type != "sports"
+        && conv.matches.as_ref().is_none_or(|m| m.is_empty())
+        && let Some(title) = analysis
+            .get("parsed_title")
+            .or_else(|| analysis.get("torrent_name"))
+            .or_else(|| analysis.get("file_name"))
+            .and_then(|v| v.as_str())
+            .filter(|t| !t.is_empty() && !t.eq_ignore_ascii_case("video"))
+    {
+        let year = analysis
+            .get("year")
+            .and_then(|v| v.as_i64())
+            .map(|y| y as i32);
+        conv.matches = Some(matches::search_by_title(state, title, year, media_type).await);
+    }
+
     if let Some(reason) = content_exists::check_content_already_exists(&state.pool, &conv).await {
         let _ = api
             .edit_message_text(
@@ -155,6 +175,7 @@ pub async fn handle_sports_category(
     conv.sports_category = Some(category.to_string());
     conv.step = ConversationStep::AwaitingMetadataReview;
     let analysis = conv.analysis_result.clone().unwrap_or(json!({}));
+    seed_metadata_overrides_from_analysis(&mut conv.metadata_overrides, &analysis);
     let title = analysis
         .get("parsed_title")
         .or_else(|| analysis.get("file_name"))
@@ -220,6 +241,7 @@ pub async fn handle_match_selection(
     };
 
     conv.selected_match = Some(selected);
+    seed_metadata_overrides_from_analysis(&mut conv.metadata_overrides, &analysis);
     conv.step = ConversationStep::AwaitingMetadataReview;
     conv.touch();
     state_store::save_conversation(state, &conv).await;
@@ -723,6 +745,22 @@ pub async fn handle_meta_edit(
     conv.touch();
     state_store::save_conversation(state, &conv).await;
 
+    if field == "languages" {
+        let (msg, kb) = languages_edit_view(state, user_id, &conv).await;
+        let _ = api
+            .edit_message_text(chat_id, message_id, &msg, Some(kb))
+            .await;
+        return;
+    }
+
+    if field == "audio" {
+        let (msg, kb) = audio_edit_view(state, user_id, &conv).await;
+        let _ = api
+            .edit_message_text(chat_id, message_id, &msg, Some(kb))
+            .await;
+        return;
+    }
+
     let options = field_options(field);
     let mut rows: Vec<Value> = vec![];
     for chunk in options.chunks(2) {
@@ -766,6 +804,49 @@ pub async fn handle_meta_val(
     let Some(mut conv) = state_store::get_conversation(state, user_id).await else {
         return;
     };
+
+    if field == "languages" {
+        let analysis = conv.analysis_result.clone().unwrap_or(json!({}));
+        toggle_language_override(&mut conv.metadata_overrides, value, &analysis);
+        conv.step = ConversationStep::AwaitingFieldEdit;
+        conv.editing_field = Some(field.to_string());
+        conv.touch();
+        state_store::save_conversation(state, &conv).await;
+        let (msg, kb) = languages_edit_view(state, user_id, &conv).await;
+        let _ = api
+            .edit_message_text(chat_id, message_id, &msg, Some(kb))
+            .await;
+        return;
+    }
+
+    if field == "audio_formats" {
+        let analysis = conv.analysis_result.clone().unwrap_or(json!({}));
+        toggle_audio_override(&mut conv.metadata_overrides, value, &analysis);
+        conv.step = ConversationStep::AwaitingFieldEdit;
+        conv.editing_field = Some("audio".to_string());
+        conv.touch();
+        state_store::save_conversation(state, &conv).await;
+        let (msg, kb) = audio_edit_view(state, user_id, &conv).await;
+        let _ = api
+            .edit_message_text(chat_id, message_id, &msg, Some(kb))
+            .await;
+        return;
+    }
+
+    if field == "channels" {
+        let analysis = conv.analysis_result.clone().unwrap_or(json!({}));
+        toggle_channel_override(&mut conv.metadata_overrides, value, &analysis);
+        conv.step = ConversationStep::AwaitingFieldEdit;
+        conv.editing_field = Some("audio".to_string());
+        conv.touch();
+        state_store::save_conversation(state, &conv).await;
+        let (msg, kb) = audio_edit_view(state, user_id, &conv).await;
+        let _ = api
+            .edit_message_text(chat_id, message_id, &msg, Some(kb))
+            .await;
+        return;
+    }
+
     if let Some(obj) = conv.metadata_overrides.as_object_mut() {
         obj.insert(field.to_string(), json!(value));
     }
@@ -777,6 +858,123 @@ pub async fn handle_meta_val(
     let _ = api
         .edit_message_text(chat_id, message_id, &msg, Some(kb))
         .await;
+}
+
+async fn languages_edit_view(
+    state: &AppState,
+    user_id: i64,
+    conv: &ConversationState,
+) -> (String, Value) {
+    let analysis = conv.analysis_result.clone().unwrap_or(json!({}));
+    let selected = selected_languages(&analysis, &conv.metadata_overrides);
+    let selected_line = if selected.is_empty() {
+        "_None selected — tap languages to add._".to_string()
+    } else {
+        selected.join(", ")
+    };
+
+    let options = field_options("languages");
+    let mut rows: Vec<Value> = vec![];
+    for chunk in options.chunks(2) {
+        let mut row = vec![];
+        for lang in chunk {
+            let prefix = if selected.iter().any(|s| s == *lang) {
+                "✓ "
+            } else {
+                ""
+            };
+            row.push(json!({
+                "text": format!("{prefix}{lang}"),
+                "callback_data": CallbackAction::MetaVal {
+                    user_id,
+                    field: "languages".to_string(),
+                    value: lang.to_string(),
+                }.encode(state).await,
+            }));
+        }
+        rows.push(json!(row));
+    }
+    rows.push(json!([{
+        "text": "✅ Done",
+        "callback_data": CallbackAction::BackReview { user_id }.encode(state).await,
+    }]));
+
+    (
+        format!(
+            "🌐 *Select Languages*\n\n\
+             Tap to toggle. You can select multiple.\n\n\
+             *Selected:* {selected_line}"
+        ),
+        json!({ "inline_keyboard": rows }),
+    )
+}
+
+async fn audio_edit_view(
+    state: &AppState,
+    user_id: i64,
+    conv: &ConversationState,
+) -> (String, Value) {
+    let analysis = conv.analysis_result.clone().unwrap_or(json!({}));
+    let selected_display = format_audio_display(&analysis, &conv.metadata_overrides);
+    let selected_formats =
+        super::metadata::selected_audio_formats(&analysis, &conv.metadata_overrides);
+    let selected_channels = super::metadata::selected_channels(&analysis, &conv.metadata_overrides);
+
+    let mut rows: Vec<Value> = vec![];
+
+    for chunk in field_options("audio_formats").chunks(2) {
+        let mut row = vec![];
+        for format in chunk {
+            let prefix = if selected_formats.iter().any(|s| s == *format) {
+                "✓ "
+            } else {
+                ""
+            };
+            row.push(json!({
+                "text": format!("{prefix}{format}"),
+                "callback_data": CallbackAction::MetaVal {
+                    user_id,
+                    field: "audio_formats".to_string(),
+                    value: format.to_string(),
+                }.encode(state).await,
+            }));
+        }
+        rows.push(json!(row));
+    }
+
+    for chunk in field_options("channels").chunks(2) {
+        let mut row = vec![];
+        for channel in chunk {
+            let prefix = if selected_channels.iter().any(|s| s == *channel) {
+                "✓ "
+            } else {
+                ""
+            };
+            row.push(json!({
+                "text": format!("{prefix}{channel}"),
+                "callback_data": CallbackAction::MetaVal {
+                    user_id,
+                    field: "channels".to_string(),
+                    value: channel.to_string(),
+                }.encode(state).await,
+            }));
+        }
+        rows.push(json!(row));
+    }
+
+    rows.push(json!([{
+        "text": "✅ Done",
+        "callback_data": CallbackAction::BackReview { user_id }.encode(state).await,
+    }]));
+
+    (
+        format!(
+            "🔊 *Select Audio*\n\n\
+             Tap formats/channels to toggle. You can select multiple.\n\n\
+             *Selected:* {selected_display}"
+        ),
+        json!({ "inline_keyboard": rows }),
+    )
 }
 
 pub async fn handle_batch_summary(

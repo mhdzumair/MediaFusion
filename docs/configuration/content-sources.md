@@ -54,6 +54,22 @@ These scrapers run on a schedule to keep catalogs fresh. Enable the ones relevan
 | `YOUTUBE_API_KEY` | `None` | Required when YouTube scraping is enabled |
 | `IS_SCRAP_FROM_TELEGRAM_BACKGROUND` | `false` | Scrape Telegram channels |
 
+See [Telegram Integration](../integrations/telegram.md) for bot setup, per-user sessions, channel configuration, and scrape depth options.
+
+## Telegram channel scraping
+
+Per-user Telegram sessions scrape channels/groups the user has joined. Requires `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, and bot configuration.
+
+| Variable | Default | Description |
+|---|---|---|
+| `TELEGRAM_API_ID` | — | Telegram user API ID (from my.telegram.org) |
+| `TELEGRAM_API_HASH` | — | Telegram user API hash |
+| `MIN_SCRAPING_VIDEO_SIZE` | `26214400` | Minimum video size in bytes (25 MB) |
+| `TELEGRAM_BACKGROUND_SCRAPER_CRONTAB` | *(built-in)* | Cron for the background scraper |
+| `DISABLE_TELEGRAM_BACKGROUND_SCRAPER` | `false` | Disable scheduled Telegram scraping |
+
+Manual scrapes (web UI or `/scrape` in the bot) default to **25 messages per channel**; users can choose a custom count or full history. See the [Telegram integration guide](../integrations/telegram.md#running-scrapes) for details.
+
 ## Live search
 
 | Variable | Default | Description |

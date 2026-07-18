@@ -136,6 +136,7 @@ pub async fn store_forwarded_video(
             .map(str::to_string),
         file_id: Some(file_id.to_string()),
         file_unique_id: file_unique_id.map(str::to_string),
+        document_id: None,
         backup_chat_id: backup_chat_id.clone(),
         backup_message_id: backup_message_id.map(|id| id as i32),
     };

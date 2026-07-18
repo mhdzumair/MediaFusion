@@ -145,6 +145,7 @@ pub struct TelegramStoreInput {
     /// Bot contribution fields (optional).
     pub file_id: Option<String>,
     pub file_unique_id: Option<String>,
+    pub document_id: Option<i64>,
     pub backup_chat_id: Option<String>,
     pub backup_message_id: Option<i32>,
 }

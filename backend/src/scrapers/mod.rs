@@ -18,6 +18,7 @@ pub mod rss;
 pub mod source_health;
 pub mod stream_convert;
 pub mod telegram;
+pub mod telegram_clients;
 pub mod title_queries;
 pub mod torbox_search;
 pub mod torrent_info;
@@ -119,6 +120,8 @@ pub struct ScrapedTelegramStream {
     pub episode: Option<i32>,
     /// IMDb ID extracted from message caption (feed scrape mode).
     pub caption_imdb_id: Option<String>,
+    pub document_id: Option<i64>,
+    pub file_unique_id: Option<String>,
 }
 
 /// Metadata passed to scrapers at request time.

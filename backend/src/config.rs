@@ -195,12 +195,6 @@ pub struct AppConfig {
     pub telegram_api_id: Option<i32>,
     /// Telegram API hash.
     pub telegram_api_hash: Option<String>,
-    /// Base64-encoded grammers session bytes (separate from Telethon session).
-    pub telegram_grammers_session: Option<String>,
-    /// List of channel @usernames to scrape for media files.
-    pub telegram_scraping_channels: Vec<String>,
-    /// Maximum number of messages to fetch per channel during live scrape.
-    pub telegram_scrape_message_limit: i32,
     /// Minimum video file size in bytes to consider (default 50 MB).
     pub min_scraping_video_size: u64,
 
@@ -659,18 +653,6 @@ impl AppConfig {
             telegram_api_id: env("TELEGRAM_API_ID")
                 .ok().and_then(|s| s.parse().ok()),
             telegram_api_hash: env("TELEGRAM_API_HASH").ok().filter(|s| !s.is_empty()),
-            telegram_grammers_session: env("TELEGRAM_GRAMMERS_SESSION").ok().filter(|s| !s.is_empty()),
-            telegram_scraping_channels: env("TELEGRAM_SCRAPING_CHANNELS")
-                .ok()
-                .map(|s| {
-                    s.split(',')
-                        .map(|c| c.trim().to_string())
-                        .filter(|c| !c.is_empty())
-                        .collect()
-                })
-                .unwrap_or_default(),
-            telegram_scrape_message_limit: env("TELEGRAM_SCRAPE_MESSAGE_LIMIT")
-                .ok().and_then(|s| s.parse().ok()).unwrap_or(100),
             min_scraping_video_size: env("MIN_SCRAPING_VIDEO_SIZE")
                 .ok().and_then(|s| s.parse().ok()).unwrap_or(26_214_400),
             enable_iptv_import: env("ENABLE_IPTV_IMPORT")

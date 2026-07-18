@@ -248,31 +248,10 @@ async fn run_torrent_scrape(
         .collect();
     crate::db::store_torrent_streams(&state.pool, &normalized, &opts).await;
 
-    // ── Telegram live scraper (Phase 2c) ─────────────────────────────────────
-    if let Some(ref tg_client) = state.telegram {
-        let user_channel_list = if let Some(uid) = user_data.user_id {
-            crate::db::telegram_channels::user_scraping_channels(&state.pool, uid).await
-        } else {
-            vec![]
-        };
-        let kf_tg = state
-            .keyword_filters
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        let tg_results = telegram::scrape(
-            tg_client,
-            &state.config.telegram_scraping_channels,
-            &user_channel_list,
-            meta,
-            media_type,
-            season,
-            episode,
-            state.config.telegram_scrape_message_limit,
-            state.config.min_scraping_video_size,
-            &kf_tg,
-        )
-        .await;
+    // ── Telegram live scraper ────────────────────────────────────────────────
+    if let Some(uid) = user_data.user_id {
+        let tg_results =
+            telegram::scrape_for_user(state, uid, meta, media_type, season, episode).await;
 
         let tg_opts =
             stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
@@ -347,30 +326,9 @@ pub async fn run_forced(
     // Forced scrape explicitly invalidates the cache so the caller sees fresh results.
     invalidate_stream_cache(&state.redis, meta, media_type, season, episode, scope).await;
 
-    if let Some(ref tg_client) = state.telegram {
-        let user_channel_list = if let Some(uid) = user_data.user_id {
-            crate::db::telegram_channels::user_scraping_channels(&state.pool, uid).await
-        } else {
-            vec![]
-        };
-        let kf_tg2 = state
-            .keyword_filters
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        let tg_results = telegram::scrape(
-            tg_client,
-            &state.config.telegram_scraping_channels,
-            &user_channel_list,
-            meta,
-            media_type,
-            season,
-            episode,
-            state.config.telegram_scrape_message_limit,
-            state.config.min_scraping_video_size,
-            &kf_tg2,
-        )
-        .await;
+    if let Some(uid) = user_data.user_id {
+        let tg_results =
+            telegram::scrape_for_user(state, uid, meta, media_type, season, episode).await;
         let tg_opts =
             stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
         let tg_validated: Vec<_> = tg_results

@@ -207,4 +207,25 @@ impl BotApi {
             .cloned()
             .ok_or_else(|| BotApiError::Parse("missing result".into()))
     }
+
+    pub async fn forward_message(
+        &self,
+        chat_id: i64,
+        from_chat_id: i64,
+        message_id: i64,
+    ) -> Result<Value, BotApiError> {
+        let data = self
+            .post(
+                "forwardMessage",
+                json!({
+                    "chat_id": chat_id,
+                    "from_chat_id": from_chat_id,
+                    "message_id": message_id,
+                }),
+            )
+            .await?;
+        data.get("result")
+            .cloned()
+            .ok_or_else(|| BotApiError::Parse("missing result".into()))
+    }
 }

@@ -75,6 +75,17 @@ pub enum CallbackAction {
     BatchSetSeries {
         user_id: i64,
     },
+    DialogPick {
+        user_id: i64,
+        index: usize,
+    },
+    DialogPage {
+        user_id: i64,
+        page: usize,
+    },
+    DialogCancel {
+        user_id: i64,
+    },
     LegacySelect {
         user_id: i64,
         msg_id: i64,
@@ -116,6 +127,9 @@ impl CallbackAction {
             Self::BatchImport { user_id } => format!("batch_import:{user_id}"),
             Self::BatchSkip { user_id, item_id } => format!("batch_skip:{user_id}:{item_id}"),
             Self::BatchSetSeries { user_id } => format!("batch_series:{user_id}"),
+            Self::DialogPick { user_id, index } => format!("dlg_pick:{user_id}:{index}"),
+            Self::DialogPage { user_id, page } => format!("dlg_page:{user_id}:{page}"),
+            Self::DialogCancel { user_id } => format!("dlg_cancel:{user_id}"),
             Self::LegacySelect {
                 user_id,
                 msg_id,
@@ -208,6 +222,17 @@ impl CallbackAction {
             "batch_series" if parts.len() >= 2 => Some(Self::BatchSetSeries {
                 user_id: parts[1].parse().ok()?,
             }),
+            "dlg_pick" if parts.len() >= 3 => Some(Self::DialogPick {
+                user_id: parts[1].parse().ok()?,
+                index: parts[2].parse().ok()?,
+            }),
+            "dlg_page" if parts.len() >= 3 => Some(Self::DialogPage {
+                user_id: parts[1].parse().ok()?,
+                page: parts[2].parse().ok()?,
+            }),
+            "dlg_cancel" if parts.len() >= 2 => Some(Self::DialogCancel {
+                user_id: parts[1].parse().ok()?,
+            }),
             "select" if parts.len() >= 4 => Some(Self::LegacySelect {
                 user_id: parts[1].parse().ok()?,
                 msg_id: parts[2].parse().ok()?,
@@ -238,6 +263,9 @@ impl CallbackAction {
             | Self::BatchImport { user_id }
             | Self::BatchSkip { user_id, .. }
             | Self::BatchSetSeries { user_id }
+            | Self::DialogPick { user_id, .. }
+            | Self::DialogPage { user_id, .. }
+            | Self::DialogCancel { user_id }
             | Self::LegacySelect { user_id, .. } => *user_id,
         }
     }

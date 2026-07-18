@@ -4,11 +4,13 @@ use serde_json::{Value, json};
 
 use crate::{
     parser,
-    routes::content::{acestream_import, http_import, nzb_import, torrent_import, youtube_import},
+    routes::content::{
+        acestream_import, http_import, import_helpers, nzb_import, torrent_import, youtube_import,
+    },
     state::AppState,
 };
 
-use super::{api::BotApi, model::ContentType};
+use super::{api::BotApi, metadata, model::ContentType};
 
 pub async fn run_analysis(
     state: &AppState,
@@ -24,7 +26,7 @@ pub async fn run_analysis(
         }
         ContentType::TorrentFile => analyze_torrent_file(state, api, raw_input, media_type).await,
         ContentType::TorrentUrl => analyze_torrent_url(state, raw_input, media_type).await,
-        ContentType::Video => analyze_video(raw_input, media_type),
+        ContentType::Video => analyze_video(state, raw_input, media_type).await,
         ContentType::Youtube => {
             let url = raw_input.get("url").and_then(|v| v.as_str()).unwrap_or("");
             youtube_import::analyze_youtube_for_bot(state, url, media_type).await
@@ -120,19 +122,49 @@ async fn analyze_torrent_url(state: &AppState, raw_input: &Value, media_type: &s
     }
 }
 
-fn analyze_video(raw_input: &Value, media_type: &str) -> Value {
+fn video_title_source<'a>(file_name: &'a str, caption: &'a str) -> &'a str {
+    let file_name = file_name.trim();
+    let caption = caption.trim();
+    if caption.is_empty() {
+        return file_name;
+    }
+    if file_name.is_empty() || file_name.eq_ignore_ascii_case("video") {
+        return caption;
+    }
+    if caption.len() > file_name.len() {
+        caption
+    } else {
+        file_name
+    }
+}
+
+async fn analyze_video(state: &AppState, raw_input: &Value, media_type: &str) -> Value {
     let file_name = raw_input
         .get("file_name")
         .and_then(|v| v.as_str())
         .unwrap_or("video");
-    let parsed = if parser::is_sports_title(file_name) {
-        parser::parse_sports_title(file_name)
+    let caption = raw_input
+        .get("caption")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let parse_source = video_title_source(file_name, caption);
+    let parsed = if parser::is_sports_title(parse_source) {
+        parser::parse_sports_title(parse_source)
     } else {
-        parser::parse_title(file_name)
+        parser::parse_title(parse_source)
     };
+    let search_title = parsed.title.as_deref().unwrap_or(parse_source);
+    let matches = if search_title.is_empty() || search_title.eq_ignore_ascii_case("video") {
+        Vec::new()
+    } else {
+        import_helpers::search_analyze_matches(state, None, search_title, parsed.year, media_type)
+            .await
+    };
+    let extras = metadata::parsed_title_json_extras(&parsed);
     json!({
         "success": true,
         "file_name": file_name,
+        "caption": caption,
         "file_unique_id": raw_input.get("file_unique_id").and_then(|v| v.as_str()),
         "file_size": raw_input.get("file_size").and_then(|v| v.as_i64()),
         "parsed_title": parsed.title,
@@ -140,7 +172,10 @@ fn analyze_video(raw_input: &Value, media_type: &str) -> Value {
         "resolution": parsed.resolution,
         "quality": parsed.quality,
         "codec": parsed.codec,
+        "languages": extras["languages"].clone(),
+        "audio_formats": extras["audio_formats"].clone(),
+        "channels": extras["channels"].clone(),
         "media_type": media_type,
-        "matches": [],
+        "matches": matches,
     })
 }

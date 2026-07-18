@@ -26,6 +26,7 @@ import { useProfiles, useManifestUrl } from '@/hooks'
 import { useAuth } from '@/contexts/AuthContext'
 import { getAppConfig, associateKodiManifest } from '@/lib/api'
 import { ExternalPlatformIntegrations } from '@/components/integrations/ExternalPlatformIntegrations'
+import { TelegramAccountIntegration } from '@/components/integrations/TelegramAccountIntegration'
 
 export function IntegrationsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -645,6 +646,8 @@ export function IntegrationsPage() {
             simklRedirectUrl={simklRedirectUrl}
           />
         )}
+
+        {user && <TelegramAccountIntegration />}
       </div>
     </TooltipProvider>
   )

@@ -11,7 +11,9 @@ use crate::{
 use super::{
     api::BotApi,
     forwarded,
-    metadata::{episode_info, metadata_value, selected_languages},
+    metadata::{
+        episode_info, metadata_value, selected_audio_formats, selected_channels, selected_languages,
+    },
     model::{ContentType, ConversationState},
 };
 
@@ -163,6 +165,8 @@ fn build_contribution_data(
     };
 
     let languages = selected_languages(&analysis, overrides);
+    let audio_formats = selected_audio_formats(&analysis, overrides);
+    let channels = selected_channels(&analysis, overrides);
     let (season_number, episode_number, episode_end) = episode_info(&analysis, overrides);
     let is_public = import_helpers::stream_is_public_on_submit(true, true);
 
@@ -173,8 +177,9 @@ fn build_contribution_data(
         "resolution": field_or_analysis("resolution"),
         "quality": field_or_analysis("quality"),
         "codec": field_or_analysis("codec"),
-        "audio": field_or_analysis("audio"),
         "languages": languages,
+        "audio_formats": audio_formats,
+        "channels": channels,
         "season_number": season_number,
         "episode_number": episode_number,
         "episode_end": episode_end,

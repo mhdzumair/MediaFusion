@@ -30,14 +30,14 @@ use std::sync::Arc;
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Redirect, Response},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    db::IntegrationType,
+    db::{IntegrationType, types::UserId},
     jobs::{
         enqueue::{EnqueueOpts, enqueue_simple},
         handlers::integration_syncs::{SyncOptions, sync_integration_inline},
@@ -978,28 +978,24 @@ pub async fn trigger_sync_all(
 
 /// GET /api/v1/telegram/status
 pub async fn get_telegram_status(State(state): State<Arc<AppState>>) -> Response {
-    let scraper_enabled = state.telegram.is_some();
-    let bot_configured = state.config.telegram_bot_token.is_some();
     let api_configured = state.config.telegram_api_id.is_some();
-    let global_channels_count = state.config.telegram_scraping_channels.len();
+    let bot_configured = state.config.telegram_bot_token.is_some();
+    let scraping_available = state.telegram_clients.api_configured();
 
-    let message = if !scraper_enabled {
-        "Telegram scraping is disabled by administrator".to_string()
-    } else if !api_configured {
+    let message = if !api_configured {
         "Telegram API credentials are not configured".to_string()
-    } else if global_channels_count == 0 {
-        "No global channels configured. Users can add their own channels.".to_string()
+    } else if !scraping_available {
+        "Telegram API credentials are incomplete".to_string()
     } else {
-        format!("Telegram scraping is enabled with {global_channels_count} global channel(s)")
+        "Users can connect their own Telegram account for channel scraping".to_string()
     };
 
     (
         StatusCode::OK,
         Json(serde_json::json!({
-            "scraper_enabled": scraper_enabled,
+            "scraper_enabled": scraping_available,
             "bot_configured": bot_configured,
             "api_credentials_configured": api_configured,
-            "global_channels_count": global_channels_count,
             "message": message,
         })),
     )
@@ -1033,9 +1029,12 @@ async fn load_profile_tgc(
 }
 
 /// Helper: build the standard telegram-config response JSON.
-fn build_tgc_response(
-    tgc: &serde_json::Value,
+async fn build_tgc_response(
     state: &AppState,
+    user_id: UserId,
+    tgc: &serde_json::Value,
+    session_connected: bool,
+    session_account_id: Option<i64>,
     telegram_user_id: Option<String>,
     linked_at: Option<DateTime<Utc>>,
 ) -> serde_json::Value {
@@ -1043,25 +1042,36 @@ fn build_tgc_response(
         .get("enabled")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let use_global = tgc
-        .get("use_global_channels")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
-    let channels = tgc
-        .get("ch")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!([]));
-    let global_count = state.config.telegram_scraping_channels.len();
+    let channel_rows: Vec<crate::db::telegram_channels::UserChannel> =
+        crate::db::telegram_channels::list_user_channels(&state.pool_ro, user_id).await;
+    let stats =
+        crate::db::telegram_channels::scrape_stats_for_channels(&state.pool_ro, &channel_rows)
+            .await;
+
+    let channels: Vec<serde_json::Value> = channel_rows
+        .into_iter()
+        .map(|ch| {
+            let stream_count = stats.get(&ch.id).map(|s| s.stream_count).unwrap_or(0);
+            let is_public = crate::util::telegram_channel_id::is_public_username(&ch.id);
+            serde_json::json!({
+                "id": ch.id,
+                "name": ch.name,
+                "enabled": ch.enabled,
+                "priority": 1,
+                "is_public": is_public,
+                "stream_count": stream_count,
+            })
+        })
+        .collect();
 
     serde_json::json!({
         "enabled": enabled,
         "channels": channels,
-        "use_global_channels": use_global,
-        "global_channels_available": global_count > 0,
-        "global_channel_count": global_count,
         "account_linked": telegram_user_id.is_some(),
         "telegram_user_id": telegram_user_id,
         "linked_at": linked_at,
+        "session_connected": session_connected,
+        "session_telegram_account_id": session_account_id,
     })
 }
 
@@ -1095,9 +1105,24 @@ pub async fn get_telegram_config(
     };
 
     let (tg_uid, linked_at) = user_row.unwrap_or((None, None));
+    let session_row =
+        crate::db::user_telegram_session::get_session(&state.pool_ro, UserId(user_id)).await;
+    let session_connected = session_row.is_some();
+    let session_account_id = session_row.map(|r| r.telegram_account_id);
     (
         StatusCode::OK,
-        Json(build_tgc_response(&tgc, &state, tg_uid, linked_at)),
+        Json(
+            build_tgc_response(
+                &state,
+                UserId(user_id),
+                &tgc,
+                session_connected,
+                session_account_id,
+                tg_uid,
+                linked_at,
+            )
+            .await,
+        ),
     )
         .into_response()
 }
@@ -1122,9 +1147,6 @@ pub async fn update_telegram_config(
     // Apply updates from body
     if let Some(enabled) = body.get("enabled").and_then(|v| v.as_bool()) {
         tgc["enabled"] = serde_json::json!(enabled);
-    }
-    if let Some(use_global) = body.get("use_global_channels").and_then(|v| v.as_bool()) {
-        tgc["use_global_channels"] = serde_json::json!(use_global);
     }
 
     full_config["tgc"] = tgc.clone();
@@ -1153,9 +1175,24 @@ pub async fn update_telegram_config(
     };
 
     let (tg_uid, linked_at) = user_row.unwrap_or((None, None));
+    let session_row =
+        crate::db::user_telegram_session::get_session(&state.pool_ro, UserId(user_id)).await;
+    let session_connected = session_row.is_some();
+    let session_account_id = session_row.map(|r| r.telegram_account_id);
     (
         StatusCode::OK,
-        Json(build_tgc_response(&tgc, &state, tg_uid, linked_at)),
+        Json(
+            build_tgc_response(
+                &state,
+                UserId(user_id),
+                &tgc,
+                session_connected,
+                session_account_id,
+                tg_uid,
+                linked_at,
+            )
+            .await,
+        ),
     )
         .into_response()
 }
@@ -1173,55 +1210,51 @@ pub async fn add_telegram_channel(
     };
 
     let channel_id = match body.get("id").and_then(|v| v.as_str()) {
-        Some(s) => s.to_string(),
+        Some(s) => s,
         None => return bad_request("Channel 'id' is required"),
     };
+    let name = body.get("name").and_then(|v| v.as_str());
 
-    let (tgc, _) = match load_profile_tgc(&state, user_id).await {
-        Ok(v) => v,
-        Err(r) => return r,
-    };
-
-    let mut channels: Vec<serde_json::Value> = tgc
-        .get("ch")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-
-    // Check for duplicate
-    if channels
-        .iter()
-        .any(|ch| ch.get("id").and_then(|v| v.as_str()) == Some(&channel_id))
+    match crate::db::telegram_channels::add_user_channel(
+        &state.pool,
+        UserId(user_id),
+        channel_id,
+        name,
+    )
+    .await
     {
-        return (
+        Ok(ch) => {
+            let stats = crate::db::telegram_channels::scrape_stats_for_channels(
+                &state.pool_ro,
+                std::slice::from_ref(&ch),
+            )
+            .await;
+            let stream_count = stats.get(&ch.id).map(|s| s.stream_count).unwrap_or(0);
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({
+                    "id": ch.id,
+                    "name": ch.name,
+                    "enabled": ch.enabled,
+                    "priority": 1,
+                    "is_public": crate::util::telegram_channel_id::is_public_username(&ch.id),
+                    "stream_count": stream_count,
+                })),
+            )
+                .into_response()
+        }
+        Err(crate::db::telegram_channels::ChannelMutationError::Duplicate) => (
             StatusCode::CONFLICT,
             Json(serde_json::json!({"error": "Channel already exists"})),
         )
-            .into_response();
+            .into_response(),
+        Err(crate::db::telegram_channels::ChannelMutationError::NotFound) => {
+            bad_request("Invalid channel identifier")
+        }
+        Err(crate::db::telegram_channels::ChannelMutationError::Database(e)) => {
+            db_error("add_telegram_channel update", &e)
+        }
     }
-
-    let new_channel = serde_json::json!({
-        "id": channel_id,
-        "name": body.get("name").and_then(|v| v.as_str()).unwrap_or(&channel_id),
-        "enabled": body.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
-        "priority": body.get("priority").and_then(|v| v.as_i64()).unwrap_or(1),
-    });
-    channels.push(new_channel.clone());
-
-    let channels_json = serde_json::to_string(&channels).unwrap_or_else(|_| "[]".to_string());
-
-    if let Err(e) = sqlx::query(
-        "UPDATE user_profiles SET config = jsonb_set(COALESCE(config, '{}'), ARRAY['tgc','ch'], $1::jsonb, true) WHERE user_id = $2 AND is_default = true",
-    )
-    .bind(&channels_json)
-    .bind(user_id)
-    .execute(&state.pool)
-    .await
-    {
-        return db_error("add_telegram_channel update", &e);
-    }
-
-    (StatusCode::CREATED, Json(new_channel)).into_response()
 }
 
 /// DELETE /api/v1/telegram/channels/{channel_id}
@@ -1236,41 +1269,17 @@ pub async fn remove_telegram_channel(
         return unauthorized();
     };
 
-    let (tgc, _) = match load_profile_tgc(&state, user_id).await {
-        Ok(v) => v,
-        Err(r) => return r,
-    };
-
-    let channels: Vec<serde_json::Value> = tgc
-        .get("ch")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-
-    let original_len = channels.len();
-    let updated: Vec<serde_json::Value> = channels
-        .into_iter()
-        .filter(|ch| ch.get("id").and_then(|v| v.as_str()) != Some(&channel_id))
-        .collect();
-
-    if updated.len() == original_len {
-        return not_found("Channel not found");
-    }
-
-    let channels_json = serde_json::to_string(&updated).unwrap_or_else(|_| "[]".to_string());
-
-    if let Err(e) = sqlx::query(
-        "UPDATE user_profiles SET config = jsonb_set(COALESCE(config, '{}'), ARRAY['tgc','ch'], $1::jsonb, true) WHERE user_id = $2 AND is_default = true",
+    match crate::db::telegram_channels::remove_user_channel(
+        &state.pool,
+        UserId(user_id),
+        &channel_id,
     )
-    .bind(&channels_json)
-    .bind(user_id)
-    .execute(&state.pool)
     .await
     {
-        return db_error("remove_telegram_channel update", &e);
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => not_found("Channel not found"),
+        Err(e) => db_error("remove_telegram_channel update", &e),
     }
-
-    StatusCode::NO_CONTENT.into_response()
 }
 
 /// PATCH /api/v1/telegram/channels/{channel_id}
@@ -1286,51 +1295,231 @@ pub async fn update_telegram_channel(
         return unauthorized();
     };
 
-    let (tgc, _) = match load_profile_tgc(&state, user_id).await {
-        Ok(v) => v,
-        Err(r) => return r,
-    };
-
-    let mut channels: Vec<serde_json::Value> = tgc
-        .get("ch")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-
-    let pos = channels
-        .iter()
-        .position(|ch| ch.get("id").and_then(|v| v.as_str()) == Some(&channel_id));
-
-    let Some(idx) = pos else {
-        return not_found("Channel not found");
-    };
-
-    // Apply partial updates
-    if let Some(name) = body.get("name").and_then(|v| v.as_str()) {
-        channels[idx]["name"] = serde_json::json!(name);
-    }
-    if let Some(enabled) = body.get("enabled").and_then(|v| v.as_bool()) {
-        channels[idx]["enabled"] = serde_json::json!(enabled);
-    }
-    if let Some(priority) = body.get("priority").and_then(|v| v.as_i64()) {
-        channels[idx]["priority"] = serde_json::json!(priority);
-    }
-
-    let updated_channel = channels[idx].clone();
-    let channels_json = serde_json::to_string(&channels).unwrap_or_else(|_| "[]".to_string());
-
-    if let Err(e) = sqlx::query(
-        "UPDATE user_profiles SET config = jsonb_set(COALESCE(config, '{}'), ARRAY['tgc','ch'], $1::jsonb, true) WHERE user_id = $2 AND is_default = true",
+    match crate::db::telegram_channels::update_user_channel(
+        &state.pool,
+        UserId(user_id),
+        &channel_id,
+        body.get("name").and_then(|v| v.as_str()),
+        body.get("enabled").and_then(|v| v.as_bool()),
+        body.get("priority").and_then(|v| v.as_i64()),
     )
-    .bind(&channels_json)
-    .bind(user_id)
-    .execute(&state.pool)
     .await
     {
-        return db_error("update_telegram_channel update", &e);
+        Ok(Some(updated)) => (StatusCode::OK, Json(updated)).into_response(),
+        Ok(None) => not_found("Channel not found"),
+        Err(e) => db_error("update_telegram_channel update", &e),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TelegramDialogsQuery {
+    pub limit: Option<usize>,
+}
+
+/// GET /api/v1/telegram/dialogs
+pub async fn list_telegram_dialogs(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<TelegramDialogsQuery>,
+) -> Response {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
+        return unauthorized();
+    };
+
+    if !crate::db::user_telegram_session::has_session(&state.pool_ro, UserId(user_id)).await {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "Telegram scraping session is not connected",
+            })),
+        )
+            .into_response();
     }
 
-    (StatusCode::OK, Json(updated_channel)).into_response()
+    let limit = query.limit.unwrap_or(60).clamp(1, 200);
+    match crate::services::telegram_dialogs::list_scrapable_dialogs(
+        &state.pool,
+        &state.telegram_clients,
+        UserId(user_id),
+        limit,
+    )
+    .await
+    {
+        Ok(dialogs) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "dialogs": dialogs })),
+        )
+            .into_response(),
+        Err(message) => (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({ "error": message })),
+        )
+            .into_response(),
+    }
+}
+
+/// GET /api/v1/telegram/dialogs/{channel_id}/photo
+pub async fn get_telegram_dialog_photo(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(channel_id): Path<String>,
+) -> Response {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
+        return unauthorized();
+    };
+
+    let Some(client) = state
+        .telegram_clients
+        .get_client(&state.pool, UserId(user_id))
+        .await
+    else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+
+    let mut dialog_peers =
+        crate::services::telegram_peer::cached_dialog_peer_map(UserId(user_id), &client).await;
+    let mut bytes =
+        crate::services::telegram_peer::download_channel_photo(&client, &channel_id, &dialog_peers)
+            .await;
+    if bytes.is_none() {
+        dialog_peers = crate::services::telegram_peer::load_dialog_peer_map(&client).await;
+        crate::services::telegram_peer::store_dialog_peer_map(
+            UserId(user_id),
+            dialog_peers.clone(),
+        )
+        .await;
+        bytes = crate::services::telegram_peer::download_channel_photo(
+            &client,
+            &channel_id,
+            &dialog_peers,
+        )
+        .await;
+    }
+    let Some(bytes) = bytes else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "image/jpeg"),
+            (header::CACHE_CONTROL, "private, max-age=3600"),
+        ],
+        bytes,
+    )
+        .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TriggerTelegramScrapeBody {
+    pub channel: Option<String>,
+    pub scrape_all: Option<bool>,
+    pub message_limit: Option<i32>,
+    pub scrape_all_messages: Option<bool>,
+}
+
+/// POST /api/v1/telegram/scrape
+pub async fn trigger_telegram_scrape(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<TriggerTelegramScrapeBody>,
+) -> Response {
+    let Some(user_id) =
+        auth_guard::validate_active_user(&state.pool, &headers, &state.config.secret_key_raw).await
+    else {
+        return unauthorized();
+    };
+
+    if !crate::db::user_telegram_session::has_session(&state.pool_ro, UserId(user_id)).await {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "Telegram scraping session is not connected",
+            })),
+        )
+            .into_response();
+    }
+
+    let scrape_all = body.scrape_all.unwrap_or(body.channel.is_none());
+    let channels = if scrape_all {
+        crate::db::telegram_channels::user_scraping_channels(&state.pool_ro, UserId(user_id)).await
+    } else {
+        body.channel
+            .as_deref()
+            .map(|c| vec![crate::util::telegram_channel_id::normalize_stored_channel_id(c)])
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
+
+    if channels.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "No scraping channels configured",
+            })),
+        )
+            .into_response();
+    }
+
+    let mut payload = serde_json::json!({
+        "mediafusion_user_id": user_id,
+        "scrape_all": scrape_all,
+        "scrape_all_messages": body.scrape_all_messages.unwrap_or(false),
+    });
+    if body.scrape_all_messages != Some(true) {
+        payload["message_limit"] = serde_json::json!(
+            body.message_limit
+                .unwrap_or(crate::scrapers::telegram::DEFAULT_TELEGRAM_SCRAPE_MESSAGE_LIMIT)
+        );
+    }
+    if !scrape_all {
+        if let Some(channel) = channels.first() {
+            payload["channel"] = serde_json::json!(channel);
+        }
+    }
+
+    match crate::jobs::enqueue_simple(
+        &state.pool,
+        "telegram_bg",
+        &payload,
+        crate::jobs::EnqueueOpts {
+            dedupe_key: Some(format!("telegram_scrape_web:{user_id}")),
+            ..Default::default()
+        },
+    )
+    .await
+    {
+        Ok(Some(_)) => (
+            StatusCode::ACCEPTED,
+            Json(serde_json::json!({
+                "status": "queued",
+                "message": "Telegram scrape job queued. Results appear after the worker runs.",
+                "channels": channels.len(),
+            })),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({
+                "error": "A scrape job is already queued or running for your account",
+            })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("trigger_telegram_scrape enqueue: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to queue scrape job" })),
+            )
+                .into_response()
+        }
+    }
 }
 
 /// POST /api/v1/telegram/validate

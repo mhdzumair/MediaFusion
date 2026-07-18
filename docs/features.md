@@ -50,7 +50,7 @@ MediaFusion aggregates streams from multiple sources simultaneously:
 | **DMM Hashlist** | GitHub-hosted hashlist | Incremental sync from DebridMediaManager |
 | **MediaFusion peer** | Another instance | Aggregate results from a second instance |
 | **RSS feeds** | Configurable | Custom parsing patterns and scheduling |
-| **Telegram** | Channel scraping | Optional; requires Telegram API credentials |
+| **Telegram** | Channel scraping | Optional; [bot + user API setup](integrations/telegram.md) |
 | **YouTube** | Channel scraping | Optional; requires YouTube API key |
 
 ### On-demand & background search

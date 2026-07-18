@@ -49,6 +49,7 @@ pub mod streams;
 pub mod telegram;
 pub mod telegram_channels;
 pub mod torznab;
+pub mod user_telegram_session;
 pub mod watch_history;
 
 pub use media::{

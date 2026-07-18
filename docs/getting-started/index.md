@@ -30,7 +30,7 @@ MediaFusion server          ← this is what you install / self-host
 - Debrid caches (Zilean DMM, Torrentio)
 - IPTV / M3U playlists
 - AceStream channels
-- Telegram, YouTube, RSS feeds
+- Telegram, YouTube, RSS feeds — see [Telegram integration](../integrations/telegram.md) for channel scraping setup
 
 **Streaming providers** — when you play something, MediaFusion routes it through your configured provider. A debrid provider downloads the torrent to a fast server and returns a direct HTTP link. P2P plays directly.
 

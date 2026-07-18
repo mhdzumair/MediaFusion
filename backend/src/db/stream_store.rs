@@ -307,52 +307,31 @@ pub async fn store_telegram_stream(
     }
     let stream_id = insert_base_stream(pool, &base, StreamType::Telegram).await?;
 
-    let ts_result = if stream.file_id.is_some() || stream.file_unique_id.is_some() {
-        sqlx::query(
-            r#"
-            INSERT INTO telegram_stream (
-                stream_id, chat_id, chat_username, message_id, file_name, size, mime_type,
-                file_id, file_unique_id, backup_chat_id, backup_message_id
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
-            )
-            ON CONFLICT (stream_id) DO NOTHING
-            "#,
+    let ts_result = sqlx::query(
+        r#"
+        INSERT INTO telegram_stream (
+            stream_id, chat_id, chat_username, message_id, file_name, size, mime_type,
+            file_id, file_unique_id, document_id, backup_chat_id, backup_message_id
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
         )
-        .bind(stream_id.0)
-        .bind(&stream.chat_id)
-        .bind(&stream.chat_username)
-        .bind(stream.message_id)
-        .bind(&stream.file_name)
-        .bind(stream.size)
-        .bind(&stream.mime_type)
-        .bind(&stream.file_id)
-        .bind(&stream.file_unique_id)
-        .bind(&stream.backup_chat_id)
-        .bind(stream.backup_message_id)
-        .execute(pool)
-        .await
-    } else {
-        sqlx::query(
-            r#"
-            INSERT INTO telegram_stream (
-                stream_id, chat_id, chat_username, message_id, file_name, size, mime_type
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7
-            )
-            ON CONFLICT (stream_id) DO NOTHING
-            "#,
-        )
-        .bind(stream_id.0)
-        .bind(&stream.chat_id)
-        .bind(&stream.chat_username)
-        .bind(stream.message_id)
-        .bind(&stream.file_name)
-        .bind(stream.size)
-        .bind(&stream.mime_type)
-        .execute(pool)
-        .await
-    };
+        ON CONFLICT (stream_id) DO NOTHING
+        "#,
+    )
+    .bind(stream_id.0)
+    .bind(&stream.chat_id)
+    .bind(&stream.chat_username)
+    .bind(stream.message_id)
+    .bind(&stream.file_name)
+    .bind(stream.size)
+    .bind(&stream.mime_type)
+    .bind(&stream.file_id)
+    .bind(&stream.file_unique_id)
+    .bind(stream.document_id)
+    .bind(&stream.backup_chat_id)
+    .bind(stream.backup_message_id)
+    .execute(pool)
+    .await;
 
     if let Ok(r) = &ts_result
         && r.rows_affected() == 0

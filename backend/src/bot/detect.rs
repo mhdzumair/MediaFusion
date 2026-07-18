@@ -107,6 +107,7 @@ pub fn detect_content_type(message: &Message) -> Option<(ContentType, Value)> {
                 "file_name": video.file_name,
                 "file_size": video.file_size,
                 "mime_type": video.mime_type,
+                "caption": message.caption,
             }),
         ));
     }
@@ -137,6 +138,7 @@ pub fn detect_content_type(message: &Message) -> Option<(ContentType, Value)> {
                     "file_name": fname,
                     "file_size": doc.file_size,
                     "mime_type": mime,
+                    "caption": message.caption,
                 }),
             ));
         }
@@ -222,12 +224,22 @@ pub fn content_preview(ct: ContentType, raw: &Value) -> String {
     }
 }
 
-/// Normalize @channel / t.me/... to @username form.
+/// Normalize @channel / t.me/... / id:-100... to a stored scraping identifier.
 pub fn normalize_channel_identifier(raw: &str) -> Option<String> {
     let s = raw.trim();
     if s.is_empty() {
         return None;
     }
+
+    if s.starts_with("id:")
+        || s.starts_with("channel:")
+        || s.starts_with("group:")
+        || (s.starts_with('-') && s.parse::<i64>().is_ok())
+    {
+        let normalized = crate::util::telegram_channel_id::normalize_stored_channel_id(s);
+        return (!normalized.is_empty()).then_some(normalized);
+    }
+
     if s.starts_with('@') {
         let name = s.trim_start_matches('@').trim();
         if name.is_empty() {

@@ -65,6 +65,20 @@ You must set these before MediaFusion will start:
 | [Security](security.md) | API password, encryption, rate limiting |
 | [Stream Formatting](stream-formatting.md) | Custom stream title/description templates |
 
+## Integrations
+
+Client apps and external services:
+
+| Integration | Guide |
+|---|---|
+| [Stremio](../integrations/stremio.md) | Install and configure the Stremio addon |
+| [Kodi](../integrations/kodi.md) | Kodi addon setup |
+| [Prowlarr](../integrations/prowlarr.md) | Torrent indexer aggregation |
+| [Telegram](../integrations/telegram.md) | Bot contributions, channel scraping, playback |
+| [AceStream](../integrations/acestream.md) | AceStream via MediaFlow |
+| [qBittorrent WebDAV](../integrations/qbittorrent.md) | Self-hosted download pipeline |
+| [Browser Extension](../integrations/browser-extension.md) | One-click torrent import |
+
 ## Full reference
 
 The complete list of all 291 environment variables with types and defaults is in the [Environment Variable Reference](../reference/env-reference.md).

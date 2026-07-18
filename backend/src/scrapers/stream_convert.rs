@@ -75,7 +75,8 @@ impl From<&ScrapedTelegramStream> for TelegramStoreInput {
             size: s.size,
             mime_type: s.mime_type.clone(),
             file_id: None,
-            file_unique_id: None,
+            file_unique_id: s.file_unique_id.clone(),
+            document_id: s.document_id,
             backup_chat_id: None,
             backup_message_id: None,
         }

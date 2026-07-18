@@ -34,6 +34,17 @@ pub struct Message {
     pub forward_from_chat: Option<Chat>,
     #[serde(default)]
     pub forward_from_message_id: Option<i64>,
+    #[serde(default)]
+    pub contact: Option<Contact>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Contact {
+    pub phone_number: String,
+    #[serde(default)]
+    pub first_name: Option<String>,
+    #[serde(default)]
+    pub user_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -294,6 +305,16 @@ pub struct BatchState {
 impl BatchState {
     pub fn touch(&mut self) {
         self.updated_at = chrono::Utc::now();
+    }
+
+    pub fn is_complete(&self) -> bool {
+        !self.items.is_empty()
+            && self.items.iter().all(|item| {
+                matches!(
+                    item.status,
+                    BatchItemStatus::Imported | BatchItemStatus::Skipped | BatchItemStatus::Failed
+                )
+            })
     }
 
     pub fn get_item(&self, item_id: &str) -> Option<&BatchItem> {

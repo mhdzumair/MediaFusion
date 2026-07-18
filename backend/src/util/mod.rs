@@ -8,6 +8,7 @@ pub mod nzb_storage;
 pub mod rate_limit;
 pub mod retry;
 pub mod s3_client;
+pub mod telegram_channel_id;
 pub mod telegram_file_id;
 pub mod telegram_session;
 pub mod telemetry;

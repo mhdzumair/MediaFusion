@@ -6,7 +6,7 @@ use crate::{routes::content::import_helpers, state::AppState};
 
 use super::{
     callback::CallbackAction,
-    metadata::{episode_info, metadata_value, selected_languages},
+    metadata::{episode_info, format_audio_display, metadata_value, selected_languages},
     model::{ContentType, ConversationState},
     text,
 };
@@ -87,9 +87,12 @@ pub async fn show_matches(state: &AppState, conv: &ConversationState) -> (String
     }]));
 
     let escaped_title = text::escape_markdown(title);
-    let msg = format!(
-        "🔍 *Select Match*\n\n*Content:* `{escaped_title}`\n\nChoose the correct media or search manually:"
-    );
+    let match_hint = if matches.is_empty() {
+        "No automatic matches found. Search manually or enter an ID:"
+    } else {
+        "Choose the correct media, or search manually:"
+    };
+    let msg = format!("🔍 *Select Match*\n\n*Content:* `{escaped_title}`\n\n{match_hint}");
     (msg, json!({ "inline_keyboard": rows }))
 }
 
@@ -184,7 +187,7 @@ pub async fn show_metadata_review(state: &AppState, conv: &ConversationState) ->
     let resolution = metadata_value("resolution", &analysis, overrides);
     let quality = metadata_value("quality", &analysis, overrides);
     let codec = metadata_value("codec", &analysis, overrides);
-    let audio = metadata_value("audio", &analysis, overrides);
+    let audio = format_audio_display(&analysis, overrides);
     let languages_list = selected_languages(&analysis, overrides);
     let languages = if languages_list.is_empty() {
         "Auto".to_string()

@@ -33,6 +33,7 @@ pub mod rss;
 pub mod stream;
 pub mod streaming_provider;
 pub mod telegram_playback;
+pub mod telegram_session;
 pub mod telegram_webhook;
 pub mod torznab;
 pub mod usenet;
@@ -806,7 +807,15 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/telegram/config", get(integrations::get_telegram_config).patch(integrations::update_telegram_config))
         .route("/api/v1/telegram/channels", post(integrations::add_telegram_channel))
         .route("/api/v1/telegram/channels/{channel_id}", delete(integrations::remove_telegram_channel).patch(integrations::update_telegram_channel))
+        .route("/api/v1/telegram/dialogs", get(integrations::list_telegram_dialogs))
+        .route("/api/v1/telegram/dialogs/{channel_id}/photo", get(integrations::get_telegram_dialog_photo))
+        .route("/api/v1/telegram/scrape", post(integrations::trigger_telegram_scrape))
         .route("/api/v1/telegram/validate", post(integrations::validate_telegram_channel))
+        .route("/api/v1/telegram/session/status", get(telegram_session::get_session_status))
+        .route("/api/v1/telegram/session/start", post(telegram_session::start_session_login))
+        .route("/api/v1/telegram/session/verify", post(telegram_session::verify_session_code))
+        .route("/api/v1/telegram/session/password", post(telegram_session::verify_session_password))
+        .route("/api/v1/telegram/session", delete(telegram_session::delete_session))
         .route("/api/v1/telegram/login", get(integrations::telegram_login))
         .route("/api/v1/telegram/unlink", delete(integrations::telegram_unlink));
 

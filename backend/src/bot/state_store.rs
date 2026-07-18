@@ -1,6 +1,7 @@
 //! Redis-backed conversation/batch/login state.
 
 use fred::prelude::{Expiration, KeysInterface};
+use serde::{Deserialize, Serialize};
 
 use crate::state::AppState;
 
@@ -126,6 +127,123 @@ pub async fn set_scrape_job(state: &AppState, user_id: i64, payload: &str) {
 
 pub async fn clear_scrape_job(state: &AppState, user_id: i64) {
     let _: Result<i64, _> = state.redis.del(&scrape_job_key(user_id)).await;
+}
+
+const SCRAPE_SETUP_TTL_SECS: i64 = 15 * 60;
+
+fn scrape_setup_key(user_id: i64) -> String {
+    format!("telegram:scrape_setup:{user_id}")
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapeSetupState {
+    pub mediafusion_user_id: i32,
+    pub chat_id: i64,
+    pub channel: Option<String>,
+    pub scrape_all: bool,
+}
+
+pub async fn get_scrape_setup(state: &AppState, user_id: i64) -> Option<ScrapeSetupState> {
+    let raw: Option<String> = state.redis.get(&scrape_setup_key(user_id)).await.ok()?;
+    raw.and_then(|s| serde_json::from_str(&s).ok())
+}
+
+pub async fn save_scrape_setup(state: &AppState, user_id: i64, setup: &ScrapeSetupState) {
+    if let Ok(json) = serde_json::to_string(setup) {
+        let _: Result<(), _> = state
+            .redis
+            .set::<(), _, _>(
+                &scrape_setup_key(user_id),
+                json,
+                Some(Expiration::EX(SCRAPE_SETUP_TTL_SECS)),
+                None,
+                false,
+            )
+            .await;
+    }
+}
+
+pub async fn clear_scrape_setup(state: &AppState, user_id: i64) {
+    let _: Result<i64, _> = state.redis.del(&scrape_setup_key(user_id)).await;
+}
+
+const CHANNEL_SETUP_TTL_SECS: i64 = 15 * 60;
+
+fn channel_setup_key(user_id: i64) -> String {
+    format!("telegram:channel_setup:{user_id}")
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChannelSetupAction {
+    Add,
+    Remove,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelSetupState {
+    pub action: ChannelSetupAction,
+}
+
+pub async fn get_channel_setup(state: &AppState, user_id: i64) -> Option<ChannelSetupState> {
+    let raw: Option<String> = state.redis.get(&channel_setup_key(user_id)).await.ok()?;
+    raw.and_then(|s| serde_json::from_str(&s).ok())
+}
+
+pub async fn save_channel_setup(state: &AppState, user_id: i64, setup: &ChannelSetupState) {
+    if let Ok(json) = serde_json::to_string(setup) {
+        let _: Result<(), _> = state
+            .redis
+            .set::<(), _, _>(
+                &channel_setup_key(user_id),
+                json,
+                Some(Expiration::EX(CHANNEL_SETUP_TTL_SECS)),
+                None,
+                false,
+            )
+            .await;
+    }
+}
+
+pub async fn clear_channel_setup(state: &AppState, user_id: i64) {
+    let _: Result<i64, _> = state.redis.del(&channel_setup_key(user_id)).await;
+}
+
+const DIALOG_PICK_TTL_SECS: i64 = 15 * 60;
+
+fn dialog_pick_key(user_id: i64) -> String {
+    format!("telegram:dialog_pick:{user_id}")
+}
+
+pub async fn save_dialog_pick(
+    state: &AppState,
+    user_id: i64,
+    dialogs: &[crate::services::telegram_dialogs::ScrapableDialog],
+) {
+    if let Ok(json) = serde_json::to_string(dialogs) {
+        let _: Result<(), _> = state
+            .redis
+            .set::<(), _, _>(
+                &dialog_pick_key(user_id),
+                json,
+                Some(Expiration::EX(DIALOG_PICK_TTL_SECS)),
+                None,
+                false,
+            )
+            .await;
+    }
+}
+
+pub async fn get_dialog_pick(
+    state: &AppState,
+    user_id: i64,
+) -> Option<Vec<crate::services::telegram_dialogs::ScrapableDialog>> {
+    let raw: Option<String> = state.redis.get(&dialog_pick_key(user_id)).await.ok()?;
+    raw.and_then(|s| serde_json::from_str(&s).ok())
+}
+
+pub async fn clear_dialog_pick(state: &AppState, user_id: i64) {
+    let _: Result<i64, _> = state.redis.del(&dialog_pick_key(user_id)).await;
 }
 
 pub async fn cache_callback_payload(state: &AppState, payload: &str) -> String {

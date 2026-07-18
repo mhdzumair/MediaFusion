@@ -946,6 +946,9 @@ pub async fn analyze_magnet_for_bot(
         "resolution": parsed.resolution,
         "quality": parsed.quality,
         "codec": parsed.codec,
+        "languages": parsed.languages,
+        "audio_formats": parsed.audio,
+        "channels": parsed.channels,
         "matches": matches,
     });
 
@@ -1025,6 +1028,9 @@ pub async fn analyze_torrent_bytes(
         "resolution": parsed.resolution,
         "quality": parsed.quality,
         "codec": parsed.codec,
+        "languages": parsed.languages,
+        "audio_formats": parsed.audio,
+        "channels": parsed.channels,
         "matches": matches,
     }))
 }

@@ -76,6 +76,18 @@ Ready to use — no setup required:
 
 ---
 
+## Integrations
+
+| Integration | Description |
+|---|---|
+| [Stremio](integrations/stremio.md) | Primary client — install the addon |
+| [Kodi](integrations/kodi.md) | Kodi addon |
+| [Telegram](integrations/telegram.md) | Bot contributions + channel scraping |
+| [Prowlarr](integrations/prowlarr.md) | Torrent indexers |
+| [AceStream](integrations/acestream.md) | Live streams via MediaFlow |
+| [qBittorrent WebDAV](integrations/qbittorrent.md) | Self-hosted downloads |
+| [Browser Extension](integrations/browser-extension.md) | Import from torrent sites |
+
 ## Supported streaming providers
 
 | Provider | Type | Cost |

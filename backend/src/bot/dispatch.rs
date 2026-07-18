@@ -7,7 +7,8 @@ use tracing::warn;
 use crate::state::AppState;
 
 use super::{
-    api::BotApi, callback::CallbackAction, commands, detect, model::Message, state_store, wizard,
+    api::BotApi, callback::CallbackAction, channels, commands, detect, dialog_picker,
+    model::Message, state_store, wizard,
 };
 
 pub async fn dispatch_update(state: Arc<AppState>, update: super::model::Update) {
@@ -51,6 +52,14 @@ async fn handle_message(state: &AppState, api: &BotApi, message: Message) {
     if let Some(text) = text_or_caption {
         if text.starts_with('/') {
             commands::handle_command(state, api, user_id, chat_id, text).await;
+            return;
+        }
+
+        if channels::handle_text(state, api, user_id, chat_id, text).await {
+            return;
+        }
+
+        if commands::handle_scrape_limit_input(state, api, user_id, chat_id, text).await {
             return;
         }
 
@@ -217,6 +226,19 @@ async fn handle_callback(state: &AppState, api: &BotApi, cb: super::model::Callb
         CallbackAction::BatchSetSeries { .. } => {
             super::batch::handle_set_series_prompt(state, api, user_id, chat_id, message_id).await;
         }
+        CallbackAction::DialogPick { index, .. } => {
+            dialog_picker::handle_dialog_pick(state, api, user_id, chat_id, message_id, index)
+                .await;
+        }
+        CallbackAction::DialogPage { page, .. } => {
+            dialog_picker::handle_dialog_page(state, api, user_id, chat_id, message_id, page).await;
+        }
+        CallbackAction::DialogCancel { .. } => {
+            state_store::clear_dialog_pick(state, user_id).await;
+            let _ = api
+                .edit_message_text(chat_id, message_id, "❌ Channel picker cancelled.", None)
+                .await;
+        }
         CallbackAction::LegacySelect { .. } => {}
     }
 }
@@ -230,12 +252,21 @@ pub async fn register_commands(state: Arc<AppState>) {
         ("start", "Welcome message and quick start guide"),
         ("help", "Show available commands and usage"),
         ("login", "Link your Telegram account to MediaFusion"),
-        ("status", "Check account link status"),
-        ("cancel", "Cancel current operation"),
         (
-            "scrape",
-            "Scrape a public Telegram channel (@channel or t.me link)",
+            "session",
+            "How to connect Telegram scraping session (web UI)",
         ),
+        ("dropsession", "Disconnect your Telegram scraping session"),
+        ("status", "Check account link and scraping status"),
+        (
+            "browsechannels",
+            "Pick a channel from your Telegram account",
+        ),
+        ("addchannel", "Add a scraping channel by @username"),
+        ("removechannel", "Remove a channel from your scraping list"),
+        ("channels", "List configured scraping channels"),
+        ("scrape", "Scrape configured channels (or one @channel)"),
+        ("cancel", "Cancel current operation"),
     ];
     match api.set_my_commands(&commands).await {
         Ok(()) => tracing::info!("telegram bot commands registered"),

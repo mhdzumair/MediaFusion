@@ -4,23 +4,53 @@
 //! documents that look like video files, parses them with PTT and filters
 //! by title similarity before returning [`ScrapedTelegramStream`]s.
 
-use std::sync::Arc;
-
 use grammers_client::Client;
-use grammers_session::SessionData;
 use regex::Regex;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::{
-    config::AppConfig,
+    db::types::UserId,
     parser,
     scrapers::{ScrapedTelegramStream, SearchMeta},
-    state::KeywordFilterCache,
+    services::telegram_peer,
+    state::{AppState, KeywordFilterCache},
+    util::telegram_channel_id::{self, ChannelRef},
 };
 
 const VIDEO_EXTENSIONS: &[&str] = &[
     ".mkv", ".mp4", ".avi", ".webm", ".mov", ".flv", ".wmv", ".m4v",
 ];
+
+/// Default messages fetched per channel when the user does not specify a limit.
+pub const DEFAULT_TELEGRAM_SCRAPE_MESSAGE_LIMIT: i32 = 25;
+
+/// Parse a user-provided scrape depth.
+///
+/// - empty → default (`25`)
+/// - `all` → no limit (`None`)
+/// - positive integer → that many messages
+pub fn parse_scrape_message_limit(input: &str) -> Result<Option<i32>, &'static str> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Ok(Some(DEFAULT_TELEGRAM_SCRAPE_MESSAGE_LIMIT));
+    }
+    if trimmed.eq_ignore_ascii_case("all") {
+        return Ok(None);
+    }
+    let value: i32 = trimmed.parse().map_err(|_| "invalid")?;
+    if value <= 0 {
+        return Err("invalid");
+    }
+    Ok(Some(value))
+}
+
+pub fn format_scrape_message_limit(limit: Option<i32>) -> String {
+    match limit {
+        None => "all messages".to_string(),
+        Some(n) => format!("{n} messages"),
+    }
+}
 
 fn imdb_pattern() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
@@ -38,91 +68,35 @@ fn document_is_video(doc: &grammers_client::media::Document) -> bool {
     doc.duration().is_some() && doc.resolution().is_some()
 }
 
-// ─── Client initialisation ────────────────────────────────────────────────────
-
-/// Build and return a connected Telegram MTProto client, or `None` if the
-/// required env vars are missing / session is invalid.
-///
-/// The underlying `SenderPoolRunner` is spawned as a background tokio task —
-/// it will keep the connection alive for the process lifetime.
-pub async fn init_client(config: &AppConfig) -> Option<Arc<Client>> {
-    let api_id = config.telegram_api_id?;
-    let api_hash = config.telegram_api_hash.as_deref()?;
-    let session_b64 = config.telegram_grammers_session.as_deref()?;
-
-    let session_data = match crate::util::telegram_session::parse_session_data(session_b64) {
-        Ok(d) => d,
-        Err(e) => {
-            tracing::warn!("telegram: session parse failed: {e}");
-            return None;
-        }
-    };
-
-    if !crate::util::telegram_session::session_is_authenticated(&session_data) {
-        tracing::warn!(
-            "telegram: session is not authenticated — scraping will not work; \
-             run `cargo run --bin telegram_session` or convert your Telethon session"
-        );
-        return None;
-    }
-
-    match build_client(api_id, api_hash, session_data).await {
-        Ok(client) => {
-            tracing::info!("telegram: MTProto client initialised (authenticated session loaded)");
-            Some(Arc::new(client))
-        }
-        Err(e) => {
-            tracing::warn!("telegram: client init failed: {e}");
-            None
-        }
-    }
-}
-
-async fn build_client(
-    api_id: i32,
-    api_hash: &str,
-    session_data: SessionData,
-) -> Result<Client, Box<dyn std::error::Error + Send + Sync>> {
-    use grammers_session::storages::MemorySession;
-    use std::sync::Arc;
-
-    let session = Arc::new(MemorySession::from(session_data));
-
-    let pool = grammers_client::sender::SenderPool::new(Arc::clone(&session) as Arc<_>, api_id);
-    let runner = pool.runner;
-    let handle = pool.handle;
-
-    tokio::spawn(async move {
-        runner.run().await;
-    });
-
-    let client = Client::new(handle);
-    let _ = api_hash;
-    Ok(client)
-}
-
 // ─── Scrape entry point ───────────────────────────────────────────────────────
 
-/// Scrape all configured channels (global + per-user) and return matching streams.
+/// Scrape the given channels and return matching streams.
 #[allow(clippy::too_many_arguments)]
 pub async fn scrape(
     client: &Client,
     channels: &[String],
-    user_channels: &[String],
     meta: &SearchMeta,
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-    message_limit: i32,
+    message_limit: Option<i32>,
     min_size: u64,
     keyword_filters: &KeywordFilterCache,
 ) -> Vec<ScrapedTelegramStream> {
-    let mut all_channels: Vec<String> = channels.to_vec();
-    all_channels.extend_from_slice(user_channels);
-    all_channels.dedup();
+    let needs_dialog_lookup = channels.iter().any(|channel| {
+        matches!(
+            telegram_channel_id::parse_channel_ref(channel),
+            Some(ChannelRef::DialogId(_))
+        )
+    });
+    let dialog_peers = if needs_dialog_lookup {
+        telegram_peer::load_dialog_peer_map(client).await
+    } else {
+        HashMap::new()
+    };
 
     let mut results = Vec::new();
-    for channel in &all_channels {
+    for channel in channels {
         let channel_results = scrape_channel(
             client,
             channel,
@@ -133,11 +107,59 @@ pub async fn scrape(
             message_limit,
             min_size,
             keyword_filters,
+            &dialog_peers,
         )
         .await;
         results.extend(channel_results);
     }
     results
+}
+
+/// Scrape configured channels for a user using their stored MTProto session.
+pub async fn scrape_for_user(
+    state: &AppState,
+    user_id: UserId,
+    meta: &SearchMeta,
+    media_type: &str,
+    season: Option<i32>,
+    episode: Option<i32>,
+) -> Vec<ScrapedTelegramStream> {
+    if !state.telegram_clients.api_configured() {
+        return vec![];
+    }
+
+    let channels = crate::db::telegram_channels::user_scraping_channels(&state.pool, user_id).await;
+    if channels.is_empty() {
+        return vec![];
+    }
+
+    let Some(client) = state
+        .telegram_clients
+        .get_client(&state.pool, user_id)
+        .await
+    else {
+        tracing::debug!("telegram: no client for user {}", user_id.0);
+        return vec![];
+    };
+
+    let keyword_filters = state
+        .keyword_filters
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+
+    scrape(
+        &client,
+        &channels,
+        meta,
+        media_type,
+        season,
+        episode,
+        Some(DEFAULT_TELEGRAM_SCRAPE_MESSAGE_LIMIT),
+        state.config.min_scraping_video_size,
+        &keyword_filters,
+    )
+    .await
 }
 
 // ─── Per-channel scrape ───────────────────────────────────────────────────────
@@ -150,33 +172,24 @@ async fn scrape_channel(
     media_type: &str,
     season: Option<i32>,
     episode: Option<i32>,
-    message_limit: i32,
+    message_limit: Option<i32>,
     min_size: u64,
     keyword_filters: &KeywordFilterCache,
+    dialog_peers: &HashMap<i64, grammers_session::types::PeerRef>,
 ) -> Vec<ScrapedTelegramStream> {
-    let username = channel.trim_start_matches('@');
-
-    // Resolve channel entity
-    let peer = match client.resolve_username(username).await {
-        Ok(Some(p)) => p,
-        Ok(None) => {
-            tracing::debug!("telegram: channel @{username} not found");
-            return vec![];
-        }
-        Err(e) => {
-            tracing::warn!("telegram: resolve @{username}: {e}");
-            return vec![];
-        }
+    let Some(channel_ref) = telegram_channel_id::parse_channel_ref(channel) else {
+        tracing::debug!("telegram: invalid channel identifier {channel}");
+        return vec![];
     };
 
-    // Get a PeerRef (needed for iter_messages)
-    let peer_ref = match peer.to_ref().await {
-        Some(r) => r,
-        None => {
-            tracing::warn!("telegram: @{username}: no peer ref (min peer, not cached)");
-            return vec![];
-        }
-    };
+    let (peer, peer_ref) =
+        match telegram_peer::resolve_channel_ref(client, channel_ref, dialog_peers).await {
+            Some(found) => found,
+            None => {
+                tracing::debug!("telegram: could not resolve channel {channel}");
+                return vec![];
+            }
+        };
 
     // Extract chat metadata for embedding into results
     let chat_id = peer.id().bot_api_dialog_id();
@@ -187,7 +200,10 @@ async fn scrape_channel(
     };
 
     // Iterate messages
-    let mut iter = client.iter_messages(peer_ref).limit(message_limit as usize);
+    let mut iter = client.iter_messages(peer_ref);
+    if let Some(limit) = message_limit {
+        iter = iter.limit(limit as usize);
+    }
 
     let mut results = Vec::new();
     loop {
@@ -210,7 +226,7 @@ async fn scrape_channel(
             }
             Ok(None) => break,
             Err(e) => {
-                tracing::warn!("telegram: iter_messages @{username}: {e}");
+                tracing::warn!("telegram: iter_messages {channel}: {e}");
                 break;
             }
         }
@@ -235,7 +251,13 @@ fn process_message(
 ) -> Option<ScrapedTelegramStream> {
     use grammers_client::media::Media;
 
-    let (file_name, size, mime_type): (String, i64, Option<String>) = match message.media()? {
+    let (file_name, size, mime_type, document_id, file_unique_id): (
+        String,
+        i64,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+    ) = match message.media()? {
         Media::Document(doc) => {
             let is_video = document_is_video(&doc);
             let mut name = doc.name().unwrap_or("").to_string();
@@ -248,6 +270,8 @@ fn process_message(
             }
             let size = doc.size().unwrap_or(0) as i64;
             let mime = doc.mime_type().map(str::to_string);
+            let document_id = Some(doc.id());
+            let file_unique_id = Some(doc.id().to_string());
             if !is_video {
                 let lower = name.to_lowercase();
                 let mime_is_video = mime.as_deref().is_some_and(|m| m.starts_with("video/"));
@@ -255,7 +279,7 @@ fn process_message(
                     return None;
                 }
             }
-            (name, size, mime)
+            (name, size, mime, document_id, file_unique_id)
         }
         _ => return None,
     };
@@ -307,5 +331,23 @@ fn process_message(
         season,
         episode,
         caption_imdb_id,
+        document_id,
+        file_unique_id,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_scrape_message_limit_defaults_and_all() {
+        assert_eq!(
+            parse_scrape_message_limit("").unwrap(),
+            Some(DEFAULT_TELEGRAM_SCRAPE_MESSAGE_LIMIT)
+        );
+        assert_eq!(parse_scrape_message_limit("all").unwrap(), None);
+        assert_eq!(parse_scrape_message_limit("50").unwrap(), Some(50));
+        assert!(parse_scrape_message_limit("0").is_err());
+    }
 }

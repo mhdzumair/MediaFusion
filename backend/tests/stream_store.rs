@@ -404,6 +404,7 @@ async fn store_telegram_dedupes_by_chat_and_message() {
         mime_type: Some("video/mp4".to_string()),
         file_id: None,
         file_unique_id: None,
+        document_id: None,
         backup_chat_id: None,
         backup_message_id: None,
     };

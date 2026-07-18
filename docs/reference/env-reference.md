@@ -262,9 +262,6 @@ These control how long scraped results are considered fresh before re-querying.
 |---|---|---|
 | `TELEGRAM_API_ID` | — | Telegram API ID (from my.telegram.org). |
 | `TELEGRAM_API_HASH` | — | Telegram API hash. |
-| `TELEGRAM_GRAMMERS_SESSION` | — | Grammers session string for the Telegram scraper. |
-| `TELEGRAM_SCRAPING_CHANNELS` | — | Comma-separated list of channel usernames/IDs to scrape. |
-| `TELEGRAM_SCRAPE_MESSAGE_LIMIT` | `100` | Max messages to fetch per channel per scrape run. |
 
 ---
 

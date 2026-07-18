@@ -1237,6 +1237,9 @@ pub async fn get_media_streams(
             ts.info_hash,
             us.nzb_guid,
             ys.video_id AS yt_id,
+            tgs.chat_id AS tg_chat_id,
+            tgs.message_id AS tg_message_id,
+            tgs.id AS telegram_stream_id,
             {STREAM_LINK_AGG_COLS},
             ts.created_at
            FROM stream s
@@ -1248,6 +1251,7 @@ pub async fn get_media_streams(
            LEFT JOIN torrent_stream ts ON ts.stream_id = s.id
            LEFT JOIN usenet_stream us ON us.stream_id = s.id
            LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
+           LEFT JOIN telegram_stream tgs ON tgs.stream_id = s.id
            WHERE s.is_active = true
              AND s.is_blocked = false
              {kw_filter}
@@ -1273,6 +1277,9 @@ pub async fn get_media_streams(
             ts.info_hash,
             us.nzb_guid,
             ys.video_id AS yt_id,
+            tgs.chat_id AS tg_chat_id,
+            tgs.message_id AS tg_message_id,
+            tgs.id AS telegram_stream_id,
             {STREAM_LINK_AGG_COLS},
             ts.created_at
            FROM stream s
@@ -1280,6 +1287,7 @@ pub async fn get_media_streams(
            LEFT JOIN torrent_stream ts ON ts.stream_id = s.id
            LEFT JOIN usenet_stream us ON us.stream_id = s.id
            LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
+           LEFT JOIN telegram_stream tgs ON tgs.stream_id = s.id
            WHERE sml.media_id = $1
              AND s.is_active = true
              AND s.is_blocked = false
@@ -1502,12 +1510,29 @@ pub async fn get_media_streams(
                     )
                 };
 
-            // Build playback URL for torrent/usenet streams when a provider is configured
+            // Build playback URL for torrent/usenet/telegram streams when configured.
             let raw_playback_url: Option<String> = if rd_blocked {
                 None
-            } else if !secret_str.is_empty() {
-                if let Some(ref svc) = selected_provider {
-                    if r.stream_type == StreamType::Torrent {
+            } else if secret_str.is_empty() {
+                None
+            } else if r.stream_type == StreamType::Telegram {
+                if let Some(tg_id) = r.telegram_stream_id {
+                    Some(format!(
+                        "{}/streaming_provider/{}/telegram/stream/{}",
+                        state.config.host_url, secret_str, tg_id
+                    ))
+                } else if let (Some(chat_id), Some(msg_id)) =
+                    (r.tg_chat_id.as_deref(), r.tg_message_id)
+                {
+                    Some(format!(
+                        "{}/streaming_provider/{}/telegram/{}/{}",
+                        state.config.host_url, secret_str, chat_id, msg_id
+                    ))
+                } else {
+                    None
+                }
+            } else if let Some(ref svc) = selected_provider {
+                if r.stream_type == StreamType::Torrent {
                         if let Some(ref hash) = r.info_hash {
                             let filename = r.filename.as_deref().unwrap_or("");
                             let base = match (params.season, params.episode) {
@@ -1550,9 +1575,6 @@ pub async fn get_media_streams(
                     } else {
                         None
                     }
-                } else {
-                    None
-                }
             } else {
                 None
             };

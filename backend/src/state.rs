@@ -279,9 +279,10 @@ pub struct AppState {
     debrid_http_no_proxy: Option<reqwest::Client>,
     /// HTTP request metrics collector.
     pub metrics: Arc<Metrics>,
-    /// Optional Telegram MTProto client for live scraping (Phase 2c).
-    /// None if TELEGRAM_API_ID / TELEGRAM_API_HASH / TELEGRAM_GRAMMERS_SESSION are not set.
-    pub telegram: Option<Arc<grammers_client::Client>>,
+    /// Per-user Telegram MTProto client pool for channel scraping.
+    pub telegram_clients: Arc<crate::scrapers::telegram_clients::TelegramClientPool>,
+    /// In-memory pending Telegram login flows (phone/code/2FA).
+    pub telegram_pending_logins: Arc<crate::services::telegram_login::PendingLoginStore>,
     /// In-memory cache of keyword filters and whitelist phrases.
     pub keyword_filters: Arc<RwLock<KeywordFilterCache>>,
     /// ONNX-based NSFW poster classifier. `None` when the model file is absent
@@ -366,7 +367,11 @@ impl AppState {
             (None, None)
         };
 
-        let telegram = crate::scrapers::telegram::init_client(&config).await;
+        let telegram_clients = Arc::new(
+            crate::scrapers::telegram_clients::TelegramClientPool::new(config.clone()),
+        );
+        let telegram_pending_logins =
+            Arc::new(crate::services::telegram_login::PendingLoginStore::new());
 
         // Load keyword cache — sync_keywords_from_file is called after
         // migrate::run in main/worker so the schema is guaranteed to exist.
@@ -393,7 +398,8 @@ impl AppState {
             http_no_proxy,
             debrid_http_no_proxy,
             metrics: Metrics::new(),
-            telegram,
+            telegram_clients,
+            telegram_pending_logins,
             keyword_filters,
             nsfw_classifier,
         }))
