@@ -71,7 +71,7 @@ serde_json = "1"
 quick-xml = { version = "0.41", features = ["serde"] }
 
 # HTTP client (live scrapers)
-reqwest = { version = "0.13", default-features = false, features = ["gzip", "brotli", "http2", "json", "multipart", "form", "query", "stream"] }
+reqwest = { version = "0.13", default-features = false, features = ["gzip", "brotli", "http2", "json", "multipart", "form", "query", "stream", "cookies"] }
 openssl = { version = "0.10", optional = true }
 
 # Database
