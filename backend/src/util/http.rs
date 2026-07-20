@@ -63,6 +63,7 @@ pub fn build(proxy_url: Option<&str>, keepalive_secs: u64) -> reqwest::Client {
     let mut builder = reqwest::Client::builder()
         .user_agent("MediaFusion/1.0 (+https://github.com/mhdzumair/MediaFusion)")
         .http1_only()
+        .cookie_store(true)
         .timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(10))
         .pool_idle_timeout(Duration::from_secs(20))
