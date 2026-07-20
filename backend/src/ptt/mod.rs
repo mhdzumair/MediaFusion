@@ -431,4 +431,12 @@ mod tests {
         assert!(r.languages.contains(&"French".to_string()));
         assert!(r.languages.contains(&"Spanish".to_string()));
     }
+
+    #[test]
+    fn test_ukrainian_ukr_tag() {
+        let r = parse("Example.2021.1080p.BluRay.2xUkr.Eng.mkv", true);
+        assert_eq!(r.languages.len(), 2);
+        assert!(r.languages.contains(&"Ukrainian".to_string()));
+        assert!(r.languages.contains(&"English".to_string()));
+    }
 }
