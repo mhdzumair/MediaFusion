@@ -77,7 +77,7 @@ pub async fn fetch_streams_bulk(
                                 WHERE pt.stream_id = st.id AND pt.user_id IS NOT NULL
                             ), 0)
                         ) ORDER BY ts.seeders DESC NULLS LAST
-                    ) FILTER (WHERE ts.info_hash IS NOT NULL AND st.is_active AND NOT st.is_blocked AND NOT st.is_keyword_blocked), '[]')
+                    ) FILTER (WHERE ts.info_hash IS NOT NULL AND st.is_active AND NOT st.is_blocked), '[]')
                 ) AS data
             FROM file_media_link fml
             JOIN stream_file sf ON sf.id = fml.file_id
@@ -151,7 +151,7 @@ pub async fn fetch_streams_bulk(
                                 WHERE pt.stream_id = st.id AND pt.user_id IS NOT NULL
                             ), 0)
                         ) ORDER BY ts.seeders DESC NULLS LAST
-                    ) FILTER (WHERE ts.info_hash IS NOT NULL AND st.is_active AND NOT st.is_blocked AND NOT st.is_keyword_blocked), '[]')
+                    ) FILTER (WHERE ts.info_hash IS NOT NULL AND st.is_active AND NOT st.is_blocked), '[]')
                 ) AS data
             FROM stream_media_link sml
             JOIN stream st ON st.id = sml.stream_id
@@ -216,7 +216,6 @@ pub async fn fetch_usenet_streams_bulk(
               AND fml.episode_number = $3
               AND st.is_active = true
               AND st.is_blocked = false
-              AND st.is_keyword_blocked = false
             ORDER BY us.size DESC
             "#,
         )
@@ -255,7 +254,6 @@ pub async fn fetch_usenet_streams_bulk(
             WHERE sml.media_id = ANY($1)
               AND st.is_active = true
               AND st.is_blocked = false
-              AND st.is_keyword_blocked = false
             ORDER BY us.size DESC
             "#,
         )
@@ -312,7 +310,7 @@ pub async fn fetch_http_streams_bulk(
             JOIN stream st ON st.id = sf.stream_id
             JOIN http_stream hs ON hs.stream_id = st.id
             WHERE fml.media_id = ANY($1) AND fml.season_number = $2 AND fml.episode_number = $3
-              AND st.is_active AND NOT st.is_blocked AND NOT st.is_keyword_blocked
+              AND st.is_active AND NOT st.is_blocked
         "#,
         )
         .bind(media_ids)
@@ -338,7 +336,7 @@ pub async fn fetch_http_streams_bulk(
             FROM stream_media_link sml
             JOIN stream st ON st.id = sml.stream_id
             JOIN http_stream hs ON hs.stream_id = st.id
-            WHERE sml.media_id = ANY($1) AND st.is_active AND NOT st.is_blocked AND NOT st.is_keyword_blocked
+            WHERE sml.media_id = ANY($1) AND st.is_active AND NOT st.is_blocked
         "#,
         )
         .bind(media_ids)
@@ -383,7 +381,7 @@ pub async fn fetch_youtube_streams_bulk(
         FROM stream_media_link sml
         JOIN stream st ON st.id = sml.stream_id
         JOIN youtube_stream ys ON ys.stream_id = st.id
-        WHERE sml.media_id = ANY($1) AND st.is_active AND NOT st.is_blocked AND NOT st.is_keyword_blocked
+        WHERE sml.media_id = ANY($1) AND st.is_active AND NOT st.is_blocked
     "#,
     )
     .bind(media_ids)
@@ -436,7 +434,7 @@ pub async fn fetch_telegram_streams_bulk(
             JOIN stream st ON st.id = sf.stream_id
             JOIN telegram_stream ts ON ts.stream_id = st.id
             WHERE fml.media_id = ANY($1) AND fml.season_number = $2 AND fml.episode_number = $3
-              AND st.is_active AND NOT st.is_blocked AND NOT st.is_keyword_blocked
+              AND st.is_active AND NOT st.is_blocked
         "#,
         )
         .bind(media_ids)
@@ -462,7 +460,7 @@ pub async fn fetch_telegram_streams_bulk(
             FROM stream_media_link sml
             JOIN stream st ON st.id = sml.stream_id
             JOIN telegram_stream ts ON ts.stream_id = st.id
-            WHERE sml.media_id = ANY($1) AND st.is_active AND NOT st.is_blocked AND NOT st.is_keyword_blocked
+            WHERE sml.media_id = ANY($1) AND st.is_active AND NOT st.is_blocked
         "#,
         )
         .bind(media_ids)
@@ -504,7 +502,7 @@ pub async fn fetch_acestream_streams_bulk(
         FROM stream_media_link sml
         JOIN stream st ON st.id = sml.stream_id
         JOIN acestream_stream ace ON ace.stream_id = st.id
-        WHERE sml.media_id = ANY($1) AND st.is_active AND NOT st.is_blocked AND NOT st.is_keyword_blocked
+        WHERE sml.media_id = ANY($1) AND st.is_active AND NOT st.is_blocked
     "#,
     )
     .bind(media_ids)
@@ -795,7 +793,6 @@ pub async fn fetch_tv_streams_for_media(pool: &PgPool, media_id: MediaId) -> Vec
             WHERE sml.media_id = $1
               AND st.is_active = true
               AND st.is_blocked = false
-              AND st.is_keyword_blocked = false
 
             UNION ALL
 
@@ -818,7 +815,6 @@ pub async fn fetch_tv_streams_for_media(pool: &PgPool, media_id: MediaId) -> Vec
             WHERE sml.media_id = $1
               AND st.is_active = true
               AND st.is_blocked = false
-              AND st.is_keyword_blocked = false
         ) combined
         ORDER BY sort_ts DESC
         LIMIT 100

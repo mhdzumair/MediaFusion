@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ListPagination } from '@/components/ui/list-pagination'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
@@ -60,13 +61,14 @@ import {
   useDeleteSeasonAdmin,
   useUpdateWatchProgress,
   useDeleteStream,
+  useBulkStreamCommunity,
   type CatalogType,
 } from '@/hooks'
 import { useBlockTorrentStream } from '@/hooks/useAdmin'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRpdb } from '@/contexts/RpdbContext'
 import { useToast } from '@/hooks/use-toast'
-import type { StreamingProviderInfo } from '@/lib/api'
+import type { StreamingProviderInfo, CatalogStreamInfo } from '@/lib/api'
 import { adminApi } from '@/lib/api/admin'
 import {
   StreamVoteButtons,
@@ -85,6 +87,7 @@ import {
   type FileLink,
   type EditedFileLink,
 } from '@/components/stream'
+import { sortStreams } from '@/components/stream/streamSorting'
 import {
   MetadataActions,
   MetadataEditSheet,
@@ -98,7 +101,6 @@ import {
 import { RatingsDisplay, ContentGuidance, SeriesEpisodePicker, TrailerButton } from '@/components/content'
 import { PlayerDialog, ExternalPlayerMenu } from '@/components/player'
 import { Poster, Backdrop } from '@/components/ui/poster'
-import type { CatalogStreamInfo } from '@/lib/api'
 import type { ScrapeResponse } from '@/lib/api/scrapers'
 import { scrapersApi } from '@/lib/api/scrapers'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -488,6 +490,7 @@ function StreamActionDialog({
   const createStreamSuggestion = useCreateStreamSuggestion()
   const { hasMinimumRole } = useAuth()
   const isModerator = hasMinimumRole('moderator')
+  const isAdmin = hasMinimumRole('admin')
 
   // Moderator mutations
   const blockStream = useBlockTorrentStream()
@@ -551,6 +554,8 @@ function StreamActionDialog({
         episode,
         action,
         stream_info: {
+          id: stream.id,
+          info_hash: stream.info_hash,
           name: stream.name,
           quality: stream.quality,
           size: stream.size,
@@ -727,6 +732,24 @@ function StreamActionDialog({
                       RD block
                     </Badge>
                   )}
+                  {stream.is_blocked && (
+                    <Badge
+                      variant="outline"
+                      className="border-red-500/40 text-red-600 dark:text-red-400 bg-red-500/10"
+                      title="Manually blocked stream (admin-only visibility)."
+                    >
+                      Blocked
+                    </Badge>
+                  )}
+                  {stream.is_keyword_blocked && (
+                    <Badge
+                      variant="outline"
+                      className="border-orange-500/40 text-orange-600 dark:text-orange-400 bg-orange-500/10"
+                      title="Blocked by keyword filter (admin-only visibility)."
+                    >
+                      Keyword Blocked
+                    </Badge>
+                  )}
                 </div>
               </div>
 
@@ -883,15 +906,24 @@ function StreamActionDialog({
 
               {/* Actions */}
               <div className="grid gap-3">
-                {stream.rd_blocked ? (
+                {stream.rd_blocked && (
                   <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-sm">
                     <p className="text-amber-600 dark:text-amber-400 font-medium mb-1">RealDebrid blocked</p>
                     <p className="text-muted-foreground text-xs">
-                      This release name uses a format RealDebrid rejects (e.g. WEBRip, WEB-DL). The stream is listed for
-                      reference — switch to another debrid provider in the stream bar, or play via P2P in Stremio.
+                      This release uses a filename pattern RealDebrid rejects (e.g. WEBRip, WEB-DL). It is hidden from
+                      Stremio but playable here — switch to another debrid provider if RealDebrid fails at resolve time.
                     </p>
                   </div>
-                ) : streamUrl && (isDebridProvider || isDirectProxyStream || isYoutubeStream) ? (
+                )}
+                {isAdmin && (stream.is_blocked || stream.is_keyword_blocked) && (
+                  <div className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/20 text-sm">
+                    <p className="text-orange-600 dark:text-orange-400 font-medium mb-1">Restricted stream</p>
+                    <p className="text-muted-foreground text-xs">
+                      This stream is hidden from regular users. Playback is enabled for admin review.
+                    </p>
+                  </div>
+                )}
+                {streamUrl && (isDebridProvider || isDirectProxyStream || isYoutubeStream) ? (
                   <>
                     {/* In-browser playback - requires MediaFlow proxy AND debrid for all streams */}
                     {hasMediaflowProxy || isDirectProxyStream || isYoutubeStream ? (
@@ -1139,7 +1171,9 @@ function StreamActionDialog({
                 <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
                 <p>
                   {stream.rd_blocked
-                    ? 'RealDebrid cannot process this torrent filename pattern. Use another provider or copy the info hash below.'
+                    ? streamUrl
+                      ? 'Hidden from Stremio due to RealDebrid filename rules. You can still play here — use another debrid provider if RealDebrid fails.'
+                      : 'Hidden from Stremio due to RealDebrid filename rules. Configure a debrid provider to attempt playback.'
                     : streamUrl && (isDebridProvider || isDirectProxyStream || isYoutubeStream)
                       ? hasMediaflowProxy || isDirectProxyStream || isYoutubeStream
                         ? isYoutubeStream
@@ -1286,6 +1320,8 @@ export function ContentDetailPage() {
   const [autoOpenedStreamId, setAutoOpenedStreamId] = useState<string | null>(null)
   const hasStreamDeepLink = streamFilters.streamIdFilter.length > 0
   const [viewMode, setViewMode] = useState<ViewMode>('list')
+  const [streamPage, setStreamPage] = useState(1)
+  const [streamPageSize, setStreamPageSize] = useState<25 | 50 | 100>(50)
 
   // Player state (hoisted from StreamActionDialog for proper modal layering)
   const [playerOpen, setPlayerOpen] = useState(false)
@@ -1579,8 +1615,7 @@ export function ContentDetailPage() {
       languageFilter,
       cachedFilter,
       streamTypeFilter,
-      sortBy,
-      sortOrder,
+      sortPriority,
     } = streamFilters
 
     if (qualityFilter.length > 0) {
@@ -1664,51 +1699,27 @@ export function ContentDetailPage() {
       result = result.filter((s) => s.id !== undefined && String(s.id) === streamFilters.streamIdFilter)
     }
 
-    // Apply sorting
-    result.sort((a, b) => {
-      let comparison = 0
-
-      switch (sortBy) {
-        case 'quality': {
-          // Sort by resolution quality tier (4K > 1080p > 720p > SD)
-          const getQualityScore = (s: CatalogStreamInfo) => {
-            const res = (s.resolution || '').toLowerCase()
-            if (res.includes('4k') || res.includes('2160')) return 4
-            if (res.includes('1080')) return 3
-            if (res.includes('720')) return 2
-            return 1
-          }
-          comparison = getQualityScore(a) - getQualityScore(b)
-          break
-        }
-        case 'size': {
-          // Parse size strings like "1.5 GB", "700 MB"
-          const parseSize = (sizeStr?: string) => {
-            if (!sizeStr) return 0
-            const match = sizeStr.match(/([\d.]+)\s*(GB|MB|KB|TB)/i)
-            if (!match) return 0
-            const [, num, unit] = match
-            const multipliers: Record<string, number> = { KB: 1, MB: 1024, GB: 1024 * 1024, TB: 1024 * 1024 * 1024 }
-            return parseFloat(num) * (multipliers[unit.toUpperCase()] || 1)
-          }
-          comparison = parseSize(a.size) - parseSize(b.size)
-          break
-        }
-        case 'seeders': {
-          comparison = (a.seeders || 0) - (b.seeders || 0)
-          break
-        }
-        case 'source': {
-          comparison = (a.source || '').localeCompare(b.source || '')
-          break
-        }
-      }
-
-      return sortOrder === 'desc' ? -comparison : comparison
-    })
-
-    return result
+    // Apply multi-key sorting (priority order — first non-tie wins)
+    return sortStreams(result, sortPriority)
   }, [streamsData, streamFilters, lastPlayedStreamId])
+
+  const streamTotalPages = Math.max(1, Math.ceil(filteredStreams.length / streamPageSize))
+  const safeStreamPage = Math.min(streamPage, streamTotalPages)
+
+  const paginatedStreams = useMemo(() => {
+    const start = (safeStreamPage - 1) * streamPageSize
+    return filteredStreams.slice(start, start + streamPageSize)
+  }, [filteredStreams, safeStreamPage, streamPageSize])
+
+  const paginatedStreamIds = useMemo(
+    () => paginatedStreams.map((s) => s.id).filter((id): id is number => id !== undefined),
+    [paginatedStreams],
+  )
+  const { data: communityBulk } = useBulkStreamCommunity(paginatedStreamIds)
+
+  useEffect(() => {
+    setStreamPage(1)
+  }, [streamFilters, selectedSeason, selectedEpisode, selectedProvider, streamPageSize])
 
   // Derive available filter options from streams
   const availableSources = useMemo(() => {
@@ -1818,6 +1829,8 @@ export function ContentDetailPage() {
             episode: selectedEpisode,
             action: 'watch',
             stream_info: {
+              id: stream.id,
+              info_hash: stream.info_hash,
               name: stream.name,
               quality: stream.quality,
               size: stream.size,
@@ -2497,37 +2510,67 @@ export function ContentDetailPage() {
                     Clear Filters
                   </Button>
                 </div>
-              ) : viewMode === 'grouped' ? (
-                <StreamGroupedList
-                  streams={filteredStreams}
-                  groupBy="quality"
-                  renderStream={(stream, index) => (
-                    <StreamCard
-                      key={stream.id || index}
-                      stream={stream}
-                      onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
-                      mediaType={catalogType === 'series' ? 'series' : 'movie'}
-                      isLastPlayed={
-                        stream.id !== undefined &&
-                        (String(stream.id) === lastPlayedStreamId || String(stream.id) === streamFilters.streamIdFilter)
-                      }
-                    />
-                  )}
-                />
               ) : (
-                <div className="space-y-3">
-                  {filteredStreams.map((stream, index) => (
-                    <StreamCard
-                      key={stream.id || index}
-                      stream={stream}
-                      onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
-                      mediaType={catalogType === 'series' ? 'series' : 'movie'}
-                      isLastPlayed={
-                        stream.id !== undefined &&
-                        (String(stream.id) === lastPlayedStreamId || String(stream.id) === streamFilters.streamIdFilter)
-                      }
+                <div className="space-y-4">
+                  <ListPagination
+                    inputId="stream-page-jump-top"
+                    currentPage={safeStreamPage}
+                    totalPages={streamTotalPages}
+                    totalItems={filteredStreams.length}
+                    pageSize={streamPageSize}
+                    onPageChange={setStreamPage}
+                    alwaysShowSummary
+                    pageSizeOptions={[25, 50, 100]}
+                    onPageSizeChange={(size) => setStreamPageSize(size as 25 | 50 | 100)}
+                  />
+                  {viewMode === 'grouped' ? (
+                    <StreamGroupedList
+                      streams={paginatedStreams}
+                      groupBy="quality"
+                      renderStream={(stream, index) => (
+                        <StreamCard
+                          key={stream.id || index}
+                          stream={stream}
+                          community={stream.id ? communityBulk?.streams[String(stream.id)] : undefined}
+                          onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
+                          mediaType={catalogType === 'series' ? 'series' : 'movie'}
+                          isLastPlayed={
+                            stream.id !== undefined &&
+                            (String(stream.id) === lastPlayedStreamId ||
+                              String(stream.id) === streamFilters.streamIdFilter)
+                          }
+                        />
+                      )}
                     />
-                  ))}
+                  ) : (
+                    <div className="space-y-3">
+                      {paginatedStreams.map((stream, index) => (
+                        <StreamCard
+                          key={stream.id || index}
+                          stream={stream}
+                          community={stream.id ? communityBulk?.streams[String(stream.id)] : undefined}
+                          onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
+                          mediaType={catalogType === 'series' ? 'series' : 'movie'}
+                          isLastPlayed={
+                            stream.id !== undefined &&
+                            (String(stream.id) === lastPlayedStreamId ||
+                              String(stream.id) === streamFilters.streamIdFilter)
+                          }
+                        />
+                      ))}
+                    </div>
+                  )}
+                  <ListPagination
+                    inputId="stream-page-jump-bottom"
+                    currentPage={safeStreamPage}
+                    totalPages={streamTotalPages}
+                    totalItems={filteredStreams.length}
+                    pageSize={streamPageSize}
+                    onPageChange={setStreamPage}
+                    alwaysShowSummary
+                    pageSizeOptions={[25, 50, 100]}
+                    onPageSizeChange={(size) => setStreamPageSize(size as 25 | 50 | 100)}
+                  />
                 </div>
               )}
             </CardContent>

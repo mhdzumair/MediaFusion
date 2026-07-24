@@ -11,7 +11,7 @@ use mediafusion_api::{
     config::AppConfig,
     jobs::{JobRegistry, metrics::JobMetrics},
     state::{
-        AppState, load_keyword_filter_cache, maybe_recompute_keyword_blocked,
+        AppState, load_keyword_filter_cache, schedule_keyword_recomputes,
         sync_keywords_from_file,
     },
 };
@@ -130,10 +130,7 @@ async fn main() {
 
     sync_keywords_from_file(&state.pool).await;
     *state.keyword_filters.write().unwrap() = load_keyword_filter_cache(&state.pool).await;
-
-    {
-        maybe_recompute_keyword_blocked(&state.pool).await;
-    }
+    schedule_keyword_recomputes(&state.pool).await;
 
     mediafusion_api::bot::register_notification_handlers(Arc::clone(&state));
     mediafusion_api::util::trackers::init_best_trackers(&state).await;

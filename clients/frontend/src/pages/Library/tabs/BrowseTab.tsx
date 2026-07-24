@@ -24,7 +24,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Film, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ShieldAlert, Trash2 } from 'lucide-react'
+import { Film, ShieldAlert, Trash2 } from 'lucide-react'
+import { ListPagination } from '@/components/ui/list-pagination'
 import {
   ContentCard,
   ContentGrid,
@@ -83,117 +84,6 @@ const saveState = (state: BrowseState) => {
   } catch {
     // Ignore storage errors
   }
-}
-
-// ---------------------------------------------------------------------------
-// Pagination component
-// ---------------------------------------------------------------------------
-
-interface BrowsePaginationProps {
-  currentPage: number
-  totalPages: number
-  totalItems: number
-  pageSize: number
-  onPageChange: (page: number) => void
-}
-
-function BrowsePagination({ currentPage, totalPages, totalItems, pageSize, onPageChange }: BrowsePaginationProps) {
-  if (totalPages <= 1) return null
-
-  const startItem = (currentPage - 1) * pageSize + 1
-  const endItem = Math.min(currentPage * pageSize, totalItems)
-
-  // Build page numbers array with ellipsis markers
-  const pages: (number | '...')[] = []
-  if (totalPages <= 7) {
-    for (let i = 1; i <= totalPages; i++) pages.push(i)
-  } else if (currentPage <= 4) {
-    for (let i = 1; i <= 5; i++) pages.push(i)
-    pages.push('...')
-    pages.push(totalPages)
-  } else if (currentPage >= totalPages - 3) {
-    pages.push(1)
-    pages.push('...')
-    for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i)
-  } else {
-    pages.push(1)
-    pages.push('...')
-    for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i)
-    pages.push('...')
-    pages.push(totalPages)
-  }
-
-  const btnBase =
-    'inline-flex items-center justify-center h-8 min-w-[2rem] px-2 text-sm rounded border transition-colors select-none'
-  const btnActive = 'bg-primary text-primary-foreground border-primary font-medium'
-  const btnInactive = 'bg-transparent text-foreground border-border hover:bg-accent cursor-pointer'
-  const btnDisabled = 'opacity-40 cursor-not-allowed bg-transparent border-border text-muted-foreground'
-
-  return (
-    <div className="flex items-center justify-between text-sm text-muted-foreground py-1">
-      <span className="hidden sm:block">
-        Showing {startItem.toLocaleString()}–{endItem.toLocaleString()} of {totalItems.toLocaleString()}
-      </span>
-      <div className="flex items-center gap-1 mx-auto sm:mx-0">
-        {/* First */}
-        <button
-          className={`${btnBase} ${currentPage === 1 ? btnDisabled : btnInactive}`}
-          disabled={currentPage === 1}
-          onClick={() => onPageChange(1)}
-          title="First page"
-        >
-          <ChevronsLeft className="h-3.5 w-3.5" />
-        </button>
-        {/* Prev */}
-        <button
-          className={`${btnBase} ${currentPage === 1 ? btnDisabled : btnInactive}`}
-          disabled={currentPage === 1}
-          onClick={() => onPageChange(currentPage - 1)}
-          title="Previous page"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
-        </button>
-
-        {pages.map((p, i) =>
-          p === '...' ? (
-            <span key={`ellipsis-${i}`} className="px-1 text-muted-foreground">
-              …
-            </span>
-          ) : (
-            <button
-              key={p}
-              className={`${btnBase} ${p === currentPage ? btnActive : btnInactive}`}
-              onClick={() => onPageChange(p as number)}
-            >
-              {p}
-            </button>
-          ),
-        )}
-
-        {/* Next */}
-        <button
-          className={`${btnBase} ${currentPage === totalPages ? btnDisabled : btnInactive}`}
-          disabled={currentPage === totalPages}
-          onClick={() => onPageChange(currentPage + 1)}
-          title="Next page"
-        >
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-        {/* Last */}
-        <button
-          className={`${btnBase} ${currentPage === totalPages ? btnDisabled : btnInactive}`}
-          disabled={currentPage === totalPages}
-          onClick={() => onPageChange(totalPages)}
-          title="Last page"
-        >
-          <ChevronsRight className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <span className="hidden sm:block text-right opacity-0 pointer-events-none">
-        Showing {startItem}–{endItem} of {totalItems}
-      </span>
-    </div>
-  )
 }
 
 // ---------------------------------------------------------------------------
@@ -745,7 +635,8 @@ export function BrowseTab() {
 
       {/* Top pagination */}
       {pagedData && pagedData.total > pageSize && (
-        <BrowsePagination
+        <ListPagination
+          inputId="browse-page-jump"
           currentPage={browsePage}
           totalPages={totalPages}
           totalItems={pagedData.total}
@@ -876,7 +767,8 @@ export function BrowseTab() {
 
           {/* Bottom pagination */}
           {pagedData && pagedData.total > pageSize && (
-            <BrowsePagination
+            <ListPagination
+              inputId="browse-page-jump"
               currentPage={browsePage}
               totalPages={totalPages}
               totalItems={pagedData.total}

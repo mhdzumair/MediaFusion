@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { keywordFiltersApi } from '@/lib/api'
+import { keywordFiltersApi, type KeywordSyncStatus } from '@/lib/api'
 
 export const keywordFilterKeys = {
   all: ['keyword-filters'] as const,
+  syncStatus: () => [...keywordFilterKeys.all, 'sync-status'] as const,
   keywords: (params?: { page?: number; page_size?: number; search?: string; scope?: string }) =>
     [...keywordFilterKeys.all, 'keywords', params] as const,
   whitelist: (params?: { page?: number; page_size?: number }) =>
@@ -79,6 +80,27 @@ export function useReloadKeywordCache() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: () => keywordFiltersApi.reloadCache(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keywordFilterKeys.all }),
+  })
+}
+
+export function useKeywordSyncStatus(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: keywordFilterKeys.syncStatus(),
+    queryFn: () => keywordFiltersApi.getSyncStatus(),
+    enabled: options?.enabled !== false,
+    refetchInterval: (query) => {
+      const data = query.state.data as KeywordSyncStatus | undefined
+      const active = data?.recompute.in_progress
+      return active ? 5_000 : 30_000
+    },
+  })
+}
+
+export function useResetKeywordFilters() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => keywordFiltersApi.resetToDefaults(),
     onSuccess: () => qc.invalidateQueries({ queryKey: keywordFilterKeys.all }),
   })
 }

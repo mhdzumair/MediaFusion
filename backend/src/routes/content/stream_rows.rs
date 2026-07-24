@@ -41,7 +41,7 @@ pub const STREAM_BASE_COLS: &str = r#"
     ts.seeders,
     s.uploader,
     s.release_group,
-    s.is_keyword_blocked"#;
+    s.is_blocked"#;
 
 #[derive(sqlx::FromRow)]
 pub struct BrowseStreamRow {
@@ -56,6 +56,7 @@ pub struct BrowseStreamRow {
     pub seeders: Option<i32>,
     pub uploader: Option<String>,
     pub release_group: Option<String>,
+    pub is_blocked: bool,
     pub filename: Option<String>,
     pub file_size: Option<i64>,
     pub info_hash: Option<String>,
@@ -76,7 +77,6 @@ pub struct BrowseStreamRow {
     pub is_complete: bool,
     pub is_dubbed: bool,
     pub is_subbed: bool,
-    pub is_keyword_blocked: bool,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -112,7 +112,6 @@ pub struct MyStreamRow {
     pub is_blocked: bool,
     pub is_active: bool,
     pub is_public: bool,
-    pub is_keyword_blocked: bool,
     pub media_id: Option<i32>,
     pub media_title: Option<String>,
     pub media_type: Option<String>,
@@ -286,7 +285,7 @@ impl From<&MyStreamRow> for StreamFlags {
     }
 }
 
-pub fn my_stream_row_to_json(row: &MyStreamRow) -> Value {
+pub fn my_stream_row_to_json(row: &MyStreamRow, kf: &crate::state::KeywordFilterCache) -> Value {
     let link_arrays = parse_stream_link_arrays(
         row.audio_formats.as_deref(),
         row.channels.as_deref(),
@@ -316,7 +315,11 @@ pub fn my_stream_row_to_json(row: &MyStreamRow) -> Value {
         obj.insert("is_blocked".into(), json!(row.is_blocked));
         obj.insert("is_active".into(), json!(row.is_active));
         obj.insert("is_public".into(), json!(row.is_public));
-        obj.insert("is_keyword_blocked".into(), json!(row.is_keyword_blocked));
+        // Runtime-only — no stream.is_keyword_blocked DB column.
+        obj.insert(
+            "is_keyword_blocked".into(),
+            json!(kf.is_stream_text_blocked(&row.name, row.filename.as_deref())),
+        );
         obj.insert("media_id".into(), json!(row.media_id));
         obj.insert("media_title".into(), json!(row.media_title));
         obj.insert("media_type".into(), json!(row.media_type));

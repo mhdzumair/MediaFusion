@@ -17,7 +17,8 @@ pub struct KeywordFilterCache {
     /// Media-scoped keywords (scope 'media' or 'all'): drive is_keyword_blocked DB column
     /// and in-memory media title checks (e.g. MDBList API path).
     pub keywords: Vec<String>,
-    /// Stream-scoped keywords (scope 'stream' or 'all'): for torrent/stream title filtering.
+    /// Stream-scoped keywords loaded from the embedded file plus admin overrides.
+    /// Applied at runtime when serving/scraping streams — not stored as DB flags.
     pub stream_keywords: Vec<String>,
     pub whitelist: Vec<String>, // whitelist phrases, lowercased
     /// Mirrors `AppConfig::poster_nsfw_enabled`; set after loading from DB.
@@ -532,6 +533,8 @@ async fn recompute_keyword_blocked(
     pool: &PgPool,
     keywords: &[String],
     whitelist: &[String],
+    kind: KwRecomputeKind,
+    sweep_ver: &str,
 ) -> bool {
     // Compile the full keyword/whitelist lists into single regex alternations once.
     // PostgreSQL's NFA evaluates one pattern per row in O(len(text)) regardless of
@@ -616,6 +619,16 @@ async fn recompute_keyword_blocked(
             }
         }
 
+        if recompute_superseded(pool, kind, sweep_ver).await {
+            tracing::info!(
+                target_version = sweep_ver,
+                updated = total_updated,
+                "{}: aborting sweep — newer keyword version requested",
+                kind.label()
+            );
+            return false;
+        }
+
         from_id = to_id;
         if from_id >= max_id {
             break;
@@ -634,9 +647,8 @@ async fn recompute_keyword_blocked(
     true
 }
 
-const STREAM_KW_BLOCKED_RECOMPUTE_ID: &str = "stream-keyword-blocked-recompute";
 
-// Deployment-wide single-flight leases for the keyword-blocked recomputes.
+// Deployment-wide single-flight lease for the media keyword-blocked recompute.
 // `keyword_filters` is a global table, so every process computes the identical
 // result — and even a minimal deployment runs the API and the worker as
 // separate processes, both of which trigger recomputes at startup. Without
@@ -661,12 +673,12 @@ const RECOMPUTE_LEASE_RENEW_SECS: u64 = 60;
 // stale under it and a successor can claim.
 const RECOMPUTE_RENEW_ABORT_SECS: u64 = 120;
 const RECOMPUTE_RETRY_SLEEP_SECS: u64 = 180;
+const RECOMPUTE_RETRY_SLEEP_PENDING_SECS: u64 = 1;
 const RECOMPUTE_MAX_ATTEMPTS: u32 = 48;
 const MEDIA_KW_RECOMPUTE_LEASE_ID: &str = "keyword-blocked-recompute-lease";
-const STREAM_KW_RECOMPUTE_LEASE_ID: &str = "stream-keyword-blocked-recompute-lease";
+const MEDIA_KW_RECOMPUTE_REQUEST_ID: &str = "keyword-blocked-recompute-request";
 
-/// Read the recorded completion version for `marker_id` (e.g.
-/// [`STREAM_KW_BLOCKED_RECOMPUTE_ID`]).
+/// Read the recorded completion version for `marker_id`.
 async fn recorded_version(pool: &PgPool, marker_id: &str) -> Option<String> {
     sqlx::query_scalar("SELECT file_hash FROM keyword_sync_state WHERE id = $1")
         .bind(marker_id)
@@ -675,53 +687,93 @@ async fn recorded_version(pool: &PgPool, marker_id: &str) -> Option<String> {
         .unwrap_or(None)
 }
 
-/// Which keyword-blocked recompute a single-flight run targets.
+/// Media `is_keyword_blocked` batch recompute (stream filtering is runtime-only).
 #[derive(Clone, Copy)]
 pub enum KwRecomputeKind {
-    /// `media.is_keyword_blocked` from media-scoped keywords.
     Media,
-    /// `stream.is_keyword_blocked` from stream-scoped keywords.
-    Stream,
 }
 
 impl KwRecomputeKind {
-    fn lease_id(self) -> &'static str {
-        match self {
-            Self::Media => MEDIA_KW_RECOMPUTE_LEASE_ID,
-            Self::Stream => STREAM_KW_RECOMPUTE_LEASE_ID,
-        }
+    pub fn lease_id(self) -> &'static str {
+        MEDIA_KW_RECOMPUTE_LEASE_ID
     }
-    fn marker_id(self) -> &'static str {
-        match self {
-            Self::Media => KW_BLOCKED_RECOMPUTE_ID,
-            Self::Stream => STREAM_KW_BLOCKED_RECOMPUTE_ID,
-        }
+    pub fn marker_id(self) -> &'static str {
+        KW_BLOCKED_RECOMPUTE_ID
+    }
+    fn request_id(self) -> &'static str {
+        MEDIA_KW_RECOMPUTE_REQUEST_ID
     }
     fn label(self) -> &'static str {
-        match self {
-            Self::Media => "keyword blocked recompute",
-            Self::Stream => "stream keyword blocked recompute",
+        "keyword blocked recompute"
+    }
+    pub fn version(self, kf: &KeywordFilterCache) -> u64 {
+        kf.media_version_tag()
+    }
+    async fn sweep(self, pool: &PgPool, kf: &KeywordFilterCache, sweep_ver: &str) -> bool {
+        recompute_keyword_blocked(pool, &kf.keywords, &kf.whitelist, self, sweep_ver).await
+    }
+}
+
+async fn requested_recompute_version(pool: &PgPool, kind: KwRecomputeKind) -> Option<String> {
+    recorded_version(pool, kind.request_id()).await
+}
+
+async fn set_requested_recompute_version(pool: &PgPool, kind: KwRecomputeKind, ver_str: &str) {
+    if let Err(e) = sqlx::query(
+        "INSERT INTO keyword_sync_state (id, file_hash, synced_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (id) DO UPDATE SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
+    )
+    .bind(kind.request_id())
+    .bind(ver_str)
+    .execute(pool)
+    .await
+    {
+        tracing::warn!(
+            "{}: failed to record recompute request for {ver_str}: {e}",
+            kind.label()
+        );
+    }
+}
+
+async fn abort_recompute_lease(pool: &PgPool, kind: KwRecomputeKind) {
+    match sqlx::query("DELETE FROM keyword_sync_state WHERE id = $1")
+        .bind(kind.lease_id())
+        .execute(pool)
+        .await
+    {
+        Ok(r) if r.rows_affected() > 0 => {
+            tracing::info!(
+                "{}: aborted in-flight sweep so the latest keyword version can run",
+                kind.label()
+            );
+        }
+        Ok(_) => {}
+        Err(e) => {
+            tracing::warn!("{}: failed to abort recompute lease: {e}", kind.label());
         }
     }
-    fn version(self, kf: &KeywordFilterCache) -> u64 {
-        match self {
-            Self::Media => kf.media_version_tag(),
-            // Full tag: any keyword/whitelist change (including media-scope
-            // changes that may have crossover with stream scope) triggers a
-            // stream recompute.
-            Self::Stream => kf.version_tag(),
-        }
+}
+
+async fn recompute_superseded(pool: &PgPool, kind: KwRecomputeKind, sweep_ver: &str) -> bool {
+    if let Some(req) = requested_recompute_version(pool, kind).await {
+        return req != sweep_ver;
     }
-    /// Run the full-table sweep. Returns `true` only when every batch
-    /// succeeded; marker publication is the caller's (fenced) responsibility.
-    async fn sweep(self, pool: &PgPool, kf: &KeywordFilterCache) -> bool {
-        match self {
-            Self::Media => recompute_keyword_blocked(pool, &kf.keywords, &kf.whitelist).await,
-            Self::Stream => {
-                recompute_stream_keyword_blocked(pool, &kf.stream_keywords, &kf.whitelist).await
-            }
-        }
+    if let Ok(kf) = try_load_keyword_filter_cache(pool).await {
+        return format!("{:016x}", kind.version(&kf)) != sweep_ver;
     }
+    false
+}
+
+async fn recompute_work_pending(pool: &PgPool, kind: KwRecomputeKind) -> bool {
+    let Ok(kf) = try_load_keyword_filter_cache(pool).await else {
+        return false;
+    };
+    let live = format!("{:016x}", kind.version(&kf));
+    recorded_version(pool, kind.marker_id())
+        .await
+        .as_deref()
+        != Some(live.as_str())
 }
 
 /// Converge `kind`'s `is_keyword_blocked` column to the CURRENT keyword state
@@ -807,9 +859,14 @@ pub async fn kw_recompute_single_flight(pool: &PgPool, kind: KwRecomputeKind) {
 
         if claimed.is_none() {
             tracing::debug!(
-                "{label}: another pod holds the recompute lease (attempt {attempt}), waiting"
+                "{label}: another task holds the recompute lease (attempt {attempt}), waiting"
             );
-            tokio::time::sleep(std::time::Duration::from_secs(RECOMPUTE_RETRY_SLEEP_SECS)).await;
+            let wait_secs = if recompute_work_pending(pool, kind).await {
+                RECOMPUTE_RETRY_SLEEP_PENDING_SECS
+            } else {
+                RECOMPUTE_RETRY_SLEEP_SECS
+            };
+            tokio::time::sleep(std::time::Duration::from_secs(wait_secs)).await;
             continue;
         }
 
@@ -819,6 +876,16 @@ pub async fn kw_recompute_single_flight(pool: &PgPool, kind: KwRecomputeKind) {
             tracing::debug!("{label}: version {ver_str} completed while claiming, done");
             release_lease(pool, kind.lease_id(), &owner, label).await;
             return;
+        }
+
+        if let Some(req) = requested_recompute_version(pool, kind).await
+            && req != ver_str
+        {
+            tracing::debug!(
+                "{label}: requested version {req} differs from live {ver_str}, retrying"
+            );
+            release_lease(pool, kind.lease_id(), &owner, label).await;
+            continue;
         }
 
         // Confirm ownership with a fenced renewal immediately before starting
@@ -879,7 +946,7 @@ pub async fn kw_recompute_single_flight(pool: &PgPool, kind: KwRecomputeKind) {
         };
 
         let swept_ok = tokio::select! {
-            ok = kind.sweep(pool, &kf) => ok,
+            ok = kind.sweep(pool, &kf, &ver_str) => ok,
             _ = renew_until_lost => false,
         };
 
@@ -888,7 +955,9 @@ pub async fn kw_recompute_single_flight(pool: &PgPool, kind: KwRecomputeKind) {
         // renewal stall) cannot publish at all, so it can never overwrite a
         // successor's completion state. `published` implies we owned the lease
         // at the instant of publication.
+        let superseded = recompute_superseded(pool, kind, &ver_str).await;
         let published = swept_ok
+            && !superseded
             && publish_marker_fenced(
                 pool,
                 kind.marker_id(),
@@ -909,6 +978,12 @@ pub async fn kw_recompute_single_flight(pool: &PgPool, kind: KwRecomputeKind) {
             // reload compares the marker against the LIVE keyword state and
             // exits only when they agree, otherwise we keep converging.
             tracing::info!("{label}: swept version {ver_str}, reverifying against live state");
+            continue;
+        }
+        if superseded {
+            tracing::info!(
+                "{label}: sweep for version {ver_str} superseded, converging to latest keywords"
+            );
             continue;
         }
         if swept_ok {
@@ -1003,159 +1078,61 @@ async fn release_lease(pool: &PgPool, lease_id: &str, owner: &str, label: &str) 
     }
 }
 
-/// Batch-recompute `stream.is_keyword_blocked` for all rows.
-///
-/// Mirrors `recompute_keyword_blocked` but targets the `stream` table using
-/// stream-scoped keywords (scope 'stream' or 'all').
-async fn recompute_stream_keyword_blocked(
-    pool: &PgPool,
-    stream_keywords: &[String],
-    whitelist: &[String],
-) -> bool {
-    let kw_pattern: Option<String> = build_regex_pattern(stream_keywords);
-    let wl_pattern: Option<String> = build_regex_pattern(whitelist);
-
-    // Get the current max ID so we know when to stop.
-    let max_id: i32 = match sqlx::query_scalar::<_, Option<i32>>("SELECT MAX(id) FROM stream")
-        .fetch_one(pool)
-        .await
-    {
-        Ok(Some(id)) => id,
-        Ok(None) => {
-            // An empty table is trivially converged.
-            tracing::debug!("stream keyword blocked: stream table is empty, nothing to sweep");
-            return true;
-        }
-        Err(e) => {
-            tracing::error!("recompute_stream_keyword_blocked failed to get max id: {e}");
-            return false;
-        }
-    };
-
-    const BATCH_SIZE: i32 = 500;
-    let mut from_id: i32 = 0;
-    let mut total_updated: u64 = 0;
-    let started = std::time::Instant::now();
-
-    loop {
-        let to_id = from_id + BATCH_SIZE;
-        let result = sqlx::query(
-            "UPDATE stream s
-             SET is_keyword_blocked = (
-                 $3::text IS NOT NULL
-                 AND s.name ~* $3
-                 AND ($4::text IS NULL OR s.name !~* $4)
-             )
-             WHERE s.id > $1 AND s.id <= $2
-               AND s.is_keyword_blocked IS DISTINCT FROM (
-                   $3::text IS NOT NULL
-                   AND s.name ~* $3
-                   AND ($4::text IS NULL OR s.name !~* $4)
-               )",
-        )
-        .bind(from_id)
-        .bind(to_id)
-        .bind(&kw_pattern)
-        .bind(&wl_pattern)
-        .execute(pool)
-        .await;
-
-        match result {
-            Ok(r) => total_updated += r.rows_affected(),
-            Err(e) => {
-                // NotificationResponse errors are transient pool-connection issues (a connection
-                // that previously did LISTEN received an async notification during query execution).
-                // Skip the batch and continue rather than aborting the entire recompute.
-                let msg = e.to_string();
-                if msg.contains("NotificationResponse") {
-                    tracing::warn!(
-                        "recompute_stream_keyword_blocked batch [{from_id}..{to_id}] skipped \
-                         due to transient NotificationResponse on pool connection: {e}"
-                    );
-                } else {
-                    tracing::error!(
-                        "recompute_stream_keyword_blocked batch [{from_id}..{to_id}] failed: {e}"
-                    );
-                    return false;
-                }
-            }
-        }
-
-        from_id = to_id;
-        if from_id >= max_id {
-            break;
-        }
-    }
-
-    // Completion-marker publication lives in kw_recompute_single_flight, fenced
-    // on lease ownership — a sweep that lost its lease must not publish.
-    let elapsed = started.elapsed();
-    tracing::info!(
-        keywords = stream_keywords.len(),
-        updated = total_updated,
-        elapsed_ms = elapsed.as_millis(),
-        "keyword filter: stream is_keyword_blocked recompute complete"
-    );
-    true
-}
-
-/// Check whether stream `is_keyword_blocked` needs a recompute and, if so, spawn one.
-pub async fn maybe_recompute_stream_keyword_blocked(pool: &PgPool) {
-    match try_load_keyword_filter_cache(pool).await {
-        Ok(kf) => {
-            let ver_str = format!("{:016x}", kf.version_tag());
-            if recorded_version(pool, STREAM_KW_BLOCKED_RECOMPUTE_ID)
-                .await
-                .as_deref()
-                == Some(ver_str.as_str())
-            {
-                tracing::debug!(
-                    "stream keyword blocked: column up to date (version {ver_str}), skipping recompute"
-                );
-                return;
-            }
-            tracing::info!(
-                "stream keyword blocked: version changed ({ver_str}), recomputing in background"
-            );
-        }
+async fn schedule_kind_recompute(pool: &PgPool, kind: KwRecomputeKind) {
+    let kf = match try_load_keyword_filter_cache(pool).await {
+        Ok(kf) => kf,
         Err(e) => {
             tracing::warn!(
-                "stream keyword blocked: keyword state load failed, scheduling recompute: {e}"
+                "{}: keyword state load failed, skipping schedule: {e}",
+                kind.label()
             );
+            return;
         }
+    };
+    let ver_str = format!("{:016x}", kind.version(&kf));
+    if recorded_version(pool, kind.marker_id())
+        .await
+        .as_deref()
+        == Some(ver_str.as_str())
+    {
+        tracing::debug!(
+            "{}: column up to date (version {ver_str}), skipping recompute",
+            kind.label()
+        );
+        return;
+    }
+
+    tracing::info!(
+        "{}: scheduling recompute for version {ver_str}",
+        kind.label()
+    );
+    let prev_request = requested_recompute_version(pool, kind).await;
+    let version_changed = prev_request.as_deref() != Some(ver_str.as_str());
+    set_requested_recompute_version(pool, kind, &ver_str).await;
+    if version_changed {
+        abort_recompute_lease(pool, kind).await;
+    } else if is_recompute_lease_active(pool, kind).await {
+        tracing::debug!(
+            "{}: recompute for version {ver_str} already running",
+            kind.label()
+        );
+        return;
     }
     let pool = pool.clone();
-    tokio::spawn(async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Stream).await });
+    tokio::spawn(async move { kw_recompute_single_flight(&pool, kind).await });
 }
 
-/// Check whether `is_keyword_blocked` needs a recompute and, if so, spawn one.
-///
-/// Reloads keyword state from the DB rather than trusting a caller-supplied cache,
-/// so a degraded empty cache cannot suppress a needed recompute.
+/// Schedule media blocked-flag recompute when the completion marker is stale.
+/// Stream keyword filtering is runtime-only and does not batch-update the DB.
+/// When keywords change while a sweep is already running, the in-flight lease is
+/// aborted and batch loops exit early so only the latest version is converged.
+pub async fn schedule_keyword_recomputes(pool: &PgPool) {
+    schedule_kind_recompute(pool, KwRecomputeKind::Media).await;
+}
+
+/// Check whether media `is_keyword_blocked` needs a recompute and, if so, spawn one.
 pub async fn maybe_recompute_keyword_blocked(pool: &PgPool) {
-    match try_load_keyword_filter_cache(pool).await {
-        Ok(kf) => {
-            let ver_str = format!("{:016x}", kf.media_version_tag());
-            if recorded_version(pool, KW_BLOCKED_RECOMPUTE_ID)
-                .await
-                .as_deref()
-                == Some(ver_str.as_str())
-            {
-                tracing::debug!(
-                    "keyword blocked: column up to date (version {ver_str}), skipping recompute"
-                );
-                return;
-            }
-            tracing::info!(
-                "keyword blocked: version changed ({ver_str}), recomputing in background"
-            );
-        }
-        Err(e) => {
-            tracing::warn!("keyword blocked: keyword state load failed, scheduling recompute: {e}");
-        }
-    }
-    let pool = pool.clone();
-    tokio::spawn(async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Media).await });
+    schedule_kind_recompute(pool, KwRecomputeKind::Media).await;
 }
 
 pub async fn load_keyword_filter_cache(pool: &PgPool) -> KeywordFilterCache {
@@ -1189,11 +1166,18 @@ pub async fn try_load_keyword_filter_cache(
     .fetch_all(pool)
     .await?;
 
-    let stream_keywords: Vec<String> = sqlx::query_scalar(
-        "SELECT LOWER(keyword) FROM keyword_filters WHERE is_active = true AND scope IN ('all', 'stream') ORDER BY keyword",
+    let mut stream_keywords = embedded_stream_keywords();
+    let admin_stream_keywords: Vec<String> = sqlx::query_scalar(
+        "SELECT LOWER(keyword) FROM keyword_filters WHERE is_active = true AND source = 'admin' AND scope IN ('all', 'stream') ORDER BY keyword",
     )
     .fetch_all(pool)
     .await?;
+    for kw in admin_stream_keywords {
+        if !stream_keywords.iter().any(|existing| existing == &kw) {
+            stream_keywords.push(kw);
+        }
+    }
+    stream_keywords.sort();
 
     let whitelist: Vec<String> =
         sqlx::query_scalar("SELECT LOWER(phrase) FROM keyword_whitelist ORDER BY phrase")
@@ -1205,6 +1189,129 @@ pub async fn try_load_keyword_filter_cache(
         whitelist,
         nsfw_filter_enabled: false, // caller sets this from config after loading
     })
+}
+
+pub const MEDIA_KEYWORDS_SYNC_ID: &str = "media-keywords";
+
+/// Stats derived from the compile-time embedded keyword files.
+pub struct EmbeddedKeywordFileStats {
+    pub hash: String,
+    pub keyword_count: usize,
+    pub whitelist_count: usize,
+}
+
+fn sha256_hex(content: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(content.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Hash and entry counts for the embedded media keyword file.
+pub fn embedded_media_keyword_file_stats() -> EmbeddedKeywordFileStats {
+    const FILE_CONTENT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/resources/media-keywords-filters.txt"
+    ));
+    let mut keyword_count = 0usize;
+    let mut whitelist_count = 0usize;
+    for line in FILE_CONTENT.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with('!') {
+            if !trimmed[1..].trim().is_empty() {
+                whitelist_count += 1;
+            }
+        } else {
+            keyword_count += 1;
+        }
+    }
+    EmbeddedKeywordFileStats {
+        hash: sha256_hex(FILE_CONTENT),
+        keyword_count,
+        whitelist_count,
+    }
+}
+
+/// Parse stream keywords from the compile-time embedded resource file.
+pub fn embedded_stream_keywords() -> Vec<String> {
+    const FILE_CONTENT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/resources/stream-keywords-filters.txt"
+    ));
+    FILE_CONTENT
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| line.to_lowercase())
+        .collect()
+}
+
+/// Hash and entry counts for the embedded stream keyword file.
+pub fn embedded_stream_keyword_file_stats() -> EmbeddedKeywordFileStats {
+    let keyword_count = embedded_stream_keywords().len();
+    const FILE_CONTENT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/resources/stream-keywords-filters.txt"
+    ));
+    EmbeddedKeywordFileStats {
+        hash: sha256_hex(FILE_CONTENT),
+        keyword_count,
+        whitelist_count: 0,
+    }
+}
+
+/// Read a `keyword_sync_state` row (hash + timestamp).
+pub async fn keyword_sync_state_row(
+    pool: &PgPool,
+    id: &str,
+) -> Option<(String, chrono::DateTime<chrono::Utc>)> {
+    sqlx::query_as("SELECT file_hash, synced_at FROM keyword_sync_state WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+}
+
+/// Whether a deployment-wide recompute lease is currently held (fresh within the stale window).
+pub async fn is_recompute_lease_active(pool: &PgPool, kind: KwRecomputeKind) -> bool {
+    let active: Option<i32> = sqlx::query_scalar(
+        "SELECT 1 FROM keyword_sync_state
+         WHERE id = $1 AND synced_at >= NOW() - ($2 * interval '1 second')",
+    )
+    .bind(kind.lease_id())
+    .bind(RECOMPUTE_LEASE_STALE_SECS)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    active.is_some()
+}
+
+/// Clear stored file-sync hashes so the next sync re-imports from the embedded files.
+pub async fn clear_keyword_file_sync_state(pool: &PgPool) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM keyword_sync_state WHERE id = $1")
+        .bind(MEDIA_KEYWORDS_SYNC_ID)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Remove admin-managed keyword/whitelist rows and force a full re-import from embedded files.
+pub async fn reset_keywords_to_file_defaults(pool: &PgPool) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM keyword_filters WHERE source = 'admin'")
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM keyword_whitelist WHERE source = 'admin'")
+        .execute(pool)
+        .await?;
+    clear_keyword_file_sync_state(pool).await?;
+    sync_keywords_from_file(pool).await;
+    Ok(())
 }
 
 /// Sync `keywords/media-keywords.txt` into the DB.
@@ -1220,12 +1327,9 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
         env!("CARGO_MANIFEST_DIR"),
         "/resources/media-keywords-filters.txt"
     ));
-    const SYNC_ID: &str = "media-keywords";
+    const SYNC_ID: &str = MEDIA_KEYWORDS_SYNC_ID;
 
-    // ── Compute hash ──────────────────────────────────────────────────────────
-    use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(FILE_CONTENT.as_bytes());
-    let hash: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+    let hash = sha256_hex(FILE_CONTENT);
 
     // ── Compare with stored hash ──────────────────────────────────────────────
     let stored: Option<String> =
@@ -1236,6 +1340,7 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
             .unwrap_or(None);
 
     if stored.as_deref() == Some(hash.as_str()) {
+        reconcile_file_keyword_scopes(pool).await;
         tracing::debug!("keyword sync: file unchanged (hash {hash}), skipping");
         return;
     }
@@ -1270,11 +1375,12 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
         }
     };
 
-    // Remove old file-sourced media-scope entries (leaves stream-scope file rows intact)
-    if let Err(e) =
-        sqlx::query("DELETE FROM keyword_filters WHERE source = 'file' AND scope = 'media'")
-            .execute(&mut *tx)
-            .await
+    // Remove old file-sourced media keywords (including legacy scope='all' rows).
+    if let Err(e) = sqlx::query(
+        "DELETE FROM keyword_filters WHERE source = 'file' AND scope IN ('media', 'all')",
+    )
+    .execute(&mut *tx)
+    .await
     {
         tracing::error!("keyword sync: delete keyword_filters failed: {e}");
         return;
@@ -1292,7 +1398,14 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
         && let Err(e) = sqlx::query(
             "INSERT INTO keyword_filters (keyword, source, scope)
              SELECT UNNEST($1::text[]), 'file', 'media'
-             ON CONFLICT (LOWER(keyword)) DO UPDATE SET source = 'file', is_active = true, scope = 'media'",
+             ON CONFLICT (LOWER(keyword)) DO UPDATE SET
+               source = 'file',
+               is_active = true,
+               scope = CASE
+                 WHEN keyword_filters.source = 'admin' AND keyword_filters.scope = 'stream' THEN 'stream'
+                 WHEN keyword_filters.scope IN ('stream', 'all') THEN 'all'
+                 ELSE 'media'
+               END",
         )
         .bind(&keywords[..])
         .execute(&mut *tx)
@@ -1337,142 +1450,32 @@ pub async fn sync_keywords_from_file(pool: &PgPool) {
         return;
     }
 
-    // Converge the media flags in the background via the deployment-wide
-    // single-flight lease (which reloads the merged file+admin keyword state
-    // from the DB — computing a version from the file lists alone here would
-    // disagree with the DB-derived tag whenever admin-managed rows exist).
-    {
-        let pool = pool.clone();
-        tokio::spawn(
-            async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Media).await },
-        );
-    }
-
     tracing::info!(
         "keyword sync: done — {} keywords, {} whitelist phrases (hash {hash})",
         keywords.len(),
         whitelist.len()
     );
 
-    // Sync stream-scoped keywords from the companion file.
-    sync_stream_keywords_from_file(pool).await;
+    reconcile_file_keyword_scopes(pool).await;
 }
 
-/// Sync `keywords/stream-keywords.txt` into the DB with `scope='stream'`.
-///
-/// Lines starting with `#` are comment lines and are skipped.  Only rows with
-/// `source = 'file' AND scope = 'stream'` are touched — admin-managed entries
-/// are left untouched.
-///
-/// A SHA-256 of the raw file bytes is stored in `keyword_sync_state`.  If the
-/// hash matches the stored value the sync is skipped entirely.
-pub async fn sync_stream_keywords_from_file(pool: &PgPool) {
-    const FILE_CONTENT: &str = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/resources/stream-keywords-filters.txt"
-    ));
-    const SYNC_ID: &str = "stream-keywords";
-
-    // ── Compute hash ──────────────────────────────────────────────────────────
-    use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(FILE_CONTENT.as_bytes());
-    let hash: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-
-    // ── Compare with stored hash ──────────────────────────────────────────────
-    let stored: Option<String> =
-        sqlx::query_scalar("SELECT file_hash FROM keyword_sync_state WHERE id = $1")
-            .bind(SYNC_ID)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
-
-    if stored.as_deref() == Some(hash.as_str()) {
-        tracing::debug!("stream keyword sync: file unchanged (hash {hash}), skipping");
+/// Keywords present in both bundled files use scope `all`; media-only keywords stay `media`.
+async fn reconcile_file_keyword_scopes(pool: &PgPool) {
+    let stream_keywords = embedded_stream_keywords();
+    if stream_keywords.is_empty() {
         return;
     }
-
-    tracing::info!("stream keyword sync: file changed, syncing to DB…");
-
-    // ── Parse file ────────────────────────────────────────────────────────────
-    let mut stream_keywords: Vec<String> = Vec::new();
-
-    for line in FILE_CONTENT.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        stream_keywords.push(trimmed.to_lowercase());
-    }
-
-    // ── Replace file-sourced stream-scope rows atomically ─────────────────────
-    let mut tx = match pool.begin().await {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::error!("stream keyword sync: failed to begin transaction: {e}");
-            return;
-        }
-    };
-
-    // Remove old file-sourced stream-scope entries
-    if let Err(e) =
-        sqlx::query("DELETE FROM keyword_filters WHERE source = 'file' AND scope = 'stream'")
-            .execute(&mut *tx)
-            .await
-    {
-        tracing::error!("stream keyword sync: delete keyword_filters failed: {e}");
-        return;
-    }
-
-    // Insert new stream keywords (skip if empty)
-    if !stream_keywords.is_empty()
-        && let Err(e) = sqlx::query(
-            "INSERT INTO keyword_filters (keyword, source, scope)
-             SELECT UNNEST($1::text[]), 'file', 'stream'
-             ON CONFLICT (LOWER(keyword)) DO UPDATE SET source = 'file', is_active = true, scope = 'stream'",
-        )
-        .bind(&stream_keywords[..])
-        .execute(&mut *tx)
-        .await
-        {
-            tracing::error!("stream keyword sync: insert keyword_filters failed: {e}");
-            return;
-        }
-
-    // Update stored hash
     if let Err(e) = sqlx::query(
-        "INSERT INTO keyword_sync_state (id, file_hash, synced_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (id) DO UPDATE SET file_hash = EXCLUDED.file_hash, synced_at = NOW()",
+        "UPDATE keyword_filters SET scope = 'all'
+         WHERE source = 'file' AND scope = 'media'
+           AND LOWER(keyword) = ANY($1::text[])",
     )
-    .bind(SYNC_ID)
-    .bind(&hash)
-    .execute(&mut *tx)
+    .bind(&stream_keywords)
+    .execute(pool)
     .await
     {
-        tracing::error!("stream keyword sync: update keyword_sync_state failed: {e}");
-        return;
+        tracing::warn!("keyword sync: failed to reconcile media/stream scopes: {e}");
     }
-
-    if let Err(e) = tx.commit().await {
-        tracing::error!("stream keyword sync: commit failed: {e}");
-        return;
-    }
-
-    // Load the current whitelist for the recompute
-    // Converge the stream flags in the background via the deployment-wide
-    // single-flight lease (see the media sync above for why the version must
-    // come from the DB, not the file lists).
-    {
-        let pool = pool.clone();
-        tokio::spawn(
-            async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Stream).await },
-        );
-    }
-
-    tracing::info!(
-        "stream keyword sync: done — {} keywords (hash {hash})",
-        stream_keywords.len()
-    );
 }
 
 #[cfg(test)]

@@ -1,6 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useState } from 'react'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -11,9 +10,13 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import {
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   Filter,
   X,
   ChevronDown,
+  ChevronUp,
+  Plus,
   Zap,
   Clock,
   Magnet,
@@ -25,16 +28,20 @@ import {
   History,
   Hash,
 } from 'lucide-react'
+import {
+  DEFAULT_STREAM_SORT_PRIORITY,
+  STREAM_SORT_OPTIONS,
+  type StreamSortKey,
+  type StreamSortOption,
+} from './streamSorting'
 
-export type SortBy = 'quality' | 'size' | 'seeders' | 'source'
-export type SortOrder = 'asc' | 'desc'
+export type { StreamSortKey, StreamSortOption, StreamSortDirection } from './streamSorting'
 
 export type CachedFilter = 'all' | 'cached' | 'not_cached'
 export type StreamType = 'torrent' | 'usenet' | 'http' | 'telegram' | 'direct'
 
 export interface StreamFilterState {
-  sortBy: SortBy
-  sortOrder: SortOrder
+  sortPriority: StreamSortOption[]
   qualityFilter: string[]
   resolutionFilter: string[]
   sourceFilter: string[]
@@ -162,34 +169,163 @@ export function StreamFilters({
     (filters.infoHashSearch.length > 0 ? 1 : 0) +
     (filters.streamIdFilter.length > 0 ? 1 : 0)
 
+  const toggleSortOption = (key: StreamSortKey) => {
+    const exists = filters.sortPriority.some((s) => s.k === key)
+    const next = exists
+      ? filters.sortPriority.filter((s) => s.k !== key)
+      : [...filters.sortPriority, { k: key, d: 'desc' as const }]
+    updateFilter('sortPriority', next)
+  }
+
+  const toggleSortDirection = (key: StreamSortKey) => {
+    updateFilter(
+      'sortPriority',
+      filters.sortPriority.map((s) =>
+        s.k === key ? { ...s, d: s.d === 'desc' ? ('asc' as const) : ('desc' as const) } : s,
+      ),
+    )
+  }
+
+  const moveSortOption = (key: StreamSortKey, direction: 'up' | 'down') => {
+    const index = filters.sortPriority.findIndex((s) => s.k === key)
+    if (index < 0) return
+    const nextIndex = direction === 'up' ? index - 1 : index + 1
+    if (nextIndex < 0 || nextIndex >= filters.sortPriority.length) return
+    const next = [...filters.sortPriority]
+    const [item] = next.splice(index, 1)
+    next.splice(nextIndex, 0, item)
+    updateFilter('sortPriority', next)
+  }
+
+  const resetSortPriority = () => updateFilter('sortPriority', [...DEFAULT_STREAM_SORT_PRIORITY])
+
+  const inactiveSortOptions = STREAM_SORT_OPTIONS.filter(
+    (option) => !filters.sortPriority.some((s) => s.k === option.key),
+  )
+
   return (
     <div className="flex flex-col gap-3">
       {/* Sort + Filter row */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Sort Controls */}
-        <div className="flex items-center gap-2">
-          <Select value={filters.sortBy} onValueChange={(value: SortBy) => updateFilter('sortBy', value)}>
-            <SelectTrigger className="w-[110px] sm:w-[130px] rounded-xl h-9 text-xs sm:text-sm">
-              <ArrowUpDown className="h-3.5 w-3.5 mr-1 sm:mr-1.5 text-muted-foreground shrink-0" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="quality">Quality</SelectItem>
-              <SelectItem value="size">Size</SelectItem>
-              <SelectItem value="seeders">Seeders</SelectItem>
-              <SelectItem value="source">Source</SelectItem>
-            </SelectContent>
-          </Select>
+        {/* Multi-sort controls */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="h-9 rounded-xl">
+              <ArrowUpDown className="h-3.5 w-3.5 mr-1 sm:mr-1.5" />
+              Sort
+              {filters.sortPriority.length > 0 && (
+                <Badge variant="secondary" className="ml-1 sm:ml-1.5 h-5 px-1.5 text-xs">
+                  {filters.sortPriority.length}
+                </Badge>
+              )}
+              <ChevronDown className="h-3.5 w-3.5 ml-1 sm:ml-1.5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[calc(100vw-2rem)] sm:w-[380px] p-0" align="start" sideOffset={8}>
+            <div className="p-3 sm:p-4 border-b border-border/50">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h4 className="font-semibold text-sm">Sort Priority</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">First match wins. Reorder for tie-breakers.</p>
+                </div>
+                <Button variant="ghost" size="sm" className="h-7 text-xs shrink-0" onClick={resetSortPriority}>
+                  Reset
+                </Button>
+              </div>
+            </div>
+            <ScrollArea className="max-h-[min(60dvh,420px)]">
+              <div className="p-3 sm:p-4 space-y-3">
+                {filters.sortPriority.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No sort rules active. Add options below.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {filters.sortPriority.map((activeSort, index) => {
+                      const option = STREAM_SORT_OPTIONS.find((o) => o.key === activeSort.k)
+                      if (!option) return null
+                      return (
+                        <div
+                          key={activeSort.k}
+                          className="flex items-center gap-2 p-2.5 rounded-lg border border-primary/30 bg-primary/5"
+                        >
+                          <Badge variant="outline" className="text-xs w-6 justify-center shrink-0">
+                            {index + 1}
+                          </Badge>
+                          <div className="flex flex-col gap-0.5 shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5"
+                              onClick={() => moveSortOption(activeSort.k, 'up')}
+                              disabled={index === 0}
+                            >
+                              <ChevronUp className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5"
+                              onClick={() => moveSortOption(activeSort.k, 'down')}
+                              disabled={index === filters.sortPriority.length - 1}
+                            >
+                              <ChevronDown className="h-3 w-3" />
+                            </Button>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{option.label}</p>
+                            <p className="text-[10px] text-muted-foreground truncate">
+                              {activeSort.d === 'desc' ? option.desc : option.asc}
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            onClick={() => toggleSortDirection(activeSort.k)}
+                            title={activeSort.d === 'desc' ? option.desc : option.asc}
+                          >
+                            {activeSort.d === 'desc' ? (
+                              <ArrowDown className="h-4 w-4 text-primary" />
+                            ) : (
+                              <ArrowUp className="h-4 w-4 text-primary" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-red-500"
+                            onClick={() => toggleSortOption(activeSort.k)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 px-2.5 rounded-xl"
-            onClick={() => updateFilter('sortOrder', filters.sortOrder === 'asc' ? 'desc' : 'asc')}
-          >
-            {filters.sortOrder === 'desc' ? '↓' : '↑'}
-          </Button>
-        </div>
+                {inactiveSortOptions.length > 0 && (
+                  <div className="pt-2 border-t border-border/50 space-y-2">
+                    <p className="text-xs text-muted-foreground">Add sort option</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {inactiveSortOptions.map((option) => (
+                        <Button
+                          key={option.key}
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => toggleSortOption(option.key)}
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          {option.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </PopoverContent>
+        </Popover>
 
         {/* Filter Popover */}
         <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -506,6 +642,23 @@ export function StreamFilters({
         )}
       </div>
 
+      {/* Active sort rules */}
+      {filters.sortPriority.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
+          {filters.sortPriority.map((sort, index) => {
+            const option = STREAM_SORT_OPTIONS.find((o) => o.key === sort.k)
+            if (!option) return null
+            return (
+              <Badge key={sort.k} variant="outline" className="text-[10px] sm:text-xs gap-1 py-0.5 px-1.5 sm:px-2">
+                <span className="text-muted-foreground">{index + 1}.</span>
+                {option.label}
+                {sort.d === 'desc' ? ' ↓' : ' ↑'}
+              </Badge>
+            )
+          })}
+        </div>
+      )}
+
       {/* Active Filters Display */}
       {hasActiveFilters && (
         <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
@@ -623,8 +776,7 @@ export function StreamFilters({
 
 // Default filter state
 export const defaultStreamFilters: StreamFilterState = {
-  sortBy: 'quality',
-  sortOrder: 'desc',
+  sortPriority: [...DEFAULT_STREAM_SORT_PRIORITY],
   qualityFilter: [],
   resolutionFilter: [],
   sourceFilter: [],

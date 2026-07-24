@@ -676,7 +676,7 @@ pub async fn resolve(
             .collect()
     };
 
-    // Drop torrent pairs that RealDebrid would block based on filename patterns.
+    // Drop RealDebrid-paired torrents whose filenames RD rejects (other providers still show them).
     let torrent_pairs: Vec<(Value, usize)> = torrent_pairs
         .into_iter()
         .filter(|(t, pi)| {

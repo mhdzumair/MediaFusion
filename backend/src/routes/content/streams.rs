@@ -120,6 +120,33 @@ async fn require_stream_owner(
     }
 }
 
+// ─── Stream status helpers ───────────────────────────────────────────────────
+
+/// Stream keyword blocking is runtime-only (in-memory cache). There is no
+/// `stream.is_keyword_blocked` DB column.
+fn stream_keyword_blocked(kf: &crate::state::KeywordFilterCache, row: &MyStreamRow) -> bool {
+    kf.is_stream_text_blocked(&row.name, row.filename.as_deref())
+}
+
+fn status_uses_runtime_keyword_filter(status: Option<&str>) -> bool {
+    matches!(status, Some("active") | Some("keyword_blocked"))
+}
+
+fn stream_matches_status(
+    row: &MyStreamRow,
+    status: Option<&str>,
+    kf: &crate::state::KeywordFilterCache,
+) -> bool {
+    let keyword_blocked = stream_keyword_blocked(kf, row);
+    match status {
+        Some("active") => row.is_active && !row.is_blocked && !keyword_blocked,
+        Some("blocked") => row.is_blocked,
+        Some("inactive") => !row.is_active && !row.is_blocked,
+        Some("keyword_blocked") => !row.is_blocked && keyword_blocked,
+        _ => true,
+    }
+}
+
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 /// GET /api/v1/streams/mine
@@ -162,16 +189,19 @@ pub async fn list_my_streams(
     let mut next_idx = 2i32;
 
     match status_filter.as_deref() {
-        Some("active") => filters.push_str(
-            " AND s.is_blocked = false AND s.is_keyword_blocked = false AND s.is_active = true",
-        ),
+        // SQL filters use DB columns only (`is_blocked` = manual moderator/owner block).
+        Some("active") => {
+            filters.push_str(" AND s.is_blocked = false AND s.is_active = true")
+        }
         Some("blocked") => filters.push_str(" AND s.is_blocked = true"),
         Some("inactive") => filters.push_str(" AND s.is_active = false AND s.is_blocked = false"),
-        Some("keyword_blocked") => {
-            filters.push_str(" AND s.is_keyword_blocked = true AND s.is_blocked = false")
-        }
+        // Keyword blocking has no DB column — exclude manual blocks in SQL, then match
+        // titles against the in-memory keyword cache below.
+        Some("keyword_blocked") => filters.push_str(" AND s.is_blocked = false"),
         _ => {}
     }
+
+    let runtime_keyword_filter = status_uses_runtime_keyword_filter(status_filter.as_deref());
 
     if let Some(ref st) = stream_type_filter {
         filters.push_str(&format!(" AND lower(s.stream_type::text) = ${next_idx}"));
@@ -212,6 +242,84 @@ pub async fn list_my_streams(
         count_query = count_query.bind(pattern.clone());
     }
 
+    let list_sql_base = format!(
+        r#"SELECT
+            {STREAM_BASE_COLS},
+            (SELECT sf.filename FROM stream_file sf WHERE sf.stream_id = s.id LIMIT 1) AS filename,
+            COALESCE(ts.total_size, sml.file_size) AS file_size,
+            ts.info_hash,
+            ys.video_id AS yt_id,
+            {STREAM_LINK_AGG_COLS},
+            s.is_blocked,
+            s.is_active,
+            s.is_public,
+            sml.media_id,
+            m.title AS media_title,
+            m.type::text AS media_type,
+            (SELECT url FROM media_image mi
+             WHERE mi.media_id = m.id AND mi.image_type = 'poster' AND mi.is_primary = true
+             LIMIT 1) AS media_poster_url,
+            (SELECT mei.external_id FROM media_external_id mei
+             WHERE mei.media_id = m.id AND mei.provider = 'imdb'
+             LIMIT 1) AS media_imdb_id,
+            (SELECT COUNT(*)::bigint FROM stream_file sf WHERE sf.stream_id = s.id) AS file_count,
+            s.created_at
+           {from_joins}
+           ORDER BY s.created_at DESC"#
+    );
+
+    let kf = state.keyword_filters.read().unwrap().clone();
+
+    if runtime_keyword_filter {
+        // Keyword status is computed at runtime — paginate after in-memory filtering.
+        let list_sql = list_sql_base;
+        let mut list_query =
+            sqlx::query_as::<_, MyStreamRow>(sqlx::AssertSqlSafe(list_sql.as_str())).bind(user_id);
+        for v in &bind_values {
+            list_query = list_query.bind(v.clone());
+        }
+        if let Some(ref pattern) = search {
+            list_query = list_query.bind(pattern.clone());
+        }
+
+        let rows: Vec<MyStreamRow> = match list_query.fetch_all(&state.pool_ro).await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("list_my_streams query failed for user {user_id}: {e}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "Database error"})),
+                )
+                    .into_response();
+            }
+        };
+
+        let filtered: Vec<MyStreamRow> = rows
+            .into_iter()
+            .filter(|row| stream_matches_status(row, status_filter.as_deref(), &kf))
+            .collect();
+        let total = filtered.len() as i64;
+        let page_rows: Vec<MyStreamRow> = filtered
+            .into_iter()
+            .skip(offset as usize)
+            .take(page_size as usize)
+            .collect();
+        let items: Vec<serde_json::Value> = page_rows
+            .iter()
+            .map(|row| my_stream_row_to_json(row, &kf))
+            .collect();
+        let has_more = offset + (page_rows.len() as i64) < total;
+
+        return Json(json!({
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": has_more,
+        }))
+        .into_response();
+    }
+
     let total: i64 = match count_query.fetch_one(&state.pool_ro).await {
         Ok(v) => v,
         Err(e) => {
@@ -225,31 +333,8 @@ pub async fn list_my_streams(
     };
 
     let list_sql = format!(
-        r#"SELECT
-            {STREAM_BASE_COLS},
-            (SELECT sf.filename FROM stream_file sf WHERE sf.stream_id = s.id LIMIT 1) AS filename,
-            COALESCE(ts.total_size, sml.file_size) AS file_size,
-            ts.info_hash,
-            ys.video_id AS yt_id,
-            {STREAM_LINK_AGG_COLS},
-            s.is_blocked,
-            s.is_active,
-            s.is_public,
-            s.is_keyword_blocked,
-            sml.media_id,
-            m.title AS media_title,
-            m.type::text AS media_type,
-            (SELECT url FROM media_image mi
-             WHERE mi.media_id = m.id AND mi.image_type = 'poster' AND mi.is_primary = true
-             LIMIT 1) AS media_poster_url,
-            (SELECT mei.external_id FROM media_external_id mei
-             WHERE mei.media_id = m.id AND mei.provider = 'imdb'
-             LIMIT 1) AS media_imdb_id,
-            (SELECT COUNT(*)::bigint FROM stream_file sf WHERE sf.stream_id = s.id) AS file_count,
-            s.created_at
-           {from_joins}
-           ORDER BY s.created_at DESC
-           LIMIT ${next_idx} OFFSET ${}"#,
+        "{list_sql_base}
+           LIMIT ${next_idx} OFFSET ${}",
         next_idx + 1
     );
 
@@ -275,7 +360,7 @@ pub async fn list_my_streams(
         }
     };
 
-    let items: Vec<serde_json::Value> = rows.iter().map(my_stream_row_to_json).collect();
+    let items: Vec<serde_json::Value> = rows.iter().map(|row| my_stream_row_to_json(row, &kf)).collect();
     let has_more = offset + (rows.len() as i64) < total;
 
     Json(json!({

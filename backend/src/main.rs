@@ -11,8 +11,8 @@ use mediafusion_api::{
     config::AppConfig,
     exception_tracker, routes,
     state::{
-        AppState, load_keyword_filter_cache, maybe_recompute_keyword_blocked,
-        maybe_recompute_stream_keyword_blocked, sync_keywords_from_file,
+        AppState, load_keyword_filter_cache, schedule_keyword_recomputes,
+        sync_keywords_from_file,
     },
 };
 use tracing::info;
@@ -104,10 +104,8 @@ async fn main() {
         let kf_lock = Arc::clone(&state.keyword_filters);
         tokio::spawn(async move {
             sync_keywords_from_file(&pool).await;
-            let kf = load_keyword_filter_cache(&pool).await;
-            maybe_recompute_keyword_blocked(&pool).await;
-            maybe_recompute_stream_keyword_blocked(&pool).await;
-            *kf_lock.write().unwrap() = kf;
+            schedule_keyword_recomputes(&pool).await;
+            *kf_lock.write().unwrap() = load_keyword_filter_cache(&pool).await;
         });
     }
 

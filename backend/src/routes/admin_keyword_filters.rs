@@ -2,8 +2,10 @@
 ///
 /// Routes:
 ///   GET  /api/v1/admin/keyword-filters              → list_keyword_filters
+///   GET  /api/v1/admin/keyword-filters/sync-status  → keyword_sync_status
 ///   POST /api/v1/admin/keyword-filters              → add_keyword_filter
 ///   POST /api/v1/admin/keyword-filters/reload       → reload_keyword_cache
+///   POST /api/v1/admin/keyword-filters/reset        → reset_keyword_filters
 ///   PATCH /api/v1/admin/keyword-filters/{id}        → toggle_keyword_filter
 ///   DELETE /api/v1/admin/keyword-filters/{id}       → delete_keyword_filter
 ///   GET  /api/v1/admin/keyword-whitelist            → list_keyword_whitelist
@@ -23,9 +25,12 @@ use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;
+use sqlx::PgPool;
 
 use crate::state::{
-    AppState, KwRecomputeKind, kw_recompute_single_flight, try_load_keyword_filter_cache,
+    AppState, KwRecomputeKind, embedded_media_keyword_file_stats, embedded_stream_keyword_file_stats,
+    is_recompute_lease_active, keyword_sync_state_row, reset_keywords_to_file_defaults,
+    schedule_keyword_recomputes, try_load_keyword_filter_cache, MEDIA_KEYWORDS_SYNC_ID,
 };
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -140,6 +145,180 @@ pub struct WhitelistRow {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Serialize)]
+struct FileSyncStatus {
+    embedded_hash: String,
+    stored_hash: Option<String>,
+    synced_at: Option<DateTime<Utc>>,
+    in_sync: bool,
+    embedded_keyword_count: usize,
+    db_file_keyword_count: i64,
+    embedded_whitelist_count: usize,
+    db_file_whitelist_count: i64,
+}
+
+#[derive(Serialize)]
+struct RecomputeJobStatus {
+    target_version: String,
+    recorded_version: Option<String>,
+    up_to_date: bool,
+    in_progress: bool,
+    lease_owner: Option<String>,
+    lease_synced_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize)]
+struct RuntimeStreamKeywordsStatus {
+    embedded_hash: String,
+    embedded_keyword_count: usize,
+    cache_keyword_count: usize,
+    admin_override_count: i64,
+    runtime_only: bool,
+}
+
+#[derive(Serialize)]
+struct KeywordSyncStatusResponse {
+    file_sync: FileSyncStatusSection,
+    recompute: RecomputeJobStatus,
+    cache: CacheCounts,
+    admin_overrides: AdminOverrideCounts,
+}
+
+#[derive(Serialize)]
+struct FileSyncStatusSection {
+    media: FileSyncStatus,
+    stream: RuntimeStreamKeywordsStatus,
+}
+
+#[derive(Serialize)]
+struct CacheCounts {
+    media_keywords: usize,
+    stream_keywords: usize,
+    whitelist: usize,
+}
+
+#[derive(Serialize)]
+struct AdminOverrideCounts {
+    keywords: i64,
+    whitelist: i64,
+}
+
+async fn build_media_file_sync_status(
+    pool: &PgPool,
+    embedded: &crate::state::EmbeddedKeywordFileStats,
+) -> FileSyncStatus {
+    let stored = keyword_sync_state_row(pool, MEDIA_KEYWORDS_SYNC_ID).await;
+    let db_file_keyword_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM keyword_filters
+         WHERE source = 'file' AND scope IN ('media', 'all') AND is_active = true",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+    let db_file_whitelist_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM keyword_whitelist WHERE source = 'file'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+    let (stored_hash, synced_at) = stored
+        .map(|(hash, at)| (Some(hash), Some(at)))
+        .unwrap_or((None, None));
+    let in_sync = stored_hash.as_deref() == Some(embedded.hash.as_str())
+        && db_file_keyword_count == embedded.keyword_count as i64
+        && db_file_whitelist_count == embedded.whitelist_count as i64;
+
+    FileSyncStatus {
+        embedded_hash: embedded.hash.clone(),
+        stored_hash,
+        synced_at,
+        in_sync,
+        embedded_keyword_count: embedded.keyword_count,
+        db_file_keyword_count,
+        embedded_whitelist_count: embedded.whitelist_count,
+        db_file_whitelist_count,
+    }
+}
+
+async fn build_runtime_stream_status(
+    pool: &PgPool,
+    kf: &crate::state::KeywordFilterCache,
+) -> RuntimeStreamKeywordsStatus {
+    let embedded = embedded_stream_keyword_file_stats();
+    let admin_override_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM keyword_filters
+         WHERE source = 'admin' AND scope IN ('stream', 'all') AND is_active = true",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+
+    RuntimeStreamKeywordsStatus {
+        embedded_hash: embedded.hash,
+        embedded_keyword_count: embedded.keyword_count,
+        cache_keyword_count: kf.stream_keywords.len(),
+        admin_override_count,
+        runtime_only: true,
+    }
+}
+
+async fn build_recompute_status(
+    pool: &PgPool,
+    kind: KwRecomputeKind,
+    kf: &crate::state::KeywordFilterCache,
+) -> RecomputeJobStatus {
+    let target_version = format!("{:016x}", kind.version(kf));
+    let recorded_version = keyword_sync_state_row(pool, kind.marker_id())
+        .await
+        .map(|(hash, _)| hash);
+    let up_to_date = recorded_version.as_deref() == Some(target_version.as_str());
+    let in_progress = is_recompute_lease_active(pool, kind).await;
+    let lease = keyword_sync_state_row(pool, kind.lease_id()).await;
+
+    RecomputeJobStatus {
+        target_version,
+        recorded_version,
+        up_to_date,
+        in_progress,
+        lease_owner: lease.as_ref().map(|(owner, _)| owner.clone()),
+        lease_synced_at: lease.map(|(_, at)| at),
+    }
+}
+
+async fn build_keyword_sync_status(
+    pool: &PgPool,
+    kf: &crate::state::KeywordFilterCache,
+) -> KeywordSyncStatusResponse {
+    let media_embedded = embedded_media_keyword_file_stats();
+    let admin_keywords: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM keyword_filters WHERE source = 'admin'")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+    let admin_whitelist: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM keyword_whitelist WHERE source = 'admin'")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+
+    KeywordSyncStatusResponse {
+        file_sync: FileSyncStatusSection {
+            media: build_media_file_sync_status(pool, &media_embedded).await,
+            stream: build_runtime_stream_status(pool, kf).await,
+        },
+        recompute: build_recompute_status(pool, KwRecomputeKind::Media, kf).await,
+        cache: CacheCounts {
+            media_keywords: kf.keywords.len(),
+            stream_keywords: kf.stream_keywords.len(),
+            whitelist: kf.whitelist.len(),
+        },
+        admin_overrides: AdminOverrideCounts {
+            keywords: admin_keywords,
+            whitelist: admin_whitelist,
+        },
+    }
+}
+
 // ─── Reload cache helper ──────────────────────────────────────────────────────
 
 async fn reload_cache(state: &AppState) {
@@ -156,13 +335,7 @@ async fn reload_cache(state: &AppState) {
             );
         }
     }
-    // Converge the blocked flags via the deployment-wide single-flight lease —
-    // an admin keyword edit must not launch unguarded full-table sweeps
-    // alongside whatever other processes are doing.
-    let pool = state.pool.clone();
-    let pool2 = pool.clone();
-    tokio::spawn(async move { kw_recompute_single_flight(&pool, KwRecomputeKind::Media).await });
-    tokio::spawn(async move { kw_recompute_single_flight(&pool2, KwRecomputeKind::Stream).await });
+    schedule_keyword_recomputes(&state.pool).await;
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -618,6 +791,102 @@ pub async fn delete_whitelist_phrase(
     }
 }
 
+/// GET /api/v1/admin/keyword-filters/sync-status
+pub async fn keyword_sync_status(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let user_id = match validate_admin(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
+    if !check_admin_role(&state.pool, user_id).await {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Admin role required"})),
+        )
+            .into_response();
+    }
+
+    let kf = match try_load_keyword_filter_cache(&state.pool).await {
+        Ok(mut cache) => {
+            cache.nsfw_filter_enabled = state.config.poster_nsfw_enabled;
+            cache
+        }
+        Err(e) => {
+            tracing::error!("keyword sync status: cache load failed: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": "Failed to load keyword filter state"})),
+            )
+                .into_response();
+        }
+    };
+
+    Json(build_keyword_sync_status(&state.pool, &kf).await).into_response()
+}
+
+/// POST /api/v1/admin/keyword-filters/reset
+///
+/// Removes admin-managed overrides and re-imports bundled default keywords from
+/// the embedded resource files compiled into the running binary.
+pub async fn reset_keyword_filters(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let user_id = match validate_admin(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
+    if !check_admin_role(&state.pool, user_id).await {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "Admin role required"})),
+        )
+            .into_response();
+    }
+
+    if let Err(e) = reset_keywords_to_file_defaults(&state.pool).await {
+        tracing::error!("keyword reset failed: {e}");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"detail": format!("Failed to reset keywords: {e}")})),
+        )
+            .into_response();
+    }
+
+    reload_cache(&state).await;
+
+    let kf = match try_load_keyword_filter_cache(&state.pool).await {
+        Ok(mut cache) => {
+            cache.nsfw_filter_enabled = state.config.poster_nsfw_enabled;
+            cache
+        }
+        Err(e) => {
+            tracing::error!("keyword reset: cache load failed after reset: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": "Keywords reset but cache reload failed"})),
+            )
+                .into_response();
+        }
+    };
+
+    Json(build_keyword_sync_status(&state.pool, &kf).await).into_response()
+}
+
 /// POST /api/v1/admin/keyword-filters/reload
 pub async fn reload_keyword_cache(
     headers: HeaderMap,
@@ -641,8 +910,13 @@ pub async fn reload_keyword_cache(
             .into_response();
     }
 
-    let mut new_cache = match try_load_keyword_filter_cache(&state.pool).await {
-        Ok(cache) => cache,
+    reload_cache(&state).await;
+
+    let kf = match try_load_keyword_filter_cache(&state.pool).await {
+        Ok(mut cache) => {
+            cache.nsfw_filter_enabled = state.config.poster_nsfw_enabled;
+            cache
+        }
         Err(e) => {
             tracing::error!("keyword filter cache reload failed: {e}");
             return (
@@ -652,18 +926,12 @@ pub async fn reload_keyword_cache(
                 .into_response();
         }
     };
-    new_cache.nsfw_filter_enabled = state.config.poster_nsfw_enabled;
-    let keywords_count = new_cache.keywords.len();
-    let stream_keywords_count = new_cache.stream_keywords.len();
-    let whitelist_count = new_cache.whitelist.len();
-    if let Ok(mut w) = state.keyword_filters.write() {
-        *w = new_cache;
-    }
 
     Json(json!({
-        "keywords_count": keywords_count,
-        "stream_keywords_count": stream_keywords_count,
-        "whitelist_count": whitelist_count,
+        "keywords_count": kf.keywords.len(),
+        "stream_keywords_count": kf.stream_keywords.len(),
+        "whitelist_count": kf.whitelist.len(),
+        "sync_status": build_keyword_sync_status(&state.pool, &kf).await,
     }))
     .into_response()
 }

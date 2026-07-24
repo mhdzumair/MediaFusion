@@ -1214,13 +1214,6 @@ pub async fn get_media_streams(
         }
     }
 
-    // Privileged users see keyword-blocked streams; regular users do not.
-    let kw_filter = if is_privileged {
-        ""
-    } else {
-        "AND s.is_keyword_blocked = false"
-    };
-
     tracing::debug!(
         "get_media_streams: fetching streams for {catalog_type}/{media_id} season={season:?} episode={episode:?} stream_id={:?}",
         params.stream_id
@@ -1254,7 +1247,6 @@ pub async fn get_media_streams(
            LEFT JOIN telegram_stream tgs ON tgs.stream_id = s.id
            WHERE s.is_active = true
              AND s.is_blocked = false
-             {kw_filter}
            ORDER BY s.id"#
         )))
         .bind(media_id)
@@ -1290,8 +1282,7 @@ pub async fn get_media_streams(
            LEFT JOIN telegram_stream tgs ON tgs.stream_id = s.id
            WHERE sml.media_id = $1
              AND s.is_active = true
-             AND s.is_blocked = false
-             {kw_filter}"#
+             AND s.is_blocked = false"#
         )))
         .bind(media_id)
         .fetch_all(&state.pool_ro)
@@ -1517,6 +1508,7 @@ pub async fn get_media_streams(
                         &state.config.rd_blocked_dot_pairs,
                     )
                 };
+            let keyword_blocked = kf.is_stream_text_blocked(&r.name, r.filename.as_deref());
 
             // Build playback URL for torrent/usenet/telegram streams when configured.
             let raw_playback_url: Option<String> = if rd_blocked {
@@ -1636,7 +1628,7 @@ pub async fn get_media_streams(
                 "release_group": r.release_group,
                 "cached": is_cached,
                 "rd_blocked": rd_blocked,
-                "is_keyword_blocked": r.is_keyword_blocked,
+                "is_keyword_blocked": keyword_blocked,
                 "is_remastered": r.is_remastered,
                 "is_upscaled": r.is_upscaled,
                 "is_proper": r.is_proper,

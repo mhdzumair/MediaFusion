@@ -31,7 +31,54 @@ export interface WhitelistListResponse {
 
 export interface KeywordCacheStats {
   keywords_count: number
+  stream_keywords_count: number
   whitelist_count: number
+  sync_status?: KeywordSyncStatus
+}
+
+export interface FileSyncStatus {
+  embedded_hash: string
+  stored_hash: string | null
+  synced_at: string | null
+  in_sync: boolean
+  embedded_keyword_count: number
+  db_file_keyword_count: number
+  embedded_whitelist_count: number
+  db_file_whitelist_count: number
+}
+
+export interface RuntimeStreamKeywordsStatus {
+  embedded_hash: string
+  embedded_keyword_count: number
+  cache_keyword_count: number
+  admin_override_count: number
+  runtime_only: boolean
+}
+
+export interface RecomputeJobStatus {
+  target_version: string
+  recorded_version: string | null
+  up_to_date: boolean
+  in_progress: boolean
+  lease_owner: string | null
+  lease_synced_at: string | null
+}
+
+export interface KeywordSyncStatus {
+  file_sync: {
+    media: FileSyncStatus
+    stream: RuntimeStreamKeywordsStatus
+  }
+  recompute: RecomputeJobStatus
+  cache: {
+    media_keywords: number
+    stream_keywords: number
+    whitelist: number
+  }
+  admin_overrides: {
+    keywords: number
+    whitelist: number
+  }
 }
 
 export const keywordFiltersApi = {
@@ -68,6 +115,14 @@ export const keywordFiltersApi = {
 
   reloadCache: async (): Promise<KeywordCacheStats> => {
     return apiClient.post<KeywordCacheStats>('/admin/keyword-filters/reload')
+  },
+
+  getSyncStatus: async (): Promise<KeywordSyncStatus> => {
+    return apiClient.get<KeywordSyncStatus>('/admin/keyword-filters/sync-status')
+  },
+
+  resetToDefaults: async (): Promise<KeywordSyncStatus> => {
+    return apiClient.post<KeywordSyncStatus>('/admin/keyword-filters/reset')
   },
 
   listWhitelist: async (params?: { page?: number; page_size?: number }): Promise<WhitelistListResponse> => {

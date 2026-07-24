@@ -9,6 +9,7 @@ export {
   StreamFilters,
   defaultStreamFilters,
   type StreamFilterState,
+  type StreamSortOption,
   type CachedFilter,
   type StreamType,
 } from './StreamFilters'
