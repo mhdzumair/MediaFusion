@@ -264,9 +264,7 @@ async fn resolve(
     } else {
         None
     };
-    let token: &str = if provider.service == "qbittorrent" {
-        ""
-    } else if let Some(ref t) = resolved_token {
+    let token: &str = if let Some(ref t) = resolved_token {
         t.as_str()
     } else {
         provider.token.as_deref().ok_or_else(|| {
