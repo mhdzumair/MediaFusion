@@ -6,6 +6,7 @@ use fred::prelude::*;
 use tokio::task::JoinSet;
 
 use crate::{
+    config::AppConfig,
     models::user_data::UserData,
     parser,
     scrapers::{
@@ -17,9 +18,6 @@ use crate::{
     state::AppState,
 };
 
-const MOVIE_SIMILARITY_MIN: u32 = 85;
-const SERIES_SIMILARITY_MIN: u32 = 80;
-
 /// Core validation shared by all stream types (torrent, usenet, telegram).
 /// Checks title similarity, year match for movies, and S/E presence for series.
 fn validate_stream_core(
@@ -28,11 +26,12 @@ fn validate_stream_core(
     raw_name: &str,
     meta: &SearchMeta,
     media_type: &str,
+    cfg: &AppConfig,
 ) -> bool {
     let sim_min = if media_type == "movie" {
-        MOVIE_SIMILARITY_MIN
+        cfg.movie_similarity_min
     } else {
-        SERIES_SIMILARITY_MIN
+        cfg.series_similarity_min
     };
     let parsed_title = parsed.title.as_deref().unwrap_or(raw_name);
     if parser::similarity_ratio(parsed_title, &meta.title) < sim_min {
@@ -50,13 +49,14 @@ fn validate_stream_core(
     true
 }
 
-fn validate_scraped_stream(stream: &ScrapedStream, meta: &SearchMeta, media_type: &str) -> bool {
+fn validate_scraped_stream(stream: &ScrapedStream, meta: &SearchMeta, media_type: &str, cfg: &AppConfig) -> bool {
     validate_stream_core(
         &stream.parsed,
         &stream.files,
         &stream.name,
         meta,
         media_type,
+        cfg,
     )
 }
 
@@ -64,6 +64,7 @@ fn validate_usenet_stream(
     stream: &ScrapedUsenetStream,
     meta: &SearchMeta,
     media_type: &str,
+    cfg: &AppConfig,
 ) -> bool {
     validate_stream_core(
         &stream.parsed,
@@ -71,6 +72,7 @@ fn validate_usenet_stream(
         &stream.name,
         meta,
         media_type,
+        cfg,
     )
 }
 
@@ -78,11 +80,12 @@ fn validate_telegram_stream(
     stream: &crate::scrapers::ScrapedTelegramStream,
     meta: &SearchMeta,
     media_type: &str,
+    cfg: &AppConfig,
 ) -> bool {
     let sim_min = if media_type == "movie" {
-        MOVIE_SIMILARITY_MIN
+        cfg.movie_similarity_min
     } else {
-        SERIES_SIMILARITY_MIN
+        cfg.series_similarity_min
     };
     let parsed_title = stream.parsed.title.as_deref().unwrap_or(&stream.name);
     if parser::similarity_ratio(parsed_title, &meta.title) < sim_min {
@@ -232,7 +235,7 @@ async fn run_torrent_scrape(
     let mut seen = std::collections::HashSet::new();
     let deduped: Vec<ScrapedStream> = results
         .into_iter()
-        .filter(|s| validate_scraped_stream(s, meta, media_type))
+        .filter(|s| validate_scraped_stream(s, meta, media_type, &state.config))
         .filter(|s| seen.insert(s.info_hash.clone()))
         .collect();
 
@@ -278,7 +281,7 @@ async fn run_torrent_scrape(
             stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
         let tg_validated: Vec<_> = tg_results
             .into_iter()
-            .filter(|s| validate_telegram_stream(s, meta, media_type))
+            .filter(|s| validate_telegram_stream(s, meta, media_type, &state.config))
             .collect();
         let tg_normalized: Vec<_> = tg_validated
             .iter()
@@ -334,7 +337,7 @@ pub async fn run_forced(
     let mut seen = std::collections::HashSet::new();
     let deduped: Vec<ScrapedStream> = results
         .into_iter()
-        .filter(|s| validate_scraped_stream(s, meta, media_type))
+        .filter(|s| validate_scraped_stream(s, meta, media_type, &state.config))
         .filter(|s| seen.insert(s.info_hash.clone()))
         .collect();
 
@@ -375,7 +378,7 @@ pub async fn run_forced(
             stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
         let tg_validated: Vec<_> = tg_results
             .into_iter()
-            .filter(|s| validate_telegram_stream(s, meta, media_type))
+            .filter(|s| validate_telegram_stream(s, meta, media_type, &state.config))
             .collect();
         let tg_normalized: Vec<_> = tg_validated
             .iter()
@@ -550,6 +553,7 @@ pub async fn run_usenet(
             episode,
             Some(&usenet_hg),
             &kf,
+            cfg,
         )
         .await;
         results.extend(pu);
@@ -561,7 +565,7 @@ pub async fn run_usenet(
     let mut seen = std::collections::HashSet::new();
     let validated: Vec<ScrapedUsenetStream> = results
         .into_iter()
-        .filter(|s| validate_usenet_stream(s, meta, media_type))
+        .filter(|s| validate_usenet_stream(s, meta, media_type, &state.config))
         .filter(|s| seen.insert(s.nzb_guid.clone()))
         .collect();
 
@@ -604,7 +608,7 @@ pub async fn run_background(
     let mut seen = std::collections::HashSet::new();
     let deduped: Vec<ScrapedStream> = results
         .into_iter()
-        .filter(|s| validate_scraped_stream(s, meta, media_type))
+        .filter(|s| validate_scraped_stream(s, meta, media_type, &state.config))
         .filter(|s| seen.insert(s.info_hash.clone()))
         .collect();
 
@@ -1066,6 +1070,7 @@ async fn fan_out_with_opts(
                 sites.as_deref(),
                 Some(&hg),
                 &kf,
+                &cfg,
             )
             .await;
             ("public_indexers", streams, start, t.elapsed().as_secs_f64())

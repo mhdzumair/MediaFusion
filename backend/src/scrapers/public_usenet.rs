@@ -10,6 +10,7 @@ use reqwest::Client;
 use sha2::{Digest, Sha256};
 
 use crate::{
+    config::AppConfig,
     parser,
     scrapers::{
         ScrapedUsenetStream, SearchMeta,
@@ -29,8 +30,6 @@ enum IndexerOutcome {
 
 const NZBINDEX_ORIGIN: &str = "https://www.nzbindex.com";
 const BINSEARCH_BASE: &str = "https://www.binsearch.info";
-const MOVIE_SIMILARITY_MIN: u32 = 85;
-const SERIES_SIMILARITY_MIN: u32 = 80;
 
 pub async fn scrape(
     client: &Client,
@@ -40,6 +39,7 @@ pub async fn scrape(
     episode: Option<i32>,
     health_gate: Option<&HealthGateConfig>,
     keyword_filters: &KeywordFilterCache,
+    cfg: &AppConfig,
 ) -> Vec<ScrapedUsenetStream> {
     let queries = build_queries(meta, media_type, season, episode);
     let mut results: Vec<ScrapedUsenetStream> = Vec::new();
@@ -65,6 +65,7 @@ pub async fn scrape(
                                     season,
                                     episode,
                                     keyword_filters,
+                                    cfg,
                                 )
                             {
                                 results.push(s);
@@ -100,6 +101,7 @@ pub async fn scrape(
                                     season,
                                     episode,
                                     keyword_filters,
+                                    cfg,
                                 )
                             {
                                 results.push(s);
@@ -198,6 +200,7 @@ fn validate_and_build(
     season: Option<i32>,
     episode: Option<i32>,
     keyword_filters: &KeywordFilterCache,
+    cfg: &AppConfig,
 ) -> Option<ScrapedUsenetStream> {
     if item.name.is_empty() {
         return None;
@@ -207,9 +210,9 @@ fn validate_and_build(
     }
     let parsed = parser::parse_title(&item.name);
     let sim_min = if media_type == "movie" {
-        MOVIE_SIMILARITY_MIN
+        cfg.movie_similarity_min
     } else {
-        SERIES_SIMILARITY_MIN
+        cfg.series_similarity_min
     };
     let ratio =
         parser::similarity_ratio(parsed.title.as_deref().unwrap_or(&item.name), &meta.title);

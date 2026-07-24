@@ -63,6 +63,7 @@ pub fn build(proxy_url: Option<&str>, keepalive_secs: u64) -> reqwest::Client {
     let mut builder = reqwest::Client::builder()
         .user_agent("MediaFusion/1.0 (+https://github.com/mhdzumair/MediaFusion)")
         .http1_only()
+        .cookie_store(true)
         .timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(10))
         .pool_idle_timeout(Duration::from_secs(20))
@@ -87,6 +88,7 @@ pub fn build_debrid(proxy_url: Option<&str>, keepalive_secs: u64) -> reqwest::Cl
     let mut builder = reqwest::Client::builder()
         .user_agent("MediaFusion/1.0 (+https://github.com/mhdzumair/MediaFusion)")
         .http1_only()
+        .cookie_store(true)
         .timeout(Duration::from_secs(90))
         .connect_timeout(Duration::from_secs(15))
         // Keep pool idle timeout well under the server-side HTTP keep-alive timeout (typically

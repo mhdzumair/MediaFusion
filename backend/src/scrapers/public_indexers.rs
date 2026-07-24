@@ -11,6 +11,7 @@ use reqwest::Client;
 use scraper::{Html, Selector};
 
 use crate::{
+    config::AppConfig,
     parser,
     scrapers::{
         ScrapedStream, SearchMeta, fetcher,
@@ -21,9 +22,6 @@ use crate::{
     },
     state::KeywordFilterCache,
 };
-
-const MOVIE_SIMILARITY_MIN: u32 = 85;
-const SERIES_SIMILARITY_MIN: u32 = 80;
 
 static MAGNET_RE: OnceLock<regex::Regex> = OnceLock::new();
 static SIZE_RE: OnceLock<regex::Regex> = OnceLock::new();
@@ -56,6 +54,7 @@ pub async fn scrape(
     enabled_sites: Option<&str>,
     health_gate: Option<&HealthGateConfig>,
     keyword_filters: &KeywordFilterCache,
+    cfg: &AppConfig,
 ) -> Vec<ScrapedStream> {
     let byparr_available = byparr_url.is_some();
     let indexers = get_indexers_for_media(media_type, enabled_sites, byparr_available);
@@ -122,6 +121,7 @@ pub async fn scrape(
             episode,
             byparr_url,
             keyword_filters,
+            cfg,
         )
         .await;
 
@@ -164,6 +164,7 @@ async fn scrape_indexer(
     episode: Option<i32>,
     byparr_url: Option<&str>,
     keyword_filters: &KeywordFilterCache,
+    cfg: &AppConfig,
 ) -> (Vec<ScrapedStream>, bool) {
     match indexer.handler {
         HandlerType::Rss => {
@@ -175,11 +176,12 @@ async fn scrape_indexer(
                 season,
                 episode,
                 keyword_filters,
+                cfg,
             )
             .await
         }
         HandlerType::SubsPleaseJson => {
-            scrape_subsplease(client, indexer, meta, season, episode).await
+            scrape_subsplease(client, indexer, meta, season, episode, cfg).await
         }
         HandlerType::Html => {
             scrape_html(
@@ -191,6 +193,7 @@ async fn scrape_indexer(
                 episode,
                 byparr_url,
                 keyword_filters,
+                cfg,
             )
             .await
         }
@@ -236,12 +239,13 @@ async fn scrape_rss(
     season: Option<i32>,
     episode: Option<i32>,
     keyword_filters: &KeywordFilterCache,
+    cfg: &AppConfig,
 ) -> (Vec<ScrapedStream>, bool) {
     let queries = build_queries(meta, media_type, season, episode);
     let sim_min = if media_type == "movie" {
-        MOVIE_SIMILARITY_MIN
+        cfg.movie_similarity_min
     } else {
-        SERIES_SIMILARITY_MIN
+        cfg.series_similarity_min
     };
     let mut results = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -346,6 +350,7 @@ async fn scrape_subsplease(
     meta: &SearchMeta,
     season: Option<i32>,
     episode: Option<i32>,
+    cfg: &AppConfig,
 ) -> (Vec<ScrapedStream>, bool) {
     let url = indexer.query_url_templates[0].replace("{query}", &urlencoding::encode(&meta.title));
 
@@ -387,7 +392,7 @@ async fn scrape_subsplease(
             _ => continue,
         };
         let sim = parser::similarity_ratio(&show_name, &meta.title);
-        if sim < SERIES_SIMILARITY_MIN {
+        if sim < cfg.series_similarity_min {
             continue;
         }
         let downloads = match show_data.get("downloads").and_then(|v| v.as_array()) {
@@ -488,12 +493,13 @@ async fn scrape_html(
     episode: Option<i32>,
     byparr_url: Option<&str>,
     keyword_filters: &KeywordFilterCache,
+    cfg: &AppConfig,
 ) -> (Vec<ScrapedStream>, bool) {
     let queries = build_queries(meta, media_type, season, episode);
     let sim_min = if media_type == "movie" {
-        MOVIE_SIMILARITY_MIN
+        cfg.movie_similarity_min
     } else {
-        SERIES_SIMILARITY_MIN
+        cfg.series_similarity_min
     };
     let mut results = Vec::new();
     let mut seen = std::collections::HashSet::new();
