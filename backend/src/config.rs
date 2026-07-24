@@ -123,6 +123,8 @@ pub struct AppConfig {
     pub is_scrap_from_torznab: bool,
 
     // ── Scraper search TTLs in seconds (derived from interval env vars) ──────
+    pub movie_similarity_min: u32,
+    pub series_similarity_min: u32,
     pub prowlarr_search_ttl: i64,
     pub zilean_search_ttl: i64,
     pub torrentio_search_ttl: i64,
@@ -599,6 +601,14 @@ impl AppConfig {
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(false),
             is_scrap_from_torznab: env("IS_SCRAP_FROM_TORZNAB")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(true),
+            movie_similarity_min: env("MEDIAFUSION_MOVIE_SIMILARITY_MIN")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(85),
+            series_similarity_min: env("MEDIAFUSION_SERIES_SIMILARITY_MIN")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(80),
             prowlarr_search_ttl: env("PROWLARR_SEARCH_INTERVAL_HOUR")
                 .ok().and_then(|v| v.parse::<i64>().ok()).unwrap_or(72) * 3600,
             zilean_search_ttl: env("ZILEAN_SEARCH_INTERVAL_HOUR")
