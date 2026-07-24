@@ -145,7 +145,7 @@ async fn qb_add_torrent(
     torrent_file: Option<&[u8]>,
     is_private: bool,
 ) -> Result<(), ProviderError> {
-    if is_private {
+    if is_private && torrent_file.is_some() {
         qb_set_preferences(http, cfg, true).await?;
     }
 

@@ -42,6 +42,7 @@ pub(crate) const TORRENT_CAPABLE: &[&str] = &[
     "realdebrid",
     "seedr",
     "torbox",
+    "qbittorrent",
     "stremthru",
     "torrin",
     "easydebrid",
