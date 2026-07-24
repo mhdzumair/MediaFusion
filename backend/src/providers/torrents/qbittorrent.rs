@@ -202,6 +202,7 @@ fn is_duplicate_torrent_error(text: &str) -> bool {
         "already present",
         "duplicate torrent",
         "is already queued",
+        "conflict",
     ]
     .iter()
     .any(|phrase| text.contains(phrase))
