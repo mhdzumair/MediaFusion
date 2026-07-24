@@ -191,6 +191,8 @@ export interface StreamInfo {
   size?: string // Formatted size (e.g., "2.5 GB")
   size_bytes?: number // Raw size in bytes
   seeders?: number
+  /** Distinct users who played + anonymous playback counter */
+  watched_count?: number
   uploader?: string
   release_group?: string
   cached?: boolean // Whether stream is cached in debrid

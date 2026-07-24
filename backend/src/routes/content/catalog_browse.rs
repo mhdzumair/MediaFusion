@@ -25,7 +25,7 @@ use sha2::Sha256;
 
 use crate::{
     cache,
-    db::{MediaType, StreamType, TorrentType},
+    db::{self, MediaType, StreamType, TorrentType},
     models::user_data::UserData,
     parser::{
         FilterContext, cap_streams, compare_sort_keys, filter_streams_by_preferences,
@@ -1404,9 +1404,15 @@ pub async fn get_media_streams(
         .unwrap_or("P2P");
 
     // Build (sort_ctx, output_json) pairs so we can sort before returning
+    let stream_ids: Vec<i32> = stream_rows.iter().map(|r| r.id).collect();
+    let watched_counts = db::fetch_watched_counts_bulk(&state.pool_ro, &stream_ids)
+        .await
+        .unwrap_or_default();
+
     let mut stream_pairs: Vec<(serde_json::Value, serde_json::Value)> = stream_rows
         .into_iter()
         .map(|r| {
+            let watched_count = watched_counts.get(&r.id).copied().unwrap_or(0);
             let stream_type = r.stream_type.as_wire().to_lowercase();
 
             let is_cached = r.info_hash.as_deref()
@@ -1439,6 +1445,7 @@ pub async fn get_media_streams(
                 "size": file_size_val,
                 "file_size": file_size_val,
                 "seeders": seeders_val,
+                "watched_count": watched_count,
                 "languages": lang_arr_vals,
                 "hdr_formats": hdr_arr,
                 "cached": is_cached,
@@ -1465,6 +1472,7 @@ pub async fn get_media_streams(
                 "languages": lang_arr_vals,
                 "size": file_size_val,
                 "seeders": seeders_val,
+                "watched_count": watched_count,
                 "source": r.source,
                 "release_group": r.release_group,
                 "uploader": r.uploader,
@@ -1623,6 +1631,7 @@ pub async fn get_media_streams(
                 "size": size_str,
                 "size_bytes": r.file_size,
                 "seeders": r.seeders,
+                "watched_count": watched_count,
                 "uploader": r.uploader,
                 "release_group": r.release_group,
                 "cached": is_cached,

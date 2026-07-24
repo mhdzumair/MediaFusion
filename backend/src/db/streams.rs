@@ -70,7 +70,12 @@ pub async fn fetch_streams_bulk(
                                 FROM stream_channel_link scl
                                 JOIN audio_channel ac ON ac.id = scl.channel_id
                                 WHERE scl.stream_id = st.id
-                            ), '[]'::jsonb)
+                            ), '[]'::jsonb),
+                            'watched_count', st.playback_count + COALESCE((
+                                SELECT COUNT(DISTINCT pt.user_id)::int
+                                FROM playback_tracking pt
+                                WHERE pt.stream_id = st.id AND pt.user_id IS NOT NULL
+                            ), 0)
                         ) ORDER BY ts.seeders DESC NULLS LAST
                     ) FILTER (WHERE ts.info_hash IS NOT NULL AND st.is_active AND NOT st.is_blocked AND NOT st.is_keyword_blocked), '[]')
                 ) AS data
@@ -139,7 +144,12 @@ pub async fn fetch_streams_bulk(
                                 FROM stream_channel_link scl
                                 JOIN audio_channel ac ON ac.id = scl.channel_id
                                 WHERE scl.stream_id = st.id
-                            ), '[]'::jsonb)
+                            ), '[]'::jsonb),
+                            'watched_count', st.playback_count + COALESCE((
+                                SELECT COUNT(DISTINCT pt.user_id)::int
+                                FROM playback_tracking pt
+                                WHERE pt.stream_id = st.id AND pt.user_id IS NOT NULL
+                            ), 0)
                         ) ORDER BY ts.seeders DESC NULLS LAST
                     ) FILTER (WHERE ts.info_hash IS NOT NULL AND st.is_active AND NOT st.is_blocked AND NOT st.is_keyword_blocked), '[]')
                 ) AS data

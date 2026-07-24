@@ -426,6 +426,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/streams/{stream_id}/suggest", post(content::stream_suggestions::create_stream_suggestion))
         .route("/api/v1/streams/{stream_id}/signals", get(content::stream_suggestions::get_stream_signals))
         .route("/api/v1/streams/signals/bulk", post(content::stream_suggestions::bulk_stream_signals))
+        .route("/api/v1/streams/community/bulk", post(content::stream_community::bulk_stream_community))
         .route("/api/v1/streams/{stream_id}/editable-fields", get(content::stream_suggestions::get_stream_editable_fields))
         .route("/api/v1/streams/{stream_id}/suggestions", get(content::stream_suggestions::list_stream_suggestions))
         .route("/api/v1/streams/{stream_id}/broken-status", get(content::stream_suggestions::get_stream_broken_status).patch(content::stream_suggestions::update_stream_broken_status))

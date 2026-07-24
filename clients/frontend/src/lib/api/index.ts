@@ -254,6 +254,12 @@ export {
   type EpisodeLinkFieldName,
 } from './stream-suggestions'
 export {
+  streamCommunityApi,
+  communityStatsToVoteSummary,
+  type StreamCommunityStats,
+  type BulkStreamCommunityResponse,
+} from './stream-community'
+export {
   streamsApi,
   type MyStreamItem,
   type MyStreamsListParams,
@@ -313,6 +319,10 @@ export {
   type KeywordFilterListResponse,
   type WhitelistListResponse,
   type KeywordCacheStats,
+  type KeywordSyncStatus,
+  type FileSyncStatus,
+  type RuntimeStreamKeywordsStatus,
+  type RecomputeJobStatus,
 } from './keyword-filters'
 export {
   genreAdminApi,

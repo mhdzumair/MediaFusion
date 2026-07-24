@@ -7,6 +7,7 @@ import {
   type StreamSuggestionListParams,
   type ModeratorStreamSuggestionStatus,
 } from '@/lib/api'
+import { streamCommunityKeys } from './useStreamCommunity'
 
 // Query keys
 export const streamSuggestionKeys = {
@@ -74,6 +75,7 @@ export function useCreateStreamSuggestion() {
       queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.pending() })
       queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.stats() })
       queryClient.invalidateQueries({ queryKey: streamSignalsKeys.stream(streamId) })
+      queryClient.invalidateQueries({ queryKey: streamCommunityKeys.all })
     },
   })
 }

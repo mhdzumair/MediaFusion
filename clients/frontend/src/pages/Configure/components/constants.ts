@@ -180,6 +180,7 @@ export const SORTING_OPTIONS = [
   { key: 'size', label: 'Size', desc: 'Largest size first', asc: 'Smallest size first' },
   { key: 'seeders', label: 'Seeders', desc: 'Most seeders first', asc: 'Fewest seeders first' },
   { key: 'created_at', label: 'Created At', desc: 'Newest first', asc: 'Oldest first' },
+  { key: 'watched_count', label: 'Watched', desc: 'Most watched first', asc: 'Least watched first' },
 ]
 
 export const STREAM_TYPES = [

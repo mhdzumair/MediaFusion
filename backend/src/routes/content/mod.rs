@@ -1,5 +1,6 @@
 pub mod acestream_import;
 pub mod catalog_browse;
+pub mod stream_community;
 pub mod contribution_processors;
 pub mod contributions;
 pub mod discover;

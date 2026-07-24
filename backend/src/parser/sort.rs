@@ -129,6 +129,11 @@ pub fn torrent_sort_key(
                         .fold(language_sorting.len() as f64, f64::min);
                     mult * -min_idx
                 }
+                "watched_count" => {
+                    mult * t.get("watched_count")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0) as f64
+                }
                 _ => 0.0,
             }
         })

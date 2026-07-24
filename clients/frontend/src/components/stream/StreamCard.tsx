@@ -29,10 +29,12 @@ import { StreamCommunityRow } from './StreamCommunityRow'
 import { StreamReport } from './StreamReport'
 import { FileAnnotationDialog, type FileLink, type EditedFileLink } from './FileAnnotationDialog'
 import { catalogApi } from '@/lib/api'
+import type { StreamCommunityStats } from '@/lib/api/stream-community'
 
 interface StreamCardProps {
   stream: CatalogStreamInfo
   onClick: () => void
+  community?: StreamCommunityStats
   showActions?: boolean
   showModeratorActions?: boolean
   showOwnerActions?: boolean
@@ -59,6 +61,7 @@ function getAudioFormatsString(stream: CatalogStreamInfo): string | undefined {
 export function StreamCard({
   stream,
   onClick,
+  community,
   showActions = true,
   showModeratorActions = true,
   showOwnerActions = false,
@@ -475,9 +478,18 @@ export function StreamCard({
             <Badge
               variant="outline"
               className="shrink-0 text-[10px] px-1.5 py-0 h-5 border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10"
-              title="RealDebrid does not support this release type (e.g. WEBRip, WEB-DL). Switch provider or use Stremio P2P."
+              title="RealDebrid does not support this release type (e.g. WEBRip, WEB-DL). Hidden from Stremio; playable in the web UI."
             >
               RD block
+            </Badge>
+          )}
+          {stream.is_blocked && (
+            <Badge
+              variant="outline"
+              className="shrink-0 text-[10px] px-1.5 py-0 h-5 border-red-500/40 text-red-600 dark:text-red-400 bg-red-500/10"
+              title="This stream was manually blocked and is not visible to regular users."
+            >
+              Blocked
             </Badge>
           )}
           {stream.is_keyword_blocked && (
@@ -495,7 +507,14 @@ export function StreamCard({
         {stream.description && (
           <p className="text-xs text-muted-foreground whitespace-pre-line leading-relaxed">{stream.description}</p>
         )}
-        {stream.id && <StreamCommunityRow streamId={stream.id} className="pt-1" />}
+        {stream.id && (
+          <StreamCommunityRow
+            streamId={stream.id}
+            community={community}
+            watchedCount={stream.watched_count}
+            className="pt-1"
+          />
+        )}
       </div>
 
       {actionsMenu}

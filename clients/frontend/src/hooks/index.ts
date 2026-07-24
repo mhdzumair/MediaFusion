@@ -194,6 +194,8 @@ export {
   streamSignalsKeys,
 } from './useStreamSuggestions'
 
+export { useBulkStreamCommunity, streamCommunityKeys } from './useStreamCommunity'
+
 // Episode Suggestions hooks
 export {
   useEpisodeSuggestions,
@@ -227,6 +229,8 @@ export {
   useAddWhitelistPhrase,
   useDeleteWhitelistPhrase,
   useReloadKeywordCache,
+  useKeywordSyncStatus,
+  useResetKeywordFilters,
   keywordFilterKeys,
 } from './useKeywordFilters'
 

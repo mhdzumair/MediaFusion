@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { votingApi, type StreamVoteRequest } from '@/lib/api'
 
 import { streamSignalsKeys } from './useStreamSuggestions'
+import { streamCommunityKeys } from './useStreamCommunity'
 
 // Query keys
 export const votingKeys = {
@@ -39,6 +40,7 @@ export function useVoteOnStream() {
     onSuccess: (_, { streamId }) => {
       queryClient.invalidateQueries({ queryKey: votingKeys.streamVotes(streamId) })
       queryClient.invalidateQueries({ queryKey: streamSignalsKeys.stream(streamId) })
+      queryClient.invalidateQueries({ queryKey: streamCommunityKeys.all })
       queryClient.invalidateQueries({
         queryKey: votingKeys.all,
         predicate: (query) => query.queryKey[1] === 'streams',
@@ -56,6 +58,7 @@ export function useRemoveStreamVote() {
     onSuccess: (_, streamId) => {
       queryClient.invalidateQueries({ queryKey: votingKeys.streamVotes(streamId) })
       queryClient.invalidateQueries({ queryKey: streamSignalsKeys.stream(streamId) })
+      queryClient.invalidateQueries({ queryKey: streamCommunityKeys.all })
       queryClient.invalidateQueries({
         queryKey: votingKeys.all,
         predicate: (query) => query.queryKey[1] === 'streams',
@@ -64,7 +67,7 @@ export function useRemoveStreamVote() {
   })
 }
 
-// Get content likes (popularity) - uses media_id (internal ID)
+// Get content likes
 export function useContentLikes(mediaId: number | undefined) {
   return useQuery({
     queryKey: votingKeys.contentLikes(mediaId!),

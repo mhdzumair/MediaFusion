@@ -165,6 +165,7 @@ async fn dispatch(
         season,
         episode,
         filename.as_deref(),
+        method != Method::HEAD,
     );
 
     let resolved = if method == Method::HEAD {
@@ -209,6 +210,7 @@ async fn resolve(
     season: Option<i32>,
     episode: Option<i32>,
     filename: Option<&str>,
+    track_playback: bool,
 ) -> Result<String, providers::ProviderError> {
     // 1. Decrypt user config
     let raw_user_data = crypto::resolve_user_data(
@@ -270,6 +272,31 @@ async fn resolve(
         provider.token.as_deref().ok_or_else(|| {
             providers::ProviderError::api("Provider token is missing", "invalid_token.mp4")
         })?
+    };
+
+    let record_playback = {
+        let pool = state.pool.clone();
+        let hash = info_hash.to_string();
+        let user_id = user_data.user_id.map(|u| u.0);
+        let profile_id = user_data.profile_id.map(|p| p.0);
+        let pname = provider_name.to_string();
+        let pservice = provider.service.clone();
+        let s = season;
+        let e = episode;
+        move || {
+            if track_playback {
+                db::spawn_track_stream_playback_by_hash(
+                    pool,
+                    hash,
+                    user_id,
+                    profile_id,
+                    s,
+                    e,
+                    Some(pname),
+                    Some(pservice),
+                );
+            }
+        }
     };
 
     // 3. Restriction check: block playback if all media linked to this torrent is restricted.
@@ -394,6 +421,9 @@ async fn resolve(
             state.config.store_stremthru_magnet_cache,
         )
         .await;
+
+        // Count plays only when the provider freshly resolves a URL (not cache hits).
+        record_playback();
 
         if let Some(profile_id) = user_data.profile_id {
             spawn_playback_scrobble(

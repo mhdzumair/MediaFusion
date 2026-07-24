@@ -35,6 +35,7 @@ pub mod contribution_defaults;
 pub mod genres;
 pub mod media;
 pub mod meta;
+pub mod playback_tracking;
 pub mod metadata_merge;
 pub mod metadata_model;
 pub mod metadata_store;
@@ -87,6 +88,10 @@ pub use stream_store::{
     store_telegram_stream, store_telegram_streams, store_torrent_stream, store_torrent_streams,
     store_usenet_stream, store_usenet_streams, store_youtube_stream, strip_nul,
     upsert_stream_file_row, upsert_torrent_files_by_hash,
+};
+pub use playback_tracking::{
+    fetch_watched_count, fetch_watched_counts_bulk, resolve_stream_id_for_tracking,
+    resolve_stream_id_from_info_hash, spawn_track_stream_playback_by_hash, track_stream_playback,
 };
 pub use streams::{
     StreamPlaybackInfo, TorrentFileEntry, fetch_acestream_streams_bulk, fetch_http_streams_bulk,

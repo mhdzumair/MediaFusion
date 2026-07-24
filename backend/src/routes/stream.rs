@@ -2449,7 +2449,7 @@ fn scraped_to_json(s: &crate::scrapers::ScrapedStream) -> Value {
 // Default Python-compatible stream templates
 const DEFAULT_TITLE_TEMPLATE: &str = "{addon.name} {if stream.type = torrent}🧲 {service.shortName} {if service.cached}⚡️{else}⏳{/if}{elif stream.type = usenet}📰 {service.shortName}{elif stream.type = telegram}📱{elif stream.type = youtube}▶️{elif stream.type = http}🌐{else}🔗{/if} {if stream.resolution}{stream.resolution}{/if}";
 
-const DEFAULT_DESC_TEMPLATE: &str = "{if stream.hdr_formats}🎨 {stream.hdr_formats|join('|')} {/if}{if stream.quality}📺 {stream.quality} {/if}{if stream.codec}🎞️ {stream.codec} {/if}{if stream.audio_formats}🎵 {stream.audio_formats|join('|')} {/if}{if stream.channels}🔊 {stream.channels|join(' ')}{/if}\n{if stream.size > 0}📦 {stream.size|bytes}{if stream.folderSize > stream.size} / {stream.folderSize|bytes}{/if} {/if}{if stream.seeders > 0}👤 {stream.seeders}{/if}\n{if stream.languages}🌐 {stream.languages|join(' + ')}{/if}\n🔗 {stream.source}{if stream.uploader} | 🧑‍💻 {stream.uploader}{/if}";
+const DEFAULT_DESC_TEMPLATE: &str = "{if stream.hdr_formats}🎨 {stream.hdr_formats|join('|')} {/if}{if stream.quality}📺 {stream.quality} {/if}{if stream.codec}🎞️ {stream.codec} {/if}{if stream.audio_formats}🎵 {stream.audio_formats|join('|')} {/if}{if stream.channels}🔊 {stream.channels|join(' ')}{/if}\n{if stream.size > 0}📦 {stream.size|bytes}{if stream.folderSize > stream.size} / {stream.folderSize|bytes}{/if} {/if}{if stream.seeders > 0}👤 {stream.seeders}{/if}{if stream.watched_count > 0} ▶️ {stream.watched_count}{/if}\n{if stream.languages}🌐 {stream.languages|join(' + ')}{/if}\n🔗 {stream.source}{if stream.uploader} | 🧑‍💻 {stream.uploader}{/if}";
 
 /// Build quality detail string for bingeGroup (mirrors Python parser.py:805-815).
 fn build_quality_detail(t: &Value) -> String {
@@ -2638,6 +2638,8 @@ fn build_stream_context(
     copy_num!("seeders");
     copy_num!("size");
     copy_num!("folderSize");
+    copy_num!("watched_count");
+    copy_num!("playback_count");
     // boolean: cached + quality flags
     stream_obj.insert("cached".to_string(), Value::Bool(is_cached));
     copy_bool!("is_proper");

@@ -23,9 +23,11 @@ import {
 import { cn } from '@/lib/utils'
 import { useStreamVotes, useVoteOnStream, useRemoveStreamVote } from '@/hooks'
 import type { VoteType, QualityStatus, StreamVoteSummary } from '@/lib/api'
+import { communityStatsToVoteSummary, type StreamCommunityStats } from '@/lib/api/stream-community'
 
 interface StreamVoteButtonsProps {
   streamId: number
+  community?: StreamCommunityStats
   compact?: boolean
   showCounts?: boolean
   className?: string
@@ -38,8 +40,15 @@ const qualityStatusConfig: Record<QualityStatus, { label: string; icon: typeof C
   poor_quality: { label: 'Poor Quality', icon: AlertTriangle, color: 'text-primary' },
 }
 
-export function StreamVoteButtons({ streamId, compact = false, showCounts = true, className }: StreamVoteButtonsProps) {
-  const { data: voteSummary, isLoading } = useStreamVotes(streamId)
+export function StreamVoteButtons({
+  streamId,
+  community,
+  compact = false,
+  showCounts = true,
+  className,
+}: StreamVoteButtonsProps) {
+  const { data: fetchedVoteSummary, isLoading } = useStreamVotes(community ? undefined : streamId)
+  const voteSummary = community ? communityStatsToVoteSummary(community) : fetchedVoteSummary
   const voteOnStream = useVoteOnStream()
   const removeVote = useRemoveStreamVote()
 
@@ -71,7 +80,7 @@ export function StreamVoteButtons({ streamId, compact = false, showCounts = true
     }
   }
 
-  if (isLoading) {
+  if (isLoading && !community) {
     return (
       <div className={cn('flex items-center gap-2', className)}>
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
