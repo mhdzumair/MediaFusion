@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ListPagination } from '@/components/ui/list-pagination'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   AlertDialog,
@@ -23,8 +24,6 @@ import {
   EyeOff,
   Eye,
   Search,
-  ChevronLeft,
-  ChevronRight,
   CheckCircle,
   XCircle,
   Loader2,
@@ -51,7 +50,13 @@ import { Poster } from '@/components/ui/poster'
 import { useRpdb } from '@/contexts/RpdbContext'
 import { saveContentDetailReturnUrl } from '../browseNavigation'
 
-const PAGE_SIZE = 24
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const
+type PageSize = (typeof PAGE_SIZE_OPTIONS)[number]
+
+function parsePageSize(raw: string | null): PageSize {
+  const n = parseInt(raw ?? '25', 10)
+  return PAGE_SIZE_OPTIONS.includes(n as PageSize) ? (n as PageSize) : 25
+}
 
 const TYPE_LABELS: Record<string, string> = {
   movie: 'Movie',
@@ -351,7 +356,8 @@ export function NsfwReviewTab() {
   const [search, setSearch] = useState('')
 
   const filter = searchParams.get('n_filter') || 'nsfw_flagged'
-  const page = parseInt(searchParams.get('n_page') || '1', 10)
+  const page = Math.max(1, parseInt(searchParams.get('n_page') || '1', 10) || 1)
+  const pageSize = parsePageSize(searchParams.get('n_page_size'))
 
   const setFilter = (value: string) => {
     const next = new URLSearchParams(searchParams)
@@ -362,11 +368,22 @@ export function NsfwReviewTab() {
 
   const setPage = (value: number) => {
     const next = new URLSearchParams(searchParams)
-    next.set('n_page', String(value))
+    if (value > 1) {
+      next.set('n_page', String(value))
+    } else {
+      next.delete('n_page')
+    }
     setSearchParams(next, { replace: true })
   }
 
-  const queryKey = ['media', 'nsfw', { search, page, filter }]
+  const setPageSize = (value: PageSize) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('n_page_size', String(value))
+    next.set('n_page', '1')
+    setSearchParams(next, { replace: true })
+  }
+
+  const queryKey = ['media', 'nsfw', { search, page, pageSize, filter }]
 
   const { data, isLoading } = useQuery({
     queryKey,
@@ -374,13 +391,19 @@ export function NsfwReviewTab() {
       adminApi.getBlockedMedia({
         search: search || undefined,
         page,
-        page_size: PAGE_SIZE,
+        page_size: pageSize,
         filter,
       }),
   })
 
   const isAdmin = data?.viewer_is_admin ?? false
   const returnLabel = filter === 'nsfw_reviewed' ? 'NSFW Review (Reviewed)' : 'NSFW Review'
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1
+
+  const handlePageChange = (nextPage: number) => {
+    setPage(nextPage)
+    window.scrollTo(0, 0)
+  }
 
   return (
     <div className="space-y-6">
@@ -437,6 +460,20 @@ export function NsfwReviewTab() {
         </Select>
       </div>
 
+      {data && data.total > 0 && (
+        <ListPagination
+          inputId="nsfw-page-jump"
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={data.total}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          onPageSizeChange={(size) => setPageSize(size as PageSize)}
+          alwaysShowSummary
+        />
+      )}
+
       {/* Grid */}
       {isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -463,30 +500,17 @@ export function NsfwReviewTab() {
             ))}
           </div>
 
-          {data.total > PAGE_SIZE && (
-            <div className="flex justify-center items-center gap-2 pt-4">
-              <Button
-                variant="outline"
-                size="icon"
-                disabled={page === 1}
-                onClick={() => setPage(page - 1)}
-                className="rounded-xl"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="px-4 text-sm text-muted-foreground">
-                Page {page} of {Math.ceil(data.total / PAGE_SIZE)}
-              </span>
-              <Button
-                variant="outline"
-                size="icon"
-                disabled={!data.has_more}
-                onClick={() => setPage(page + 1)}
-                className="rounded-xl"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+          {data.total > pageSize && (
+            <ListPagination
+              inputId="nsfw-page-jump-bottom"
+              currentPage={page}
+              totalPages={totalPages}
+              totalItems={data.total}
+              pageSize={pageSize}
+              onPageChange={handlePageChange}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              onPageSizeChange={(size) => setPageSize(size as PageSize)}
+            />
           )}
         </>
       )}

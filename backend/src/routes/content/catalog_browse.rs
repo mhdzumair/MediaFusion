@@ -27,10 +27,6 @@ use crate::{
     cache,
     db::{self, MediaType, StreamType, TorrentType},
     models::user_data::UserData,
-    parser::{
-        FilterContext, cap_streams, compare_sort_keys, filter_streams_by_preferences,
-        torrent_sort_key,
-    },
     routes::{
         content::stream_rows::{
             BrowseStreamRow, STREAM_BASE_COLS, STREAM_LINK_AGG_COLS, format_size,
@@ -1174,16 +1170,8 @@ pub async fn get_media_streams(
         .map(|u| format!("U-{u}"))
         .unwrap_or_default();
 
-    // Extract sort preferences from profile UserData (or use defaults)
+    // Extract profile UserData for playback URL generation and provider context.
     let ud = profile_user_data.unwrap_or_default();
-    let sorting_priority = ud.sorting_priority();
-    let language_sorting = ud.language_sorting_list();
-    let selected_resolutions = ud.effective_selected_resolutions();
-    let quality_filter = if ud.quality_filter.is_empty() {
-        crate::parser::default_quality_filter_groups()
-    } else {
-        ud.quality_filter.clone()
-    };
 
     // MediaFlow configuration for web browser playback.
     // web_playback_enabled is true only when MediaFlow is configured with enable_web_playback.
@@ -1195,12 +1183,24 @@ pub async fn get_media_streams(
     let season = effective_season;
     let episode = effective_episode;
 
-    // Determine if the caller is a privileged user (admin or moderator) — used for both
-    // restricted-media gating and keyword-blocked stream visibility.
-    let is_privileged =
-        crate::routes::auth_guard::decode_access_token(&headers, &state.config.secret_key_raw)
-            .map(|(_, role)| matches!(role.as_str(), "admin" | "moderator"))
-            .unwrap_or(false);
+    // Privileged users (admin/moderator) can load streams for restricted media review.
+    let auth_role = crate::routes::auth_guard::decode_access_token(
+        &headers,
+        &state.config.secret_key_raw,
+    )
+    .ok()
+    .map(|(_, role)| role);
+    let is_admin = auth_role.as_deref() == Some("admin");
+    let is_privileged = auth_role
+        .as_deref()
+        .is_some_and(|role| matches!(role, "admin" | "moderator"));
+
+    // Regular users: active and not manually blocked. Admins also see blocked streams (may be inactive).
+    let stream_visibility = if is_admin {
+        "((NOT s.is_blocked AND s.is_active) OR s.is_blocked)"
+    } else {
+        "(s.is_active AND NOT s.is_blocked)"
+    };
 
     // Guard: don't serve streams for restricted media (manual / keyword / NSFW).
     // Admins can still retrieve streams for review on the detail page.
@@ -1245,8 +1245,10 @@ pub async fn get_media_streams(
            LEFT JOIN usenet_stream us ON us.stream_id = s.id
            LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
            LEFT JOIN telegram_stream tgs ON tgs.stream_id = s.id
-           WHERE s.is_active = true
-             AND s.is_blocked = false
+           WHERE {stream_visibility}
+             AND fml.media_id = $1
+             AND fml.season_number = $2
+             AND fml.episode_number = $3
            ORDER BY s.id"#
         )))
         .bind(media_id)
@@ -1281,8 +1283,7 @@ pub async fn get_media_streams(
            LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
            LEFT JOIN telegram_stream tgs ON tgs.stream_id = s.id
            WHERE sml.media_id = $1
-             AND s.is_active = true
-             AND s.is_blocked = false"#
+             AND {stream_visibility}"#
         )))
         .bind(media_id)
         .fetch_all(&state.pool_ro)
@@ -1294,24 +1295,11 @@ pub async fn get_media_streams(
     };
 
     tracing::debug!(
-        "get_media_streams: found {} rows for media_id={media_id}",
+        "get_media_streams: found {} rows for media_id={media_id} (preference filters are UI-only)",
         stream_rows.len()
     );
 
     let kf = state.keyword_filters.read().unwrap().clone();
-    let stream_rows: Vec<BrowseStreamRow> = if is_privileged {
-        stream_rows
-    } else {
-        stream_rows
-            .into_iter()
-            .filter(|r| !kf.is_stream_text_blocked(&r.name, r.filename.as_deref()))
-            .collect()
-    };
-
-    tracing::debug!(
-        "get_media_streams: {} rows after runtime keyword filter for media_id={media_id}",
-        stream_rows.len()
-    );
 
     // Step 1: check Redis debrid_cache:{service} (global per service)
     let mut cached_hashes: HashMap<String, bool> = if let Some(ref svc) = selected_provider {
@@ -1628,6 +1616,7 @@ pub async fn get_media_streams(
                 "release_group": r.release_group,
                 "cached": is_cached,
                 "rd_blocked": rd_blocked,
+                "is_blocked": r.is_blocked,
                 "is_keyword_blocked": keyword_blocked,
                 "is_remastered": r.is_remastered,
                 "is_upscaled": r.is_upscaled,
@@ -1670,7 +1659,7 @@ pub async fn get_media_streams(
         });
     }
 
-    // Keep provider-compatible outputs for stream_id deep-link pinning (bypasses preference/cap only).
+    // Keep provider-compatible outputs for stream_id deep-link pinning.
     let provider_compatible_outputs: std::collections::HashMap<i32, serde_json::Value> =
         stream_pairs
             .iter()
@@ -1681,67 +1670,8 @@ pub async fn get_media_streams(
             })
             .collect();
 
-    let allow_public_usenet = state.config.is_scrap_from_public_usenet_indexers;
-    let kf = {
-        state
-            .keyword_filters
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_default()
-    };
-    let filter_ctx = FilterContext {
-        user_data: &ud,
-        season,
-        episode,
-        primary_provider: ud.get_primary_provider(),
-        usenet_providers: None,
-        is_usenet: false,
-        allow_public_usenet,
-        keyword_filters: &kf,
-    };
-
-    let sort_rows: Vec<serde_json::Value> = stream_pairs.iter().map(|(a, _)| a.clone()).collect();
-    let filtered_sort = filter_streams_by_preferences(sort_rows, &filter_ctx);
-    let capped_sort = cap_streams(
-        filtered_sort,
-        ud.max_streams_per_resolution,
-        ud.effective_max_streams(),
-    );
-    let keep_ids: std::collections::HashSet<i32> = capped_sort
-        .iter()
-        .filter_map(|v| v.get("_id").and_then(|x| x.as_i64()).map(|i| i as i32))
-        .collect();
-    stream_pairs.retain(|(ctx, _)| {
-        ctx.get("_id")
-            .and_then(|x| x.as_i64())
-            .is_some_and(|id| keep_ids.contains(&(id as i32)))
-    });
-
-    if !sorting_priority.is_empty() {
-        stream_pairs.sort_by(|(a, _), (b, _)| {
-            let ka = torrent_sort_key(
-                a,
-                &sorting_priority,
-                &selected_resolutions,
-                &quality_filter,
-                &language_sorting,
-                &cached_hashes,
-                season,
-                episode,
-            );
-            let kb = torrent_sort_key(
-                b,
-                &sorting_priority,
-                &selected_resolutions,
-                &quality_filter,
-                &language_sorting,
-                &cached_hashes,
-                season,
-                episode,
-            );
-            compare_sort_keys(&ka, &kb)
-        });
-    }
+    // User preference filters (resolution, quality, language, keyword, caps) are applied in the
+    // web UI only. The Stremio stream endpoint applies them server-side from profile config.
 
     let mut streams: Vec<serde_json::Value> =
         stream_pairs.into_iter().map(|(_, out)| out).collect();

@@ -345,21 +345,15 @@ pub async fn list_blocked_media(
     State(state): State<Arc<AppState>>,
     Query(params): Query<BlockedMediaQuery>,
 ) -> impl IntoResponse {
-    // nsfw_flagged filter is accessible to any authenticated user;
-    // the blocked filter requires admin/moderator.
+    // nsfw_flagged / nsfw_reviewed filters are admin-only.
     let filter = params.filter.as_deref().unwrap_or("blocked");
     let viewer_is_admin;
 
     if filter == "nsfw_flagged" || filter == "nsfw_reviewed" {
-        // Any valid token can view NSFW flagged/reviewed items.
-        let data = match crate::routes::admin_nsfw::extract_token_data(
-            &headers,
-            &state.config.secret_key_raw,
-        ) {
-            Some(d) => d,
-            None => return forbidden(),
-        };
-        viewer_is_admin = data["role"].as_str() == Some("admin");
+        if validate_admin(&headers, &state.config.secret_key_raw).is_none() {
+            return forbidden();
+        }
+        viewer_is_admin = true;
     } else {
         // Blocked media requires at least moderator.
         match validate_moderator_or_admin(&headers, &state.config.secret_key_raw) {

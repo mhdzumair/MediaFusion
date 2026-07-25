@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ListPagination } from '@/components/ui/list-pagination'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,26 +20,20 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  Ban,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  CheckCircle,
-  Loader2,
-  ShieldAlert,
-  Calendar,
-  User,
-  Tag,
-  EyeOff,
-} from 'lucide-react'
+import { Ban, Search, CheckCircle, Loader2, ShieldAlert, Calendar, User, Tag, EyeOff } from 'lucide-react'
 import { adminApi, type BlockedMediaItem } from '@/lib/api/admin'
 import { useToast } from '@/hooks/use-toast'
 import { Poster } from '@/components/ui/poster'
 import { useRpdb } from '@/contexts/RpdbContext'
 import { saveContentDetailReturnUrl } from '../browseNavigation'
 
-const PAGE_SIZE = 24
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const
+type PageSize = (typeof PAGE_SIZE_OPTIONS)[number]
+
+function parsePageSize(raw: string | null): PageSize {
+  const n = parseInt(raw ?? '25', 10)
+  return PAGE_SIZE_OPTIONS.includes(n as PageSize) ? (n as PageSize) : 25
+}
 
 const TYPE_LABELS = {
   movie: 'Movie',
@@ -239,7 +234,8 @@ export function BlockedLibraryTab() {
 
   const catalogType = (searchParams.get('type') as 'movie' | 'series' | 'tv') || ''
   const filter = searchParams.get('b_filter') || 'all_restricted'
-  const page = parseInt(searchParams.get('b_page') || '1', 10)
+  const page = Math.max(1, parseInt(searchParams.get('b_page') || '1', 10) || 1)
+  const pageSize = parsePageSize(searchParams.get('b_page_size'))
   const [search, setSearch] = useState('')
 
   const setType = (value: string) => {
@@ -262,11 +258,22 @@ export function BlockedLibraryTab() {
 
   const setPage = (value: number) => {
     const next = new URLSearchParams(searchParams)
-    next.set('b_page', String(value))
+    if (value > 1) {
+      next.set('b_page', String(value))
+    } else {
+      next.delete('b_page')
+    }
     setSearchParams(next, { replace: true })
   }
 
-  const queryKey = ['admin', 'blocked-media', { type: catalogType || undefined, search, page, filter }]
+  const setPageSize = (value: PageSize) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('b_page_size', String(value))
+    next.set('b_page', '1')
+    setSearchParams(next, { replace: true })
+  }
+
+  const queryKey = ['admin', 'blocked-media', { type: catalogType || undefined, search, page, pageSize, filter }]
 
   const { data, isLoading } = useQuery({
     queryKey,
@@ -275,7 +282,7 @@ export function BlockedLibraryTab() {
         type: catalogType || undefined,
         search: search || undefined,
         page,
-        page_size: PAGE_SIZE,
+        page_size: pageSize,
         filter,
       }),
   })
@@ -285,6 +292,12 @@ export function BlockedLibraryTab() {
   }
 
   const returnLabel = FILTER_LABELS[filter] ?? 'Blocked Content'
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1
+
+  const handlePageChange = (nextPage: number) => {
+    setPage(nextPage)
+    window.scrollTo(0, 0)
+  }
 
   return (
     <div className="space-y-6">
@@ -341,6 +354,20 @@ export function BlockedLibraryTab() {
         </Select>
       </div>
 
+      {data && data.total > 0 && (
+        <ListPagination
+          inputId="blocked-page-jump"
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={data.total}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          onPageSizeChange={(size) => setPageSize(size as PageSize)}
+          alwaysShowSummary
+        />
+      )}
+
       {/* Grid */}
       {isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -367,30 +394,17 @@ export function BlockedLibraryTab() {
             ))}
           </div>
 
-          {data.total > PAGE_SIZE && (
-            <div className="flex justify-center items-center gap-2 pt-4">
-              <Button
-                variant="outline"
-                size="icon"
-                disabled={page === 1}
-                onClick={() => setPage(page - 1)}
-                className="rounded-xl"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="px-4 text-sm text-muted-foreground">
-                Page {page} of {Math.ceil(data.total / PAGE_SIZE)}
-              </span>
-              <Button
-                variant="outline"
-                size="icon"
-                disabled={!data.has_more}
-                onClick={() => setPage(page + 1)}
-                className="rounded-xl"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+          {data.total > pageSize && (
+            <ListPagination
+              inputId="blocked-page-jump-bottom"
+              currentPage={page}
+              totalPages={totalPages}
+              totalItems={data.total}
+              pageSize={pageSize}
+              onPageChange={handlePageChange}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              onPageSizeChange={(size) => setPageSize(size as PageSize)}
+            />
           )}
         </>
       )}

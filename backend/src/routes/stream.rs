@@ -1095,6 +1095,7 @@ fn filter_pipeline_rows(
         is_usenet,
         allow_public_usenet,
         keyword_filters,
+        bypass_preference_filters: false,
     };
     filter_streams_by_preferences(rows, &ctx)
 }

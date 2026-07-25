@@ -35,6 +35,8 @@ pub struct FilterContext<'a> {
     pub is_usenet: bool,
     pub allow_public_usenet: bool,
     pub keyword_filters: &'a KeywordFilterCache,
+    /// Skip resolution/size/quality/HDR/language/keyword/name filters (admin/moderator review).
+    pub bypass_preference_filters: bool,
 }
 
 /// Port of Python `filter_streams_by_user_preferences` — returns rows with `filtered_*` sidecars set.
@@ -154,6 +156,11 @@ pub fn filter_streams_by_preferences(streams: Vec<Value>, ctx: &FilterContext<'_
                         .collect::<Vec<_>>()
                 ),
             );
+        }
+
+        if ctx.bypass_preference_filters {
+            out.push(row);
+            continue;
         }
 
         // Step 4: resolution

@@ -38,8 +38,25 @@ export function LibraryPage() {
 
   // Blocked-content view: ?blocked=true (admin only)
   const isBlockedView = searchParams.get('blocked') === 'true' && isAdmin
-  // NSFW review view: ?nsfw=true (any authenticated user)
-  const isNsfwView = searchParams.get('nsfw') === 'true'
+  // NSFW review view: ?nsfw=true (admin only)
+  const isNsfwView = searchParams.get('nsfw') === 'true' && isAdmin
+
+  // Strip NSFW view param for non-admins (e.g. moderators with a bookmarked URL)
+  useEffect(() => {
+    if (isAdmin) return
+    setSearchParams(
+      (prev) => {
+        if (prev.get('nsfw') !== 'true') return prev
+        const params = new URLSearchParams(prev)
+        params.delete('nsfw')
+        params.delete('n_filter')
+        params.delete('n_page')
+        params.delete('n_page_size')
+        return params
+      },
+      { replace: true },
+    )
+  }, [isAdmin, setSearchParams])
 
   // Get initial tab from URL or session storage
   const urlTab = searchParams.get('tab')
@@ -120,7 +137,7 @@ export function LibraryPage() {
     )
   }
 
-  // NSFW review view — visible to any authenticated user
+  // NSFW review view — admin only
   if (isNsfwView) {
     return (
       <div className="space-y-6 p-6 max-w-screen-xl mx-auto">
@@ -202,25 +219,26 @@ export function LibraryPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* NSFW review — all authenticated users */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-xl gap-2 border-destructive/20 text-destructive/80 hover:bg-destructive/10 hover:text-destructive"
-              onClick={() =>
-                setSearchParams(
-                  (prev) => {
-                    const params = new URLSearchParams(prev)
-                    params.set('nsfw', 'true')
-                    return params
-                  },
-                  { replace: true },
-                )
-              }
-            >
-              <EyeOff className="h-4 w-4" />
-              NSFW Review
-            </Button>
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl gap-2 border-destructive/20 text-destructive/80 hover:bg-destructive/10 hover:text-destructive"
+                onClick={() =>
+                  setSearchParams(
+                    (prev) => {
+                      const params = new URLSearchParams(prev)
+                      params.set('nsfw', 'true')
+                      return params
+                    },
+                    { replace: true },
+                  )
+                }
+              >
+                <EyeOff className="h-4 w-4" />
+                NSFW Review
+              </Button>
+            )}
 
             {/* Admin shortcut to blocked content */}
             {isAdmin && (

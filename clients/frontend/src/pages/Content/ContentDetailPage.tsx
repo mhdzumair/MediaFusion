@@ -1599,12 +1599,19 @@ export function ContentDetailPage() {
     })
   }
 
-  // Client-side filtering for instant UI feedback
-  // (Server-side filtering already applied via API params)
+  // Client-side filtering and sorting (catalog API returns unfiltered streams).
   const filteredStreams = useMemo(() => {
     if (!streamsData?.streams) return []
 
     let result = [...streamsData.streams]
+
+    // Privileged users (moderator+) see keyword-blocked streams; admins also see manually blocked ones.
+    if (!isModerator) {
+      result = result.filter((s) => !s.is_keyword_blocked)
+    }
+    if (!isAdmin) {
+      result = result.filter((s) => !s.is_blocked)
+    }
 
     // Apply instant client-side filters (for UI responsiveness)
     const {
@@ -1701,7 +1708,7 @@ export function ContentDetailPage() {
 
     // Apply multi-key sorting (priority order — first non-tie wins)
     return sortStreams(result, sortPriority)
-  }, [streamsData, streamFilters, lastPlayedStreamId])
+  }, [streamsData, streamFilters, lastPlayedStreamId, isModerator, isAdmin])
 
   const streamTotalPages = Math.max(1, Math.ceil(filteredStreams.length / streamPageSize))
   const safeStreamPage = Math.min(streamPage, streamTotalPages)

@@ -92,6 +92,7 @@ fn run_pipeline(
         is_usenet: false,
         allow_public_usenet: false,
         keyword_filters: &kf,
+        bypass_preference_filters: false,
     };
     let priority = user_data.sorting_priority();
     let selected_resolutions = user_data.effective_selected_resolutions();
