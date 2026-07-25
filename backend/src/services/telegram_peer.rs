@@ -35,7 +35,10 @@ pub async fn load_dialog_peer_map(client: &Client) -> HashMap<i64, PeerRef> {
     loop {
         match iter.next().await {
             Ok(Some(dialog)) => {
-                map.insert(dialog.peer.id().bot_api_dialog_id(), dialog.peer_ref());
+                let Some(dialog_id) = dialog.peer.id().bot_api_dialog_id() else {
+                    continue;
+                };
+                map.insert(dialog_id, dialog.peer_ref());
             }
             Ok(None) => break,
             Err(e) => {
@@ -79,7 +82,7 @@ pub async fn resolve_channel_ref(
     match channel_ref {
         ChannelRef::Username(username) => {
             let peer = client.resolve_username(&username).await.ok()??;
-            let peer_ref = peer.to_ref().await?;
+            let peer_ref = peer.to_ref().await.ok().flatten()?;
             Some((peer, peer_ref))
         }
         ChannelRef::DialogId(dialog_id) => {
@@ -96,7 +99,7 @@ pub async fn download_channel_photo(
     dialog_peers: &HashMap<i64, PeerRef>,
 ) -> Option<Vec<u8>> {
     let (peer, _) = resolve_channel_peer(client, channel_id, dialog_peers).await?;
-    let photo = peer.photo(false).await?;
+    let photo = peer.photo(false).await.ok().flatten()?;
     let mut iter = client.iter_download(&photo);
     let mut bytes = Vec::new();
     loop {

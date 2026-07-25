@@ -172,8 +172,8 @@ aws-credential-types = "1"
 aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", "default-https-client", "http-1x"] }
 
 # Telegram MTProto live scraper (Phase 2c)
-grammers-client = { version = "0.9", default-features = false }
-grammers-session = { version = "0.9", default-features = false }
+grammers-client = { version = "0.10", default-features = false }
+grammers-session = { version = "0.10", default-features = false }
 
 # See tikv-jemallocator docs: cfg(not(target_env = "msvc")). Optional so CI can
 # disable it for Windows GNU cross-compiles where jemalloc does not link.
@@ -194,8 +194,3 @@ harness = false
 opt-level = 3
 lto = "thin"
 codegen-units = 1
-
-# glass_pumpkin 1.10.0 was yanked; grammers-crypto 0.9.0 requires ^1.10.0.
-# Pin grammers-crypto to git until a fixed crates.io release is published.
-[patch.crates-io]
-grammers-crypto = { git = "https://codeberg.org/Lonami/grammers" }

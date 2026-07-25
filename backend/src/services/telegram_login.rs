@@ -94,9 +94,12 @@ async fn spawn_client(
 async fn export_session_data(
     session: &MemorySession,
 ) -> Result<grammers_session::SessionData, String> {
-    let home_dc = session.home_dc_id();
+    let home_dc = session
+        .home_dc_id()
+        .map_err(|e| format!("session home_dc: {e}"))?;
     let dc = session
         .dc_option(home_dc)
+        .map_err(|e| format!("session dc_option: {e}"))?
         .ok_or_else(|| format!("session missing DC {home_dc} options"))?;
     let mut data = grammers_session::SessionData {
         home_dc,
@@ -120,7 +123,10 @@ async fn persist_authenticated_session(
     let telethon = telegram_session::export_telethon_string(&data)?;
     let encrypted = session_crypto::encrypt_session(&telethon, &config.secret_key)
         .ok_or_else(|| "failed to encrypt session".to_string())?;
-    let account_id = grammers_user.id().bot_api_dialog_id();
+    let account_id = grammers_user
+        .id()
+        .bot_api_dialog_id()
+        .ok_or_else(|| "telegram user has no bot API dialog id".to_string())?;
     db::user_telegram_session::upsert_session(pool, user_id, &encrypted, account_id)
         .await
         .map_err(|e| format!("db upsert session: {e}"))?;

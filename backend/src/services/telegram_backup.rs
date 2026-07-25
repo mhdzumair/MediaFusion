@@ -33,7 +33,7 @@ async fn resolve_backup_peer_ref(
         ChannelRef::DialogId(dialog_id) => dialog_peers.get(&dialog_id).cloned(),
         ChannelRef::Username(username) => {
             let peer = client.resolve_username(&username).await.ok()??;
-            peer.to_ref().await
+            peer.to_ref().await.ok().flatten()
         }
     }
 }

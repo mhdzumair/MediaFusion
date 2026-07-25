@@ -43,7 +43,10 @@ pub async fn list_scrapable_dialogs(
             break;
         };
 
-        peer_map.insert(dialog.peer.id().bot_api_dialog_id(), dialog.peer_ref());
+        let Some(dialog_id) = dialog.peer.id().bot_api_dialog_id() else {
+            continue;
+        };
+        peer_map.insert(dialog_id, dialog.peer_ref());
 
         match &dialog.peer {
             Peer::Channel(channel) => {
@@ -56,7 +59,9 @@ pub async fn list_scrapable_dialogs(
                     is_public,
                     has_photo,
                     id: username.unwrap_or_else(|| {
-                        telegram_channel_id::format_dialog_id(channel.id().bot_api_dialog_id())
+                        telegram_channel_id::format_dialog_id(
+                            channel.id().bot_api_dialog_id_unchecked(),
+                        )
                     }),
                     name,
                     kind: "channel".to_string(),
@@ -72,7 +77,9 @@ pub async fn list_scrapable_dialogs(
                     is_public,
                     has_photo,
                     id: username.unwrap_or_else(|| {
-                        telegram_channel_id::format_dialog_id(group.id().bot_api_dialog_id())
+                        telegram_channel_id::format_dialog_id(
+                            group.id().bot_api_dialog_id_unchecked(),
+                        )
                     }),
                     name,
                     kind: "group".to_string(),

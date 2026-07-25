@@ -192,7 +192,10 @@ async fn scrape_channel(
         };
 
     // Extract chat metadata for embedding into results
-    let chat_id = peer.id().bot_api_dialog_id();
+    let Some(chat_id) = peer.id().bot_api_dialog_id() else {
+        tracing::debug!("telegram: peer has no bot API dialog id for {channel}");
+        return vec![];
+    };
     let chat_username: Option<String> = match &peer {
         grammers_client::peer::Peer::Channel(c) => c.username().map(str::to_string),
         grammers_client::peer::Peer::Group(g) => g.username().map(str::to_string),
