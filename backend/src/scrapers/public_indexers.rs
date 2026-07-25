@@ -605,8 +605,7 @@ async fn process_row_data(
         .as_deref()
         .filter(|m| m.starts_with("magnet:"))
         .and_then(|magnet| {
-            parser::extract_info_hash(magnet)
-                .map(|h| (h.to_lowercase(), magnet.to_string()))
+            parser::extract_info_hash(magnet).map(|h| (h.to_lowercase(), magnet.to_string()))
         }) {
         Some(found) => found,
         None => {
@@ -630,10 +629,8 @@ async fn process_row_data(
     };
 
     let (stream_name, parsed) = parser::parse_magnet_stream(&magnet_url, &row_title);
-    let ratio = parser::similarity_ratio(
-        parsed.title.as_deref().unwrap_or(&stream_name),
-        &meta.title,
-    );
+    let ratio =
+        parser::similarity_ratio(parsed.title.as_deref().unwrap_or(&stream_name), &meta.title);
     if ratio < sim_min {
         return None;
     }

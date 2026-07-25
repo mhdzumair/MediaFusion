@@ -350,7 +350,8 @@ mod tests {
 
     #[test]
     fn magnet_dn_drives_stream_resolution() {
-        let magnet = "magnet:?xt=urn:btih:abc123deadbeefabc123deadbeefabc123&dn=Peter.(2026).1080p.WEB-DL";
+        let magnet =
+            "magnet:?xt=urn:btih:abc123deadbeefabc123deadbeefabc123&dn=Peter.(2026).1080p.WEB-DL";
         let stream_name = parser::stream_name_from_magnet(magnet, "Peter (2026) HDRip");
         let parsed = parser::parse_title(&stream_name);
         assert_eq!(parsed.resolution.as_deref(), Some("1080p"));

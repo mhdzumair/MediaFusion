@@ -128,8 +128,7 @@ pub fn extract_magnet_uri(s: &str) -> Option<String> {
     }
     static MAGNET_RE: OnceLock<regex::Regex> = OnceLock::new();
     let re = MAGNET_RE.get_or_init(|| regex::Regex::new(r#"magnet:\?[^\s"'<>]+"#).unwrap());
-    re.find(trimmed)
-        .map(|m| m.as_str().replace("&amp;", "&"))
+    re.find(trimmed).map(|m| m.as_str().replace("&amp;", "&"))
 }
 
 /// Best stream/torrent name for a scraped magnet link.
@@ -185,7 +184,8 @@ mod magnet_tests {
 
     #[test]
     fn stream_name_prefers_magnet_dn() {
-        let magnet = "magnet:?xt=urn:btih:abc123deadbeefabc123deadbeefabc123&dn=Movie.2026.1080p.WEB-DL";
+        let magnet =
+            "magnet:?xt=urn:btih:abc123deadbeefabc123deadbeefabc123&dn=Movie.2026.1080p.WEB-DL";
         assert_eq!(
             stream_name_from_magnet(magnet, "Movie (2026) HDRip"),
             "Movie.2026.1080p.WEB-DL"
@@ -195,8 +195,7 @@ mod magnet_tests {
     #[test]
     fn parse_stream_name_from_sources_finds_embedded_magnet() {
         let html = r#"<a href="magnet:?xt=urn:btih:abc123deadbeefabc123deadbeefabc123&dn=Show.S01E01.1080p.WEB">link</a>"#;
-        let (name, parsed) =
-            parse_stream_name_from_sources(&[html], "Show S01E01 Generic Title");
+        let (name, parsed) = parse_stream_name_from_sources(&[html], "Show S01E01 Generic Title");
         assert_eq!(name, "Show.S01E01.1080p.WEB");
         assert_eq!(parsed.resolution.as_deref(), Some("1080p"));
     }

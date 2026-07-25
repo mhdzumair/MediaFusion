@@ -856,13 +856,12 @@ pub(crate) async fn scrape_ext_catalog(
                 // Always parse technical metadata via sports-aware PTT.
                 // For generic movie/TV catalog, fall back to standard parsing
                 // for non-sports titles.
-                let parsed = if spec.category != "ext_to_movie"
-                    || parser::is_sports_title(&stream_name)
-                {
-                    parser::parse_sports_title(&stream_name)
-                } else {
-                    parser::parse_title(&stream_name)
-                };
+                let parsed =
+                    if spec.category != "ext_to_movie" || parser::is_sports_title(&stream_name) {
+                        parser::parse_sports_title(&stream_name)
+                    } else {
+                        parser::parse_title(&stream_name)
+                    };
 
                 // Determine whether this is a weekly series episode (Raw,
                 // SmackDown, NXT, …), a race weekend (grouped into a series

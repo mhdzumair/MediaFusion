@@ -546,7 +546,8 @@ async fn scrape_formula_feeds(ctx: &JobCtx) -> Result<(), JobError> {
 
             let stream_name = parser::stream_name_from_magnet(&magnet, &title);
             let (clean_title, year, effective_media_type, files, parsed) =
-                classify_sports_rss_release(&stream_name, &info_hash, SOURCE, pool, proxy_url).await;
+                classify_sports_rss_release(&stream_name, &info_hash, SOURCE, pool, proxy_url)
+                    .await;
 
             let source = format!("{SOURCE}/{}", feed.label);
             info!(

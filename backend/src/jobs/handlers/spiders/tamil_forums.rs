@@ -308,11 +308,7 @@ async fn scrape_tamil_forum(
 
                 // Topic title drives media lookup; each torrent name drives stream metadata.
                 let topic_parsed = parser::parse_title(&title);
-                let clean_title = topic_parsed
-                    .title
-                    .as_deref()
-                    .unwrap_or(&title)
-                    .to_string();
+                let clean_title = topic_parsed.title.as_deref().unwrap_or(&title).to_string();
 
                 // Resolve or create media (PTT clean title → DB lookup → TMDB → stub).
                 let tmdb_key = ctx.state.config.tmdb_api_key.as_deref();
