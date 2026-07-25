@@ -22,7 +22,7 @@
       
       
       <link rel="icon" href="../../assets/logo.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -30,7 +30,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -1203,6 +1203,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#telegram-channel-scraping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Telegram channel scraping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#live-search" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1846,6 +1857,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#telegram-channel-scraping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Telegram channel scraping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#live-search" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2081,6 +2103,46 @@
 </tr>
 </tbody>
 </table>
+<p>See <a href="../../integrations/telegram/">Telegram Integration</a> for bot setup, per-user sessions, channel configuration, and scrape depth options.</p>
+<h2 id="telegram-channel-scraping">Telegram channel scraping<a class="headerlink" href="#telegram-channel-scraping" title="Permanent link">¶</a></h2>
+<p>Per-user Telegram sessions scrape channels/groups the user has joined. Requires <code>TELEGRAM_API_ID</code>, <code>TELEGRAM_API_HASH</code>, and bot configuration.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TELEGRAM_API_ID</code></td>
+<td>—</td>
+<td>Telegram user API ID (from my.telegram.org)</td>
+</tr>
+<tr>
+<td><code>TELEGRAM_API_HASH</code></td>
+<td>—</td>
+<td>Telegram user API hash</td>
+</tr>
+<tr>
+<td><code>MIN_SCRAPING_VIDEO_SIZE</code></td>
+<td><code>26214400</code></td>
+<td>Minimum video size in bytes (25 MB)</td>
+</tr>
+<tr>
+<td><code>TELEGRAM_BACKGROUND_SCRAPER_CRONTAB</code></td>
+<td><em>(built-in)</em></td>
+<td>Cron for the background scraper</td>
+</tr>
+<tr>
+<td><code>DISABLE_TELEGRAM_BACKGROUND_SCRAPER</code></td>
+<td><code>false</code></td>
+<td>Disable scheduled Telegram scraping</td>
+</tr>
+</tbody>
+</table>
+<p>Manual scrapes (web UI or <code>/scrape</code> in the bot) default to <strong>25 messages per channel</strong>; users can choose a custom count or full history. See the <a href="../../integrations/telegram/#running-scrapes">Telegram integration guide</a> for details.</p>
 <h2 id="live-search">Live search<a class="headerlink" href="#live-search" title="Permanent link">¶</a></h2>
 <table>
 <thead>
@@ -2347,7 +2409,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.path", "navigation.top", "navigation.footer", "search.highlight", "search.suggest", "search.share", "content.tabs.link", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
       
         <script src="../../assets/mermaid-init.js"></script>
       
