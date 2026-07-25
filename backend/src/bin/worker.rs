@@ -11,8 +11,7 @@ use mediafusion_api::{
     config::AppConfig,
     jobs::{JobRegistry, metrics::JobMetrics},
     state::{
-        AppState, load_keyword_filter_cache, schedule_keyword_recomputes,
-        sync_keywords_from_file,
+        AppState, load_keyword_filter_cache, schedule_keyword_recomputes, sync_keywords_from_file,
     },
 };
 use tokio_util::sync::CancellationToken;

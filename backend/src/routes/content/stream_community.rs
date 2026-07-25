@@ -76,11 +76,7 @@ pub async fn bulk_stream_community(
     State(state): State<Arc<AppState>>,
     Json(body): Json<BulkStreamCommunityRequest>,
 ) -> Response {
-    let stream_ids: Vec<i32> = body
-        .stream_ids
-        .into_iter()
-        .filter(|id| *id > 0)
-        .collect();
+    let stream_ids: Vec<i32> = body.stream_ids.into_iter().filter(|id| *id > 0).collect();
 
     if stream_ids.is_empty() {
         return (StatusCode::OK, Json(json!({ "streams": {} }))).into_response();

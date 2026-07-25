@@ -29,12 +29,10 @@ import { StreamCommunityRow } from './StreamCommunityRow'
 import { StreamReport } from './StreamReport'
 import { FileAnnotationDialog, type FileLink, type EditedFileLink } from './FileAnnotationDialog'
 import { catalogApi } from '@/lib/api'
-import type { StreamCommunityStats } from '@/lib/api/stream-community'
 
 interface StreamCardProps {
   stream: CatalogStreamInfo
   onClick: () => void
-  community?: StreamCommunityStats
   showActions?: boolean
   showModeratorActions?: boolean
   showOwnerActions?: boolean
@@ -61,7 +59,6 @@ function getAudioFormatsString(stream: CatalogStreamInfo): string | undefined {
 export function StreamCard({
   stream,
   onClick,
-  community,
   showActions = true,
   showModeratorActions = true,
   showOwnerActions = false,
@@ -329,6 +326,7 @@ export function StreamCard({
               streamName={stream.name}
               currentQuality={stream.quality || stream.resolution}
               currentLanguage={audioFormatsString}
+              isBlocked={stream.is_blocked}
               trigger={
                 <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                   <Flag className="h-4 w-4 mr-2" />
@@ -507,14 +505,7 @@ export function StreamCard({
         {stream.description && (
           <p className="text-xs text-muted-foreground whitespace-pre-line leading-relaxed">{stream.description}</p>
         )}
-        {stream.id && (
-          <StreamCommunityRow
-            streamId={stream.id}
-            community={community}
-            watchedCount={stream.watched_count}
-            className="pt-1"
-          />
-        )}
+        {stream.id && <StreamCommunityRow streamId={stream.id} watchedCount={stream.watched_count} className="pt-1" />}
       </div>
 
       {actionsMenu}

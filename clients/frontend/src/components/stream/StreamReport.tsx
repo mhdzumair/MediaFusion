@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -30,7 +29,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCreateStreamSuggestion } from '@/hooks'
-import { streamSuggestionsApi } from '@/lib/api/stream-suggestions'
+import { useStreamCommunityStats } from '@/contexts/StreamCommunityContext'
 import type { StreamSuggestionType } from '@/lib/api'
 
 interface StreamReportProps {
@@ -38,9 +37,10 @@ interface StreamReportProps {
   streamName?: string
   currentQuality?: string
   currentLanguage?: string
+  isBlocked?: boolean
   className?: string
   variant?: 'button' | 'icon'
-  trigger?: React.ReactNode // Custom trigger element
+  trigger?: React.ReactNode
 }
 
 const suggestionTypes: { value: StreamSuggestionType; label: string; icon: React.ReactNode; description: string }[] = [
@@ -81,11 +81,13 @@ export function StreamReport({
   streamName,
   currentQuality,
   currentLanguage,
+  isBlocked = false,
   className,
   variant = 'button',
   trigger,
 }: StreamReportProps) {
   const createSuggestion = useCreateStreamSuggestion()
+  const { stats, isLoading: communityLoading } = useStreamCommunityStats(streamId)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [selectedType, setSelectedType] = useState<StreamSuggestionType>('report_broken')
@@ -93,25 +95,12 @@ export function StreamReport({
   const [suggestedValue, setSuggestedValue] = useState('')
   const [reason, setReason] = useState('')
 
-  const showCommunityPanel = selectedType === 'report_broken' || selectedType === 'other'
-  const { data: signals, refetch: refetchSignals } = useQuery({
-    queryKey: ['stream-signals', streamId],
-    queryFn: () => streamSuggestionsApi.getStreamSignals(streamId),
-    enabled: dialogOpen && showCommunityPanel,
-    staleTime: 20_000,
-  })
-
-  useEffect(() => {
-    if (dialogOpen && showCommunityPanel) {
-      refetchSignals()
-    }
-  }, [dialogOpen, showCommunityPanel, refetchSignals])
+  const showCommunityPanel = dialogOpen && (selectedType === 'report_broken' || selectedType === 'other')
 
   const selectedTypeInfo = suggestionTypes.find((t) => t.value === selectedType)
 
   const handleTypeChange = (value: StreamSuggestionType) => {
     setSelectedType(value)
-    // Pre-fill current value based on type
     if (value === 'field_correction') {
       setCurrentValue(currentQuality || '')
     } else if (value === 'language_add' || value === 'language_remove') {
@@ -143,8 +132,8 @@ export function StreamReport({
   }
 
   const needsSuggestedValue = selectedType === 'field_correction' || selectedType === 'language_add'
+  const userAlreadyReportedIssue = selectedType === 'report_broken' && stats?.user_has_issue_report === true
 
-  // Default trigger based on variant
   const defaultTrigger =
     variant === 'icon' ? (
       <Button variant="ghost" size="icon" className={cn('h-8 w-8', className)}>
@@ -192,7 +181,6 @@ export function StreamReport({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Issue type selection */}
           <div className="space-y-2">
             <Label>Issue Type</Label>
             <Select value={selectedType} onValueChange={(v) => handleTypeChange(v as StreamSuggestionType)}>
@@ -213,15 +201,19 @@ export function StreamReport({
             {selectedTypeInfo && <p className="text-xs text-muted-foreground">{selectedTypeInfo.description}</p>}
           </div>
 
-          {/* Community signals (issue reports + thumbs) */}
-          {showCommunityPanel && signals && (
-            <Alert variant={signals.is_blocked ? 'destructive' : undefined}>
-              {signals.is_blocked ? (
+          {showCommunityPanel && (
+            <Alert variant={isBlocked ? 'destructive' : undefined}>
+              {communityLoading && !stats ? (
+                <AlertDescription className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading community reports…
+                </AlertDescription>
+              ) : isBlocked ? (
                 <>
                   <Ban className="h-4 w-4" />
                   <AlertDescription>This stream is blocked and may be hidden from some views.</AlertDescription>
                 </>
-              ) : (
+              ) : stats ? (
                 <>
                   <Flag className="h-4 w-4" />
                   <AlertDescription>
@@ -232,51 +224,29 @@ export function StreamReport({
                       <div className="flex flex-wrap items-center gap-3 text-foreground">
                         <span className="inline-flex items-center gap-1">
                           <Flag className="h-3.5 w-3.5" />
-                          {signals.issue_report_count} issue report{signals.issue_report_count === 1 ? '' : 's'}
+                          {stats.issue_report_count} issue report{stats.issue_report_count === 1 ? '' : 's'}
                         </span>
                         <span className="inline-flex items-center gap-1">
                           <ThumbsUp className="h-3.5 w-3.5 text-emerald-500" />
-                          {signals.rating_up}
+                          {stats.rating_up}
                           <ThumbsDown className="h-3.5 w-3.5 text-red-500" />
-                          {signals.rating_down}
-                          <span className="text-muted-foreground">(score {signals.rating_score})</span>
+                          {stats.rating_down}
+                          <span className="text-muted-foreground">(score {stats.rating_score})</span>
                         </span>
                       </div>
-                      {selectedType === 'report_broken' &&
-                        signals.user_has_report_broken === true &&
-                        signals.auto_block_on_broken_reports &&
-                        signals.reports_needed_for_auto_block > 0 && (
-                          <p className="text-xs text-muted-foreground">
-                            You already reported as broken. Auto-block (if enabled) uses{' '}
-                            {signals.legacy_approved_broken_reporters} of {signals.broken_report_threshold} approved
-                            reporter{signals.broken_report_threshold === 1 ? '' : 's'};{' '}
-                            {signals.reports_needed_for_auto_block} more needed.
-                          </p>
-                        )}
-                      {selectedType === 'report_broken' && signals.user_has_report_broken === true && (
+                      {userAlreadyReportedIssue && (
                         <p className="text-xs flex items-center gap-1 text-foreground">
                           <CheckCircle2 className="h-3.5 w-3.5" />
-                          You have already submitted a broken report for this stream.
+                          You have already submitted an issue report for this stream.
                         </p>
-                      )}
-                      {signals.recent_reasons.length > 0 && (
-                        <div className="text-xs text-muted-foreground space-y-1">
-                          <p className="font-medium text-foreground/80">Recent notes</p>
-                          <ul className="list-disc pl-4 space-y-0.5">
-                            {signals.recent_reasons.map((r, i) => (
-                              <li key={i}>{r}</li>
-                            ))}
-                          </ul>
-                        </div>
                       )}
                     </div>
                   </AlertDescription>
                 </>
-              )}
+              ) : null}
             </Alert>
           )}
 
-          {/* Current value (for corrections) */}
           {needsSuggestedValue && (
             <div className="space-y-2">
               <Label htmlFor="current">Current Value</Label>
@@ -289,7 +259,6 @@ export function StreamReport({
             </div>
           )}
 
-          {/* Suggested value (for corrections) */}
           {needsSuggestedValue && (
             <div className="space-y-2">
               <Label htmlFor="suggested">{selectedType === 'language_add' ? 'Language to Add' : 'Correct Value'}</Label>
@@ -302,7 +271,6 @@ export function StreamReport({
             </div>
           )}
 
-          {/* Reason / description */}
           <div className="space-y-2">
             <Label htmlFor="reason">
               {selectedType === 'report_broken' ? 'Error Details (optional)' : 'Additional Details (optional)'}
@@ -330,8 +298,8 @@ export function StreamReport({
             disabled={
               createSuggestion.isPending ||
               (needsSuggestedValue && !suggestedValue.trim()) ||
-              (selectedType === 'report_broken' && signals?.user_has_report_broken === true) ||
-              (selectedType === 'report_broken' && signals?.is_blocked === true)
+              userAlreadyReportedIssue ||
+              (selectedType === 'report_broken' && isBlocked)
             }
           >
             {createSuggestion.isPending ? (
@@ -339,10 +307,6 @@ export function StreamReport({
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Submitting...
               </>
-            ) : selectedType === 'report_broken' && signals?.user_has_report_broken === true ? (
-              'Already Reported'
-            ) : selectedType === 'report_broken' && signals?.is_blocked === true ? (
-              'Already Blocked'
             ) : (
               'Submit Report'
             )}

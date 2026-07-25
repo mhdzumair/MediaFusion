@@ -35,11 +35,11 @@ pub mod contribution_defaults;
 pub mod genres;
 pub mod media;
 pub mod meta;
-pub mod playback_tracking;
 pub mod metadata_merge;
 pub mod metadata_model;
 pub mod metadata_store;
 pub mod metadata_suggestion_apply;
+pub mod playback_tracking;
 pub mod pool;
 pub mod retry;
 pub mod stream_backfill;
@@ -73,6 +73,10 @@ pub use metadata_suggestion_apply::{
     replace_primary_image_for_media, replace_writers_for_media, update_tv_country_for_media,
     update_tv_language_for_media,
 };
+pub use playback_tracking::{
+    fetch_watched_count, fetch_watched_counts_bulk, resolve_stream_id_for_tracking,
+    resolve_stream_id_from_info_hash, spawn_track_stream_playback_by_hash, track_stream_playback,
+};
 pub use stream_links::{
     link_stream_audio_channels, link_stream_audio_formats, link_stream_hdr_formats,
     link_stream_languages, link_stream_to_media, link_stream_to_media_with_flags,
@@ -88,10 +92,6 @@ pub use stream_store::{
     store_telegram_stream, store_telegram_streams, store_torrent_stream, store_torrent_streams,
     store_usenet_stream, store_usenet_streams, store_youtube_stream, strip_nul,
     upsert_stream_file_row, upsert_torrent_files_by_hash,
-};
-pub use playback_tracking::{
-    fetch_watched_count, fetch_watched_counts_bulk, resolve_stream_id_for_tracking,
-    resolve_stream_id_from_info_hash, spawn_track_stream_playback_by_hash, track_stream_playback,
 };
 pub use streams::{
     StreamPlaybackInfo, TorrentFileEntry, fetch_acestream_streams_bulk, fetch_http_streams_bulk,

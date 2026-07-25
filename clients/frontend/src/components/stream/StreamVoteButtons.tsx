@@ -21,13 +21,13 @@ import {
   Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useStreamVotes, useVoteOnStream, useRemoveStreamVote } from '@/hooks'
+import { useStreamCommunityStats } from '@/contexts/StreamCommunityContext'
+import { useVoteOnStream, useRemoveStreamVote } from '@/hooks'
 import type { VoteType, QualityStatus, StreamVoteSummary } from '@/lib/api'
-import { communityStatsToVoteSummary, type StreamCommunityStats } from '@/lib/api/stream-community'
+import { communityStatsToVoteSummary } from '@/lib/api/stream-community'
 
 interface StreamVoteButtonsProps {
   streamId: number
-  community?: StreamCommunityStats
   compact?: boolean
   showCounts?: boolean
   className?: string
@@ -40,15 +40,9 @@ const qualityStatusConfig: Record<QualityStatus, { label: string; icon: typeof C
   poor_quality: { label: 'Poor Quality', icon: AlertTriangle, color: 'text-primary' },
 }
 
-export function StreamVoteButtons({
-  streamId,
-  community,
-  compact = false,
-  showCounts = true,
-  className,
-}: StreamVoteButtonsProps) {
-  const { data: fetchedVoteSummary, isLoading } = useStreamVotes(community ? undefined : streamId)
-  const voteSummary = community ? communityStatsToVoteSummary(community) : fetchedVoteSummary
+export function StreamVoteButtons({ streamId, compact = false, showCounts = true, className }: StreamVoteButtonsProps) {
+  const { stats, isLoading } = useStreamCommunityStats(streamId)
+  const voteSummary = stats ? communityStatsToVoteSummary(stats) : undefined
   const voteOnStream = useVoteOnStream()
   const removeVote = useRemoveStreamVote()
 
@@ -80,7 +74,7 @@ export function StreamVoteButtons({
     }
   }
 
-  if (isLoading && !community) {
+  if (isLoading && !voteSummary) {
     return (
       <div className={cn('flex items-center gap-2', className)}>
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -240,13 +234,14 @@ export function StreamVoteButtons({
 export function StreamPopularityBadge({
   streamId,
   className,
-  threshold = 5, // Minimum total votes to show badge
+  threshold = 5,
 }: {
   streamId: number
   className?: string
   threshold?: number
 }) {
-  const { data: voteSummary, isLoading } = useStreamVotes(streamId)
+  const { stats, isLoading } = useStreamCommunityStats(streamId)
+  const voteSummary = stats ? communityStatsToVoteSummary(stats) : undefined
 
   if (isLoading || !voteSummary) return null
 

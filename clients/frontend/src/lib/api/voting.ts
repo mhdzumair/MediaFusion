@@ -32,10 +32,6 @@ export interface StreamVoteSummary {
   comment: string | null
 }
 
-export interface BulkStreamVoteSummary {
-  summaries: Record<string, StreamVoteSummary>
-}
-
 // Content likes (popularity)
 export interface ContentLikeResponse {
   id: number
@@ -59,14 +55,6 @@ export const votingApi = {
 
   removeStreamVote: async (streamId: number): Promise<void> => {
     await apiClient.delete(`/streams/${streamId}/vote`)
-  },
-
-  getStreamVotes: async (streamId: number): Promise<StreamVoteSummary> => {
-    return apiClient.get<StreamVoteSummary>(`/streams/${streamId}/votes`)
-  },
-
-  getBulkStreamVotes: async (streamIds: number[]): Promise<BulkStreamVoteSummary> => {
-    return apiClient.post<BulkStreamVoteSummary>('/streams/votes/bulk', streamIds)
   },
 
   // Content likes (popularity) - uses media_id (internal ID)

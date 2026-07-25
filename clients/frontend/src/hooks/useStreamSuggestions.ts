@@ -18,11 +18,6 @@ export const streamSuggestionKeys = {
   stats: () => [...streamSuggestionKeys.all, 'stats'] as const,
 }
 
-export const streamSignalsKeys = {
-  all: ['stream-signals'] as const,
-  stream: (streamId: number) => [...streamSignalsKeys.all, streamId] as const,
-}
-
 // Get suggestions for a stream
 export function useStreamSuggestions(streamId: number | undefined, params: StreamSuggestionListParams = {}) {
   return useQuery({
@@ -74,7 +69,6 @@ export function useCreateStreamSuggestion() {
       queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.stream(String(streamId)) })
       queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.pending() })
       queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.stats() })
-      queryClient.invalidateQueries({ queryKey: streamSignalsKeys.stream(streamId) })
       queryClient.invalidateQueries({ queryKey: streamCommunityKeys.all })
     },
   })
@@ -125,15 +119,6 @@ export function useDeleteStreamSuggestion() {
   })
 }
 
-export function useStreamSignals(streamId: number | undefined) {
-  return useQuery({
-    queryKey: streamSignalsKeys.stream(streamId!),
-    queryFn: () => streamSuggestionsApi.getStreamSignals(streamId!),
-    enabled: streamId !== undefined,
-    staleTime: 20_000,
-  })
-}
-
 export function useUpdateStreamIssueTriage() {
   const queryClient = useQueryClient()
 
@@ -142,7 +127,7 @@ export function useUpdateStreamIssueTriage() {
       streamSuggestionsApi.updateIssueTriage(suggestionId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: streamSuggestionKeys.all })
-      queryClient.invalidateQueries({ queryKey: streamSignalsKeys.all })
+      queryClient.invalidateQueries({ queryKey: streamCommunityKeys.all })
     },
   })
 }

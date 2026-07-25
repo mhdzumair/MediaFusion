@@ -1,6 +1,5 @@
 pub mod acestream_import;
 pub mod catalog_browse;
-pub mod stream_community;
 pub mod contribution_processors;
 pub mod contributions;
 pub mod discover;
@@ -15,6 +14,7 @@ pub mod metadata_ops;
 pub mod nzb_import;
 pub mod reference;
 pub mod scraping;
+pub mod stream_community;
 pub mod stream_linking;
 pub mod stream_rows;
 pub mod stream_suggestions;

@@ -130,9 +130,7 @@ pub fn torrent_sort_key(
                     mult * -min_idx
                 }
                 "watched_count" => {
-                    mult * t.get("watched_count")
-                        .and_then(|v| v.as_i64())
-                        .unwrap_or(0) as f64
+                    mult * t.get("watched_count").and_then(|v| v.as_i64()).unwrap_or(0) as f64
                 }
                 _ => 0.0,
             }

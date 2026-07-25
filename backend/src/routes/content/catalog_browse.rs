@@ -1184,12 +1184,10 @@ pub async fn get_media_streams(
     let episode = effective_episode;
 
     // Privileged users (admin/moderator) can load streams for restricted media review.
-    let auth_role = crate::routes::auth_guard::decode_access_token(
-        &headers,
-        &state.config.secret_key_raw,
-    )
-    .ok()
-    .map(|(_, role)| role);
+    let auth_role =
+        crate::routes::auth_guard::decode_access_token(&headers, &state.config.secret_key_raw)
+            .ok()
+            .map(|(_, role)| role);
     let is_admin = auth_role.as_deref() == Some("admin");
     let is_privileged = auth_role
         .as_deref()

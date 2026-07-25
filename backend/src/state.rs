@@ -647,7 +647,6 @@ async fn recompute_keyword_blocked(
     true
 }
 
-
 // Deployment-wide single-flight lease for the media keyword-blocked recompute.
 // `keyword_filters` is a global table, so every process computes the identical
 // result — and even a minimal deployment runs the API and the worker as
@@ -770,10 +769,7 @@ async fn recompute_work_pending(pool: &PgPool, kind: KwRecomputeKind) -> bool {
         return false;
     };
     let live = format!("{:016x}", kind.version(&kf));
-    recorded_version(pool, kind.marker_id())
-        .await
-        .as_deref()
-        != Some(live.as_str())
+    recorded_version(pool, kind.marker_id()).await.as_deref() != Some(live.as_str())
 }
 
 /// Converge `kind`'s `is_keyword_blocked` column to the CURRENT keyword state
@@ -1090,11 +1086,7 @@ async fn schedule_kind_recompute(pool: &PgPool, kind: KwRecomputeKind) {
         }
     };
     let ver_str = format!("{:016x}", kind.version(&kf));
-    if recorded_version(pool, kind.marker_id())
-        .await
-        .as_deref()
-        == Some(ver_str.as_str())
-    {
+    if recorded_version(pool, kind.marker_id()).await.as_deref() == Some(ver_str.as_str()) {
         tracing::debug!(
             "{}: column up to date (version {ver_str}), skipping recompute",
             kind.label()

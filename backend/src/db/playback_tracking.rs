@@ -162,8 +162,7 @@ pub fn spawn_track_stream_playback_by_hash(
     provider_service: Option<String>,
 ) {
     tokio::spawn(async move {
-        let Some((stream_id, media_id)) =
-            resolve_stream_id_from_info_hash(&pool, &info_hash).await
+        let Some((stream_id, media_id)) = resolve_stream_id_from_info_hash(&pool, &info_hash).await
         else {
             return;
         };

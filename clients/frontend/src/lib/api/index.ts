@@ -218,7 +218,6 @@ export {
   type StreamVoteRequest,
   type StreamVoteResponse,
   type StreamVoteSummary,
-  type BulkStreamVoteSummary,
   type ContentLikeResponse,
   type ContentLikeSummary,
 } from './voting'
@@ -245,9 +244,6 @@ export {
   type StreamSuggestionReviewRequest,
   type StreamSuggestionStats,
   type StreamSuggestionListParams,
-  type StreamSignalsResponse,
-  type StreamSignalsSummary,
-  type BulkStreamSignalsResponse,
   type StreamIssueTriageRequest,
   type IssueTriageStatus,
   type StreamFieldName,

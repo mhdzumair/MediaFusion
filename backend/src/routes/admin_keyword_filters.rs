@@ -28,9 +28,9 @@ use sha2::Sha256;
 use sqlx::PgPool;
 
 use crate::state::{
-    AppState, KwRecomputeKind, embedded_media_keyword_file_stats, embedded_stream_keyword_file_stats,
-    is_recompute_lease_active, keyword_sync_state_row, reset_keywords_to_file_defaults,
-    schedule_keyword_recomputes, try_load_keyword_filter_cache, MEDIA_KEYWORDS_SYNC_ID,
+    AppState, KwRecomputeKind, MEDIA_KEYWORDS_SYNC_ID, embedded_media_keyword_file_stats,
+    embedded_stream_keyword_file_stats, is_recompute_lease_active, keyword_sync_state_row,
+    reset_keywords_to_file_defaults, schedule_keyword_recomputes, try_load_keyword_filter_cache,
 };
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -215,12 +215,11 @@ async fn build_media_file_sync_status(
     .fetch_one(pool)
     .await
     .unwrap_or(0);
-    let db_file_whitelist_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM keyword_whitelist WHERE source = 'file'",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
+    let db_file_whitelist_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM keyword_whitelist WHERE source = 'file'")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
     let (stored_hash, synced_at) = stored
         .map(|(hash, at)| (Some(hash), Some(at)))
         .unwrap_or((None, None));

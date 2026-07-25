@@ -190,9 +190,7 @@ pub async fn list_my_streams(
 
     match status_filter.as_deref() {
         // SQL filters use DB columns only (`is_blocked` = manual moderator/owner block).
-        Some("active") => {
-            filters.push_str(" AND s.is_blocked = false AND s.is_active = true")
-        }
+        Some("active") => filters.push_str(" AND s.is_blocked = false AND s.is_active = true"),
         Some("blocked") => filters.push_str(" AND s.is_blocked = true"),
         Some("inactive") => filters.push_str(" AND s.is_active = false AND s.is_blocked = false"),
         // Keyword blocking has no DB column — exclude manual blocks in SQL, then match
@@ -360,7 +358,10 @@ pub async fn list_my_streams(
         }
     };
 
-    let items: Vec<serde_json::Value> = rows.iter().map(|row| my_stream_row_to_json(row, &kf)).collect();
+    let items: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|row| my_stream_row_to_json(row, &kf))
+        .collect();
     let has_more = offset + (rows.len() as i64) < total;
 
     Json(json!({

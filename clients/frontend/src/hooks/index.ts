@@ -156,8 +156,6 @@ export {
 
 // Voting hooks
 export {
-  useStreamVotes,
-  useBulkStreamVotes,
   useVoteOnStream,
   useRemoveStreamVote,
   useContentLikes,
@@ -188,13 +186,12 @@ export {
   useReviewStreamSuggestion,
   useBulkReviewStreamSuggestions,
   useDeleteStreamSuggestion,
-  useStreamSignals,
   useUpdateStreamIssueTriage,
   streamSuggestionKeys,
-  streamSignalsKeys,
 } from './useStreamSuggestions'
 
 export { useBulkStreamCommunity, streamCommunityKeys } from './useStreamCommunity'
+export { StreamCommunityProvider, useStreamCommunityStats } from '@/contexts/StreamCommunityContext'
 
 // Episode Suggestions hooks
 export {

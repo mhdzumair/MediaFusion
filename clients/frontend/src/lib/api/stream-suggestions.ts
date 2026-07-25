@@ -152,38 +152,6 @@ export interface BrokenReportStatus {
   reports_needed: number
 }
 
-export interface StreamSignalsResponse {
-  stream_id: number
-  is_blocked: boolean
-  issue_report_count: number
-  auto_block_on_broken_reports: boolean
-  broken_report_threshold: number
-  rating_up: number
-  rating_down: number
-  rating_score: number
-  rating_total: number
-  user_has_issue_report: boolean | null
-  user_has_report_broken: boolean | null
-  user_vote: number | null
-  recent_reasons: string[]
-  legacy_approved_broken_reporters: number
-  reports_needed_for_auto_block: number
-}
-
-export interface StreamSignalsSummary {
-  issue_report_count: number
-  rating_up: number
-  rating_down: number
-  rating_score: number
-  rating_total: number
-  user_vote: number | null
-  user_has_issue_report: boolean | null
-}
-
-export interface BulkStreamSignalsResponse {
-  signals: Record<string, StreamSignalsSummary>
-}
-
 export type IssueTriageStatus = 'open' | 'reviewed' | 'dismissed' | 'action_taken'
 
 export interface StreamIssueTriageRequest {
@@ -284,14 +252,6 @@ export const streamSuggestionsApi = {
   // Get broken report status for a stream
   getBrokenStatus: async (streamId: number): Promise<BrokenReportStatus> => {
     return apiClient.get<BrokenReportStatus>(`/streams/${streamId}/broken-status`)
-  },
-
-  getStreamSignals: async (streamId: number): Promise<StreamSignalsResponse> => {
-    return apiClient.get<StreamSignalsResponse>(`/streams/${streamId}/signals`)
-  },
-
-  getBulkStreamSignals: async (streamIds: number[]): Promise<BulkStreamSignalsResponse> => {
-    return apiClient.post<BulkStreamSignalsResponse>('/streams/signals/bulk', streamIds)
   },
 
   updateIssueTriage: async (suggestionId: string, data: StreamIssueTriageRequest): Promise<StreamSuggestion> => {
