@@ -512,6 +512,10 @@ pub fn router(state: Arc<AppState>) -> Router {
             post(content::voting::bulk_content_ratings),
         )
         .route(
+            "/api/v1/content/likes/bulk",
+            post(content::voting::bulk_content_likes),
+        )
+        .route(
             "/api/v1/content/{media_id}/like",
             post(content::voting::like_content).delete(content::voting::unlike_content),
         )

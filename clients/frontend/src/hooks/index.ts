@@ -155,14 +155,10 @@ export {
 } from './useLibrary'
 
 // Voting hooks
-export {
-  useVoteOnStream,
-  useRemoveStreamVote,
-  useContentLikes,
-  useLikeContent,
-  useUnlikeContent,
-  votingKeys,
-} from './useVoting'
+export { useVoteOnStream, useRemoveStreamVote, useLikeContent, useUnlikeContent, votingKeys } from './useVoting'
+
+export { useBulkContentLikes, contentLikesKeys } from './useContentLikes'
+export { ContentLikesProvider, useContentLikesStats } from '@/contexts/ContentLikesContext'
 
 // Suggestions hooks
 export {

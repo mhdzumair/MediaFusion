@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Film, Tv, Radio, Search, SortAsc, Plus, Heart, Bookmark, ChevronLeft, ChevronRight } from 'lucide-react'
 import { ContentCard, ContentGrid, type ContentCardData } from '@/components/content'
-import { useLibrary, useLibraryStats, useRemoveFromLibrary } from '@/hooks'
+import { useLibrary, useLibraryStats, useRemoveFromLibrary, ContentLikesProvider } from '@/hooks'
 import type { CatalogType } from '@/hooks'
 import { saveContentDetailReturnUrl } from '../browseNavigation'
 
@@ -62,6 +62,8 @@ export function MyLibraryTab() {
     })
     return { contentItems: items, libraryItemIdMap: idMap }
   }, [data?.items])
+
+  const mediaIds = useMemo(() => contentItems.map((item) => item.id), [contentItems])
 
   const handleRemove = async (item: ContentCardData) => {
     const libraryItemId = libraryItemIdMap.get(item.id)
@@ -275,53 +277,55 @@ export function MyLibraryTab() {
           </Button>
         </div>
       ) : (
-        <>
-          <ContentGrid>
-            {contentItems.map((item) => {
-              const isSelected = selectedItemId === item.id
-              return (
-                <ContentCard
-                  key={item.id}
-                  item={item}
-                  variant="grid"
-                  showType={true}
-                  showEdit
-                  onRemove={handleRemove}
-                  onNavigate={handleCardClick}
-                  isSelected={isSelected}
-                  cardRef={isSelected ? selectedCardRef : undefined}
-                />
-              )
-            })}
-          </ContentGrid>
+        <ContentLikesProvider mediaIds={mediaIds}>
+          <>
+            <ContentGrid>
+              {contentItems.map((item) => {
+                const isSelected = selectedItemId === item.id
+                return (
+                  <ContentCard
+                    key={item.id}
+                    item={item}
+                    variant="grid"
+                    showType={true}
+                    showEdit
+                    onRemove={handleRemove}
+                    onNavigate={handleCardClick}
+                    isSelected={isSelected}
+                    cardRef={isSelected ? selectedCardRef : undefined}
+                  />
+                )
+              })}
+            </ContentGrid>
 
-          {/* Pagination */}
-          {data.total > pageSize && (
-            <div className="flex justify-center items-center gap-2 pt-4">
-              <Button
-                variant="outline"
-                size="icon"
-                disabled={page === 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="rounded-xl"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="px-4 text-sm text-muted-foreground">
-                Page {page} of {Math.ceil(data.total / pageSize)}
-              </span>
-              <Button
-                variant="outline"
-                size="icon"
-                disabled={!data.has_more}
-                onClick={() => setPage((p) => p + 1)}
-                className="rounded-xl"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-        </>
+            {/* Pagination */}
+            {data.total > pageSize && (
+              <div className="flex justify-center items-center gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={page === 1}
+                  onClick={() => setPage((p) => p - 1)}
+                  className="rounded-xl"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="px-4 text-sm text-muted-foreground">
+                  Page {page} of {Math.ceil(data.total / pageSize)}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={!data.has_more}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="rounded-xl"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </>
+        </ContentLikesProvider>
       )}
     </div>
   )

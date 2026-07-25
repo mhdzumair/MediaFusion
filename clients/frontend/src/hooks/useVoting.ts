@@ -1,12 +1,12 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { votingApi, type StreamVoteRequest } from '@/lib/api'
 
 import { streamCommunityKeys } from './useStreamCommunity'
+import { contentLikesKeys } from './useContentLikes'
 
 // Query keys
 export const votingKeys = {
   all: ['voting'] as const,
-  contentLikes: (mediaId: number) => [...votingKeys.all, 'content', mediaId] as const,
 }
 
 // Vote on stream
@@ -34,23 +34,14 @@ export function useRemoveStreamVote() {
   })
 }
 
-// Get content likes
-export function useContentLikes(mediaId: number | undefined) {
-  return useQuery({
-    queryKey: votingKeys.contentLikes(mediaId!),
-    queryFn: () => votingApi.getContentLikes(mediaId!),
-    enabled: !!mediaId,
-  })
-}
-
 // Like content - uses media_id
 export function useLikeContent() {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: (mediaId: number) => votingApi.likeContent(mediaId),
-    onSuccess: (_, mediaId) => {
-      queryClient.invalidateQueries({ queryKey: votingKeys.contentLikes(mediaId) })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: contentLikesKeys.all })
     },
   })
 }
@@ -61,8 +52,8 @@ export function useUnlikeContent() {
 
   return useMutation({
     mutationFn: (mediaId: number) => votingApi.unlikeContent(mediaId),
-    onSuccess: (_, mediaId) => {
-      queryClient.invalidateQueries({ queryKey: votingKeys.contentLikes(mediaId) })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: contentLikesKeys.all })
     },
   })
 }

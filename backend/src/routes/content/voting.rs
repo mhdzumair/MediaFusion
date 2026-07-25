@@ -11,7 +11,8 @@
 ///   POST   /api/v1/content/{media_id}/like       → like_content
 ///   DELETE /api/v1/content/{media_id}/like       → unlike_content      (204)
 ///   GET    /api/v1/content/{media_id}/likes      → get_content_likes   (optional auth)
-use std::sync::Arc;
+///   POST   /api/v1/content/likes/bulk            → bulk_content_likes  (optional auth)
+use std::{collections::HashSet, sync::Arc};
 
 use axum::{
     Json,
@@ -740,6 +741,95 @@ pub async fn unlike_content(
                 .into_response()
         }
     }
+}
+
+const MAX_BULK_MEDIA_IDS: usize = 100;
+
+#[derive(Deserialize)]
+pub struct BulkContentLikesRequest {
+    pub media_ids: Vec<i32>,
+}
+
+/// POST /api/v1/content/likes/bulk
+pub async fn bulk_content_likes(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<BulkContentLikesRequest>,
+) -> Response {
+    let media_ids: Vec<i32> = body.media_ids.into_iter().filter(|id| *id > 0).collect();
+
+    if media_ids.len() > MAX_BULK_MEDIA_IDS {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": format!("Maximum {MAX_BULK_MEDIA_IDS} media_ids allowed")})),
+        )
+            .into_response();
+    }
+
+    if media_ids.is_empty() {
+        return (StatusCode::OK, Json(json!({"media": {}}))).into_response();
+    }
+
+    let user_id = validate_token(&headers, &state.config.secret_key_raw);
+
+    let counts: Vec<(i32, i64)> = match sqlx::query_as(
+        "SELECT media_id, COUNT(*)::bigint AS likes_count
+         FROM metadata_votes
+         WHERE media_id = ANY($1) AND vote_type = 'like'
+         GROUP BY media_id",
+    )
+    .bind(&media_ids)
+    .fetch_all(&state.pool_ro)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("DB error bulk counting likes: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Database error"})),
+            )
+                .into_response();
+        }
+    };
+
+    let count_map: std::collections::HashMap<i32, i64> = counts.into_iter().collect();
+
+    let user_liked_set: HashSet<i32> = if let Some(uid) = user_id {
+        match sqlx::query_scalar::<_, i32>(
+            "SELECT media_id FROM metadata_votes
+             WHERE user_id = $1 AND media_id = ANY($2) AND vote_type = 'like'",
+        )
+        .bind(uid)
+        .bind(&media_ids)
+        .fetch_all(&state.pool_ro)
+        .await
+        {
+            Ok(v) => v.into_iter().collect(),
+            Err(e) => {
+                tracing::warn!("DB error bulk checking user likes: {e}");
+                HashSet::new()
+            }
+        }
+    } else {
+        HashSet::new()
+    };
+
+    let mut media = serde_json::Map::new();
+    for media_id in &media_ids {
+        let likes_count = count_map.get(media_id).copied().unwrap_or(0);
+        let user_liked = user_liked_set.contains(media_id);
+        media.insert(
+            media_id.to_string(),
+            json!({
+                "media_id": media_id,
+                "likes_count": likes_count,
+                "user_liked": user_liked,
+            }),
+        );
+    }
+
+    (StatusCode::OK, Json(json!({"media": media}))).into_response()
 }
 
 /// GET /api/v1/content/{media_id}/likes

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -41,6 +41,7 @@ import {
   useGenres,
   useDebounce,
   catalogKeys,
+  ContentLikesProvider,
   type CatalogType,
   type SortOption,
   type SortDirection,
@@ -416,6 +417,8 @@ export function BrowseTab() {
     nudity: item.nudity,
   }))
 
+  const mediaIds = useMemo(() => contentItems.map((item) => item.id), [contentItems])
+
   const itemExists = contentItems.some((item) => item.id === selectedItemId)
 
   // Clear selection only after the stored page is loaded and the item is still missing
@@ -672,111 +675,113 @@ export function BrowseTab() {
           )}
         </div>
       ) : (
-        <>
-          {viewMode === 'grid' ? (
-            <ContentGrid>
-              {contentItems.map((item) => {
-                const isSelected = selectedItemId === item.id
-                const isBulkSelected = selectedIds.has(item.id)
-                return bulkMode ? (
-                  <div
-                    key={item.id}
-                    className={`relative rounded-xl transition-all ${isBulkSelected ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''}`}
-                  >
-                    {/* Full-area click capture — sits above card, below checkbox */}
+        <ContentLikesProvider mediaIds={mediaIds}>
+          <>
+            {viewMode === 'grid' ? (
+              <ContentGrid>
+                {contentItems.map((item) => {
+                  const isSelected = selectedItemId === item.id
+                  const isBulkSelected = selectedIds.has(item.id)
+                  return bulkMode ? (
                     <div
-                      className="absolute inset-0 z-10 cursor-pointer"
-                      onClick={() => toggleItemSelection(item.id)}
-                    />
-                    <div className="absolute top-2 left-2 z-20">
-                      <Checkbox
-                        checked={isBulkSelected}
-                        onCheckedChange={() => toggleItemSelection(item.id)}
-                        className="bg-background/80 backdrop-blur-sm border-white/60"
+                      key={item.id}
+                      className={`relative rounded-xl transition-all ${isBulkSelected ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''}`}
+                    >
+                      {/* Full-area click capture — sits above card, below checkbox */}
+                      <div
+                        className="absolute inset-0 z-10 cursor-pointer"
+                        onClick={() => toggleItemSelection(item.id)}
                       />
-                    </div>
-                    <ContentCard
-                      item={item}
-                      variant="grid"
-                      showEdit={false}
-                      onNavigate={undefined}
-                      isSelected={false}
-                    />
-                  </div>
-                ) : (
-                  <ContentCard
-                    key={item.id}
-                    item={item}
-                    variant="grid"
-                    showEdit
-                    onBlock={isAdmin ? setBlockTarget : undefined}
-                    onNavigate={handleCardClick}
-                    isSelected={isSelected}
-                    cardRef={isSelected ? selectedCardRef : undefined}
-                  />
-                )
-              })}
-            </ContentGrid>
-          ) : (
-            <ContentList>
-              {contentItems.map((item) => {
-                const isSelected = selectedItemId === item.id
-                const isBulkSelected = selectedIds.has(item.id)
-                return bulkMode ? (
-                  <div
-                    key={item.id}
-                    className={`relative rounded-xl transition-all ${isBulkSelected ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''}`}
-                  >
-                    {/* Full-area click capture — sits above card, below checkbox */}
-                    <div
-                      className="absolute inset-0 z-10 cursor-pointer"
-                      onClick={() => toggleItemSelection(item.id)}
-                    />
-                    <div className="absolute top-1/2 left-3 z-20 -translate-y-1/2">
-                      <Checkbox
-                        checked={isBulkSelected}
-                        onCheckedChange={() => toggleItemSelection(item.id)}
-                        className="bg-background/80 backdrop-blur-sm border-white/60"
-                      />
-                    </div>
-                    <div className="pl-10">
+                      <div className="absolute top-2 left-2 z-20">
+                        <Checkbox
+                          checked={isBulkSelected}
+                          onCheckedChange={() => toggleItemSelection(item.id)}
+                          className="bg-background/80 backdrop-blur-sm border-white/60"
+                        />
+                      </div>
                       <ContentCard
                         item={item}
-                        variant="list"
+                        variant="grid"
                         showEdit={false}
                         onNavigate={undefined}
                         isSelected={false}
                       />
                     </div>
-                  </div>
-                ) : (
-                  <ContentCard
-                    key={item.id}
-                    item={item}
-                    variant="list"
-                    showEdit
-                    onBlock={isAdmin ? setBlockTarget : undefined}
-                    onNavigate={handleCardClick}
-                    isSelected={isSelected}
-                    cardRef={isSelected ? selectedCardRef : undefined}
-                  />
-                )
-              })}
-            </ContentList>
-          )}
+                  ) : (
+                    <ContentCard
+                      key={item.id}
+                      item={item}
+                      variant="grid"
+                      showEdit
+                      onBlock={isAdmin ? setBlockTarget : undefined}
+                      onNavigate={handleCardClick}
+                      isSelected={isSelected}
+                      cardRef={isSelected ? selectedCardRef : undefined}
+                    />
+                  )
+                })}
+              </ContentGrid>
+            ) : (
+              <ContentList>
+                {contentItems.map((item) => {
+                  const isSelected = selectedItemId === item.id
+                  const isBulkSelected = selectedIds.has(item.id)
+                  return bulkMode ? (
+                    <div
+                      key={item.id}
+                      className={`relative rounded-xl transition-all ${isBulkSelected ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''}`}
+                    >
+                      {/* Full-area click capture — sits above card, below checkbox */}
+                      <div
+                        className="absolute inset-0 z-10 cursor-pointer"
+                        onClick={() => toggleItemSelection(item.id)}
+                      />
+                      <div className="absolute top-1/2 left-3 z-20 -translate-y-1/2">
+                        <Checkbox
+                          checked={isBulkSelected}
+                          onCheckedChange={() => toggleItemSelection(item.id)}
+                          className="bg-background/80 backdrop-blur-sm border-white/60"
+                        />
+                      </div>
+                      <div className="pl-10">
+                        <ContentCard
+                          item={item}
+                          variant="list"
+                          showEdit={false}
+                          onNavigate={undefined}
+                          isSelected={false}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <ContentCard
+                      key={item.id}
+                      item={item}
+                      variant="list"
+                      showEdit
+                      onBlock={isAdmin ? setBlockTarget : undefined}
+                      onNavigate={handleCardClick}
+                      isSelected={isSelected}
+                      cardRef={isSelected ? selectedCardRef : undefined}
+                    />
+                  )
+                })}
+              </ContentList>
+            )}
 
-          {/* Bottom pagination */}
-          {pagedData && pagedData.total > pageSize && (
-            <ListPagination
-              inputId="browse-page-jump"
-              currentPage={browsePage}
-              totalPages={totalPages}
-              totalItems={pagedData.total}
-              pageSize={pageSize}
-              onPageChange={handlePageChange}
-            />
-          )}
-        </>
+            {/* Bottom pagination */}
+            {pagedData && pagedData.total > pageSize && (
+              <ListPagination
+                inputId="browse-page-jump"
+                currentPage={browsePage}
+                totalPages={totalPages}
+                totalItems={pagedData.total}
+                pageSize={pageSize}
+                onPageChange={handlePageChange}
+              />
+            )}
+          </>
+        </ContentLikesProvider>
       )}
 
       {/* Admin single-block dialog */}

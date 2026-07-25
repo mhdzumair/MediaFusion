@@ -46,6 +46,10 @@ export interface ContentLikeSummary {
   user_liked: boolean
 }
 
+export interface BulkContentLikesResponse {
+  media: Record<string, ContentLikeSummary>
+}
+
 // API functions
 export const votingApi = {
   // Stream voting
@@ -66,7 +70,7 @@ export const votingApi = {
     await apiClient.delete(`/content/${mediaId}/like`)
   },
 
-  getContentLikes: async (mediaId: number): Promise<ContentLikeSummary> => {
-    return apiClient.get<ContentLikeSummary>(`/content/${mediaId}/likes`)
+  getBulkContentLikes: async (mediaIds: number[]): Promise<BulkContentLikesResponse> => {
+    return apiClient.post<BulkContentLikesResponse>('/content/likes/bulk', { media_ids: mediaIds })
   },
 }

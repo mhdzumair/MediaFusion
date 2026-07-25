@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { MoreVertical, Trash2, ExternalLink, Edit, Play, Heart, Loader2, Ban } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useContentLikes, useLikeContent, useUnlikeContent } from '@/hooks'
+import { useLikeContent, useUnlikeContent, useContentLikesStats } from '@/hooks'
 import { useRpdb } from '@/contexts/RpdbContext'
 import type { CatalogType, AllRatings } from '@/lib/api'
 import type { ExternalIds } from '@/lib/api/catalog'
@@ -65,14 +65,12 @@ interface QuickLikeProps {
 }
 
 export function QuickLike({ mediaId, className, size = 'sm', initialLikesCount }: QuickLikeProps) {
-  // Only fetch full data when we have user interaction or no initial count
-  const { data: likesSummary, isFetched } = useContentLikes(mediaId)
+  const { stats: likesSummary } = useContentLikesStats(mediaId)
   const likeContent = useLikeContent()
   const unlikeContent = useUnlikeContent()
 
-  const userLiked = likesSummary?.user_liked || false
-  // Use fetched count if available, otherwise fall back to initial count
-  const likesCount = isFetched ? likesSummary?.likes_count || 0 : (initialLikesCount ?? likesSummary?.likes_count ?? 0)
+  const userLiked = likesSummary?.user_liked ?? false
+  const likesCount = likesSummary?.likes_count ?? initialLikesCount ?? 0
   const isLiking = likeContent.isPending || unlikeContent.isPending
 
   const handleLike = async (e: React.MouseEvent) => {

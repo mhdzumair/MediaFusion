@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Heart, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useContentLikes, useLikeContent, useUnlikeContent } from '@/hooks'
+import { useLikeContent, useUnlikeContent, useContentLikesStats } from '@/hooks'
 
 interface MetadataActionsProps {
   mediaId: number
@@ -15,12 +15,12 @@ interface MetadataActionsProps {
  * Note: Use MetadataEditSheet for suggesting metadata edits
  */
 export function MetadataActions({ mediaId, className }: MetadataActionsProps) {
-  const { data: likesSummary } = useContentLikes(mediaId)
+  const { stats: likesSummary } = useContentLikesStats(mediaId)
   const likeContent = useLikeContent()
   const unlikeContent = useUnlikeContent()
 
-  const userLiked = likesSummary?.user_liked || false
-  const likesCount = likesSummary?.likes_count || 0
+  const userLiked = likesSummary?.user_liked ?? false
+  const likesCount = likesSummary?.likes_count ?? 0
   const isLiking = likeContent.isPending || unlikeContent.isPending
 
   const handleLikeToggle = async () => {
@@ -73,12 +73,12 @@ export function ContentLikeButton({
   compact?: boolean
   className?: string
 }) {
-  const { data: likesSummary } = useContentLikes(mediaId)
+  const { stats: likesSummary } = useContentLikesStats(mediaId)
   const likeContent = useLikeContent()
   const unlikeContent = useUnlikeContent()
 
-  const userLiked = likesSummary?.user_liked || false
-  const likesCount = likesSummary?.likes_count || 0
+  const userLiked = likesSummary?.user_liked ?? false
+  const likesCount = likesSummary?.likes_count ?? 0
   const isLiking = likeContent.isPending || unlikeContent.isPending
 
   const handleLikeToggle = async (e: React.MouseEvent) => {
@@ -145,7 +145,7 @@ export function ContentLikeButton({
  * Badge showing likes count
  */
 export function ContentLikesBadge({ mediaId, className }: { mediaId: number; className?: string }) {
-  const { data: likesSummary, isLoading } = useContentLikes(mediaId)
+  const { stats: likesSummary, isLoading } = useContentLikesStats(mediaId)
 
   if (isLoading || !likesSummary) return null
 

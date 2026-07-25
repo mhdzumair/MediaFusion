@@ -64,6 +64,7 @@ import {
   type CatalogType,
 } from '@/hooks'
 import { StreamCommunityProvider } from '@/contexts/StreamCommunityContext'
+import { ContentLikesProvider } from '@/contexts/ContentLikesContext'
 import { useBlockTorrentStream } from '@/hooks/useAdmin'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRpdb } from '@/contexts/RpdbContext'
@@ -1952,710 +1953,712 @@ export function ContentDetailPage() {
   }
 
   return (
-    <StreamCommunityProvider streamIds={communityStreamIds}>
-      <div className="space-y-6">
-        {/* Back Button */}
-        <Button variant="ghost" asChild className="rounded-xl">
-          <Link to={libraryReturnTo}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to {returnLabel}
-          </Link>
-        </Button>
+    <ContentLikesProvider mediaIds={mediaId ? [mediaId] : []}>
+      <StreamCommunityProvider streamIds={communityStreamIds}>
+        <div className="space-y-6">
+          {/* Back Button */}
+          <Button variant="ghost" asChild className="rounded-xl">
+            <Link to={libraryReturnTo}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to {returnLabel}
+            </Link>
+          </Button>
 
-        {/* Hero Section */}
-        <div className="relative overflow-hidden rounded-2xl">
-          {/* Background with RPDB backdrop support */}
-          <div className="absolute inset-0">
-            <Backdrop
-              metaId={item.external_ids?.imdb || `mf:${item.id}`}
-              backdrop={item.background}
-              rpdbApiKey={catalogType !== 'tv' ? rpdbApiKey : null}
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-background via-background/95 to-background/80" />
-          </div>
-
-          <div className="relative grid lg:grid-cols-[280px_1fr] gap-8 p-6 lg:p-8">
-            {/* Poster */}
-            <div className="mx-auto lg:mx-0">
-              <Poster
+          {/* Hero Section */}
+          <div className="relative overflow-hidden rounded-2xl">
+            {/* Background with RPDB backdrop support */}
+            <div className="absolute inset-0">
+              <Backdrop
                 metaId={item.external_ids?.imdb || `mf:${item.id}`}
-                catalogType={catalogType === 'tv' ? 'tv' : catalogType}
-                poster={item.poster}
+                backdrop={item.background}
                 rpdbApiKey={catalogType !== 'tv' ? rpdbApiKey : null}
-                title={item.title}
-                className="w-[200px] lg:w-full rounded-2xl shadow-2xl"
+                className="absolute inset-0 w-full h-full object-cover"
               />
+              <div className="absolute inset-0 bg-gradient-to-r from-background via-background/95 to-background/80" />
             </div>
 
-            {/* Info */}
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Badge variant="outline" className="text-xs">
-                    {catalogType === 'movie' ? 'Movie' : catalogType === 'series' ? 'Series' : 'TV'}
-                  </Badge>
-                  {item.year && <span className="text-sm text-muted-foreground">{item.year}</span>}
-                  {item.is_blocked && (
-                    <Badge variant="destructive" className="text-xs gap-1">
-                      <Ban className="h-3 w-3" />
-                      Blocked
-                    </Badge>
-                  )}
-                  {item.is_keyword_blocked && !item.keyword_block_override && (
-                    <Badge className="text-xs gap-1 bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                      <Ban className="h-3 w-3" />
-                      Keyword Blocked
-                    </Badge>
-                  )}
-                  {item.is_keyword_blocked && item.keyword_block_override && (
-                    <Badge className="text-xs gap-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                      <ShieldCheck className="h-3 w-3" />
-                      Keyword Overridden
-                    </Badge>
-                  )}
-                </div>
-                <h1 className="text-3xl lg:text-4xl font-bold">
-                  {item.is_keyword_blocked && item.matched_keywords?.length
-                    ? highlightKeywords(item.title, item.matched_keywords)
-                    : item.title}
-                </h1>
-              </div>
-
-              {/* Meta Info */}
-              <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                {/* Multi-provider ratings */}
-                {item.ratings?.external_ratings && item.ratings.external_ratings.length > 0 ? (
-                  <RatingsDisplay
-                    ratings={item.ratings}
-                    size="default"
-                    maxExternalRatings={5}
-                    showCommunity={false} // Community shown separately below
-                  />
-                ) : (
-                  item.imdb_rating && (
-                    <div className="flex items-center gap-1">
-                      <Star className="h-4 w-4 fill-primary text-primary" />
-                      <span className="font-medium text-foreground">{item.imdb_rating.toFixed(1)}</span>
-                      <span>/ 10</span>
-                    </div>
-                  )
-                )}
-                {/* Content Guidance (Certification & Nudity) */}
-                <ContentGuidance certification={item.certification} nudity={item.nudity} size="default" />
-                {item.runtime && (
-                  <div className="flex items-center gap-1">
-                    <Clock className="h-4 w-4" />
-                    <span>{item.runtime}</span>
-                  </div>
-                )}
-                {item.year && (
-                  <div className="flex items-center gap-1">
-                    <Calendar className="h-4 w-4" />
-                    <span>{item.year}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Genres - clickable to filter */}
-              {(item.genres?.length ?? 0) > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {item.genres?.map((genre) => (
-                    <Link key={genre} to={`/dashboard/library?tab=browse&genre=${encodeURIComponent(genre)}`}>
-                      <Badge
-                        variant="secondary"
-                        className="rounded-lg hover:bg-primary/20 hover:text-primary cursor-pointer transition-colors"
-                      >
-                        {genre}
-                      </Badge>
-                    </Link>
-                  ))}
-                </div>
-              )}
-
-              {/* Description */}
-              {item.description && (
-                <p className="text-muted-foreground leading-relaxed max-w-2xl">
-                  {item.is_keyword_blocked && item.matched_keywords?.length
-                    ? highlightKeywords(item.description, item.matched_keywords)
-                    : item.description}
-                </p>
-              )}
-
-              {/* Credits (Directors, Writers, Cast) */}
-              {(item.directors?.length || item.writers?.length || item.cast?.length) && (
-                <div className="grid gap-3 text-sm max-w-2xl">
-                  {item.directors && item.directors.length > 0 && (
-                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <span className="text-muted-foreground font-medium">
-                        Director{item.directors.length > 1 ? 's' : ''}:
-                      </span>
-                      {item.directors.map((director, idx) => (
-                        <Link
-                          key={director}
-                          to={`/dashboard/library?tab=browse&type=${catalogType}&search=${encodeURIComponent(director)}`}
-                          className="hover:text-primary transition-colors"
-                        >
-                          {director}
-                          {idx < item.directors!.length - 1 ? ',' : ''}
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-                  {item.writers && item.writers.length > 0 && (
-                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <span className="text-muted-foreground font-medium">
-                        Writer{item.writers.length > 1 ? 's' : ''}:
-                      </span>
-                      {item.writers.slice(0, 5).map((writer, idx) => (
-                        <Link
-                          key={writer}
-                          to={`/dashboard/library?tab=browse&type=${catalogType}&search=${encodeURIComponent(writer)}`}
-                          className="hover:text-primary transition-colors"
-                        >
-                          {writer}
-                          {idx < Math.min(item.writers!.length, 5) - 1 ? ',' : ''}
-                        </Link>
-                      ))}
-                      {item.writers.length > 5 && (
-                        <span className="text-muted-foreground">+{item.writers.length - 5} more</span>
-                      )}
-                    </div>
-                  )}
-                  {item.cast && item.cast.length > 0 && (
-                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <span className="text-muted-foreground font-medium">Cast:</span>
-                      {item.cast.slice(0, 8).map((actor, idx) => (
-                        <Link
-                          key={actor}
-                          to={`/dashboard/library?tab=browse&type=${catalogType}&search=${encodeURIComponent(actor)}`}
-                          className="hover:text-primary transition-colors"
-                        >
-                          {actor}
-                          {idx < Math.min(item.cast!.length, 8) - 1 ? ',' : ''}
-                        </Link>
-                      ))}
-                      {item.cast.length > 8 && (
-                        <span className="text-muted-foreground">+{item.cast.length - 8} more</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="flex flex-wrap gap-3 pt-2">
-                {/* Trailer Button - shown if trailers available */}
-                {item.trailers && item.trailers.length > 0 && (
-                  <TrailerButton trailers={item.trailers} title={item.title} />
-                )}
-
-                {isAuthenticated && (
-                  <Button
-                    variant="outline"
-                    onClick={handleLibraryToggle}
-                    disabled={addToLibrary.isPending || removeFromLibrary.isPending}
-                    className="rounded-xl"
-                  >
-                    {addToLibrary.isPending || removeFromLibrary.isPending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : libraryStatus?.in_library ? (
-                      <HeartOff className="mr-2 h-4 w-4" />
-                    ) : (
-                      <Heart className="mr-2 h-4 w-4" />
-                    )}
-                    {libraryStatus?.in_library ? 'Remove from Library' : 'Add to Library'}
-                  </Button>
-                )}
-              </div>
-
-              {/* Metadata Voting & Edit */}
-              {isAuthenticated && mediaId && (
-                <div className="pt-4 border-t border-border/30 mt-4">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <ContentLikesBadge mediaId={mediaId} />
-                    <MetadataActions mediaId={mediaId} />
-                    <MetadataEditSheet mediaId={mediaId} catalogType={catalogType} />
-                    {/* RefreshMetadataButton only for movies/series - TV channels don't have IMDb IDs */}
-                    {(catalogType === 'movie' || catalogType === 'series') && (
-                      <RefreshMetadataButton
-                        mediaId={mediaId}
-                        externalIds={item.external_ids}
-                        mediaType={catalogType}
-                        title={item.title}
-                        year={item.year}
-                      />
-                    )}
-                    {/* ScrapeContentButton for movies/series - triggers stream scraping */}
-                    {(catalogType === 'movie' || catalogType === 'series') && (
-                      <ScrapeContentButton
-                        mediaId={mediaId}
-                        mediaType={catalogType}
-                        title={item.title}
-                        season={catalogType === 'series' ? selectedSeason : undefined}
-                        episode={catalogType === 'series' ? selectedEpisode : undefined}
-                      />
-                    )}
-                    {/* Block/Unblock button - moderators and admins only */}
-                    {isModerator && (
-                      <BlockContentButton
-                        mediaId={mediaId}
-                        mediaTitle={item.title}
-                        mediaType={catalogType}
-                        isBlocked={item.is_blocked || false}
-                        blockReason={item.block_reason}
-                      />
-                    )}
-                    {isAdmin && (
-                      <DeleteContentButton mediaId={mediaId} mediaTitle={item.title} mediaType={catalogType} />
-                    )}
-                  </div>
-                  {(item.last_refreshed_at || item.last_scraped_at) && (
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mt-2">
-                      {item.last_refreshed_at && (
-                        <p>
-                          Metadata refreshed:{' '}
-                          {new Date(item.last_refreshed_at).toLocaleDateString(undefined, {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </p>
-                      )}
-                      {item.last_scraped_at && (
-                        <p>
-                          Streams scraped:{' '}
-                          {new Date(item.last_scraped_at).toLocaleDateString(undefined, {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* NSFW poster flag — visible to all users; review controls for admins */}
-              {item.poster_nsfw_flagged != null && item.poster_nsfw_score != null && (
-                <NsfwStatusSection
-                  mediaId={mediaId}
-                  score={item.poster_nsfw_score}
-                  flagged={item.poster_nsfw_flagged}
-                  reviewed={item.poster_nsfw_reviewed ?? false}
-                  isAdmin={isAdmin}
+            <div className="relative grid lg:grid-cols-[280px_1fr] gap-8 p-6 lg:p-8">
+              {/* Poster */}
+              <div className="mx-auto lg:mx-0">
+                <Poster
+                  metaId={item.external_ids?.imdb || `mf:${item.id}`}
+                  catalogType={catalogType === 'tv' ? 'tv' : catalogType}
+                  poster={item.poster}
+                  rpdbApiKey={catalogType !== 'tv' ? rpdbApiKey : null}
+                  title={item.title}
+                  className="w-[200px] lg:w-full rounded-2xl shadow-2xl"
                 />
-              )}
+              </div>
 
-              {/* Keyword block override — admin only, shown when keyword-blocked */}
-              {item.is_keyword_blocked && isAdmin && (
-                <KeywordOverrideSection
-                  mediaId={mediaId}
-                  isOverridden={item.keyword_block_override ?? false}
-                  isAdmin={isAdmin}
-                  onSuccess={() =>
-                    queryClient.invalidateQueries({ queryKey: ['catalog', catalogType, mediaId.toString()] })
-                  }
-                />
-              )}
-
-              {/* External IDs */}
-              {item.external_ids && (
-                <div className="pt-4 border-t border-border/30">
-                  <p className="text-xs text-muted-foreground mb-2 font-medium">External IDs</p>
-                  <ExternalIdsDisplay externalIds={item.external_ids} mediaType={catalogType} />
-                </div>
-              )}
-
-              {/* Catalogs */}
-              {item.catalogs && item.catalogs.length > 0 && (
-                <div className="pt-4 border-t border-border/30">
-                  <p className="text-xs text-muted-foreground mb-2 font-medium">Catalogs</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {item.catalogs.map((catalog) => (
-                      <Badge key={catalog} variant="secondary" className="rounded-lg text-xs capitalize">
-                        {catalog.replace(/_/g, ' ')}
+              {/* Info */}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className="text-xs">
+                      {catalogType === 'movie' ? 'Movie' : catalogType === 'series' ? 'Series' : 'TV'}
+                    </Badge>
+                    {item.year && <span className="text-sm text-muted-foreground">{item.year}</span>}
+                    {item.is_blocked && (
+                      <Badge variant="destructive" className="text-xs gap-1">
+                        <Ban className="h-3 w-3" />
+                        Blocked
                       </Badge>
-                    ))}
+                    )}
+                    {item.is_keyword_blocked && !item.keyword_block_override && (
+                      <Badge className="text-xs gap-1 bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                        <Ban className="h-3 w-3" />
+                        Keyword Blocked
+                      </Badge>
+                    )}
+                    {item.is_keyword_blocked && item.keyword_block_override && (
+                      <Badge className="text-xs gap-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        <ShieldCheck className="h-3 w-3" />
+                        Keyword Overridden
+                      </Badge>
+                    )}
                   </div>
+                  <h1 className="text-3xl lg:text-4xl font-bold">
+                    {item.is_keyword_blocked && item.matched_keywords?.length
+                      ? highlightKeywords(item.title, item.matched_keywords)
+                      : item.title}
+                  </h1>
                 </div>
-              )}
 
-              {/* AKA Titles */}
-              {item.aka_titles && item.aka_titles.length > 0 && (
-                <div className="pt-4">
-                  <p className="text-xs text-muted-foreground">
-                    Also known as: {item.aka_titles.slice(0, 3).join(', ')}
-                    {item.aka_titles.length > 3 && ` +${item.aka_titles.length - 3} more`}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Series Season/Episode Selector */}
-        {catalogType === 'series' && seasons.length > 0 && (
-          <SeriesEpisodePicker
-            seasons={seasons}
-            selectedSeason={selectedSeason}
-            selectedEpisode={selectedEpisode}
-            onSeasonChange={(season) => {
-              setSelectedSeason(season)
-              setSelectedEpisode(undefined)
-            }}
-            onEpisodeChange={setSelectedEpisode}
-            isAdmin={isAdmin}
-            onDeleteEpisode={handleDeleteEpisode}
-            isDeletingEpisode={deleteEpisodeAdmin.isPending}
-            onDeleteSeason={handleDeleteSeason}
-            isDeletingSeason={deleteSeasonAdmin.isPending}
-            onEpisodeEditSuccess={handleEpisodeEditSuccess}
-          />
-        )}
-
-        {/* Streams Section */}
-        {isAuthenticated &&
-          (catalogType === 'movie' ||
-            catalogType === 'tv' ||
-            (selectedSeason !== undefined && selectedEpisode !== undefined)) && (
-            <Card className="glass border-border/50">
-              <CardHeader className="px-3 sm:px-6 py-4 sm:py-6">
-                <div className="flex flex-col gap-3 sm:gap-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                        <Play className="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
-                        Available Streams
-                      </CardTitle>
-                      <CardDescription className="text-xs sm:text-sm mt-0.5">
-                        {catalogType === 'series'
-                          ? `Season ${selectedSeason}, Episode ${selectedEpisode}`
-                          : catalogType === 'tv'
-                            ? 'Select a stream to watch this channel'
-                            : 'Select a stream to watch or download'}
-                      </CardDescription>
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {/* Profile Selector - show when multiple profiles available */}
-                      {profiles && profiles.length > 1 ? (
-                        <Select
-                          value={selectedProfileId?.toString() ?? ''}
-                          onValueChange={(value) => {
-                            const newProfileId = parseInt(value, 10)
-                            const newProfile = profiles.find((p) => p.id === newProfileId)
-                            setSelectedProfileId(newProfileId)
-                            setSelectedProfileUuid(newProfile?.uuid)
-                            // Set the primary provider from the new profile
-                            setSelectedProvider(newProfile?.streaming_providers?.primary_service || undefined)
-                          }}
-                        >
-                          <SelectTrigger className="w-[130px] sm:w-[160px] h-9 rounded-xl text-xs sm:text-sm">
-                            <SelectValue placeholder="Profile" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {profiles.map((profile) => (
-                              <SelectItem key={profile.id} value={profile.id.toString()}>
-                                <div className="flex items-center gap-2">
-                                  <span>{profile.name}</span>
-                                  {profile.is_default && (
-                                    <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                      Default
-                                    </Badge>
-                                  )}
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : profiles && profiles.length === 1 ? (
-                        // Show single profile name as a badge
-                        <Badge
-                          variant="outline"
-                          className="rounded-lg px-2.5 sm:px-3 py-1.5 h-9 flex items-center text-xs sm:text-sm"
-                        >
-                          {profiles[0].name}
-                        </Badge>
-                      ) : null}
-                      <ViewModeToggle mode={viewMode} onModeChange={setViewMode} />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => refetchStreams()}
-                        disabled={streamsLoading}
-                        className="rounded-xl h-9 text-xs sm:text-sm"
-                      >
-                        {streamsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Refresh'}
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Provider Tabs - show when providers available */}
-                  {availableProviders.length > 0 &&
-                    (availableProviders.length > 1 ? (
-                      <Tabs
-                        value={selectedProvider || availableProviders[0]?.service}
-                        onValueChange={(value) => setSelectedProvider(value)}
-                        className="w-full"
-                      >
-                        <TabsList className="w-full justify-start h-auto flex-wrap gap-1 bg-muted/50 p-1 rounded-xl">
-                          {availableProviders.map((provider) => (
-                            <TabsTrigger
-                              key={provider.service}
-                              value={provider.service}
-                              className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm"
-                            >
-                              {getProviderDisplayName(provider)}
-                            </TabsTrigger>
-                          ))}
-                        </TabsList>
-                      </Tabs>
-                    ) : (
-                      // Show single provider as a badge
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">Provider:</span>
-                        <Badge variant="secondary" className="rounded-lg px-3 py-1">
-                          {getProviderDisplayName(availableProviders[0])}
-                        </Badge>
+                {/* Meta Info */}
+                <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                  {/* Multi-provider ratings */}
+                  {item.ratings?.external_ratings && item.ratings.external_ratings.length > 0 ? (
+                    <RatingsDisplay
+                      ratings={item.ratings}
+                      size="default"
+                      maxExternalRatings={5}
+                      showCommunity={false} // Community shown separately below
+                    />
+                  ) : (
+                    item.imdb_rating && (
+                      <div className="flex items-center gap-1">
+                        <Star className="h-4 w-4 fill-primary text-primary" />
+                        <span className="font-medium text-foreground">{item.imdb_rating.toFixed(1)}</span>
+                        <span>/ 10</span>
                       </div>
-                    ))}
-
-                  {/* Filters and Sorting */}
-                  {streamsData?.streams && streamsData.streams.length > 0 && (
-                    <StreamFilters
-                      filters={streamFilters}
-                      onFiltersChange={handleStreamFiltersChange}
-                      availableSources={availableSources}
-                      availableResolutions={availableResolutions}
-                      availableQualities={availableQualities}
-                      availableCodecs={availableCodecs}
-                      availableLanguages={availableLanguages}
-                      availableStreamTypes={availableStreamTypes}
-                      totalStreams={streamsData?.streams?.length || 0}
-                      filteredCount={filteredStreams.length}
-                      showCachedFilter={availableProviders.length > 0}
-                      hasLastPlayed={!!lastPlayedStreamId}
-                    />
+                    )
+                  )}
+                  {/* Content Guidance (Certification & Nudity) */}
+                  <ContentGuidance certification={item.certification} nudity={item.nudity} size="default" />
+                  {item.runtime && (
+                    <div className="flex items-center gap-1">
+                      <Clock className="h-4 w-4" />
+                      <span>{item.runtime}</span>
+                    </div>
+                  )}
+                  {item.year && (
+                    <div className="flex items-center gap-1">
+                      <Calendar className="h-4 w-4" />
+                      <span>{item.year}</span>
+                    </div>
                   )}
                 </div>
-              </CardHeader>
-              <CardContent className="px-3 sm:px-6">
-                {/* Banner shown when navigated from Discover */}
-                {scrapingBanner && (
-                  <div
-                    className={`flex items-start gap-3 rounded-xl border px-4 py-3 mb-4 text-sm ${scrapeResult ? 'border-border bg-muted/40' : 'border-primary/30 bg-primary/5'}`}
-                  >
-                    {autoScrapeMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0 mt-0.5" />
-                    ) : (
-                      <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      {autoScrapeMutation.isPending ? (
-                        <>
-                          <p className="font-medium">Searching for streams…</p>
-                          <p className="text-muted-foreground text-xs">
-                            Scanning indexers, this may take up to a minute.
-                          </p>
-                        </>
-                      ) : scrapeResult ? (
-                        <>
-                          <p className="font-medium">
-                            Scraping complete — {scrapeResult.streams_found} stream
-                            {scrapeResult.streams_found !== 1 ? 's' : ''} found
-                          </p>
-                          {scrapeResult.scrapers_used.length > 0 && (
-                            <p className="text-muted-foreground text-xs mt-0.5">
-                              Used: {scrapeResult.scrapers_used.join(', ')}
-                            </p>
-                          )}
-                          {scrapeResult.streams_found === 0 && (
-                            <p className="text-muted-foreground text-xs mt-0.5">
-                              No streams were found. Try again later or check your indexer configuration.
-                            </p>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <p className="font-medium">Searching for streams…</p>
-                          <p className="text-muted-foreground text-xs">
-                            Scanning indexers, this may take up to a minute.
-                          </p>
-                        </>
-                      )}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 shrink-0"
-                      onClick={() => setScrapingBanner(false)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
-                {streamsLoading ? (
-                  <div className="space-y-3">
-                    {[...Array(5)].map((_, i) => (
-                      <Skeleton key={i} className="h-20 rounded-xl" />
+
+                {/* Genres - clickable to filter */}
+                {(item.genres?.length ?? 0) > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {item.genres?.map((genre) => (
+                      <Link key={genre} to={`/dashboard/library?tab=browse&genre=${encodeURIComponent(genre)}`}>
+                        <Badge
+                          variant="secondary"
+                          className="rounded-lg hover:bg-primary/20 hover:text-primary cursor-pointer transition-colors"
+                        >
+                          {genre}
+                        </Badge>
+                      </Link>
                     ))}
                   </div>
-                ) : !streamsData?.streams.length ? (
-                  <div className="text-center py-8">
-                    <Wifi className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
-                    <p className="mt-4 text-muted-foreground">No streams available</p>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Make sure you have a streaming provider configured
-                    </p>
-                  </div>
-                ) : filteredStreams.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Wifi className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
-                    <p className="mt-4 text-muted-foreground">No streams match your filters</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-4 rounded-xl"
-                      onClick={() => handleStreamFiltersChange(defaultStreamFilters)}
-                    >
-                      Clear Filters
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <ListPagination
-                      inputId="stream-page-jump-top"
-                      currentPage={safeStreamPage}
-                      totalPages={streamTotalPages}
-                      totalItems={filteredStreams.length}
-                      pageSize={streamPageSize}
-                      onPageChange={setStreamPage}
-                      alwaysShowSummary
-                      pageSizeOptions={[25, 50, 100]}
-                      onPageSizeChange={(size) => setStreamPageSize(size as 25 | 50 | 100)}
-                    />
-                    {viewMode === 'grouped' ? (
-                      <StreamGroupedList
-                        streams={paginatedStreams}
-                        groupBy="quality"
-                        renderStream={(stream, index) => (
-                          <StreamCard
-                            key={stream.id || index}
-                            stream={stream}
-                            onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
-                            mediaType={catalogType === 'series' ? 'series' : 'movie'}
-                            isLastPlayed={
-                              stream.id !== undefined &&
-                              (String(stream.id) === lastPlayedStreamId ||
-                                String(stream.id) === streamFilters.streamIdFilter)
-                            }
-                          />
-                        )}
-                      />
-                    ) : (
-                      <div className="space-y-3">
-                        {paginatedStreams.map((stream, index) => (
-                          <StreamCard
-                            key={stream.id || index}
-                            stream={stream}
-                            onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
-                            mediaType={catalogType === 'series' ? 'series' : 'movie'}
-                            isLastPlayed={
-                              stream.id !== undefined &&
-                              (String(stream.id) === lastPlayedStreamId ||
-                                String(stream.id) === streamFilters.streamIdFilter)
-                            }
-                          />
+                )}
+
+                {/* Description */}
+                {item.description && (
+                  <p className="text-muted-foreground leading-relaxed max-w-2xl">
+                    {item.is_keyword_blocked && item.matched_keywords?.length
+                      ? highlightKeywords(item.description, item.matched_keywords)
+                      : item.description}
+                  </p>
+                )}
+
+                {/* Credits (Directors, Writers, Cast) */}
+                {(item.directors?.length || item.writers?.length || item.cast?.length) && (
+                  <div className="grid gap-3 text-sm max-w-2xl">
+                    {item.directors && item.directors.length > 0 && (
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="text-muted-foreground font-medium">
+                          Director{item.directors.length > 1 ? 's' : ''}:
+                        </span>
+                        {item.directors.map((director, idx) => (
+                          <Link
+                            key={director}
+                            to={`/dashboard/library?tab=browse&type=${catalogType}&search=${encodeURIComponent(director)}`}
+                            className="hover:text-primary transition-colors"
+                          >
+                            {director}
+                            {idx < item.directors!.length - 1 ? ',' : ''}
+                          </Link>
                         ))}
                       </div>
                     )}
-                    <ListPagination
-                      inputId="stream-page-jump-bottom"
-                      currentPage={safeStreamPage}
-                      totalPages={streamTotalPages}
-                      totalItems={filteredStreams.length}
-                      pageSize={streamPageSize}
-                      onPageChange={setStreamPage}
-                      alwaysShowSummary
-                      pageSizeOptions={[25, 50, 100]}
-                      onPageSizeChange={(size) => setStreamPageSize(size as 25 | 50 | 100)}
-                    />
+                    {item.writers && item.writers.length > 0 && (
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="text-muted-foreground font-medium">
+                          Writer{item.writers.length > 1 ? 's' : ''}:
+                        </span>
+                        {item.writers.slice(0, 5).map((writer, idx) => (
+                          <Link
+                            key={writer}
+                            to={`/dashboard/library?tab=browse&type=${catalogType}&search=${encodeURIComponent(writer)}`}
+                            className="hover:text-primary transition-colors"
+                          >
+                            {writer}
+                            {idx < Math.min(item.writers!.length, 5) - 1 ? ',' : ''}
+                          </Link>
+                        ))}
+                        {item.writers.length > 5 && (
+                          <span className="text-muted-foreground">+{item.writers.length - 5} more</span>
+                        )}
+                      </div>
+                    )}
+                    {item.cast && item.cast.length > 0 && (
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="text-muted-foreground font-medium">Cast:</span>
+                        {item.cast.slice(0, 8).map((actor, idx) => (
+                          <Link
+                            key={actor}
+                            to={`/dashboard/library?tab=browse&type=${catalogType}&search=${encodeURIComponent(actor)}`}
+                            className="hover:text-primary transition-colors"
+                          >
+                            {actor}
+                            {idx < Math.min(item.cast!.length, 8) - 1 ? ',' : ''}
+                          </Link>
+                        ))}
+                        {item.cast.length > 8 && (
+                          <span className="text-muted-foreground">+{item.cast.length - 8} more</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
+
+                {/* Actions */}
+                <div className="flex flex-wrap gap-3 pt-2">
+                  {/* Trailer Button - shown if trailers available */}
+                  {item.trailers && item.trailers.length > 0 && (
+                    <TrailerButton trailers={item.trailers} title={item.title} />
+                  )}
+
+                  {isAuthenticated && (
+                    <Button
+                      variant="outline"
+                      onClick={handleLibraryToggle}
+                      disabled={addToLibrary.isPending || removeFromLibrary.isPending}
+                      className="rounded-xl"
+                    >
+                      {addToLibrary.isPending || removeFromLibrary.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : libraryStatus?.in_library ? (
+                        <HeartOff className="mr-2 h-4 w-4" />
+                      ) : (
+                        <Heart className="mr-2 h-4 w-4" />
+                      )}
+                      {libraryStatus?.in_library ? 'Remove from Library' : 'Add to Library'}
+                    </Button>
+                  )}
+                </div>
+
+                {/* Metadata Voting & Edit */}
+                {isAuthenticated && mediaId && (
+                  <div className="pt-4 border-t border-border/30 mt-4">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <ContentLikesBadge mediaId={mediaId} />
+                      <MetadataActions mediaId={mediaId} />
+                      <MetadataEditSheet mediaId={mediaId} catalogType={catalogType} />
+                      {/* RefreshMetadataButton only for movies/series - TV channels don't have IMDb IDs */}
+                      {(catalogType === 'movie' || catalogType === 'series') && (
+                        <RefreshMetadataButton
+                          mediaId={mediaId}
+                          externalIds={item.external_ids}
+                          mediaType={catalogType}
+                          title={item.title}
+                          year={item.year}
+                        />
+                      )}
+                      {/* ScrapeContentButton for movies/series - triggers stream scraping */}
+                      {(catalogType === 'movie' || catalogType === 'series') && (
+                        <ScrapeContentButton
+                          mediaId={mediaId}
+                          mediaType={catalogType}
+                          title={item.title}
+                          season={catalogType === 'series' ? selectedSeason : undefined}
+                          episode={catalogType === 'series' ? selectedEpisode : undefined}
+                        />
+                      )}
+                      {/* Block/Unblock button - moderators and admins only */}
+                      {isModerator && (
+                        <BlockContentButton
+                          mediaId={mediaId}
+                          mediaTitle={item.title}
+                          mediaType={catalogType}
+                          isBlocked={item.is_blocked || false}
+                          blockReason={item.block_reason}
+                        />
+                      )}
+                      {isAdmin && (
+                        <DeleteContentButton mediaId={mediaId} mediaTitle={item.title} mediaType={catalogType} />
+                      )}
+                    </div>
+                    {(item.last_refreshed_at || item.last_scraped_at) && (
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mt-2">
+                        {item.last_refreshed_at && (
+                          <p>
+                            Metadata refreshed:{' '}
+                            {new Date(item.last_refreshed_at).toLocaleDateString(undefined, {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                        )}
+                        {item.last_scraped_at && (
+                          <p>
+                            Streams scraped:{' '}
+                            {new Date(item.last_scraped_at).toLocaleDateString(undefined, {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* NSFW poster flag — visible to all users; review controls for admins */}
+                {item.poster_nsfw_flagged != null && item.poster_nsfw_score != null && (
+                  <NsfwStatusSection
+                    mediaId={mediaId}
+                    score={item.poster_nsfw_score}
+                    flagged={item.poster_nsfw_flagged}
+                    reviewed={item.poster_nsfw_reviewed ?? false}
+                    isAdmin={isAdmin}
+                  />
+                )}
+
+                {/* Keyword block override — admin only, shown when keyword-blocked */}
+                {item.is_keyword_blocked && isAdmin && (
+                  <KeywordOverrideSection
+                    mediaId={mediaId}
+                    isOverridden={item.keyword_block_override ?? false}
+                    isAdmin={isAdmin}
+                    onSuccess={() =>
+                      queryClient.invalidateQueries({ queryKey: ['catalog', catalogType, mediaId.toString()] })
+                    }
+                  />
+                )}
+
+                {/* External IDs */}
+                {item.external_ids && (
+                  <div className="pt-4 border-t border-border/30">
+                    <p className="text-xs text-muted-foreground mb-2 font-medium">External IDs</p>
+                    <ExternalIdsDisplay externalIds={item.external_ids} mediaType={catalogType} />
+                  </div>
+                )}
+
+                {/* Catalogs */}
+                {item.catalogs && item.catalogs.length > 0 && (
+                  <div className="pt-4 border-t border-border/30">
+                    <p className="text-xs text-muted-foreground mb-2 font-medium">Catalogs</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {item.catalogs.map((catalog) => (
+                        <Badge key={catalog} variant="secondary" className="rounded-lg text-xs capitalize">
+                          {catalog.replace(/_/g, ' ')}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* AKA Titles */}
+                {item.aka_titles && item.aka_titles.length > 0 && (
+                  <div className="pt-4">
+                    <p className="text-xs text-muted-foreground">
+                      Also known as: {item.aka_titles.slice(0, 3).join(', ')}
+                      {item.aka_titles.length > 3 && ` +${item.aka_titles.length - 3} more`}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Series Season/Episode Selector */}
+          {catalogType === 'series' && seasons.length > 0 && (
+            <SeriesEpisodePicker
+              seasons={seasons}
+              selectedSeason={selectedSeason}
+              selectedEpisode={selectedEpisode}
+              onSeasonChange={(season) => {
+                setSelectedSeason(season)
+                setSelectedEpisode(undefined)
+              }}
+              onEpisodeChange={setSelectedEpisode}
+              isAdmin={isAdmin}
+              onDeleteEpisode={handleDeleteEpisode}
+              isDeletingEpisode={deleteEpisodeAdmin.isPending}
+              onDeleteSeason={handleDeleteSeason}
+              isDeletingSeason={deleteSeasonAdmin.isPending}
+              onEpisodeEditSuccess={handleEpisodeEditSuccess}
+            />
+          )}
+
+          {/* Streams Section */}
+          {isAuthenticated &&
+            (catalogType === 'movie' ||
+              catalogType === 'tv' ||
+              (selectedSeason !== undefined && selectedEpisode !== undefined)) && (
+              <Card className="glass border-border/50">
+                <CardHeader className="px-3 sm:px-6 py-4 sm:py-6">
+                  <div className="flex flex-col gap-3 sm:gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                          <Play className="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
+                          Available Streams
+                        </CardTitle>
+                        <CardDescription className="text-xs sm:text-sm mt-0.5">
+                          {catalogType === 'series'
+                            ? `Season ${selectedSeason}, Episode ${selectedEpisode}`
+                            : catalogType === 'tv'
+                              ? 'Select a stream to watch this channel'
+                              : 'Select a stream to watch or download'}
+                        </CardDescription>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Profile Selector - show when multiple profiles available */}
+                        {profiles && profiles.length > 1 ? (
+                          <Select
+                            value={selectedProfileId?.toString() ?? ''}
+                            onValueChange={(value) => {
+                              const newProfileId = parseInt(value, 10)
+                              const newProfile = profiles.find((p) => p.id === newProfileId)
+                              setSelectedProfileId(newProfileId)
+                              setSelectedProfileUuid(newProfile?.uuid)
+                              // Set the primary provider from the new profile
+                              setSelectedProvider(newProfile?.streaming_providers?.primary_service || undefined)
+                            }}
+                          >
+                            <SelectTrigger className="w-[130px] sm:w-[160px] h-9 rounded-xl text-xs sm:text-sm">
+                              <SelectValue placeholder="Profile" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {profiles.map((profile) => (
+                                <SelectItem key={profile.id} value={profile.id.toString()}>
+                                  <div className="flex items-center gap-2">
+                                    <span>{profile.name}</span>
+                                    {profile.is_default && (
+                                      <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                        Default
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : profiles && profiles.length === 1 ? (
+                          // Show single profile name as a badge
+                          <Badge
+                            variant="outline"
+                            className="rounded-lg px-2.5 sm:px-3 py-1.5 h-9 flex items-center text-xs sm:text-sm"
+                          >
+                            {profiles[0].name}
+                          </Badge>
+                        ) : null}
+                        <ViewModeToggle mode={viewMode} onModeChange={setViewMode} />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => refetchStreams()}
+                          disabled={streamsLoading}
+                          className="rounded-xl h-9 text-xs sm:text-sm"
+                        >
+                          {streamsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Refresh'}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Provider Tabs - show when providers available */}
+                    {availableProviders.length > 0 &&
+                      (availableProviders.length > 1 ? (
+                        <Tabs
+                          value={selectedProvider || availableProviders[0]?.service}
+                          onValueChange={(value) => setSelectedProvider(value)}
+                          className="w-full"
+                        >
+                          <TabsList className="w-full justify-start h-auto flex-wrap gap-1 bg-muted/50 p-1 rounded-xl">
+                            {availableProviders.map((provider) => (
+                              <TabsTrigger
+                                key={provider.service}
+                                value={provider.service}
+                                className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm"
+                              >
+                                {getProviderDisplayName(provider)}
+                              </TabsTrigger>
+                            ))}
+                          </TabsList>
+                        </Tabs>
+                      ) : (
+                        // Show single provider as a badge
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">Provider:</span>
+                          <Badge variant="secondary" className="rounded-lg px-3 py-1">
+                            {getProviderDisplayName(availableProviders[0])}
+                          </Badge>
+                        </div>
+                      ))}
+
+                    {/* Filters and Sorting */}
+                    {streamsData?.streams && streamsData.streams.length > 0 && (
+                      <StreamFilters
+                        filters={streamFilters}
+                        onFiltersChange={handleStreamFiltersChange}
+                        availableSources={availableSources}
+                        availableResolutions={availableResolutions}
+                        availableQualities={availableQualities}
+                        availableCodecs={availableCodecs}
+                        availableLanguages={availableLanguages}
+                        availableStreamTypes={availableStreamTypes}
+                        totalStreams={streamsData?.streams?.length || 0}
+                        filteredCount={filteredStreams.length}
+                        showCachedFilter={availableProviders.length > 0}
+                        hasLastPlayed={!!lastPlayedStreamId}
+                      />
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="px-3 sm:px-6">
+                  {/* Banner shown when navigated from Discover */}
+                  {scrapingBanner && (
+                    <div
+                      className={`flex items-start gap-3 rounded-xl border px-4 py-3 mb-4 text-sm ${scrapeResult ? 'border-border bg-muted/40' : 'border-primary/30 bg-primary/5'}`}
+                    >
+                      {autoScrapeMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0 mt-0.5" />
+                      ) : (
+                        <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        {autoScrapeMutation.isPending ? (
+                          <>
+                            <p className="font-medium">Searching for streams…</p>
+                            <p className="text-muted-foreground text-xs">
+                              Scanning indexers, this may take up to a minute.
+                            </p>
+                          </>
+                        ) : scrapeResult ? (
+                          <>
+                            <p className="font-medium">
+                              Scraping complete — {scrapeResult.streams_found} stream
+                              {scrapeResult.streams_found !== 1 ? 's' : ''} found
+                            </p>
+                            {scrapeResult.scrapers_used.length > 0 && (
+                              <p className="text-muted-foreground text-xs mt-0.5">
+                                Used: {scrapeResult.scrapers_used.join(', ')}
+                              </p>
+                            )}
+                            {scrapeResult.streams_found === 0 && (
+                              <p className="text-muted-foreground text-xs mt-0.5">
+                                No streams were found. Try again later or check your indexer configuration.
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <p className="font-medium">Searching for streams…</p>
+                            <p className="text-muted-foreground text-xs">
+                              Scanning indexers, this may take up to a minute.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => setScrapingBanner(false)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                  {streamsLoading ? (
+                    <div className="space-y-3">
+                      {[...Array(5)].map((_, i) => (
+                        <Skeleton key={i} className="h-20 rounded-xl" />
+                      ))}
+                    </div>
+                  ) : !streamsData?.streams.length ? (
+                    <div className="text-center py-8">
+                      <Wifi className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
+                      <p className="mt-4 text-muted-foreground">No streams available</p>
+                      <p className="text-sm text-muted-foreground mt-2">
+                        Make sure you have a streaming provider configured
+                      </p>
+                    </div>
+                  ) : filteredStreams.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Wifi className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
+                      <p className="mt-4 text-muted-foreground">No streams match your filters</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-4 rounded-xl"
+                        onClick={() => handleStreamFiltersChange(defaultStreamFilters)}
+                      >
+                        Clear Filters
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <ListPagination
+                        inputId="stream-page-jump-top"
+                        currentPage={safeStreamPage}
+                        totalPages={streamTotalPages}
+                        totalItems={filteredStreams.length}
+                        pageSize={streamPageSize}
+                        onPageChange={setStreamPage}
+                        alwaysShowSummary
+                        pageSizeOptions={[25, 50, 100]}
+                        onPageSizeChange={(size) => setStreamPageSize(size as 25 | 50 | 100)}
+                      />
+                      {viewMode === 'grouped' ? (
+                        <StreamGroupedList
+                          streams={paginatedStreams}
+                          groupBy="quality"
+                          renderStream={(stream, index) => (
+                            <StreamCard
+                              key={stream.id || index}
+                              stream={stream}
+                              onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
+                              mediaType={catalogType === 'series' ? 'series' : 'movie'}
+                              isLastPlayed={
+                                stream.id !== undefined &&
+                                (String(stream.id) === lastPlayedStreamId ||
+                                  String(stream.id) === streamFilters.streamIdFilter)
+                              }
+                            />
+                          )}
+                        />
+                      ) : (
+                        <div className="space-y-3">
+                          {paginatedStreams.map((stream, index) => (
+                            <StreamCard
+                              key={stream.id || index}
+                              stream={stream}
+                              onClick={() => handleStreamClick(stream as CatalogStreamInfo)}
+                              mediaType={catalogType === 'series' ? 'series' : 'movie'}
+                              isLastPlayed={
+                                stream.id !== undefined &&
+                                (String(stream.id) === lastPlayedStreamId ||
+                                  String(stream.id) === streamFilters.streamIdFilter)
+                              }
+                            />
+                          ))}
+                        </div>
+                      )}
+                      <ListPagination
+                        inputId="stream-page-jump-bottom"
+                        currentPage={safeStreamPage}
+                        totalPages={streamTotalPages}
+                        totalItems={filteredStreams.length}
+                        pageSize={streamPageSize}
+                        onPageChange={setStreamPage}
+                        alwaysShowSummary
+                        pageSizeOptions={[25, 50, 100]}
+                        onPageSizeChange={(size) => setStreamPageSize(size as 25 | 50 | 100)}
+                      />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+          {/* Login prompt for anonymous users */}
+          {!isAuthenticated && (
+            <Card className="glass border-border/50">
+              <CardContent className="py-8 text-center">
+                <Play className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
+                <p className="mt-4 font-medium">Sign in to view streams</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  You need to be logged in with a configured streaming provider to access streams
+                </p>
+                <Button asChild className="mt-4 rounded-xl">
+                  <Link to="/login">Sign In</Link>
+                </Button>
               </CardContent>
             </Card>
           )}
 
-        {/* Login prompt for anonymous users */}
-        {!isAuthenticated && (
-          <Card className="glass border-border/50">
-            <CardContent className="py-8 text-center">
-              <Play className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
-              <p className="mt-4 font-medium">Sign in to view streams</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                You need to be logged in with a configured streaming provider to access streams
-              </p>
-              <Button asChild className="mt-4 rounded-xl">
-                <Link to="/login">Sign In</Link>
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Stream Action Dialog */}
-        <StreamActionDialog
-          open={streamDialogOpen}
-          onOpenChange={setStreamDialogOpen}
-          stream={selectedStream}
-          mediaId={mediaId}
-          title={item.title}
-          catalogType={catalogType === 'series' ? 'series' : catalogType === 'tv' ? 'tv' : 'movie'}
-          season={selectedSeason}
-          episode={selectedEpisode}
-          selectedProvider={streamsData?.selected_provider}
-          hasMediaflowProxy={streamsData?.web_playback_enabled || false}
-          onStreamDeleted={() => refetchStreams()}
-          onWatch={handleWatchStream}
-        />
-
-        {/* Video Player Dialog (rendered at page level to avoid nested dialog issues) */}
-        {playerStream && playerStreamUrl && (
-          <PlayerDialog
-            open={playerOpen}
-            onOpenChange={handlePlayerClose}
-            stream={{
-              id: playerStream.id ? String(playerStream.id) : undefined,
-              name: playerStream.name,
-              title: playerStream.stream_name,
-              url: playerStreamUrl,
-              ytId: playerStream.yt_id || playerStream.ytId,
-              streamType: playerStream.stream_type,
-              quality: playerStream.quality,
-              resolution: playerStream.resolution,
-              size: playerStream.size,
-              source: playerStream.source,
-              codec: playerStream.codec,
-              audio: Array.isArray(playerStream.audio_formats)
-                ? playerStream.audio_formats.join('|')
-                : playerStream.audio_formats,
-              behaviorHints: playerStream.behavior_hints,
-            }}
-            externalStreamUrl={playerExternalStreamUrl || playerStreamUrl}
-            transcodeStreamUrl={playerTranscodeStreamUrl}
-            isTranscodedPlayback={isPlayingTranscodedStream}
-            onSwitchToTranscode={handleSwitchToTranscode}
-            contentTitle={item.title}
-            startTime={startTime}
-            onTimeUpdate={handleTimeUpdate}
-            onEnded={() => handlePlayerClose(false)}
+          {/* Stream Action Dialog */}
+          <StreamActionDialog
+            open={streamDialogOpen}
+            onOpenChange={setStreamDialogOpen}
+            stream={selectedStream}
+            mediaId={mediaId}
+            title={item.title}
+            catalogType={catalogType === 'series' ? 'series' : catalogType === 'tv' ? 'tv' : 'movie'}
+            season={selectedSeason}
+            episode={selectedEpisode}
+            selectedProvider={streamsData?.selected_provider}
+            hasMediaflowProxy={streamsData?.web_playback_enabled || false}
+            onStreamDeleted={() => refetchStreams()}
+            onWatch={handleWatchStream}
           />
-        )}
-      </div>
-    </StreamCommunityProvider>
+
+          {/* Video Player Dialog (rendered at page level to avoid nested dialog issues) */}
+          {playerStream && playerStreamUrl && (
+            <PlayerDialog
+              open={playerOpen}
+              onOpenChange={handlePlayerClose}
+              stream={{
+                id: playerStream.id ? String(playerStream.id) : undefined,
+                name: playerStream.name,
+                title: playerStream.stream_name,
+                url: playerStreamUrl,
+                ytId: playerStream.yt_id || playerStream.ytId,
+                streamType: playerStream.stream_type,
+                quality: playerStream.quality,
+                resolution: playerStream.resolution,
+                size: playerStream.size,
+                source: playerStream.source,
+                codec: playerStream.codec,
+                audio: Array.isArray(playerStream.audio_formats)
+                  ? playerStream.audio_formats.join('|')
+                  : playerStream.audio_formats,
+                behaviorHints: playerStream.behavior_hints,
+              }}
+              externalStreamUrl={playerExternalStreamUrl || playerStreamUrl}
+              transcodeStreamUrl={playerTranscodeStreamUrl}
+              isTranscodedPlayback={isPlayingTranscodedStream}
+              onSwitchToTranscode={handleSwitchToTranscode}
+              contentTitle={item.title}
+              startTime={startTime}
+              onTimeUpdate={handleTimeUpdate}
+              onEnded={() => handlePlayerClose(false)}
+            />
+          )}
+        </div>
+      </StreamCommunityProvider>
+    </ContentLikesProvider>
   )
 }
