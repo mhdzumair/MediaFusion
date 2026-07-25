@@ -351,10 +351,12 @@ pub async fn store_telegram_stream(
     .await?;
 
     if opts.media_type == super::types::MediaType::Series
-        && let (Some(s), Some(e)) = (opts.season, opts.episode)
+        && (opts.season.is_some() || opts.episode.is_some())
     {
-        link_synthetic_episode_file(pool, stream_id, opts.media_id, s, e, opts).await?;
+        link_telegram_series_file(pool, stream_id, stream, opts).await?;
     }
+
+    link_stream_parsed_metadata(pool, stream_id, &stream.base).await;
 
     Ok(StoreStreamResult::Inserted(stream_id))
 }
@@ -924,6 +926,42 @@ where
     .bind(link_source)
     .execute(executor)
     .await?;
+    Ok(())
+}
+
+async fn link_telegram_series_file(
+    pool: &PgPool,
+    stream_id: StreamId,
+    stream: &TelegramStoreInput,
+    opts: &StoreStreamOpts,
+) -> Result<(), sqlx::Error> {
+    let file = StreamFileStoreInput {
+        file_index: 0,
+        filename: stream.file_name.clone(),
+        size: Some(stream.size),
+        season_number: opts.season.unwrap_or(0),
+        episode_number: opts.episode.unwrap_or(0),
+    };
+    if let Some(file_id) = insert_stream_file(pool, stream_id, &file, false).await? {
+        sqlx::query(
+            r#"
+            INSERT INTO file_media_link
+                (file_id, media_id, season_number, episode_number, episode_end,
+                 is_primary, confidence, link_source, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, 1.0, $7, NOW())
+            ON CONFLICT (file_id, media_id, season_number, episode_number) DO NOTHING
+            "#,
+        )
+        .bind(file_id)
+        .bind(opts.media_id)
+        .bind(opts.season)
+        .bind(opts.episode)
+        .bind(opts.episode_end)
+        .bind(opts.is_primary)
+        .bind(opts.link_source)
+        .execute(pool)
+        .await?;
+    }
     Ok(())
 }
 

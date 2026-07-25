@@ -24,9 +24,18 @@ import {
   useToast,
 } from '@/hooks'
 import type { TaskRecord } from '@/lib/api'
+import {
+  bulkCancelMessage,
+  bulkRetryMessage,
+  cancelTaskMessage,
+  isCancelTaskAccepted,
+  isRetryTaskAccepted,
+  retryTaskMessage,
+} from '@/lib/api/task-management'
 import type { ScraperMetricsSummary } from '@/lib/api/metrics'
 import { Ban, Loader2, RefreshCw, RotateCcw, Workflow } from 'lucide-react'
 import { SchedulerManagementSection } from './components/SchedulerManagementSection'
+import { TelegramBackupPanel } from './components/TelegramBackupPanel'
 import {
   BulkActionConfirmDialog,
   ScraperDetailsDialog,
@@ -201,9 +210,9 @@ export function TaskManagementPage() {
         reason: 'cancelled-from-admin-ui',
       })
       toast({
-        title: response.success ? 'Cancellation Requested' : 'Cancellation Not Applied',
-        description: response.message,
-        variant: response.success ? 'default' : 'destructive',
+        title: isCancelTaskAccepted(response) ? 'Cancellation Requested' : 'Cancellation Not Applied',
+        description: cancelTaskMessage(response),
+        variant: isCancelTaskAccepted(response) ? 'default' : 'destructive',
       })
     } catch (error) {
       toast({
@@ -218,9 +227,9 @@ export function TaskManagementPage() {
     try {
       const response = await retryTask.mutateAsync(task.task_id)
       toast({
-        title: response.success ? 'Task Requeued' : 'Task Not Retried',
-        description: response.message,
-        variant: response.success ? 'default' : 'destructive',
+        title: isRetryTaskAccepted(response) ? 'Task Requeued' : 'Task Not Retried',
+        description: retryTaskMessage(response),
+        variant: isRetryTaskAccepted(response) ? 'default' : 'destructive',
       })
     } catch (error) {
       toast({
@@ -270,7 +279,7 @@ export function TaskManagementPage() {
         })
         toast({
           title: 'Bulk cancel submitted',
-          description: result.message,
+          description: bulkCancelMessage(result),
         })
       } else {
         const result = await bulkRetry.mutateAsync({
@@ -279,7 +288,7 @@ export function TaskManagementPage() {
         })
         toast({
           title: 'Bulk retry submitted',
-          description: result.message,
+          description: bulkRetryMessage(result),
         })
       }
     } catch (error) {
@@ -378,10 +387,11 @@ export function TaskManagementPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-3 w-full max-w-3xl">
+        <TabsList className="grid h-auto w-full max-w-4xl grid-cols-2 gap-1 sm:grid-cols-4">
           <TabsTrigger value="tasks">Tasks</TabsTrigger>
           <TabsTrigger value="scrapers">Scrapers</TabsTrigger>
           <TabsTrigger value="schedules">Schedules</TabsTrigger>
+          <TabsTrigger value="telegram">Telegram Backup</TabsTrigger>
         </TabsList>
 
         <TabsContent value="tasks" className="space-y-4">
@@ -734,6 +744,10 @@ export function TaskManagementPage() {
 
         <TabsContent value="schedules" className="space-y-4">
           <SchedulerManagementSection />
+        </TabsContent>
+
+        <TabsContent value="telegram" className="space-y-4">
+          <TelegramBackupPanel />
         </TabsContent>
       </Tabs>
 

@@ -43,10 +43,15 @@ impl JobHandler for TelegramBgScraper {
 
         let message_limit = parse_job_message_limit(&args);
         let min_size = ctx.state.config.min_scraping_video_size;
+        let limit_label = format_scrape_message_limit(message_limit);
+        let api = BotApi::from_state(&ctx.state).ok();
+        if api.is_none() {
+            warn!("telegram_bg: bot API not configured — scrape summaries will not be sent");
+        }
 
         // Per-user on-demand scrape from bot or web UI
         if args.get("mediafusion_user_id").is_some() {
-            return run_user_scrape(&ctx, &args, message_limit, min_size).await;
+            return run_user_scrape(&ctx, &args, message_limit, min_size, api.as_ref()).await;
         }
 
         let targets = crate::db::user_telegram_session::list_scrape_targets(&ctx.state.pool).await;
@@ -73,6 +78,9 @@ impl JobHandler for TelegramBgScraper {
                 continue;
             };
 
+            let mut totals = ScrapeMetrics::default();
+            let mut channel_results = Vec::with_capacity(target.channels.len());
+
             for channel in &target.channels {
                 if ctx.is_cancelled() {
                     return Err(JobError::Cancelled);
@@ -80,8 +88,29 @@ impl JobHandler for TelegramBgScraper {
                 let metrics =
                     scrape_and_persist_channel(&ctx, &client, channel, message_limit, min_size)
                         .await;
-                total_streams += metrics.imported;
+                totals.imported += metrics.imported;
+                totals.skipped += metrics.skipped;
+                totals.errors += metrics.errors;
+                channel_results.push(ChannelScrapeResult {
+                    channel: channel.clone(),
+                    metrics,
+                });
             }
+
+            total_streams += totals.imported;
+
+            send_scrape_notifications(
+                &ctx,
+                api.as_ref(),
+                &channel_results,
+                &totals,
+                &limit_label,
+                target.user_id,
+                None,
+                None,
+                None,
+            )
+            .await;
         }
 
         info!("telegram_bg: done — total streams persisted across all users: {total_streams}");
@@ -90,6 +119,31 @@ impl JobHandler for TelegramBgScraper {
 }
 
 fn parse_job_message_limit(args: &serde_json::Value) -> Option<i32> {
+    parse_channel_message_limit(args, None)
+}
+
+fn parse_channel_message_limit(args: &serde_json::Value, channel: Option<&str>) -> Option<i32> {
+    if let Some(channel) = channel
+        && let Some(channel_cfg) = args
+            .get("channel_limits")
+            .and_then(|v| v.get(channel))
+    {
+        if channel_cfg
+            .get("scrape_all_messages")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            return None;
+        }
+        if let Some(limit) = channel_cfg
+            .get("message_limit")
+            .and_then(|v| v.as_i64())
+            .map(|n| n as i32)
+        {
+            return Some(limit);
+        }
+    }
+
     if args
         .get("scrape_all_messages")
         .and_then(|v| v.as_bool())
@@ -115,6 +169,7 @@ async fn run_user_scrape(
     args: &serde_json::Value,
     message_limit: Option<i32>,
     min_size: u64,
+    api: Option<&BotApi>,
 ) -> Result<(), JobError> {
     let telegram_user_id = args
         .get("telegram_user_id")
@@ -159,7 +214,12 @@ async fn run_user_scrape(
         return Ok(());
     };
 
-    let api = BotApi::from_state(&ctx.state).ok();
+    let owned_api = if api.is_some() {
+        None
+    } else {
+        BotApi::from_state(&ctx.state).ok()
+    };
+    let api = api.or(owned_api.as_ref());
     let mut totals = ScrapeMetrics::default();
     let mut channel_results = Vec::with_capacity(channels.len());
     let limit_label = format_scrape_message_limit(message_limit);
@@ -169,15 +229,17 @@ async fn run_user_scrape(
             return Err(JobError::Cancelled);
         }
 
-        if let (Some(api), Some(mid), Some(chat_id)) = (api.as_ref(), progress_message_id, chat_id)
+        if let (Some(api), Some(mid), Some(chat_id)) = (api, progress_message_id, chat_id)
         {
+            let channel_limit = parse_channel_message_limit(args, Some(channel));
+            let channel_limit_label = format_scrape_message_limit(channel_limit);
             let progress = if channels.len() == 1 {
                 format!(
-                    "🔍 *Scraping Channel*\n\n`{channel}`\nDepth: {limit_label}\n\n⏳ Fetching messages..."
+                    "🔍 *Scraping Channel*\n\n`{channel}`\nDepth: {channel_limit_label}\n\n⏳ Fetching messages..."
                 )
             } else {
                 format!(
-                    "🔍 *Scraping Channels* ({}/{total})\n\n`{channel}`\nDepth: {limit_label}\n\n⏳ Fetching messages...",
+                    "🔍 *Scraping Channels* ({}/{total})\n\n`{channel}`\nDepth: {channel_limit_label}\n\n⏳ Fetching messages...",
                     index + 1,
                     total = channels.len()
                 )
@@ -185,8 +247,15 @@ async fn run_user_scrape(
             let _ = api.edit_message_text(chat_id, mid, &progress, None).await;
         }
 
-        let metrics =
-            scrape_and_persist_channel(ctx, &client, channel, message_limit, min_size).await;
+        let channel_limit = parse_channel_message_limit(args, Some(channel));
+        let metrics = scrape_and_persist_channel(
+            ctx,
+            &client,
+            channel,
+            channel_limit,
+            min_size,
+        )
+        .await;
         totals.imported += metrics.imported;
         totals.skipped += metrics.skipped;
         totals.errors += metrics.errors;
@@ -196,60 +265,124 @@ async fn run_user_scrape(
         });
     }
 
-    let summary = build_scrape_summary(
+    send_scrape_notifications(
+        ctx,
+        api,
         &channel_results,
         &totals,
         &limit_label,
-        telegram_user_id,
         mediafusion_user_id,
-    );
-
-    if let (Some(api), Some(mid), Some(chat_id)) = (api.as_ref(), progress_message_id, chat_id) {
-        let _ = api.edit_message_text(chat_id, mid, &summary, None).await;
-    } else if let Some(api) = api.as_ref() {
-        let notify_chat_id = if chat_id.is_some() {
-            chat_id
-        } else if telegram_user_id > 0 {
-            Some(telegram_user_id)
-        } else {
-            crate::db::telegram::get_user_telegram_id(&ctx.state.pool_ro, mediafusion_user_id).await
-        };
-        if let Some(target_chat_id) = notify_chat_id {
-            let _ = api.send_message(target_chat_id, &summary, None).await;
-        }
-    }
-
-    if let Some(api) = api.as_ref()
-        && let Some(notification_chat_id) = ctx.state.config.telegram_chat_id.as_deref()
-        && !notification_chat_id.is_empty()
-    {
-        let notify_user_id = if telegram_user_id > 0 {
-            telegram_user_id
-        } else {
-            crate::db::telegram::get_user_telegram_id(&ctx.state.pool_ro, mediafusion_user_id)
-                .await
-                .unwrap_or(0)
-        };
-        let admin_summary = format!(
-            "📡 *Telegram Scrape Completed*\n\n\
-             User: `{notify_user_id}` (MediaFusion #{mf_id})\n\
-             Depth: {limit_label}\n\n{summary_body}",
-            mf_id = mediafusion_user_id.0,
-            summary_body = scrape_summary_body(&channel_results, &totals)
-        );
-        let _ = api
-            .send_message(
-                notification_chat_id.parse().unwrap_or(chat_id.unwrap_or(0)),
-                &admin_summary,
-                None,
-            )
-            .await;
-    }
+        Some(telegram_user_id),
+        chat_id,
+        progress_message_id,
+    )
+    .await;
 
     if telegram_user_id > 0 {
         crate::bot::clear_scrape_job(&ctx.state, telegram_user_id).await;
     }
     Ok(())
+}
+
+async fn send_scrape_notifications(
+    ctx: &JobCtx,
+    api: Option<&BotApi>,
+    channel_results: &[ChannelScrapeResult],
+    totals: &ScrapeMetrics,
+    limit_label: &str,
+    mediafusion_user_id: UserId,
+    telegram_user_id: Option<i64>,
+    chat_id: Option<i64>,
+    progress_message_id: Option<i64>,
+) {
+    let Some(api) = api else {
+        warn!(
+            "telegram_bg: bot API not configured — skipping scrape summary for user {}",
+            mediafusion_user_id.0
+        );
+        return;
+    };
+
+    let telegram_user_id = telegram_user_id.unwrap_or(0);
+    let summary = build_scrape_summary(
+        channel_results,
+        totals,
+        limit_label,
+        telegram_user_id,
+        mediafusion_user_id,
+    );
+
+    if let (Some(mid), Some(chat_id)) = (progress_message_id, chat_id) {
+        match api.edit_message_text(chat_id, mid, &summary, None).await {
+            Ok(()) => info!(
+                "telegram_bg: updated scrape summary for user {} in chat {chat_id}",
+                mediafusion_user_id.0
+            ),
+            Err(e) => warn!(
+                "telegram_bg: failed to update scrape summary for user {} in chat {chat_id}: {e}",
+                mediafusion_user_id.0
+            ),
+        }
+    } else {
+        let notify_chat_id = chat_id.or(if telegram_user_id > 0 {
+            Some(telegram_user_id)
+        } else {
+            crate::db::telegram::get_user_telegram_id(&ctx.state.pool_ro, mediafusion_user_id).await
+        });
+        match notify_chat_id {
+            Some(target_chat_id) => match api.send_message(target_chat_id, &summary, None).await {
+                Ok(_) => info!(
+                    "telegram_bg: sent scrape summary to chat {target_chat_id} for user {}",
+                    mediafusion_user_id.0
+                ),
+                Err(e) => warn!(
+                    "telegram_bg: failed to send scrape summary to chat {target_chat_id} for user {}: {e}",
+                    mediafusion_user_id.0
+                ),
+            },
+            None => warn!(
+                "telegram_bg: no Telegram chat id for user {} — scrape summary not sent",
+                mediafusion_user_id.0
+            ),
+        }
+    }
+
+    let Some(notification_chat_id) = ctx.state.config.telegram_chat_id.as_deref() else {
+        return;
+    };
+    if notification_chat_id.is_empty() {
+        return;
+    }
+
+    let notify_user_id = if telegram_user_id > 0 {
+        telegram_user_id
+    } else {
+        crate::db::telegram::get_user_telegram_id(&ctx.state.pool_ro, mediafusion_user_id)
+            .await
+            .unwrap_or(0)
+    };
+    let admin_summary = format!(
+        "📡 *Telegram Scrape Completed*\n\n\
+         User: `{notify_user_id}` (MediaFusion #{mf_id})\n\
+         Depth: {limit_label}\n\n{summary_body}",
+        mf_id = mediafusion_user_id.0,
+        summary_body = scrape_summary_body(channel_results, totals)
+    );
+    let admin_chat_id = notification_chat_id
+        .parse::<i64>()
+        .unwrap_or(chat_id.unwrap_or(0));
+    match api
+        .send_message(admin_chat_id, &admin_summary, None)
+        .await
+    {
+        Ok(_) => info!(
+            "telegram_bg: sent admin scrape summary to chat {admin_chat_id} for user {}",
+            mediafusion_user_id.0
+        ),
+        Err(e) => warn!(
+            "telegram_bg: failed to send admin scrape summary to chat {admin_chat_id}: {e}"
+        ),
+    }
 }
 
 fn build_scrape_summary(
@@ -346,21 +479,13 @@ async fn scrape_and_persist_channel(
             .filter(|t| !t.is_empty())
             .unwrap_or(&stream.name);
 
-        let exists: Option<(i32,)> = sqlx::query_as(
-            "SELECT stream_id FROM telegram_stream WHERE chat_id = $1 AND message_id = $2 LIMIT 1",
-        )
-        .bind(stream.chat_id.to_string())
-        .bind(stream.message_id)
-        .fetch_optional(&ctx.state.pool)
-        .await
-        .unwrap_or(None);
-
-        if exists.is_some() {
+        if telegram_stream_already_indexed(&ctx.state.pool, stream).await {
             metrics.skipped += 1;
             continue;
         }
 
-        let is_series = stream.season.is_some() || stream.episode.is_some();
+        let (season, episode, episode_end) = telegram::series_episode_from_parsed(&stream.parsed);
+        let is_series = season.is_some() || episode.is_some();
         let media_type = if is_series { "series" } else { "movie" };
 
         let meta_result = media_resolve::search_meta_for_telegram_feed(
@@ -389,30 +514,24 @@ async fn scrape_and_persist_channel(
             channel,
             stream,
             &dialog_peers,
+            title,
         )
         .await;
 
         let mut input: crate::db::TelegramStoreInput = stream.into();
-        if let Some(file_id) = enrichment.file_id {
-            input.file_id = Some(file_id);
-        }
-        if let Some(chat_id) = enrichment.primary_chat_id {
-            input.chat_id = chat_id;
-        }
-        if let Some(message_id) = enrichment.primary_message_id {
-            input.message_id = message_id;
-        }
         input.backup_chat_id = enrichment.backup_chat_id;
         input.backup_message_id = enrichment.backup_message_id;
+        input.file_id = enrichment.file_id.or(input.file_id);
         input.document_id = enrichment.document_id.or(input.document_id);
         input.file_unique_id = enrichment.file_unique_id.or(input.file_unique_id);
 
-        let opts = stream_convert::scraper_store_opts(
+        let mut opts = stream_convert::scraper_store_opts(
             meta.media_id,
             media_type,
-            stream.season,
-            stream.episode,
+            season,
+            episode,
         );
+        opts.episode_end = episode_end;
         match crate::db::store_telegram_stream(&ctx.state.pool, &input, &opts).await {
             Ok(r) if r.was_inserted() => metrics.imported += 1,
             Ok(_) => metrics.skipped += 1,
@@ -435,4 +554,32 @@ async fn scrape_and_persist_channel(
         streams.len()
     );
     metrics
+}
+
+async fn telegram_stream_already_indexed(
+    pool: &sqlx::PgPool,
+    stream: &crate::scrapers::ScrapedTelegramStream,
+) -> bool {
+    if let Some(ref file_unique_id) = stream.file_unique_id {
+        let exists: Option<(i32,)> = sqlx::query_as(
+            "SELECT stream_id FROM telegram_stream WHERE file_unique_id = $1 LIMIT 1",
+        )
+        .bind(file_unique_id)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+        if exists.is_some() {
+            return true;
+        }
+    }
+
+    let exists: Option<(i32,)> = sqlx::query_as(
+        "SELECT stream_id FROM telegram_stream WHERE chat_id = $1 AND message_id = $2 LIMIT 1",
+    )
+    .bind(stream.chat_id.to_string())
+    .bind(stream.message_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+    exists.is_some()
 }

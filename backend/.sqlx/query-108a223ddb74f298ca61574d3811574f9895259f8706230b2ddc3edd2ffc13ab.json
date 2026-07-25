@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE jobs\n               SET status    = 'running',\n                   started_at = now(),\n                   worker_id  = $1,\n                   attempts   = attempts + 1\n             WHERE id IN (\n                   SELECT id FROM jobs\n                    WHERE queue      = $2\n                      AND status     = 'pending'\n                      AND scheduled_at <= now()\n                    ORDER BY priority, scheduled_at\n                    FOR UPDATE SKIP LOCKED\n                    LIMIT $3\n                   )\n            RETURNING id, payload, attempts, cancel_requested\n            ",
+  "query": "\n            UPDATE jobs\n               SET status    = 'running',\n                   started_at = now(),\n                   worker_id  = $1,\n                   attempts   = attempts + 1\n             WHERE id IN (\n                   SELECT id FROM jobs\n                    WHERE queue      = $2\n                      AND status     = 'pending'\n                      AND NOT cancel_requested\n                      AND scheduled_at <= now()\n                    ORDER BY priority, scheduled_at\n                    FOR UPDATE SKIP LOCKED\n                    LIMIT $3\n                   )\n            RETURNING id, payload, attempts, cancel_requested\n            ",
   "describe": {
     "columns": [
       {
@@ -62,5 +62,5 @@
       false
     ]
   },
-  "hash": "a7a473528ad238f4eadd2b57f6d9da476fa8511b211d68b589b58efc07440498"
+  "hash": "108a223ddb74f298ca61574d3811574f9895259f8706230b2ddc3edd2ffc13ab"
 }

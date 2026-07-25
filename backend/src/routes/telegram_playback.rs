@@ -178,23 +178,13 @@ async fn build_mediaflow_url(
         .as_deref()
         .ok_or(PlaybackError::NoMediaFlow)?;
 
-    // 2. Require file_id
-    let file_id = stream.file_id.as_deref().ok_or(PlaybackError::NoFileId)?;
-
-    // 3. Require auth user
+    // 2. Require auth user
     let user_id = user_data.user_id.ok_or(PlaybackError::Unauthorized)?;
 
-    // 4. Get or create per-user forward
-    let forward = get_or_create_forward(
-        state,
-        stream.id as i64,
-        file_id,
-        user_id,
-        &stream.stream_name,
-    )
-    .await?;
+    // 3. Get or create per-user forward (uses stored file_id or backup channel copy)
+    let (forward, resolved_file_id) = get_or_create_forward(state, &stream, user_id).await?;
 
-    // 5. Build MediaFlow URL
+    // 4. Build MediaFlow URL
     let endpoint = if let Some(ref fname) = stream.file_name {
         format!("/proxy/telegram/stream/{}", urlencoding::encode(fname))
     } else {
@@ -208,14 +198,16 @@ async fn build_mediaflow_url(
 
     // Prefer stored document_id; fall back to decoding from file_id (Bot API encoding).
     let document_id = stream.document_id.or_else(|| {
-        crate::util::telegram_file_id::extract_document_id_from_file_id(stream.file_id.as_deref())
+        crate::util::telegram_file_id::extract_document_id_from_file_id(
+            resolved_file_id.as_deref().or(stream.file_id.as_deref()),
+        )
     });
 
     if let Some(doc_id) = document_id {
         params.push(("document_id", doc_id.to_string()));
     }
-    if let Some(ref fid) = stream.file_id {
-        params.push(("file_id", fid.clone()));
+    if let Some(fid) = resolved_file_id.or(stream.file_id.clone()) {
+        params.push(("file_id", fid));
     }
     if let Some(sz) = stream.size {
         params.push(("file_size", sz.to_string()));
@@ -244,19 +236,19 @@ async fn build_mediaflow_url(
     Ok(base)
 }
 
-/// Get an existing TelegramUserForward or create one via Bot API sendVideo.
+/// Get an existing TelegramUserForward or create one via Bot API sendVideo / backup copy.
 async fn get_or_create_forward(
     state: &AppState,
-    telegram_stream_id: i64,
-    file_id: &str,
+    stream: &tg_db::TelegramStreamRow,
     user_id: UserId,
-    stream_name: &Option<String>,
-) -> Result<tg_db::TelegramUserForwardRow, PlaybackError> {
+) -> Result<(tg_db::TelegramUserForwardRow, Option<String>), PlaybackError> {
+    let telegram_stream_id = stream.id as i64;
+
     // Fast path: existing record
     if let Some(fwd) =
         tg_db::get_telegram_user_forward(&state.pool_ro, telegram_stream_id, user_id).await
     {
-        return Ok(fwd);
+        return Ok((fwd, stream.file_id.clone()));
     }
 
     // Require bot token
@@ -291,7 +283,7 @@ async fn get_or_create_forward(
         if let Some(fwd) =
             tg_db::get_telegram_user_forward(&state.pool_ro, telegram_stream_id, user_id).await
         {
-            return Ok(fwd);
+            return Ok((fwd, stream.file_id.clone()));
         }
         return Err(PlaybackError::LockTimeout);
     }
@@ -301,26 +293,47 @@ async fn get_or_create_forward(
         tg_db::get_telegram_user_forward(&state.pool_ro, telegram_stream_id, user_id).await
     {
         let _ = state.redis.del::<(), _>(&lock_key).await;
-        return Ok(fwd);
+        return Ok((fwd, stream.file_id.clone()));
     }
 
-    // Send video via Bot API
-    let caption = stream_name.as_deref().map(|n| format!("🎬 {n}"));
-    let send_result = send_video_to_user(
-        &state.http,
-        bot_token,
-        telegram_user_id,
-        file_id,
-        caption.as_deref(),
-    )
-    .await;
+    let send_result = if let Some(file_id) = stream.file_id.as_deref() {
+        let caption = stream.stream_name.as_deref().map(|n| format!("🎬 {n}"));
+        send_video_to_user(
+            &state.http,
+            bot_token,
+            telegram_user_id,
+            file_id,
+            caption.as_deref(),
+        )
+        .await
+        .map(|coords| (coords, Some(file_id.to_string())))
+    } else if let (Some(backup_chat_id), Some(backup_message_id)) =
+        (stream.backup_chat_id.as_deref(), stream.backup_message_id)
+    {
+        copy_backup_to_user(
+            state,
+            telegram_user_id,
+            backup_chat_id,
+            i64::from(backup_message_id),
+        )
+        .await
+    } else {
+        let _ = state.redis.del::<(), _>(&lock_key).await;
+        return Err(PlaybackError::NoFileId);
+    };
 
     let _ = state.redis.del::<(), _>(&lock_key).await;
 
-    let (forwarded_chat_id, forwarded_message_id) = send_result?;
+    let ((forwarded_chat_id, forwarded_message_id), resolved_file_id) = send_result?;
+
+    if let Some(ref file_id) = resolved_file_id
+        && stream.file_id.as_deref() != Some(file_id.as_str())
+    {
+        let _ = tg_db::update_telegram_stream_file_id(&state.pool, stream.id, file_id).await;
+    }
 
     // Persist the forward
-    tg_db::create_telegram_user_forward(
+    let fwd = tg_db::create_telegram_user_forward(
         &state.pool,
         telegram_stream_id,
         user_id,
@@ -332,7 +345,51 @@ async fn get_or_create_forward(
     .map_err(|e| {
         tracing::warn!("create_telegram_user_forward: {e}");
         PlaybackError::DbError
-    })
+    })?;
+
+    Ok((fwd, resolved_file_id.or_else(|| stream.file_id.clone())))
+}
+
+async fn copy_backup_to_user(
+    state: &AppState,
+    telegram_user_id: i64,
+    backup_chat_id: &str,
+    backup_message_id: i64,
+) -> Result<((String, i64), Option<String>), PlaybackError> {
+    let from_chat_id = backup_chat_id
+        .parse::<i64>()
+        .map_err(|_| PlaybackError::NoFileId)?;
+    let api = crate::bot::BotApi::from_state(state).map_err(|_| PlaybackError::BotNotConfigured)?;
+    let result = api
+        .copy_message(telegram_user_id, from_chat_id, backup_message_id)
+        .await
+        .map_err(|e| {
+            tracing::warn!("telegram_playback: backup copy failed: {e}");
+            PlaybackError::BotSendFailed(e.to_string())
+        })?;
+
+    let file_id = extract_bot_file_id(&result);
+    let message_id = result
+        .get("message_id")
+        .and_then(|v| v.as_i64())
+        .ok_or(PlaybackError::BotApiError("copyMessage: no message_id"))?;
+    Ok(((
+        telegram_user_id.to_string(),
+        message_id,
+    ), file_id))
+}
+
+fn extract_bot_file_id(message: &serde_json::Value) -> Option<String> {
+    for key in ["video", "document", "audio"] {
+        if let Some(file_id) = message
+            .get(key)
+            .and_then(|v| v.get("file_id"))
+            .and_then(|v| v.as_str())
+        {
+            return Some(file_id.to_string());
+        }
+    }
+    None
 }
 
 /// Call Bot API sendVideo and return (forwarded_chat_id, forwarded_message_id).

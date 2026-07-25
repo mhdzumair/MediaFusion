@@ -151,6 +151,33 @@ export interface ImdbDatasetImportStatusResponse {
   message?: string | null
 }
 
+export interface TelegramBackupStatsResponse {
+  total_streams: number
+  with_file_id: number
+  without_file_id: number
+  with_file_unique_id: number
+  without_file_unique_id: number
+  with_backup: number
+  without_backup: number
+  backup_channel_configured: boolean
+  backup_channel_id: string | null
+}
+
+export interface RunTelegramBackupJobRequest {
+  mediafusion_user_id?: number
+  only_missing?: boolean
+  batch_size?: number
+  capture_file_id?: boolean
+  message_limit?: number
+}
+
+export interface TelegramBackupJobResponse {
+  status: string
+  job_id?: number
+  queue?: string
+  detail?: string
+}
+
 export interface MigrateMediaRequest {
   from_media_id?: number
   from_media_ids?: number[]
@@ -269,6 +296,18 @@ export const scrapersApi = {
 
   runImdbDatasetImport: async (payload: RunImdbDatasetImportRequest = {}): Promise<Record<string, unknown>> => {
     return apiClient.post('/admin/scrapers/imdb-dataset/run', payload)
+  },
+
+  getTelegramBackupStats: async (): Promise<TelegramBackupStatsResponse> => {
+    return apiClient.get('/admin/telegram/stats')
+  },
+
+  runTelegramBackupStore: async (payload: RunTelegramBackupJobRequest = {}): Promise<TelegramBackupJobResponse> => {
+    return apiClient.post('/admin/telegram/backup/store', payload)
+  },
+
+  runTelegramBackupRestore: async (payload: RunTelegramBackupJobRequest = {}): Promise<TelegramBackupJobResponse> => {
+    return apiClient.post('/admin/telegram/backup/restore', payload)
   },
 
   /**

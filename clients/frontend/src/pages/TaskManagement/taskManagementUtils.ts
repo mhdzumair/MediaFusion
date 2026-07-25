@@ -73,7 +73,7 @@ export function isTaskCancellable(task: TaskRecord): boolean {
   if (task.cancellation_requested) {
     return false
   }
-  return !['success', 'error', 'cancelled', 'skipped', 'enqueue_failed'].includes(task.status)
+  return ['pending', 'running', 'stale', 'queued', 'scheduled'].includes(task.status)
 }
 
 export function isTaskRetryable(task: TaskRecord): boolean {

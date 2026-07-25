@@ -1420,6 +1420,7 @@ pub struct TriggerTelegramScrapeBody {
     pub scrape_all: Option<bool>,
     pub message_limit: Option<i32>,
     pub scrape_all_messages: Option<bool>,
+    pub channel_limits: Option<serde_json::Value>,
 }
 
 /// POST /api/v1/telegram/scrape
@@ -1472,6 +1473,9 @@ pub async fn trigger_telegram_scrape(
         "scrape_all": scrape_all,
         "scrape_all_messages": body.scrape_all_messages.unwrap_or(false),
     });
+    if let Some(channel_limits) = body.channel_limits {
+        payload["channel_limits"] = channel_limits;
+    }
     if body.scrape_all_messages != Some(true) {
         payload["message_limit"] = serde_json::json!(
             body.message_limit
@@ -1507,6 +1511,7 @@ pub async fn trigger_telegram_scrape(
         Ok(None) => (
             StatusCode::CONFLICT,
             Json(serde_json::json!({
+                "detail": "A scrape job is already queued or running for your account",
                 "error": "A scrape job is already queued or running for your account",
             })),
         )

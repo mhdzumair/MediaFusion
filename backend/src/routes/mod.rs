@@ -693,6 +693,14 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/admin/tasks/{task_id}/cancel", post(admin_scrapers::cancel_task))
         // ── Admin telegram ────────────────────────────────────────────────────
         .route("/api/v1/admin/telegram/stats", get(admin_scrapers::get_telegram_stats))
+        .route(
+            "/api/v1/admin/telegram/backup/store",
+            post(admin_scrapers::run_telegram_backup_store),
+        )
+        .route(
+            "/api/v1/admin/telegram/backup/restore",
+            post(admin_scrapers::run_telegram_backup_restore),
+        )
         .route("/api/v1/admin/telegram/migrate", post(admin_scrapers::migrate_single_stream))
         .route("/api/v1/admin/telegram/migrate/bulk", post(admin_scrapers::migrate_bulk_streams))
         .route("/api/v1/admin/telegram/exportable", get(admin_scrapers::get_exportable_streams))

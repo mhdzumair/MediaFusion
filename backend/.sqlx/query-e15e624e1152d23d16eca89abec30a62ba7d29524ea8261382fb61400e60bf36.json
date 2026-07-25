@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE jobs SET status='cancelled', finished_at=now(), dedupe_key=NULL WHERE id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e15e624e1152d23d16eca89abec30a62ba7d29524ea8261382fb61400e60bf36"
+}

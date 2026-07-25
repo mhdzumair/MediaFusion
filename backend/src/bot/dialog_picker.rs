@@ -76,9 +76,9 @@ pub async fn handle_browse_channels_command(
 
     let scrapable: Vec<_> = dialogs.into_iter().filter(|d| d.scrapable).collect();
     if scrapable.is_empty() {
-        let msg = "ℹ️ *No Channels or Groups Found*\n\n\
-             Your Telegram account has no channels or groups in recent dialogs.\n\n\
-             Join a channel or group in Telegram first, then try again.";
+        let msg = "ℹ️ *No Scraping Sources Found*\n\n\
+             Your Telegram account has no channels, groups, or bot chats in recent dialogs.\n\n\
+             Join a channel/group or start a bot in Telegram first, then try again.";
         if let Ok(mid) = progress {
             let _ = api.edit_message_text(chat_id, mid, msg, None).await;
         }

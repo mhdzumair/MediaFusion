@@ -880,6 +880,16 @@ pub fn add_defaults(p: &mut Parser) {
             ..Default::default()
         },
     );
+    p.add(
+        "hdr",
+        rei(r"\bDS4K\b"),
+        uniq_concat(value("DS4K")),
+        Opts {
+            skip_if_already_found: false,
+            remove: true,
+            ..Default::default()
+        },
+    );
 
     // ── Codec ─────────────────────────────────────────────────────────────
     p.add(
@@ -1078,6 +1088,18 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "audio",
+        rei(r"\bDTS[.\- ]?HD[.\- ]?MA\b"),
+        uniq_concat(value("DTS Lossless")),
+        ao(true),
+    );
+    p.add(
+        "audio",
+        rei(r"(?<=[.\-_ ])MA(?=[.\-_ ])"),
+        uniq_concat(value("DTS Lossless")),
+        ao(true),
+    );
+    p.add(
+        "audio",
         rei(r"\b(True[ .-]?HD|\.True\.)\b"),
         uniq_concat(value("TrueHD")),
         Opts {
@@ -1140,7 +1162,7 @@ pub fn add_defaults(p: &mut Parser) {
     );
     p.add(
         "audio",
-        rei(r"\bOPUS(\b|\d)(?!.*[ ._-](\d{3,4}p))"),
+        rei(r"(?<!^)\bOPUS(\b|\d)(?!\s*[\(\[]?(?:19|20)\d{2})(?!.*[ ._-](\d{3,4}p))"),
         uniq_concat(value("OPUS")),
         ao(true),
     );

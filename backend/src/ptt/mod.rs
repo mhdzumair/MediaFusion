@@ -425,10 +425,46 @@ mod tests {
     }
 
     #[test]
+    fn test_opus_movie_titles_are_not_audio_codec() {
+        let cases = [
+            "Opus (2025) 1080p 10bit WEBRip x265 HEVC [Hindi NF DDP 5.1 +.mkv",
+            "Opus_2025_720p_10bit_WEBRip_x265_HEVC_Hindi_NF_HE_AAC_5_1_+_English.mkv",
+        ];
+        for case in cases {
+            let parsed = parse(case, true);
+            assert_eq!(parsed.title, "Opus", "failed for {case}");
+            assert_eq!(parsed.year, Some(2025));
+        }
+    }
+
+    #[test]
+    fn test_opus_audio_codec_still_detected() {
+        let parsed = parse("Movie.2025.1080p.WEB-DL.OPUS.2.0-GROUP", true);
+        assert_eq!(parsed.title, "Movie");
+        assert!(parsed.audio.contains(&"OPUS".to_string()));
+    }
+
+    #[test]
     fn test_translate_languages() {
         let r = parse("Movie.2020.1080p.English.French.Spanish.mkv", true);
         assert!(r.languages.contains(&"English".to_string()));
         assert!(r.languages.contains(&"French".to_string()));
         assert!(r.languages.contains(&"Spanish".to_string()));
+    }
+
+    #[test]
+    fn test_disclosure_day_filename() {
+        let parsed = parse(
+            "Disclosure.Day.2026.1080p.10bit.DS4K.MA.WEBRip.English-H.mkv",
+            true,
+        );
+        assert_eq!(parsed.title, "Disclosure Day");
+        assert_eq!(parsed.year, Some(2026));
+        assert_eq!(parsed.resolution.as_deref(), Some("1080p"));
+        assert_eq!(parsed.quality.as_deref(), Some("WEBRip"));
+        assert_eq!(parsed.bit_depth.as_deref(), Some("10bit"));
+        assert!(parsed.languages.contains(&"English".to_string()));
+        assert!(parsed.hdr.contains(&"DS4K".to_string()));
+        assert!(parsed.audio.contains(&"DTS Lossless".to_string()));
     }
 }

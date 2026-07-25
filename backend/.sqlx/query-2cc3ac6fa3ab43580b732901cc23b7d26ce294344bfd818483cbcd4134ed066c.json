@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE jobs SET status='dead', finished_at=now(), last_error=$1, dedupe_key=NULL WHERE id=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2cc3ac6fa3ab43580b732901cc23b7d26ce294344bfd818483cbcd4134ed066c"
+}

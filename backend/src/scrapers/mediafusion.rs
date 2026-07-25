@@ -143,6 +143,7 @@ fn parse_rich_stream(item: &Value) -> Option<ScrapedStream> {
         is_remastered: false,
         is_upscaled: false,
         release_group: None,
+        bit_depth: None,
     };
 
     Some(ScrapedStream {

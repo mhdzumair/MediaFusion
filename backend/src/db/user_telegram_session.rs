@@ -98,6 +98,16 @@ pub struct UserTelegramScrapeTarget {
     pub channels: Vec<String>,
 }
 
+pub async fn list_session_user_ids(pool: &PgPool) -> Vec<UserId> {
+    sqlx::query_scalar::<_, i32>("SELECT user_id FROM user_telegram_sessions ORDER BY user_id")
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(UserId)
+        .collect()
+}
+
 /// Users with stored sessions and enabled scraping channels in their default profile.
 pub async fn list_scrape_targets(pool: &PgPool) -> Vec<UserTelegramScrapeTarget> {
     let rows: Vec<(i32, serde_json::Value)> = match sqlx::query_as(

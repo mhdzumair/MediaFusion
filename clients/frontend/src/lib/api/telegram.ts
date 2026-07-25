@@ -121,6 +121,7 @@ export const telegramApi = {
     scrape_all?: boolean
     message_limit?: number
     scrape_all_messages?: boolean
+    channel_limits?: Record<string, Record<string, boolean | number>>
   }): Promise<{ status: string; message: string; channels?: number }> => {
     return apiClient.post('/telegram/scrape', payload)
   },

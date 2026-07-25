@@ -208,6 +208,19 @@ impl BotApi {
             .ok_or_else(|| BotApiError::Parse("missing result".into()))
     }
 
+    pub async fn delete_message(&self, chat_id: i64, message_id: i64) -> Result<(), BotApiError> {
+        let _ = self
+            .post(
+                "deleteMessage",
+                json!({
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                }),
+            )
+            .await?;
+        Ok(())
+    }
+
     pub async fn forward_message(
         &self,
         chat_id: i64,

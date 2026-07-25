@@ -1,4 +1,4 @@
-//! List channels/groups from a user's connected Telegram MTProto session.
+//! List channels, groups, and bot chats from a user's connected Telegram MTProto session.
 
 use grammers_client::peer::Peer;
 use grammers_session::types::PeerRef;
@@ -14,10 +14,18 @@ pub struct ScrapableDialog {
     pub id: String,
     pub name: String,
     pub kind: String,
-    /// True when the user session can access this dialog (channels and joined groups).
+    /// True when the user session can access this dialog (channels, joined groups, and bots).
     pub scrapable: bool,
     pub is_public: bool,
     pub has_photo: bool,
+}
+
+fn dialog_display_name(name: &str, fallback: &str) -> String {
+    if name.trim().is_empty() {
+        fallback.to_string()
+    } else {
+        name.to_string()
+    }
 }
 
 pub async fn list_scrapable_dialogs(
@@ -83,6 +91,25 @@ pub async fn list_scrapable_dialogs(
                     }),
                     name,
                     kind: "group".to_string(),
+                });
+            }
+            Peer::User(user) if user.is_bot() && !user.deleted() => {
+                let username = user.username().map(|u| format!("@{u}"));
+                let is_public = username.is_some();
+                let has_photo = user.photo().is_some();
+                let fallback = username.clone().unwrap_or_else(|| "Bot".to_string());
+                let name = dialog_display_name(&user.full_name(), &fallback);
+                results.push(ScrapableDialog {
+                    scrapable: true,
+                    is_public,
+                    has_photo,
+                    id: username.unwrap_or_else(|| {
+                        telegram_channel_id::format_dialog_id(
+                            user.id().bot_api_dialog_id_unchecked(),
+                        )
+                    }),
+                    name,
+                    kind: "bot".to_string(),
                 });
             }
             _ => {}

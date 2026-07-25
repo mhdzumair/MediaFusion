@@ -57,6 +57,7 @@ pub struct ParsedTitle {
     pub is_remastered: bool,
     pub is_upscaled: bool,
     pub release_group: Option<String>,
+    pub bit_depth: Option<String>,
 }
 
 pub fn parse_title(raw: &str) -> ParsedTitle {
@@ -87,6 +88,7 @@ pub fn parse_title(raw: &str) -> ParsedTitle {
         is_remastered: p.is_remastered,
         is_upscaled: p.is_upscaled,
         release_group: p.group,
+        bit_depth: p.bit_depth,
     }
 }
 

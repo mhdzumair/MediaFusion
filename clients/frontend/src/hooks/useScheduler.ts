@@ -268,6 +268,38 @@ export function useRunImdbDatasetImport() {
   })
 }
 
+export function useTelegramBackupStats(enabled = true) {
+  return useQuery({
+    queryKey: [...schedulerKeys.all, 'telegram-backup-stats'] as const,
+    queryFn: () => scrapersApi.getTelegramBackupStats(),
+    enabled,
+    staleTime: 15 * 1000,
+    refetchInterval: 30 * 1000,
+  })
+}
+
+export function useRunTelegramBackupStore() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: scrapersApi.runTelegramBackupStore,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [...schedulerKeys.all, 'telegram-backup-stats'] })
+    },
+  })
+}
+
+export function useRunTelegramBackupRestore() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: scrapersApi.runTelegramBackupRestore,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [...schedulerKeys.all, 'telegram-backup-stats'] })
+    },
+  })
+}
+
 export function useUpdateSchedulerJob() {
   const queryClient = useQueryClient()
 

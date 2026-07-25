@@ -52,6 +52,20 @@ pub fn format_scrape_message_limit(limit: Option<i32>) -> String {
     }
 }
 
+/// Extract season / episode / episode_end from PTT parse results (matches Python feed scrape).
+pub fn series_episode_from_parsed(
+    parsed: &crate::parser::ParsedTitle,
+) -> (Option<i32>, Option<i32>, Option<i32>) {
+    let season = parsed.seasons.first().copied();
+    let episode = parsed.episodes.first().copied();
+    let episode_end = if parsed.episodes.len() > 1 {
+        parsed.episodes.last().copied()
+    } else {
+        None
+    };
+    (season, episode, episode_end)
+}
+
 fn imdb_pattern() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"tt\d{7,8}").expect("IMDB_PATTERN"))
@@ -321,6 +335,8 @@ fn process_message(
         }
     }
 
+    let (parsed_season, parsed_episode, _) = series_episode_from_parsed(&parsed);
+
     Some(ScrapedTelegramStream {
         chat_id,
         chat_username: chat_username.clone(),
@@ -331,8 +347,8 @@ fn process_message(
         source: "telegram".to_string(),
         name: file_name,
         parsed,
-        season,
-        episode,
+        season: season.or(parsed_season),
+        episode: episode.or(parsed_episode),
         caption_imdb_id,
         document_id,
         file_unique_id,
@@ -352,5 +368,16 @@ mod tests {
         assert_eq!(parse_scrape_message_limit("all").unwrap(), None);
         assert_eq!(parse_scrape_message_limit("50").unwrap(), Some(50));
         assert!(parse_scrape_message_limit("0").is_err());
+    }
+
+    #[test]
+    fn series_episode_from_adventure_time_filename() {
+        let parsed = crate::parser::parse_title(
+            "Adventure Time S05 EP 01-13 Combined 1080p Hevc [Hindi] Gj~R.mkv",
+        );
+        let (season, episode, episode_end) = series_episode_from_parsed(&parsed);
+        assert_eq!(season, Some(5));
+        assert_eq!(episode, Some(1));
+        assert_eq!(episode_end, Some(13));
     }
 }

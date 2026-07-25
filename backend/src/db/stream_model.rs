@@ -64,6 +64,18 @@ impl Default for StreamStoreBase {
 }
 
 impl StreamStoreBase {
+    /// Normalize PTT bit depth for stream templates that append `-bit` (e.g. `10bit` → `10`).
+    fn normalize_bit_depth(raw: Option<String>) -> Option<String> {
+        raw.and_then(|value| {
+            let digits: String = value.chars().filter(|c| c.is_ascii_digit()).collect();
+            if digits.is_empty() {
+                None
+            } else {
+                Some(digits)
+            }
+        })
+    }
+
     /// Build from a parsed torrent/usenet title (scraper and import paths).
     pub fn from_parsed(name: String, source: String, parsed: &crate::parser::ParsedTitle) -> Self {
         Self {
@@ -73,7 +85,7 @@ impl StreamStoreBase {
             codec: parsed.codec.clone(),
             quality: parsed.quality.clone(),
             release_group: parsed.release_group.clone(),
-            bit_depth: None,
+            bit_depth: Self::normalize_bit_depth(parsed.bit_depth.clone()),
             is_proper: parsed.is_proper,
             is_repack: parsed.is_repack,
             is_extended: parsed.is_extended,

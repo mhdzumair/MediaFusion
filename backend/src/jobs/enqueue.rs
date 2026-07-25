@@ -25,6 +25,17 @@ pub async fn enqueue<P: Serialize>(
     let priority = opts.priority.unwrap_or(100);
     let max_attempts = opts.max_attempts.unwrap_or(5);
 
+    // Release dedupe locks held by finished jobs so the same key can be reused.
+    if let Some(ref key) = opts.dedupe_key {
+        sqlx::query(
+            "UPDATE jobs SET dedupe_key = NULL \
+             WHERE dedupe_key = $1 AND status NOT IN ('pending', 'running')",
+        )
+        .bind(key)
+        .execute(&mut *conn)
+        .await?;
+    }
+
     let row = sqlx::query!(
         r#"
         INSERT INTO jobs (queue, payload, priority, max_attempts, dedupe_key,

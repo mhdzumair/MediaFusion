@@ -3039,30 +3039,16 @@ fn format_telegram_stream(
     let url = format!("{host_url}/streaming_provider/{secret_str}/telegram/{chat_id}/{message_id}");
 
     let (title_tpl, desc_tpl) = resolve_templates(stream_template);
-    let mut stream_obj = serde_json::Map::new();
-    stream_obj.insert("type".into(), json!("telegram"));
-    for key in &["name", "quality", "resolution", "codec", "source"] {
-        if let Some(v) = row
-            .get(*key)
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-        {
-            stream_obj.insert(key.to_string(), json!(v));
-        }
-    }
-    if let Some(sz) = row.get("size").and_then(|v| v.as_i64()) {
-        stream_obj.insert("size".into(), json!(sz));
-    }
-    if let Some(arr) = row.get("languages").and_then(|v| v.as_array()) {
-        stream_obj.insert("languages".into(), json!(arr));
-    }
-    let ctx = json!({
-        "stream": Value::Object(stream_obj),
-        "service": {},
-        "addon": { "name": addon_name },
-        "meta": build_media_context(media_meta, season, episode),
-    });
-
+    let ctx = build_stream_context(
+        row,
+        "telegram",
+        addon_name,
+        None,
+        false,
+        media_meta,
+        season,
+        episode,
+    );
     let title_str = template::render(&title_tpl, &ctx);
     let desc_str = template::render(&desc_tpl, &ctx);
     let title_str = if title_str.trim().is_empty() {

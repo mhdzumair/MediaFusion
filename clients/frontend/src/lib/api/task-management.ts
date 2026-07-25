@@ -82,16 +82,19 @@ export interface CancelTaskRequest {
 }
 
 export interface CancelTaskResponse {
-  success: boolean
+  success?: boolean
+  status?: string
   task_id: string
-  message: string
+  message?: string
 }
 
 export interface RetryTaskResponse {
-  success: boolean
-  source_task_id: string
-  new_task_id: string | null
-  message: string
+  success?: boolean
+  status?: string
+  source_task_id?: string
+  new_task_id?: string | null
+  original_task_id?: string
+  message?: string
 }
 
 export interface BulkActionRequest {
@@ -105,13 +108,56 @@ export interface BulkActionRequest {
 }
 
 export interface BulkActionResponse {
-  success: boolean
-  message: string
-  requested: number
-  applied: number
-  skipped: number
+  success?: boolean
+  status?: string
+  message?: string
+  requested?: number
+  applied?: number
+  cancelled?: number
+  skipped?: number
   task_ids: string[]
-  new_task_ids: string[]
+  new_task_ids?: string[]
+}
+
+export function isCancelTaskAccepted(response: CancelTaskResponse): boolean {
+  return response.success === true || response.status === 'accepted'
+}
+
+export function cancelTaskMessage(response: CancelTaskResponse): string {
+  return response.message ?? 'Cancellation request submitted.'
+}
+
+export function isRetryTaskAccepted(response: RetryTaskResponse): boolean {
+  return response.success === true || response.status === 'accepted'
+}
+
+export function retryTaskMessage(response: RetryTaskResponse): string {
+  if (response.message) {
+    return response.message
+  }
+  if (response.new_task_id) {
+    return `Task requeued as ${response.new_task_id}.`
+  }
+  if (response.status === 'skipped') {
+    return 'Task was not requeued because an identical job is already pending.'
+  }
+  return 'Retry request submitted.'
+}
+
+export function bulkCancelMessage(response: BulkActionResponse): string {
+  if (response.message) {
+    return response.message
+  }
+  const count = response.cancelled ?? response.applied ?? response.task_ids.length
+  return `Cancellation requested for ${count} task(s).`
+}
+
+export function bulkRetryMessage(response: BulkActionResponse): string {
+  if (response.message) {
+    return response.message
+  }
+  const count = response.new_task_ids?.length ?? response.applied ?? response.task_ids.length
+  return `Retry requested for ${count} task(s).`
 }
 
 export interface TaskListParams {

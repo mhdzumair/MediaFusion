@@ -254,6 +254,9 @@ export {
   useImdbDatasetStatus,
   useUpdateImdbDatasetConfig,
   useRunImdbDatasetImport,
+  useRunTelegramBackupRestore,
+  useRunTelegramBackupStore,
+  useTelegramBackupStats,
   useUpdateSchedulerJob,
   schedulerKeys,
 } from './useScheduler'

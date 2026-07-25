@@ -34,6 +34,7 @@ use super::{
             tamil_forums::{TamilBlastersCrawl, TamilMvCrawl},
         },
         telegram_bg::TelegramBgScraper,
+        telegram_backup_ops::{TelegramBackupRestore, TelegramBackupStore},
         update_seeders::UpdateSeeders,
         update_tv_posters::UpdateTvPosters,
         validate_tv::ValidateTvStreams,
@@ -101,6 +102,8 @@ impl JobRegistry {
         self.register(Arc::new(YoutubeBgScraper));
         self.register(Arc::new(AcestreamBgScraper));
         self.register(Arc::new(TelegramBgScraper));
+        self.register(Arc::new(TelegramBackupStore));
+        self.register(Arc::new(TelegramBackupRestore));
         self.register(Arc::new(BackfillStreamMetadata));
         self.register(Arc::new(ValidateTvStreams));
         self.register(Arc::new(UpdateSeeders));

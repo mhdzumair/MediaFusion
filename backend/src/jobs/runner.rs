@@ -199,6 +199,7 @@ impl QueueRunner {
                    SELECT id FROM jobs
                     WHERE queue      = $2
                       AND status     = 'pending'
+                      AND NOT cancel_requested
                       AND scheduled_at <= now()
                     ORDER BY priority, scheduled_at
                     FOR UPDATE SKIP LOCKED
@@ -260,7 +261,7 @@ impl QueueRunner {
 
     async fn mark_success(pool: &PgPool, job_id: i64) {
         let _ = sqlx::query!(
-            "UPDATE jobs SET status='success', finished_at=now() WHERE id=$1",
+            "UPDATE jobs SET status='success', finished_at=now(), dedupe_key=NULL WHERE id=$1",
             job_id
         )
         .execute(pool)
@@ -270,7 +271,7 @@ impl QueueRunner {
 
     async fn mark_cancelled(pool: &PgPool, job_id: i64) {
         let _ = sqlx::query!(
-            "UPDATE jobs SET status='cancelled', finished_at=now() WHERE id=$1",
+            "UPDATE jobs SET status='cancelled', finished_at=now(), dedupe_key=NULL WHERE id=$1",
             job_id
         )
         .execute(pool)
@@ -296,7 +297,7 @@ impl QueueRunner {
 
         if attempts >= max_attempts {
             let _ = sqlx::query!(
-                "UPDATE jobs SET status='dead', finished_at=now(), last_error=$1 WHERE id=$2",
+                "UPDATE jobs SET status='dead', finished_at=now(), last_error=$1, dedupe_key=NULL WHERE id=$2",
                 error,
                 job_id
             )

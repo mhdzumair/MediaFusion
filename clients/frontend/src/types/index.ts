@@ -261,10 +261,10 @@ export interface RegisterResponse {
 
 // API response types
 export interface ApiError {
-  detail: string
+  detail?: string
   status?: string
   status_code?: number
-  error?: boolean
+  error?: boolean | string
   errors?: Array<{ type: string; loc: (string | number)[]; msg: string }>
 }
 

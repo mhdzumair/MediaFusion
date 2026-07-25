@@ -3141,6 +3141,33 @@ fn effective_job_status(
     (status.to_string(), false)
 }
 
+async fn request_job_cancellation(pool: &sqlx::PgPool, job_id: i64) -> Result<bool, sqlx::Error> {
+    let pending = sqlx::query(
+        r#"UPDATE jobs
+           SET status = 'cancelled',
+               cancel_requested = true,
+               finished_at = now(),
+               dedupe_key = NULL
+         WHERE id = $1 AND status = 'pending'"#,
+    )
+    .bind(job_id)
+    .execute(pool)
+    .await?;
+
+    if pending.rows_affected() > 0 {
+        return Ok(true);
+    }
+
+    let running = sqlx::query(
+        "UPDATE jobs SET cancel_requested = true WHERE id = $1 AND status = 'running'",
+    )
+    .bind(job_id)
+    .execute(pool)
+    .await?;
+
+    Ok(running.rows_affected() > 0)
+}
+
 async fn reclaim_ancient_running_jobs(pool: &sqlx::PgPool) {
     let result = sqlx::query(
         r#"UPDATE jobs
@@ -3165,7 +3192,7 @@ async fn load_tasks(pool: &sqlx::PgPool, limit: i64) -> Vec<Value> {
 
     let rows = sqlx::query(
         r#"SELECT id, queue, payload, status, attempts, last_error,
-                  created_at, started_at, finished_at, worker_id
+                  created_at, started_at, finished_at, worker_id, cancel_requested
            FROM jobs
            ORDER BY created_at DESC
            LIMIT $1"#,
@@ -3179,6 +3206,7 @@ async fn load_tasks(pool: &sqlx::PgPool, limit: i64) -> Vec<Value> {
         .map(|r| {
             let id: i64 = r.get("id");
             let status: String = r.get("status");
+            let cancel_requested: bool = r.try_get("cancel_requested").ok().unwrap_or(false);
             let created_at: Option<chrono::DateTime<chrono::Utc>> =
                 r.try_get("created_at").ok().flatten();
             let started_at: Option<chrono::DateTime<chrono::Utc>> =
@@ -3193,6 +3221,8 @@ async fn load_tasks(pool: &sqlx::PgPool, limit: i64) -> Vec<Value> {
                 "queue_name": queue,
                 "status": effective_status,
                 "is_running": is_running,
+                "cancellation_requested": cancel_requested,
+                "cancel_requested": cancel_requested,
                 "attempts": r.get::<i32, _>("attempts"),
                 "error": r.try_get::<Option<String>, _>("last_error").ok().flatten(),
                 "worker_id": r.try_get::<Option<String>, _>("worker_id").ok().flatten(),
@@ -3660,6 +3690,12 @@ pub async fn bulk_cancel_tasks(
                     body["search"].as_str(),
                 )
             })
+            .filter(|r| {
+                matches!(
+                    r["status"].as_str(),
+                    Some("pending") | Some("running") | Some("stale")
+                )
+            })
             .take(limit)
             .filter_map(|r| r["task_id"].as_str().and_then(|s| s.parse::<i64>().ok()))
             .collect()
@@ -3667,14 +3703,10 @@ pub async fn bulk_cancel_tasks(
 
     let mut cancelled_ids: Vec<i64> = Vec::new();
     for job_id in &job_ids {
-        let result = sqlx::query(
-            "UPDATE jobs SET cancel_requested = true WHERE id = $1 AND status = 'running'",
-        )
-        .bind(job_id)
-        .execute(&state.pool)
-        .await;
-        if result.is_ok() {
-            cancelled_ids.push(*job_id);
+        match request_job_cancellation(&state.pool, *job_id).await {
+            Ok(true) => cancelled_ids.push(*job_id),
+            Ok(false) => {}
+            Err(e) => tracing::warn!("bulk_cancel_tasks job {job_id}: {e}"),
         }
     }
 
@@ -4050,16 +4082,15 @@ pub async fn cancel_task(
             .into_response();
     }
 
-    let result =
-        sqlx::query("UPDATE jobs SET cancel_requested = true WHERE id = $1 AND status = 'running'")
-            .bind(job_id)
-            .execute(&state.pool)
-            .await;
-
-    match result {
-        Ok(_) => (
+    match request_job_cancellation(&state.pool, job_id).await {
+        Ok(true) => (
             StatusCode::ACCEPTED,
             Json(json!({"status": "accepted", "task_id": task_id})),
+        )
+            .into_response(),
+        Ok(false) => (
+            StatusCode::CONFLICT,
+            Json(json!({"detail": "Task is not pending or running"})),
         )
             .into_response(),
         Err(e) => {
@@ -4088,11 +4119,152 @@ pub async fn get_telegram_stats(
     {
         return forbidden();
     }
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM telegram_stream")
-        .fetch_one(&state.pool_ro)
+    let stats = crate::db::telegram::fetch_telegram_backup_stats(&state.pool_ro).await;
+    Json(json!({
+        "total_streams": stats.total_streams,
+        "with_file_id": stats.with_file_id,
+        "without_file_id": stats.without_file_id,
+        "with_file_unique_id": stats.with_file_unique_id,
+        "without_file_unique_id": stats.total_streams - stats.with_file_unique_id,
+        "with_backup": stats.with_backup,
+        "without_backup": stats.without_backup,
+        "backup_channel_configured": state
+            .config
+            .telegram_backup_channel_id
+            .as_deref()
+            .is_some_and(|s| !s.is_empty()),
+        "backup_channel_id": state.config.telegram_backup_channel_id,
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+pub struct TelegramBackupJobBody {
+    pub mediafusion_user_id: Option<i32>,
+    pub only_missing: Option<bool>,
+    pub batch_size: Option<i64>,
+    pub capture_file_id: Option<bool>,
+    pub message_limit: Option<i32>,
+}
+
+/// POST /api/v1/admin/telegram/backup/store
+pub async fn run_telegram_backup_store(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<TelegramBackupJobBody>,
+) -> impl IntoResponse {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
         .await
-        .unwrap_or(0);
-    Json(json!({"total_streams": total})).into_response()
+        .is_none()
+    {
+        return forbidden();
+    }
+
+    let mut payload = serde_json::json!({
+        "only_missing": body.only_missing.unwrap_or(true),
+        "batch_size": body.batch_size.unwrap_or(25),
+        "continuous": true,
+        "capture_file_id": body.capture_file_id.unwrap_or(false),
+    });
+    if let Some(user_id) = body.mediafusion_user_id {
+        payload["mediafusion_user_id"] = serde_json::json!(user_id);
+    }
+
+    match crate::jobs::enqueue::enqueue_simple(
+        &state.pool,
+        "telegram_backup_store",
+        &payload,
+        crate::jobs::EnqueueOpts {
+            dedupe_key: Some("telegram_backup_store".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    {
+        Ok(Some(job_id)) => (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "status": "accepted",
+                "job_id": job_id,
+                "queue": "telegram_backup_store",
+            })),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "detail": "A backup store job is already queued or running",
+            })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("run_telegram_backup_store: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": "Failed to queue backup store job"})),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// POST /api/v1/admin/telegram/backup/restore
+pub async fn run_telegram_backup_restore(
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<TelegramBackupJobBody>,
+) -> impl IntoResponse {
+    if validate_admin(&state.pool, &headers, &state.config.secret_key_raw)
+        .await
+        .is_none()
+    {
+        return forbidden();
+    }
+
+    let mut payload = serde_json::json!({
+        "message_limit": body.message_limit.unwrap_or(500),
+        "capture_file_id": body.capture_file_id.unwrap_or(true),
+    });
+    if let Some(user_id) = body.mediafusion_user_id {
+        payload["mediafusion_user_id"] = serde_json::json!(user_id);
+    }
+
+    match crate::jobs::enqueue::enqueue_simple(
+        &state.pool,
+        "telegram_backup_restore",
+        &payload,
+        crate::jobs::EnqueueOpts {
+            dedupe_key: Some("telegram_backup_restore".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    {
+        Ok(Some(job_id)) => (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "status": "accepted",
+                "job_id": job_id,
+                "queue": "telegram_backup_restore",
+            })),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "detail": "A backup restore job is already queued or running",
+            })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("run_telegram_backup_restore: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": "Failed to queue backup restore job"})),
+            )
+                .into_response()
+        }
+    }
 }
 
 /// POST /api/v1/admin/telegram/migrate

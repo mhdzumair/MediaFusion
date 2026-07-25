@@ -12,6 +12,8 @@ pub struct TelegramStreamRow {
     pub file_name: Option<String>,
     pub size: Option<i64>,
     pub stream_name: Option<String>,
+    pub backup_chat_id: Option<String>,
+    pub backup_message_id: Option<i32>,
 }
 
 /// TelegramUserForward row — maps (telegram_stream_id, user_id) to the forwarded copy.
@@ -33,6 +35,8 @@ type TgStreamTuple = (
     Option<String>,
     Option<i64>,
     Option<String>,
+    Option<String>,
+    Option<i32>,
 );
 type TgForwardTuple = (i32, i32, UserId, i64, String, i64, DateTime<Utc>);
 
@@ -45,6 +49,8 @@ fn tuple_to_stream_row(r: TgStreamTuple) -> TelegramStreamRow {
         file_name: r.4,
         size: r.5,
         stream_name: r.6,
+        backup_chat_id: r.7,
+        backup_message_id: r.8,
     }
 }
 
@@ -69,7 +75,8 @@ pub async fn fetch_telegram_stream_by_chat_message(
     sqlx::query_as::<_, TgStreamTuple>(
         r#"
         SELECT ts.id, ts.file_id, ts.file_unique_id, ts.document_id,
-               ts.file_name, ts.size, st.name
+               ts.file_name, ts.size, st.name,
+               ts.backup_chat_id, ts.backup_message_id
         FROM telegram_stream ts
         JOIN stream st ON st.id = ts.stream_id
         WHERE ts.chat_id = $1 AND ts.message_id = $2
@@ -92,7 +99,8 @@ pub async fn fetch_telegram_stream_by_id(
     sqlx::query_as::<_, TgStreamTuple>(
         r#"
         SELECT ts.id, ts.file_id, ts.file_unique_id, ts.document_id,
-               ts.file_name, ts.size, st.name
+               ts.file_name, ts.size, st.name,
+               ts.backup_chat_id, ts.backup_message_id
         FROM telegram_stream ts
         JOIN stream st ON st.id = ts.stream_id
         WHERE ts.id = $1
@@ -177,6 +185,19 @@ pub async fn create_telegram_user_forward(
     .map(tuple_to_forward_row)
 }
 
+pub async fn update_telegram_stream_file_id(
+    pool: &PgPool,
+    telegram_stream_id: i32,
+    file_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE telegram_stream SET file_id = $1 WHERE id = $2")
+        .bind(file_id)
+        .bind(telegram_stream_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Delete a TelegramUserForward row (used when refreshing stale forwards).
 pub async fn delete_telegram_user_forward(pool: &PgPool, telegram_stream_id: i64, user_id: UserId) {
     let _ = sqlx::query(
@@ -234,4 +255,209 @@ pub async fn resolve_mediafusion_user_id(
     let key = crate::bot::user_mapping_key(telegram_user_id);
     let cached: Option<String> = redis.get(&key).await.ok()?;
     cached.and_then(|s| s.parse::<i32>().ok()).map(UserId)
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct TelegramBackupStats {
+    pub total_streams: i64,
+    pub with_file_id: i64,
+    pub without_file_id: i64,
+    pub with_backup: i64,
+    pub without_backup: i64,
+    pub with_file_unique_id: i64,
+}
+
+pub async fn fetch_telegram_backup_stats(pool: &PgPool) -> TelegramBackupStats {
+    let row: Option<(i64, i64, i64, i64, i64, i64)> = sqlx::query_as(
+        r#"
+        SELECT
+            COUNT(*)::bigint,
+            COUNT(*) FILTER (
+                WHERE file_id IS NOT NULL AND file_id <> ''
+            )::bigint,
+            COUNT(*) FILTER (
+                WHERE file_id IS NULL OR file_id = ''
+            )::bigint,
+            COUNT(*) FILTER (
+                WHERE backup_chat_id IS NOT NULL AND backup_chat_id <> ''
+                  AND backup_message_id IS NOT NULL
+            )::bigint,
+            COUNT(*) FILTER (
+                WHERE backup_chat_id IS NULL OR backup_chat_id = ''
+                  OR backup_message_id IS NULL
+            )::bigint,
+            COUNT(*) FILTER (
+                WHERE file_unique_id IS NOT NULL AND file_unique_id <> ''
+            )::bigint
+        FROM telegram_stream
+        "#,
+    )
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    row.map(|(total, with_file_id, without_file_id, with_backup, without_backup, with_file_unique_id)| {
+        TelegramBackupStats {
+            total_streams: total,
+            with_file_id,
+            without_file_id,
+            with_backup,
+            without_backup,
+            with_file_unique_id,
+        }
+    })
+    .unwrap_or_default()
+}
+
+#[derive(Debug, Clone)]
+pub struct TelegramStreamBackupRow {
+    pub id: i32,
+    pub chat_id: String,
+    pub message_id: i32,
+    pub file_name: String,
+    pub file_unique_id: Option<String>,
+    pub document_id: Option<i64>,
+    pub stream_name: String,
+    pub backup_chat_id: Option<String>,
+    pub backup_message_id: Option<i32>,
+    pub file_id: Option<String>,
+}
+
+type BackupRowTuple = (
+    i32,
+    String,
+    i32,
+    String,
+    Option<String>,
+    Option<i64>,
+    String,
+    Option<String>,
+    Option<i32>,
+    Option<String>,
+);
+
+fn tuple_to_backup_row(r: BackupRowTuple) -> TelegramStreamBackupRow {
+    TelegramStreamBackupRow {
+        id: r.0,
+        chat_id: r.1,
+        message_id: r.2,
+        file_name: r.3,
+        file_unique_id: r.4,
+        document_id: r.5,
+        stream_name: r.6,
+        backup_chat_id: r.7,
+        backup_message_id: r.8,
+        file_id: r.9,
+    }
+}
+
+pub async fn list_streams_for_backup_store(
+    pool: &PgPool,
+    after_id: i32,
+    limit: i64,
+    only_missing: bool,
+) -> Vec<TelegramStreamBackupRow> {
+    let rows: Vec<BackupRowTuple> = sqlx::query_as(
+        r#"
+        SELECT ts.id, ts.chat_id, ts.message_id, ts.file_name, ts.file_unique_id,
+               ts.document_id, st.name, ts.backup_chat_id, ts.backup_message_id, ts.file_id
+        FROM telegram_stream ts
+        JOIN stream st ON st.id = ts.stream_id
+        WHERE ts.id > $1
+          AND ($2 = false OR ts.backup_chat_id IS NULL OR ts.backup_chat_id = ''
+               OR ts.backup_message_id IS NULL)
+        ORDER BY ts.id
+        LIMIT $3
+        "#,
+    )
+    .bind(after_id)
+    .bind(!only_missing)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    rows.into_iter().map(tuple_to_backup_row).collect()
+}
+
+pub async fn find_stream_for_restore(
+    pool: &PgPool,
+    file_unique_id: Option<&str>,
+    file_name: Option<&str>,
+) -> Option<TelegramStreamBackupRow> {
+    if let Some(unique) = file_unique_id.filter(|s| !s.is_empty()) {
+        let row: Option<BackupRowTuple> = sqlx::query_as(
+            r#"
+            SELECT ts.id, ts.chat_id, ts.message_id, ts.file_name, ts.file_unique_id,
+                   ts.document_id, st.name, ts.backup_chat_id, ts.backup_message_id, ts.file_id
+            FROM telegram_stream ts
+            JOIN stream st ON st.id = ts.stream_id
+            WHERE ts.file_unique_id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(unique)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+        if row.is_some() {
+            return row.map(tuple_to_backup_row);
+        }
+    }
+
+    let name = file_name.filter(|s| !s.is_empty())?;
+    sqlx::query_as::<_, BackupRowTuple>(
+        r#"
+        SELECT ts.id, ts.chat_id, ts.message_id, ts.file_name, ts.file_unique_id,
+               ts.document_id, st.name, ts.backup_chat_id, ts.backup_message_id, ts.file_id
+        FROM telegram_stream ts
+        JOIN stream st ON st.id = ts.stream_id
+        WHERE ts.file_name = $1
+        ORDER BY ts.id DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(name)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None)
+    .map(tuple_to_backup_row)
+}
+
+pub async fn update_telegram_stream_backup(
+    pool: &PgPool,
+    telegram_stream_id: i32,
+    backup_chat_id: &str,
+    backup_message_id: i32,
+    file_id: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    if let Some(fid) = file_id.filter(|s| !s.is_empty()) {
+        sqlx::query(
+            r#"
+            UPDATE telegram_stream
+            SET backup_chat_id = $1, backup_message_id = $2, file_id = $3
+            WHERE id = $4
+            "#,
+        )
+        .bind(backup_chat_id)
+        .bind(backup_message_id)
+        .bind(fid)
+        .bind(telegram_stream_id)
+        .execute(pool)
+        .await?;
+    } else {
+        sqlx::query(
+            r#"
+            UPDATE telegram_stream
+            SET backup_chat_id = $1, backup_message_id = $2
+            WHERE id = $3
+            "#,
+        )
+        .bind(backup_chat_id)
+        .bind(backup_message_id)
+        .bind(telegram_stream_id)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
 }
