@@ -128,18 +128,17 @@ impl JobHandler for RegistryCrawl {
                     continue;
                 }
 
-                // Try to get info hash from direct magnet
-                let direct_hash = row
+                // Try to get info hash and magnet URI from listing row or detail page.
+                let (info_hash, magnet_url) = match row
                     .magnet_href
                     .as_deref()
                     .filter(|m| m.starts_with("magnet:"))
-                    .and_then(parser::extract_info_hash)
-                    .map(|h| h.to_lowercase());
-
-                let info_hash = match direct_hash {
-                    Some(h) => h,
+                    .and_then(|magnet| {
+                        parser::extract_info_hash(magnet)
+                            .map(|h| (h.to_lowercase(), magnet.to_string()))
+                    }) {
+                    Some(found) => found,
                     None => {
-                        // Try detail page if we have a href
                         let detail_href = match row.detail_href {
                             Some(ref d) => d.clone(),
                             None => continue,
@@ -164,13 +163,15 @@ impl JobHandler for RegistryCrawl {
                             Some(r) => r,
                             None => continue,
                         };
-                        match find_magnet_in_html(&dr.html)
-                            .as_deref()
-                            .and_then(parser::extract_info_hash)
-                        {
+                        let magnet = match find_magnet_in_html(&dr.html) {
+                            Some(m) => m,
+                            None => continue,
+                        };
+                        let hash = match parser::extract_info_hash(&magnet) {
                             Some(h) => h.to_lowercase(),
                             None => continue,
-                        }
+                        };
+                        (hash, magnet)
                     }
                 };
 
@@ -184,7 +185,7 @@ impl JobHandler for RegistryCrawl {
                     .as_deref()
                     .and_then(|s| s.trim().parse::<i32>().ok());
 
-                let parsed = parser::parse_title(&title);
+                let (stream_name, parsed) = parser::parse_magnet_stream(&magnet_url, &title);
                 let is_series = !parsed.seasons.is_empty() || !parsed.episodes.is_empty();
                 let media_type = if is_series { "series" } else { "movie" };
                 let files = if is_series {
@@ -195,7 +196,7 @@ impl JobHandler for RegistryCrawl {
 
                 let stream = ScrapedStream {
                     info_hash,
-                    name: title,
+                    name: stream_name,
                     source: indexer.source_name.to_string(),
                     seeders,
                     size,

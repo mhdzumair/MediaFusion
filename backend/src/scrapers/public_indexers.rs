@@ -298,9 +298,17 @@ async fn scrape_rss(
             if !seen.insert(info_hash.clone()) {
                 continue;
             }
-            let parsed = parser::parse_title(&title);
-            let ratio =
-                parser::similarity_ratio(parsed.title.as_deref().unwrap_or(&title), &meta.title);
+            let magnet_sources = [
+                link.as_str(),
+                item.enclosure_url.as_deref().unwrap_or(""),
+                item.description.as_deref().unwrap_or(""),
+            ];
+            let (stream_name, parsed) =
+                parser::parse_stream_name_from_sources(&magnet_sources, &title);
+            let ratio = parser::similarity_ratio(
+                parsed.title.as_deref().unwrap_or(&stream_name),
+                &meta.title,
+            );
             if ratio < sim_min {
                 continue;
             }
@@ -321,7 +329,7 @@ async fn scrape_rss(
             let size = item.description.as_deref().and_then(parse_size_bytes);
             results.push(ScrapedStream {
                 info_hash,
-                name: title,
+                name: stream_name,
                 source: indexer.source_name.to_string(),
                 seeders: Some(0),
                 size,
@@ -408,7 +416,7 @@ async fn scrape_subsplease(
                 None => continue,
             };
             let res = dl.get("res").and_then(|v| v.as_str()).unwrap_or("");
-            let name = if res.is_empty() {
+            let fallback_name = if res.is_empty() {
                 show_name.clone()
             } else {
                 format!("{show_name} - {res}p")
@@ -417,7 +425,7 @@ async fn scrape_subsplease(
                 .get("size")
                 .and_then(|v| v.as_str())
                 .and_then(parse_size_bytes);
-            let parsed = parser::parse_title(&name);
+            let (name, parsed) = parser::parse_magnet_stream(magnet, &fallback_name);
             let files = build_series_files(&parsed, season, episode);
             if files.is_empty() {
                 continue;
@@ -589,31 +597,19 @@ async fn process_row_data(
     if keyword_filters.matches_blocked_keyword(&data.title) {
         return None;
     }
-    let parsed = parser::parse_title(&data.title);
-    let ratio =
-        parser::similarity_ratio(parsed.title.as_deref().unwrap_or(&data.title), &meta.title);
-    if ratio < sim_min {
-        return None;
-    }
-    if media_type == "movie"
-        && let (Some(py), Some(my)) = (parsed.year, meta.year)
-        && py != my
-    {
-        return None;
-    }
+    let row_title = data.title.clone();
 
-    // Try direct magnet from listing row
-    let direct_hash = data
+    // Try direct magnet from listing row, otherwise follow the detail page.
+    let (info_hash, magnet_url) = match data
         .magnet_href
         .as_deref()
         .filter(|m| m.starts_with("magnet:"))
-        .and_then(parser::extract_info_hash)
-        .map(|h| h.to_lowercase());
-
-    let info_hash = match direct_hash {
-        Some(h) => h,
+        .and_then(|magnet| {
+            parser::extract_info_hash(magnet)
+                .map(|h| (h.to_lowercase(), magnet.to_string()))
+        }) {
+        Some(found) => found,
         None => {
-            // No direct magnet — follow detail page link
             let detail_href = data.detail_href?;
             if detail_href.len() > indexer.max_detail_url_length {
                 return None;
@@ -628,9 +624,25 @@ async fn process_row_data(
             )
             .await?;
             let magnet = find_magnet_in_html(&dr.html)?;
-            parser::extract_info_hash(&magnet)?.to_lowercase()
+            let hash = parser::extract_info_hash(&magnet)?.to_lowercase();
+            (hash, magnet)
         }
     };
+
+    let (stream_name, parsed) = parser::parse_magnet_stream(&magnet_url, &row_title);
+    let ratio = parser::similarity_ratio(
+        parsed.title.as_deref().unwrap_or(&stream_name),
+        &meta.title,
+    );
+    if ratio < sim_min {
+        return None;
+    }
+    if media_type == "movie"
+        && let (Some(py), Some(my)) = (parsed.year, meta.year)
+        && py != my
+    {
+        return None;
+    }
 
     let size = data.size_str.as_deref().and_then(parse_size_bytes);
     let seeders = data
@@ -649,7 +661,7 @@ async fn process_row_data(
 
     Some(ScrapedStream {
         info_hash,
-        name: data.title,
+        name: stream_name,
         source: indexer.source_name.to_string(),
         seeders,
         size,

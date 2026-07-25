@@ -834,15 +834,23 @@ pub async fn scrape_feed(
         let size = extract_size(item, patterns);
         let seeders = extract_seeders(item, patterns);
 
+        let magnet_sources = [
+            item.enclosure_url.as_deref().unwrap_or(""),
+            item.link.as_deref().unwrap_or(""),
+            item.description.as_deref().unwrap_or(""),
+        ];
+        let (stream_name, stream_parsed) =
+            parser::parse_stream_name_from_sources(&magnet_sources, &title);
+
         let media = if sports_feed {
             // Sports path: use sports stub creator (sets is_add_title_to_poster=true) + catalog link
-            let clean_title = parser::sports_parser::clean_sports_title(&title);
-            let detected_cat = parser::sports_parser::detect_sports_category(&title);
+            let clean_title = parser::sports_parser::clean_sports_title(&stream_name);
+            let detected_cat = parser::sports_parser::detect_sports_category(&stream_name);
             let sports_catalog = resolved_catalog_id.or(detected_cat).unwrap_or("sports");
             let catalogs: Vec<&str> = vec![sports_catalog];
 
             // Extract year from sports title parser
-            let sports_parsed = parser::sports_parser::parse_sports_title(&title);
+            let sports_parsed = parser::sports_parser::parse_sports_title(&stream_name);
             let year = sports_parsed.year;
 
             match crate::scrapers::media_resolve::find_or_create_sports_stub(
@@ -871,7 +879,7 @@ pub async fn scrape_feed(
             }
         } else {
             // Standard PTT path
-            let parsed = parser::parse_title(&title);
+            let parsed = stream_parsed.clone();
             let is_series = match content_type.trim().to_ascii_lowercase().as_str() {
                 "series" => true,
                 "movies" => false,
@@ -888,7 +896,7 @@ pub async fn scrape_feed(
                 .title
                 .as_deref()
                 .filter(|t| !t.is_empty())
-                .unwrap_or(&title);
+                .unwrap_or(&stream_name);
 
             match find_or_create_media(
                 pool,
@@ -919,22 +927,21 @@ pub async fn scrape_feed(
 
         // For stream upsert we need is_series and parsed; re-derive for non-sports
         let (is_series_for_stream, parsed_for_stream) = if sports_feed {
-            (false, parser::parse_title(&title))
+            (false, parser::parse_title(&stream_name))
         } else {
-            let parsed = parser::parse_title(&title);
             let is_series = match content_type.trim().to_ascii_lowercase().as_str() {
                 "series" => true,
                 "movies" => false,
-                _ => !parsed.seasons.is_empty() || !parsed.episodes.is_empty(),
+                _ => !stream_parsed.seasons.is_empty() || !stream_parsed.episodes.is_empty(),
             };
-            (is_series, parsed)
+            (is_series, stream_parsed.clone())
         };
 
         // Upsert stream
         match upsert_rss_stream(
             pool,
             &info_hash,
-            &title,
+            &stream_name,
             &source,
             seeders,
             size,
@@ -951,7 +958,7 @@ pub async fn scrape_feed(
                 processed += 1;
                 info!(
                     "rss_scraper: inserted stream for '{}' ({:?}) → media {} ({})",
-                    title, media.year, media.id, media.title
+                    stream_name, media.year, media.id, media.title
                 );
             }
             RssStreamUpsert::Skipped(reason) => {

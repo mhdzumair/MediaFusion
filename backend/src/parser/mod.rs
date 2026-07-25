@@ -108,6 +108,55 @@ pub fn extract_info_hash(s: &str) -> Option<String> {
     re.find(s).map(|m| m.as_str().to_lowercase())
 }
 
+/// Extract the display name (`dn`) from a magnet URI.
+pub fn extract_magnet_dn(magnet: &str) -> Option<String> {
+    static DN_RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = DN_RE.get_or_init(|| regex::Regex::new(r"[?&]dn=([^&]+)").unwrap());
+    re.captures(magnet).and_then(|c| c.get(1)).map(|m| {
+        let plus_decoded = m.as_str().replace('+', "%20");
+        urlencoding::decode(&plus_decoded)
+            .unwrap_or_default()
+            .into_owned()
+    })
+}
+
+/// Extract a magnet URI from a string that may be a bare magnet link or embed one.
+pub fn extract_magnet_uri(s: &str) -> Option<String> {
+    let trimmed = s.trim();
+    if trimmed.starts_with("magnet:") {
+        return Some(trimmed.replace("&amp;", "&"));
+    }
+    static MAGNET_RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = MAGNET_RE.get_or_init(|| regex::Regex::new(r#"magnet:\?[^\s"'<>]+"#).unwrap());
+    re.find(trimmed)
+        .map(|m| m.as_str().replace("&amp;", "&"))
+}
+
+/// Best stream/torrent name for a scraped magnet link.
+/// Uses the magnet `dn=` display name when present; otherwise `fallback`.
+pub fn stream_name_from_magnet(magnet: &str, fallback: &str) -> String {
+    extract_magnet_dn(magnet)
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| fallback.trim().to_string())
+}
+
+/// Parse stream metadata from a magnet URI using `dn=` when available.
+pub fn parse_magnet_stream(magnet: &str, fallback: &str) -> (String, ParsedTitle) {
+    let name = stream_name_from_magnet(magnet, fallback);
+    (name.clone(), parse_title(&name))
+}
+
+/// Parse stream metadata, preferring magnet `dn=` found in any of `sources`.
+pub fn parse_stream_name_from_sources(sources: &[&str], fallback: &str) -> (String, ParsedTitle) {
+    for source in sources {
+        if let Some(magnet) = extract_magnet_uri(source) {
+            return parse_magnet_stream(&magnet, fallback);
+        }
+    }
+    let name = fallback.trim().to_string();
+    (name.clone(), parse_title(&name))
+}
+
 /// Title similarity ratio (0–100) — mirrors Python `calculate_max_similarity_ratio`.
 ///
 /// Uses word-token Jaccard similarity after normalisation (lowercase, alphanumeric only).
@@ -128,6 +177,37 @@ fn normalise(s: &str) -> Vec<String> {
         .filter(|t| !t.is_empty())
         .map(|t| t.to_string())
         .collect()
+}
+
+#[cfg(test)]
+mod magnet_tests {
+    use super::*;
+
+    #[test]
+    fn stream_name_prefers_magnet_dn() {
+        let magnet = "magnet:?xt=urn:btih:abc123deadbeefabc123deadbeefabc123&dn=Movie.2026.1080p.WEB-DL";
+        assert_eq!(
+            stream_name_from_magnet(magnet, "Movie (2026) HDRip"),
+            "Movie.2026.1080p.WEB-DL"
+        );
+    }
+
+    #[test]
+    fn parse_stream_name_from_sources_finds_embedded_magnet() {
+        let html = r#"<a href="magnet:?xt=urn:btih:abc123deadbeefabc123deadbeefabc123&dn=Show.S01E01.1080p.WEB">link</a>"#;
+        let (name, parsed) =
+            parse_stream_name_from_sources(&[html], "Show S01E01 Generic Title");
+        assert_eq!(name, "Show.S01E01.1080p.WEB");
+        assert_eq!(parsed.resolution.as_deref(), Some("1080p"));
+    }
+
+    #[test]
+    fn parse_magnet_stream_falls_back_without_dn() {
+        let magnet = "magnet:?xt=urn:btih:abc123deadbeefabc123deadbeefabc123";
+        let (name, parsed) = parse_magnet_stream(magnet, "Fallback.2026.720p.WEB-DL");
+        assert_eq!(name, "Fallback.2026.720p.WEB-DL");
+        assert_eq!(parsed.resolution.as_deref(), Some("720p"));
+    }
 }
 
 fn jaccard(a: &str, b: &str) -> u32 {

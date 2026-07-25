@@ -190,7 +190,8 @@ impl JobHandler for ArabTorrentsCrawl {
                 let is_series = item.video_type == "series";
                 let media_type = if is_series { "series" } else { "movie" };
 
-                let parsed = parser::parse_title(&item.title);
+                let (stream_name, parsed) =
+                    parser::parse_magnet_stream(&item.magnet_link, &item.title);
                 let files = if is_series {
                     build_series_files(&parsed, None, None)
                 } else {
@@ -199,7 +200,7 @@ impl JobHandler for ArabTorrentsCrawl {
 
                 let stream = ScrapedStream {
                     info_hash,
-                    name: item.title.clone(),
+                    name: stream_name,
                     source: SOURCE.to_string(),
                     seeders: None,
                     size: None,

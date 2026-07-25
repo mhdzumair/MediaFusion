@@ -92,18 +92,6 @@ pub fn extract_info_hash_from_magnet(magnet: &str) -> Option<String> {
     })
 }
 
-fn extract_dn(magnet: &str) -> Option<String> {
-    static DN_RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = DN_RE.get_or_init(|| regex::Regex::new(r"[?&]dn=([^&]+)").unwrap());
-    re.captures(magnet).and_then(|c| c.get(1)).map(|m| {
-        // Replace + with space before percent-decoding (magnet dn uses + for spaces)
-        let plus_decoded = m.as_str().replace('+', "%20");
-        urlencoding::decode(&plus_decoded)
-            .unwrap_or_default()
-            .into_owned()
-    })
-}
-
 /// Decode a 32-char Base32 string (RFC 4648 alphabet, uppercase) to a 40-char hex string.
 fn base32_to_hex(s: &str) -> Option<String> {
     let upper = s.to_uppercase();
@@ -620,7 +608,7 @@ pub async fn analyze_magnet(
             .await
             .unwrap_or(false);
 
-    let torrent_name = extract_dn(&body.magnet_link)
+    let torrent_name = parser::extract_magnet_dn(&body.magnet_link)
         .or_else(|| body.title.clone())
         .unwrap_or_default();
 
@@ -917,7 +905,7 @@ pub async fn analyze_magnet_for_bot(
         }
     };
 
-    let torrent_name = extract_dn(magnet_link).unwrap_or_default();
+    let torrent_name = parser::extract_magnet_dn(magnet_link).unwrap_or_default();
     if !torrent_name.is_empty() && is_adult_content(&torrent_name) {
         return json!({"success": false, "error": "Adult content is not allowed"});
     }
@@ -1204,7 +1192,7 @@ pub async fn import_magnet(
         }
     };
 
-    let torrent_name = extract_dn(&magnet_link)
+    let torrent_name = parser::extract_magnet_dn(&magnet_link)
         .or_else(|| title.clone())
         .unwrap_or_default();
     let name_for_parse = if torrent_name.is_empty() {

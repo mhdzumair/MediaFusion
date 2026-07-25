@@ -255,10 +255,11 @@ async fn scrape_movierulz(args: &serde_json::Value, ctx: &JobCtx) -> Result<(), 
             else {
                 continue;
             };
-            let parsed = parser::parse_title(&page_title);
+            let stream_name = parser::stream_name_from_magnet(&magnet, &page_title);
+            let parsed = parser::parse_title(&stream_name);
             block_streams.push(ScrapedStream {
                 info_hash,
-                name: page_title.clone(),
+                name: stream_name,
                 source: SOURCE.to_string(),
                 seeders: None,
                 size: None,
@@ -345,5 +346,13 @@ mod tests {
         assert_eq!(title, "Peter (2026) HDRip");
         assert_eq!(magnets.len(), 1);
         assert!(magnets[0].starts_with("magnet:"));
+    }
+
+    #[test]
+    fn magnet_dn_drives_stream_resolution() {
+        let magnet = "magnet:?xt=urn:btih:abc123deadbeefabc123deadbeefabc123&dn=Peter.(2026).1080p.WEB-DL";
+        let stream_name = parser::stream_name_from_magnet(magnet, "Peter (2026) HDRip");
+        let parsed = parser::parse_title(&stream_name);
+        assert_eq!(parsed.resolution.as_deref(), Some("1080p"));
     }
 }

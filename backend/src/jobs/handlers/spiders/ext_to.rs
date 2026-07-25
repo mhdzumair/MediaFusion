@@ -851,28 +851,32 @@ pub(crate) async fn scrape_ext_catalog(
                     continue;
                 };
 
+                let stream_name = parser::stream_name_from_magnet(&magnet, &title);
+
                 // Always parse technical metadata via sports-aware PTT.
                 // For generic movie/TV catalog, fall back to standard parsing
                 // for non-sports titles.
-                let parsed = if spec.category != "ext_to_movie" || parser::is_sports_title(&title) {
-                    parser::parse_sports_title(&title)
+                let parsed = if spec.category != "ext_to_movie"
+                    || parser::is_sports_title(&stream_name)
+                {
+                    parser::parse_sports_title(&stream_name)
                 } else {
-                    parser::parse_title(&title)
+                    parser::parse_title(&stream_name)
                 };
 
                 // Determine whether this is a weekly series episode (Raw,
                 // SmackDown, NXT, …), a race weekend (grouped into a series
                 // with one episode per session), Drive to Survive, or a
                 // standalone movie (PPV events, etc.).
-                let wwe_info = parser::classify_fighting_series_title(&title);
-                let racing_info = parser::parse_racing_title(&title);
-                let drive_to_survive = parser::classify_drive_to_survive(&title);
+                let wwe_info = parser::classify_fighting_series_title(&stream_name);
+                let racing_info = parser::parse_racing_title(&stream_name);
+                let drive_to_survive = parser::classify_drive_to_survive(&stream_name);
                 let (clean_title, year, effective_media_type, files) =
                     if let Some((series_title, season, episode)) = drive_to_survive {
                         let episode_title = parsed
                             .episode_title
                             .clone()
-                            .unwrap_or_else(|| parser::clean_sports_title(&title));
+                            .unwrap_or_else(|| parser::clean_sports_title(&stream_name));
                         let files = vec![StreamFile {
                             file_index: 0,
                             filename: episode_title,
@@ -881,7 +885,7 @@ pub(crate) async fn scrape_ext_catalog(
                         }];
                         (series_title, None, "series", files)
                     } else if let Some(ref info) = wwe_info {
-                        let episode_title = parser::clean_sports_title(&title);
+                        let episode_title = parser::clean_sports_title(&stream_name);
                         let files = vec![StreamFile {
                             file_index: 0,
                             filename: episode_title,
@@ -893,7 +897,7 @@ pub(crate) async fn scrape_ext_catalog(
                         let display_title = racing
                             .session
                             .clone()
-                            .unwrap_or_else(|| parser::clean_sports_title(&title));
+                            .unwrap_or_else(|| parser::clean_sports_title(&stream_name));
                         let files = formula_racing::resolve_racing_files(
                             spec.source,
                             &info_hash,
@@ -907,9 +911,9 @@ pub(crate) async fn scrape_ext_catalog(
                         (racing.series_title.clone(), racing.year, "series", files)
                     } else {
                         let clean = if spec.category == "fighting" {
-                            parser::clean_fighting_event_title(&title)
+                            parser::clean_fighting_event_title(&stream_name)
                         } else {
-                            parsed.title.clone().unwrap_or_else(|| title.clone())
+                            parsed.title.clone().unwrap_or_else(|| stream_name.clone())
                         };
                         (clean, parsed.year, spec.media_type, vec![])
                     };
@@ -918,7 +922,7 @@ pub(crate) async fn scrape_ext_catalog(
                     "{}: ✓ title=\"{}\" info_hash={} seeders={:?} size={:?} uploader={:?} \
                      clean_title=\"{}\" year={:?} media_type={}",
                     spec.source,
-                    title,
+                    stream_name,
                     info_hash,
                     seeders,
                     size,
@@ -985,7 +989,7 @@ pub(crate) async fn scrape_ext_catalog(
 
                 let stream = ScrapedStream {
                     info_hash,
-                    name: title,
+                    name: stream_name,
                     source: spec.source.to_string(),
                     seeders,
                     size,

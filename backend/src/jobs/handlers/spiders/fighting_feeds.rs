@@ -227,18 +227,19 @@ async fn scrape_fighting_feeds(ctx: &JobCtx) -> Result<(), JobError> {
                 continue;
             };
 
+            let stream_name = parser::stream_name_from_magnet(&magnet, &title);
             let (clean_title, year, effective_media_type, files, parsed) =
-                classify_sports_rss_release(&title, &info_hash, SOURCE, pool, proxy_url).await;
+                classify_sports_rss_release(&stream_name, &info_hash, SOURCE, pool, proxy_url).await;
 
             let source = format!("{SOURCE}/{}", feed.label);
             info!(
-                "{source}: ✓ title=\"{title}\" info_hash={info_hash} clean_title=\"{clean_title}\" \
+                "{source}: ✓ title=\"{stream_name}\" info_hash={info_hash} clean_title=\"{clean_title}\" \
                  media_type={effective_media_type}"
             );
 
             persist_sports_rss_stream(
                 pool,
-                &title,
+                &stream_name,
                 &info_hash,
                 clean_title,
                 year,

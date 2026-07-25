@@ -231,7 +231,9 @@ impl JobHandler for EztvRssCrawl {
             // Rate-limit per item
             rate_limit::wait("eztv.re", 5).await;
 
-            let parsed = parser::parse_title(&title);
+            let magnet_sources = [item.enclosure_url.as_deref().unwrap_or("")];
+            let (stream_name, parsed) =
+                parser::parse_stream_name_from_sources(&magnet_sources, &title);
             let is_series = !parsed.seasons.is_empty() || !parsed.episodes.is_empty();
             let media_type = if is_series { "series" } else { "movie" };
             let files = if is_series {
@@ -242,7 +244,7 @@ impl JobHandler for EztvRssCrawl {
 
             let stream = ScrapedStream {
                 info_hash,
-                name: title,
+                name: stream_name,
                 source: "EZTV".to_string(),
                 seeders: item.seeds,
                 size: item.enclosure_size,

@@ -306,9 +306,13 @@ async fn scrape_tamil_forum(
                     continue;
                 }
 
-                // Parse the title once for this topic.
-                let parsed = parser::parse_title(&title);
-                let clean_title = parsed.title.as_deref().unwrap_or(&title).to_string();
+                // Topic title drives media lookup; each torrent name drives stream metadata.
+                let topic_parsed = parser::parse_title(&title);
+                let clean_title = topic_parsed
+                    .title
+                    .as_deref()
+                    .unwrap_or(&title)
+                    .to_string();
 
                 // Resolve or create media (PTT clean title → DB lookup → TMDB → stub).
                 let tmdb_key = ctx.state.config.tmdb_api_key.as_deref();
@@ -322,7 +326,7 @@ async fn scrape_tamil_forum(
                     pool,
                     &ctx.state.http,
                     &clean_title,
-                    parsed.year,
+                    topic_parsed.year,
                     is_series,
                     &catalog_ids,
                     tmdb_key,
@@ -347,7 +351,7 @@ async fn scrape_tamil_forum(
                     media_id: crate::db::MediaId(media_id),
                     imdb_id,
                     title: clean_title.clone(),
-                    year: parsed.year,
+                    year: topic_parsed.year,
                 };
 
                 // Each torrent link for this topic becomes one ScrapedStream.
@@ -377,18 +381,20 @@ async fn scrape_tamil_forum(
                         continue;
                     };
 
+                    let torrent_name = torrent_info.name.unwrap_or_else(|| title.clone());
+                    let stream_parsed = parser::parse_title(&torrent_name);
                     let files = if is_series {
-                        build_series_files(&parsed, None, None)
+                        build_series_files(&stream_parsed, None, None)
                     } else {
                         vec![]
                     };
                     let stream = ScrapedStream {
                         info_hash: torrent_info.info_hash,
-                        name: torrent_info.name.unwrap_or_else(|| title.clone()),
+                        name: torrent_name,
                         source: source_label.to_string(),
                         seeders: None,
                         size: torrent_info.total_size,
-                        parsed: parsed.clone(),
+                        parsed: stream_parsed,
                         files,
                         is_cached: false,
                         torrent_type: crate::db::TorrentType::Public,
@@ -734,5 +740,21 @@ mod tests {
             "Movie Dual Audio ENG"
         ));
         assert!(should_link_catalog("tamil", "hdrip", "Jailer (2023)"));
+    }
+
+    #[test]
+    fn stream_metadata_parsed_from_torrent_name_not_topic_title() {
+        let topic = "Peddi (2026) HD-Rip";
+        let torrent_4k = "www.1TamilMV.report - Peddi (2026) TRUE WEB-DL - 4K SDR - HEVC - [Tam + Tel + Mal + Kan] - (DD+5.1 - 640Kbps & AAC) - 19.5GB - ESub.mkv";
+        let torrent_1080p = "www.1TamilMV.report - Peddi (2026) TRUE WEB-DL - 1080p - AVC - [Tam + Tel + Mal + Kan] - (DD+5.1 - 640Kbps & AAC) - 10GB - ESub.mkv";
+
+        let topic_parsed = crate::parser::parse_title(topic);
+        let parsed_4k = crate::parser::parse_title(torrent_4k);
+        let parsed_1080p = crate::parser::parse_title(torrent_1080p);
+
+        assert_eq!(topic_parsed.title.as_deref(), Some("Peddi"));
+        assert_eq!(parsed_4k.resolution.as_deref(), Some("2160p"));
+        assert_eq!(parsed_1080p.resolution.as_deref(), Some("1080p"));
+        assert_ne!(parsed_4k.resolution, parsed_1080p.resolution);
     }
 }
