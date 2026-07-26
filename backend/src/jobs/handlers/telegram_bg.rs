@@ -124,9 +124,7 @@ fn parse_job_message_limit(args: &serde_json::Value) -> Option<i32> {
 
 fn parse_channel_message_limit(args: &serde_json::Value, channel: Option<&str>) -> Option<i32> {
     if let Some(channel) = channel
-        && let Some(channel_cfg) = args
-            .get("channel_limits")
-            .and_then(|v| v.get(channel))
+        && let Some(channel_cfg) = args.get("channel_limits").and_then(|v| v.get(channel))
     {
         if channel_cfg
             .get("scrape_all_messages")
@@ -229,8 +227,7 @@ async fn run_user_scrape(
             return Err(JobError::Cancelled);
         }
 
-        if let (Some(api), Some(mid), Some(chat_id)) = (api, progress_message_id, chat_id)
-        {
+        if let (Some(api), Some(mid), Some(chat_id)) = (api, progress_message_id, chat_id) {
             let channel_limit = parse_channel_message_limit(args, Some(channel));
             let channel_limit_label = format_scrape_message_limit(channel_limit);
             let progress = if channels.len() == 1 {
@@ -248,14 +245,8 @@ async fn run_user_scrape(
         }
 
         let channel_limit = parse_channel_message_limit(args, Some(channel));
-        let metrics = scrape_and_persist_channel(
-            ctx,
-            &client,
-            channel,
-            channel_limit,
-            min_size,
-        )
-        .await;
+        let metrics =
+            scrape_and_persist_channel(ctx, &client, channel, channel_limit, min_size).await;
         totals.imported += metrics.imported;
         totals.skipped += metrics.skipped;
         totals.errors += metrics.errors;
@@ -371,17 +362,14 @@ async fn send_scrape_notifications(
     let admin_chat_id = notification_chat_id
         .parse::<i64>()
         .unwrap_or(chat_id.unwrap_or(0));
-    match api
-        .send_message(admin_chat_id, &admin_summary, None)
-        .await
-    {
+    match api.send_message(admin_chat_id, &admin_summary, None).await {
         Ok(_) => info!(
             "telegram_bg: sent admin scrape summary to chat {admin_chat_id} for user {}",
             mediafusion_user_id.0
         ),
-        Err(e) => warn!(
-            "telegram_bg: failed to send admin scrape summary to chat {admin_chat_id}: {e}"
-        ),
+        Err(e) => {
+            warn!("telegram_bg: failed to send admin scrape summary to chat {admin_chat_id}: {e}")
+        }
     }
 }
 
@@ -525,12 +513,8 @@ async fn scrape_and_persist_channel(
         input.document_id = enrichment.document_id.or(input.document_id);
         input.file_unique_id = enrichment.file_unique_id.or(input.file_unique_id);
 
-        let mut opts = stream_convert::scraper_store_opts(
-            meta.media_id,
-            media_type,
-            season,
-            episode,
-        );
+        let mut opts =
+            stream_convert::scraper_store_opts(meta.media_id, media_type, season, episode);
         opts.episode_end = episode_end;
         match crate::db::store_telegram_stream(&ctx.state.pool, &input, &opts).await {
             Ok(r) if r.was_inserted() => metrics.imported += 1,

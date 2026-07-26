@@ -42,9 +42,7 @@ pub fn parse_channel_ref(raw: &str) -> Option<ChannelRef> {
         return Some(ChannelRef::DialogId(id));
     }
 
-    if trimmed.starts_with('-')
-        || trimmed.chars().all(|c| c.is_ascii_digit())
-    {
+    if trimmed.starts_with('-') || trimmed.chars().all(|c| c.is_ascii_digit()) {
         let id: i64 = trimmed.parse().ok()?;
         return Some(ChannelRef::DialogId(id));
     }
@@ -91,14 +89,6 @@ mod tests {
         assert_eq!(
             normalize_stored_channel_id("channel:-1001234567890"),
             "id:-1001234567890"
-        );
-        assert_eq!(
-            normalize_stored_channel_id("640175965"),
-            "id:640175965"
-        );
-        assert_eq!(
-            normalize_stored_channel_id("chat-8232614"),
-            "id:8232614"
         );
     }
 

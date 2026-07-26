@@ -5,7 +5,7 @@ use tracing::info;
 
 use crate::{
     db::{
-        telegram::{list_streams_for_backup_store, TelegramStreamBackupRow},
+        telegram::{TelegramStreamBackupRow, list_streams_for_backup_store},
         types::UserId,
     },
     jobs::{
@@ -13,8 +13,8 @@ use crate::{
         handler::{JobCtx, JobHandler},
     },
     services::telegram_backup::{
-        resolve_mtproto_client, restore_stream_from_backup_message, store_stream_to_backup,
-        BackupBatchMetrics,
+        BackupBatchMetrics, resolve_mtproto_client, restore_stream_from_backup_message,
+        store_stream_to_backup,
     },
     services::telegram_peer,
 };
@@ -78,13 +78,9 @@ async fn run_backup_store_batch(
     after_id: i32,
 ) -> Result<(BackupBatchMetrics, i32), JobError> {
     let batch_size = args.batch_size.clamp(1, 200);
-    let rows = list_streams_for_backup_store(
-        &ctx.state.pool,
-        after_id,
-        batch_size,
-        args.only_missing,
-    )
-    .await;
+    let rows =
+        list_streams_for_backup_store(&ctx.state.pool, after_id, batch_size, args.only_missing)
+            .await;
 
     if rows.is_empty() {
         return Ok((BackupBatchMetrics::default(), after_id));
@@ -144,7 +140,9 @@ impl JobHandler for TelegramBackupStore {
             .filter(|s| !s.is_empty())
             .is_none()
         {
-            return Err(JobError::other("TELEGRAM_BACKUP_CHANNEL_ID is not configured"));
+            return Err(JobError::other(
+                "TELEGRAM_BACKUP_CHANNEL_ID is not configured",
+            ));
         }
 
         let preferred = args.mediafusion_user_id.map(UserId);
@@ -161,7 +159,8 @@ impl JobHandler for TelegramBackupStore {
                 return Err(JobError::Cancelled);
             }
 
-            let (batch, last_id) = run_backup_store_batch(&ctx, &args, client.as_ref(), after_id).await?;
+            let (batch, last_id) =
+                run_backup_store_batch(&ctx, &args, client.as_ref(), after_id).await?;
             if batch.processed == 0 {
                 break;
             }
@@ -255,10 +254,7 @@ impl JobHandler for TelegramBackupRestore {
                         Ok(Some(_)) => metrics.restored += 1,
                         Ok(None) => metrics.skipped += 1,
                         Err(e) => {
-                            tracing::debug!(
-                                "telegram_backup_restore: msg {} — {e}",
-                                message.id()
-                            );
+                            tracing::debug!("telegram_backup_restore: msg {} — {e}", message.id());
                             metrics.skipped += 1;
                         }
                     }

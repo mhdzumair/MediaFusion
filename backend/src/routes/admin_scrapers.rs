@@ -3158,12 +3158,11 @@ async fn request_job_cancellation(pool: &sqlx::PgPool, job_id: i64) -> Result<bo
         return Ok(true);
     }
 
-    let running = sqlx::query(
-        "UPDATE jobs SET cancel_requested = true WHERE id = $1 AND status = 'running'",
-    )
-    .bind(job_id)
-    .execute(pool)
-    .await?;
+    let running =
+        sqlx::query("UPDATE jobs SET cancel_requested = true WHERE id = $1 AND status = 'running'")
+            .bind(job_id)
+            .execute(pool)
+            .await?;
 
     Ok(running.rows_affected() > 0)
 }

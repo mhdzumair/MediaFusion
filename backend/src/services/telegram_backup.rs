@@ -3,7 +3,7 @@
 //! Copies media to the configured backup channel as a new message (not a forward).
 //! Used during scrape enrichment and admin backup store/restore jobs.
 
-use grammers_client::{message::InputMessage, Client, message::Message};
+use grammers_client::{Client, message::InputMessage, message::Message};
 use grammers_session::types::PeerRef;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -199,12 +199,9 @@ pub async fn enrich_scraped_stream(
     enrichment.backup_message_id = Some(result.backup_message_id);
 
     if let Ok(api) = BotApi::from_state(state) {
-        enrichment.file_id = capture_file_id_from_backup(
-            &api,
-            &result.backup_chat_id,
-            result.backup_message_id,
-        )
-        .await;
+        enrichment.file_id =
+            capture_file_id_from_backup(&api, &result.backup_chat_id, result.backup_message_id)
+                .await;
     }
 
     enrichment
@@ -264,12 +261,9 @@ pub async fn store_stream_to_backup(
 
     if capture_file_id {
         if let Ok(api) = BotApi::from_state(state) {
-            result.file_id = capture_file_id_from_backup(
-                &api,
-                &result.backup_chat_id,
-                result.backup_message_id,
-            )
-            .await;
+            result.file_id =
+                capture_file_id_from_backup(&api, &result.backup_chat_id, result.backup_message_id)
+                    .await;
         }
     }
 
@@ -292,7 +286,9 @@ pub async fn restore_stream_from_backup_message(
     message: &Message,
     capture_file_id: bool,
 ) -> Result<Option<i32>, String> {
-    let media = message.media().ok_or_else(|| "backup message has no media".to_string())?;
+    let media = message
+        .media()
+        .ok_or_else(|| "backup message has no media".to_string())?;
     let _ = media;
 
     let caption = message.text();
@@ -317,13 +313,9 @@ pub async fn restore_stream_from_backup_message(
 
     if capture_file_id {
         if let Ok(api) = BotApi::from_state(state) {
-            file_id = capture_file_id_from_backup(
-                &api,
-                backup_channel,
-                backup_message_id,
-            )
-            .await
-            .or(file_id);
+            file_id = capture_file_id_from_backup(&api, backup_channel, backup_message_id)
+                .await
+                .or(file_id);
         }
     }
 
@@ -345,7 +337,11 @@ pub async fn resolve_mtproto_client(
     preferred_user_id: Option<crate::db::types::UserId>,
 ) -> Result<(crate::db::types::UserId, Arc<Client>), String> {
     if let Some(user_id) = preferred_user_id {
-        if let Some(client) = state.telegram_clients.get_client(&state.pool, user_id).await {
+        if let Some(client) = state
+            .telegram_clients
+            .get_client(&state.pool, user_id)
+            .await
+        {
             return Ok((user_id, client));
         }
         return Err(format!(
@@ -355,7 +351,11 @@ pub async fn resolve_mtproto_client(
     }
 
     for user_id in crate::db::user_telegram_session::list_session_user_ids(&state.pool).await {
-        if let Some(client) = state.telegram_clients.get_client(&state.pool, user_id).await {
+        if let Some(client) = state
+            .telegram_clients
+            .get_client(&state.pool, user_id)
+            .await
+        {
             return Ok((user_id, client));
         }
     }

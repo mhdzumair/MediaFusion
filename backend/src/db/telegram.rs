@@ -296,16 +296,25 @@ pub async fn fetch_telegram_backup_stats(pool: &PgPool) -> TelegramBackupStats {
     .await
     .unwrap_or(None);
 
-    row.map(|(total, with_file_id, without_file_id, with_backup, without_backup, with_file_unique_id)| {
-        TelegramBackupStats {
-            total_streams: total,
+    row.map(
+        |(
+            total,
             with_file_id,
             without_file_id,
             with_backup,
             without_backup,
             with_file_unique_id,
-        }
-    })
+        )| {
+            TelegramBackupStats {
+                total_streams: total,
+                with_file_id,
+                without_file_id,
+                with_backup,
+                without_backup,
+                with_file_unique_id,
+            }
+        },
+    )
     .unwrap_or_default()
 }
 

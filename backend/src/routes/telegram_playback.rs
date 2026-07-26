@@ -373,10 +373,7 @@ async fn copy_backup_to_user(
         .get("message_id")
         .and_then(|v| v.as_i64())
         .ok_or(PlaybackError::BotApiError("copyMessage: no message_id"))?;
-    Ok(((
-        telegram_user_id.to_string(),
-        message_id,
-    ), file_id))
+    Ok(((telegram_user_id.to_string(), message_id), file_id))
 }
 
 fn extract_bot_file_id(message: &serde_json::Value) -> Option<String> {

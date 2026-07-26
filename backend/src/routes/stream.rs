@@ -3040,14 +3040,7 @@ fn format_telegram_stream(
 
     let (title_tpl, desc_tpl) = resolve_templates(stream_template);
     let ctx = build_stream_context(
-        row,
-        "telegram",
-        addon_name,
-        None,
-        false,
-        media_meta,
-        season,
-        episode,
+        row, "telegram", addon_name, None, false, media_meta, season, episode,
     );
     let title_str = template::render(&title_tpl, &ctx);
     let desc_str = template::render(&desc_tpl, &ctx);
