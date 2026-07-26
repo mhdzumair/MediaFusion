@@ -336,13 +336,13 @@ pub async fn set_external_id_for_media(
     .ok()
     .flatten();
 
-    if let Some(owner_id) = existing_owner {
-        if owner_id != media_id {
-            debug!(
-                "set_external_id_for_media: {provider}={external_id} already linked to media {owner_id}, skipping media {media_id}"
-            );
-            return false;
-        }
+    if let Some(owner_id) = existing_owner
+        && owner_id != media_id
+    {
+        debug!(
+            "set_external_id_for_media: {provider}={external_id} already linked to media {owner_id}, skipping media {media_id}"
+        );
+        return false;
     }
 
     if let Err(e) = sqlx::query(
