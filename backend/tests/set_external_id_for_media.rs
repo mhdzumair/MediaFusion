@@ -144,7 +144,10 @@ async fn set_external_id_for_media_rejects_id_owned_by_other_media() {
         "must not steal an external id from another media row"
     );
 
-    assert_eq!(imdb_ids_for_media(pool, target_id).await, Vec::<String>::new());
+    assert_eq!(
+        imdb_ids_for_media(pool, target_id).await,
+        Vec::<String>::new()
+    );
 
     cleanup.finish().await;
 }
