@@ -1213,8 +1213,8 @@ pub fn embedded_media_keyword_file_stats() -> EmbeddedKeywordFileStats {
         if trimmed.is_empty() {
             continue;
         }
-        if trimmed.starts_with('!') {
-            if !trimmed[1..].trim().is_empty() {
+        if let Some(stripped) = trimmed.strip_prefix('!') {
+            if !stripped.trim().is_empty() {
                 whitelist_count += 1;
             }
         } else {

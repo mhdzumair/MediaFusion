@@ -140,12 +140,11 @@ pub async fn resolve_stream_id_for_tracking(
     if let Some(id) = stream_info.get("id").and_then(|v| v.as_i64()) {
         return Some((id as i32, media_id));
     }
-    if let Some(hash) = stream_info.get("info_hash").and_then(|v| v.as_str()) {
-        if let Some((stream_id, linked_media_id)) =
+    if let Some(hash) = stream_info.get("info_hash").and_then(|v| v.as_str())
+        && let Some((stream_id, linked_media_id)) =
             resolve_stream_id_from_info_hash(pool, hash).await
-        {
-            return Some((stream_id, linked_media_id));
-        }
+    {
+        return Some((stream_id, linked_media_id));
     }
     None
 }

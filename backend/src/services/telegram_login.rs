@@ -28,13 +28,19 @@ enum PendingEntry {
     AwaitingPassword {
         session: Arc<MemorySession>,
         client: Arc<Client>,
-        password_token: PasswordToken,
+        password_token: Box<PasswordToken>,
         _runner: JoinHandle<()>,
     },
 }
 
 pub struct PendingLoginStore {
     entries: Mutex<HashMap<i32, PendingEntry>>,
+}
+
+impl Default for PendingLoginStore {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PendingLoginStore {
@@ -214,7 +220,7 @@ pub async fn verify_code(
                     PendingEntry::AwaitingPassword {
                         session,
                         client,
-                        password_token,
+                        password_token: Box::new(password_token),
                         _runner,
                     },
                 );
@@ -279,7 +285,7 @@ pub async fn verify_password(
     };
 
     let user = client
-        .check_password(password_token, password)
+        .check_password(*password_token, password)
         .await
         .map_err(|e| match e {
             SignInError::InvalidPassword(_) => "invalid 2FA password".to_string(),

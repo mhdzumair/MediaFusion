@@ -1497,9 +1497,7 @@ pub async fn get_media_streams(
             let keyword_blocked = kf.is_stream_text_blocked(&r.name, r.filename.as_deref());
 
             // Build playback URL for torrent/usenet/telegram streams when configured.
-            let raw_playback_url: Option<String> = if rd_blocked {
-                None
-            } else if secret_str.is_empty() {
+            let raw_playback_url: Option<String> = if rd_blocked || secret_str.is_empty() {
                 None
             } else if r.stream_type == StreamType::Telegram {
                 if let Some(tg_id) = r.telegram_stream_id {

@@ -311,9 +311,9 @@ pub async fn handle_scrape_limit_input(
     true
 }
 
-fn parse_scrape_command(
-    text_msg: &str,
-) -> Result<(Option<Option<i32>>, Option<String>, bool), String> {
+type ScrapeCommandParse = Result<(Option<Option<i32>>, Option<String>, bool), String>;
+
+fn parse_scrape_command(text_msg: &str) -> ScrapeCommandParse {
     let parts: Vec<&str> = text_msg.split_whitespace().collect();
     let mut message_limit: Option<Option<i32>> = None;
     let mut channel: Option<String> = None;

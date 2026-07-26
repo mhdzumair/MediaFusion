@@ -180,6 +180,22 @@ fn normalise(s: &str) -> Vec<String> {
         .collect()
 }
 
+fn jaccard(a: &str, b: &str) -> u32 {
+    let ta: std::collections::HashSet<String> = normalise(a).into_iter().collect();
+    let tb: std::collections::HashSet<String> = normalise(b).into_iter().collect();
+
+    if ta.is_empty() && tb.is_empty() {
+        return 100;
+    }
+    if ta.is_empty() || tb.is_empty() {
+        return 0;
+    }
+
+    let intersection = ta.intersection(&tb).count();
+    let union = ta.union(&tb).count();
+    ((intersection * 100) / union) as u32
+}
+
 #[cfg(test)]
 mod magnet_tests {
     use super::*;
@@ -209,20 +225,4 @@ mod magnet_tests {
         assert_eq!(name, "Fallback.2026.720p.WEB-DL");
         assert_eq!(parsed.resolution.as_deref(), Some("720p"));
     }
-}
-
-fn jaccard(a: &str, b: &str) -> u32 {
-    let ta: std::collections::HashSet<String> = normalise(a).into_iter().collect();
-    let tb: std::collections::HashSet<String> = normalise(b).into_iter().collect();
-
-    if ta.is_empty() && tb.is_empty() {
-        return 100;
-    }
-    if ta.is_empty() || tb.is_empty() {
-        return 0;
-    }
-
-    let intersection = ta.intersection(&tb).count();
-    let union = ta.union(&tb).count();
-    ((intersection * 100) / union) as u32
 }

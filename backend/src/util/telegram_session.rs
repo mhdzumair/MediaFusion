@@ -29,14 +29,14 @@ pub fn validate_user_session(session: &str) -> Result<(), String> {
     if trimmed.starts_with('1') {
         return Ok(());
     }
-    if let Ok((_, meta)) = extract_data_from_pyrogram(trimmed) {
-        if meta.is_bot {
-            return Err(
-                "session is a Pyrogram bot session; channel scraping requires a user account \
-                 session created with your phone number"
-                    .into(),
-            );
-        }
+    if let Ok((_, meta)) = extract_data_from_pyrogram(trimmed)
+        && meta.is_bot
+    {
+        return Err(
+            "session is a Pyrogram bot session; channel scraping requires a user account \
+             session created with your phone number"
+                .into(),
+        );
     }
     Ok(())
 }

@@ -101,7 +101,7 @@ async fn copy_message_to_backup(
         telegram_peer::resolve_channel_peer(client, source_chat_id, dialog_peers).await?;
 
     let messages = client
-        .get_messages_by_id(source_peer_ref.clone(), &[message_id])
+        .get_messages_by_id(source_peer_ref, &[message_id])
         .await
         .ok()?;
     let message = match messages.into_iter().next() {
@@ -135,12 +135,12 @@ async fn capture_file_id_from_backup(
         .await
         .ok()?;
     let file_id = extract_bot_file_id(&copied);
-    if let Some(message_id) = copied.get("message_id").and_then(|v| v.as_i64()) {
-        if let Err(e) = api.delete_message(chat_id, message_id).await {
-            tracing::warn!(
-                "telegram backup: failed to delete temporary file_id probe message {message_id} in {backup_chat_id}: {e}"
-            );
-        }
+    if let Some(message_id) = copied.get("message_id").and_then(|v| v.as_i64())
+        && let Err(e) = api.delete_message(chat_id, message_id).await
+    {
+        tracing::warn!(
+            "telegram backup: failed to delete temporary file_id probe message {message_id} in {backup_chat_id}: {e}"
+        );
     }
     file_id
 }
@@ -259,12 +259,12 @@ pub async fn store_stream_to_backup(
         })?
     };
 
-    if capture_file_id {
-        if let Ok(api) = BotApi::from_state(state) {
-            result.file_id =
-                capture_file_id_from_backup(&api, &result.backup_chat_id, result.backup_message_id)
-                    .await;
-        }
+    if capture_file_id
+        && let Ok(api) = BotApi::from_state(state)
+    {
+        result.file_id =
+            capture_file_id_from_backup(&api, &result.backup_chat_id, result.backup_message_id)
+                .await;
     }
 
     update_telegram_stream_backup(
@@ -311,12 +311,12 @@ pub async fn restore_stream_from_backup_message(
     let backup_message_id = message.id();
     let mut file_id = row.file_id.clone();
 
-    if capture_file_id {
-        if let Ok(api) = BotApi::from_state(state) {
-            file_id = capture_file_id_from_backup(&api, backup_channel, backup_message_id)
-                .await
-                .or(file_id);
-        }
+    if capture_file_id
+        && let Ok(api) = BotApi::from_state(state)
+    {
+        file_id = capture_file_id_from_backup(&api, backup_channel, backup_message_id)
+            .await
+            .or(file_id);
     }
 
     update_telegram_stream_backup(

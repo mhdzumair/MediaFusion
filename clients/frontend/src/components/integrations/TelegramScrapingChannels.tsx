@@ -287,12 +287,15 @@ export function TelegramScrapingChannels() {
     }))
   }
 
-  const buildChannelLimitPayload = (channelId: string) => {
+  const buildChannelLimitPayload = (channelId: string): Record<string, boolean | number> => {
     const settings = getChannelSettings(channelId)
     if (settings.scrapeAllMessages) {
       return { scrape_all_messages: true }
     }
-    return { message_limit: parseMessageLimit(settings.messageLimit) }
+    return {
+      scrape_all_messages: false,
+      message_limit: parseMessageLimit(settings.messageLimit),
+    }
   }
 
   const buildChannelLimitsMap = (channels: TelegramScrapingChannel[]) =>

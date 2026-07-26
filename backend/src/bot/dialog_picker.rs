@@ -203,7 +203,7 @@ async fn build_picker_view(
     dialogs: &[telegram_dialogs::ScrapableDialog],
     page: usize,
 ) -> (String, serde_json::Value) {
-    let total_pages = ((dialogs.len() + PAGE_SIZE - 1) / PAGE_SIZE).max(1);
+    let total_pages = dialogs.len().div_ceil(PAGE_SIZE).max(1);
     let page = page.min(total_pages - 1);
     let start = page * PAGE_SIZE;
     let end = (start + PAGE_SIZE).min(dialogs.len());

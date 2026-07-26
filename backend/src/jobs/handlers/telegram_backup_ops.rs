@@ -96,7 +96,7 @@ async fn run_backup_store_batch(
         }
         last_id = row.id;
         metrics.processed += 1;
-        match store_one(&ctx, client, &dialog_peers, &row, args.capture_file_id).await {
+        match store_one(ctx, client, &dialog_peers, &row, args.capture_file_id).await {
             Ok(true) => metrics.stored += 1,
             Ok(false) => metrics.skipped += 1,
             Err(e) => {

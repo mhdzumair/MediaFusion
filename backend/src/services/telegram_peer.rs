@@ -86,8 +86,8 @@ pub async fn resolve_channel_ref(
             Some((peer, peer_ref))
         }
         ChannelRef::DialogId(dialog_id) => {
-            let peer_ref = dialog_peers.get(&dialog_id)?.clone();
-            let peer = client.resolve_peer(peer_ref.clone()).await.ok()?;
+            let peer_ref = *dialog_peers.get(&dialog_id)?;
+            let peer = client.resolve_peer(peer_ref).await.ok()?;
             Some((peer, peer_ref))
         }
     }
