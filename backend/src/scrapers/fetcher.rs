@@ -5,6 +5,8 @@
 ///   - Byparr (FlareSolverr-compatible REST endpoint for CF-protected sites)
 use reqwest::Client;
 
+use crate::util::browser_headers;
+
 pub struct FetchResult {
     pub html: String,
     pub final_url: String,
@@ -34,16 +36,6 @@ fn looks_like_cf_challenge(html: &str) -> bool {
 pub async fn fetch_plain(client: &Client, url: &str) -> Option<FetchResult> {
     let resp = client
         .get(url)
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
-             (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        )
-        .header(
-            "Accept",
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        )
-        .header("Accept-Language", "en-US,en;q=0.5")
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await
@@ -63,7 +55,7 @@ pub async fn fetch_plain(client: &Client, url: &str) -> Option<FetchResult> {
         html,
         final_url,
         cookies: vec![],
-        user_agent: String::new(),
+        user_agent: browser_headers::CHROME_USER_AGENT.to_string(),
     })
 }
 
@@ -125,7 +117,7 @@ pub async fn fetch_byparr(client: &Client, byparr_url: &str, url: &str) -> Optio
     let user_agent = solution
         .get("userAgent")
         .and_then(|u| u.as_str())
-        .unwrap_or_default()
+        .unwrap_or(browser_headers::CHROME_USER_AGENT)
         .to_string();
 
     Some(FetchResult {

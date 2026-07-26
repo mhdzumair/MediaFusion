@@ -4,7 +4,6 @@
 /// is blocked by Cloudflare. Streams are deduped by info_hash at store time.
 use async_trait::async_trait;
 use regex::Regex;
-use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, HeaderMap, HeaderName, HeaderValue, USER_AGENT};
 use reqwest::{Client, RequestBuilder};
 use tracing::{debug, info, warn};
 
@@ -15,15 +14,13 @@ use crate::{
     },
     parser,
     scrapers::{browser, rss::parse_rss_xml},
-    util::rate_limit,
+    util::{browser_headers, rate_limit},
 };
 
 use super::sports_rss_common::{classify_sports_rss_release, persist_sports_rss_stream};
 
 const SOURCE: &str = "FormulaFeeds";
 const CATEGORY: &str = "formula_racing";
-
-const CHROME_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 // ─── Formulio feed URLs (decoded from feed.txt base64 blobs) ─────────────────
 
@@ -84,72 +81,12 @@ enum FeedKind {
 }
 
 fn feed_request(client: &Client, kind: FeedKind, url: &str) -> RequestBuilder {
-    let mut req = client.get(url).timeout(std::time::Duration::from_secs(30));
+    let req = client.get(url).timeout(std::time::Duration::from_secs(30));
 
     match kind {
-        FeedKind::Bt4g | FeedKind::Knaben => {
-            req = req
-                .header(USER_AGENT, CHROME_UA)
-                .header(
-                    ACCEPT,
-                    "application/rss+xml, application/xml, text/xml, */*",
-                )
-                .header(ACCEPT_LANGUAGE, "en-US,en;q=0.9");
-        }
-        FeedKind::Reddit => {
-            // Mirror formulio's browser-like headers — bare reqwest UA gets 403.
-            let mut headers = HeaderMap::new();
-            headers.insert(USER_AGENT, HeaderValue::from_static(CHROME_UA));
-            headers.insert(
-                ACCEPT,
-                HeaderValue::from_static(
-                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                ),
-            );
-            headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.9"));
-            headers.insert(
-                HeaderName::from_static("cache-control"),
-                HeaderValue::from_static("max-age=0"),
-            );
-            headers.insert(
-                HeaderName::from_static("sec-ch-ua"),
-                HeaderValue::from_static(
-                    r#""Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120""#,
-                ),
-            );
-            headers.insert(
-                HeaderName::from_static("sec-ch-ua-mobile"),
-                HeaderValue::from_static("?0"),
-            );
-            headers.insert(
-                HeaderName::from_static("sec-ch-ua-platform"),
-                HeaderValue::from_static(r#""Windows""#),
-            );
-            headers.insert(
-                HeaderName::from_static("sec-fetch-dest"),
-                HeaderValue::from_static("document"),
-            );
-            headers.insert(
-                HeaderName::from_static("sec-fetch-mode"),
-                HeaderValue::from_static("navigate"),
-            );
-            headers.insert(
-                HeaderName::from_static("sec-fetch-site"),
-                HeaderValue::from_static("none"),
-            );
-            headers.insert(
-                HeaderName::from_static("sec-fetch-user"),
-                HeaderValue::from_static("?1"),
-            );
-            headers.insert(
-                HeaderName::from_static("upgrade-insecure-requests"),
-                HeaderValue::from_static("1"),
-            );
-            req = req.headers(headers);
-        }
+        FeedKind::Bt4g | FeedKind::Knaben => browser_headers::apply_rss_request(req),
+        FeedKind::Reddit => browser_headers::apply_document_request(req),
     }
-
-    req
 }
 
 /// True when a response body looks like RSS/Atom XML (not an HTML error/login page).
@@ -218,7 +155,14 @@ async fn fetch_reddit_feed_xml(
             if let Some(bl_url) = browserless_url {
                 info!("{SOURCE}/{label}: trying browserless for {url}");
                 rate_limit::wait("formula_feeds_browserless", 1).await;
-                match browser::fetch_text_via_browser(client, bl_url, url, Some(CHROME_UA)).await {
+                match browser::fetch_text_via_browser(
+                    client,
+                    bl_url,
+                    url,
+                    Some(browser_headers::CHROME_USER_AGENT),
+                )
+                .await
+                {
                     Some((status, body))
                         if (200..300).contains(&status) && looks_like_rss_xml(&body) =>
                     {

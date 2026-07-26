@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use mediafusion_api::nsfw::{MODEL_HF_URL, NsfwClassifier, NsfwScores};
+use mediafusion_api::util::browser_headers;
 
 struct Args {
     out: PathBuf,
@@ -108,7 +109,7 @@ async fn download(url: &str, dest: &PathBuf) {
     println!("\n━━ Downloading …");
 
     let client = reqwest::Client::builder()
-        .user_agent("mediafusion-nsfw-setup/1.0")
+        .default_headers(browser_headers::default_client_headers())
         .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .expect("reqwest client");

@@ -314,12 +314,7 @@ async fn fetch_annotate_cache(
     media_type: &str,
     year: Option<i32>,
 ) -> Option<Vec<u8>> {
-    let resp = state
-        .http
-        .get(url)
-        .header(header::USER_AGENT, "MediaFusion/1.0")
-        .send()
-        .await;
+    let resp = state.http.get(url).send().await;
 
     let raw_bytes = match resp {
         Ok(r) if r.status().is_success() => match r.bytes().await {

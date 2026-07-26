@@ -1,3 +1,4 @@
+pub mod browser_headers;
 pub mod egress_watchdog;
 pub mod http;
 pub mod image_storage;

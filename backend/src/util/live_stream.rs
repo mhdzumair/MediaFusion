@@ -5,6 +5,8 @@ use reqwest::Client;
 use serde_json::Value;
 use tracing::debug;
 
+use crate::util::browser_headers;
+
 const IPTV_VALID_CONTENT_TYPES: &[&str] = &[
     "application/vnd.apple.mpegurl",
     "application/x-mpegurl",
@@ -12,8 +14,6 @@ const IPTV_VALID_CONTENT_TYPES: &[&str] = &[
     "application/octet-stream",
     "application/dash+xml",
 ];
-
-const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36";
 
 fn request_headers(behavior_hints: &Value) -> reqwest::header::HeaderMap {
     let mut headers = reqwest::header::HeaderMap::new();
@@ -35,7 +35,7 @@ fn request_headers(behavior_hints: &Value) -> reqwest::header::HeaderMap {
     if !headers.contains_key(reqwest::header::USER_AGENT) {
         headers.insert(
             reqwest::header::USER_AGENT,
-            reqwest::header::HeaderValue::from_static(UA),
+            reqwest::header::HeaderValue::from_static(browser_headers::CHROME_USER_AGENT),
         );
     }
     headers

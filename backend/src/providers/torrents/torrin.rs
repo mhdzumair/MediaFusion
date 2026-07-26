@@ -16,7 +16,6 @@ use super::DownloadedTorrent;
 use super::stremthru;
 
 const BASE_URL: &str = "https://api.torrin.app";
-const USER_AGENT: &str = "MediaFusion";
 
 /// Rewrite the bare Torrin key into a StremThru store token pinned to Torrin's
 /// API: `{url}|{store_name}:{store_token}`. The store name is arbitrary (Torrin
@@ -58,7 +57,6 @@ async fn add_and_status(
 
     let resp = http
         .post(format!("{BASE_URL}/v0/store/magnets"))
-        .header("User-Agent", USER_AGENT)
         .header("Authorization", format!("Bearer {token}"))
         .json(&json!({ "magnet": magnet }))
         .send()

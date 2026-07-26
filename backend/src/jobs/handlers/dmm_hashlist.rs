@@ -94,7 +94,6 @@ async fn github_get_json(
 ) -> Result<serde_json::Value, JobError> {
     let mut req = http
         .get(url)
-        .header("User-Agent", "mediafusion")
         .header("Accept", "application/vnd.github+json");
     if let Some(tok) = token {
         req = req.header("Authorization", format!("Bearer {tok}"));
@@ -140,10 +139,7 @@ async fn github_get_text(
     url: &str,
     token: Option<&str>,
 ) -> Result<String, JobError> {
-    let mut req = http
-        .get(url)
-        .header("User-Agent", "mediafusion")
-        .timeout(std::time::Duration::from_secs(40));
+    let mut req = http.get(url).timeout(std::time::Duration::from_secs(40));
     if let Some(tok) = token {
         req = req.header("Authorization", format!("Bearer {tok}"));
     }

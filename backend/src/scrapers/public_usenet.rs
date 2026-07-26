@@ -380,8 +380,6 @@ async fn search_binsearch(client: &Client, query: &str, page: u32) -> IndexerOut
     );
     let html = match client
         .get(&url)
-        // Use a browser-like UA to reduce the chance of an immediate block.
-        .header("User-Agent", "Mozilla/5.0 (compatible; MediaFusion/6.0)")
         .timeout(std::time::Duration::from_secs(20))
         .send()
         .await

@@ -51,6 +51,8 @@ pub fn transport_error_kind(e: &reqwest::Error) -> &'static str {
     }
 }
 
+use crate::util::browser_headers;
+
 /// Shared reqwest client for all outbound HTTP (scrapers, RPDB, etc.).
 /// HTTP/1.1 only: the deployment runs behind a Cloudflare WARP tunnel which silently
 /// resets HTTP/2 multiplexed connections mid-flight (GOAWAY/RST_STREAM). Python used
@@ -61,7 +63,7 @@ pub fn transport_error_kind(e: &reqwest::Error) -> &'static str {
 pub fn build(proxy_url: Option<&str>, keepalive_secs: u64) -> reqwest::Client {
     let ka = Duration::from_secs(keepalive_secs);
     let mut builder = reqwest::Client::builder()
-        .user_agent("MediaFusion/1.0 (+https://github.com/mhdzumair/MediaFusion)")
+        .default_headers(browser_headers::default_client_headers())
         .http1_only()
         .timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(10))
@@ -85,7 +87,7 @@ pub fn build(proxy_url: Option<&str>, keepalive_secs: u64) -> reqwest::Client {
 pub fn build_debrid(proxy_url: Option<&str>, keepalive_secs: u64) -> reqwest::Client {
     let ka = Duration::from_secs(keepalive_secs);
     let mut builder = reqwest::Client::builder()
-        .user_agent("MediaFusion/1.0 (+https://github.com/mhdzumair/MediaFusion)")
+        .default_headers(browser_headers::default_client_headers())
         .http1_only()
         .timeout(Duration::from_secs(90))
         .connect_timeout(Duration::from_secs(15))

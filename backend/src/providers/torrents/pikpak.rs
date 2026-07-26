@@ -21,6 +21,7 @@ use crate::providers::{
     ProviderError,
     torrents::transport::{MediaFlowForward, append_query},
 };
+use crate::util::browser_headers;
 
 const API_HOST: &str = "api-drive.mypikpak.com";
 const USER_HOST: &str = "user.mypikpak.com";
@@ -28,8 +29,6 @@ const CLIENT_ID: &str = "YUMx5nI8ZU8Ap8pm";
 const CLIENT_SECRET: &str = "dbw2OtmVEeuUvIptb1Coygx";
 const CLIENT_VERSION: &str = "2.0.0";
 const PACKAGE_NAME: &str = "mypikpak.com";
-const USER_AGENT: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0";
 const REDIRECT_URI: &str = "xlaccsdk01://xbase.cloud/callback?state=harbor";
 
 /// Web-platform captcha sign salts (rclone / debrify).
@@ -196,7 +195,10 @@ fn build_auth_headers(device_id: &str, captcha_token: Option<&str>) -> reqwest::
         reqwest::header::CONTENT_TYPE,
         "application/json".parse().unwrap(),
     );
-    h.insert(reqwest::header::USER_AGENT, USER_AGENT.parse().unwrap());
+    h.insert(
+        reqwest::header::USER_AGENT,
+        browser_headers::CHROME_USER_AGENT.parse().unwrap(),
+    );
     if let Ok(val) = CLIENT_ID.parse() {
         h.insert("X-Client-ID", val);
     }

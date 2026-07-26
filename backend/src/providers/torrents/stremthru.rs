@@ -11,7 +11,6 @@ use serde_json::Value;
 use crate::providers::{ProviderError, file_selection::select_debrid_file_index, response_json};
 
 const DEFAULT_BASE_URL: &str = "https://stremthru.432hz.dev";
-const USER_AGENT: &str = "mediafusion";
 
 // ─── Video file selection helper ──────────────────────────────────────────────
 
@@ -126,7 +125,7 @@ async fn st_get(
     path: &str,
 ) -> Result<Value, ProviderError> {
     let url = format!("{}{path}", cfg.base_url);
-    let req = http.get(&url).header("User-Agent", USER_AGENT);
+    let req = http.get(&url);
     let req = apply_auth(req, &cfg.auth);
     let resp = req.send().await?;
     let body: Value = response_json(resp, "st_get").await?;
@@ -141,10 +140,7 @@ async fn st_post(
     payload: &Value,
 ) -> Result<Value, ProviderError> {
     let url = format!("{}{path}", cfg.base_url);
-    let req = http
-        .post(&url)
-        .header("User-Agent", USER_AGENT)
-        .json(payload);
+    let req = http.post(&url).json(payload);
     let req = apply_auth(req, &cfg.auth);
     let resp = req.send().await?;
     let body: Value = response_json(resp, "st_post").await?;
@@ -158,7 +154,7 @@ async fn st_delete(
     path: &str,
 ) -> Result<(), ProviderError> {
     let url = format!("{}{path}", cfg.base_url);
-    let req = http.delete(&url).header("User-Agent", USER_AGENT);
+    let req = http.delete(&url);
     let req = apply_auth(req, &cfg.auth);
     req.send().await?;
     Ok(())
@@ -450,7 +446,6 @@ pub async fn check_cached(
         let hash_list = chunk.join(",");
         let req = http
             .get(&url)
-            .header("User-Agent", USER_AGENT)
             .query(&[("hash", hash_list.as_str()), ("sid", sid.as_str())]);
         let req = apply_auth(req, &cfg.auth);
         let resp = match req.send().await {

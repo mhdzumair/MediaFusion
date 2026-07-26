@@ -4,7 +4,6 @@
 /// ext.to is blocked. Streams are deduped by info_hash at store time.
 use async_trait::async_trait;
 use regex::Regex;
-use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, USER_AGENT};
 use reqwest::{Client, RequestBuilder};
 use tracing::{debug, info, warn};
 
@@ -15,7 +14,7 @@ use crate::{
     },
     parser,
     scrapers::rss::parse_rss_xml,
-    util::rate_limit,
+    util::{browser_headers, rate_limit},
 };
 
 use super::sports_rss_common::{
@@ -24,8 +23,6 @@ use super::sports_rss_common::{
 
 const SOURCE: &str = "FightingFeeds";
 const CATEGORY: &str = "fighting";
-
-const CHROME_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 const BT4G_WWE: &str = "https://bt4gprx.com/search?q=WWE&page=rss";
 const BT4G_UFC: &str = "https://bt4gprx.com/search?q=UFC&page=rss";
@@ -45,17 +42,12 @@ enum FeedKind {
 }
 
 fn feed_request(client: &Client, kind: FeedKind, url: &str) -> RequestBuilder {
-    let mut req = client.get(url).timeout(std::time::Duration::from_secs(30));
+    let req = client.get(url).timeout(std::time::Duration::from_secs(30));
     if matches!(kind, FeedKind::Bt4g | FeedKind::Knaben) {
-        req = req
-            .header(USER_AGENT, CHROME_UA)
-            .header(
-                ACCEPT,
-                "application/rss+xml, application/xml, text/xml, */*",
-            )
-            .header(ACCEPT_LANGUAGE, "en-US,en;q=0.9");
+        browser_headers::apply_rss_request(req)
+    } else {
+        req
     }
-    req
 }
 
 fn looks_like_rss_xml(body: &str) -> bool {

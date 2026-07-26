@@ -14,7 +14,7 @@ use crate::{
     },
     parser,
     routes::content::import_helpers::is_adult_content,
-    scrapers::media_resolve,
+    scrapers::{fetcher::fetch_plain, media_resolve},
 };
 
 const SEEN_KEY: &str = "acestream_bg:seen";
@@ -40,7 +40,7 @@ static INFOHASH_PARAM_RE: Lazy<Regex> = Lazy::new(|| {
 
 static LABELED_SERVER_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
-        r"Server\s*(?P<server_no>\d+)\s*:\s*(?P<label>[^\n\r<]+).*?acestream://(?P<cid>[a-fA-F0-9]{40})",
+        r"(?s)Server\s*(?P<server_no>\d+)\s*:\s*(?P<label>[^\n\r<]+).*?acestream://(?P<cid>[a-fA-F0-9]{40})",
     )
     .expect("acestream labeled server regex")
 });
@@ -522,24 +522,24 @@ async fn fetch_source_candidates(
     let mut all = Vec::new();
     for cfg in configs {
         for url in cfg.urls.iter().take(MAX_PAGES_PER_SOURCE) {
-            let body = match http
-                .get(url)
-                .timeout(std::time::Duration::from_secs(FETCH_TIMEOUT_SECS))
-                .send()
-                .await
-            {
-                Ok(r) if r.status().is_success() => r.text().await.unwrap_or_default(),
-                Err(e) => {
-                    warn!("acestream_bg: fetch {} failed: {e}", url);
-                    continue;
-                }
-                Ok(r) => {
-                    warn!("acestream_bg: HTTP {} from {}", r.status().as_u16(), url);
+            let body = match fetch_plain(http, url).await {
+                Some(result) if !result.html.is_empty() => result.html,
+                _ => {
+                    warn!(
+                        "acestream_bg: fetch {} failed (source {}) — \
+                         site may block bot User-Agents or require a browser challenge",
+                        url, cfg.name
+                    );
                     continue;
                 }
             };
             let extracted = if cfg.labeled_server_parser {
-                extract_labeled_servers(&body, &cfg.name, &cfg.media_type)
+                let labeled = extract_labeled_servers(&body, &cfg.name, &cfg.media_type);
+                if labeled.is_empty() {
+                    extract_from_html(&body, &cfg.name, &cfg.media_type)
+                } else {
+                    labeled
+                }
             } else {
                 extract_from_html(&body, &cfg.name, &cfg.media_type)
             };

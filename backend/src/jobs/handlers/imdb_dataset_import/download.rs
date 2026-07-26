@@ -10,11 +10,12 @@ use tracing::info;
 
 use super::types::DatasetDef;
 use crate::jobs::error::JobError;
+use crate::util::browser_headers;
 
 /// IMDb datasets are multi-GB; the shared app HTTP client uses a 30s timeout.
 static IMDB_HTTP: Lazy<Client> = Lazy::new(|| {
     Client::builder()
-        .user_agent("mediafusion-imdb-import/1.0")
+        .default_headers(browser_headers::default_client_headers())
         .connect_timeout(Duration::from_secs(30))
         .timeout(Duration::from_secs(7200))
         .tcp_keepalive(Duration::from_secs(60))
