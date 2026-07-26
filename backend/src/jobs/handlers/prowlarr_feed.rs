@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use async_trait::async_trait;
 use fred::prelude::{KeysInterface, SetsInterface};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     jobs::{
@@ -52,7 +52,7 @@ impl JobHandler for ProwlarrFeedScraper {
         let (base_url, api_key) = match (&config.prowlarr_url, &config.prowlarr_api_key) {
             (Some(u), Some(k)) => (u.clone(), k.clone()),
             _ => {
-                debug!("prowlarr_feed: prowlarr not configured, skipping");
+                info!("prowlarr_feed: prowlarr not configured, skipping");
                 return Ok(());
             }
         };

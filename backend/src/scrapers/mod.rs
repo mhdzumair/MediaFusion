@@ -15,6 +15,7 @@ pub mod public_indexers;
 pub mod public_usenet;
 pub mod rpdb;
 pub mod rss;
+pub mod scraper_config;
 pub mod source_health;
 pub mod stream_convert;
 pub mod telegram;

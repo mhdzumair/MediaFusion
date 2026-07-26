@@ -259,9 +259,7 @@ pub async fn store_stream_to_backup(
         })?
     };
 
-    if capture_file_id
-        && let Ok(api) = BotApi::from_state(state)
-    {
+    if capture_file_id && let Ok(api) = BotApi::from_state(state) {
         result.file_id =
             capture_file_id_from_backup(&api, &result.backup_chat_id, result.backup_message_id)
                 .await;
@@ -311,9 +309,7 @@ pub async fn restore_stream_from_backup_message(
     let backup_message_id = message.id();
     let mut file_id = row.file_id.clone();
 
-    if capture_file_id
-        && let Ok(api) = BotApi::from_state(state)
-    {
+    if capture_file_id && let Ok(api) = BotApi::from_state(state) {
         file_id = capture_file_id_from_backup(&api, backup_channel, backup_message_id)
             .await
             .or(file_id);

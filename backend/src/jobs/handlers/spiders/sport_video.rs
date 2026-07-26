@@ -33,13 +33,11 @@ use crate::{
 
 // ─── Config helpers ───────────────────────────────────────────────────────────
 
-fn load_sport_video_categories(config_path: &str) -> Vec<(String, String)> {
-    if let Ok(text) = std::fs::read_to_string(config_path)
-        && let Ok(root) = serde_json::from_str::<serde_json::Value>(&text)
-        && let Some(cats) = root
-            .get("sport_video")
-            .and_then(|v| v.get("categories"))
-            .and_then(|v| v.as_object())
+fn load_sport_video_categories(root: &serde_json::Value) -> Vec<(String, String)> {
+    if let Some(cats) = root
+        .get("sport_video")
+        .and_then(|v| v.get("categories"))
+        .and_then(|v| v.as_object())
     {
         return cats
             .iter()
@@ -272,7 +270,8 @@ impl JobHandler for SportVideoCrawl {
     type Args = serde_json::Value;
 
     async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        let categories = load_sport_video_categories(&ctx.state.config.scraper_config_path);
+        let root = crate::scrapers::scraper_config::load(&ctx.state).await;
+        let categories = load_sport_video_categories(&root);
         if categories.is_empty() {
             warn!("sport_video: no categories configured");
             return Ok(());

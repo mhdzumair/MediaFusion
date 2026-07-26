@@ -79,16 +79,7 @@ struct AceStreamSourceConfig {
     metadata_poster: Option<String>,
 }
 
-fn scraper_config_root(path: &str) -> Option<Value> {
-    let text = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&text).ok()
-}
-
-fn load_source_configs(path: &str) -> Vec<AceStreamSourceConfig> {
-    let root = match scraper_config_root(path) {
-        Some(v) => v,
-        None => return vec![],
-    };
+fn load_source_configs(root: &Value) -> Vec<AceStreamSourceConfig> {
     let items = root
         .get("acestream_background")
         .and_then(|v| v.get("sources"))
@@ -405,13 +396,9 @@ fn extract_from_json_item(
 
 async fn fetch_search_api_candidates(
     http: &reqwest::Client,
-    config_path: &str,
+    root: &Value,
     api_key: Option<&str>,
 ) -> Vec<AceCandidate> {
-    let root = match scraper_config_root(config_path) {
-        Some(v) => v,
-        None => return vec![],
-    };
     let search = match root
         .get("acestream_background")
         .and_then(|v| v.get("search_api"))
@@ -846,14 +833,14 @@ impl JobHandler for AcestreamBgScraper {
     type Args = serde_json::Value;
 
     async fn run(&self, _args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
-        let config_path = &ctx.state.config.scraper_config_path;
-        let source_configs = load_source_configs(config_path);
+        let root = crate::scrapers::scraper_config::load(&ctx.state).await;
+        let source_configs = load_source_configs(&root);
         let api_key = std::env::var("ACESTREAM_BACKGROUND_SEARCH_API_KEY")
             .ok()
             .filter(|s| !s.is_empty());
 
         let mut candidates =
-            fetch_search_api_candidates(&ctx.state.http, config_path, api_key.as_deref()).await;
+            fetch_search_api_candidates(&ctx.state.http, &root, api_key.as_deref()).await;
         candidates.extend(fetch_source_candidates(&ctx.state.http, &source_configs).await);
 
         if candidates.is_empty() {

@@ -87,6 +87,7 @@ export interface SchedulerJobLogRun {
   error: string | null
   attempts: number
   events: SchedulerJobEvent[]
+  summary?: string | null
 }
 
 export interface SchedulerJobLogsResponse {

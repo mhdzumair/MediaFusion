@@ -3078,13 +3078,16 @@ pub async fn get_scheduler_job_logs(
             .iter()
             .map(|r| {
                 let at: Option<chrono::DateTime<chrono::Utc>> = r.try_get("at").ok().flatten();
-                json!({
-                    "event": r.get::<String, _>("event"),
-                    "detail": r.try_get::<Option<String>, _>("detail").ok().flatten(),
-                    "at": at.map(|t| t.to_rfc3339()),
-                })
+                let detail: Option<serde_json::Value> = r.try_get("detail").ok().flatten();
+                crate::jobs::log_capture::event_to_json(
+                    &r.get::<String, _>("event"),
+                    detail,
+                    at.map(|t| t.to_rfc3339()),
+                )
             })
             .collect();
+
+        let summary = crate::jobs::log_capture::summary_from_events(&events);
 
         let created_at: Option<chrono::DateTime<chrono::Utc>> =
             job_row.try_get("created_at").ok().flatten();
@@ -3102,6 +3105,7 @@ pub async fn get_scheduler_job_logs(
             "error": job_row.try_get::<Option<String>, _>("last_error").ok().flatten(),
             "attempts": job_row.get::<i32, _>("attempts"),
             "events": events,
+            "summary": summary,
         }));
     }
 
@@ -3839,13 +3843,16 @@ async fn load_task_detail_json(pool: &sqlx::PgPool, task_id: &str) -> Option<Val
         .iter()
         .map(|r| {
             let at: Option<chrono::DateTime<chrono::Utc>> = r.try_get("at").ok().flatten();
-            json!({
-                "event": r.get::<String, _>("event"),
-                "detail": r.try_get::<Option<String>, _>("detail").ok().flatten(),
-                "at": at.map(|t| t.to_rfc3339()),
-            })
+            let detail: Option<serde_json::Value> = r.try_get("detail").ok().flatten();
+            crate::jobs::log_capture::event_to_json(
+                &r.get::<String, _>("event"),
+                detail,
+                at.map(|t| t.to_rfc3339()),
+            )
         })
         .collect();
+
+    let summary = crate::jobs::log_capture::summary_from_events(&events);
 
     Some(json!({
         "task_id": job_id.to_string(),
@@ -3862,6 +3869,7 @@ async fn load_task_detail_json(pool: &sqlx::PgPool, task_id: &str) -> Option<Val
         "started_at": started_at.map(|t| t.to_rfc3339()),
         "finished_at": finished_at.map(|t| t.to_rfc3339()),
         "events": events,
+        "summary": summary,
     }))
 }
 

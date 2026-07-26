@@ -63,7 +63,8 @@ impl JobHandler for ArabTorrentsCrawl {
             .and_then(|v| v.as_str())
             .unwrap_or("all");
 
-        let (homepage, catalogs) = load_spider_config(&ctx.state.config.scraper_config_path);
+        let root = crate::scrapers::scraper_config::load(&ctx.state).await;
+        let (homepage, catalogs) = load_spider_config(&root);
         let targets = build_targets(
             &homepage,
             &catalogs,
@@ -261,12 +262,9 @@ impl JobHandler for ArabTorrentsCrawl {
     }
 }
 
-fn load_spider_config(config_path: &str) -> (String, serde_json::Value) {
+fn load_spider_config(root: &serde_json::Value) -> (String, serde_json::Value) {
     let default_catalogs = serde_json::json!({});
-    if let Ok(text) = std::fs::read_to_string(config_path)
-        && let Ok(root) = serde_json::from_str::<serde_json::Value>(&text)
-        && let Some(node) = root.get("arab_torrents")
-    {
+    if let Some(node) = root.get("arab_torrents") {
         let homepage = node
             .get("homepage")
             .and_then(|v| v.as_str())

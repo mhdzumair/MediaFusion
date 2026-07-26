@@ -30,14 +30,11 @@ use super::spider_args::parse_listing_page_args;
 const SOURCE: &str = "MovieRulz";
 const CATALOG: &str = "movierulz";
 
-fn load_movierulz_config(config_path: &str) -> (String, Vec<String>) {
+fn load_movierulz_config(root: &serde_json::Value) -> (String, Vec<String>) {
     let default_homepage = "https://www.5movierulz.day".to_string();
     let default_categories = default_category_urls(&default_homepage);
 
-    if let Ok(text) = std::fs::read_to_string(config_path)
-        && let Ok(root) = serde_json::from_str::<serde_json::Value>(&text)
-        && let Some(cfg) = root.get("movierulz")
-    {
+    if let Some(cfg) = root.get("movierulz") {
         let homepage = cfg
             .get("homepage")
             .and_then(|v| v.as_str())
@@ -160,7 +157,8 @@ async fn fetch_html(
 
 async fn scrape_movierulz(args: &serde_json::Value, ctx: &JobCtx) -> Result<(), JobError> {
     let (pages, start_page) = parse_listing_page_args(args);
-    let (homepage, seed_urls) = load_movierulz_config(&ctx.state.config.scraper_config_path);
+    let root = crate::scrapers::scraper_config::load(&ctx.state).await;
+    let (homepage, seed_urls) = load_movierulz_config(&root);
     let client = &ctx.state.http;
     let pool = &ctx.state.pool;
     let byparr_url = ctx.state.config.byparr_url.clone();

@@ -100,6 +100,15 @@ export function TaskDetailsDialog({ open, onOpenChange, selectedTaskId, isLoadin
               </div>
             )}
 
+            {task.summary && (
+              <div className="rounded-lg border border-border/50 p-3">
+                <p className="text-sm font-medium mb-2">Run Summary</p>
+                <ScrollArea className="h-40">
+                  <pre className="whitespace-pre-wrap font-mono text-xs">{task.summary}</pre>
+                </ScrollArea>
+              </div>
+            )}
+
             {task.events && task.events.length > 0 && (
               <div className="rounded-lg border border-border/50 p-3">
                 <p className="text-sm font-medium mb-2">Event Timeline</p>

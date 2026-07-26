@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use fred::prelude::{KeysInterface, SetsInterface};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     jobs::{
@@ -39,7 +39,7 @@ impl JobHandler for JackettFeedScraper {
         let (base_url, api_key) = match (&config.jackett_url, &config.jackett_api_key) {
             (Some(u), Some(k)) => (u.clone(), k.clone()),
             _ => {
-                debug!("jackett_feed: jackett not configured, skipping");
+                info!("jackett_feed: jackett not configured, skipping");
                 return Ok(());
             }
         };

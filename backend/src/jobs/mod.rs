@@ -3,6 +3,7 @@ pub mod enqueue;
 pub mod error;
 pub mod handler;
 pub mod handlers;
+pub mod log_capture;
 pub mod metrics;
 pub mod registry;
 pub mod runner;

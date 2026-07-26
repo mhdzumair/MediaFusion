@@ -1482,9 +1482,7 @@ pub async fn trigger_telegram_scrape(
                 .unwrap_or(crate::scrapers::telegram::DEFAULT_TELEGRAM_SCRAPE_MESSAGE_LIMIT)
         );
     }
-    if !scrape_all
-        && let Some(channel) = channels.first()
-    {
+    if !scrape_all && let Some(channel) = channels.first() {
         payload["channel"] = serde_json::json!(channel);
     }
 

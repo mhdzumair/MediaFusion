@@ -144,8 +144,6 @@ impl QueueRunner {
                 if job.cancel_requested {
                     job_cancel.cancel();
                 }
-                // Store cancel token so notification handler can fire it.
-                // (stored in a global map keyed by job_id — see cancel_tokens module)
                 super::cancel_tokens::register(job.id, job_cancel.clone());
 
                 let ctx = JobCtx {
@@ -155,8 +153,15 @@ impl QueueRunner {
                     cancel: job_cancel.clone(),
                 };
 
+                Self::write_event(&pool, job.id, "started", None).await;
+
                 let start = Instant::now();
-                let result = handler.run_erased(job.payload, ctx).await;
+                let handler = handler;
+                let payload = job.payload;
+                let result = super::log_capture::with_capture(&pool, job.id, async move {
+                    handler.run_erased(payload, ctx).await
+                })
+                .await;
                 let elapsed = start.elapsed();
 
                 super::cancel_tokens::deregister(job.id);
@@ -412,7 +417,7 @@ pub(crate) async fn mark_job_failed(pool: &PgPool, job_id: i64, error: &str) {
     .await;
 }
 
-async fn job_write_event(
+pub(crate) async fn job_write_event(
     pool: &PgPool,
     job_id: i64,
     event: &str,

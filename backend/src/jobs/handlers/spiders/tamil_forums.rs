@@ -115,18 +115,12 @@ fn should_link_catalog(language: &str, video_type: &str, torrent_name: &str) -> 
 ///
 /// Falls back to a hard-coded default when the config file is missing or the
 /// key is absent, so the handler can still run.
-fn spider_homepage(spider_name: &str, default: &str, config_path: &str) -> String {
-    // Try to read and parse as JSON.
-    if let Ok(text) = std::fs::read_to_string(config_path)
-        && let Ok(root) = serde_json::from_str::<serde_json::Value>(&text)
-        && let Some(hp) = root
-            .get(spider_name)
-            .and_then(|v| v.get("homepage"))
-            .and_then(|v| v.as_str())
-    {
-        return hp.to_string();
-    }
-    default.to_string()
+fn spider_homepage(spider_name: &str, default: &str, root: &serde_json::Value) -> String {
+    root.get(spider_name)
+        .and_then(|v| v.get("homepage"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| default.to_string())
 }
 
 // ─── Shared scraping logic ────────────────────────────────────────────────────
@@ -585,14 +579,11 @@ fn bencode_end(data: &[u8], pos: usize) -> Option<usize> {
 
 // ─── Config loader ────────────────────────────────────────────────────────────
 
-fn load_catalogs(spider_name: &str, config_path: &str) -> serde_json::Value {
-    if let Ok(text) = std::fs::read_to_string(config_path)
-        && let Ok(root) = serde_json::from_str::<serde_json::Value>(&text)
-        && let Some(catalogs) = root.get(spider_name).and_then(|v| v.get("catalogs"))
-    {
-        return catalogs.clone();
-    }
-    serde_json::Value::Object(serde_json::Map::new())
+fn load_catalogs(spider_name: &str, root: &serde_json::Value) -> serde_json::Value {
+    root.get(spider_name)
+        .and_then(|v| v.get("catalogs"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()))
 }
 
 // ─── Job handlers ─────────────────────────────────────────────────────────────
@@ -607,9 +598,9 @@ impl JobHandler for TamilMvCrawl {
 
     async fn run(&self, args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
         let (pages, start_page) = parse_listing_page_args(&args);
-        let config_path = &ctx.state.config.scraper_config_path;
-        let homepage = spider_homepage("tamilmv", "https://www.1tamilmv.earth", config_path);
-        let catalogs = load_catalogs("tamilmv", config_path);
+        let root = crate::scrapers::scraper_config::load(&ctx.state).await;
+        let homepage = spider_homepage("tamilmv", "https://www.1tamilmv.earth", &root);
+        let catalogs = load_catalogs("tamilmv", &root);
         scrape_tamil_forum(
             "tamilmv", "TamilMV", &homepage, &catalogs, pages, start_page, &ctx,
         )
@@ -627,9 +618,9 @@ impl JobHandler for TamilBlastersCrawl {
 
     async fn run(&self, args: Self::Args, ctx: JobCtx) -> Result<(), JobError> {
         let (pages, start_page) = parse_listing_page_args(&args);
-        let config_path = &ctx.state.config.scraper_config_path;
-        let homepage = spider_homepage("tamil_blasters", "https://1tamilblasters.wtf", config_path);
-        let catalogs = load_catalogs("tamil_blasters", config_path);
+        let root = crate::scrapers::scraper_config::load(&ctx.state).await;
+        let homepage = spider_homepage("tamil_blasters", "https://1tamilblasters.wtf", &root);
+        let catalogs = load_catalogs("tamil_blasters", &root);
         scrape_tamil_forum(
             "tamil_blasters",
             "TamilBlasters",

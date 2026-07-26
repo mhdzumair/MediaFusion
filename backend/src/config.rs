@@ -294,7 +294,12 @@ pub struct AppConfig {
     /// Byparr (FlareSolverr-compatible) base URL. When set, Cloudflare-protected
     /// public indexers (1337x, TPB, etc.) are fetched via Byparr instead of plain HTTP.
     pub byparr_url: Option<String>,
+    /// Local path to `scraper_config.json` (fallback when remote fetch fails).
     pub scraper_config_path: String,
+    /// `local` reads only from disk; `remote` (default) fetches from GitHub with Redis cache.
+    pub use_config_source: String,
+    /// Remote URL for scraper config (default: MediaFusion GitHub raw JSON).
+    pub remote_config_source: String,
     /// Comma-separated list of public indexer keys to enable (e.g. "x1337,nyaa").
     /// When unset, all indexers matching the media type are used.
     pub public_indexers_live_search_sites: Option<String>,
@@ -764,7 +769,11 @@ impl AppConfig {
                 .filter(|s| !s.is_empty())
                 .map(|u| u.trim_end_matches('/').to_string()),
             scraper_config_path: env("SCRAPER_CONFIG_PATH")
-                .unwrap_or_else(|_| "../resources/json/scraper_config.json".into()),
+                .unwrap_or_else(|_| crate::scrapers::scraper_config::default_local_config_path()),
+            use_config_source: env("USE_CONFIG_SOURCE").unwrap_or_else(|_| "remote".into()),
+            remote_config_source: env("REMOTE_CONFIG_SOURCE").unwrap_or_else(|_| {
+                "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/scraper_config.json".into()
+            }),
             public_indexers_live_search_sites: env("PUBLIC_INDEXERS_LIVE_SEARCH_SITES")
                 .ok().filter(|s| !s.is_empty()),
             public_indexers_source_health_gates_enabled: env("PUBLIC_INDEXERS_SOURCE_HEALTH_GATES_ENABLED")

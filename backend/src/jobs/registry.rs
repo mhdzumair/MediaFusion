@@ -43,7 +43,8 @@ use super::{
     },
     metrics::JobMetrics,
     runner::{
-        QueueRunner, insert_inline_job, mark_job_cancelled, mark_job_failed, mark_job_success,
+        QueueRunner, insert_inline_job, job_write_event, mark_job_cancelled, mark_job_failed,
+        mark_job_success,
     },
     scheduler,
 };
@@ -179,7 +180,15 @@ impl JobRegistry {
             cancel,
         };
 
-        match handler.run_erased(payload, ctx).await {
+        job_write_event(&state.pool, job_id, "started", None).await;
+
+        let pool = &state.pool;
+        let result = super::log_capture::with_capture(pool, job_id, async move {
+            handler.run_erased(payload, ctx).await
+        })
+        .await;
+
+        match result {
             Ok(()) => {
                 mark_job_success(&state.pool, job_id).await;
                 Ok(())

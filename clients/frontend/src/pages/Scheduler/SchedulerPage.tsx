@@ -473,19 +473,25 @@ function JobDetailForm({
                         <span className="font-medium">Run #{run.job_id}</span>
                         <span className="text-muted-foreground">{formatDateTime(run.created_at)}</span>
                       </div>
-                      {run.events.length === 0 ? (
+                      {run.summary ? (
+                        <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed mt-1">
+                          {run.summary}
+                        </pre>
+                      ) : run.events.length === 0 ? (
                         <p className="text-muted-foreground">No events recorded</p>
                       ) : (
                         <div className="space-y-1 pl-2 border-l border-border/50">
-                          {run.events.map((event, index) => (
-                            <div key={`${run.job_id}-${index}`} className="flex justify-between gap-2">
-                              <span>{event.event}</span>
-                              <span className="text-muted-foreground shrink-0">
-                                {formatDateTime(event.at)}
-                                {event.detail ? ` · ${event.detail}` : ''}
-                              </span>
-                            </div>
-                          ))}
+                          {run.events
+                            .filter((event) => event.event !== 'summary')
+                            .map((event, index) => (
+                              <div key={`${run.job_id}-${index}`} className="flex justify-between gap-2">
+                                <span>{event.event}</span>
+                                <span className="text-muted-foreground shrink-0">
+                                  {formatDateTime(event.at)}
+                                  {event.detail ? ` · ${event.detail}` : ''}
+                                </span>
+                              </div>
+                            ))}
                         </div>
                       )}
                     </div>

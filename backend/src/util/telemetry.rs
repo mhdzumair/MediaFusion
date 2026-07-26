@@ -1,7 +1,20 @@
 use crate::exception_tracker::ExceptionTrackerLayer;
+use crate::jobs::log_capture::JobLogCaptureLayer;
 use tokio::sync::mpsc;
 
 pub fn init(exc_tx: Option<mpsc::UnboundedSender<crate::exception_tracker::ExcEvent>>) {
+    init_internal(exc_tx, false);
+}
+
+/// Worker telemetry — also captures handler log lines into job event summaries.
+pub fn init_worker() {
+    init_internal(None, true);
+}
+
+fn init_internal(
+    exc_tx: Option<mpsc::UnboundedSender<crate::exception_tracker::ExcEvent>>,
+    capture_job_logs: bool,
+) {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -15,10 +28,12 @@ pub fn init(exc_tx: Option<mpsc::UnboundedSender<crate::exception_tracker::ExcEv
         .compact();
 
     let exc_layer = exc_tx.map(|tx| ExceptionTrackerLayer { tx });
+    let job_log_layer = capture_job_logs.then_some(JobLogCaptureLayer);
 
     tracing_subscriber::Registry::default()
         .with(env_filter)
         .with(fmt_layer)
+        .with(job_log_layer)
         .with(exc_layer)
         .init();
 }

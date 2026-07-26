@@ -84,18 +84,14 @@ fn magnet_inline_re() -> &'static Regex {
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 /// ext.to domain (from scraper config or default).
-fn ext_to_domain(config_path: &str) -> String {
-    if let Ok(text) = std::fs::read_to_string(config_path)
-        && let Ok(root) = serde_json::from_str::<serde_json::Value>(&text)
-        && let Some(domains) = root
-            .get("start_urls")
-            .and_then(|v| v.get("ext_to"))
-            .and_then(|v| v.as_array())
-        && let Some(domain) = domains.first().and_then(|v| v.as_str())
-    {
-        return domain.to_string();
-    }
-    "ext.to".to_string()
+fn ext_to_domain(root: &serde_json::Value) -> String {
+    root.get("start_urls")
+        .and_then(|v| v.get("ext_to"))
+        .and_then(|v| v.as_array())
+        .and_then(|domains| domains.first())
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| "ext.to".to_string())
 }
 
 // ─── Catalog definition ───────────────────────────────────────────────────────
@@ -716,7 +712,8 @@ pub(crate) async fn scrape_ext_catalog(
     args: &serde_json::Value,
     ctx: &JobCtx,
 ) -> Result<(), JobError> {
-    let domain = ext_to_domain(&ctx.state.config.scraper_config_path);
+    let root = crate::scrapers::scraper_config::load(&ctx.state).await;
+    let domain = ext_to_domain(&root);
     let base_url = format!("https://{domain}");
     let client = &ctx.state.http;
     let byparr_url = ctx.state.config.byparr_url.clone();

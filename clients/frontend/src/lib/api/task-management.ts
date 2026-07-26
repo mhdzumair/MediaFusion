@@ -50,6 +50,7 @@ export interface TaskDetailRecord {
   args_preview?: unknown[]
   kwargs_preview?: Record<string, unknown>
   events?: TaskEvent[]
+  summary?: string | null
 }
 
 export interface TaskListResponse {

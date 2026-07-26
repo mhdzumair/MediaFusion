@@ -84,7 +84,7 @@ async fn main() {
 
     let config = AppConfig::from_env();
 
-    mediafusion_api::util::telemetry::init(None);
+    mediafusion_api::util::telemetry::init_worker();
 
     mediafusion_api::migrate::preflight(&config.postgres_uri)
         .await
