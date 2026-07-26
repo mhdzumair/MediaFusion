@@ -1179,6 +1179,10 @@ pub async fn get_media_streams(
         .mediaflow_config
         .as_ref()
         .filter(|m| m.enable_web_playback && m.proxy_url.as_deref().is_some_and(|s| !s.is_empty()));
+    let mediaflow_config = ud
+        .mediaflow_config
+        .as_ref()
+        .filter(|m| m.proxy_url.as_deref().is_some_and(|s| !s.is_empty()));
     let web_playback_enabled = mediaflow_web_config.is_some();
     let season = effective_season;
     let episode = effective_episode;
@@ -1231,6 +1235,8 @@ pub async fn get_media_streams(
             tgs.chat_id AS tg_chat_id,
             tgs.message_id AS tg_message_id,
             tgs.id AS telegram_stream_id,
+            ace.content_id AS ace_content_id,
+            ace.info_hash AS ace_info_hash,
             {STREAM_LINK_AGG_COLS},
             ts.created_at
            FROM stream s
@@ -1243,6 +1249,7 @@ pub async fn get_media_streams(
            LEFT JOIN usenet_stream us ON us.stream_id = s.id
            LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
            LEFT JOIN telegram_stream tgs ON tgs.stream_id = s.id
+           LEFT JOIN acestream_stream ace ON ace.stream_id = s.id
            WHERE {stream_visibility}
              AND fml.media_id = $1
              AND fml.season_number = $2
@@ -1272,6 +1279,8 @@ pub async fn get_media_streams(
             tgs.chat_id AS tg_chat_id,
             tgs.message_id AS tg_message_id,
             tgs.id AS telegram_stream_id,
+            ace.content_id AS ace_content_id,
+            ace.info_hash AS ace_info_hash,
             {STREAM_LINK_AGG_COLS},
             ts.created_at
            FROM stream s
@@ -1280,6 +1289,7 @@ pub async fn get_media_streams(
            LEFT JOIN usenet_stream us ON us.stream_id = s.id
            LEFT JOIN youtube_stream ys ON ys.stream_id = s.id
            LEFT JOIN telegram_stream tgs ON tgs.stream_id = s.id
+           LEFT JOIN acestream_stream ace ON ace.stream_id = s.id
            WHERE sml.media_id = $1
              AND {stream_visibility}"#
         )))
@@ -1496,8 +1506,23 @@ pub async fn get_media_streams(
                 };
             let keyword_blocked = kf.is_stream_text_blocked(&r.name, r.filename.as_deref());
 
-            // Build playback URL for torrent/usenet/telegram streams when configured.
-            let raw_playback_url: Option<String> = if rd_blocked || secret_str.is_empty() {
+            // Build playback URL for torrent/usenet/telegram/acestream streams when configured.
+            let raw_playback_url: Option<String> = if rd_blocked {
+                None
+            } else if r.stream_type == StreamType::Acestream {
+                if ud.enable_acestream_streams {
+                    mediaflow_config.and_then(|mf| {
+                        mediaflow::encode_mediaflow_acestream_url(
+                            mf.proxy_url.as_deref()?,
+                            r.ace_content_id.as_deref(),
+                            r.ace_info_hash.as_deref(),
+                            mf.api_password.as_deref(),
+                        )
+                    })
+                } else {
+                    None
+                }
+            } else if secret_str.is_empty() {
                 None
             } else if r.stream_type == StreamType::Telegram {
                 if let Some(tg_id) = r.telegram_stream_id {
@@ -1564,25 +1589,29 @@ pub async fn get_media_streams(
             };
 
             // Build browser_url by wrapping raw_playback_url through MediaFlow when configured.
-            // raw_playback_url is kept for external players; browser_url is for in-browser playback.
-            let browser_url: Option<String> = raw_playback_url.as_deref().and_then(|raw| {
-                mediaflow_web_config.and_then(|mf| {
-                    let proxy_url = mf.proxy_url.as_deref()?;
-                    let mut params = std::collections::BTreeMap::new();
-                    if let Some(ap) = mf.api_password.as_deref().filter(|s| !s.is_empty()) {
-                        params.insert("api_password".into(), ap.to_string());
-                    }
-                    mediaflow::encode_mediaflow_proxy_url(
-                        proxy_url,
-                        "/proxy/stream",
-                        Some(raw),
-                        params,
-                        None,
-                        None,
-                    )
-                    .ok()
+            // AceStream URLs already target MediaFlow directly and must not be double-wrapped.
+            let browser_url: Option<String> = if r.stream_type == StreamType::Acestream {
+                raw_playback_url.clone()
+            } else {
+                raw_playback_url.as_deref().and_then(|raw| {
+                    mediaflow_web_config.and_then(|mf| {
+                        let proxy_url = mf.proxy_url.as_deref()?;
+                        let mut params = std::collections::BTreeMap::new();
+                        if let Some(ap) = mf.api_password.as_deref().filter(|s| !s.is_empty()) {
+                            params.insert("api_password".into(), ap.to_string());
+                        }
+                        mediaflow::encode_mediaflow_proxy_url(
+                            proxy_url,
+                            "/proxy/stream",
+                            Some(raw),
+                            params,
+                            None,
+                            None,
+                        )
+                        .ok()
+                    })
                 })
-            });
+            };
 
             let output = json!({
                 "id": r.id,

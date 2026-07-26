@@ -65,6 +65,8 @@ pub struct BrowseStreamRow {
     pub tg_chat_id: Option<String>,
     pub tg_message_id: Option<i32>,
     pub telegram_stream_id: Option<i32>,
+    pub ace_content_id: Option<String>,
+    pub ace_info_hash: Option<String>,
     pub audio_formats: Option<String>,
     pub channels: Option<String>,
     pub hdr_formats: Option<String>,

@@ -3074,22 +3074,12 @@ fn format_acestream_stream(
         .get("info_hash")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty());
-    if content_id.is_none() && info_hash.is_none() {
-        return None;
-    }
-
-    // Build MediaFlow acestream URL: {proxy_url}/proxy/acestream/stream?id=...&api_password=...
-    let mut params = Vec::new();
-    if let Some(id) = content_id {
-        params.push(format!("id={}", urlencoding::encode(id)));
-    } else if let Some(ih) = info_hash {
-        params.push(format!("infohash={}", urlencoding::encode(ih)));
-    }
-    if let Some(ap) = mf.api_password.as_deref().filter(|s| !s.is_empty()) {
-        params.push(format!("api_password={}", urlencoding::encode(ap)));
-    }
-    let base = proxy_url.trim_end_matches('/');
-    let url = format!("{base}/proxy/acestream/stream?{}", params.join("&"));
+    let url = mediaflow::encode_mediaflow_acestream_url(
+        proxy_url,
+        content_id,
+        info_hash,
+        mf.api_password.as_deref(),
+    )?;
 
     let quality = row.get("quality").and_then(|v| v.as_str()).unwrap_or("");
     let resolution = row.get("resolution").and_then(|v| v.as_str()).unwrap_or("");
