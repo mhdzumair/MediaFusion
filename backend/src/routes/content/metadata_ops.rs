@@ -82,6 +82,42 @@ pub struct LinkMultipleExternalIdsBody {
     pub tvdb_id: Option<String>,
     pub mal_id: Option<String>,
     pub trakt_id: Option<String>,
+    #[serde(rename = "type")]
+    pub media_type: Option<String>,
+    #[serde(default = "default_true")]
+    pub fetch_metadata: bool,
+}
+
+fn normalize_external_id(provider: &str, raw: &str) -> Result<String, String> {
+    let mut external_id = raw.trim().to_string();
+    let provider = provider.to_ascii_lowercase();
+
+    if provider == "imdb" {
+        if !external_id.starts_with("tt") {
+            return Err("IMDb ID must start with 'tt'".into());
+        }
+        return Ok(external_id);
+    }
+
+    if matches!(
+        provider.as_str(),
+        "tmdb" | "tvdb" | "mal" | "kitsu" | "anilist" | "trakt"
+    ) {
+        if external_id.contains(':') {
+            external_id = external_id
+                .rsplit_once(':')
+                .map(|(_, id)| id.to_string())
+                .unwrap_or(external_id);
+        }
+        if !external_id.chars().all(|c| c.is_ascii_digit()) {
+            return Err(format!(
+                "{} ID must be numeric",
+                provider.to_ascii_uppercase()
+            ));
+        }
+    }
+
+    Ok(external_id)
 }
 
 #[derive(Deserialize)]
@@ -292,55 +328,20 @@ pub async fn link_external_id(
             .into_response();
     }
 
-    let mut external_id = body.external_id.trim().to_string();
-    let provider = body.provider.to_lowercase();
-    if provider == "imdb" && !external_id.starts_with("tt") {
+    let provider = body.provider.to_ascii_lowercase();
+    let external_id = match normalize_external_id(&provider, &body.external_id) {
+        Ok(id) => id,
+        Err(detail) => {
+            return (StatusCode::BAD_REQUEST, Json(json!({"detail": detail}))).into_response();
+        }
+    };
+
+    if !crate::db::set_external_id_for_media(&state.pool, media_id, &provider, &external_id).await {
         return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"detail": "IMDb ID must start with 'tt'"})),
+            StatusCode::CONFLICT,
+            Json(json!({"detail": "External ID already linked to a different media"})),
         )
             .into_response();
-    }
-    if matches!(
-        provider.as_str(),
-        "tmdb" | "tvdb" | "mal" | "kitsu" | "anilist"
-    ) {
-        if external_id.contains(':') {
-            external_id = external_id
-                .rsplit_once(':')
-                .map(|(_, id)| id.to_string())
-                .unwrap_or(external_id);
-        }
-        if !external_id.chars().all(|c| c.is_ascii_digit()) {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"detail": format!("{} ID must be numeric", provider.to_uppercase())})),
-            )
-                .into_response();
-        }
-    }
-
-    let result = sqlx::query(
-        "INSERT INTO media_external_id (media_id, provider, external_id)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (provider, external_id) DO UPDATE SET media_id = EXCLUDED.media_id",
-    )
-    .bind(media_id)
-    .bind(&provider)
-    .bind(&external_id)
-    .execute(&state.pool)
-    .await;
-
-    match result {
-        Ok(_) => {}
-        Err(e) => {
-            tracing::error!("link_external_id: upsert error: {e}");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"detail": "Database error"})),
-            )
-                .into_response();
-        }
     }
 
     let mut metadata_updated = false;
@@ -393,13 +394,16 @@ pub async fn link_multiple_external_ids(
     Path(media_id): Path<i32>,
     Json(body): Json<LinkMultipleExternalIdsBody>,
 ) -> Response {
-    if validate_token(&headers, &state.config.secret_key_raw).is_none() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": "Unauthorized"})),
-        )
-            .into_response();
-    }
+    let user_id = match validate_token(&headers, &state.config.secret_key_raw) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"detail": "Unauthorized"})),
+            )
+                .into_response();
+        }
+    };
 
     // Check media exists
     let exists: bool = match sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM media WHERE id = $1)")
@@ -437,35 +441,57 @@ pub async fn link_multiple_external_ids(
     let mut failed_providers: Vec<String> = Vec::new();
 
     for (provider, id_opt) in candidates {
-        let Some(external_id) = id_opt else { continue };
-
-        let result = sqlx::query(
-            "INSERT INTO media_external_id (media_id, provider, external_id)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (provider, external_id) DO UPDATE SET external_id = EXCLUDED.external_id",
-        )
-        .bind(media_id)
-        .bind(provider)
-        .bind(&external_id)
-        .execute(&state.pool)
-        .await;
-
-        match result {
-            Ok(_) => linked_providers.push(provider.to_string()),
+        let Some(raw_id) = id_opt else { continue };
+        let external_id = match normalize_external_id(provider, &raw_id) {
+            Ok(id) => id,
             Err(e) => {
-                tracing::warn!("link_multiple_external_ids: failed provider {provider}: {e}");
+                tracing::warn!("link_multiple_external_ids: invalid {provider} id: {e}");
                 failed_providers.push(provider.to_string());
+                continue;
             }
+        };
+
+        if crate::db::set_external_id_for_media(&state.pool, media_id, provider, &external_id).await
+        {
+            linked_providers.push(provider.to_string());
+        } else {
+            failed_providers.push(provider.to_string());
         }
+    }
+
+    let mut metadata_updated = false;
+    if body.fetch_metadata && !linked_providers.is_empty() {
+        let meta_type = body.media_type.as_deref().unwrap_or("movie");
+        let keys = crate::scrapers::metadata::resolve_metadata_keys(
+            &state.pool_ro,
+            Some(user_id),
+            crate::scrapers::metadata::ResolvedMetadataKeys::server_keys_from_config(&state.config),
+        )
+        .await;
+        let (refreshed_providers, _) = crate::scrapers::metadata::refresh_media_from_providers(
+            &state.pool,
+            &state.http,
+            media_id,
+            meta_type,
+            keys.fetch_ctx(
+                state.config.trakt_client_id.as_deref(),
+                state.config.trakt_client_secret.as_deref(),
+                state.config.imdb_cinemeta_fallback_enabled,
+            ),
+            Some(&linked_providers),
+        )
+        .await;
+        metadata_updated = !refreshed_providers.is_empty();
     }
 
     (
         StatusCode::OK,
         Json(json!({
-            "status": "success",
+            "status": if linked_providers.is_empty() { "partial" } else { "success" },
             "media_id": media_id,
             "linked_providers": linked_providers,
             "failed_providers": failed_providers,
+            "metadata_updated": metadata_updated,
         })),
     )
         .into_response()
@@ -729,34 +755,20 @@ pub async fn migrate_media_id(
         ).into_response();
     }
 
-    // Upsert
-    let result = sqlx::query(
-        "INSERT INTO media_external_id (media_id, provider, external_id)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (media_id, provider) DO UPDATE SET external_id = EXCLUDED.external_id",
-    )
-    .bind(media_id)
-    .bind(provider)
-    .bind(&ext_id)
-    .execute(&state.pool)
-    .await;
-
-    match result {
-        Ok(_) => Json(json!({
+    if crate::db::set_external_id_for_media(&state.pool, media_id, provider, &ext_id).await {
+        Json(json!({
             "status": "success",
             "media_id": media_id,
             "provider": provider,
             "external_id": ext_id,
         }))
-        .into_response(),
-        Err(e) => {
-            tracing::error!("migrate_media_id: upsert error: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"detail": "Database error"})),
-            )
-                .into_response()
-        }
+        .into_response()
+    } else {
+        (
+            StatusCode::CONFLICT,
+            Json(json!({"detail": format!("External ID {new_external_id} is already in use by another media item")})),
+        )
+            .into_response()
     }
 }
 

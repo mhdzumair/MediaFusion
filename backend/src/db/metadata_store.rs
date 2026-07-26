@@ -312,23 +312,24 @@ pub async fn store_external_id(pool: &PgPool, media_id: i32, provider: &str, ext
 
 /// Assign an external ID to a media row, replacing any prior value for that provider.
 ///
-/// If `(provider, external_id)` is already linked to a different media row the
-/// assignment is skipped — the unique `uq_provider_external_id` constraint prevents
-/// sharing one provider ID across multiple media entries.
+/// Returns `true` when the media row ends up linked to `external_id` for `provider`.
+/// Returns `false` when `external_id` is empty or already belongs to a different media row.
 pub async fn set_external_id_for_media(
     pool: &PgPool,
     media_id: i32,
     provider: &str,
     external_id: &str,
-) {
+) -> bool {
+    let provider = provider.to_ascii_lowercase();
+    let external_id = external_id.trim();
     if external_id.is_empty() {
-        return;
+        return false;
     }
 
     let existing_owner: Option<i32> = sqlx::query_scalar(
         "SELECT media_id FROM media_external_id WHERE provider = $1 AND external_id = $2",
     )
-    .bind(provider)
+    .bind(&provider)
     .bind(external_id)
     .fetch_optional(pool)
     .await
@@ -340,33 +341,43 @@ pub async fn set_external_id_for_media(
             debug!(
                 "set_external_id_for_media: {provider}={external_id} already linked to media {owner_id}, skipping media {media_id}"
             );
+            return false;
         }
-        return;
-    }
-
-    if let Err(e) =
-        sqlx::query("DELETE FROM media_external_id WHERE media_id = $1 AND provider = $2")
-            .bind(media_id)
-            .bind(provider)
-            .execute(pool)
-            .await
-    {
-        warn!("set_external_id_for_media: delete old {provider} for media {media_id}: {e}");
-        return;
     }
 
     if let Err(e) = sqlx::query(
+        "DELETE FROM media_external_id WHERE media_id = $1 AND provider = $2 AND external_id != $3",
+    )
+    .bind(media_id)
+    .bind(&provider)
+    .bind(external_id)
+    .execute(pool)
+    .await
+    {
+        warn!("set_external_id_for_media: delete old {provider} for media {media_id}: {e}");
+        return false;
+    }
+
+    if existing_owner == Some(media_id) {
+        return true;
+    }
+
+    match sqlx::query(
         "INSERT INTO media_external_id (media_id, provider, external_id, created_at, updated_at) \
          VALUES ($1, $2, $3, NOW(), NOW()) \
          ON CONFLICT (provider, external_id) DO NOTHING",
     )
     .bind(media_id)
-    .bind(provider)
+    .bind(&provider)
     .bind(external_id)
     .execute(pool)
     .await
     {
-        warn!("set_external_id_for_media({provider}, media_id={media_id}): {e}");
+        Ok(_) => true,
+        Err(e) => {
+            warn!("set_external_id_for_media({provider}, media_id={media_id}): {e}");
+            false
+        }
     }
 }
 
