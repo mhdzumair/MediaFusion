@@ -2,6 +2,7 @@ pub mod acestream_bg;
 pub mod backfill_stream_metadata;
 pub mod background_search;
 pub mod cleanup;
+pub mod daily_digest;
 pub mod discover_prewarm;
 pub mod dmm_hashlist;
 pub mod imdb_dataset_import;

@@ -12,6 +12,7 @@ use super::{
         backfill_stream_metadata::BackfillStreamMetadata,
         background_search::BackgroundSearch,
         cleanup::Cleanup,
+        daily_digest::DailyDigest,
         discover_prewarm::DiscoverPrewarm,
         dmm_hashlist::DmmHashlistScraper,
         imdb_dataset_import::ImdbDatasetImport,
@@ -115,6 +116,7 @@ impl JobRegistry {
         self.register(Arc::new(Cleanup));
         self.register(Arc::new(IntegrationSyncs));
         self.register(Arc::new(PendingModerationReminder));
+        self.register(Arc::new(DailyDigest));
         self.register(Arc::new(M3uImport));
         self.register(Arc::new(XtreamImport));
 

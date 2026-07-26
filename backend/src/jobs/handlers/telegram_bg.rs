@@ -345,18 +345,17 @@ async fn send_scrape_notifications(
         return;
     }
 
-    let notify_user_id = if telegram_user_id > 0 {
-        telegram_user_id
+    let trigger = if telegram_user_id > 0 || chat_id.is_some() {
+        "On-demand"
     } else {
-        crate::db::telegram::get_user_telegram_id(&ctx.state.pool_ro, mediafusion_user_id)
-            .await
-            .unwrap_or(0)
+        "Scheduled"
     };
     let admin_summary = format!(
         "📡 *Telegram Scrape Completed*\n\n\
-         User: `{notify_user_id}` (MediaFusion #{mf_id})\n\
-         Depth: {limit_label}\n\n{summary_body}",
-        mf_id = mediafusion_user_id.0,
+         Trigger: {trigger}\n\
+         Depth: {limit_label}\n\
+         Channels: {channel_count}\n\n{summary_body}",
+        channel_count = channel_results.len(),
         summary_body = scrape_summary_body(channel_results, totals)
     );
     let admin_chat_id = notification_chat_id

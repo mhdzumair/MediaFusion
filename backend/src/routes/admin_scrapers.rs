@@ -2226,6 +2226,13 @@ const SCHEDULER_JOBS: &[(&str, &str, &str, &str, &str)] = &[
         "0 */6 * * *",
     ),
     (
+        "daily_digest",
+        "Daily Digest",
+        "maintenance",
+        "Sends daily Telegram summary of new streams, media, users, contributions, and moderation queues",
+        "0 8 * * *",
+    ),
+    (
         "imdb_dataset_import",
         "IMDb Dataset Import",
         "background",
@@ -2461,6 +2468,7 @@ fn job_id_to_cron_name(job_id: &str) -> Option<String> {
             "integration_syncs" => "integration_syncs",
             "update_tv_posters" => "update_tv_posters",
             "pending_moderation_reminder" => "pending_moderation_reminder",
+            "daily_digest" => "daily_digest",
             "imdb_dataset_import" => "imdb_dataset_import",
             id if job_id_to_queue(id) != "default" => id,
             _ => return None,
@@ -2529,6 +2537,7 @@ fn job_id_to_queue(job_id: &str) -> &'static str {
         "integration_syncs" => "integration_syncs",
         "update_tv_posters" => "update_tv_posters",
         "pending_moderation_reminder" => "pending_moderation_reminder",
+        "daily_digest" => "daily_digest",
         "imdb_dataset_import" => "imdb_dataset_import",
         _ => "default",
     }
@@ -2896,6 +2905,7 @@ async fn dispatch_scheduler_job(
                 "integration_syncs" => ("integration_syncs", json!({})),
                 "update_tv_posters" => ("update_tv_posters", json!({})),
                 "pending_moderation_reminder" => ("pending_moderation_reminder", json!({})),
+                "daily_digest" => ("daily_digest", json!({})),
                 "imdb_dataset_import" => ("imdb_dataset_import", json!({})),
                 _ => return Err(()),
             }

@@ -2,42 +2,14 @@
 
 use std::sync::Arc;
 
-use crate::{state::AppState, util::notification_registry};
+use crate::state::AppState;
 
 /// Wire Telegram bot notifications into the shared notification registry.
-pub fn register_notification_handlers(state: Arc<AppState>) {
-    let bot_token = match state.config.telegram_bot_token.clone() {
-        Some(t) if !t.is_empty() => t,
-        _ => return,
-    };
-    let chat_id = match state.config.telegram_chat_id.clone() {
-        Some(c) if !c.is_empty() => c,
-        _ => return,
-    };
-
-    let host_url = state.config.host_url.clone();
-    let http = state.http.clone();
-
-    notification_registry::register_file_annotation_handler(Arc::new(
-        move |info_hash, torrent_name| {
-            let bot_token = bot_token.clone();
-            let chat_id = chat_id.clone();
-            let host_url = host_url.clone();
-            let http = http.clone();
-            Box::pin(async move {
-                send_file_annotation_telegram(
-                    &http,
-                    &bot_token,
-                    &chat_id,
-                    &host_url,
-                    &info_hash,
-                    &torrent_name,
-                )
-                .await;
-            })
-        },
-    ));
-}
+///
+/// Per-torrent episode annotation alerts are intentionally not registered here;
+/// annotation queue counts are included in the daily digest and pending moderation
+/// reminder jobs instead.
+pub fn register_notification_handlers(_state: Arc<AppState>) {}
 
 pub async fn send_block_notification(
     http: &reqwest::Client,
@@ -186,45 +158,11 @@ pub async fn send_content_received_notification(
     if let Some(err) = error_message.filter(|s| !s.is_empty()) {
         message.push_str(&format!("*Error*: `{err}`\n"));
     }
-    send_text_message(http, bot_token, chat_id, &message).await;
-}
-
-async fn send_file_annotation_telegram(
-    http: &reqwest::Client,
-    bot_token: &str,
-    chat_id: &str,
-    host_url: &str,
-    info_hash: &str,
-    torrent_name: &str,
-) {
-    let annotation_url = format!(
-        "{}/app/dashboard/moderator?tab=annotation",
-        host_url.trim_end_matches('/')
-    );
-    let message = format!(
-        "📝 Episode file mapping required\n\n\
-         *Info Hash*: `{info_hash}`\n\
-         *Torrent Name*: `{torrent_name}`\n\
-         *Annotation Queue*: [Open]({annotation_url})\n\
-         Please review and annotate the episode mappings manually."
-    );
-    send_text_message(http, bot_token, chat_id, &message).await;
+    crate::bot::telegram_moderation::send_telegram_text(http, bot_token, chat_id, &message).await;
 }
 
 async fn send_text_message(http: &reqwest::Client, bot_token: &str, chat_id: &str, message: &str) {
-    let url = format!("https://api.telegram.org/bot{bot_token}/sendMessage");
-    let payload = serde_json::json!({
-        "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": true,
-    });
-    if let Err(e) = http.post(&url).json(&payload).send().await {
-        tracing::warn!(
-            error_kind = crate::util::http::transport_error_kind(&e),
-            "telegram notification sendMessage failed: {e}"
-        );
-    }
+    crate::bot::telegram_moderation::send_telegram_text(http, bot_token, chat_id, message).await;
 }
 
 async fn send_photo_message(

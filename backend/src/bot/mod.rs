@@ -20,6 +20,7 @@ mod model;
 mod notifications;
 mod session_setup;
 mod state_store;
+pub mod telegram_moderation;
 mod text;
 mod wizard;
 
